@@ -86,8 +86,11 @@ def test_acore_memory_reports_snapshot() -> None:
     body = r.json()
     assert body["ok"] is True
     assert set(body["ram"].keys()) == {"total_bytes", "available_bytes", "used_bytes", "percent"}
-    assert set(body["process"].keys()) == {"rss_bytes"}
-    assert set(body["device"].keys()) == {
+    # `footprint_bytes` (the physical footprint incl. Metal buffers) is present where the host can report it (macOS).
+    assert {"rss_bytes"} <= set(body["process"].keys()) <= {"rss_bytes", "footprint_bytes"}
+    # The MLX figures (`mlx_active_bytes`, `mlx_cache_bytes`, `mlx_peak_bytes`, `mlx_held_bytes`) are present
+    # where MLX is importable; the base keys are always there.
+    _base = {
         "backend",
         "allocated_bytes",
         "total_bytes",
@@ -97,6 +100,8 @@ def test_acore_memory_reports_snapshot() -> None:
         "host_in_use_bytes",
         "wired_limit_bytes",
     }
+    _mlx = {"mlx_active_bytes", "mlx_cache_bytes", "mlx_peak_bytes", "mlx_held_bytes"}
+    assert _base <= set(body["device"].keys()) <= _base | _mlx
     assert isinstance(body["ts"], float)
 
 

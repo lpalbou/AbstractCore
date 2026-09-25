@@ -16,10 +16,10 @@ from abstractcore.utils import memory as memory_mod
 def test_memory_snapshot_shape() -> None:
     snap = memory_mod.get_memory_snapshot()
 
-    assert set(snap.keys()) == {"ts", "ram", "process", "device", "host"}
+    assert set(snap.keys()) == {"ts", "ram", "process", "device", "held", "host"}
     assert isinstance(snap["ts"], float)
     assert set(snap["ram"].keys()) == {"total_bytes", "available_bytes", "used_bytes", "percent"}
-    assert set(snap["process"].keys()) == {"rss_bytes"}
+    assert set(snap["process"].keys()) == {"rss_bytes", "footprint_bytes"}
     assert set(snap["device"].keys()) == {
         "backend",
         "allocated_bytes",
@@ -27,7 +27,16 @@ def test_memory_snapshot_shape() -> None:
         "free_bytes",
         "host_in_use_bytes",
         "wired_limit_bytes",
+        "mlx_active_bytes",
+        "mlx_cache_bytes",
+        "mlx_peak_bytes",
+        "mlx_held_bytes",
     }
+    # `held` is the process-level MLX residency block (None without MLX).
+    held = snap["held"]
+    assert held is None or isinstance(held, dict)
+    if isinstance(held, dict) and "error" not in held:
+        assert {"backend", "active_bytes", "cache_bytes", "peak_bytes", "held_bytes", "models", "holders", "resident_models"} <= set(held)
     assert snap["device"]["backend"] in {"metal", "cuda", "mps", None}
     assert set(snap["host"].keys()) == {"host_id", "host_name", "kind"}
     assert snap["host"]["kind"] == "local"
@@ -59,7 +68,11 @@ def test_memory_snapshot_never_raises_when_psutil_broken(monkeypatch) -> None:
         "used_bytes": None,
         "percent": None,
     }
-    assert snap["process"] == {"rss_bytes": None}
+    # rss comes from psutil (now broken -> None); footprint is a separate,
+    # psutil-free macOS probe (proc_pid_rusage), so it may still be known.
+    assert snap["process"]["rss_bytes"] is None
+    assert snap["process"]["footprint_bytes"] is None or isinstance(snap["process"]["footprint_bytes"], int)
+    assert set(snap["process"].keys()) == {"rss_bytes", "footprint_bytes"}
 
 
 def test_memory_snapshot_never_raises_without_device_backends(monkeypatch) -> None:
@@ -76,7 +89,12 @@ def test_memory_snapshot_never_raises_without_device_backends(monkeypatch) -> No
         "free_bytes": None,
         "host_in_use_bytes": None,
         "wired_limit_bytes": None,
+        "mlx_active_bytes": None,
+        "mlx_cache_bytes": None,
+        "mlx_peak_bytes": None,
+        "mlx_held_bytes": None,
     }
+    assert snap["held"] is None
 
 
 def test_memory_snapshot_never_raises_when_device_probe_errors(monkeypatch) -> None:

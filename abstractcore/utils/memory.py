@@ -54,13 +54,43 @@ def _ram_snapshot() -> Dict[str, Any]:
     return out
 
 
+def darwin_phys_footprint_bytes(pid: Optional[int] = None) -> Optional[int]:
+    """This process's PHYSICAL FOOTPRINT on macOS (`proc_pid_rusage`,
+    `ri_phys_footprint`): the number Activity Monitor's "Memory" column and
+    `footprint`/`vmmap --summary` report. It INCLUDES Metal buffers (MLX
+    weights and KV caches), which RSS does NOT -- a gateway holding 88 GB of
+    MLX memory had an RSS of 6 GB (2026-09-25). None off macOS or on failure."""
+    try:
+        import ctypes
+        import os
+        import platform
+
+        if platform.system() != "Darwin":
+            return None
+        libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
+        rusage_info_v2 = 2
+        # struct rusage_info_v2: uint8 ri_uuid[16] then 18 uint64 fields;
+        # ri_phys_footprint is the 8th uint64 (offset 16 + 7 * 8).
+        buf = ctypes.create_string_buffer(16 + 18 * 8)
+        rc = libproc.proc_pid_rusage(ctypes.c_int(int(pid or os.getpid())), ctypes.c_int(rusage_info_v2), buf)
+        if rc != 0:
+            return None
+        value = int.from_bytes(buf.raw[72:80], "little", signed=False)
+        return value if value > 0 else None
+    except Exception:
+        return None
+
+
 def _process_snapshot() -> Dict[str, Any]:
+    out: Dict[str, Any] = {"rss_bytes": None, "footprint_bytes": None}
     try:
         import psutil
 
-        return {"rss_bytes": int(psutil.Process().memory_info().rss)}
+        out["rss_bytes"] = int(psutil.Process().memory_info().rss)
     except Exception:
-        return {"rss_bytes": None}
+        pass
+    out["footprint_bytes"] = darwin_phys_footprint_bytes()
+    return out
 
 
 def metal_wired_limit_bytes() -> Optional[int]:
@@ -185,6 +215,14 @@ def _device_snapshot() -> Dict[str, Any]:
         # backends — CUDA's total/free already ARE device-wide truth):
         "host_in_use_bytes": None,
         "wired_limit_bytes": None,
+        # MLX allocator truth for THIS process (metal only): live buffers,
+        # freed-but-cached buffers, high-water mark, and their sum -- what the
+        # process actually pins in unified memory. `allocated_bytes` stays the
+        # live figure for compatibility; `mlx_held_bytes` is the one to show.
+        "mlx_active_bytes": None,
+        "mlx_cache_bytes": None,
+        "mlx_peak_bytes": None,
+        "mlx_held_bytes": None,
     }
 
     # Apple Silicon via MLX (unified memory; Metal exposes no free-bytes query).
@@ -203,8 +241,18 @@ def _device_snapshot() -> Dict[str, Any]:
             try:
                 # PROCESS-LOCAL truth: mlx active memory of THIS process only.
                 out["allocated_bytes"] = int(get_active())
+                out["mlx_active_bytes"] = out["allocated_bytes"]
             except Exception:
                 pass
+            for name, key in (("get_cache_memory", "mlx_cache_bytes"), ("get_peak_memory", "mlx_peak_bytes")):
+                fn = getattr(mx, name, None) or getattr(metal, name, None)
+                if callable(fn):
+                    try:
+                        out[key] = int(fn())
+                    except Exception:
+                        pass
+            if isinstance(out["mlx_active_bytes"], int) or isinstance(out["mlx_cache_bytes"], int):
+                out["mlx_held_bytes"] = int(out["mlx_active_bytes"] or 0) + int(out["mlx_cache_bytes"] or 0)
             try:
                 device_info = getattr(mx, "device_info", None) or getattr(metal, "device_info", None)
                 if callable(device_info):
@@ -323,15 +371,32 @@ def get_memory_snapshot() -> Dict[str, Any]:
     Shape:
         {"ts": <unix float>,
          "ram": {"total_bytes", "available_bytes", "used_bytes", "percent"},
-         "process": {"rss_bytes"},
+         "process": {"rss_bytes",
+                     "footprint_bytes"},           # macOS phys_footprint: INCLUDES Metal/MLX buffers (RSS does not)
          "device": {"backend": "metal"|"cuda"|"mps"|None,
                     "allocated_bytes": int|None,   # THIS process (metal/mps: mlx/torch active memory)
                     "total_bytes": int|None,
                     "free_bytes": int|None,
                     "host_in_use_bytes": int|None,  # metal: cross-process accelerator HEAP (ioreg);
                                                     #   excludes memory-mapped GGUF weights
-                    "wired_limit_bytes": int|None}, # metal: enforced ceiling (sysctl, else Metal working set)
+                    "wired_limit_bytes": int|None,  # metal: enforced ceiling (sysctl, else Metal working set)
+                    "mlx_active_bytes": int|None,   # metal: MLX live buffers (this process)
+                    "mlx_cache_bytes": int|None,    # metal: MLX freed-but-cached buffers (this process)
+                    "mlx_peak_bytes": int|None,
+                    "mlx_held_bytes": int|None},    # active + cache: what the process pins
+         "held": {"backend": "mlx", "active_bytes", "cache_bytes", "peak_bytes", "held_bytes",
+                  "resident_models": int, "holders": int,
+                  "models": [{"lane", "model_path", "models", "holders", "weights_bytes",
+                              "drafter_bytes", "apc_bytes", "prompt_cache_bytes",
+                              "hybrid_snapshot_bytes", "cache_bytes", "held_bytes", ...}]}
+                 | None,                            # None when MLX is absent
          "host": {"host_id", "host_name", "kind"}}
+
+    `held` is the PROCESS-level residency truth (`abstractcore.providers.
+    mlx_residency`): every MLX model whose weights are alive in this process
+    and who holds them -- including holders no runtime pool can reach. A UI
+    that lists "no models loaded" while `held.held_bytes` > 0 is lying; the
+    tray/console/gateway read this block so they cannot.
 
     Missing/unknowable values are None; this function never raises.
     """
@@ -344,5 +409,24 @@ def get_memory_snapshot() -> Dict[str, Any]:
         "ram": _ram_snapshot(),
         "process": _process_snapshot(),
         "device": _device_snapshot(),
+        "held": _held_snapshot(),
         "host": _host_snapshot(),
     }
+
+
+def _held_snapshot() -> Optional[Dict[str, Any]]:
+    """Process-level MLX residency (see `get_memory_snapshot`). None without MLX."""
+    try:
+        import mlx.core  # noqa: F401  (no MLX: nothing can be held by it)
+    except Exception:
+        return None
+    try:
+        from ..providers.mlx_residency import mlx_memory_report
+
+        report = mlx_memory_report()
+        # `holder_rows` carry object ids for diagnostics; keep the snapshot JSON-light.
+        for row in report.get("models") or []:
+            row.pop("holder_rows", None)
+        return report
+    except Exception as exc:  # noqa: BLE001 - visibility must never break a caller
+        return {"backend": "mlx", "error": f"{type(exc).__name__}: {exc}"}
