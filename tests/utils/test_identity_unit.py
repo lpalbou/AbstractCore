@@ -29,11 +29,15 @@ def test_every_known_app_has_every_link(app_id):
     assert app.repo.startswith("https://github.com/lpalbou/")
 
 
-def test_missing_distribution_is_an_error_not_unknown():
+def test_missing_distribution_is_an_error_not_unknown(monkeypatch):
     import importlib.metadata as md
 
+    def _absent(name):
+        raise md.PackageNotFoundError(name)
+
+    monkeypatch.setattr(identity.metadata, "version", _absent)
     with pytest.raises(md.PackageNotFoundError):
-        identity.app_identity("abstractflow")  # a TypeScript app: never a Python distribution
+        identity.app_identity("abstractassistant")
 
 
 def test_gateway_version_rows_match_the_ui_kit_contract():
