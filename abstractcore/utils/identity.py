@@ -20,6 +20,7 @@ and :func:`about_lines` / :func:`about_html` to render it.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib import metadata, resources
@@ -152,11 +153,11 @@ def gateway_version_rows(payload: Optional[GatewayAboutPayload], error: Optional
     On an error, or a payload without a gateway version, exactly one row:
     ``Gateway`` → ``unavailable (<reason>)``.
     """
-    if error:
-        return [("Gateway", f"unavailable ({error})")]
+    if error is not None:
+        return [("Gateway", f"unavailable ({error.strip() or 'unknown error'})")]
     gateway = str((payload or {}).get("abstractgateway") or "").strip()
     if not gateway:
-        return [("Gateway", "unavailable (response has no abstractgateway version)")]
+        return [("Gateway", "unavailable (the gateway did not report its version)")]
     rows: List[Tuple[str, str]] = [("Gateway", f"AbstractGateway {gateway}")]
     framework = (payload or {}).get("abstractframework")
     framework_text = str(framework).strip() if framework else ""
@@ -177,17 +178,29 @@ def _escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
+_URL_RE = re.compile(r"https?://[^\s<>\"]+")
+
+
+def _render_value(label: str, value: str) -> str:
+    """Escape a value; URLs inside it become links; only the Contact row is a mailto."""
+    if label == "Contact":
+        return f'<a href="mailto:{_escape(value)}">{_escape(value)}</a>'
+    out: List[str] = []
+    last = 0
+    for match in _URL_RE.finditer(value):
+        out.append(_escape(value[last:match.start()]))
+        url = match.group(0)
+        out.append(f'<a href="{_escape(url)}">{_escape(url)}</a>')
+        last = match.end()
+    out.append(_escape(value[last:]))
+    return "".join(out)
+
+
 def about_html(identity: AppIdentity, extra: Optional[Mapping[str, str]] = None) -> str:
     """The same rows as HTML, with URLs rendered as links (Qt rich text safe)."""
     parts: List[str] = []
     for label, value in about_fields(identity, extra):
-        if value.startswith("http://") or value.startswith("https://"):
-            rendered = f'<a href="{_escape(value)}">{_escape(value)}</a>'
-        elif "@" in value and " " not in value:
-            rendered = f'<a href="mailto:{_escape(value)}">{_escape(value)}</a>'
-        else:
-            rendered = _escape(value)
-        parts.append(f"<b>{_escape(label)}:</b> {rendered}")
+        parts.append(f"<b>{_escape(label)}:</b> {_render_value(label, value)}")
     return "<br>".join(parts)
 
 
