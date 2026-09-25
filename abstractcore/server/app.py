@@ -3824,6 +3824,7 @@ def _best_effort_unload(llm: Any, *, request_id: str, provider: str, model: str)
             raise AttributeError("Provider does not implement unload_model(model_name)")
         llm.unload_model(model)
         logger.info("🧹 Provider Unloaded", request_id=request_id, provider=provider, model=model)
+        _best_effort_process_eject(provider, model, request_id=request_id)
     except Exception as e:
         logger.warning(
             "⚠️ Provider unload failed",
@@ -4417,6 +4418,192 @@ def _best_effort_unload_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, *
             model=runtime.model,
             runtime_id=runtime.runtime_id,
         )
+        _best_effort_process_eject(runtime.provider, runtime.model, request_id=request_id)
+
+
+def _best_effort_process_eject(provider: str, model: str, *, request_id: str) -> None:
+    """`unload_after` frees the model from EVERY in-process holder, not only the
+    instance of this request (MLX weights are shared; HuggingFace copies are
+    not). Skipped while a managed runtime still serves the pair."""
+    try:
+        report = _process_eject_after_unload(str(provider or "").strip().lower(), str(model or "").strip(),
+                                             reason="unload_after")
+    except Exception as e:
+        logger.warning("⚠️ Process-wide eject failed", request_id=request_id, provider=provider, model=model,
+                       error=str(e), error_type=type(e).__name__)
+        return
+    if report is not None and not report.get("ok"):
+        logger.warning("⚠️ Model still resident after unload_after", request_id=request_id, provider=provider,
+                       model=model, error=_process_eject_error(report, str(model)))
+
+
+# ---------------------------------------------------------------------------
+# Process-wide residency (mission M2, 2026-09-25). The registry above names
+# only the runtimes THIS server built; MLX / HuggingFace / embedding weights
+# can also be held by instances it never registered (a per-request provider,
+# an embedder, a sibling that shares the MLX weights). An unload that freed
+# only the registry instance answered "unloaded" over resident weights, and
+# the listing said nothing about them. Both now go through core's
+# process-level truth (`abstractcore.providers.process_residency`).
+# ---------------------------------------------------------------------------
+def _managed_runtime_naming(provider: str, model: str) -> Optional["_GatewayLoadedRuntime"]:
+    with _GATEWAY_RUNTIME_LOCK:
+        for runtime in _GATEWAY_LOADED_RUNTIMES.values():
+            if runtime.provider == provider and runtime.model == model:
+                return runtime
+    return None
+
+
+def _process_eject_after_unload(provider: str, model: str, *, task: Optional[str] = None,
+                                reason: str) -> Optional[Dict[str, Any]]:
+    """Eject `model` from every in-process holder once no managed runtime of
+    this server still serves it. None when the provider's weights live in
+    another process (nothing to eject here) or a managed runtime -- locked or
+    not -- still names the pair (its residency is the registry's to manage)."""
+    from ..providers.process_residency import backend_for, eject
+
+    backend = backend_for(provider, task)
+    if backend is None:
+        return None
+    if backend != "embeddings" and _managed_runtime_naming(provider, model) is not None:
+        return None
+    return eject(backend, model, reason=reason)
+
+
+def _process_residency_record(row: Dict[str, Any], name: str) -> Dict[str, Any]:
+    backend = str(row.get("backend") or "")
+    embedding = backend == "embeddings"
+    provider = "huggingface" if embedding else backend
+    holders = int(row.get("holders") or 0)
+    copies = "" if row.get("shared_weights", True) else " (each a full copy of the weights)"
+    record: Dict[str, Any] = {
+        "runtime_id": f"process:{'embedding' if embedding else 'text_generation'}:{provider}:{name}",
+        "task": "embedding" if embedding else "text_generation",
+        "provider": provider,
+        "model": name,
+        "state": "provider_loaded",
+        "loaded": True,
+        "resident": True,
+        "runtime_cached": False,
+        "cache_state": "not_cached",
+        "locked": False,
+        "pinned": False,
+        "lockable": False,
+        "isolation": "in_process",
+        "health": "ok",
+        "error": None,
+        "provider_state": "resident_via_other_holders",
+        "source": f"abstractcore.provider.{backend}.process",
+        "backend": backend,
+        "lane": row.get("lane"),
+        "process_holders": holders,
+        "weights_bytes": row.get("weights_bytes"),
+        "cache_bytes": row.get("cache_bytes"),
+        "held_bytes": row.get("held_bytes"),
+        "shared_weights": row.get("shared_weights", True),
+        "warnings": [
+            f"held in memory by {holders} instance(s) this server did not register{copies}; "
+            "unloading it ejects every holder in the process"
+        ],
+    }
+    if row.get("kv_bytes_estimated"):
+        record["kv_bytes_estimated"] = True
+    return record
+
+
+def _merge_process_residency(
+    records: list, *, task_filter: Optional[str], provider_filter: str, model_filter: str
+) -> None:
+    """Fold every in-process model the registry does not own into a listing,
+    in place; annotate registry records with the process-wide holder count
+    and bytes."""
+    from ..providers.process_residency import resident_rows, row_names
+
+    for row in resident_rows():
+        backend = str(row.get("backend") or "")
+        task = "embedding" if backend == "embeddings" else "text_generation"
+        provider = "huggingface" if backend == "embeddings" else backend
+        if task_filter is not None and task_filter != task:
+            continue
+        if provider_filter and provider_filter != provider:
+            continue
+        for name in row_names(row):
+            if model_filter and model_filter != name:
+                continue
+            existing = next(
+                (r for r in records if isinstance(r, dict) and r.get("task", "text_generation") == task
+                 and str(r.get("provider") or "").lower() == provider and str(r.get("model") or "") == name),
+                None,
+            )
+            if existing is None:
+                records.append(_process_residency_record(row, name))
+                continue
+            existing["process_holders"] = int(row.get("holders") or 0)
+            existing.setdefault("held_bytes", row.get("held_bytes"))
+            if existing.get("loaded") is not True:
+                # This server's own instance released the weights; others hold them.
+                existing.update({"loaded": True, "resident": True, "state": "provider_loaded",
+                                 "provider_state": "resident_via_other_holders"})
+
+
+def _process_only_unload(task: str, provider: Optional[str], model: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Unload of a model no managed runtime owns but the process still holds
+    (a `process:` row of the listing). None when nothing in-process holds it."""
+    from ..providers.process_residency import backend_for, resident_rows, row_names
+
+    backend = backend_for(provider, task)
+    if backend is None or not model:
+        return None
+    if not any(model in row_names(r) for r in resident_rows(backend)):
+        return None
+    report = _process_eject_after_unload(str(provider or "huggingface"), model, task=task,
+                                         reason="acore_models_unload")
+    if report is None:
+        return None
+    record = {
+        "runtime_id": f"process:{task}:{provider or 'huggingface'}:{model}",
+        "task": task,
+        "provider": provider or "huggingface",
+        "model": model,
+        "state": "unloaded" if report.get("ok") else "provider_loaded",
+        "loaded": not report.get("ok"),
+        "isolation": "in_process",
+        "source": f"abstractcore.provider.{backend}.process",
+    }
+    out: Dict[str, Any] = {
+        "ok": bool(report.get("ok")),
+        "success": bool(report.get("ok")),
+        "runtime": record,
+        "unloaded": bool(report.get("ok")),
+        "process_eject": _json_safe_eject_report(report),
+        "affected_models": [dict(record)],
+    }
+    if not report.get("ok"):
+        out["error"] = _process_eject_error(report, model)
+    return out
+
+
+def _process_eject_error(report: Dict[str, Any], model: str) -> str:
+    residual = report.get("residual") or {}
+    refused = report.get("holders_refused") or []
+    if refused:
+        return f"{len(refused)} holder(s) of {model} refused to unload: {refused[0].get('error')}"
+    return (f"{model} is still resident in this process after the eject "
+            f"({int(residual.get('holders') or 0)} holder(s), {int(residual.get('held_bytes') or 0)} bytes held)")
+
+
+def _json_safe_eject_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    out = {k: v for k, v in report.items() if k not in ("before", "after", "residual")}
+    for key in ("before", "after"):
+        value = report.get(key)
+        if isinstance(value, dict):
+            out[key] = {k: v for k, v in value.items() if k != "row"}
+    residual = report.get("residual")
+    if isinstance(residual, dict):
+        out["residual"] = {k: v for k, v in residual.items() if k != "holder_rows"}
+    else:
+        out["residual"] = residual
+    return out
 
 
 # Ollama's server-side default keep-alive; restored on unlock so an unlocked
@@ -4774,6 +4961,9 @@ def _normalize_model_residency_task(task: Optional[str]) -> str:
         "t23d": "text_to_scene3d",
         "image_to_scene3d": "image_to_scene3d",
         "i23d": "image_to_scene3d",
+        "embedding": "embedding",
+        "embeddings": "embedding",
+        "text_embedding": "embedding",
     }
     if raw not in aliases:
         raise HTTPException(
@@ -5351,7 +5541,7 @@ def acore_models_loaded(
                 if (not provider_filter or runtime.provider == provider_filter)
                 and (not model_filter or runtime.model == model_filter)
             )
-    if task_filter != "text_generation":
+    if task_filter not in {"text_generation", "embedding"}:
         filters = {"provider": provider_filter, "model": model_filter}
         if task_filter:
             filters["task"] = task_filter
@@ -5360,13 +5550,26 @@ def acore_models_loaded(
         _merge_provider_server_sweep(
             runtimes, provider_filter=provider_filter, model_filter=model_filter
         )
+    listing_warnings: list[str] = []
+    if task_filter in {None, "text_generation", "embedding"}:
+        # Every in-process model whose weights are alive, whoever holds them.
+        # A failing probe is reported, never read as "nothing resident".
+        try:
+            _merge_process_residency(
+                runtimes, task_filter=task_filter, provider_filter=provider_filter, model_filter=model_filter
+            )
+        except Exception as exc:  # noqa: BLE001
+            listing_warnings.append(
+                f"process-wide residency could not be read ({type(exc).__name__}: {exc}); "
+                "models held outside this server's runtimes are not listed"
+            )
     # Every record this listing serves was observed on THIS host — stamp the
     # host identity (setdefault) so multi-machine aggregation stays possible.
     for record in runtimes:
         if isinstance(record, dict):
             _stamp_record_host_identity(record)
     models = sorted(runtimes, key=lambda item: str(item.get("runtime_id") or item.get("load_id") or ""))
-    return {
+    out = {
         "ok": True,
         "success": True,
         "operation": "list_loaded",
@@ -5375,6 +5578,9 @@ def acore_models_loaded(
         "models": models,
         "affected_models": models,
     }
+    if listing_warnings:
+        out["warnings"] = listing_warnings
+    return out
 
 
 def _validated_request_base_url_override(
@@ -5542,9 +5748,19 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
     if isinstance(payload.get("options"), dict):
         for k, v in dict(payload["options"]).items():
             payload.setdefault(k, v)
+    if task == "embedding" or str(req.runtime_id or "").startswith("process:embedding:"):
+        return _embedding_residency_unload(req)
     if task and task != "text_generation":
         payload["task"] = task
         return _capability_residency_unload(task, payload, http_request)
+    if str(req.runtime_id or "").startswith("process:text_generation:"):
+        # `process:text_generation:<provider>:<model>` (a listing row no managed runtime owns).
+        _, _, rest = str(req.runtime_id).partition("process:text_generation:")
+        provider_p, _, model_p = rest.partition(":")
+        result = _process_only_unload("text_generation", provider_p, model_p)
+        if result is None:
+            raise HTTPException(status_code=404, detail={"error": {"message": f"{model_p} is not resident in this process.", "type": "not_found"}})
+        return result
 
     runtime_id = str(req.runtime_id or "").strip() or None
     provider = str(req.provider or "").strip().lower() or None
@@ -5580,24 +5796,39 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
                     "runtime_id": runtime.runtime_id,
                 },
             )
+        # The registry instance is gone; free every OTHER in-process holder too
+        # (a per-request provider, a sibling sharing the MLX weights, an
+        # embedder...). The report rides in the payload and never pretends.
+        process_eject = _process_eject_after_unload(runtime.provider, runtime.model, reason="acore_models_unload")
+        eject_ok = process_eject is None or bool(process_eject.get("ok"))
         unloaded_record = {
             **_gateway_runtime_to_dict(runtime),
             "task": "text_generation",
-            "state": "unloaded",
-            "loaded": False,
+            "state": "unloaded" if eject_ok else "provider_loaded",
+            "loaded": not eject_ok,
             "locked": False,
             "pinned": False,
             "isolation": "in_process",
             "health": "ok",
-            "error": None,
+            "error": None if eject_ok else _process_eject_error(process_eject, runtime.model),
         }
-        return {
-            "ok": True,
-            "success": True,
+        out = {
+            "ok": eject_ok,
+            "success": eject_ok,
             "runtime": dict(unloaded_record),
-            "unloaded": True,
+            "unloaded": eject_ok,
             "affected_models": [dict(unloaded_record)],
         }
+        if process_eject is not None:
+            out["process_eject"] = _json_safe_eject_report(process_eject)
+        if not eject_ok:
+            out["error"] = unloaded_record["error"]
+        return out
+    if task in (None, "text_generation") and provider and model:
+        # No managed runtime, but the weights may still be in this process.
+        process_only = _process_only_unload("text_generation", provider, model)
+        if process_only is not None:
+            return process_only
     if task is None:
         for candidate_task in ("image_generation", "video_generation", "tts", "stt"):
             try:
@@ -5611,6 +5842,22 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
         status_code=404,
         detail={"error": {"message": "Loaded model runtime not found.", "type": "not_found"}},
     )
+
+
+def _embedding_residency_unload(req: "UnloadModelRequest") -> Dict[str, Any]:
+    """Eject an in-process embedding model (every EmbeddingManager holding it)."""
+    model = str(req.model or "").strip()
+    if not model and str(req.runtime_id or "").startswith("process:embedding:"):
+        model = str(req.runtime_id).split(":", 3)[3] if str(req.runtime_id).count(":") >= 3 else ""
+    if not model:
+        raise HTTPException(status_code=400, detail={"error": {
+            "message": "Provide model (or the listing's runtime_id) to unload an embedding model.",
+            "type": "invalid_request"}})
+    result = _process_only_unload("embedding", str(req.provider or "huggingface").strip().lower(), model)
+    if result is None:
+        raise HTTPException(status_code=404, detail={"error": {
+            "message": f"Embedding model {model} is not resident in this process.", "type": "not_found"}})
+    return result
 
 
 def _resolve_text_runtime_for_lock(req: LockModelRequest, http_request: Request) -> _GatewayLoadedRuntime:
