@@ -271,9 +271,9 @@ class IncrementalToolDetector:
             # Tool call is complete
             tool_json_content = self.current_tool_content[: end_match.start()].strip()
 
-            # Try to parse the tool call
-            tool_call = self._parse_tool_json(tool_json_content)
-            if tool_call:
+            # Try to parse the tool call(s): one envelope may hold several
+            # `<function=...>` blocks (qwen3_coder), and every one is a call.
+            for tool_call in self._parse_tool_payload(tool_json_content):
                 completed_tools.append(tool_call)
                 logger.debug(f"Complete tool call parsed: {tool_call.name}")
 
@@ -625,6 +625,27 @@ class IncrementalToolDetector:
 
         return streamable_content
 
+    def _parse_tool_payload(self, content: str) -> List[ToolCall]:
+        """Every tool call in one envelope body (see `_parse_tool_json`)."""
+        if not content or not content.strip():
+            return []
+        cleaned = content.strip()
+        low = cleaned.lower()
+        if "<arg_key" not in low and ("<function" in low or "<parameter" in low):
+            # qwen3_coder / Nemotron XML-ish payload:
+            #   <function=name><parameter=k>v</parameter>...</function> (repeatable)
+            # A call without parameters is still a call, as on the non-streamed lane.
+            try:
+                from ..tools.parser import _parse_xmlish_parameter_tool_calls
+
+                xmlish_calls = _parse_xmlish_parameter_tool_calls(cleaned)
+            except Exception:
+                xmlish_calls = []
+            if xmlish_calls:
+                return list(xmlish_calls)
+        tool_call = self._parse_tool_json(content)
+        return [tool_call] if tool_call else []
+
     def _parse_tool_json(self, json_content: str) -> Optional[ToolCall]:
         """Parse JSON content to create ToolCall."""
         if not json_content or not json_content.strip():
@@ -642,7 +663,7 @@ class IncrementalToolDetector:
             if arg_kv_calls:
                 return arg_kv_calls[0]
 
-        if "<parameter" in cleaned.lower():
+        if "<parameter" in cleaned.lower() or "<function" in cleaned.lower():
             try:
                 from ..tools.parser import _parse_xmlish_parameter_tool_calls
 
@@ -742,7 +763,10 @@ class IncrementalToolDetector:
                         self.accumulated_content = ""
                         return completed_tools
 
-                if "<parameter" in self.current_tool_content.lower():
+                if (
+                    "<parameter" in self.current_tool_content.lower()
+                    or "<function" in self.current_tool_content.lower()
+                ):
                     try:
                         from ..tools.parser import _parse_xmlish_parameter_tool_calls
 

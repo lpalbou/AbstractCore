@@ -8607,10 +8607,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # 2) Prompted tools: parse tool calls embedded in content.
         content = response.content
+        tool_handler = getattr(self, "tool_handler", None)
         if not isinstance(content, str) or not content.strip():
+            # No visible answer. A provider that splits inline thinking BEFORE
+            # this point (MLX, HuggingFace) may have moved the model's tool calls
+            # into `metadata["reasoning"]`: the model wrote them before (or
+            # without) its closing thinking tag. Left there, the calls are
+            # never executed and an agent that falls back to the reasoning when
+            # the content is empty returns the raw markup as its answer.
+            if tool_handler is not None:
+                self._recover_tool_calls_from_reasoning(
+                    response, tool_handler=tool_handler, allowed_names=allowed_names
+                )
             return response
 
-        tool_handler = getattr(self, "tool_handler", None)
         if tool_handler is None:
             return response
 
@@ -8658,6 +8668,99 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 response.content = cleaned_content
 
         return response
+
+    # Openers of the tool-call envelopes the prompted parsers understand; a
+    # candidate start for "the reasoning ENDS with tool calls".
+    _TOOL_ENVELOPE_OPENER_RE = re.compile(
+        r"<tool_call\b|<\|tool_call\|>|<\|tool_call>|<\|tool_call_start\|>|<function_call>|```tool_code",
+        re.IGNORECASE,
+    )
+
+    def _recover_tool_calls_from_reasoning(
+        self,
+        response: GenerateResponse,
+        *,
+        tool_handler: Any,
+        allowed_names: set[str],
+    ) -> None:
+        """Move tool calls that END the reasoning into `response.tool_calls`.
+
+        Only the TRAILING run of complete tool-call envelopes is taken (nothing
+        but whitespace after them): a call the model drafted mid-thought and then
+        reasoned past is not a call. Names are checked against the offered tools
+        like any other prompted call. The recovered markup is removed from the
+        reasoning. Tool-call syntax in the reasoning that is NOT recovered is
+        reported in `metadata["warnings"]`, never dropped silently.
+        """
+        from ..architectures.response_postprocessing import TRUNCATED_REASONING_MARKER
+
+        meta = response.metadata if isinstance(response.metadata, dict) else None
+        reasoning = meta.get("reasoning") if meta else None
+        if not isinstance(reasoning, str) or not reasoning.strip():
+            return
+
+        body = reasoning.rstrip()
+        marker = TRUNCATED_REASONING_MARKER.strip()
+        if body.endswith(marker):
+            # An unclosed thinking block is reported with a truncation marker; a
+            # block the model left open to go straight to its calls is not
+            # truncated reasoning, it is the call.
+            body = body[: -len(marker)].rstrip()
+
+        for opener in self._TOOL_ENVELOPE_OPENER_RE.finditer(body):
+            tail = body[opener.start():]
+            try:
+                parsed = tool_handler.parse_response(tail, mode="prompted")
+            except Exception:
+                continue
+            calls = getattr(parsed, "tool_calls", None)
+            leftover = getattr(parsed, "content", None)
+            if not isinstance(calls, list) or not calls:
+                continue
+            if isinstance(leftover, str) and leftover.strip():
+                continue  # prose after the calls: they are not the reasoning's end
+            normalized = self._normalize_tool_calls_payload(calls, allowed_tool_names=allowed_names)
+            if not normalized:
+                dropped = [str(getattr(c, "name", None) or "") for c in calls]
+                self._warn_unrecognized_tool_syntax(
+                    response,
+                    tail,
+                    dropped_names=[d for d in dropped if d],
+                    allowed_names=allowed_names,
+                )
+                return
+            response.tool_calls = normalized
+            remaining = body[: opener.start()].rstrip()
+            if remaining:
+                meta["reasoning"] = remaining
+            else:
+                meta.pop("reasoning", None)
+            meta["tool_calls_from_reasoning"] = len(normalized)
+            try:
+                self.logger.info(
+                    f"Recovered {len(normalized)} tool call(s) written inside the model's "
+                    f"reasoning (no visible content) model={self.model}"
+                )
+            except Exception:
+                pass
+            return
+
+        from ..tools.parser import detect_unparsed_tool_intent
+
+        if detect_unparsed_tool_intent(body):
+            msg = (
+                "Tool-call syntax found inside the model's reasoning, not at its end, and no "
+                "visible answer: nothing was executed. The response was returned without tool calls."
+            )
+            try:
+                self.logger.warning(f"{msg} model={self.model}")
+            except Exception:
+                pass
+            warnings_list = meta.get("warnings")
+            if not isinstance(warnings_list, list):
+                warnings_list = []
+            warnings_list.append(msg)
+            meta["warnings"] = warnings_list
 
     def _should_clean_tool_call_markup(self, tool_call_tags: Optional[str]) -> bool:
         """Return True when we should strip tool-call markup from assistant content."""

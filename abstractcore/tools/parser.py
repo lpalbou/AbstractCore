@@ -741,6 +741,15 @@ def _parse_xmlish_parameters(body: str) -> Dict[str, Any]:
     return arguments
 
 
+def _has_unterminated_xmlish_parameter(block: str) -> bool:
+    """True when the last `<parameter=...>` of an UNCLOSED function block never closed."""
+    openers = list(re.finditer(r"<parameter\s*=", block or "", re.IGNORECASE))
+    if not openers:
+        return False
+    closers = list(re.finditer(r"</parameter\s*>", block or "", re.IGNORECASE))
+    return not closers or closers[-1].start() < openers[-1].start()
+
+
 def _iter_xml_tool_call_bodies(response: str):
     """Yield bodies after <tool_call>, accepting a missing final </tool_call>."""
     open_re = re.compile(r"<tool_call\b[^>]*>", re.IGNORECASE)
@@ -826,7 +835,13 @@ def _parse_xmlish_parameter_tool_calls(body: str) -> List[ToolCall]:
 
         close_match = re.search(r"</function\s*>", body[func_match.end():], re.IGNORECASE)
         block_end = func_match.end() + close_match.start() if close_match else len(body)
-        arguments = _parse_xmlish_parameters(body[func_match.end():block_end])
+        block = body[func_match.end():block_end]
+        if not close_match and _has_unterminated_xmlish_parameter(block):
+            # The output stopped INSIDE a parameter value (length cap, abort):
+            # the call is incomplete. Running it with that argument silently
+            # missing is worse than reporting it unparsed.
+            continue
+        arguments = _parse_xmlish_parameters(block)
         tool_calls.append(ToolCall(name=func_name, arguments=arguments, call_id=None))
 
     if tool_calls:
