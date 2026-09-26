@@ -151,3 +151,45 @@ def test_remote_providers_are_never_process_ejected(server):
     client.post("/acore/models/load", json={"provider": "ollama", "model": "gemma3:1b"})
     body = client.post("/acore/models/unload", json={"provider": "ollama", "model": "gemma3:1b"}).json()
     assert body["ok"] is True and "process_eject" not in body and state["ejects"] == []
+
+
+# -- review S1 (2026-09-26): the guard matches the way the eject matches ---------
+def test_unload_by_another_spelling_of_a_locked_model_is_refused(server):
+    """MUTANT: an exact-string guard (`runtime.model == model`) lets
+    `MLX-Community/qwen3-4b-4bit` eject the LOCKED `mlx-community/Qwen3-4B-4bit`."""
+    app, client, state = server
+    r = client.post("/acore/models/load", json={"provider": "mlx", "model": "mlx-community/Qwen3-4B-4bit", "lock": True})
+    assert r.status_code == 200 and r.json()["lock"]["locked"] is True
+    state["rows"] = [_row("mlx", "mlx-community/Qwen3-4B-4bit")]
+    refused = client.post("/acore/models/unload", json={"task": "text_generation", "provider": "mlx",
+                                                         "model": "MLX-Community/qwen3-4b-4bit"})
+    assert refused.status_code == 409 and refused.json()["error"] == "model_locked"
+    assert state["ejects"] == []
+
+
+def test_unload_after_of_another_spelling_or_a_hub_path_never_ejects_a_managed_model(server):
+    app, client, state = server
+    client.post("/acore/models/load", json={"provider": "mlx", "model": "mlx-community/Qwen3-4B-4bit"})
+    for spelling in ("MLX-Community/qwen3-4b-4bit",
+                     "/hub/models--mlx-community--Qwen3-4B-4bit/snapshots/abc"):
+        report = app._process_eject_after_unload("mlx", spelling, reason="unload_after")
+        assert report["skipped"] is True and report["claims"][0]["kind"] == "managed_runtime", spelling
+    assert state["ejects"] == []
+
+
+def test_a_runtime_client_claim_in_the_same_process_also_blocks_the_server_eject(server):
+    app, client, state = server
+    import abstractcore.providers.process_residency as real_pr
+
+    class _Client:
+        def residency_claims(self):
+            return [{"provider": "mlx", "model": "vendor/X", "locked": False, "kind": "pool", "owner": "user-b"}]
+
+    other = _Client()
+    real_pr.register_claimant(other)
+    try:
+        state["rows"] = [_row("mlx", "vendor/X")]
+        r = client.post("/acore/models/unload", json={"task": "text_generation", "provider": "mlx", "model": "vendor/X"})
+        assert r.status_code == 409 and r.json()["error"] == "model_in_use" and state["ejects"] == []
+    finally:
+        real_pr.unregister_claimant(other)

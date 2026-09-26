@@ -4432,7 +4432,10 @@ def _best_effort_process_eject(provider: str, model: str, *, request_id: str) ->
         logger.warning("⚠️ Process-wide eject failed", request_id=request_id, provider=provider, model=model,
                        error=str(e), error_type=type(e).__name__)
         return
-    if report is not None and not report.get("ok"):
+    if report is not None and report.get("skipped"):
+        logger.info("🔒 Process-wide eject skipped after unload_after", request_id=request_id, provider=provider,
+                    model=model, reason=str(report.get("reason")))
+    elif report is not None and not report.get("ok"):
         logger.warning("⚠️ Model still resident after unload_after", request_id=request_id, provider=provider,
                        model=model, error=_process_eject_error(report, str(model)))
 
@@ -4446,28 +4449,47 @@ def _best_effort_process_eject(provider: str, model: str, *, request_id: str) ->
 # the listing said nothing about them. Both now go through core's
 # process-level truth (`abstractcore.providers.process_residency`).
 # ---------------------------------------------------------------------------
-def _managed_runtime_naming(provider: str, model: str) -> Optional["_GatewayLoadedRuntime"]:
-    with _GATEWAY_RUNTIME_LOCK:
-        for runtime in _GATEWAY_LOADED_RUNTIMES.values():
-            if runtime.provider == provider and runtime.model == model:
-                return runtime
-    return None
+class _ServerRuntimeClaims:
+    """This server's managed runtimes as residency CLAIMS (core
+    `process_residency`): a process-wide eject -- from this server, a runtime
+    client's default switch, anyone -- skips a model a managed runtime still
+    serves, matched the way the eject matches (case-insensitive, path-aware)."""
+
+    def residency_claims(self) -> list:
+        with _GATEWAY_RUNTIME_LOCK:
+            return [
+                {"provider": rt.provider, "model": rt.model, "locked": bool(getattr(rt, "locked", False)),
+                 "kind": "managed_runtime", "runtime_id": rt.runtime_id,
+                 "owner": f"AbstractCore server runtime {rt.runtime_id}"}
+                for rt in _GATEWAY_LOADED_RUNTIMES.values()
+            ]
+
+
+_SERVER_RUNTIME_CLAIMS = _ServerRuntimeClaims()
+
+
+def _register_server_runtime_claims() -> None:
+    from ..providers.process_residency import register_claimant
+
+    register_claimant(_SERVER_RUNTIME_CLAIMS)
+
+
+_register_server_runtime_claims()
 
 
 def _process_eject_after_unload(provider: str, model: str, *, task: Optional[str] = None,
                                 reason: str) -> Optional[Dict[str, Any]]:
-    """Eject `model` from every in-process holder once no managed runtime of
-    this server still serves it. None when the provider's weights live in
-    another process (nothing to eject here) or a managed runtime -- locked or
-    not -- still names the pair (its residency is the registry's to manage)."""
-    from ..providers.process_residency import backend_for, eject
+    """Eject `model` from every in-process holder unless a registered owner (a
+    managed runtime of this server -- locked or not --, a runtime client's pool
+    or lock) still claims it. None when the provider's weights live in another
+    process. The claim check and the eject run under the process residency
+    lock and this server's registry lock (always taken in that order), so no
+    runtime can be registered in between."""
+    from ..providers.process_residency import eject_unclaimed, residency_lock
 
-    backend = backend_for(provider, task)
-    if backend is None:
-        return None
-    if backend != "embeddings" and _managed_runtime_naming(provider, model) is not None:
-        return None
-    return eject(backend, model, reason=reason)
+    with residency_lock():
+        with _GATEWAY_RUNTIME_LOCK:
+            return eject_unclaimed(provider, model, task=task, reason=reason)
 
 
 def _process_residency_record(row: Dict[str, Any], name: str) -> Dict[str, Any]:
@@ -4549,17 +4571,33 @@ def _merge_process_residency(
 def _process_only_unload(task: str, provider: Optional[str], model: Optional[str]) -> Optional[Dict[str, Any]]:
     """Unload of a model no managed runtime owns but the process still holds
     (a `process:` row of the listing). None when nothing in-process holds it."""
-    from ..providers.process_residency import backend_for, resident_rows, row_names
+    from ..providers.process_residency import backend_for, model_matches, resident_rows, row_names
 
     backend = backend_for(provider, task)
     if backend is None or not model:
         return None
-    if not any(model in row_names(r) for r in resident_rows(backend)):
+    held = [r for r in resident_rows(backend)
+            if any(model_matches(n, r.get("model_path"), model) for n in row_names(r))]
+    if not held:
         return None
     report = _process_eject_after_unload(str(provider or "huggingface"), model, task=task,
                                          reason="acore_models_unload")
     if report is None:
         return None
+    if report.get("skipped"):
+        # The request names (in any spelling) a model a managed runtime or
+        # another client still serves: refuse, never eject it from under them.
+        locked = bool(report.get("locked"))
+        claims = [{k: c.get(k) for k in ("kind", "owner", "runtime_id", "model", "locked") if c.get(k) is not None}
+                  for c in report.get("claims") or []]
+        return JSONResponse(status_code=409, content={
+            "ok": False,
+            "error": "model_locked" if locked else "model_in_use",
+            "detail": str(report.get("reason")) + (
+                "; unlock it or unload it by its runtime_id with force=true" if locked
+                else "; unload it by its runtime_id"),
+            "claims": claims,
+        })
     record = {
         "runtime_id": f"process:{task}:{provider or 'huggingface'}:{model}",
         "task": task,
@@ -5800,6 +5838,8 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
         # (a per-request provider, a sibling sharing the MLX weights, an
         # embedder...). The report rides in the payload and never pretends.
         process_eject = _process_eject_after_unload(runtime.provider, runtime.model, reason="acore_models_unload")
+        # A skipped eject (another owner still claims the model) is not a
+        # failure: this runtime was unloaded, the report says who keeps it.
         eject_ok = process_eject is None or bool(process_eject.get("ok"))
         unloaded_record = {
             **_gateway_runtime_to_dict(runtime),

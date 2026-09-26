@@ -111,3 +111,104 @@ def eject(backend: str, model: Optional[str], *, reason: str = "eject") -> Dict[
     report = dict(report)
     report.setdefault("backend", backend)
     return report
+
+
+# ---------------------------------------------------------------------------
+# Who still wants a model (M2 review follow-up, 2026-09-26).
+#
+# An eject is process-wide: it unloads EVERY holder. Deciding "nobody uses it
+# any more" from one client's pool is therefore wrong in a process that hosts
+# several clients (one per gateway user, per-entity runtimes, the AbstractCore
+# server's managed runtimes). Every such owner registers as a CLAIMANT and
+# answers `residency_claims()`: the (provider, model) pairs it has pooled,
+# locked, or is building right now. `eject_unclaimed` checks every claimant
+# with the SAME matcher the eject uses (case-insensitive, path-aware) and
+# ejects under one process lock, so no claim can appear between the check and
+# the eject. Owners take `residency_lock()` when they register a new claim.
+# ---------------------------------------------------------------------------
+import threading as _threading
+import weakref as _weakref
+
+_RESIDENCY_LOCK = _threading.RLock()
+_CLAIMANTS: "_weakref.WeakSet[Any]" = _weakref.WeakSet()
+
+
+def residency_lock() -> "_threading.RLock":
+    """The process lock under which claims are checked and ejects run. Hold it
+    while registering a claim (e.g. inserting into a pool / marking a build)."""
+    return _RESIDENCY_LOCK
+
+
+def register_claimant(owner: Any) -> None:
+    """Register an object whose `residency_claims()` yields dicts
+    `{"provider", "model", "locked": bool, "kind": str, "path"?: str, "owner"?: str}`.
+    Held weakly: a collected owner claims nothing."""
+    if not callable(getattr(owner, "residency_claims", None)):
+        raise TypeError(f"{type(owner).__name__} has no residency_claims(); it cannot claim models")
+    _CLAIMANTS.add(owner)
+
+
+def unregister_claimant(owner: Any) -> None:
+    _CLAIMANTS.discard(owner)
+
+
+def model_matches(claim_model: Optional[str], claim_path: Optional[str], model: Optional[str],
+                  path: Optional[str] = None) -> bool:
+    """The eject's own matcher (`mlx_residency._matches`): case-insensitive
+    names, resolved paths, and HF hub-cache directories -- symmetric, so a
+    claim spelled differently from the request still matches."""
+    from .mlx_residency import _matches
+
+    if not (model or path):
+        return False
+    if _matches({"models": [claim_model] if claim_model else [], "model_path": claim_path or ""}, model, path):
+        return True
+    # symmetric: the request as the row, the claim as the query (a request
+    # given as a local / hub-cache path is that row's path)
+    req_path = path or (model if model and str(model).startswith(("/", "~", ".")) else "")
+    return bool(claim_model) and _matches({"models": [model] if model else [], "model_path": req_path or ""},
+                                          claim_model, claim_path)
+
+
+def claims_for(provider: Optional[str], model: Optional[str], *, path: Optional[str] = None,
+               task: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Every registered claim on (provider, model), across all claimants. A
+    claimant whose `residency_claims()` raises is itself reported as a claim
+    (`kind: "claimant_error"`): an unreadable owner never reads as "unused"."""
+    backend = backend_for(provider, task)
+    out: List[Dict[str, Any]] = []
+    with _RESIDENCY_LOCK:
+        for owner in list(_CLAIMANTS):
+            try:
+                claims = list(owner.residency_claims())
+            except Exception as exc:  # noqa: BLE001
+                out.append({"provider": provider, "model": model, "locked": True, "kind": "claimant_error",
+                            "owner": type(owner).__name__, "error": f"{type(exc).__name__}: {exc}"})
+                continue
+            for claim in claims:
+                if not isinstance(claim, dict):
+                    continue
+                if backend_for(claim.get("provider"), claim.get("task")) != backend:
+                    continue
+                if model_matches(claim.get("model"), claim.get("path"), model, path):
+                    out.append(dict(claim))
+    return out
+
+
+def eject_unclaimed(provider: str, model: str, *, task: Optional[str] = None, path: Optional[str] = None,
+                    reason: str = "eject") -> Optional[Dict[str, Any]]:
+    """Eject `model` process-wide unless a registered owner still pools, locks
+    or is building it. Check and eject run under one process lock. None when
+    the provider's weights live in another process. A skipped eject returns
+    `{"ok": True, "skipped": True, "claims": [...], "reason": ...}`."""
+    backend = backend_for(provider, task)
+    if backend is None:
+        return None
+    with _RESIDENCY_LOCK:
+        claims = claims_for(provider, model, path=path, task=task)
+        if claims:
+            owners = sorted({f"{c.get('owner') or c.get('kind')}{' (locked)' if c.get('locked') else ''}" for c in claims})
+            return {"ok": True, "skipped": True, "backend": backend, "model": model, "claims": claims,
+                    "locked": any(bool(c.get("locked")) for c in claims),
+                    "reason": f"{model} is still in use by {', '.join(owners)}; not ejected"}
+        return eject(backend, model, reason=reason)

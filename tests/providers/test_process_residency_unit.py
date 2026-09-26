@@ -42,3 +42,56 @@ def test_embeddings_rows_and_eject_dispatch_to_the_manager_module(monkeypatch):
 def test_unknown_backend_fails_loudly():
     with pytest.raises(ValueError):
         pr.resident_rows("vllm")
+
+
+# -- claims (review follow-up 2026-09-26) -------------------------------------------
+class _Owner:
+    def __init__(self, claims):
+        self.claims = claims
+
+    def residency_claims(self):
+        if isinstance(self.claims, Exception):
+            raise self.claims
+        return list(self.claims)
+
+
+def test_eject_unclaimed_skips_a_model_another_owner_claims_in_any_spelling(monkeypatch):
+    ejects = []
+    monkeypatch.setattr(pr, "eject", lambda b, m, reason="eject": ejects.append((b, m)) or {"ok": True})
+    owner = _Owner([{"provider": "mlx", "model": "mlx-community/Qwen3-4B-4bit", "locked": True, "kind": "pool"}])
+    pr.register_claimant(owner)
+    try:
+        for spelling in ("MLX-Community/qwen3-4b-4bit", "/hub/models--mlx-community--Qwen3-4B-4bit/snapshots/x"):
+            out = pr.eject_unclaimed("mlx", spelling, reason="t")
+            assert out["skipped"] is True and out["locked"] is True, spelling
+        assert ejects == []
+        # another backend's claim does not block
+        assert pr.eject_unclaimed("huggingface", "mlx-community/Qwen3-4B-4bit")["ok"] is True
+        assert ejects == [("huggingface", "mlx-community/Qwen3-4B-4bit")]
+    finally:
+        pr.unregister_claimant(owner)
+    assert pr.eject_unclaimed("mlx", "MLX-Community/qwen3-4b-4bit")["ok"] is True
+
+
+def test_a_claimant_that_cannot_answer_counts_as_a_claim(monkeypatch):
+    monkeypatch.setattr(pr, "eject", lambda *a, **k: pytest.fail("must not eject"))
+    owner = _Owner(RuntimeError("boom"))
+    pr.register_claimant(owner)
+    try:
+        out = pr.eject_unclaimed("mlx", "vendor/x")
+        assert out["skipped"] is True and out["claims"][0]["kind"] == "claimant_error"
+    finally:
+        pr.unregister_claimant(owner)
+
+
+def test_claimants_are_held_weakly_and_must_answer():
+    import gc
+
+    owner = _Owner([{"provider": "mlx", "model": "vendor/x", "locked": False, "kind": "pool"}])
+    pr.register_claimant(owner)
+    assert pr.claims_for("mlx", "vendor/x")
+    del owner
+    gc.collect()
+    assert pr.claims_for("mlx", "vendor/x") == []
+    with pytest.raises(TypeError):
+        pr.register_claimant(object())
