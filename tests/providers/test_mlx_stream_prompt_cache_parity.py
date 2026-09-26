@@ -301,3 +301,27 @@ def test_gpt_oss_tool_call_survives_the_mlx_sync_postprocessing():
     assert "Need it." not in sync.content
     calls = parse_tool_calls(sync.content, "openai/gpt-oss-20b")
     assert [(c.name, c.arguments) for c in calls] == [("get_weather", {"city": "Paris"})]
+
+
+def test_mlx_stream_announces_a_prompt_opened_thinking_block():
+    """`_generate_core` leads the stream with THINKING_OPENED_BY_PROMPT when the
+    rendered prompt ends with `<think>` -- and only then."""
+    from abstractcore.architectures import detect_architecture, get_architecture_format, get_model_capabilities
+    from abstractcore.architectures.response_postprocessing import THINKING_OPENED_BY_PROMPT
+
+    def run(rendered: str):
+        p = _mlx_lm_provider(["Reasoning", "</think>", "Answer"])
+        p.architecture_config = get_architecture_format(detect_architecture("qwen3-4b"))
+        p.model_capabilities = get_model_capabilities("qwen3-4b")
+        p.temperature = 0.0
+        p.max_output_tokens = 16
+        p.tool_handler = SimpleNamespace(supports_prompted=False)
+        p._build_prompt = Mock(return_value=rendered)
+        p._prepare_generation_kwargs = lambda **kwargs: kwargs
+        return list(p._generate_internal("q", stream=True))
+
+    opened = run("<|im_start|>assistant\n<think>\n")
+    assert opened[0].content == "" and opened[0].metadata == {THINKING_OPENED_BY_PROMPT: True}
+    assert "".join(c.content for c in opened) == "Reasoning</think>Answer"
+    plain = run("<|im_start|>assistant\n")
+    assert all(THINKING_OPENED_BY_PROMPT not in (c.metadata or {}) for c in plain)

@@ -77,6 +77,7 @@ from ..architectures import detect_architecture, get_architecture_format, get_mo
 from ..architectures.response_postprocessing import (
     normalize_assistant_text,
     maybe_create_incremental_thinking_tag_stripper,
+    THINKING_OPENED_BY_PROMPT,
     strip_output_wrappers,
 )
 from ..architectures.thinking_controls import (
@@ -5154,6 +5155,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                     meta["_timing"] = merged
                                     processed_chunk.metadata = meta
 
+                            if (
+                                isinstance(processed_chunk.metadata, dict)
+                                and processed_chunk.metadata.pop(THINKING_OPENED_BY_PROMPT, False)
+                                and thinking_stripper is not None
+                            ):
+                                # The provider rendered a prompt that already opened
+                                # the thinking block: stream the reasoning from the
+                                # first token instead of holding everything until
+                                # the closing tag.
+                                thinking_stripper.open_thinking()
                             if isinstance(processed_chunk.content, str) and processed_chunk.content:
                                 processed_chunk.content = strip_output_wrappers(
                                     processed_chunk.content,
@@ -5164,6 +5175,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                     processed_chunk.content = thinking_stripper.process(
                                         processed_chunk.content
                                     )
+                                    # Inline thinking streams as `reasoning_delta` as it
+                                    # is generated (display only; the complete
+                                    # `reasoning` still comes from the stripper at the
+                                    # end, so it is not collected again above).
+                                    inline_delta = thinking_stripper.take_reasoning_delta()
+                                    if inline_delta:
+                                        meta = (
+                                            processed_chunk.metadata
+                                            if isinstance(processed_chunk.metadata, dict)
+                                            else {}
+                                        )
+                                        existing = meta.get("reasoning_delta")
+                                        meta["reasoning_delta"] = (
+                                            existing if isinstance(existing, str) else ""
+                                        ) + inline_delta
+                                        processed_chunk.metadata = meta
                             if thinking_meta and isinstance(thinking_meta, dict):
                                 meta = (
                                     processed_chunk.metadata

@@ -4794,11 +4794,32 @@ class MLXProvider(BaseProvider):
                     prompt_cache_telemetry=cache_telemetry,
                 )
 
+                # The chat template may END the prompt inside an opened thinking
+                # block (Qwen3.x with thinking on renders `<think>\n`): the model
+                # then writes reasoning first and only the CLOSING tag. Say so
+                # on a leading empty chunk, so the stream shows that reasoning
+                # as it is generated instead of holding it until `</think>`.
+                from ..architectures.response_postprocessing import (
+                    THINKING_OPENED_BY_PROMPT,
+                    prompt_opens_thinking,
+                )
+
+                _opened = prompt_opens_thinking(
+                    full_prompt,
+                    architecture_format=getattr(self, "architecture_config", None),
+                    model_capabilities=getattr(self, "model_capabilities", None),
+                )
+
                 # The streamed generator is consumed AFTER this function returns,
                 # so the residual has to stay installed until it is exhausted --
                 # closing here would remove it before the prompt pass runs.
-                def _guarded_stream(_inner=_streamed, _st=_stack):
+                def _guarded_stream(_inner=_streamed, _st=_stack, _opened=_opened):
                     try:
+                        if _opened:
+                            yield GenerateResponse(
+                                content="", model=self.model,
+                                metadata={THINKING_OPENED_BY_PROMPT: True},
+                            )
                         for _chunk in _inner:
                             yield _chunk
                     finally:

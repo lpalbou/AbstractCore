@@ -18,6 +18,28 @@ _logger = get_logger(__name__)
 # (e.g. the stream/response was truncated before the closing tag arrived).
 TRUNCATED_REASONING_MARKER = " (...)"
 
+# Stream-chunk metadata flag: the provider's rendered prompt ENDED with the
+# thinking start tag (the chat template opened the block), so the first
+# generated tokens are reasoning. BaseProvider consumes it (never forwarded).
+THINKING_OPENED_BY_PROMPT = "_thinking_opened_by_prompt"
+
+
+def prompt_opens_thinking(
+    prompt: Any,
+    *,
+    architecture_format: Optional[Mapping[str, Any]] = None,
+    model_capabilities: Optional[Mapping[str, Any]] = None,
+) -> bool:
+    """True when a rendered prompt ends inside an opened thinking block."""
+    if not isinstance(prompt, str) or not prompt:
+        return False
+    tags = _get_thinking_tags(architecture_format=architecture_format, model_capabilities=model_capabilities)
+    if tags is None:
+        return False
+    start_tag, end_tag = tags
+    tail = prompt.rstrip()
+    return tail.endswith(start_tag)
+
 
 def _coerce_str(value: Any) -> Optional[str]:
     if not isinstance(value, str):
@@ -203,6 +225,43 @@ class IncrementalThinkingTagStripper:
         self._state: str = "visible" if assume_visible_start else "searching"  # searching|visible|thinking
         self._current_reasoning_parts: list[str] = []
         self._reasoning_blocks: list[str] = []
+        # Reasoning identified since the last `take_reasoning_delta()`: streamed
+        # to the caller as it is generated, not only as the final aggregate.
+        self._pending_delta: list[str] = []
+        # Visible text right after a closing tag starts without the blank lines
+        # models put there (the non-streamed `strip_thinking_tags` strips them).
+        self._strip_leading_visible = False
+
+    def open_thinking(self) -> None:
+        """The prompt already opened the thinking block (the chat template ended
+        with the start tag): what the model generates first IS reasoning.
+
+        Without this, a response that only carries the CLOSING tag is withheld
+        until that tag arrives (the "closing-only" case below), so a model that
+        thinks for minutes streams nothing for minutes. Only valid before any
+        text was processed."""
+        if self._state == "searching" and not self._buffer:
+            self._state = "thinking"
+            self._current_reasoning_parts = []
+
+    def take_reasoning_delta(self) -> str:
+        """Reasoning text identified since the previous call (may be empty)."""
+        delta = "".join(self._pending_delta)
+        self._pending_delta = []
+        return delta
+
+    def _add_reasoning(self, text: str) -> None:
+        if text:
+            self._current_reasoning_parts.append(text)
+            self._pending_delta.append(text)
+
+    def _add_visible(self, out_parts: list, text: str) -> None:
+        if self._strip_leading_visible:
+            text = text.lstrip()
+            if text:
+                self._strip_leading_visible = False
+        if text:
+            out_parts.append(text)
 
     @staticmethod
     def _suffix_prefix_len(haystack: str, needle: str) -> int:
@@ -249,7 +308,7 @@ class IncrementalThinkingTagStripper:
                 if kind == "start":
                     prefix = self._buffer[:idx]
                     if prefix:
-                        out_parts.append(prefix)
+                        self._add_visible(out_parts, prefix)
                     self._buffer = self._buffer[idx + len(self._start_tag) :]
                     self._state = "thinking"
                     self._current_reasoning_parts = []
@@ -257,11 +316,12 @@ class IncrementalThinkingTagStripper:
 
                 # end tag before any explicit start tag -> closing-only case
                 reasoning_prefix = self._buffer[:idx]
-                if reasoning_prefix:
-                    self._current_reasoning_parts = [reasoning_prefix]
+                self._current_reasoning_parts = []
+                self._add_reasoning(reasoning_prefix)
                 self._buffer = self._buffer[idx + len(self._end_tag) :]
                 self._finalize_current_reasoning()
                 self._state = "visible"
+                self._strip_leading_visible = True
                 continue
 
             if self._state == "visible":
@@ -269,16 +329,16 @@ class IncrementalThinkingTagStripper:
                 if start_idx == -1:
                     keep = self._suffix_prefix_len(self._buffer, self._start_tag)
                     if keep:
-                        out_parts.append(self._buffer[:-keep])
+                        self._add_visible(out_parts, self._buffer[:-keep])
                         self._buffer = self._buffer[-keep:]
                     else:
-                        out_parts.append(self._buffer)
+                        self._add_visible(out_parts, self._buffer)
                         self._buffer = ""
                     break
 
                 prefix = self._buffer[:start_idx]
                 if prefix:
-                    out_parts.append(prefix)
+                    self._add_visible(out_parts, prefix)
                 self._buffer = self._buffer[start_idx + len(self._start_tag) :]
                 self._state = "thinking"
                 self._current_reasoning_parts = []
@@ -289,19 +349,18 @@ class IncrementalThinkingTagStripper:
                 if end_idx == -1:
                     keep = self._suffix_prefix_len(self._buffer, self._end_tag)
                     if keep:
-                        self._current_reasoning_parts.append(self._buffer[:-keep])
+                        self._add_reasoning(self._buffer[:-keep])
                         self._buffer = self._buffer[-keep:]
                     else:
-                        self._current_reasoning_parts.append(self._buffer)
+                        self._add_reasoning(self._buffer)
                         self._buffer = ""
                     break
 
-                reasoning_text = self._buffer[:end_idx]
-                if reasoning_text:
-                    self._current_reasoning_parts.append(reasoning_text)
+                self._add_reasoning(self._buffer[:end_idx])
                 self._buffer = self._buffer[end_idx + len(self._end_tag) :]
                 self._finalize_current_reasoning()
                 self._state = "visible"
+                self._strip_leading_visible = True
                 continue
 
             break
@@ -325,7 +384,7 @@ class IncrementalThinkingTagStripper:
                 self._reasoning_blocks.append(truncated + TRUNCATED_REASONING_MARKER)
         else:
             # searching/visible: emit any remaining buffered visible content.
-            visible_tail = self._buffer
+            visible_tail = self._buffer.lstrip() if self._strip_leading_visible else self._buffer
             self._buffer = ""
 
         reasoning = "\n\n".join(self._reasoning_blocks).strip() if self._reasoning_blocks else None
