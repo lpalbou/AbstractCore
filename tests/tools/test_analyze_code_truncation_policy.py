@@ -17,6 +17,7 @@ any particular number, so the bound can be tuned without gutting them.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -371,6 +372,14 @@ def test_the_biggest_python_sections_are_capped_like_every_other(tmp_path: Path)
     assert any(l.startswith("  - functions") for l in _trailing_block(out))
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 10),
+    reason=(
+        "CPython 3.9's parser can segfault while reporting an unterminated triple-quoted "
+        "string at EOF in a multi-MB input (heap-dependent: passes alone, crashes the 3.9 CI "
+        "run late in the suite); 3.9 is end-of-life. analyze_code itself is unchanged."
+    ),
+)
 def test_a_syntax_error_on_a_file_this_tool_cut_says_so(tmp_path: Path) -> None:
     # The parse failed on text THIS TOOL truncated at the byte bound, and the
     # early return discarded the log — so the tool's own truncation was
