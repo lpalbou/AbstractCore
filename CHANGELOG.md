@@ -22,6 +22,18 @@ what the process holds on the accelerator.
   life of the process. It is now freed when dropped, `EmbeddingManager.unload()` frees it on
   request, and the next embedding after an unload loads the model again. `unload()` leaves embedders
   served by Ollama, LM Studio or another server untouched (`in_process: false`).
+- An unload never ejects a model that something else in the process still uses. Before, an
+  unload for another spelling of a model name (for example `MLX-Community/qwen3-4b-4bit`) or for
+  its hub-cache path ejected a managed runtime's model, even a locked one. Such an unload is now
+  refused with `409` (`model_locked` or `model_in_use`). Every owner of models in the process (the
+  server's managed runtimes, runtime clients) registers what it uses, and an eject checks all of
+  them with the same name matching the eject itself uses.
+- Unloading an embedding model while an embedding is running no longer breaks that call. The
+  unload waits for it to finish; if it is still running after `drain_timeout_s`, nothing is freed
+  and the report says the call is in flight.
+- `device.process_held_bytes` on NVIDIA GPUs now counts what torch has reserved on the GPU
+  (`device.torch_cuda_reserved_bytes`, basis `cuda_device_counter`), plus the llama.cpp figure when
+  a GGUF model is loaded. Before, it read 0 while torch held the model.
 - `MLXProvider.load_model()` accepted `ttl_s` and `keep_alive` and ignored them without saying so.
   MLX has no idle or time-based unload; the response now lists them under `unsupported_options`
   with a warning.

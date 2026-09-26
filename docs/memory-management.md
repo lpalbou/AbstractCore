@@ -78,11 +78,18 @@ Shape:
     llama.cpp (GGUF) buffers. Measured on an M5 Max: a 2 GiB MLX array moved it by exactly
     2 GiB, and a Qwen3.5-4B Q4_K_M GGUF on Metal with an 8K context moved it by 3.59 GB, all of
     which was returned when the model was closed.
-  - `"sum:..."` — without torch nothing else can allocate on the device, so the figure is the sum
-    of the fields named: `mlx_held_bytes` (measured) and `llama_cpp_bytes`, which is the GGUF
-    weights plus an **estimate** of the KV cache computed from the model's geometry at f16. That
-    estimate can overstate hybrid models (3.80 GB estimated versus 3.59 GB measured for the model
-    above).
+  - `"cuda_device_counter"` — on NVIDIA GPUs, what torch has reserved on every visible GPU
+    (`device.torch_cuda_reserved_bytes`). When a GGUF model is loaded, the llama.cpp figure is
+    added and the basis reads `cuda_device_counter+llama_cpp_bytes(estimated)`, because llama.cpp
+    allocates GPU memory outside torch.
+  - `"sum:..."` — the sum of the fields named: `mlx_held_bytes` (measured) and `llama_cpp_bytes`,
+    which is the GGUF weights plus an **estimate** of the KV cache computed from the model's
+    geometry at f16 (marked `(estimated)` when non-zero). That estimate can overstate hybrid
+    models (3.80 GB estimated versus 3.59 GB measured for the model above).
+
+  Other native libraries that allocate GPU memory by themselves (whisper.cpp, CoreML,
+  onnxruntime) appear only in the Metal device counter, not in a `cuda_device_counter` or `sum:`
+  figure.
 
   The per-backend fields (`mlx_held_bytes`, `torch_mps_allocated_bytes`, `llama_cpp_bytes`)
   attribute that total; do not add them on top of it. CPU-side memory (tokenizers, Python objects)
@@ -341,6 +348,13 @@ report = eject("huggingface", "unsloth/Qwen3.5-4B-GGUF")
 report = eject("embeddings", "sentence-transformers/all-MiniLM-L6-v2")
 ```
 
+`eject()` unloads every holder, whoever uses it. To eject only what nobody still needs, use
+`eject_unclaimed(provider, model)`. The AbstractCore server's managed runtimes and AbstractRuntime
+clients register the models they pool, lock or are loading (`register_claimant()`), and
+`eject_unclaimed()` skips a model any of them claims, matching names the way the eject does:
+case-insensitively, and by local or hub-cache path. The check and the eject run under one process
+lock (`residency_lock()`).
+
 The backend-specific functions are also available. For MLX, use `eject_model()`:
 
 ```python
@@ -364,7 +378,9 @@ The HuggingFace provider has the same function in `abstractcore.providers.hf_res
 model, collects garbage and returns torch's MPS memory pool to the system. For embedding models,
 `abstractcore.embeddings.manager.eject_embedding_models()` does the same for every
 `EmbeddingManager` holding the model, and `EmbeddingManager.unload()` frees a single one. An
-embedder stays usable after an eject: its next embedding loads the model again. Embedders served by
+embedder stays usable after an eject: its next embedding loads the model again. An unload waits for
+embeddings that are running on the manager; if one is still running after `drain_timeout_s`
+(default 30 seconds), nothing is freed and the report carries `in_flight`. Embedders served by
 Ollama, LM Studio or another server hold nothing in this process, so `unload()` leaves them
 untouched and says so (`in_process: false`).
 
