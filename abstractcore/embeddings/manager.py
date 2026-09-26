@@ -281,7 +281,11 @@ def eject_embedding_models(model: Optional[str] = None, *, reason: str = "eject"
             continue
         row = {"id": id(manager), "model": name, "type": type(manager).__name__}
         try:
-            manager.unload()
+            result = manager.unload()
+            if result.get("in_flight"):
+                row["error"] = str(result.get("reason"))
+                errors.append(row)
+                continue
             unloaded.append(row)
         except Exception as exc:  # noqa: BLE001 - one refusing holder must not hide the others
             row["error"] = f"{type(exc).__name__}: {exc}"
@@ -511,8 +515,12 @@ class EmbeddingManager:
 
         # Initialize model (HuggingFace only)
         self.model = None
-        # Serializes the lazy reload after `unload()` (see `_ensure_local_model`).
+        # Serializes the lazy reload after `unload()` and counts the encodes in
+        # flight, so an unload waits for them (or refuses) instead of pulling
+        # the model from under a running call (`_local_model_in_use`).
         self._load_lock = threading.RLock()
+        self._model_cv = threading.Condition(self._load_lock)
+        self._inflight_encodes = 0
         if self.provider == "huggingface":
             self._load_model()
 
@@ -703,17 +711,33 @@ class EmbeddingManager:
             logger.error(f"Failed to load embedding model {self.model_id}: {e}")
             raise
 
-    def _ensure_local_model(self) -> None:
+    def _ensure_local_model(self) -> Any:
         """Reload the in-process model after `unload()`: the next embedding
-        after an eject loads the weights again, transparently. A no-op for
-        server-backed providers (nothing lives in this process) and when the
-        model is already loaded."""
-        if self.provider != "huggingface" or self.model is not None:
-            return
+        after an eject loads the weights again, transparently. Returns the
+        model. Server-backed providers hold nothing here (returns None)."""
+        if self.provider != "huggingface":
+            return None
         with self._load_lock:
             if self.model is None:
                 logger.info(f"embedding model {self.model_id} was unloaded; loading it again for this request")
                 self._load_model()
+            return self.model
+
+    @contextmanager
+    def _local_model_in_use(self):
+        """The loaded model, counted as IN USE for the duration of the block:
+        `unload()` waits for the count to reach 0 before dropping the model,
+        so a running encode never loses its model mid-call (and a call that
+        starts after the unload reloads it)."""
+        with self._model_cv:
+            model = self._ensure_local_model()
+            self._inflight_encodes += 1
+        try:
+            yield model
+        finally:
+            with self._model_cv:
+                self._inflight_encodes -= 1
+                self._model_cv.notify_all()
 
     def _sentence_transformers_source(self) -> "tuple[str, Dict[str, Any]]":
         """`(name_or_path, extra_kwargs)` for `SentenceTransformer(...)`.
@@ -1095,12 +1119,12 @@ class EmbeddingManager:
             # Generate embedding based on provider
             if self.provider == "huggingface":
                 # HuggingFace: Use sentence-transformers model
-                self._ensure_local_model()
-                embedding = self.model.encode(
-                    text,
-                    show_progress_bar=False,
-                    convert_to_numpy=True
-                ).tolist()
+                with self._local_model_in_use() as model:
+                    embedding = model.encode(
+                        text,
+                        show_progress_bar=False,
+                        convert_to_numpy=True
+                    ).tolist()
 
                 # Apply Matryoshka truncation if specified
                 if self.output_dims and len(embedding) > self.output_dims:
@@ -1190,12 +1214,12 @@ class EmbeddingManager:
             try:
                 if self.provider == "huggingface":
                     # HuggingFace: Use sentence-transformers batch encoding
-                    self._ensure_local_model()
-                    batch_embeddings = self.model.encode(
-                        uncached_texts,
-                        show_progress_bar=False,
-                        convert_to_numpy=True
-                    )
+                    with self._local_model_in_use() as model:
+                        batch_embeddings = model.encode(
+                            uncached_texts,
+                            show_progress_bar=False,
+                            convert_to_numpy=True
+                        )
 
                     # Convert to list and apply Matryoshka truncation
                     for i, (text, embedding, idx) in enumerate(zip(uncached_texts, batch_embeddings, uncached_indices)):
@@ -1272,8 +1296,8 @@ class EmbeddingManager:
             return self.output_dims
 
         if self.provider == "huggingface":
-            self._ensure_local_model()
-            return self.model.get_sentence_embedding_dimension()
+            with self._local_model_in_use() as model:
+                return model.get_sentence_embedding_dimension()
         else:
             # For Ollama/LMStudio, we need to generate a test embedding to get dimension
             # This is cached, so it's only done once
@@ -1770,7 +1794,7 @@ class EmbeddingManager:
             pass
         return claim
 
-    def unload(self) -> Dict[str, Any]:
+    def unload(self, *, drain_timeout_s: float = 30.0) -> Dict[str, Any]:
         """Free the in-process embedding model: drop the SentenceTransformer,
         clear the memo, save the persistent caches, collect, and return torch's
         MPS pool to the OS. Idempotent. The manager stays usable: the next
@@ -1778,7 +1802,12 @@ class EmbeddingManager:
 
         Server-backed providers (Ollama, LM Studio, OpenAI-compatible...) hold
         no weights in this process: their client is kept, nothing is dropped,
-        and the report says so (`in_process: False`)."""
+        and the report says so (`in_process: False`).
+
+        Embeddings running on this manager are waited for (up to
+        `drain_timeout_s`); if one is still running then, nothing is freed and
+        the report says so (`in_flight`), rather than blaming an unknown
+        reference."""
         from ..providers.hf_residency import release_torch_mps_cache, torch_mps_stats
 
         if self.provider != "huggingface":
@@ -1801,11 +1830,27 @@ class EmbeddingManager:
         except Exception:
             pass
         weights_ref = None
-        try:
-            weights_ref = weakref.ref(self.model) if self.model is not None else None
-        except TypeError:
-            weights_ref = None
-        with self._load_lock:
+        with self._model_cv:
+            drained = self._model_cv.wait_for(lambda: self._inflight_encodes == 0, timeout=drain_timeout_s)
+            if not drained:
+                running = int(self._inflight_encodes)
+                return {
+                    "unloaded": False,
+                    "in_process": True,
+                    "model": str(self.model_id),
+                    "provider": str(self.provider),
+                    "loaded": self.model is not None,
+                    "in_flight": running,
+                    "freed_weights_bytes": 0,
+                    "residual_weights_alive": True,
+                    "residual_weights_bytes": before.get("weights_bytes"),
+                    "reason": (f"{running} embedding call(s) still running on {self.model_id} after "
+                               f"{drain_timeout_s}s; nothing was freed; retry the unload when they end"),
+                }
+            try:
+                weights_ref = weakref.ref(self.model) if self.model is not None else None
+            except TypeError:
+                weights_ref = None
             self.model = None
         try:
             self.embed.cache_clear()

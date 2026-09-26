@@ -218,3 +218,60 @@ def test_unload_of_a_server_backed_embedder_keeps_its_client(monkeypatch, tmp_pa
     assert m._provider_instance is client
     assert m.embed("still works") == [0.5, 0.5]
     assert manager_mod.eject_embedding_models()["holders_found"] == 0
+
+
+# -- review S4 (2026-09-26): unload vs an embedding in flight ----------------------
+def _blocking_manager(manager_mod, tmp_path, monkeypatch):
+    import threading as _t
+
+    gate, started = _t.Event(), _t.Event()
+    m = manager_mod.EmbeddingManager(provider="huggingface", model="fake/model", cache_dir=tmp_path / "emb", strict=True)
+    real_encode = type(m.model).encode
+
+    def slow_encode(self, text, **kwargs):
+        started.set()
+        assert gate.wait(10)
+        return real_encode(self, text, **kwargs)
+
+    monkeypatch.setattr(type(m.model), "encode", slow_encode)
+    return m, gate, started
+
+
+def test_unload_during_an_embedding_reports_the_call_in_flight_and_frees_nothing(fake_sentence_transformers, tmp_path, monkeypatch):
+    """MUTANT: no in-use count -> the unload drops the model under the running
+    call and blames 'referenced elsewhere' -> RED."""
+    import threading as _t
+
+    manager_mod, state = fake_sentence_transformers
+    m, gate, started = _blocking_manager(manager_mod, tmp_path, monkeypatch)
+    out = {}
+    worker = _t.Thread(target=lambda: out.setdefault("v", m.embed("in flight")))
+    worker.start()
+    assert started.wait(5)
+    report = m.unload(drain_timeout_s=0.2)
+    assert report["unloaded"] is False and report["in_flight"] == 1 and "still running" in report["reason"]
+    assert m.model is not None, "nothing freed under the running call"
+    gate.set()
+    worker.join(5)
+    assert len(out["v"]) == 8
+    assert m.unload()["unloaded"] is True and state["allocated"] == 0
+
+
+def test_an_unload_waits_for_the_running_embedding_then_frees(fake_sentence_transformers, tmp_path, monkeypatch):
+    import threading as _t
+
+    manager_mod, state = fake_sentence_transformers
+    m, gate, started = _blocking_manager(manager_mod, tmp_path, monkeypatch)
+    out = {}
+    worker = _t.Thread(target=lambda: out.setdefault("v", m.embed("in flight")))
+    worker.start()
+    assert started.wait(5)
+    unloader = _t.Thread(target=lambda: out.setdefault("report", m.unload(drain_timeout_s=10)))
+    unloader.start()
+    unloader.join(0.3)
+    assert unloader.is_alive(), "the unload waits for the running call"
+    gate.set()
+    worker.join(5)
+    unloader.join(5)
+    assert len(out["v"]) == 8, "the running embed completed with its model"
+    assert out["report"]["unloaded"] is True and m.model is None and state["allocated"] == 0
