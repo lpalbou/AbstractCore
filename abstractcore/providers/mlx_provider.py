@@ -53,6 +53,28 @@ if TYPE_CHECKING:
     from ..media.types import MediaContent
 
 
+# Which renderer built the prompt of the call running on this thread
+# (`MLXProvider._build_prompt`); read back into `metadata["prompt_renderer"]`.
+_RENDER_STATE = threading.local()
+
+# A template renders tool definitions when `tools` is used as a VARIABLE inside
+# a Jinja statement or expression -- not when the word appears in its text, a
+# comment or a string literal.
+import re as _re
+
+_JINJA_TAG = _re.compile(r"\{\{.*?\}\}|\{%.*?%\}", _re.S)
+_JINJA_COMMENT = _re.compile(r"\{#.*?#\}", _re.S)
+_JINJA_STRING = _re.compile(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"", _re.S)
+_TOOLS_NAME = _re.compile(r"\btools\b")
+
+
+def _template_uses_tools(source: str) -> bool:
+    source = _JINJA_COMMENT.sub("", source or "")
+    return any(
+        _TOOLS_NAME.search(_JINJA_STRING.sub("", tag.group(0))) for tag in _JINJA_TAG.finditer(source)
+    )
+
+
 class _SharedMLXModel:
     """ONE loaded text model, and the KV state that only means something with it.
 
@@ -2230,6 +2252,18 @@ class MLXProvider(BaseProvider):
     # An unlikely, whitespace-free string (templates `|trim` content).
     _TEMPLATE_SENTINEL = "ACOREturnSENTINEL7f3a"
 
+    @staticmethod
+    def _set_render_record(renderer: str, reason: str = "") -> None:
+        record = {"prompt_renderer": renderer}
+        if reason:
+            record["prompt_renderer_reason"] = reason
+        _RENDER_STATE.last = record
+
+    @staticmethod
+    def _last_render_record() -> Optional[Dict[str, str]]:
+        record = getattr(_RENDER_STATE, "prompt", None)
+        return dict(record) if isinstance(record, dict) else None
+
     def _chat_template_source(self) -> Optional[str]:
         """The loaded tokenizer's chat template, or None when it has none.
 
@@ -2338,7 +2372,13 @@ class MLXProvider(BaseProvider):
 
     @staticmethod
     def _template_tool_calls(raw: Any) -> List[Dict[str, Any]]:
-        """Canonical OpenAI-style tool calls with DICT arguments (templates iterate them)."""
+        """Canonical OpenAI-style tool calls with DICT arguments (templates iterate them).
+
+        Arguments that are not a JSON object (a raw string, a truncated fragment,
+        a list) are wrapped as `{"raw_arguments": <text>}`. Templates iterate
+        `arguments|items`, so one malformed call left in history would otherwise
+        make EVERY later render of that conversation raise and fall back.
+        """
         out: List[Dict[str, Any]] = []
         if not isinstance(raw, (list, tuple)):
             return out
@@ -2365,10 +2405,13 @@ class MLXProvider(BaseProvider):
                         parsed = json.loads(text)
                     except Exception:
                         parsed = None
-                    if isinstance(parsed, dict):
-                        args = parsed
-                    # else: the raw string goes through; a template that needs a
-                    # mapping raises and the render falls back LOUDLY.
+                    args = parsed if isinstance(parsed, dict) else {"raw_arguments": args}
+            elif not isinstance(args, dict):
+                try:
+                    text = json.dumps(args, ensure_ascii=False)
+                except Exception:
+                    text = str(args)
+                args = {"raw_arguments": text}
             entry: Dict[str, Any] = {
                 "type": "function",
                 "function": {"name": name.strip(), "arguments": args},
@@ -2526,9 +2569,11 @@ class MLXProvider(BaseProvider):
           user turn as the prefix. Also derives the bare generation prompt.
         """
         if getattr(self, "tokenizer", None) is None:
+            self._set_render_record("builtin", "no tokenizer loaded")
             return None
         if self._chat_template_source() is None:
             self._note_render_path(template=False)
+            self._set_render_record("builtin", "the tokenizer has no chat template")
             return None
         try:
             text = self._render_template_text(
@@ -2542,12 +2587,12 @@ class MLXProvider(BaseProvider):
                 reasoning_effort=reasoning_effort,
             )
         except Exception as exc:
-            self._note_render_path(
-                template=False,
-                reason=f"the chat template raised on this request: {type(exc).__name__}: {exc}",
-            )
+            reason = f"the chat template raised on this request: {type(exc).__name__}: {exc}"
+            self._note_render_path(template=False, reason=reason)
+            self._set_render_record("builtin_fallback", reason)
             return None
         self._note_render_path(template=True)
+        self._set_render_record("chat_template")
         return text
 
     def _render_template_text(
@@ -2568,7 +2613,7 @@ class MLXProvider(BaseProvider):
         handler = getattr(self, "tool_handler", None)
         if tools and handler is not None and getattr(handler, "supports_prompted", False):
             source = self._chat_template_source() or ""
-            if "tools" in source or source.startswith("python:"):
+            if source.startswith("python:") or _template_uses_tools(source):
                 template_tools = handler.format_tools_for_chat_template(tools) or None
             else:
                 include_tool_list = not (
@@ -4941,6 +4986,7 @@ class MLXProvider(BaseProvider):
                         finish_reason="stop",
                         usage=usage,
                         gen_time=round((time.time() - outlines_started) * 1000, 1),
+                        metadata=self._last_render_record(),
                     )
                 except Exception as e:
                     # If native_outlines was explicitly requested, don't fall back
@@ -5092,6 +5138,9 @@ class MLXProvider(BaseProvider):
                 mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None
             ),
         )
+
+        # Which renderer built `full_prompt` (reported per response).
+        renderer_record = self._last_render_record()
 
         # MLX generation parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -5272,7 +5321,8 @@ class MLXProvider(BaseProvider):
                 # The streamed generator is consumed AFTER this function returns,
                 # so the residual has to stay installed until it is exhausted --
                 # closing here would remove it before the prompt pass runs.
-                def _guarded_stream(_inner=_streamed, _st=_stack, _opened=_opened):
+                def _guarded_stream(_inner=_streamed, _st=_stack, _opened=_opened,
+                                    _renderer=renderer_record):
                     try:
                         if _opened:
                             yield GenerateResponse(
@@ -5280,6 +5330,11 @@ class MLXProvider(BaseProvider):
                                 metadata={THINKING_OPENED_BY_PROMPT: True},
                             )
                         for _chunk in _inner:
+                            if _renderer and getattr(_chunk, "finish_reason", None):
+                                # The terminal chunk carries the per-call record,
+                                # like the non-streamed response.
+                                _chunk.metadata = dict(_chunk.metadata or {})
+                                _chunk.metadata.update(_renderer)
                             yield _chunk
                     finally:
                         try:
@@ -5316,6 +5371,9 @@ class MLXProvider(BaseProvider):
                         # bounded cost; never a correctness risk). Do not
                         # "optimize" by extending the record from reply text.
                         self._record_fed_token_ids(prompt_cache_key.strip(), fed_ids_to_record)
+                if renderer_record:
+                    response.metadata = dict(response.metadata or {})
+                    response.metadata.update(renderer_record)
                 if cache_telemetry is not None:
                     # Both lanes: the streamed lane attaches the same record to
                     # its terminal chunk (`_stream_generate`), so a runtime that
@@ -5384,8 +5442,13 @@ class MLXProvider(BaseProvider):
         enable_thinking: Optional[bool] = None,
         reasoning_effort: Optional[str] = None,
     ) -> str:
-        """Build prompt for MLX model with tool support."""
-        return self._build_prompt_fragment(
+        """Build prompt for MLX model with tool support.
+
+        Also records which renderer produced it (`_last_render_record`, per
+        thread), so the response can say so in `metadata["prompt_renderer"]`.
+        """
+        _RENDER_STATE.last = None
+        text = self._build_prompt_fragment(
             prompt=str(prompt or ""),
             messages=messages,
             system_prompt=system_prompt,
@@ -5395,6 +5458,8 @@ class MLXProvider(BaseProvider):
             enable_thinking=enable_thinking,
             reasoning_effort=reasoning_effort,
         )
+        _RENDER_STATE.prompt = getattr(_RENDER_STATE, "last", None) or {"prompt_renderer": "builtin"}
+        return text
 
     def _build_mlx_sampler(
         self, temperature: float, top_p: float, top_k: Optional[int] = None

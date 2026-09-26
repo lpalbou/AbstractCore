@@ -585,3 +585,109 @@ def test_tools_for_the_chat_template_keep_names_defaults_and_guidance():
         },
         "required": ["url"],
     }
+
+
+# --------------------------------------------------------------------------
+# Malformed history arguments and the per-call renderer record
+# --------------------------------------------------------------------------
+
+REAL_QWEN_TEMPLATES = [
+    "mlx-community/Qwen3.5-4B-4bit",
+    "mlx-community/Qwen3.6-27B-4bit",
+    QWEN38,
+]
+
+
+def _real_provider(repo: str) -> MLXProvider:
+    snap = _hf_snapshot(repo)
+    if snap is None:
+        pytest.skip(f"{repo} is not in the local HF cache")
+    transformers = pytest.importorskip("transformers")
+    tok = transformers.AutoTokenizer.from_pretrained(str(snap), local_files_only=True)
+    p = _qwen38_provider(tok)
+    from abstractcore.architectures import detect_architecture, get_architecture_format
+    from abstractcore.tools import UniversalToolHandler
+
+    p.model = repo
+    p.tool_handler = UniversalToolHandler(repo)
+    p.architecture = detect_architecture(repo)
+    p.architecture_config = get_architecture_format(p.architecture)
+    return p
+
+
+def _history_with_string_arguments(arguments: str) -> List[Dict[str, Any]]:
+    return [
+        {"role": "user", "content": "Open the page."},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"type": "function", "id": "c1", "function": {"name": "fetch_url", "arguments": arguments}}],
+        },
+        {"role": "tool", "content": "[fetch_url]: error", "tool_call_id": "c1"},
+        {"role": "user", "content": "[loop] iteration 2 of 20."},
+    ]
+
+
+@pytest.mark.parametrize("repo", REAL_QWEN_TEMPLATES)
+@pytest.mark.parametrize("arguments", ['{"url": "https://exa', "https://example.com", "[1, 2]"])
+def test_malformed_history_arguments_still_render_through_the_template(repo, arguments):
+    p = _real_provider(repo)
+    out = p._build_prompt("", _history_with_string_arguments(arguments), SYSTEM, TOOLS)
+    assert p._last_render_record() == {"prompt_renderer": "chat_template"}
+    assert "<|im_start|>tool" not in out
+    assert "<tool_response>\n[fetch_url]: error\n</tool_response>" in out
+    assert f"<function=fetch_url>\n<parameter=raw_arguments>\n{arguments}\n</parameter>" in out
+    assert out.endswith("<|im_start|>assistant\n<think>\n")
+
+
+def test_non_mapping_arguments_are_wrapped():
+    [call] = MLXProvider._template_tool_calls([{"function": {"name": "f", "arguments": "not json"}}])
+    assert call["function"]["arguments"] == {"raw_arguments": "not json"}
+    [call] = MLXProvider._template_tool_calls([{"function": {"name": "f", "arguments": ["a", 1]}}])
+    assert call["function"]["arguments"] == {"raw_arguments": '["a", 1]'}
+
+
+def test_prompt_renderer_record_names_each_path():
+    p = _provider(_JinjaTokenizer())
+    p._build_prompt("hi", None, "SYS", None)
+    assert p._last_render_record() == {"prompt_renderer": "chat_template"}
+
+    p = _provider(_JinjaTokenizer(template=None))
+    p._build_prompt("hi", None, "SYS", None)
+    assert p._last_render_record() == {
+        "prompt_renderer": "builtin",
+        "prompt_renderer_reason": "the tokenizer has no chat template",
+    }
+
+    p = _provider(_JinjaTokenizer(fail=True))
+    p._build_prompt("hi", None, "SYS", None)
+    record = p._last_render_record()
+    assert record["prompt_renderer"] == "builtin_fallback"
+    assert "template exploded" in record["prompt_renderer_reason"]
+
+
+def test_response_metadata_carries_the_renderer(monkeypatch):
+    from abstractcore.core.types import GenerateResponse
+    from abstractcore.media.delivery import MediaReport
+
+    p = _provider(_JinjaTokenizer(fail=True))
+    p.llm = object()
+    p.provider = "mlx"
+    p.temperature = 0.7
+    p.max_output_tokens = 64
+    p.structured_output_method = "prompted"
+    p._prepare_generation_kwargs = lambda **kw: dict(kw)
+    p._get_provider_max_tokens_param = lambda kw: 64
+    p._mtp_outcome = lambda used: type("O", (), {"requested": False, "reason": None})()
+    p._single_generate = lambda *a, **k: GenerateResponse(content="ok", model=p.model, finish_reason="stop")
+    response = p._generate_core("hi", system_prompt="SYS", report=MediaReport.for_request(None, provider="mlx", model=p.model))
+    assert response.metadata["prompt_renderer"] == "builtin_fallback"
+    assert "template exploded" in response.metadata["prompt_renderer_reason"]
+
+
+def test_a_template_that_only_mentions_tools_in_text_gets_the_prompted_block():
+    tmpl = MINI_TEMPLATE.replace("{%- if tools %}", "{%- if false %}").replace("for t in tools", "for t in []")
+    tmpl = "{#- no tools here, just the word tools in a comment -#}" + tmpl.replace("# Tools", "# tools")
+    p = _provider(_JinjaTokenizer(tmpl))
+    out = p._build_prompt("hi", None, "SYS", [{"name": "web_search"}])
+    assert "## Tools (fake prompted block)" in out

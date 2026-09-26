@@ -416,6 +416,14 @@ mlx-lm, the native MTP/APC runtime and the vision add-on. A model whose tokenize
 uses AbstractCore's built-in ChatML / Gemma / plain renderer; the log says once per model which renderer
 is in use, and a template that fails on a request is logged as a `#FALLBACK` warning.
 
+Each MLX response also names its renderer in `metadata["prompt_renderer"]`: `"chat_template"`,
+`"builtin"` (the tokenizer has no chat template) or `"builtin_fallback"` (the template raised on this
+request; `metadata["prompt_renderer_reason"]` says why). A streamed call carries it on the final chunk.
+A history tool call whose `arguments` is not a JSON object (a raw string, a truncated fragment) is
+passed to the template as `{"raw_arguments": "<text>"}`, so one malformed call never pushes the rest of
+the conversation off the template renderer. A template uses its own tool block only when it uses
+`tools` as a template variable.
+
 ## Tool Definition
 
 Tools are defined using the `ToolDefinition` class, but the `@tool` decorator handles this automatically:

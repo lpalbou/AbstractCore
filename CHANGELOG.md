@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once per model. Prompt-cache fragments rendered by a chat template carry a new serializer version
   (`mlx-prompt-fragment/v2:chat-template:<sha>`), so KV artifacts compiled with the previous renderer
   are rebuilt rather than reused.
+- An MLX conversation whose history holds a tool call with non-JSON-object `arguments` stays on the
+  chat-template renderer: the arguments reach the template as `{"raw_arguments": "<text>"}` instead of
+  making every later call of the run fall back to the built-in renderer. Every MLX response names its
+  renderer in `metadata["prompt_renderer"]` (`chat_template`, `builtin` or `builtin_fallback`, with
+  `metadata["prompt_renderer_reason"]` for a fallback).
 
 ## [2.16.0] - 2026-09-26
 
