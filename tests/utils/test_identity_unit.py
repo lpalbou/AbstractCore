@@ -116,10 +116,12 @@ def test_vendored_copy_matches_the_canonical_descriptor_when_present():
 
 
 def test_gateway_version_rows_match_the_shared_ui_kit_fixture():
-    """Parity with `@abstractframework/ui-kit` gatewayVersionRows: both sides run the same 13 cases."""
-    fixture = Path(__file__).resolve().parents[3] / "abstractuic" / "ui-kit" / "scripts" / "fixtures" / "gateway_version_rows.json"
-    if not fixture.exists():
-        pytest.skip("ui-kit parity fixture lives in the abstractuic repo (monorepo checkouts run it)")
+    """Parity with `@abstractframework/ui-kit` gatewayVersionRows: both sides run the same 13 cases.
+
+    The fixture is vendored next to this test so the check runs everywhere; the root repo's
+    `scripts/check_identity_sync.py` keeps the copy byte-identical to ui-kit's original.
+    """
+    fixture = Path(__file__).resolve().parent / "fixtures" / "gateway_version_rows.json"
     cases = json.loads(fixture.read_text(encoding="utf-8"))["cases"]
     assert len(cases) == 13
     for case in cases:

@@ -1,0 +1,249 @@
+{
+  "description": "Shared parity fixture for ui-kit gatewayVersionRows(payload, error?) and abstractcore.utils.identity.gateway_version_rows(payload, error=None). Expected rows were produced by the Python twin; both implementations must return exactly these rows.",
+  "cases": [
+    {
+      "name": "full payload",
+      "payload": {
+        "abstractgateway": "0.4.3",
+        "abstractframework": "0.3.3",
+        "packages": {
+          "abstractruntime": "0.4.33",
+          "abstractcore": "2.15.2",
+          "abstractgateway": "0.4.3",
+          "abstractframework": "0.3.3",
+          "abstractagent": "0.2.0"
+        }
+      },
+      "expected": [
+        [
+          "Gateway",
+          "AbstractGateway 0.4.3"
+        ],
+        [
+          "Gateway framework",
+          "AbstractFramework 0.3.3"
+        ],
+        [
+          "Gateway package abstractagent",
+          "0.2.0"
+        ],
+        [
+          "Gateway package abstractcore",
+          "2.15.2"
+        ],
+        [
+          "Gateway package abstractruntime",
+          "0.4.33"
+        ]
+      ]
+    },
+    {
+      "name": "framework null and packages null",
+      "payload": {
+        "abstractgateway": "0.4.3",
+        "abstractframework": null,
+        "packages": null
+      },
+      "expected": [
+        [
+          "Gateway",
+          "AbstractGateway 0.4.3"
+        ],
+        [
+          "Gateway framework",
+          "not installed on the gateway host"
+        ]
+      ]
+    },
+    {
+      "name": "packages with null, empty, padded and mixed-case names",
+      "payload": {
+        "abstractgateway": "0.4.3",
+        "abstractframework": "0.3.3",
+        "packages": {
+          "zeta": null,
+          "Beta": "",
+          "alpha": " 1.0 ",
+          "Alpha": "2.0",
+          "beta": "3.0"
+        }
+      },
+      "expected": [
+        [
+          "Gateway",
+          "AbstractGateway 0.4.3"
+        ],
+        [
+          "Gateway framework",
+          "AbstractFramework 0.3.3"
+        ],
+        [
+          "Gateway package Alpha",
+          "2.0"
+        ],
+        [
+          "Gateway package alpha",
+          "1.0"
+        ],
+        [
+          "Gateway package beta",
+          "3.0"
+        ]
+      ]
+    },
+    {
+      "name": "missing gateway version",
+      "payload": {
+        "abstractframework": "0.3.3",
+        "packages": {
+          "abstractcore": "2.15.2"
+        }
+      },
+      "expected": [
+        [
+          "Gateway",
+          "unavailable (the gateway did not report its version)"
+        ]
+      ]
+    },
+    {
+      "name": "empty gateway version",
+      "payload": {
+        "abstractgateway": "",
+        "abstractframework": "0.3.3"
+      },
+      "expected": [
+        [
+          "Gateway",
+          "unavailable (the gateway did not report its version)"
+        ]
+      ]
+    },
+    {
+      "name": "packages given as a list",
+      "payload": {
+        "abstractgateway": "0.4.3",
+        "packages": [
+          "abstractcore",
+          "2.15.2"
+        ]
+      },
+      "expected": [
+        [
+          "Gateway",
+          "AbstractGateway 0.4.3"
+        ],
+        [
+          "Gateway framework",
+          "not installed on the gateway host"
+        ]
+      ]
+    },
+    {
+      "name": "null payload",
+      "payload": null,
+      "expected": [
+        [
+          "Gateway",
+          "unavailable (the gateway did not report its version)"
+        ]
+      ]
+    },
+    {
+      "name": "empty error",
+      "payload": null,
+      "error": "",
+      "expected": [
+        [
+          "Gateway",
+          "unavailable (unknown error)"
+        ]
+      ]
+    },
+    {
+      "name": "blank error",
+      "payload": null,
+      "error": "  ",
+      "expected": [
+        [
+          "Gateway",
+          "unavailable (unknown error)"
+        ]
+      ]
+    },
+    {
+      "name": "HTTP error",
+      "payload": null,
+      "error": "HTTP 404",
+      "expected": [
+        [
+          "Gateway",
+          "unavailable (HTTP 404)"
+        ]
+      ]
+    },
+    {
+      "name": "numeric gateway version",
+      "payload": {
+        "abstractgateway": 4,
+        "abstractframework": "0.3.3"
+      },
+      "expected": [
+        [
+          "Gateway",
+          "unavailable (the gateway did not report its version)"
+        ]
+      ]
+    },
+    {
+      "name": "numeric and boolean framework and package versions",
+      "payload": {
+        "abstractgateway": "0.4.3",
+        "abstractframework": 3,
+        "packages": {
+          "x": true,
+          "y": 2,
+          "z": "1.0"
+        }
+      },
+      "expected": [
+        [
+          "Gateway",
+          "AbstractGateway 0.4.3"
+        ],
+        [
+          "Gateway framework",
+          "not installed on the gateway host"
+        ],
+        [
+          "Gateway package z",
+          "1.0"
+        ]
+      ]
+    },
+    {
+      "name": "payload carrying an error field is not a failure",
+      "payload": {
+        "abstractgateway": "0.4.3",
+        "error": "boom",
+        "packages": {
+          "abstractcore": "2.15.2"
+        }
+      },
+      "expected": [
+        [
+          "Gateway",
+          "AbstractGateway 0.4.3"
+        ],
+        [
+          "Gateway framework",
+          "not installed on the gateway host"
+        ],
+        [
+          "Gateway package abstractcore",
+          "2.15.2"
+        ]
+      ]
+    }
+  ]
+}
