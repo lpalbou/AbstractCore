@@ -90,6 +90,20 @@ class IncrementalToolDetector:
                 "end": r"```",
             },
         }
+        # A ```json fenced block whose body is a tool-call object
+        # (`{"name": ..., "arguments": ...}`, `{"tool_calls": [...]}` or a list
+        # of call objects). Only scanned when the request carries tools
+        # (`json_fence_tools`): a ```json block is also how a model answers a
+        # "reply in JSON" request, so without tools it is always content. A
+        # fenced block that turns out NOT to be a tool call is released as
+        # content once its closing fence arrives.
+        self.json_fence_pattern = {
+            "start": r"```json[ \t]*",
+            "end": r"```",
+            "kind": "json_fence",
+        }
+        # Set by `UnifiedStreamProcessor.process_stream` from the request's tools.
+        self.json_fence_tools = False
 
         self.active_patterns = self._get_patterns_for_model(model_name)
 
@@ -101,6 +115,12 @@ class IncrementalToolDetector:
         self.tool_start_pos = None
         self.current_pattern = None
         self.completed_tools = []
+
+    def _scan_patterns(self) -> List[Dict]:
+        """Envelopes scanned for: the model's formats, then ```json when tools are in play."""
+        if self.json_fence_tools:
+            return list(self.active_patterns) + [self.json_fence_pattern]
+        return list(self.active_patterns)
 
     def _get_patterns_for_model(self, model_name: str) -> List[Dict]:
         """Get relevant patterns for a model."""
@@ -182,7 +202,7 @@ class IncrementalToolDetector:
         completed_tools = []
 
         # Check for tool start patterns
-        for pattern_info in self.active_patterns:
+        for pattern_info in self._scan_patterns():
             start_pattern = pattern_info["start"]
             match = re.search(start_pattern, self.accumulated_content, re.IGNORECASE)
 
@@ -239,6 +259,8 @@ class IncrementalToolDetector:
         # Harmony/ChatML tool transcript: detect completion by balanced JSON after <|message|>.
         if self.current_pattern and self.current_pattern.get("kind") == "harmony":
             return self._collect_harmony_tool_content()
+        if self.current_pattern and self.current_pattern.get("kind") == "json_fence":
+            return self._collect_json_fence_content()
 
         # Check for tool end pattern
         end_pattern = self.current_pattern["end"]
@@ -277,6 +299,91 @@ class IncrementalToolDetector:
                 completed_tools.extend(additional_tools)
 
         return streamable_content, completed_tools
+
+    def _collect_json_fence_content(self) -> Tuple[str, List[ToolCall]]:
+        """Collect a ```json block; a tool-call body becomes tool calls, anything else content."""
+        streamable_content = ""
+        completed_tools: List[ToolCall] = []
+
+        end_match = re.search(r"```", self.current_tool_content)
+        if not end_match:
+            return streamable_content, completed_tools
+
+        body = self.current_tool_content[: end_match.start()]
+        calls = self._parse_json_fence_tool_calls(body)
+        # accumulated_content == <text up to the body> + current_tool_content
+        body_start = len(self.accumulated_content) - len(self.current_tool_content)
+        block_end = body_start + end_match.end()
+        start = self.tool_start_pos or 0
+
+        if calls:
+            completed_tools.extend(calls)
+            if self.rewrite_tags:
+                # Rewriting callers see the markup, as for every other envelope.
+                streamable_content = self.accumulated_content[:block_end]
+        else:
+            # Not a tool call: the block was only withheld, release it verbatim.
+            if self.rewrite_tags:
+                streamable_content = self.accumulated_content[:block_end]
+            else:
+                streamable_content = self.accumulated_content[start:block_end]
+
+        remaining_content = self.current_tool_content[end_match.end() :]
+        self.reset()
+        if remaining_content:
+            self.accumulated_content = remaining_content
+            additional_streamable, additional_tools = self._scan_for_tool_start("")
+            streamable_content += additional_streamable
+            completed_tools.extend(additional_tools)
+        return streamable_content, completed_tools
+
+    def _parse_json_fence_tool_calls(self, body: str) -> List[ToolCall]:
+        """Tool calls in a ```json body, or [] when the body is not (only) tool calls.
+
+        Accepted: one call object, `{"tool_calls": [calls]}`, or `[calls]`, where a
+        call is `{"name": str, "arguments"|"parameters": ...}` or the OpenAI
+        `{"type": "function", "function": {"name", "arguments"}}` shape. Every
+        item must be a call; a JSON answer that merely has a "name" key is not.
+        """
+        text = str(body or "").strip()
+        if not text:
+            return []
+        try:
+            data = json.loads(text)
+        except Exception:
+            data = loads_dict_like(text) if text.startswith("{") else None
+        if isinstance(data, dict) and isinstance(data.get("tool_calls"), list) and len(data) == 1:
+            items = data["tool_calls"]
+        elif isinstance(data, list):
+            items = data
+        elif isinstance(data, dict):
+            items = [data]
+        else:
+            return []
+        if not items:
+            return []
+
+        calls: List[ToolCall] = []
+        for item in items:
+            if not isinstance(item, dict):
+                return []
+            function = item.get("function") if isinstance(item.get("function"), dict) else None
+            has_name = isinstance(item.get("name"), str) or (
+                function is not None and isinstance(function.get("name"), str)
+            )
+            has_args = any(k in item for k in ("arguments", "parameters")) or (
+                function is not None and "arguments" in function
+            )
+            if not (has_name and has_args):
+                return []
+            normalized = dict(item)
+            if "arguments" not in normalized and "parameters" in normalized:
+                normalized["arguments"] = normalized.get("parameters")
+            call = self._parse_tool_json(json.dumps(normalized))
+            if call is None:
+                return []
+            calls.append(call)
+        return calls
 
     def _collect_harmony_tool_content(self) -> Tuple[str, List[ToolCall]]:
         """Collect and parse a Harmony/ChatML tool transcript block."""
@@ -453,13 +560,18 @@ class IncrementalToolDetector:
             return True
 
         # Check if we have an incomplete tool call (start tag but no end tag)
-        for pattern_info in self.active_patterns:
+        for pattern_info in self._scan_patterns():
             start_pattern = pattern_info["start"]
             end_pattern = pattern_info["end"]
+            if end_pattern is None:
+                continue
 
-            if re.search(start_pattern, self.accumulated_content, re.IGNORECASE):
-                # Has start tag - check if also has end tag
-                if not re.search(end_pattern, self.accumulated_content, re.IGNORECASE):
+            start_match = re.search(start_pattern, self.accumulated_content, re.IGNORECASE)
+            if start_match:
+                # Has start tag - check if also has end tag AFTER it
+                if not re.search(
+                    end_pattern, self.accumulated_content[start_match.end() :], re.IGNORECASE
+                ):
                     # Incomplete tool call - should buffer
                     return True
 
@@ -474,7 +586,11 @@ class IncrementalToolDetector:
             else self.accumulated_content
         )
 
-        tag_starters = ("<", "<|", "</", "<|t", "<|to", "<|tool", "<function", "<tool", "``", "```")
+        tag_starters: Tuple[str, ...] = ("<", "<|", "</", "<|t", "<|to", "<|tool", "<function", "<tool", "``", "```")
+        if self.json_fence_tools:
+            # A lone backtick may be the first third of a ```json envelope
+            # arriving one character per chunk.
+            tag_starters = tag_starters + ("`",)
         might_be_partial = any(starter in tail for starter in tag_starters)
 
         if might_be_partial and len(self.accumulated_content) > 20:
@@ -628,6 +744,60 @@ class IncrementalToolDetector:
                     self.accumulated_content = ""
 
         return completed_tools
+
+    def drain(self) -> Tuple[str, List[ToolCall], Optional[Dict[str, Any]]]:
+        """End of the model's output: (content still owed, tool calls, unparsed tool call).
+
+        Content held back only because it MIGHT start a tag is owed to the
+        caller. An envelope that opened and never closed (or closed around a
+        body no parser accepts) is NOT content: it is returned as the third
+        element, `{"format", "text", "reason"}`, so the caller can report it
+        without printing tool-call markup as the model's answer. Resets the
+        detector.
+        """
+        unparsed: Optional[Dict[str, Any]] = None
+        if self.state == ToolDetectionState.IN_TOOL_CALL:
+            start = self.tool_start_pos or 0
+            # Normal mode already streamed the text before the envelope;
+            # rewrite mode held it back, so it is still owed.
+            owed = self.accumulated_content[:start] if self.rewrite_tags else ""
+            envelope = self.accumulated_content[start:]
+            pattern = self.current_pattern or {}
+            if pattern.get("kind") == "json_fence":
+                # An unclosed ```json block: a complete call body is a call; a
+                # body that STARTS like a call (first key name/tool_calls/
+                # function/type) is a broken call; anything else is an ordinary
+                # unfinished JSON answer and stays content.
+                body = self.current_tool_content
+                tools = self._parse_json_fence_tool_calls(body)
+                if not tools and not re.match(
+                    r'\s*\[?\s*\{\s*"(name|tool_calls|function|type)"\s*:', body
+                ):
+                    owed = self.accumulated_content if self.rewrite_tags else envelope
+                    self.reset()
+                    return owed, [], None
+            else:
+                tools = self.finalize()
+            if not tools:
+                unparsed = {
+                    "format": self._pattern_name(pattern),
+                    "text": envelope,
+                    "reason": "unclosed" if pattern.get("kind") != "harmony" else "incomplete",
+                }
+            self.reset()
+            return owed, tools, unparsed
+
+        owed = self.accumulated_content
+        self.reset()
+        return owed, [], None
+
+    def _pattern_name(self, pattern: Dict[str, Any]) -> str:
+        if pattern is self.json_fence_pattern:
+            return "json_fence"
+        for name, candidate in self.patterns.items():
+            if candidate is pattern:
+                return name
+        return "unknown"
 
     def _try_parse_incomplete_json(self, content: str) -> Optional[ToolCall]:
         """Try to parse potentially incomplete JSON by finding valid JSON objects."""
@@ -843,7 +1013,69 @@ class UnifiedStreamProcessor:
 
                 return (name.strip(), args_norm, call_id_norm)
 
+            # ```json tool-call envelopes are only recognised when the request
+            # carries tools (see IncrementalToolDetector.json_fence_pattern).
+            self.detector.json_fence_tools = bool(allowed_tool_names)
+
+            def _rewritten(text: str) -> str:
+                if self.convert_to_openai_json:
+                    return self._convert_to_openai_format(text)
+                if self.tag_rewriter:
+                    return self._apply_tag_rewriting_direct(text)
+                return text
+
+            def _unparsed_metadata(
+                metadata: Optional[Dict[str, Any]], unparsed: Optional[Dict[str, Any]]
+            ) -> Optional[Dict[str, Any]]:
+                """Report an envelope that never became a tool call, never as content."""
+                if not unparsed:
+                    return metadata
+                meta = dict(metadata or {})
+                meta["unparsed_tool_call"] = unparsed
+                preview = preview_text(unparsed.get("text") or "", max_chars=200)
+                return _with_warnings(
+                    meta,
+                    [
+                        f"Unparsed tool call ({unparsed.get('format')}, {unparsed.get('reason')}): "
+                        f"the model opened a tool-call envelope that no parser accepted; it is "
+                        f"reported in metadata['unparsed_tool_call'], not as content: {preview!r}"
+                    ],
+                )
+
+            def _drain(model: Any) -> Tuple[List[GenerateResponse], Optional[Dict[str, Any]]]:
+                """Chunks owed at the end of the model's output (no finish_reason) + unparsed call."""
+                owed, tools, unparsed = self.detector.drain()
+                out: List[GenerateResponse] = []
+                if owed:
+                    out.append(GenerateResponse(content=_rewritten(owed), model=model))
+                if tools:
+                    tool_payload, name_warnings = _mapped_tool_payload(tools)
+                    if tool_payload:
+                        out.append(
+                            GenerateResponse(
+                                content="",
+                                tool_calls=tool_payload,
+                                model=model,
+                                metadata=_with_warnings(None, name_warnings),
+                            )
+                        )
+                return out, unparsed
+
+            def _detector_pending() -> bool:
+                return bool(
+                    self.detector.accumulated_content
+                    or self.detector.state == ToolDetectionState.IN_TOOL_CALL
+                )
+
             for chunk in response_stream:
+                # The provider's TERMINAL chunk (finish_reason set) carries the
+                # accounting — usage, prompt-cache telemetry — and consumers read
+                # it as the stream's last word. Content the detector still holds
+                # (a possible tag, an unclosed envelope) is settled BEFORE it, so
+                # the terminal chunk stays last and its finish_reason is not
+                # overwritten by a synthetic "stop".
+                terminal = chunk.finish_reason is not None
+
                 # Preserve provider-emitted tool calls (native tools / server-side tool_calls).
                 incoming_tool_calls = (
                     chunk.tool_calls
@@ -860,12 +1092,40 @@ class UnifiedStreamProcessor:
                         if key:
                             incoming_tool_call_keys.add(key)
 
+                if isinstance(chunk.metadata, dict):
+                    for _k in ("media_delivered", "media_dropped", "prompt_cache"):
+                        if _k in chunk.metadata:
+                            request_metadata[_k] = chunk.metadata[_k]
+
                 if not chunk.content:
+                    if terminal and _detector_pending():
+                        owed_chunks, unparsed = _drain(chunk.model)
+                        yield from owed_chunks
+                        chunk.metadata = _unparsed_metadata(chunk.metadata, unparsed)
                     yield chunk
                     continue
 
+                # A terminal chunk with content: when the detector ends up
+                # holding something, its content goes out first and the
+                # terminal attributes ride a separate, final, empty chunk.
+                terminal_attrs: Optional[GenerateResponse] = None
+
                 # Process chunk through detector (preserves tool calls for rewriting)
                 streamable_content, completed_tools = self.detector.process_chunk(chunk.content)
+                if terminal and _detector_pending():
+                    terminal_attrs = GenerateResponse(
+                        content="",
+                        model=chunk.model,
+                        finish_reason=chunk.finish_reason,
+                        usage=chunk.usage,
+                        raw_response=chunk.raw_response,
+                        metadata=chunk.metadata,
+                    )
+                    chunk = GenerateResponse(
+                        content=chunk.content,
+                        model=chunk.model,
+                        tool_calls=chunk.tool_calls,
+                    )
 
                 # Apply tag rewriting or OpenAI conversion if we have content
                 if streamable_content:
@@ -878,14 +1138,10 @@ class UnifiedStreamProcessor:
                         streamable_content = self._apply_tag_rewriting_direct(streamable_content)
                         logger.debug(f"After tag rewriting: {streamable_content[:100]}")
 
-                # Per-REQUEST metadata (currently the media-delivery record) has
-                # to survive onto the finalize chunks below, which are built from
-                # scratch. Per-CHUNK keys (ttft, reasoning deltas) deliberately do
-                # not travel.
-                if isinstance(chunk.metadata, dict):
-                    for _k in ("media_delivered", "media_dropped"):
-                        if _k in chunk.metadata:
-                            request_metadata[_k] = chunk.metadata[_k]
+                # Per-REQUEST metadata (media-delivery record, prompt-cache
+                # telemetry) was captured above: it has to survive onto the
+                # finalize chunks below, which are built from scratch. Per-CHUNK
+                # keys (ttft, reasoning deltas) deliberately do not travel.
 
                 # Yield streamable content
                 if streamable_content:
@@ -941,25 +1197,26 @@ class UnifiedStreamProcessor:
                             metadata=_with_warnings(chunk.metadata, name_warnings),
                         )
 
-            # Finalize - get any remaining tools and handle remaining content
-            final_tools = self.detector.finalize()
+                if terminal_attrs is not None:
+                    owed_chunks, unparsed = _drain(chunk.model)
+                    yield from owed_chunks
+                    terminal_attrs.metadata = _unparsed_metadata(terminal_attrs.metadata, unparsed)
+                    yield terminal_attrs
 
-            # Get any remaining accumulated content
-            remaining_content = self.detector.accumulated_content
-            self.detector.accumulated_content = ""
+            # Stream ended without a terminal chunk settling the detector (or
+            # content arrived after it): settle it now. These chunks are the
+            # stream's last, so they carry the request-scoped metadata.
+            owed, final_tools, unparsed = self.detector.drain()
 
-            if remaining_content:
-                if self.convert_to_openai_json:
-                    remaining_content = self._convert_to_openai_format(remaining_content)
-                elif self.tag_rewriter:
-                    remaining_content = self._apply_tag_rewriting_direct(remaining_content)
-
+            if owed:
                 yield GenerateResponse(
-                    content=remaining_content,
+                    content=_rewritten(owed),
                     model=self.model_name,
                     finish_reason="stop",
-                    metadata=dict(request_metadata) or None,
+                    metadata=_unparsed_metadata(dict(request_metadata) or None, None if final_tools else unparsed),
                 )
+                if not final_tools:
+                    unparsed = None
 
             if final_tools:
                 logger.debug(f"Finalized {len(final_tools)} tools - yielding for server processing")
@@ -970,6 +1227,13 @@ class UnifiedStreamProcessor:
                     model=self.model_name,
                     finish_reason="tool_calls",
                     metadata=_with_warnings(dict(request_metadata) or None, name_warnings),
+                )
+            elif unparsed:
+                yield GenerateResponse(
+                    content="",
+                    model=self.model_name,
+                    finish_reason="stop",
+                    metadata=_unparsed_metadata(dict(request_metadata) or None, unparsed),
                 )
 
         except Exception as e:
