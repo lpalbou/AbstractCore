@@ -214,3 +214,53 @@ def test_tool_execution_text_comes_before_the_terminal_chunk():
     assert [c.finish_reason for c in chunks].count("stop") == 1
     assert chunks[-1].finish_reason == "stop"
     assert chunks[-1].metadata["prompt_cache"] == KEY_TELEMETRY
+
+
+def test_concurrent_native_requests_never_swap_their_counts():
+    """Two interleaved scheduled requests on ONE provider: each terminal chunk
+    reports its own request's cached/fed counts (per-request view state)."""
+    p = MLXProvider.__new__(MLXProvider)
+    p.model = "fake/native"
+    p.logger = Mock()
+    p.llm = object()
+    p.tokenizer = _Tok()
+    p._mtp_processor = object()
+    p._mtp_last_result = SimpleNamespace(cached_tokens=999, prompt_tokens=999)  # stale, must not leak
+    p._mtp_last_apc = None
+
+    class _Handle:
+        def __init__(self, results):
+            self._it = iter(results)
+
+        def __iter__(self):
+            return self._it
+
+        def close(self):
+            pass
+
+    class _Runtime:
+        def stream(self, request, cancel_event=None, **kw):
+            cached = request["cached"]
+            return _Handle([
+                SimpleNamespace(text="a", prompt_tokens=100, cached_tokens=cached, generation_tokens=1,
+                                finish_reason=None, metadata={}, media_records=()),
+                SimpleNamespace(text="b", prompt_tokens=100, cached_tokens=cached, generation_tokens=2,
+                                finish_reason="stop", metadata={}, media_records=()),
+            ])
+
+    p._native_runtime = _Runtime()
+    p._native_runtime_request = lambda text, kwargs: {"cached": 10 if text == "one" else 70}
+    p._record_native_media = lambda: None
+    one, two = p._native_request_view(), p._native_request_view()
+    assert one._mtp_last_result is None and two._mtp_last_result is None
+    base = {"mode": "key", "backend": "mlx_vlm_apc"}
+    s1 = one._stream_generate("one", 8, 0.0, 1.0, prompt_cache_telemetry=dict(base, key="one"))
+    s2 = two._stream_generate("two", 8, 0.0, 1.0, prompt_cache_telemetry=dict(base, key="two"))
+    out1, out2 = [], []
+    for a, b in zip(s1, s2):  # strictly interleaved
+        out1.append(a)
+        out2.append(b)
+    assert out1[-1].metadata["prompt_cache"]["cached_tokens"] == 10
+    assert out1[-1].metadata["prompt_cache"]["fed_tokens"] == 90
+    assert out2[-1].metadata["prompt_cache"]["cached_tokens"] == 70
+    assert out2[-1].metadata["prompt_cache"]["fed_tokens"] == 30

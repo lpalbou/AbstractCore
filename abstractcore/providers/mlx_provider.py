@@ -359,6 +359,11 @@ class MLXProvider(BaseProvider):
         view._last_output_budget_clamp = None
         view._native_runtime_metadata = {}
         view._native_runtime_stream = None
+        # Per-CALL results: the terminal chunk's usage and `prompt_cache` record
+        # read these, so a request never starts from another request's values
+        # (the scheduler runs requests concurrently, each on its own view).
+        view._mtp_last_result = None
+        view._mtp_last_apc = None
         if cancel_event is not None and not isinstance(cancel_event, threading.Event):
             from .mlx_runtime import NativeRuntimeError
             raise NativeRuntimeError("_cancel_event must be a threading.Event", code="invalid_request")
