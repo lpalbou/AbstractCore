@@ -57,6 +57,12 @@ def test_gateway_version_rows_match_the_ui_kit_contract():
     assert identity.gateway_version_rows(None, error="HTTP 404") == [("Gateway", "unavailable (HTTP 404)")]
     assert identity.gateway_version_rows({"packages": {}}) == [("Gateway", "unavailable (the gateway did not report its version)")]
     assert identity.gateway_version_rows(None, error="  ") == [("Gateway", "unavailable (unknown error)")]
+    # Only strings are versions (parity with the ui-kit helper): numbers/booleans are "not reported".
+    assert identity.gateway_version_rows({"abstractgateway": 1.0}) == [("Gateway", "unavailable (the gateway did not report its version)")]
+    assert identity.gateway_version_rows({"abstractgateway": "0.5.0", "abstractframework": 3, "packages": {"x": True, "y": 2}}) == [
+        ("Gateway", "AbstractGateway 0.5.0"),
+        ("Gateway framework", "not installed on the gateway host"),
+    ]
 
 
 def test_unknown_app_is_refused():
@@ -90,8 +96,20 @@ def test_about_html_links_urls_and_escapes():
     assert '<a href="https://abstractframework.ai">https://abstractframework.ai</a>' in html2
 
 
+VENDORED_SHA256 = "2ee5dba4cd15b0f90fe4d71be25b7cbf333496e2838b1520964a649f5e4158f9"
+
+
+def test_vendored_copy_is_the_reviewed_descriptor():
+    """The vendored copy is pinned by content: a change to identity facts must be deliberate (update the pin)."""
+    import hashlib
+    from importlib import resources
+
+    data = resources.files("abstractcore.assets").joinpath("abstractframework_identity.json").read_bytes()
+    assert hashlib.sha256(data).hexdigest() == VENDORED_SHA256
+
+
 def test_vendored_copy_matches_the_canonical_descriptor_when_present():
     canonical = Path(__file__).resolve().parents[3] / "identity" / "abstractframework.json"
     if not canonical.exists():
-        pytest.skip("canonical descriptor lives in the AbstractFramework root repo")
-    assert json.loads(canonical.read_text(encoding="utf-8")) == identity._descriptor()
+        pytest.skip("canonical descriptor lives in the AbstractFramework root repo (the sha256 pin above covers CI)")
+    assert canonical.read_bytes() == (Path(__file__).resolve().parents[2] / "abstractcore" / "assets" / "abstractframework_identity.json").read_bytes()

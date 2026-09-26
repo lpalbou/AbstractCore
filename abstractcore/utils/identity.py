@@ -155,23 +155,26 @@ def gateway_version_rows(payload: Optional[GatewayAboutPayload], error: Optional
     """
     if error is not None:
         return [("Gateway", f"unavailable ({error.strip() or 'unknown error'})")]
-    gateway = str((payload or {}).get("abstractgateway") or "").strip()
+    gateway = _version_text((payload or {}).get("abstractgateway"))
     if not gateway:
         return [("Gateway", "unavailable (the gateway did not report its version)")]
     rows: List[Tuple[str, str]] = [("Gateway", f"AbstractGateway {gateway}")]
-    framework = (payload or {}).get("abstractframework")
-    framework_text = str(framework).strip() if framework else ""
+    framework_text = _version_text((payload or {}).get("abstractframework"))
     rows.append(("Gateway framework", f"AbstractFramework {framework_text}" if framework_text else "not installed on the gateway host"))
     packages = (payload or {}).get("packages")
     if isinstance(packages, Mapping):
         for name in sorted(packages):
             if name in ("abstractgateway", "abstractframework"):
                 continue
-            version = packages[name]
-            text = str(version).strip() if version else ""
+            text = _version_text(packages[name])
             if text:
                 rows.append((f"Gateway package {name}", text))
     return rows
+
+
+def _version_text(value: object) -> str:
+    """Only a non-empty string is a version; numbers, booleans and None are 'not reported'."""
+    return value.strip() if isinstance(value, str) else ""
 
 
 def _escape(text: str) -> str:
