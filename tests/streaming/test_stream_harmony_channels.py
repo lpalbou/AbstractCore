@@ -184,3 +184,82 @@ def test_base_provider_aggregates_harmony_reasoning_on_the_trailing_chunk():
     assert "".join(c.content or "" for c in chunks) == "The answer is 4."
     reasoning = [c.metadata["reasoning"] for c in chunks if "reasoning" in (c.metadata or {})]
     assert reasoning[-1] == "User asks 2+2. Simple."
+
+
+# --- streamed == non-streamed, through BaseProvider --------------------------
+
+TRUNCATED = "<|channel|>analysis<|message|>The user wants the weather, so I should"
+TOOL_CALL = (
+    "<|channel|>analysis<|message|>Need the weather.<|end|>"
+    "<|start|>assistant<|channel|>commentary to=functions.get_weather <|constrain|>json"
+    '<|message|>{"city": "Paris"}'
+)
+WITH_RETURN = ANALYSIS_FINAL  # ends with <|return|>
+
+
+def _stub_provider(transcript: str, finish_reason: str):
+    from abstractcore.providers.base import BaseProvider
+
+    class _Stub(BaseProvider):
+        def get_capabilities(self):
+            return ["streaming", "tools"]
+
+        def list_available_models(self, **kwargs):
+            return [self.model]
+
+        def unload_model(self, model_name):
+            return None
+
+        def _generate_internal(self, prompt, messages=None, system_prompt=None, tools=None, media=None,
+                               stream=False, response_model=None, execute_tools=None, media_metadata=None,
+                               **kwargs):
+            if not stream:
+                return GenerateResponse(content=transcript, model=self.model, finish_reason=finish_reason)
+
+            def _gen():
+                for part in _cut(transcript, 3):
+                    yield GenerateResponse(content=part, model=self.model)
+                yield GenerateResponse(content="", model=self.model, finish_reason=finish_reason)
+            return _gen()
+
+    from abstractcore.tools.handler import UniversalToolHandler
+
+    stub = _Stub(model=MODEL)
+    stub.tool_handler = UniversalToolHandler(MODEL)  # as every real provider has
+    return stub
+
+
+def _record(response_or_chunks) -> Dict[str, Any]:
+    if isinstance(response_or_chunks, GenerateResponse):
+        r = response_or_chunks
+        return {"content": r.content or "", "reasoning": (r.metadata or {}).get("reasoning"),
+                "tool_calls": [(c.get("name"), c.get("arguments")) for c in (r.tool_calls or [])],
+                "finish_reason": r.finish_reason}
+    chunks = list(response_or_chunks)
+    reasoning = [c.metadata["reasoning"] for c in chunks if "reasoning" in (c.metadata or {})]
+    return {"content": "".join(c.content or "" for c in chunks),
+            "reasoning": reasoning[-1] if reasoning else None,
+            "tool_calls": [(c.get("name"), c.get("arguments")) for ch in chunks for c in (ch.tool_calls or [])],
+            "finish_reason": next((c.finish_reason for c in reversed(chunks) if c.finish_reason), None)}
+
+
+@pytest.mark.parametrize(
+    "transcript, finish_reason, expected_content, expected_reasoning, expected_calls",
+    [
+        (ANALYSIS_FINAL[: -len("<|return|>")], "stop", "The answer is 4.", "User asks 2+2. Simple.", []),
+        (WITH_RETURN, "stop", "The answer is 4.", "User asks 2+2. Simple.", []),
+        (TRUNCATED, "length", "", "The user wants the weather, so I should (...)", []),
+        (TOOL_CALL, "stop", "", "Need the weather.", [("get_weather", {"city": "Paris"})]),
+    ],
+    ids=["full", "full-with-return-token", "truncated-before-final", "tool-call"],
+)
+def test_streamed_equals_non_streamed(transcript, finish_reason, expected_content, expected_reasoning, expected_calls):
+    tools = [{"name": "get_weather", "description": "weather",
+              "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}}]
+    sync = _record(_stub_provider(transcript, finish_reason).generate("q", tools=tools))
+    streamed = _record(_stub_provider(transcript, finish_reason).generate("q", tools=tools, stream=True))
+    assert sync == streamed
+    assert sync["content"] == expected_content
+    assert sync["reasoning"] == expected_reasoning
+    assert sync["tool_calls"] == expected_calls
+    assert sync["finish_reason"] == finish_reason

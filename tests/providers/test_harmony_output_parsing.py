@@ -40,7 +40,7 @@ def test_maybe_extract_harmony_final_cleans_content_and_sets_metadata_reasoning(
     assert reasoning == "r"
 
 
-def test_maybe_extract_harmony_final_strips_wrapper_tokens_when_only_analysis_present():
+def test_maybe_extract_harmony_truncated_before_final_is_reasoning_not_the_answer():
     resp = GenerateResponse(
         content="<|channel|>analysis<|message|>partial",
         model="gpt-oss-20b",
@@ -53,5 +53,12 @@ def test_maybe_extract_harmony_final_strips_wrapper_tokens_when_only_analysis_pr
         architecture_format=arch_fmt,
         model_capabilities=caps,
     )
-    assert cleaned == "partial"
-    assert reasoning == "partial"
+    # The model's private, mid-sentence thinking is never presented as its reply.
+    assert cleaned == ""
+    assert reasoning == "partial (...)"
+
+
+def test_split_harmony_response_never_keeps_return_or_call_tokens():
+    for token in ("<|return|>", "<|call|>"):
+        text = f"<|channel|>analysis<|message|>r<|end|><|start|>assistant<|channel|>final<|message|>Hello there.{token}"
+        assert split_harmony_response_text(text) == ("Hello there.", "r")

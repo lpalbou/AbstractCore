@@ -1063,8 +1063,15 @@ class IncrementalHarmonySplitter:
                     events.append(("unparsed", {
                         "format": "harmony", "text": f"to={self.recipient} {raw}", "reason": "unclosed",
                     }))
-            elif self.buffer:
-                events.append((self._text_kind(), self.buffer))
+            else:
+                if self.buffer:
+                    events.append((self._text_kind(), self.buffer))
+                if self.channel == "analysis":
+                    # The stream ended inside the thinking: mark it truncated,
+                    # like an unterminated <think> block.
+                    from ..architectures.response_postprocessing import TRUNCATED_REASONING_MARKER
+
+                    events.append(("reasoning", TRUNCATED_REASONING_MARKER))
         elif self.state == "header":
             recipient = re.search(r"\bto=([^\s<]+)", self.header + self.buffer)
             if recipient:

@@ -264,3 +264,40 @@ def test_concurrent_native_requests_never_swap_their_counts():
     assert out1[-1].metadata["prompt_cache"]["fed_tokens"] == 90
     assert out2[-1].metadata["prompt_cache"]["cached_tokens"] == 70
     assert out2[-1].metadata["prompt_cache"]["fed_tokens"] == 30
+
+
+def test_gpt_oss_cut_before_final_is_reasoning_and_length_on_both_lanes():
+    """Raw Harmony from the mlx-lm lane, cut inside `analysis`: the reply is empty,
+    the thinking is reasoning (marked truncated), finish_reason is "length"."""
+    from abstractcore.architectures import detect_architecture, get_architecture_format, get_model_capabilities
+
+    words = ["<|channel|>", "analysis", "<|message|>", "The user", " wants"]
+    p = _mlx_lm_provider(words)
+    p.architecture_config = get_architecture_format(detect_architecture("openai/gpt-oss-20b"))
+    p.model_capabilities = get_model_capabilities("openai/gpt-oss-20b")
+    sync = p._single_generate("q", 64, 0.0, 1.0)
+    assert sync.content == ""
+    assert sync.metadata["reasoning"] == "The user wants (...)"
+    assert sync.finish_reason == "length"
+    chunks = list(p._stream_generate("q", 64, 0.0, 1.0))
+    assert chunks[-1].finish_reason == sync.finish_reason
+    assert chunks[-1].usage == sync.usage
+
+
+def test_gpt_oss_tool_call_survives_the_mlx_sync_postprocessing():
+    """MLX post-processes the reply BEFORE the tool-call parser runs: a Harmony
+    tool message must reach that parser (only the analysis leaves the text)."""
+    from abstractcore.architectures import detect_architecture, get_architecture_format, get_model_capabilities
+    from abstractcore.tools.parser import parse_tool_calls
+
+    words = ["<|channel|>analysis<|message|>Need it.<|end|>",
+             "<|start|>assistant<|channel|>commentary to=functions.get_weather <|constrain|>json",
+             '<|message|>{"city": "Paris"}']
+    p = _mlx_lm_provider(words)
+    p.architecture_config = get_architecture_format(detect_architecture("openai/gpt-oss-20b"))
+    p.model_capabilities = get_model_capabilities("openai/gpt-oss-20b")
+    sync = p._single_generate("q", 64, 0.0, 1.0)
+    assert sync.metadata["reasoning"] == "Need it."
+    assert "Need it." not in sync.content
+    calls = parse_tool_calls(sync.content, "openai/gpt-oss-20b")
+    assert [(c.name, c.arguments) for c in calls] == [("get_weather", {"city": "Paris"})]

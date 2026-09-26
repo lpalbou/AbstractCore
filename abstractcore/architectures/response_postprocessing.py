@@ -371,9 +371,12 @@ def split_harmony_response_text(text: str) -> Tuple[Optional[str], Optional[str]
     start = (idx_msg + len(msg_marker)) if idx_msg != -1 else (idx_final + len(final_marker))
     final_raw = text[start:]
 
-    # Cut off any trailing transcript tokens.
+    # Cut off any trailing transcript tokens. `<|return|>` / `<|call|>` end a
+    # message too: backends normally stop on them without emitting them (they
+    # are EOS ids in GPT-OSS's generation config), but a backend that does
+    # emit them must not put them in the answer.
     cut_points = []
-    for marker in (end_marker, start_marker):
+    for marker in (end_marker, start_marker, "<|return|>", "<|call|>"):
         pos = final_raw.find(marker)
         if pos != -1:
             cut_points.append(pos)
@@ -432,6 +435,42 @@ def should_extract_harmony_final(
     return msg_fmt == "harmony" or resp_fmt == "harmony"
 
 
+def _harmony_without_final(text: str, reasoning: Optional[str]) -> Tuple[str, Optional[str]]:
+    """A Harmony transcript with no `final` message: what the answer is, and the reasoning.
+
+    - Not Harmony at all (no framing): the text, unchanged.
+    - A tool message (`to=<recipient>`): the transcript minus its `analysis`
+      messages, so the tool-call parser still sees the call; the analysis is
+      reasoning.
+    - Otherwise (typically cut by the output budget before `final`): the
+      analysis is REASONING, never the answer. The answer is only what the
+      model addressed to the user outside `analysis` (a recipient-less
+      `commentary` preamble, bare text) -- usually nothing. An `analysis`
+      message left open is marked truncated like an unterminated think block.
+      The streamed path (`providers.streaming.IncrementalHarmonySplitter`)
+      produces the same text and reasoning for the same transcript.
+    """
+    if "<|channel|>" not in text and "<|start|>" not in text:
+        return text, (reasoning.strip() if isinstance(reasoning, str) and reasoning.strip() else None)
+
+    if re.search(r"\bto=\S", text):
+        without_analysis = re.sub(
+            r"(?:<\|start\|>[^<]*)?<\|channel\|>\s*analysis\b.*?(?:<\|end\|>|$)",
+            "",
+            text,
+            flags=re.DOTALL,
+        )
+        return without_analysis, (reasoning.strip() if isinstance(reasoning, str) and reasoning.strip() else None)
+
+    from ..providers.streaming import IncrementalHarmonySplitter
+
+    splitter = IncrementalHarmonySplitter()
+    events = splitter.feed(text) + splitter.finish()
+    content = "".join(v for k, v in events if k == "content").strip()
+    thought = "".join(v for k, v in events if k == "reasoning").strip()
+    return content, (thought or None)
+
+
 def maybe_extract_harmony_final_text(
     text: str,
     *,
@@ -451,11 +490,7 @@ def maybe_extract_harmony_final_text(
     final_text, reasoning = split_harmony_response_text(text)
 
     if final_text is None:
-        # If we only got analysis (e.g., truncated before final), strip the wrapper tokens
-        # so the caller doesn't see raw Harmony markup.
-        if isinstance(reasoning, str) and reasoning.strip() and text.lstrip().startswith("<|channel|>analysis"):
-            return reasoning.strip(), reasoning.strip()
-        return text, reasoning.strip() if isinstance(reasoning, str) and reasoning.strip() else None
+        return _harmony_without_final(text, reasoning)
 
     return final_text, reasoning.strip() if isinstance(reasoning, str) and reasoning.strip() else None
 

@@ -57,6 +57,13 @@ what the process holds on the accelerator.
   (`metadata["reasoning_delta"]`, joined into `metadata["reasoning"]` at the end), `commentary`
   without a recipient as text, and a `to=` message as a tool call. The `<|channel|>` and other
   framing tokens never appear in the text.
+- A GPT-OSS reply cut off before its `final` message (typically by `max_output_tokens`) no longer
+  returns the model's unfinished thinking as the answer. The reply is empty, the thinking is in
+  `metadata["reasoning"]` marked truncated (` (...)`), and `finish_reason` is `"length"` when the
+  output limit was the cause; streamed and non-streamed calls now agree. On MLX, a Harmony tool
+  call in a non-streamed reply is no longer lost when the reply starts with `analysis`.
+- A non-streamed GPT-OSS answer no longer ends with `<|return|>` or `<|call|>` when a backend
+  emits those tokens.
 - Two scheduled requests running at the same time on one MLX native-runtime provider can no longer
   report each other's cached and fed token counts.
 - The last chunk of a stream is the one carrying the provider's `finish_reason` and `usage`. Text
