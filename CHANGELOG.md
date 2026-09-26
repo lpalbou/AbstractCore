@@ -13,6 +13,7 @@ what the process holds on the accelerator.
 
 ### Fixed
 
+- Tool calls a local model writes inside its thinking block (for example Qwen3-Coder style `<tool_call><function=…>` blocks before `</think>`) are recovered and executed when the reply has no visible answer; a call naming a tool that was not offered, or one cut off mid-parameter, is reported instead of silently dropped or run with missing arguments.
 - A thinking model now streams its reasoning while it thinks. When the chat template opens the
   thinking block itself (Qwen3.x with thinking on), a stream used to show nothing until the model
   closed it: minutes for a long reasoning, with the first text arriving only with the answer. The
