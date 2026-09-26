@@ -113,3 +113,15 @@ def test_vendored_copy_matches_the_canonical_descriptor_when_present():
     if not canonical.exists():
         pytest.skip("canonical descriptor lives in the AbstractFramework root repo (the sha256 pin above covers CI)")
     assert canonical.read_bytes() == (Path(__file__).resolve().parents[2] / "abstractcore" / "assets" / "abstractframework_identity.json").read_bytes()
+
+
+def test_gateway_version_rows_match_the_shared_ui_kit_fixture():
+    """Parity with `@abstractframework/ui-kit` gatewayVersionRows: both sides run the same 13 cases."""
+    fixture = Path(__file__).resolve().parents[3] / "abstractuic" / "ui-kit" / "scripts" / "fixtures" / "gateway_version_rows.json"
+    if not fixture.exists():
+        pytest.skip("ui-kit parity fixture lives in the abstractuic repo (monorepo checkouts run it)")
+    cases = json.loads(fixture.read_text(encoding="utf-8"))["cases"]
+    assert len(cases) == 13
+    for case in cases:
+        rows = identity.gateway_version_rows(case.get("payload"), case.get("error"))
+        assert [list(r) for r in rows] == case["expected"], case["name"]
