@@ -93,17 +93,18 @@ class IncrementalToolDetector:
         # A ```json fenced block whose body is a tool-call object
         # (`{"name": ..., "arguments": ...}`, `{"tool_calls": [...]}` or a list
         # of call objects). Only scanned when the request carries tools
-        # (`json_fence_tools`): a ```json block is also how a model answers a
-        # "reply in JSON" request, so without tools it is always content. A
-        # fenced block that turns out NOT to be a tool call is released as
-        # content once its closing fence arrives.
+        # (`json_fence_tools`, the OFFERED tool names), and a call counts only
+        # when its name is one of them: a ```json block is also how a model
+        # answers a "reply in JSON" request, and that answer must never be
+        # lost. A fenced block that turns out NOT to be a tool call is released
+        # as content once its closing fence arrives.
         self.json_fence_pattern = {
             "start": r"```json[ \t]*",
             "end": r"```",
             "kind": "json_fence",
         }
         # Set by `UnifiedStreamProcessor.process_stream` from the request's tools.
-        self.json_fence_tools = False
+        self.json_fence_tools: set = set()
 
         self.active_patterns = self._get_patterns_for_model(model_name)
 
@@ -337,13 +338,30 @@ class IncrementalToolDetector:
             completed_tools.extend(additional_tools)
         return streamable_content, completed_tools
 
+    def _offered_tool_name(self, name: Any) -> Optional[str]:
+        """The offered tool `name` refers to (exact, wire alias or namespaced), or None."""
+        if not isinstance(name, str) or not name.strip() or not self.json_fence_tools:
+            return None
+        name = name.strip()
+        if name in self.json_fence_tools:
+            return name
+        try:
+            from ..tools.wire_naming import map_namespaced_tool_name, resolve_wire_tool_name
+
+            return resolve_wire_tool_name(name, self.json_fence_tools) or map_namespaced_tool_name(
+                name, self.json_fence_tools
+            )
+        except Exception:
+            return None
+
     def _parse_json_fence_tool_calls(self, body: str) -> List[ToolCall]:
         """Tool calls in a ```json body, or [] when the body is not (only) tool calls.
 
         Accepted: one call object, `{"tool_calls": [calls]}`, or `[calls]`, where a
         call is `{"name": str, "arguments"|"parameters": ...}` or the OpenAI
-        `{"type": "function", "function": {"name", "arguments"}}` shape. Every
-        item must be a call; a JSON answer that merely has a "name" key is not.
+        `{"type": "function", "function": {"name", "arguments"}}` shape, AND its
+        name is one of the tools offered for this call. Every item must be such
+        a call; anything else (a JSON answer, an unknown name) is content.
         """
         text = str(body or "").strip()
         if not text:
@@ -380,7 +398,7 @@ class IncrementalToolDetector:
             if "arguments" not in normalized and "parameters" in normalized:
                 normalized["arguments"] = normalized.get("parameters")
             call = self._parse_tool_json(json.dumps(normalized))
-            if call is None:
+            if call is None or self._offered_tool_name(call.name) is None:
                 return []
             calls.append(call)
         return calls
@@ -766,12 +784,16 @@ class IncrementalToolDetector:
             if pattern.get("kind") == "json_fence":
                 # An unclosed ```json block: a complete call body is a call; a
                 # body that STARTS like a call (first key name/tool_calls/
-                # function/type) is a broken call; anything else is an ordinary
-                # unfinished JSON answer and stays content.
+                # function/type) AND already names an offered tool is a broken
+                # call; anything else is an ordinary unfinished JSON answer and
+                # stays content.
                 body = self.current_tool_content
                 tools = self._parse_json_fence_tool_calls(body)
-                if not tools and not re.match(
-                    r'\s*\[?\s*\{\s*"(name|tool_calls|function|type)"\s*:', body
+                named = re.search(r'"name"\s*:\s*"([^"]+)"', body)
+                if not tools and not (
+                    re.match(r'\s*\[?\s*\{\s*"(name|tool_calls|function|type)"\s*:', body)
+                    and named
+                    and self._offered_tool_name(named.group(1)) is not None
                 ):
                     owed = self.accumulated_content if self.rewrite_tags else envelope
                     self.reset()
@@ -1015,7 +1037,7 @@ class UnifiedStreamProcessor:
 
             # ```json tool-call envelopes are only recognised when the request
             # carries tools (see IncrementalToolDetector.json_fence_pattern).
-            self.detector.json_fence_tools = bool(allowed_tool_names)
+            self.detector.json_fence_tools = set(allowed_tool_names)
 
             def _rewritten(text: str) -> str:
                 if self.convert_to_openai_json:

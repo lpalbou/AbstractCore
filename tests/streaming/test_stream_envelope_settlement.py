@@ -159,6 +159,37 @@ def test_json_fence_that_is_not_a_tool_call_is_released_verbatim(body):
     assert not _meta(out, "unparsed_tool_call")
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"name": "alice", "parameters": {"age": 3}}',
+        '{"name": "alice", "arguments": {}}',
+        '{"tool_calls": [{"name": "search", "arguments": {}}, {"name": "delete_everything", "arguments": {}}]}',
+    ],
+    ids=["answer-shaped-like-a-call", "unknown-tool", "one-unknown-in-array"],
+)
+def test_json_fence_naming_a_tool_that_was_not_offered_is_content_verbatim(body):
+    """A model asked to return JSON must never lose its answer to the tool parser."""
+    text = f"Here you go:\n```json\n{body}\n```\n"
+    for parts in ([text], _char_split(text)):
+        out = _run(parts)
+        assert _content(out) == text
+        assert not _calls(out)
+        assert not _meta(out, "unparsed_tool_call")
+
+
+def test_json_fence_accepts_a_namespaced_spelling_of_an_offered_tool():
+    out = _run(['```json\n{"name": "functions.search", "arguments": {"q": "a"}}\n```'])
+    assert [c["name"] for c in _calls(out)] == ["search"]
+    assert _content(out) == ""
+
+
+def test_unclosed_json_fence_naming_an_unknown_tool_stays_content():
+    out = _run(["```json\n", '{"name": "alice", "argu'])
+    assert _content(out) == '```json\n{"name": "alice", "argu'
+    assert not _meta(out, "unparsed_tool_call")
+
+
 def test_json_fence_is_content_when_the_request_has_no_tools():
     out = _run([FENCED], tools=None)
     assert _content(out) == FENCED
