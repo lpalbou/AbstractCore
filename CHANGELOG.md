@@ -22,7 +22,11 @@ what the process holds on the accelerator.
   template in-process: MLX, HuggingFace transformers and GGUF (llama.cpp). OpenAI-compatible
   servers render it themselves; there the reasoning streams only when the server sends it
   separately. A streamed answer no longer starts with the
-  blank lines the model writes after `</think>`.
+  blank lines the model writes after `</think>`; whitespace inside the answer is kept.
+- Non-streamed calls on MLX, HuggingFace transformers and GGUF now also know when the chat template
+  opened the thinking block: a reply cut off while thinking is returned as reasoning marked
+  truncated (` (...)`) with an empty answer, instead of the thinking as the answer, and a reply with
+  a later thinking block no longer leaves `</think>` in the text.
 - `POST /acore/models/unload` and `unload_after` now free the model from every holder in the server
   process, not only from the server's own runtime, once no other managed runtime serves it. The
   response includes a `process_eject` report and is `ok: false` when weights remain in memory.

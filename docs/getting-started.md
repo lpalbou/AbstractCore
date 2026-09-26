@@ -219,7 +219,9 @@ while they think, and the answer as text after it. When the chat template itself
 HuggingFace transformers and GGUF (llama.cpp). OpenAI-compatible servers (LM Studio, vLLM,
 llama.cpp server, ...) render the template on the server, so AbstractCore cannot tell that the
 block was opened: unless the server returns the reasoning separately (most do), the reasoning of
-such a model arrives in one piece when the model closes the block.
+such a model arrives in one piece when the model closes the block. The same happens on a GGUF
+model whose embedded chat template AbstractCore cannot render: a warning is logged and the stream
+carries `metadata["thinking_stream"] == "held_until_close"`.
 For GPT-OSS models, the Harmony channels are split as the stream arrives: the `final` channel is
 the text, `analysis` is reasoning, and a reply cut off before `final` ends with empty text and
 `finish_reason: "length"` (see [Tool Calling](tool-calling.md#tool-calls-while-streaming)).
