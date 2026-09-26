@@ -157,3 +157,29 @@ def test_sampling_controls_reach_the_constrained_generation(monkeypatch):
     p._generate_internal(prompt="x", response_model=Route, temperature=0.9, top_p=0.5, top_k=20)
     assert p.built_samplers == [(0.9, 0.5, 20)]
     assert p.calls[0]["gen_kwargs"] == {"sampler": ("sampler", 0.9, 0.5, 20)}
+
+
+class _ThinkingTemplateTokenizer(_Tokenizer):
+    """A chat template that opens `<think>` unless thinking is off (the Qwen3.x shape)."""
+
+    chat_template = "qwen3-style template (rendered in apply_chat_template below)"
+
+    def apply_chat_template(self, messages, tools=None, tokenize=False, add_generation_prompt=False, **kw):
+        out = "".join(f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages)
+        if add_generation_prompt:
+            off = kw.get("enable_thinking") is False
+            out += "<|im_start|>assistant\n" + ("<think>\n\n</think>\n\n" if off else "<think>\n")
+        return out
+
+
+def test_the_constrained_lane_renders_the_templates_thinking_off_form(monkeypatch):
+    """JSON-constrained decoding cannot think: never start it inside an opened `<think>`."""
+    raw = '{"mode": "chat", "assistant_message": "hi", "prompt": null}'
+    p = _provider(raw, monkeypatch)
+    p.tokenizer = _ThinkingTemplateTokenizer()
+    p.architecture_config = {"message_format": "im_start_end", "thinking_tags": ["<think>", "</think>"]}
+
+    response = p._generate_internal(prompt="Route this request", response_model=Route)
+
+    assert response.finish_reason == "stop" and p.prompted_calls == []
+    assert p.calls[0]["prompt"].endswith("<|im_start|>assistant\n<think>\n\n</think>\n\n")

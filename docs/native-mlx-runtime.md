@@ -7,7 +7,10 @@ MLX, mlx-lm and mlx-vlm; it does not import or run oMLX. See
 For component ownership and request flow, see
 [Architecture](architecture.md#native-mlx-execution-ownership). The
 [M5 Max measurements](native-mlx-benchmarks.md) compare both models with oMLX,
-including vision and concurrent/staggered requests.
+including vision and concurrent/staggered requests. Every MLX lane renders its
+prompt through the model's own chat template, so tool calls in history, tool
+results and the thinking opener match what the model was trained on; see
+[tool calling](tool-calling.md#3-local-mlx-models-the-models-own-chat-template).
 
 For a source checkout, install the Apple provider stack with
 `pip install -e ".[mlx]"`. Released packages use `pip install -U "abstractcore[mlx]"`;

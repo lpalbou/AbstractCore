@@ -120,6 +120,53 @@ class UniversalToolHandler:
             include_examples=include_examples,
         )
 
+    def format_tools_for_chat_template(
+        self,
+        tools: List[Union[ToolDefinition, Callable, Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        """OpenAI-style function schemas for a model's OWN chat template.
+
+        Used by local renderers (MLX) that hand `tools=` to
+        `tokenizer.apply_chat_template`, so the template writes the tool block it
+        was trained on. Three differences from `prepare_tools_for_native`, all
+        deliberate:
+        - not gated on native support: the chat template renders the tools
+          whatever the provider's wire is;
+        - ORIGINAL tool names: the local parser checks calls against them, and the
+          wire-safe aliases exist only for strict remote endpoints;
+        - parameter `default`s are kept: valid JSON Schema, and the same guidance
+          the prompted tool block shows the model.
+        `when_to_use` is folded into `description` exactly as on the native lane.
+        """
+        if not tools:
+            return []
+        out: List[Dict[str, Any]] = []
+        for tool_def in self._convert_to_tool_definitions(tools):
+            properties: Dict[str, Any] = {}
+            required: List[str] = []
+            for name, param in (tool_def.parameters or {}).items():
+                properties[name] = dict(param) if isinstance(param, dict) else param
+                if isinstance(param, dict) and "default" not in param:
+                    required.append(name)
+            description = tool_def.description
+            if tool_def.when_to_use:
+                description = f"{description}\n\nWhen to use: {tool_def.when_to_use}"
+            out.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool_def.name,
+                        "description": description,
+                        "parameters": {
+                            "type": "object",
+                            "properties": properties,
+                            "required": required,
+                        },
+                    },
+                }
+            )
+        return out
+
     def prepare_tools_for_native(
         self,
         tools: List[Union[ToolDefinition, Callable, Dict[str, Any]]]

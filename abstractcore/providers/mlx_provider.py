@@ -599,13 +599,21 @@ class MLXProvider(BaseProvider):
             .lower()
         )
         model = str(getattr(self, "model", "") or "").strip().lower()
-        if msg_fmt == "gemma_turn":
+        template_sha = self._chat_template_fingerprint() if getattr(self, "tokenizer", None) is not None else ""
+        if template_sha:
+            # Rendered by the model's own chat template: a different serializer,
+            # so artifacts compiled by the hand-built v1 renderer never validate.
+            fmt = "chat-template"
+            version = f"mlx-prompt-fragment/v2:{fmt}:{template_sha}"
+        elif msg_fmt == "gemma_turn":
             fmt = "gemma-turn"
+            version = f"mlx-prompt-fragment/v1:{fmt}"
         else:
             fmt = "qwen-chatml" if "qwen" in model else "plain-chat"
+            version = f"mlx-prompt-fragment/v1:{fmt}"
         return PromptCacheRenderedFragment(
             serialized_prompt=str(serialized),
-            serializer_version=f"mlx-prompt-fragment/v1:{fmt}",
+            serializer_version=version,
             cache_backend="mlx",
             artifact_format=self.prompt_cache_artifact_format(),
             meta={"prompt_format": fmt},
@@ -1998,7 +2006,20 @@ class MLXProvider(BaseProvider):
         reasoning_effort: Optional[str] = None,
         include_bos: bool = True,
     ) -> str:
-        """Build a prompt fragment intended to be appended to an existing prompt_cache."""
+        """Render the MLX prompt (or a fragment of it) for every lane.
+
+        THE MODEL'S OWN CHAT TEMPLATE FIRST (`_render_via_chat_template`): the
+        tokenizer's `apply_chat_template` receives canonical OpenAI-style messages
+        (assistant turns WITH their `tool_calls`, tool results as `role: tool`) and
+        `tools=`, so history, tool responses and the generation prompt (`<think>\\n`
+        when thinking is on) are exactly what the model was trained on. The
+        hand-built renderer below is the fallback for a tokenizer with no chat
+        template (and for a template that raises on this input, loudly).
+
+        Whole-conversation renders start at position 0 (`include_bos=True`, no
+        prefilled modules); anything else is a CONTINUATION fragment appended to
+        an existing cache.
+        """
 
         prefilled = set()
         if prefilled_modules:
@@ -2009,6 +2030,19 @@ class MLXProvider(BaseProvider):
                     norm = ""
                 if norm:
                     prefilled.add(norm)
+
+        templated = self._render_via_chat_template(
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            add_generation_prompt=add_generation_prompt,
+            continuation=bool(prefilled) or not include_bos,
+            enable_thinking=enable_thinking,
+            reasoning_effort=reasoning_effort,
+        )
+        if templated is not None:
+            return templated
 
         base_system_prompt = system_prompt
         tool_system_prompt = None
@@ -2179,6 +2213,412 @@ class MLXProvider(BaseProvider):
                 parts.append("assistant:")
 
         return "".join(parts)
+
+    # ------------------------------------------------------------------
+    # Chat-template rendering (2026-09-26)
+    #
+    # The hand-built renderer diverged from the model's template in three ways
+    # that broke agent loops on Qwen3.x (XP report, 2026-09-26): it dropped the
+    # `tool_calls` of earlier assistant turns (each past turn looked like one
+    # prose sentence, and at iteration 3 the model copied that: one sentence,
+    # no call, run over), it sent tool results under an untrained `tool` role
+    # instead of `<tool_response>` inside a user turn, and it never opened
+    # `<think>\n` in the generation prompt. Rendering through the template
+    # removes the whole class of divergence instead of patching each one.
+    # ------------------------------------------------------------------
+
+    # An unlikely, whitespace-free string (templates `|trim` content).
+    _TEMPLATE_SENTINEL = "ACOREturnSENTINEL7f3a"
+
+    def _chat_template_source(self) -> Optional[str]:
+        """The loaded tokenizer's chat template, or None when it has none.
+
+        Strings only: a test double (MagicMock) answers every attribute, and a
+        non-string "template" must never switch the renderer.
+        """
+        tok = getattr(self, "tokenizer", None)
+        if tok is None or not callable(getattr(tok, "apply_chat_template", None)):
+            return None
+        holders = [tok]
+        processor = getattr(self, "_mtp_processor", None)
+        if processor is not None:
+            holders.append(processor)
+        for holder in holders:
+            try:
+                tmpl = getattr(holder, "chat_template", None)
+            except Exception:
+                tmpl = None
+            if isinstance(tmpl, dict):
+                tmpl = tmpl.get("default")
+            if isinstance(tmpl, str) and tmpl.strip():
+                return tmpl
+        try:
+            from mlx_lm.tokenizer_utils import TokenizerWrapper  # type: ignore
+
+            if isinstance(tok, TokenizerWrapper) and callable(getattr(tok, "_chat_template", None)):
+                fn = tok._chat_template
+                return f"python:{getattr(fn, '__module__', '')}.{getattr(fn, '__qualname__', '')}"
+        except Exception:
+            pass
+        return None
+
+    def _chat_template_fingerprint(self) -> str:
+        import hashlib
+
+        src = self._chat_template_source() or ""
+        return hashlib.sha256(src.encode("utf-8")).hexdigest()[:12] if src else ""
+
+    def _note_render_path(self, *, template: bool, reason: str = "") -> None:
+        """Log ONCE per model (and template) which renderer builds its prompts."""
+        import logging
+
+        key = (str(getattr(self, "model", "") or ""), template, self._chat_template_fingerprint(), reason)
+        if getattr(self, "_render_path_noted", None) == key:
+            return
+        self._render_path_noted = key
+        model = key[0] or "<unknown model>"
+        if template:
+            level = "info"
+            message = f"MLX prompt renderer for {model}: the model's own chat template (sha256 {key[2]})"
+        elif not reason:
+            # No template to diverge from: the hand-built renderer IS this model's
+            # format, so this is information, not a degradation.
+            level = "info"
+            message = (
+                f"MLX prompt renderer for {model}: hand-built renderer (the tokenizer has no "
+                f"chat template)"
+            )
+        else:
+            level = "warning"
+            message = (
+                f"#FALLBACK MLX prompt renderer for {model}: hand-built renderer ({reason}). "
+                f"Earlier tool calls, tool responses and the thinking opener are rendered by "
+                f"abstractcore, not by the model's template."
+            )
+        # Logging must never break a render (test doubles carry partial loggers).
+        for log in (getattr(self, "logger", None), logging.getLogger(__name__)):
+            emit = getattr(log, level, None) if log is not None else None
+            if callable(emit):
+                try:
+                    emit(message)
+                    return
+                except Exception:
+                    continue
+
+    def _template_thinking_kwargs(
+        self, enable_thinking: Optional[bool], reasoning_effort: Optional[str]
+    ) -> Tuple[Dict[str, Any], Optional[str]]:
+        """Template kwargs for the thinking controls, plus an effort line to inject.
+
+        `enable_thinking` goes to the template under its declared name
+        (`thinking_control.template_kwarg`, default `enable_thinking`). An effort
+        level goes to `effort_template_kwarg` when the family declares one;
+        otherwise its declared system line is merged into the system turn, as the
+        hand-built renderer did.
+        """
+        try:
+            surfaces = self._thinking_control_surfaces()
+        except Exception:
+            surfaces = None
+        kwargs: Dict[str, Any] = {}
+        effort_line: Optional[str] = None
+        if isinstance(enable_thinking, bool):
+            name = getattr(surfaces, "template_kwarg", None) or "enable_thinking"
+            kwargs[name] = enable_thinking
+        if isinstance(reasoning_effort, str) and reasoning_effort:
+            lines = dict(getattr(surfaces, "effort_system_lines", None) or {})
+            effort_kwarg = getattr(surfaces, "effort_template_kwarg", None)
+            if effort_kwarg and (not lines or reasoning_effort in lines):
+                kwargs[effort_kwarg] = reasoning_effort
+            else:
+                line = lines.get(reasoning_effort)
+                if isinstance(line, str) and line.strip():
+                    effort_line = line.strip()
+        return kwargs, effort_line
+
+    @staticmethod
+    def _template_tool_calls(raw: Any) -> List[Dict[str, Any]]:
+        """Canonical OpenAI-style tool calls with DICT arguments (templates iterate them)."""
+        out: List[Dict[str, Any]] = []
+        if not isinstance(raw, (list, tuple)):
+            return out
+        for call in raw:
+            if isinstance(call, dict):
+                fn = call.get("function") if isinstance(call.get("function"), dict) else call
+                name = fn.get("name")
+                args = fn.get("arguments", call.get("arguments"))
+                call_id = call.get("id") or call.get("call_id")
+            else:
+                name = getattr(call, "name", None)
+                args = getattr(call, "arguments", None)
+                call_id = getattr(call, "call_id", None) or getattr(call, "id", None)
+            if not isinstance(name, str) or not name.strip():
+                continue
+            if args is None:
+                args = {}
+            elif isinstance(args, str):
+                text = args.strip()
+                if not text:
+                    args = {}
+                else:
+                    try:
+                        parsed = json.loads(text)
+                    except Exception:
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        args = parsed
+                    # else: the raw string goes through; a template that needs a
+                    # mapping raises and the render falls back LOUDLY.
+            entry: Dict[str, Any] = {
+                "type": "function",
+                "function": {"name": name.strip(), "arguments": args},
+            }
+            if isinstance(call_id, str) and call_id:
+                entry["id"] = call_id
+            out.append(entry)
+        return out
+
+    def _template_conversation(
+        self,
+        *,
+        prompt: str,
+        messages: Optional[List[Dict[str, Any]]],
+        system_prompt: Optional[str],
+        tool_prompt: Optional[str],
+        effort_line: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """The request as canonical OpenAI-style messages for `apply_chat_template`.
+
+        - ONE leading system turn: `system_prompt`, the tool instructions (only when
+          the template cannot render `tools=` itself) and any leading system
+          messages, joined by a blank line.
+        - Non-leading system messages (runtime inbox guidance, attachment indexes)
+          travel exactly as on strict OpenAI-compatible servers: a
+          `<system_instruction>` user turn, deferred past tool-result runs.
+          Templates reject them mid-conversation (Qwen: "System message must be at
+          the beginning.").
+        - Assistant turns keep their `tool_calls`; `role: function` becomes `tool`.
+        - Non-string content is serialized as JSON, as before: a content list with
+          image parts must NOT make a text-only lane render image placeholders.
+        """
+
+        def _as_text(val: Any) -> str:
+            if val is None:
+                return ""
+            if isinstance(val, str):
+                return val
+            try:
+                return json.dumps(val, ensure_ascii=False)
+            except Exception:
+                return str(val)
+
+        lead: List[str] = []
+        if effort_line:
+            lead.append(effort_line)
+        if isinstance(system_prompt, str) and system_prompt.strip():
+            lead.append(system_prompt.strip())
+        if tool_prompt:
+            lead.append(tool_prompt)
+
+        conv: List[Dict[str, Any]] = []
+        for msg in messages or []:
+            if not isinstance(msg, dict):
+                continue
+            role = str(msg.get("role") or "user").strip().lower() or "user"
+            if role == "function":
+                role = "tool"
+            elif role == "developer":
+                role = "system"
+            entry: Dict[str, Any] = {"role": role, "content": _as_text(msg.get("content"))}
+            if role == "assistant":
+                calls = self._template_tool_calls(msg.get("tool_calls"))
+                if calls:
+                    entry["tool_calls"] = calls
+                reasoning = msg.get("reasoning_content")
+                if isinstance(reasoning, str) and reasoning.strip():
+                    entry["reasoning_content"] = reasoning
+            elif role == "tool":
+                for key in ("tool_call_id", "name"):
+                    value = msg.get(key)
+                    if isinstance(value, str) and value:
+                        entry[key] = value
+            conv.append(entry)
+        if isinstance(prompt, str) and prompt:
+            conv.append({"role": "user", "content": prompt})
+
+        i = 0
+        while i < len(conv) and conv[i]["role"] == "system":
+            text = conv[i]["content"].strip()
+            if text:
+                lead.append(text)
+            i += 1
+        out: List[Dict[str, Any]] = []
+        if lead:
+            out.append({"role": "system", "content": "\n\n".join(lead)})
+        rest = conv[i:]
+        if any(m.get("role") == "system" for m in rest):
+            from .openai_compatible_provider import OpenAICompatibleProvider
+
+            return OpenAICompatibleProvider._normalize_system_messages_for_strict_servers(out + rest)
+        return out + rest
+
+    def _apply_chat_template_text(
+        self,
+        msgs: List[Dict[str, Any]],
+        *,
+        tools: Optional[List[Dict[str, Any]]],
+        add_generation_prompt: bool,
+        template_kwargs: Dict[str, Any],
+    ) -> str:
+        kwargs = dict(template_kwargs)
+        if tools:
+            kwargs["tools"] = tools
+        out = self.tokenizer.apply_chat_template(
+            msgs, tokenize=False, add_generation_prompt=bool(add_generation_prompt), **kwargs
+        )
+        if not isinstance(out, str):
+            raise TypeError(f"apply_chat_template returned {type(out).__name__}, expected str")
+        return out
+
+    def _cut_before_user_header(self, head: str, render: Callable[..., str]) -> str:
+        """`head` ends with a user-turn header; return the text before that header.
+
+        The architecture's declared `user_prefix` when it matches; otherwise the
+        longest suffix `head` shares with a lone user turn's header (that can
+        also swallow the previous turn's end marker: an EARLIER cut, which is
+        still a true prefix of every continuation).
+        """
+        arch = getattr(self, "architecture_config", None)
+        user_prefix = str((arch or {}).get("user_prefix") or "") if isinstance(arch, dict) else ""
+        if user_prefix and head.endswith(user_prefix):
+            return head[: -len(user_prefix)]
+        sentinel = self._TEMPLATE_SENTINEL
+        probe = render([{"role": "user", "content": sentinel}], False)
+        idx = probe.find(sentinel)
+        probe_head = probe[:idx] if idx >= 0 else ""
+        k = 0
+        while k < len(head) and k < len(probe_head) and head[-1 - k] == probe_head[-1 - k]:
+            k += 1
+        return head[: len(head) - k]
+
+    def _render_via_chat_template(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        continuation: bool = False,
+        enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
+    ) -> Optional[str]:
+        """Render through the model's own chat template; None = use the fallback.
+
+        Three shapes, one renderer:
+        - whole conversation (has a user turn): `apply_chat_template` verbatim;
+        - no user turn yet (a system-only head, the bloc planner's probes): the
+          template cannot render it standalone (Qwen raises "No user query
+          found"), so a sentinel user turn is rendered and cut off before its
+          header — a true prefix of every continuation;
+        - CONTINUATION (prefilled modules / a fragment appended to a non-empty
+          cache): render(prefix + body) minus render(prefix), with a sentinel
+          user turn as the prefix. Also derives the bare generation prompt.
+        """
+        if getattr(self, "tokenizer", None) is None:
+            return None
+        if self._chat_template_source() is None:
+            self._note_render_path(template=False)
+            return None
+        try:
+            text = self._render_template_text(
+                prompt=prompt,
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                add_generation_prompt=add_generation_prompt,
+                continuation=continuation,
+                enable_thinking=enable_thinking,
+                reasoning_effort=reasoning_effort,
+            )
+        except Exception as exc:
+            self._note_render_path(
+                template=False,
+                reason=f"the chat template raised on this request: {type(exc).__name__}: {exc}",
+            )
+            return None
+        self._note_render_path(template=True)
+        return text
+
+    def _render_template_text(
+        self,
+        *,
+        prompt: str,
+        messages: Optional[List[Dict[str, Any]]],
+        system_prompt: Optional[str],
+        tools: Optional[List[Dict[str, Any]]],
+        add_generation_prompt: bool,
+        continuation: bool,
+        enable_thinking: Optional[bool],
+        reasoning_effort: Optional[str],
+    ) -> str:
+        template_kwargs, effort_line = self._template_thinking_kwargs(enable_thinking, reasoning_effort)
+        template_tools: Optional[List[Dict[str, Any]]] = None
+        tool_prompt: Optional[str] = None
+        handler = getattr(self, "tool_handler", None)
+        if tools and handler is not None and getattr(handler, "supports_prompted", False):
+            source = self._chat_template_source() or ""
+            if "tools" in source or source.startswith("python:"):
+                template_tools = handler.format_tools_for_chat_template(tools) or None
+            else:
+                include_tool_list = not (
+                    isinstance(system_prompt, str) and "## Tools (session)" in system_prompt
+                )
+                tool_prompt = (
+                    str(handler.format_tools_prompt(tools, include_tool_list=include_tool_list) or "").strip()
+                    or None
+                )
+
+        conv = self._template_conversation(
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            tool_prompt=tool_prompt,
+            effort_line=effort_line,
+        )
+
+        def render(msgs: List[Dict[str, Any]], gen: bool) -> str:
+            return self._apply_chat_template_text(
+                msgs, tools=template_tools, add_generation_prompt=gen, template_kwargs=template_kwargs
+            )
+
+        sentinel_turn = {"role": "user", "content": self._TEMPLATE_SENTINEL}
+
+        if continuation:
+            head = conv[:1] if conv and conv[0].get("role") == "system" else []
+            body = conv[len(head):]
+            prefix_msgs = head + [sentinel_turn]
+            prefix = render(prefix_msgs, False)
+            full = render(prefix_msgs + body, add_generation_prompt)
+            if not full.startswith(prefix):
+                raise ValueError("the template's continuation render does not extend its own prefix")
+            return full[len(prefix):]
+
+        if any(m.get("role") == "user" for m in conv):
+            return render(conv, add_generation_prompt)
+
+        probe = render(conv + [sentinel_turn], False)
+        idx = probe.find(self._TEMPLATE_SENTINEL)
+        if idx < 0:
+            raise ValueError("the template dropped the sentinel user turn")
+        text = self._cut_before_user_header(probe[:idx], render)
+        if add_generation_prompt:
+            bare = render([sentinel_turn], False)
+            opened = render([sentinel_turn], True)
+            if not opened.startswith(bare):
+                raise ValueError("the template's generation prompt does not extend its own render")
+            text += opened[len(bare):]
+        return text
 
     def _prompt_opened_thinking(self, rendered_prompt: Any) -> bool:
         from ..architectures.response_postprocessing import prompt_opens_thinking
@@ -4424,6 +4864,20 @@ class MLXProvider(BaseProvider):
                             mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None
                         ),
                     )
+                    if not isinstance(mlx_enable_thinking, bool) and self._prompt_opened_thinking(full_prompt):
+                        # The chat template opened a thinking block, but a JSON-constrained
+                        # decode cannot think: every token after `<think>\n` would be JSON
+                        # "inside" the reasoning. Unless thinking was asked for explicitly,
+                        # render the template's own thinking-off form instead.
+                        full_prompt = self._build_prompt(
+                            processed_prompt,
+                            messages,
+                            system_prompt,
+                            tools,
+                            prefilled_modules=prompt_cache_prefilled_modules,
+                            enable_thinking=False,
+                            reasoning_effort=None,
+                        )
 
                     # Create constrained generator with JSON schema
                     self.logger.debug(

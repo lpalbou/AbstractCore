@@ -5,6 +5,23 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- MLX prompts are rendered by the model's own chat template (`tokenizer.apply_chat_template`) on every
+  MLX lane (mlx-lm, native MTP/APC, vision add-on). Earlier assistant turns keep their tool calls, tool
+  results are rendered as the template renders them (Qwen3.x: `<tool_response>` inside a user turn),
+  `tools=` reaches the template's own tool block, and the generation prompt opens `<think>` when the
+  template does. Agent loops on Qwen3.x MLX builds with thinking on used to stop at the third
+  iteration with a one-sentence announcement ("Let me verify … before writing the digest.") and no
+  tool call; they now keep calling tools and finish with an answer. A system message in the middle of
+  a conversation is sent as a `<system_instruction>` user turn, as on strict OpenAI-compatible servers.
+  Models whose tokenizer has no chat template keep the built-in renderer; the log names the renderer
+  once per model. Prompt-cache fragments rendered by a chat template carry a new serializer version
+  (`mlx-prompt-fragment/v2:chat-template:<sha>`), so KV artifacts compiled with the previous renderer
+  are rebuilt rather than reused.
+
 ## [2.16.0] - 2026-09-26
 
 Ejecting a model now frees it from the whole process for every in-process backend (MLX,
