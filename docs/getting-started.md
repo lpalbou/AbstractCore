@@ -213,6 +213,9 @@ for chunk in llm.generate("Write a short poem about distributed systems.", strea
 The last chunk of a stream carries the call's `finish_reason` and, when the provider reports it,
 `usage`. On MLX it also carries `metadata["prompt_cache"]` when the call has a `prompt_cache_key`,
 the same record a non-streamed call returns (see [Prompt Caching](prompt-caching.md)).
+For GPT-OSS models, the Harmony channels are split as the stream arrives: the `final` channel is
+the text, `analysis` is reasoning, and a reply cut off before `final` ends with empty text and
+`finish_reason: "length"` (see [Tool Calling](tool-calling.md#tool-calls-while-streaming)).
 
 Streamed usage on OpenAI-compatible servers: AbstractCore asks for it with
 `stream_options: {"include_usage": true}`. A server that rejects that field is retried without it,

@@ -533,6 +533,11 @@ addressed `to=functions.NAME` is a tool call. The framing tokens (`<|channel|>`,
 `<|end|>`, ...) never appear in the text. Ollama, LM Studio and vLLM usually split Harmony on the
 server, in which case the text and reasoning already arrive separately.
 
+Streamed or not, a GPT-OSS reply that stops before its `final` message (usually because it hit
+`max_output_tokens`) comes back with empty text, the thinking in `metadata["reasoning"]` marked
+truncated with ` (...)`, and `finish_reason: "length"`; a tool call made after the thinking is still
+returned in `tool_calls`, and `<|return|>` / `<|call|>` never appear in the text.
+
 If the model opens a tool call and the stream ends before it closes, or the call cannot be parsed,
 the text is not shown as the answer. The final chunk reports it instead, with a warning:
 

@@ -62,8 +62,8 @@ what the process holds on the accelerator.
   `metadata["reasoning"]` marked truncated (` (...)`), and `finish_reason` is `"length"` when the
   output limit was the cause; streamed and non-streamed calls now agree. On MLX, a Harmony tool
   call in a non-streamed reply is no longer lost when the reply starts with `analysis`.
-- A non-streamed GPT-OSS answer no longer ends with `<|return|>` or `<|call|>` when a backend
-  emits those tokens.
+- `<|return|>` and `<|call|>` never appear in a GPT-OSS answer, streamed or not; a non-streamed
+  answer used to end with them when a backend emitted those tokens.
 - Two scheduled requests running at the same time on one MLX native-runtime provider can no longer
   report each other's cached and fed token counts.
 - The last chunk of a stream is the one carrying the provider's `finish_reason` and `usage`. Text
