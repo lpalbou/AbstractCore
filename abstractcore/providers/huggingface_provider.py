@@ -8715,9 +8715,14 @@ class HuggingFaceProvider(BaseProvider):
                 response = self._single_generate_gguf(generation_kwargs)
                 if host_cancel is not None:
                     host_cancel.raise_if_fired()  # a cut-short answer is never returned
-                response = self._apply_prompt_opened_thinking(
-                    response, self._gguf_fallback_prompt_text(generation_kwargs.get("messages"))[0]
-                )
+                fallback_prompt, render_error = self._gguf_fallback_prompt_text(generation_kwargs.get("messages"))
+                response = self._apply_prompt_opened_thinking(response, fallback_prompt)
+                if render_error is not None and isinstance(response, GenerateResponse):
+                    # Same report as the stream: whether the prompt opened a thinking
+                    # block is unknown, so the reply was split without that fact.
+                    response.metadata = dict(response.metadata or {})
+                    response.metadata["thinking_stream"] = "held_until_close"
+                    response.metadata["thinking_stream_reason"] = render_error
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 

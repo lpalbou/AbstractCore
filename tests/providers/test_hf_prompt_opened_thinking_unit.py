@@ -266,3 +266,55 @@ def test_gguf_control_plane_non_streamed_equals_the_streamed_split(monkeypatch, 
     whole = p._gguf_control_plane_generate(stream=False, **_CP_ARGS)
     assert (whole.content, (whole.metadata or {}).get("reasoning")) == streamed
     assert "</think>" not in whole.content
+
+
+def _fallback_provider(monkeypatch, template: str, reply: str) -> HuggingFaceProvider:
+    p = _provider(monkeypatch)
+
+    class FakeLlama:
+        metadata = {"tokenizer.chat_template": template}
+        chat_format = "chat_template.default"
+
+        def token_eos(self):
+            return 2
+
+        def create_chat_completion(self, **kw):
+            assert not kw["stream"]
+            return {"choices": [{"message": {"content": reply}, "finish_reason": "length"}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8}}
+
+    p.llm = FakeLlama()
+    for name, fn in {
+        "_gguf_build_chat_messages": lambda **k: [{"role": "user", "content": "q"}],
+        "_prepare_generation_kwargs": lambda **k: {},
+        "_get_provider_max_tokens_param": lambda k: 16,
+        "_gguf_prompt_cache_supports_local_control_plane": lambda: False,
+        "_thinking_disable_prefill": lambda x: "",
+        "_gguf_normalize_tool_call_arguments_for_template": lambda m: m,
+        "_gguf_template_bos_text": lambda: "",
+        "_gguf_model_token_text": lambda t: "",
+    }.items():
+        monkeypatch.setattr(p, name, fn, raising=False)
+    p.temperature = 0.0
+    p.tool_handler = None
+    return p
+
+
+@pytest.mark.parametrize("raw, content, reasoning", [
+    (TRUNCATED, "", TRUNCATED + " (...)"),
+    (LATER_BLOCK, "A1  B2", "r1\n\nr2"),
+])
+def test_non_streamed_gguf_fallback_reply_is_split_with_the_prompt_fact(monkeypatch, raw, content, reasoning):
+    p = _fallback_provider(monkeypatch, TEMPLATE.replace("{{ opener }}", "<think>\n"), raw)
+    r = p._generate_gguf("q", None, None, None, None, False, None)
+    assert (r.content, r.metadata["reasoning"]) == (content, reasoning)
+    assert "</think>" not in r.content
+    assert "thinking_stream" not in r.metadata
+
+
+def test_non_streamed_gguf_fallback_reports_an_unrenderable_template(monkeypatch):
+    p = _fallback_provider(monkeypatch, "{{ raise_exception('boom') }}", "an answer")
+    r = p._generate_gguf("q", None, None, None, None, False, None)
+    assert r.content == "an answer"
+    assert r.metadata["thinking_stream"] == "held_until_close"
+    assert "boom" in r.metadata["thinking_stream_reason"]
