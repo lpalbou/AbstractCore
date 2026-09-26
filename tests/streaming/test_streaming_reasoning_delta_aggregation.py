@@ -137,3 +137,29 @@ def test_streaming_without_reasoning_emits_no_trailing_reasoning_chunk() -> None
         if isinstance(c.metadata, dict):
             assert "reasoning" not in c.metadata
             assert "reasoning_delta" not in c.metadata
+
+
+def test_last_chunk_keeps_the_prompt_renderer_when_reasoning_is_present() -> None:
+    """The trailing aggregate chunk is rebuilt from scratch when reasoning is present;
+    the provider's per-request `prompt_renderer` record must survive onto it."""
+    provider = _make_provider(
+        [
+            GenerateResponse(content="", model="unit-test", metadata={"reasoning_delta": "Thinking."}),
+            GenerateResponse(
+                content="Final",
+                model="unit-test",
+                finish_reason="stop",
+                metadata={
+                    "prompt_renderer": "builtin_fallback",
+                    "prompt_renderer_reason": "the chat template raised on this request",
+                },
+            ),
+        ]
+    )
+
+    chunks = list(provider.generate(prompt="hi", stream=True))
+
+    last = chunks[-1].metadata or {}
+    assert last.get("reasoning") == "Thinking."
+    assert last.get("prompt_renderer") == "builtin_fallback"
+    assert last.get("prompt_renderer_reason") == "the chat template raised on this request"
