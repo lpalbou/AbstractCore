@@ -317,6 +317,20 @@ def _device_snapshot_backend() -> Dict[str, Any]:
     return out
 
 
+def _torch_cuda_reserved_bytes() -> Optional[int]:
+    """torch's CUDA reserved bytes over every visible GPU, or None when torch
+    is not imported, has no CUDA, or has not initialized it (reading never
+    initializes CUDA)."""
+    torch = sys.modules.get("torch")
+    cuda = getattr(torch, "cuda", None) if torch is not None else None
+    try:
+        if cuda is None or not cuda.is_available() or not cuda.is_initialized():
+            return None
+        return int(sum(int(cuda.memory_reserved(i)) for i in range(int(cuda.device_count()))))
+    except Exception:
+        return None
+
+
 def _device_snapshot() -> Dict[str, Any]:
     """The backend figure (`_device_snapshot_backend`) plus what EVERY
     in-process allocator pins, so the tray/console can show ONE truthful
@@ -340,17 +354,28 @@ def _device_snapshot() -> Dict[str, Any]:
       by 1 GiB more; a Qwen3.5-4B Q4_K_M GGUF on Metal (n_ctx 8192) by
       3.59 GB, all of it returned on close. Known only while torch is
       imported (reading it never imports torch).
-    - `process_held_bytes`: the one number to show as "this process pins
-      on the accelerator": the Metal device counter when known (a
-      measurement), else the sum of the per-backend figures -- MLX held
-      (measured: active + cache) + `llama_cpp_bytes` (llama.cpp weights plus
-      an f16 KV ESTIMATE from the GGUF geometry, which overstates hybrid
-      models: 3.80 GB estimated vs 3.59 GB measured in the probe above).
-      Without torch nothing else can allocate on the device, so those are
-      the only addends. CPU-side heap (tokenizers, Python objects) is never
-      in it -- `process.rss_bytes` / the footprint cover that. The
-      per-backend figures are ATTRIBUTIONS of this total, never added on
-      top of it.
+    - `torch_cuda_reserved_bytes`: on CUDA, what torch's caching allocator
+      has reserved on every visible GPU for this process
+      (`torch.cuda.memory_reserved`), freed-but-cached blocks included. Read
+      only when torch is imported and CUDA is already initialized.
+    - `process_held_bytes`: the accelerator memory this process holds, as far
+      as the figures AbstractCore can read go. `process_held_basis` says
+      which:
+        * `metal_device_counter`: the Metal device counter above (a
+          measurement covering MLX, torch and llama.cpp);
+        * `cuda_device_counter[+llama_cpp_bytes(estimated)]`: torch's CUDA
+          reserved bytes, plus the llama.cpp figure when a GGUF engine is
+          live (llama.cpp allocates on CUDA outside torch's allocator);
+        * `sum:<fields>`: MLX held (measured: active + cache) +
+          `llama_cpp_bytes`, marked `(estimated)` when non-zero (weights plus
+          an f16 KV ESTIMATE from the GGUF geometry, which overstates hybrid
+          models: 3.80 GB estimated vs 3.59 GB measured above).
+      Other native libraries that allocate GPU memory on their own
+      (whisper.cpp, CoreML, onnxruntime...) are counted only by a device
+      counter (Metal); in a `sum:` or CUDA figure they are NOT included.
+      CPU-side heap (tokenizers, Python objects) is never in it --
+      `process.rss_bytes` / the footprint cover that. The per-backend
+      figures are ATTRIBUTIONS of this total, never added on top of it.
 
     Backends are read from `sys.modules` only: a report must never import
     torch (hundreds of MB, and it breaks the GGUF Metal import-order guard).
@@ -362,6 +387,7 @@ def _device_snapshot() -> Dict[str, Any]:
     out.setdefault("metal_process_allocated_bytes", None)
     out.setdefault("process_held_bytes", None)
     out.setdefault("process_held_basis", None)
+    out.setdefault("torch_cuda_reserved_bytes", None)
     try:
         from ..providers.hf_residency import hf_memory_report
 
@@ -379,13 +405,21 @@ def _device_snapshot() -> Dict[str, Any]:
         out["process_held_bytes"] = int(driver)
         out["process_held_basis"] = "metal_device_counter"
         return out
+    llama = out.get("llama_cpp_bytes")
+    llama_i = int(llama) if isinstance(llama, int) and not isinstance(llama, bool) else 0
+    cuda_reserved = _torch_cuda_reserved_bytes()
+    if cuda_reserved is not None:
+        out["torch_cuda_reserved_bytes"] = cuda_reserved
+        out["process_held_bytes"] = int(cuda_reserved) + llama_i
+        out["process_held_basis"] = "cuda_device_counter" + ("+llama_cpp_bytes(estimated)" if llama_i else "")
+        return out
     total = 0
     parts = []
     for key in ("mlx_held_bytes", "llama_cpp_bytes"):
         value = out.get(key)
         if isinstance(value, int) and not isinstance(value, bool):
             total += value
-            parts.append(key)
+            parts.append(f"{key}(estimated)" if key == "llama_cpp_bytes" and value else key)
     if not parts and isinstance(out.get("allocated_bytes"), int):
         total, parts = int(out["allocated_bytes"]), ["allocated_bytes"]
     out["process_held_bytes"] = int(total) if parts else None

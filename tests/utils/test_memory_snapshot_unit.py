@@ -38,6 +38,7 @@ def test_memory_snapshot_shape() -> None:
         "metal_process_allocated_bytes",
         "process_held_bytes",
         "process_held_basis",
+        "torch_cuda_reserved_bytes",
     }
     # `held` is the process-level MLX residency block (None without MLX).
     held = snap["held"]
@@ -108,6 +109,7 @@ def test_memory_snapshot_never_raises_without_device_backends(monkeypatch) -> No
         "metal_process_allocated_bytes": None,
         "process_held_bytes": 0,
         "process_held_basis": "sum:llama_cpp_bytes",
+        "torch_cuda_reserved_bytes": None,
     }
     assert snap["held"] is None
 
@@ -302,7 +304,40 @@ def test_process_held_bytes_sums_every_in_process_allocator(monkeypatch) -> None
     dev = memory_mod._device_snapshot()
     assert dev["metal_process_allocated_bytes"] is None
     assert dev["process_held_bytes"] == 10 + 50, "MLX held + llama.cpp when torch is absent"
-    assert dev["process_held_basis"] == "sum:mlx_held_bytes+llama_cpp_bytes"
+    assert dev["process_held_basis"] == "sum:mlx_held_bytes+llama_cpp_bytes(estimated)"
+
+
+def test_process_held_bytes_on_cuda_uses_torch_reserved_plus_llama_cpp(monkeypatch) -> None:
+    """Review S5: on the GPU profile the Metal branch never fires; the figure
+    fell to MLX + llama.cpp = 0 while torch held GBs on the GPU (MUTANT: drop
+    the CUDA branch -> RED)."""
+    import sys as _sys
+    import types
+    from types import SimpleNamespace
+
+    from abstractcore.providers import hf_residency
+
+    torch = types.ModuleType("torch")
+    torch.cuda = SimpleNamespace(is_available=lambda: True, is_initialized=lambda: True, device_count=lambda: 2,
+                                 memory_reserved=lambda i: [3_000, 1_000][i])
+    torch.backends = SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False))
+    monkeypatch.setitem(_sys.modules, "torch", torch)
+    monkeypatch.setattr(memory_mod, "_device_snapshot_backend", lambda: {
+        "backend": "cuda", "allocated_bytes": 2_000, "total_bytes": None, "free_bytes": None,
+        "host_in_use_bytes": None, "wired_limit_bytes": None})
+    report = {"backend": "huggingface", "torch_mps_allocated_bytes": None, "torch_mps_driver_bytes": None,
+              "llama_cpp_bytes": 0, "held_bytes": 0, "models": [], "holders": 0, "resident_models": 0}
+    monkeypatch.setattr(hf_residency, "hf_memory_report", lambda: dict(report))
+    dev = memory_mod._device_snapshot()
+    assert dev["torch_cuda_reserved_bytes"] == 4_000
+    assert dev["process_held_bytes"] == 4_000 and dev["process_held_basis"] == "cuda_device_counter"
+    report["llama_cpp_bytes"] = 500
+    dev = memory_mod._device_snapshot()
+    assert dev["process_held_bytes"] == 4_500
+    assert dev["process_held_basis"] == "cuda_device_counter+llama_cpp_bytes(estimated)"
+    # CUDA not initialized yet: never initialize it just to report
+    torch.cuda.is_initialized = lambda: False
+    assert memory_mod._device_snapshot()["torch_cuda_reserved_bytes"] is None
 
 
 def test_resident_block_folds_every_backend_and_sums_bytes(monkeypatch) -> None:
