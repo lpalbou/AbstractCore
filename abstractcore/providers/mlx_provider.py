@@ -3979,8 +3979,8 @@ class MLXProvider(BaseProvider):
             # sibling still uses the weights. `clear_cache` only returns
             # buffers nobody references any more; it cannot touch a live
             # tensor, so it is harmless for the siblings -- and skipping it
-            # is a measured leak: on 2026-09-25 (hermetic replay of the
-            # operator's day) the sibling that made `shared_still_used` True
+            # is a measured leak: in a hermetic replay of a real gateway
+            # session, the sibling that made `shared_still_used` True
             # was itself collected by the `gc.collect()` above, its 15.5 GB
             # of weights + 2.6 GB of prefix cache went into the allocator
             # cache, and the guarded clear never ran: the process kept 21 GB
@@ -4328,7 +4328,7 @@ class MLXProvider(BaseProvider):
 
         if not self.llm or not self.tokenizer:
             # Ejected (`unload_model`) and asked again: reload on demand, LOUDLY,
-            # like LM Studio / Ollama JIT loading. Measured before 2026-09-23: a
+            # like LM Studio / Ollama JIT loading. Before this, a
             # gateway run after an eject "completed" with the answer
             # "Error: MLX model not loaded" and success=true. A failed reload
             # raises (never an error string dressed as an answer).
@@ -4881,8 +4881,8 @@ class MLXProvider(BaseProvider):
             if isinstance(e, GenerationCancelledError):
                 # A host cancel is never an "Error: ..." answer with
                 # finish_reason=error: the caller must see the cancel itself
-                # (mission H live proof: the runtime recorded the stopped call
-                # as COMPLETED with this error text as its content).
+                # (observed live: the runtime recorded the stopped call as
+                # COMPLETED with this error text as its content).
                 raise
             return GenerateResponse(
                 content=f"Error: {str(e)}", model=self.model, finish_reason="error"
@@ -5768,7 +5768,7 @@ class MLXProvider(BaseProvider):
         # answered "not_loaded" after its own unload while a sibling (a boot-
         # time summarizer, an override client, an old runtime) still held the
         # model is how a gateway came to say "No models loaded" over 92 GB of
-        # live MLX buffers (2026-09-25). So: `loaded`/`resident` mean "these
+        # live MLX buffers. So: `loaded`/`resident` mean "these
         # weights are in this process's memory"; `provider_state` says whether
         # THIS instance holds them or only others do.
         try:
@@ -5842,7 +5842,7 @@ class MLXProvider(BaseProvider):
 
         (`progress`/`cancel_event`: see `_stream_generate`. `_generate_core`
         passed `progress=` here before this signature accepted it, so every
-        `stream=True` call on this lane raised TypeError — fixed 2026-09-23.)
+        `stream=True` call on this lane raised TypeError; now fixed.)
         """
         collected_content = ""
         terminal = None

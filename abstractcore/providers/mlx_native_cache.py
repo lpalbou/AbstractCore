@@ -128,7 +128,7 @@ class NativeCacheStore:
             overrides = {}
             if self.memory_max_gb is not None:
                 overrides["memory_max_gb"] = self.memory_max_gb
-            # Mission A3 (2026-09-22): this lane used to inherit mlx-vlm's
+            # This lane used to inherit mlx-vlm's
             # 2048 x 2 while the session lane ran 256 x 4, so the two managers
             # spent the same budget on different things and neither kept a
             # conversation's lineage across a tool loop. One shape now, sized and

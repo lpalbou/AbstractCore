@@ -1,7 +1,7 @@
 """Process-level HuggingFace residency: what THIS process holds through the
 `huggingface` provider (transformers on torch / GGUF on llama.cpp), and who.
 
-Why this exists (mission MEM2, 2026-09-25): `mlx_residency` closed the
+Why this exists: `mlx_residency` closed the
 "No models loaded over 86 GB" lie for MLX. The HuggingFace provider had the
 SAME hole with a different mechanism: its instances do not share weights, so a
 boot-time summarizer, a per-request override client or an old runtime that
@@ -254,8 +254,8 @@ def llama_kv_alloc_bytes(metadata: Any, n_ctx: Optional[int], *, bytes_per_elem:
     the GGUF metadata (`<arch>.block_count`, `.attention.head_count_kv`,
     `.attention.key_length` / `embedding_length` / `head_count`), f16 K and V.
     This is what the process holds from the moment the engine is built --
-    `llama_state_get_size` only measures the tokens in use (measured
-    2026-09-25: 0.05 GB of state beside a 4.7 GB allocation). None when the
+    `llama_state_get_size` only measures the tokens in use (measured:
+    0.05 GB of state beside a 4.7 GB allocation). None when the
     metadata does not describe the geometry. An estimate: it is labelled so."""
     try:
         if not isinstance(metadata, dict) or not n_ctx:

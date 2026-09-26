@@ -316,7 +316,7 @@ def estimate_fit(
         # What the verdict actually compares `need_bytes` against: the ceiling
         # minus the reserve kept for the system (`Ceff`), and the overhead
         # inside `need_bytes`. A sentence that states the ceiling while the
-        # verdict used `usable_bytes` contradicts itself (mission KK).
+        # verdict used `usable_bytes` contradicts itself.
         "usable_bytes": None,
         "reserve_bytes": None,
         "overhead_bytes": None,

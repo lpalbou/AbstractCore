@@ -1,7 +1,7 @@
 """Host cancellation of an in-flight TEXT generation.
 
 A host (AbstractRuntime, for a Stop in the UI) passes ``cancel_event=`` — a
-``threading.Event`` — to ``generate()``. Until 2026-09-23 the provider
+``threading.Event`` — to ``generate()``. Originally the provider
 boundary consumed it only to make retry BACKOFF waits cancellable, so a model
 that was decoding when the run was cancelled kept decoding until it finished
 (an hour, in the incident that motivated this module: a runaway repetitive

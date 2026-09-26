@@ -4955,7 +4955,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # backoff waits cancellable (C3: a cancelled run must not park a worker for a
         # full backoff); the kwarg is consumed here and never reaches provider payloads.
         #
-        # 2026-09-23 (Stop must stop the model): the same event now also stops the
+        # Stop must stop the model: the same event also stops the
         # generation ITSELF. It is forwarded under `CANCEL_KWARG` to providers that
         # declare `supports_generation_cancel()` (MLX: stops within one token), the
         # stream loop below checks it between chunks for every provider, and an event

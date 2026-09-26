@@ -1,6 +1,6 @@
 """Process-level MLX residency: what THIS process holds in Metal memory, and who.
 
-Why this exists (live incident, 2026-09-25): a gateway showed "No models loaded"
+Why this exists (a live incident): a gateway showed "No models loaded"
 while `mx.get_active_memory()` was 92 GB. Every MLX provider INSTANCE answered
 truthfully for itself (`self.llm is None` after its own `unload_model`), but the
 weights are SHARED between instances (`_SharedMLXModel`, `NativeSession`) and
@@ -193,8 +193,7 @@ def _native_session_entries() -> Iterable[Tuple[str, str, Any]]:
     """(lane, model_path, session) for every live native session."""
     # Registries live in modules; a module that was never imported holds
     # nothing, and importing it here would pull mlx-vlm into a process that
-    # merely asked for a memory report (MEM2 discipline: reports never import
-    # a backend).
+    # merely asked for a memory report (reports never import a backend).
     try:
         ns = sys.modules.get("abstractcore.providers.mlx_native_session")
         for key, session in (list(ns._SESSIONS.items()) if ns is not None else []):

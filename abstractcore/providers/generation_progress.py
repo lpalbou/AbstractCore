@@ -52,7 +52,7 @@ interval between generation events (`min_interval_s`, default 0.5 s), so a
 host persisting them writes about two records per second of decode, for the
 WHOLE call. There is NO count-based cap of any kind. Progress events are never
 truncated: a cap of 64 per call shipped in the first version, went dark after
-~60 s of a multi-minute decode and read as a hang (operator, 2026-09-23) — the
+~60 s of a multi-minute decode and read as a hang — the
 same silent-truncation class ADR-0026 forbids. Do not reintroduce one.
 
 A provider that has no true signal must emit nothing. There is no synthetic

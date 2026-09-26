@@ -60,7 +60,7 @@ def darwin_phys_footprint_bytes(pid: Optional[int] = None) -> Optional[int]:
     `ri_phys_footprint`): the number Activity Monitor's "Memory" column and
     `footprint`/`vmmap --summary` report. It INCLUDES Metal buffers (MLX
     weights and KV caches), which RSS does NOT -- a gateway holding 88 GB of
-    MLX memory had an RSS of 6 GB (2026-09-25). None off macOS or on failure."""
+    MLX memory had an RSS of 6 GB. None off macOS or on failure."""
     try:
         import ctypes
         import os
@@ -334,7 +334,7 @@ def _torch_cuda_reserved_bytes() -> Optional[int]:
 def _device_snapshot() -> Dict[str, Any]:
     """The backend figure (`_device_snapshot_backend`) plus what EVERY
     in-process allocator pins, so the tray/console can show ONE truthful
-    process figure (mission MEM2, 2026-09-25):
+    process figure:
 
     - `torch_mps_allocated_bytes` / `torch_mps_driver_bytes`: torch's MPS
       allocator (transformers text models, embeddings, voice/vision on torch).
@@ -347,7 +347,7 @@ def _device_snapshot() -> Dict[str, Any]:
     - `metal_process_allocated_bytes`: the Metal device's allocation for THIS
       process (`torch.mps.driver_allocated_memory()` = `MTLDevice.
       currentAllocatedSize`). MLX, llama.cpp and torch all allocate from that
-      one device, so this counter is the UNION. Verified 2026-09-25 (M5 Max,
+      one device, so this counter is the UNION. Verified (M5 Max,
       torch 2.x + MLX + llama-cpp-python 0.3.35, one process): a 2 GiB MLX
       array moved it by exactly 2,147,483,648 bytes (MLX's freed-but-cached
       buffers stay inside it until `mx.clear_cache()`); a 1 GiB torch tensor
@@ -563,7 +563,13 @@ def get_memory_snapshot() -> Dict[str, Any]:
                     "torch_mps_driver_bytes": int|None,     # torch MPS driver incl. its pool (this process)
                     "llama_cpp_bytes": int|None,    # GGUF weights + KV allocation (est.) of live llama.cpp engines
                     "metal_process_allocated_bytes": int|None,  # the Metal device's allocation for this process (torch present)
-                    "process_held_basis": str|None,  # "metal_device_counter" or "sum:<the fields summed>"
+                    "process_held_basis": str|None,  # how process_held_bytes was obtained, one of:
+                                                     #   "metal_device_counter" (Metal counter, measured);
+                                                     #   "cuda_device_counter", or
+                                                     #   "cuda_device_counter+llama_cpp_bytes(estimated)" when a GGUF engine is live;
+                                                     #   "sum:<fields>" over mlx_held_bytes and llama_cpp_bytes (the latter
+                                                     #   suffixed "(estimated)" when non-zero), or "sum:allocated_bytes";
+                                                     #   None when nothing is known
                     "process_held_bytes": int|None},  # accelerator memory this process pins: the Metal device counter (measured) when torch is imported, else MLX held + llama.cpp (KV estimated)
          "resident": {"backends": {"mlx": <held block>|None,
                                    "huggingface": {"backend", "held_bytes", "models", "holders",

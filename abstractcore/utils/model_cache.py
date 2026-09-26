@@ -66,7 +66,7 @@ def hf_hub_cache_dirs() -> list[Path]:
     pointed at a non-default location. Existing directories only.
 
     THE shared answer to "where are the cached models" for every scan and
-    resolve in AbstractCore (mission EE, 2026-09-24): sites that hard-coded
+    resolve in AbstractCore: sites that hard-coded
     `~/.cache/huggingface/hub` ignored a relocated cache and reported a model
     that was right there as missing.
     """
@@ -167,7 +167,7 @@ def resolve_hf_load_snapshot(
 ) -> Optional[Path]:
     """The cached snapshot directory a LOAD of `repo_id` should read (cache-only).
 
-    Why this exists (mission U, 2026-09-24): transformers resolves a repo id
+    Why this exists: transformers resolves a repo id
     offline (`local_files_only=True`) through `refs/main` -> `snapshots/<sha>`.
     AbstractCore's own downloader pins the listed commit
     (`snapshot_download(revision=<sha>)`), and huggingface_hub writes no

@@ -4441,12 +4441,12 @@ def _best_effort_process_eject(provider: str, model: str, *, request_id: str) ->
 
 
 # ---------------------------------------------------------------------------
-# Process-wide residency (mission M2, 2026-09-25). The registry above names
+# Process-wide residency. The registry above names
 # only the runtimes THIS server built; MLX / HuggingFace / embedding weights
 # can also be held by instances it never registered (a per-request provider,
 # an embedder, a sibling that shares the MLX weights). An unload that freed
 # only the registry instance answered "unloaded" over resident weights, and
-# the listing said nothing about them. Both now go through core's
+# the listing said nothing about them. Both go through core's
 # process-level truth (`abstractcore.providers.process_residency`).
 # ---------------------------------------------------------------------------
 class _ServerRuntimeClaims:
@@ -9868,7 +9868,7 @@ async def process_chat_completion(
         if cancel_event is not None:
             gen_kwargs["_cancel_event"] = cancel_event
         elif _client_disconnect_cancels(llm):
-            # A client that goes away cancels the generation (2026-09-23): the
+            # A client that goes away cancels the generation: the
             # runtime's RemoteAbstractCoreLLMClient severs its request on a Stop,
             # and this is the only signal that reaches the server. HTTP-backed
             # providers are safe to run off the event loop (one independent

@@ -29,7 +29,7 @@ from ..config.manager import get_config_manager
 
 _config = get_config_manager()
 
-# OFFLINE-FIRST IS PER LOAD CALL, NEVER PER PROCESS (mission U, 2026-09-24).
+# OFFLINE-FIRST IS PER LOAD CALL, NEVER PER PROCESS.
 #
 # This module used to write TRANSFORMERS_OFFLINE / HF_DATASETS_OFFLINE /
 # HF_HUB_OFFLINE = 1 into `os.environ` at IMPORT whenever `offline_first` was
@@ -133,7 +133,7 @@ class _LlamaCppHostCancel:
 
     It cannot raise: llama-cpp-python 0.3 runs logits processors inside a
     ctypes sampler callback, where an exception is printed and IGNORED
-    (measured live 2026-09-23: a raising processor printed 3,817 tracebacks
+    (measured live: a raising processor printed 3,817 tracebacks
     and the non-streaming call decoded to its 4,000-token end, 50.9 s after
     the cancel). So it forces end-of-generation instead — every logit -inf
     except EOS — and records `fired`; the caller then raises the typed
@@ -373,7 +373,7 @@ def _resolve_bnb_mps_fused_kernel():
     bitsandbytes latched the failure for the life of the process, and every
     `Linear4bit` forward fell back to `dequantize -> F.linear` at about x4 the
     cost; this function then lifted that self-inflicted flag for one retry. The
-    import-time write is gone (mission U), so there is nothing of ours to lift:
+    import-time write is gone, so there is nothing of ours to lift:
     the resolution simply runs, once.
 
     `offline_first` keeps model WEIGHTS off the network; it was never meant to
@@ -939,7 +939,7 @@ class HuggingFaceProvider(BaseProvider):
         self.provider = "huggingface"
         self._user_provided_max_tokens = bool(user_provided_max_tokens)
 
-        # Process-level residency (mission MEM2, 2026-09-25): every instance is
+        # Process-level residency: every instance is
         # visible to `hf_residency`, so a listing can name holders no runtime
         # pool owns (a boot summarizer, an override client, an old runtime --
         # each a FULL COPY of the weights here) and an eject can free them all.
@@ -2993,7 +2993,7 @@ class HuggingFaceProvider(BaseProvider):
     ) -> bool:
         """Bring llama.cpp's context to `prompt_tokens`, reusing whatever is cheapest.
 
-        HOST CANCEL (2026-09-23): the prompt is evaluated in `n_batch` slices with
+        HOST CANCEL: the prompt is evaluated in `n_batch` slices with
         the host's event checked between them (`_gguf_eval_cancellable`); a cancel
         raises `GenerationCancelledError` straight through (never the cold-retry /
         engine-rebuild recovery below), leaving llama.cpp's context holding exactly
@@ -4099,7 +4099,7 @@ class HuggingFaceProvider(BaseProvider):
         Timing is the whole point and it was learned the hard way: loading a
         bnb-quantized checkpoint QUANTIZES as it loads, which calls
         `bitsandbytes...ops._get_kernel()` — then under the offline flag this
-        module wrote at import (removed, mission U) — and latches
+        module used to write at import (since removed) — and latches
         `_kernel_load_failed = True` before any post-load hook can run. A probe
         placed after `from_pretrained` therefore always finds a dead latch and
         can only report it. Measured exactly that way before this hook existed:
@@ -9648,7 +9648,7 @@ class HuggingFaceProvider(BaseProvider):
             # Reset the key's live state before re-raising; the key's next
             # call rebuilds — or restores from the still-clean pre-decode
             # snapshot, which is exactly what the snapshot is for.
-            # BaseException (2026-09-23): a host Stop mid-decode and the
+            # BaseException: a host Stop mid-decode and the
             # gateway kill switch (`EffectKilled`, a BaseException injected
             # between steps) mutate the cache exactly the same way.
             state.cache = None

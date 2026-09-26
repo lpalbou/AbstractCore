@@ -1,6 +1,6 @@
-"""One door to every in-process model residency backend (mission M2,
-2026-09-25): MLX (`mlx_residency`), the HuggingFace provider (`hf_residency`:
-transformers on torch + GGUF on llama.cpp) and in-process embeddings
+"""One door to every in-process model residency backend: MLX
+(`mlx_residency`), the HuggingFace provider (`hf_residency`: transformers on
+torch + GGUF on llama.cpp) and in-process embeddings
 (`abstractcore.embeddings.manager`).
 
 Hosts (the AbstractCore server, the runtime facade, the gateway) use it to
@@ -114,7 +114,7 @@ def eject(backend: str, model: Optional[str], *, reason: str = "eject") -> Dict[
 
 
 # ---------------------------------------------------------------------------
-# Who still wants a model (M2 review follow-up, 2026-09-26).
+# Who still wants a model.
 #
 # An eject is process-wide: it unloads EVERY holder. Deciding "nobody uses it
 # any more" from one client's pool is therefore wrong in a process that hosts

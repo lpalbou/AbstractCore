@@ -29,7 +29,7 @@ def release_native_owner(session, owner_id):
 
 
 
-# Measured on 2026-09-22 (see `NativeSession.prompt_cache`): how the snapshot
+# Measured (see `NativeSession.prompt_cache`): how the snapshot
 # budget is SPENT — on one prompt's near-identical intermediates, or on the last
 # N distinct prompts of a conversation.
 #
@@ -37,7 +37,7 @@ def release_native_owner(session, owner_id):
 # one intermediate checkpoint per `interval` tokens below the prompt's end, and
 # `APCCoordinator.checkpoint_lengths` caps that count at `checkpoint_entries` —
 # the SAME number that caps the whole snapshot store. An interval inside the
-# prompt therefore makes a single prompt fill the store (mission A3; see the
+# prompt therefore makes a single prompt fill the store (see the
 # docstring below). An interval beyond it yields exactly one snapshot per call.
 CHECKPOINT_INTERVAL_TOKENS = 1_048_576
 # Lineage depth: how many distinct prompts of a session stay restorable. A tool
@@ -51,7 +51,7 @@ CHECKPOINT_ENTRIES = 8
 # user,user) — a parse-retry nudge or drained operator guidance after a loop
 # tail or a tool-result carrier. The divergence then sits ~5 tokens before the
 # old prompt's end (`<|im_end|>\n<|im_start|>assistant\n`), past a guard of 1,
-# and the whole iteration re-prefilled (mission A3: 7,814 tokens on the 4B
+# and the whole iteration re-prefilled (measured: 7,814 tokens on a 4B
 # replay, turn 2 iteration 5). Eight tokens of margin absorb that plus a BPE
 # re-merge of the content's last token, for ~7 extra fed tokens per call.
 CHECKPOINT_GUARD_TOKENS = 8
@@ -85,8 +85,8 @@ class NativeSession:
         tokens every store was silently skipped and every turn re-prefilled
         the whole conversation. The reserve is left to mlx-vlm (machine-relative).
 
-        Checkpoint placement is SIZED HERE, by measurement (2026-09-22, 4B
-        pair, 8 conversational turns, untracked/p3/replay_4b.py). Hybrid
+        Checkpoint placement is SIZED HERE, by measurement (4B pair,
+        8 conversational turns). Hybrid
         models can only restore an EXACT stored prefix, and mlx-vlm stores
         `entries - 1` intermediate checkpoints spaced `interval` tokens below
         the prompt's end plus the end itself (`APCCoordinator.checkpoint_lengths`).
@@ -106,11 +106,10 @@ class NativeSession:
         `APC_CHECKPOINT_INTERVAL_TOKENS` / `APC_CHECKPOINT_ENTRIES` still win
         when the operator sets them.
 
-        RE-MEASURED 2026-09-22, after byte-stability landed for the react lane
+        RE-MEASURED after byte-stability landed for the react lane
         (abstractruntime `turn_grounding` stamps the grounding envelope into the
         DURABLE user turn; abstractagent stops merging loop chrome into it;
-        `untracked/missionA/replay_runtime.py`, same 4B pair, 8 turns, driven
-        through the REAL runtime stack instead of a synthetic wrapper). With a
+        same 4B pair, 8 turns, driven through the REAL runtime stack instead of a synthetic wrapper). With a
         byte-stable last user turn the restore lands on the EXACT end-of-prompt
         snapshot of the previous turn, so the INTERMEDIATE checkpoints stop
         being load-bearing:
@@ -122,7 +121,7 @@ class NativeSession:
 
         On that lane 256 x 4 now buys nothing and costs 2x the RAM.
 
-        RE-SIZED 2026-09-22 (mission A3) — 1_048_576 x 8. The 256 x 4 shape was
+        RE-SIZED to 1_048_576 x 8. The 256 x 4 shape was
         not merely wasteful: it made CONVERSATION reuse structurally impossible
         after any tool-using turn. mlx-vlm reads ONE number for two different
         jobs. `APCCoordinator.checkpoint_lengths` (apc_coordinator.py:207) caps
@@ -138,9 +137,8 @@ class NativeSession:
                                                    [27904, 28160, 28416, 28532]
           interval=2^20  entries=8  prompt=28533 -> 1 store,  capacity 8  [28532]
 
-        Consequence, measured on the operator's live stack (runs 930d405a ->
-        081d8daa -> 520d0e69, 2026-09-22 10:47-10:53) and reproduced on the 4B
-        (`untracked/missionA3/before-tools.log`): after a tool loop, the four
+        Consequence, measured on a live gateway (three consecutive runs) and
+        reproduced on the 4B: after a tool loop, the four
         resident snapshots all sit inside the loop's discarded branch (28k-token
         prompts, 256 tokens apart), and the next turn's prompt — which still
         extends the run's FIRST prompt exactly — matches none of them. Every
@@ -164,13 +162,13 @@ class NativeSession:
         holds eight END-of-prompt snapshots of the last eight calls: measured
         peak 4.90 GB on the same 2-turn x 4-iteration replay (28-30k-token
         prompts), 1.76 GB on the 8-turn chat, `memory_skips` 0 and `rejects` 0
-        throughout (`untracked/missionA3/final-*.log`). Above the budget mlx-vlm
+        throughout. Above the budget mlx-vlm
         evicts the OLDEST snapshot rather than skipping the store.
 
         Tradeoff, stated: intermediate checkpoints are gone, so a lane whose last
         user turn still changes between calls no longer lands on a 256-token grid
         — it goes cold instead of partial. React, CodeAct and MemAct all carry the
-        byte-stable invariant as of mission A3, which leaves composed entity
+        byte-stable invariant, which leaves composed entity
         visits, visual `llm_call` nodes and direct AbstractCore callers. For them
         the previous shape restored 12-246 tokens beyond the new turn at 2x the
         RAM and destroyed cross-turn reuse for everyone else; that is a bad trade
@@ -258,7 +256,7 @@ def resolve_native_drafter_path(path_or_repo: str) -> str:
     """Resolve aliases before sharing weights or deriving persistent identity.
 
     Cache first, never the network for a cached head. An explicitly named head
-    that is NOT cached (mission U, 2026-09-24):
+    that is NOT cached:
       * offline_first on (the default): refused with ModelNotFoundError naming
         the head and the download command -- loading never downloads, and a
         drafter is a model like any other;
