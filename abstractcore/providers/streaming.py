@@ -844,6 +844,240 @@ class IncrementalToolDetector:
         return None
 
 
+def _harmony_tool_call(recipient: str, raw_args: str) -> Optional[ToolCall]:
+    """A Harmony `to=<recipient>` message body as a ToolCall, or None when unparsable."""
+    name = str(recipient or "").strip()
+    if name.startswith("functions."):
+        name = name.split(".", 1)[1].strip()
+    if not name:
+        return None
+    text = str(raw_args or "").strip()
+    if not text:
+        return ToolCall(name=name, arguments={}, call_id=None)
+    loaded = loads_dict_like(text)
+    if not isinstance(loaded, dict):
+        return None
+    args: Dict[str, Any] = loaded
+    call_id: Optional[str] = None
+    # Some models emit a wrapper payload: {"name":"tool","arguments":{...},"call_id": "..."}
+    inner = loaded.get("arguments")
+    if isinstance(inner, dict):
+        args = inner
+    elif isinstance(inner, str):
+        parsed_inner = loads_dict_like(inner)
+        if isinstance(parsed_inner, dict):
+            args = parsed_inner
+    call_id_value = loaded.get("call_id") or loaded.get("id")
+    if isinstance(call_id_value, str) and call_id_value.strip():
+        call_id = call_id_value.strip()
+    return ToolCall(name=name, arguments=args, call_id=call_id)
+
+
+def _matching_brace(text: str, start: int) -> int:
+    """Index of the `}` closing the `{` at `start` (JSON strings respected), or -1."""
+    depth = 0
+    in_string = False
+    quote = ""
+    escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                in_string = False
+            continue
+        if ch in ("'", '"'):
+            in_string = True
+            quote = ch
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
+class IncrementalHarmonySplitter:
+    """Split a raw OpenAI Harmony transcript (GPT-OSS) while it streams.
+
+    Harmony output is a sequence of messages:
+    `<|channel|>analysis<|message|>...<|end|><|start|>assistant<|channel|>final<|message|>...<|return|>`
+    and tool calls `<|channel|>commentary to=functions.NAME <|constrain|>json<|message|>{...}<|call|>`.
+
+    `feed()` returns events as soon as they are decidable:
+    - ("reasoning", text): the `analysis` channel;
+    - ("content", text): the `final` channel, `commentary` without a recipient,
+      any other channel, and plain text outside any message;
+    - ("tool", ToolCall): a message with a `to=` recipient, once its JSON body closes
+      (or its `<|call|>`/`<|end|>` arrives).
+    Framing tokens are never emitted; a token cut across chunks is held back
+    until it can be decided. `finish()` settles what the stream left open and
+    returns (events, unparsed) where `unparsed` describes a tool message that
+    never became a call. The whole-text equivalent (non-streamed responses) is
+    `architectures.response_postprocessing.split_harmony_response_text`; the
+    streamed `final` text equals its result for the same transcript.
+    """
+
+    START = "<|start|>"
+    CHANNEL = "<|channel|>"
+    MESSAGE = "<|message|>"
+    TERMINATORS = ("<|end|>", "<|return|>", "<|call|>")
+    FRAMING = ("<|start|>", "<|channel|>", "<|message|>", "<|end|>", "<|return|>", "<|call|>", "<|constrain|>")
+
+    def __init__(self) -> None:
+        self.state = "outside"  # outside | header | body
+        self.buffer = ""
+        self.header = ""
+        self.channel = ""
+        self.recipient: Optional[str] = None
+
+    @property
+    def pending(self) -> bool:
+        return bool(self.buffer) or self.state != "outside"
+
+    def _partial_token_at(self, text: str) -> int:
+        """Start of a trailing fragment that may still become a framing token, or len(text)."""
+        idx = text.rfind("<")
+        if idx == -1 or len(text) - idx >= max(len(t) for t in self.FRAMING):
+            return len(text)
+        tail = text[idx:]
+        if any(token.startswith(tail) for token in self.FRAMING):
+            return idx
+        return len(text)
+
+    def _open_message(self) -> None:
+        header = self.header
+        channel = re.search(r"<\|channel\|>\s*([A-Za-z0-9_\-]+)", header)
+        self.channel = channel.group(1).lower() if channel else ""
+        recipient = re.search(r"\bto=([^\s<]+)", header)
+        self.recipient = recipient.group(1) if recipient else None
+        self.header = ""
+        self.state = "body"
+
+    def _text_kind(self) -> str:
+        return "reasoning" if self.channel == "analysis" else "content"
+
+    def feed(self, text: str) -> List[Tuple[str, Any]]:
+        self.buffer += str(text or "")
+        events: List[Tuple[str, Any]] = []
+        while True:
+            if self.state == "outside":
+                idx = self.buffer.find("<|")
+                if idx == -1:
+                    cut = self._partial_token_at(self.buffer)
+                    if cut:
+                        events.append(("content", self.buffer[:cut]))
+                    self.buffer = self.buffer[cut:]
+                    return events
+                if idx:
+                    events.append(("content", self.buffer[:idx]))
+                    self.buffer = self.buffer[idx:]
+                token = next((t for t in self.FRAMING if self.buffer.startswith(t)), None)
+                if token is None:
+                    if any(t.startswith(self.buffer) for t in self.FRAMING):
+                        return events  # a framing token still arriving
+                    # `<|` that is not framing: ordinary text.
+                    events.append(("content", self.buffer[:2]))
+                    self.buffer = self.buffer[2:]
+                    continue
+                self.buffer = self.buffer[len(token):]
+                if token == self.START:
+                    self.state, self.header = "header", ""
+                elif token == self.CHANNEL:
+                    self.state, self.header = "header", self.CHANNEL
+                # <|end|> / <|return|> / <|call|> / stray <|message|> outside a message: framing only.
+                continue
+
+            if self.state == "header":
+                idx = self.buffer.find(self.MESSAGE)
+                if idx == -1:
+                    return events
+                self.header += self.buffer[:idx]
+                self.buffer = self.buffer[idx + len(self.MESSAGE):]
+                self._open_message()
+                continue
+
+            # body
+            if self.recipient:
+                stripped = self.buffer.lstrip()
+                if stripped.startswith("{"):
+                    offset = len(self.buffer) - len(stripped)
+                    end = _matching_brace(self.buffer, offset)
+                    if end != -1:
+                        raw = self.buffer[: end + 1]
+                        self.buffer = self.buffer[end + 1:]
+                        events.extend(self._close_tool(raw))
+                        continue
+                idx = self._terminator_index(self.buffer)
+                if idx is None:
+                    return events
+                pos, token = idx
+                raw = self.buffer[:pos]
+                self.buffer = self.buffer[pos:]
+                events.extend(self._close_tool(raw))
+                continue
+
+            found = self._terminator_index(self.buffer)
+            if found is None:
+                cut = self._partial_token_at(self.buffer)
+                if cut:
+                    events.append((self._text_kind(), self.buffer[:cut]))
+                self.buffer = self.buffer[cut:]
+                return events
+            pos, token = found
+            if pos:
+                events.append((self._text_kind(), self.buffer[:pos]))
+            self.buffer = self.buffer[pos:]
+            self.state = "outside"  # the terminator itself is consumed as framing there
+
+    def _terminator_index(self, text: str) -> Optional[Tuple[int, str]]:
+        best: Optional[Tuple[int, str]] = None
+        for token in self.TERMINATORS + (self.START, self.CHANNEL):
+            pos = text.find(token)
+            if pos != -1 and (best is None or pos < best[0]):
+                best = (pos, token)
+        return best
+
+    def _close_tool(self, raw: str) -> List[Tuple[str, Any]]:
+        call = _harmony_tool_call(self.recipient or "", raw)
+        recipient = self.recipient
+        self.state, self.recipient, self.channel = "outside", None, ""
+        if call is None:
+            return [("unparsed", {"format": "harmony", "text": f"to={recipient} {raw}", "reason": "unparsable"})]
+        return [("tool", call)]
+
+    def finish(self) -> List[Tuple[str, Any]]:
+        """Settle an open message at the end of the stream (the backend may drop `<|return|>`)."""
+        events: List[Tuple[str, Any]] = []
+        if self.state == "body":
+            if self.recipient:
+                raw = self.buffer
+                call = _harmony_tool_call(self.recipient, raw) if raw.strip() else None
+                if call is not None:
+                    events.append(("tool", call))
+                else:
+                    events.append(("unparsed", {
+                        "format": "harmony", "text": f"to={self.recipient} {raw}", "reason": "unclosed",
+                    }))
+            elif self.buffer:
+                events.append((self._text_kind(), self.buffer))
+        elif self.state == "header":
+            recipient = re.search(r"\bto=([^\s<]+)", self.header + self.buffer)
+            if recipient:
+                events.append(("unparsed", {
+                    "format": "harmony", "text": self.header + self.buffer, "reason": "unclosed",
+                }))
+            # A header with no recipient carries no text: framing only.
+        elif self.buffer and not any(t.startswith(self.buffer) for t in self.FRAMING):
+            events.append(("content", self.buffer))
+        self.__init__()
+        return events
+
+
 class UnifiedStreamProcessor:
     """
     FIXED unified streaming processor with proper tag rewriting.
@@ -922,6 +1156,16 @@ class UnifiedStreamProcessor:
         self.detector = IncrementalToolDetector(
             model_name=model_name, rewrite_tags=preserve_for_rewriting
         )
+        # Harmony models (GPT-OSS) whose lane hands us the RAW transcript: split
+        # channels (analysis -> reasoning, final -> content, `to=` -> tool call)
+        # instead of treating every `<|channel|>` as the start of a tool call,
+        # which withheld the whole answer until the stream ended. Callers that
+        # asked for tag rewriting keep the markup (detector path).
+        self.harmony_splitter: Optional[IncrementalHarmonySplitter] = None
+        if not preserve_for_rewriting and self.detector.active_patterns == [
+            self.detector.patterns["harmony"]
+        ]:
+            self.harmony_splitter = IncrementalHarmonySplitter()
 
     def process_stream(
         self,
@@ -1089,6 +1333,56 @@ class UnifiedStreamProcessor:
                     or self.detector.state == ToolDetectionState.IN_TOOL_CALL
                 )
 
+            harmony = self.harmony_splitter
+
+            def _harmony_parts(events: List[Tuple[str, Any]]) -> Tuple[str, str, List[ToolCall], Optional[Dict[str, Any]]]:
+                content = "".join(v for k, v in events if k == "content")
+                reasoning = "".join(v for k, v in events if k == "reasoning")
+                tools = [v for k, v in events if k == "tool"]
+                unparsed = next((v for k, v in events if k == "unparsed"), None)
+                return content, reasoning, tools, unparsed
+
+            def _with_reasoning_delta(metadata: Optional[Dict[str, Any]], reasoning: str) -> Optional[Dict[str, Any]]:
+                if not reasoning:
+                    return metadata
+                meta = dict(metadata or {})
+                existing = meta.get("reasoning_delta")
+                meta["reasoning_delta"] = (existing if isinstance(existing, str) else "") + reasoning
+                return meta
+
+            def _harmony_chunk(chunk: GenerateResponse, terminal: bool):
+                """One provider chunk through the Harmony splitter; the terminal chunk stays last."""
+                events = harmony.feed(chunk.content) if chunk.content else []
+                if terminal and harmony.pending:
+                    events += harmony.finish()
+                content, reasoning, tools, unparsed = _harmony_parts(events)
+                incoming = chunk.tool_calls if isinstance(chunk.tool_calls, list) and chunk.tool_calls else None
+                if not terminal:
+                    meta = _unparsed_metadata(_with_reasoning_delta(chunk.metadata, reasoning), unparsed)
+                    if content or reasoning or incoming or meta:
+                        yield GenerateResponse(
+                            content=content, model=chunk.model, tool_calls=incoming,
+                            raw_response=chunk.raw_response, metadata=meta,
+                        )
+                else:
+                    if content or reasoning or incoming:
+                        yield GenerateResponse(
+                            content=content, model=chunk.model, tool_calls=incoming,
+                            metadata=_with_reasoning_delta(None, reasoning),
+                        )
+                if tools:
+                    tool_payload, name_warnings = _mapped_tool_payload(tools)
+                    yield GenerateResponse(
+                        content="", tool_calls=tool_payload, model=chunk.model,
+                        metadata=_with_warnings(None, name_warnings),
+                    )
+                if terminal:
+                    yield GenerateResponse(
+                        content="", model=chunk.model, finish_reason=chunk.finish_reason,
+                        usage=chunk.usage, raw_response=chunk.raw_response,
+                        metadata=_unparsed_metadata(chunk.metadata, unparsed),
+                    )
+
             for chunk in response_stream:
                 # The provider's TERMINAL chunk (finish_reason set) carries the
                 # accounting — usage, prompt-cache telemetry — and consumers read
@@ -1097,6 +1391,14 @@ class UnifiedStreamProcessor:
                 # the terminal chunk stays last and its finish_reason is not
                 # overwritten by a synthetic "stop".
                 terminal = chunk.finish_reason is not None
+
+                if harmony is not None:
+                    if isinstance(chunk.metadata, dict):
+                        for _k in ("media_delivered", "media_dropped", "prompt_cache"):
+                            if _k in chunk.metadata:
+                                request_metadata[_k] = chunk.metadata[_k]
+                    yield from _harmony_chunk(chunk, terminal)
+                    continue
 
                 # Preserve provider-emitted tool calls (native tools / server-side tool_calls).
                 incoming_tool_calls = (
@@ -1224,6 +1526,36 @@ class UnifiedStreamProcessor:
                     yield from owed_chunks
                     terminal_attrs.metadata = _unparsed_metadata(terminal_attrs.metadata, unparsed)
                     yield terminal_attrs
+
+            if harmony is not None and harmony.pending:
+                # No terminal chunk settled the transcript: settle it now, as
+                # the stream's last chunks (request-scoped metadata travels).
+                content, reasoning, tools, unparsed = _harmony_parts(harmony.finish())
+                if content or reasoning:
+                    yield GenerateResponse(
+                        content=content, model=self.model_name,
+                        finish_reason=None if tools else "stop",
+                        metadata=_unparsed_metadata(
+                            _with_reasoning_delta(dict(request_metadata) or None, reasoning),
+                            None if tools else unparsed,
+                        ),
+                    )
+                    if not tools:
+                        unparsed = None
+                if tools:
+                    tool_payload, name_warnings = _mapped_tool_payload(tools)
+                    yield GenerateResponse(
+                        content="", tool_calls=tool_payload, model=self.model_name,
+                        finish_reason="tool_calls",
+                        metadata=_unparsed_metadata(
+                            _with_warnings(dict(request_metadata) or None, name_warnings), unparsed
+                        ),
+                    )
+                elif unparsed:
+                    yield GenerateResponse(
+                        content="", model=self.model_name, finish_reason="stop",
+                        metadata=_unparsed_metadata(dict(request_metadata) or None, unparsed),
+                    )
 
             # Stream ended without a terminal chunk settling the detector (or
             # content arrived after it): settle it now. These chunks are the
