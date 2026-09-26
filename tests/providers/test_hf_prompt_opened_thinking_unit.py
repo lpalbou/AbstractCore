@@ -20,6 +20,22 @@ from abstractcore.architectures.response_postprocessing import THINKING_OPENED_B
 from abstractcore.core.types import GenerateResponse
 from abstractcore.providers.huggingface_provider import HuggingFaceProvider
 
+
+def _has_llama_cpp_formatter() -> bool:
+    try:
+        from llama_cpp.llama_chat_format import Jinja2ChatFormatter  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+# These cases re-render the GGUF's embedded template, which the provider does
+# with llama-cpp-python's Jinja2ChatFormatter (the CI matrix does not install it).
+needs_llama_cpp_formatter = pytest.mark.skipif(
+    not _has_llama_cpp_formatter(),
+    reason="re-renders the embedded template with llama-cpp-python's Jinja2ChatFormatter (not installed)",
+)
+
 OPENED = "<|im_start|>user\nq<|im_end|>\n<|im_start|>assistant\n<think>\n"
 PLAIN = "<|im_start|>user\nq<|im_end|>\n<|im_start|>assistant\n"
 RAW = "Counting letters.\n</think>\n\nThree."
@@ -136,7 +152,7 @@ TEMPLATE = (
 
 
 @pytest.mark.parametrize("opener, chat_format, flagged", [
-    ("<think>\n", "chat_template.default", True),
+    pytest.param("<think>\n", "chat_template.default", True, marks=needs_llama_cpp_formatter),
     ("", "chat_template.default", False),
     ("<think>\n", "chatml", False),  # built-in formats never open a thinking block
 ])
@@ -179,6 +195,7 @@ def test_gguf_fallback_stream_flags_from_the_embedded_template(monkeypatch, open
 # --- review 23 C2: a failed re-render is loud, never a silent hold -----------------
 
 
+@needs_llama_cpp_formatter
 def test_gguf_fallback_render_failure_warns_once_and_reports_the_hold(monkeypatch, caplog):
     p = _provider(monkeypatch)
 
@@ -300,6 +317,7 @@ def _fallback_provider(monkeypatch, template: str, reply: str) -> HuggingFacePro
     return p
 
 
+@needs_llama_cpp_formatter
 @pytest.mark.parametrize("raw, content, reasoning", [
     (TRUNCATED, "", TRUNCATED + " (...)"),
     (LATER_BLOCK, "A1  B2", "r1\n\nr2"),
@@ -312,6 +330,7 @@ def test_non_streamed_gguf_fallback_reply_is_split_with_the_prompt_fact(monkeypa
     assert "thinking_stream" not in r.metadata
 
 
+@needs_llama_cpp_formatter
 def test_non_streamed_gguf_fallback_reports_an_unrenderable_template(monkeypatch):
     p = _fallback_provider(monkeypatch, "{{ raise_exception('boom') }}", "an answer")
     r = p._generate_gguf("q", None, None, None, None, False, None)

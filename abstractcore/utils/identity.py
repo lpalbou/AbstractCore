@@ -23,7 +23,8 @@ import json
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from importlib import metadata, resources
+from importlib import metadata
+from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
 _ASSET = "abstractframework_identity.json"
@@ -59,7 +60,9 @@ class AppIdentity:
 
 @lru_cache(maxsize=1)
 def _descriptor() -> Dict[str, object]:
-    text = resources.files("abstractcore.assets").joinpath(_ASSET).read_text(encoding="utf-8")
+    # A path next to the package, like the other asset readers: on Python 3.9
+    # importlib.resources.files() fails on abstractcore.assets (no __init__.py).
+    text = (Path(__file__).resolve().parents[1] / "assets" / _ASSET).read_text(encoding="utf-8")
     return json.loads(text)
 
 

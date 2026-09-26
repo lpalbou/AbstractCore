@@ -102,9 +102,10 @@ VENDORED_SHA256 = "2ee5dba4cd15b0f90fe4d71be25b7cbf333496e2838b1520964a649f5e415
 def test_vendored_copy_is_the_reviewed_descriptor():
     """The vendored copy is pinned by content: a change to identity facts must be deliberate (update the pin)."""
     import hashlib
-    from importlib import resources
 
-    data = resources.files("abstractcore.assets").joinpath("abstractframework_identity.json").read_bytes()
+    import abstractcore
+
+    data = (Path(abstractcore.__file__).resolve().parent / "assets" / "abstractframework_identity.json").read_bytes()
     assert hashlib.sha256(data).hexdigest() == VENDORED_SHA256
 
 
