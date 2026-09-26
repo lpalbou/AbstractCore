@@ -4,7 +4,7 @@ Shared PDF routing for byte-oriented callers such as web tools.
 This module keeps local PDF extraction ownership inside the media layer while
 allowing explicitly-authorized native LLM augmentation for small PDFs.
 
-PRIVACY (mission EE, 2026-09-24): "explicitly authorized" means the operator
+PRIVACY: "explicitly authorized" means the operator
 setting `offline.allow_remote_pdf_extraction` (`abstractcore
 --allow-remote-pdf-extraction`), and nothing else. Before, the mere presence of
 OPENAI_API_KEY uploaded every fetched PDF to OpenAI on the default `auto` route.
