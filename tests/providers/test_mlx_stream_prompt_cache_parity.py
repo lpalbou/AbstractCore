@@ -198,3 +198,19 @@ def test_tools_wrapper_keeps_the_terminal_chunk_last():
     assert chunks[-1].finish_reason == "stop"
     assert chunks[-1].metadata["prompt_cache"] == KEY_TELEMETRY
     assert "".join(c.content for c in chunks) == "one two"
+
+
+def test_tool_execution_text_comes_before_the_terminal_chunk():
+    """Provider-side tool execution appends result text AFTER the model's stream;
+    the terminal (accounting) chunk must still be the last one, and the only one
+    with a finish_reason."""
+    p = _mlx_lm_provider(["call", " it"])
+    p.tool_handler = SimpleNamespace(supports_prompted=True)
+    p._handle_prompted_tool_execution = lambda response, tools, **kw: GenerateResponse(
+        content=response.content + "\n[tool result]", model=p.model, finish_reason="stop")
+    chunks = list(p._stream_generate_with_tools("q", 16, 0.0, 1.0, None, [{"name": "t"}],
+                                                prompt_cache_telemetry=dict(KEY_TELEMETRY)))
+    assert "".join(c.content for c in chunks) == "call it\n[tool result]"
+    assert [c.finish_reason for c in chunks].count("stop") == 1
+    assert chunks[-1].finish_reason == "stop"
+    assert chunks[-1].metadata["prompt_cache"] == KEY_TELEMETRY
