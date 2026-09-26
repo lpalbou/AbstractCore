@@ -2180,11 +2180,23 @@ class MLXProvider(BaseProvider):
 
         return "".join(parts)
 
-    def _postprocess_generated_text(self, text: str) -> tuple[str, Optional[str]]:
+    def _prompt_opened_thinking(self, rendered_prompt: Any) -> bool:
+        from ..architectures.response_postprocessing import prompt_opens_thinking
+
+        return prompt_opens_thinking(
+            rendered_prompt,
+            architecture_format=getattr(self, "architecture_config", None),
+            model_capabilities=getattr(self, "model_capabilities", None),
+        )
+
+    def _postprocess_generated_text(
+        self, text: str, *, thinking_opened_by_prompt: bool = False
+    ) -> tuple[str, Optional[str]]:
         cleaned, reasoning = normalize_assistant_text(
             str(text or ""),
             architecture_format=getattr(self, "architecture_config", None),
             model_capabilities=getattr(self, "model_capabilities", None),
+            thinking_opened_by_prompt=thinking_opened_by_prompt,
         )
         msg_fmt = (
             str((getattr(self, "architecture_config", {}) or {}).get("message_format") or "")
@@ -4799,16 +4811,9 @@ class MLXProvider(BaseProvider):
                 # then writes reasoning first and only the CLOSING tag. Say so
                 # on a leading empty chunk, so the stream shows that reasoning
                 # as it is generated instead of holding it until `</think>`.
-                from ..architectures.response_postprocessing import (
-                    THINKING_OPENED_BY_PROMPT,
-                    prompt_opens_thinking,
-                )
+                from ..architectures.response_postprocessing import THINKING_OPENED_BY_PROMPT
 
-                _opened = prompt_opens_thinking(
-                    full_prompt,
-                    architecture_format=getattr(self, "architecture_config", None),
-                    model_capabilities=getattr(self, "model_capabilities", None),
-                )
+                _opened = self._prompt_opened_thinking(full_prompt)
 
                 # The streamed generator is consumed AFTER this function returns,
                 # so the residual has to stay installed until it is exhausted --
@@ -5273,7 +5278,9 @@ class MLXProvider(BaseProvider):
         gen_time = round((time.time() - start_time) * 1000, 1)
 
         raw_text = response_text.strip()
-        generated, reasoning = self._postprocess_generated_text(raw_text)
+        generated, reasoning = self._postprocess_generated_text(
+            raw_text, thinking_opened_by_prompt=self._prompt_opened_thinking(usage_prompt)
+        )
         metadata = {"reasoning": reasoning} if reasoning else None
 
         native_result = getattr(self, "_mtp_last_result", None) if getattr(self, "_mtp_processor", None) is not None else None
@@ -5696,7 +5703,9 @@ class MLXProvider(BaseProvider):
                 # mlx-lm / in-process mlx-vlm: the source is exhausted (its own
                 # `finally` has recorded the APC counters), so the reply is final.
                 raw_text = "".join(emitted_parts).strip()
-                _, reasoning = self._postprocess_generated_text(raw_text)
+                _, reasoning = self._postprocess_generated_text(
+                    raw_text, thinking_opened_by_prompt=self._prompt_opened_thinking(usage_prompt)
+                )
                 native_result = (
                     getattr(self, "_mtp_last_result", None)
                     if getattr(self, "_mtp_processor", None) is not None

@@ -120,7 +120,11 @@ def test_gguf_control_plane_stream_flags_and_non_stream_never_carries_the_flag(m
     args = {k: v for k, v in _CP_ARGS.items()}
     whole = p._gguf_control_plane_generate(stream=False, **args)
     assert THINKING_OPENED_BY_PROMPT not in (whole.metadata or {})
-    assert whole.content == streamed_text
+    if flagged:
+        # split with the prompt fact, as the stream is (see the C4 tests below)
+        assert (whole.content, (whole.metadata or {}).get("reasoning")) == ("Three.", "Counting letters.")
+    else:
+        assert whole.content == streamed_text
 
 
 # --- GGUF fallback lane (create_chat_completion) ----------------------------------
@@ -170,3 +174,95 @@ def test_gguf_fallback_stream_flags_from_the_embedded_template(monkeypatch, open
     chunks = list(p._generate_gguf("q", None, None, None, None, True, None))
     assert _flagged(chunks)[0] is flagged and sum(_flagged(chunks)) == (1 if flagged else 0)
     assert "".join(c.content or "" for c in chunks) == RAW
+
+
+# --- review 23 C2: a failed re-render is loud, never a silent hold -----------------
+
+
+def test_gguf_fallback_render_failure_warns_once_and_reports_the_hold(monkeypatch, caplog):
+    p = _provider(monkeypatch)
+
+    class FakeLlama:
+        metadata = {"tokenizer.chat_template": "{{ raise_exception('boom') }}"}
+        chat_format = "chat_template.default"
+
+        def token_eos(self):
+            return 2
+
+        def create_chat_completion(self, **kw):
+            yield {"choices": [{"delta": {"content": RAW}, "finish_reason": None}]}
+            yield {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+
+    p.llm = FakeLlama()
+    for name, fn in {
+        "_gguf_build_chat_messages": lambda **k: [{"role": "user", "content": "q"}],
+        "_prepare_generation_kwargs": lambda **k: {},
+        "_get_provider_max_tokens_param": lambda k: 16,
+        "_gguf_prompt_cache_supports_local_control_plane": lambda: False,
+        "_thinking_disable_prefill": lambda x: "",
+        "_gguf_normalize_tool_call_arguments_for_template": lambda m: m,
+        "_gguf_template_bos_text": lambda: "",
+        "_gguf_model_token_text": lambda t: "",
+    }.items():
+        monkeypatch.setattr(p, name, fn, raising=False)
+    p.temperature = 0.0
+    with caplog.at_level(logging.WARNING):
+        first = list(p._generate_gguf("q", None, None, None, None, True, None))
+        second = list(p._generate_gguf("q", None, None, None, None, True, None))
+    for chunks in (first, second):
+        assert chunks[0].metadata["thinking_stream"] == "held_until_close"
+        assert "boom" in chunks[0].metadata["thinking_stream_reason"]
+        assert not any(_flagged(chunks))
+    warnings = [r for r in caplog.records if "could not be re-rendered" in r.getMessage()]
+    assert len(warnings) == 1 and warnings[0].levelno == logging.WARNING
+
+
+# --- review 23 C4: the non-streamed lanes know the prompt opened thinking ----------
+
+TRUNCATED = "counting the letters one by one, s t r"
+LATER_BLOCK = "r1</think>\n\nA1 <think>r2</think> B2"
+
+
+@pytest.mark.parametrize("raw, content, reasoning", [
+    (TRUNCATED, "", TRUNCATED + " (...)"),
+    (LATER_BLOCK, "A1  B2", "r1\n\nr2"),
+])
+def test_non_streamed_transformers_reply_is_split_with_the_prompt_fact(monkeypatch, raw, content, reasoning):
+    p = _provider(monkeypatch)
+    p.pipeline = object()
+    for name, fn in {
+        "_build_input_text_transformers": lambda *a, **k: OPENED,
+        "_prepare_generation_kwargs": lambda **k: {},
+        "_get_provider_max_tokens_param": lambda k: 16,
+        "_single_generate_transformers": lambda *a, **k: GenerateResponse(content=raw, model=p.model, finish_reason="length"),
+        "_transformers_prompt_cache_supported": lambda: False,
+    }.items():
+        monkeypatch.setattr(p, name, fn, raising=False)
+    p.temperature, p.top_p, p.structured_output_method = 0.0, 1.0, "prompted"
+    r = p._generate_transformers("q", stream=False)
+    assert (r.content, r.metadata["reasoning"]) == (content, reasoning)
+    assert "</think>" not in r.content
+
+
+def _stream_split(chunks: List[GenerateResponse]):
+    from abstractcore.architectures.response_postprocessing import IncrementalThinkingTagStripper
+
+    s = IncrementalThinkingTagStripper(start_tag="<think>", end_tag="</think>")
+    if chunks and _flagged(chunks)[0]:
+        s.open_thinking()
+    visible = "".join(s.process(c.content or "") for c in chunks)
+    tail, reasoning = s.finalize()
+    return visible + tail, reasoning
+
+
+@pytest.mark.parametrize("raw", [TRUNCATED, LATER_BLOCK])
+def test_gguf_control_plane_non_streamed_equals_the_streamed_split(monkeypatch, raw):
+    import sys
+
+    monkeypatch.setattr(sys.modules[__name__], "RAW", raw)
+    p = _control_plane(monkeypatch, OPENED)
+    streamed = _stream_split(list(p._gguf_control_plane_stream_generate(**_CP_ARGS)))
+    p = _control_plane(monkeypatch, OPENED)
+    whole = p._gguf_control_plane_generate(stream=False, **_CP_ARGS)
+    assert (whole.content, (whole.metadata or {}).get("reasoning")) == streamed
+    assert "</think>" not in whole.content

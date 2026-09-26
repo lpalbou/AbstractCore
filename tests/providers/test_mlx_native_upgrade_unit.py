@@ -119,7 +119,7 @@ def test_exact_27b_usage_and_execution_metadata_replace_estimates():
     value.llm = object()
     value.tokenizer = object()
     value.generate_fn = lambda *a, **k: "answer"
-    value._postprocess_generated_text = lambda text: (text, None)
+    value._postprocess_generated_text = lambda text, **_: (text, None)
     value._calculate_usage = lambda *a: {"input_tokens": 999, "output_tokens": 999}
     value._count_tokens = lambda text: 999
     value._mtp_last_result = NativeResult(prompt_tokens=17, generation_tokens=3,

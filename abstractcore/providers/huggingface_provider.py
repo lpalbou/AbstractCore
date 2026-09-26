@@ -22,7 +22,7 @@ import warnings
 from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Sequence, Union, Iterator, Type, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Sequence, Union, Iterator, Type, Tuple, TYPE_CHECKING
 
 # Import config manager to respect offline-first settings
 from ..config.manager import get_config_manager
@@ -7742,6 +7742,7 @@ class HuggingFaceProvider(BaseProvider):
             else:
                 response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, seed_value,
                                                               cancel_event=cancel_event)
+                response = self._apply_prompt_opened_thinking(response, input_text)
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 
@@ -8706,14 +8707,17 @@ class HuggingFaceProvider(BaseProvider):
                 )
 
             if stream:
-                return self._with_thinking_opened(
-                    self._gguf_fallback_prompt_text(generation_kwargs.get("messages")),
+                return self._gguf_fallback_stream(
+                    generation_kwargs.get("messages"),
                     self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools, kwargs.get('tool_call_tags')),
                 )
             else:
                 response = self._single_generate_gguf(generation_kwargs)
                 if host_cancel is not None:
                     host_cancel.raise_if_fired()  # a cut-short answer is never returned
+                response = self._apply_prompt_opened_thinking(
+                    response, self._gguf_fallback_prompt_text(generation_kwargs.get("messages"))[0]
+                )
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 
@@ -8843,24 +8847,76 @@ class HuggingFaceProvider(BaseProvider):
             yield opened
         yield from stream
 
-    def _gguf_fallback_prompt_text(self, messages: Any) -> Optional[str]:
-        """The prompt `create_chat_completion` renders for `messages`, when knowable.
+    def _gguf_fallback_prompt_text(self, messages: Any) -> Tuple[Optional[str], Optional[str]]:
+        """(prompt, error): the prompt `create_chat_completion` renders for `messages`.
 
         The fallback lane lets llama-cpp-python render the model's EMBEDDED
         template (`chat_format` "chat_template.default"); the same template
         through the same Jinja2ChatFormatter gives the same bytes. Built-in
-        chat formats (chatml, llama-2, ...) never open a thinking block, so
-        None there: only the prompt-opened-thinking hint depends on this."""
+        chat formats (chatml, llama-2, ...) never open a thinking block:
+        (None, None). When the re-render FAILS, `error` says why: the caller
+        cannot know whether the prompt opened a thinking block, so a thinking
+        model's reasoning is held until its closing tag -- which is warned
+        (once per model) and reported, never silent."""
         chat_format = str(getattr(getattr(self, "llm", None), "chat_format", "") or "")
         if not chat_format.startswith("chat_template") or not isinstance(messages, list):
-            return None
+            return None, None
         try:
             return self._gguf_render_llama_cpp_chat_template_prompt(
                 messages=messages, add_generation_prompt=True
+            ), None
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            warned = getattr(self, "_gguf_fallback_render_warned", None)
+            if warned is None:
+                warned = self._gguf_fallback_render_warned = set()
+            if self.model not in warned:
+                warned.add(self.model)
+                self.logger.warning(
+                    f"GGUF '{self.model}': the embedded chat template could not be re-rendered ({error}), "
+                    "so AbstractCore cannot tell whether it opens a thinking block; a streamed reply's "
+                    "reasoning is held until the model closes it (metadata thinking_stream='held_until_close')."
+                )
+            return None, error
+
+    def _gguf_fallback_stream(self, messages: Any, stream: Iterator[GenerateResponse]) -> Iterator[GenerateResponse]:
+        """The fallback lane's stream, led by the thinking flag or the held-until-close report."""
+        prompt_text, error = self._gguf_fallback_prompt_text(messages)
+        if error is not None:
+            yield GenerateResponse(
+                content="", model=self.model,
+                metadata={"thinking_stream": "held_until_close", "thinking_stream_reason": error},
             )
-        except Exception as exc:  # the hint is advisory; the stream itself is unaffected
-            self.logger.debug(f"GGUF fallback prompt not re-renderable for the thinking hint: {exc}")
-            return None
+        yield from self._with_thinking_opened(prompt_text, stream)
+
+    def _apply_prompt_opened_thinking(self, response: Any, prompt_text: Any) -> Any:
+        """Non-streamed twin of the stream's thinking flag.
+
+        When the rendered prompt opened the thinking block, the reply BEGINS as
+        reasoning: split it here, with that fact, so a truncated reply is
+        reasoning marked truncated (not the answer) and a later block never
+        leaks a closing tag -- exactly what the stream produces."""
+        if not isinstance(response, GenerateResponse) or not isinstance(response.content, str):
+            return response
+        if self._thinking_opened_chunk(prompt_text) is None:
+            return response
+        from ..architectures.response_postprocessing import normalize_assistant_text
+
+        cleaned, reasoning = normalize_assistant_text(
+            response.content,
+            architecture_format=getattr(self, "architecture_config", None),
+            model_capabilities=getattr(self, "model_capabilities", None),
+            thinking_opened_by_prompt=True,
+        )
+        response.content = cleaned
+        if reasoning:
+            meta = dict(response.metadata or {})
+            existing = meta.get("reasoning")
+            meta["reasoning"] = (
+                f"{existing.strip()}\n\n{reasoning}" if isinstance(existing, str) and existing.strip() else reasoning
+            )
+            response.metadata = meta
+        return response
 
     def _gguf_control_plane_can_stream(self, chat_messages: List[Dict[str, Any]]) -> bool:
         """Return True when control-plane streaming can safely handle the message payloads."""
@@ -9217,6 +9273,7 @@ class HuggingFaceProvider(BaseProvider):
             )
 
         collected = ""
+        opened = False
         last: Optional[GenerateResponse] = None
         for chunk in self._gguf_control_plane_stream_generate(
             chat_messages=chat_messages,
@@ -9241,17 +9298,36 @@ class HuggingFaceProvider(BaseProvider):
             cache_key=cache_key,
             cancel_event=cancel_event,
         ):
+            if isinstance(chunk.metadata, dict) and chunk.metadata.get("_thinking_opened_by_prompt"):
+                # The prompt opened the thinking block: split the whole reply
+                # with that fact below, as the stream does.
+                opened = True
+                continue
             last = chunk
             if isinstance(chunk.content, str) and chunk.content:
                 collected += chunk.content
 
-        return GenerateResponse(
+        response = GenerateResponse(
             content=collected,
             model=self.model,
             finish_reason=getattr(last, "finish_reason", None) if last is not None else "stop",
             usage=getattr(last, "usage", None) if last is not None else None,
             metadata=getattr(last, "metadata", None) if last is not None else None,
         )
+        if opened:
+            from ..architectures.response_postprocessing import normalize_assistant_text
+
+            cleaned, reasoning = normalize_assistant_text(
+                response.content or "",
+                architecture_format=getattr(self, "architecture_config", None),
+                model_capabilities=getattr(self, "model_capabilities", None),
+                thinking_opened_by_prompt=True,
+            )
+            response.content = cleaned
+            if reasoning:
+                response.metadata = dict(response.metadata or {})
+                response.metadata["reasoning"] = reasoning
+        return response
 
     def _stream_generate_gguf(self, kwargs: Dict[str, Any], tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
         """Stream response using GGUF with tool tag rewriting support"""

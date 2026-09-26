@@ -180,7 +180,7 @@ def test_native_decoder_typeerror_is_not_retried_without_request_constraints():
     provider.llm = object()
     provider.tokenizer = SimpleNamespace(encode=lambda text: list(text))
     provider._build_mlx_sampler = Mock(return_value=None)
-    provider._postprocess_generated_text = lambda text: (text, None)
+    provider._postprocess_generated_text = lambda text, **_: (text, None)
     provider._calculate_usage = lambda prompt, text: {
         "input_tokens": len(prompt), "output_tokens": len(text)
     }

@@ -128,3 +128,48 @@ def test_provider_stream_shows_reasoning_before_the_closing_tag_and_matches_sync
     assert "".join(c.content or "" for c in chunks) == sync.content == ANSWER
     assert streamed_reasoning == sync.metadata["reasoning"] == THINKING
     assert "".join((c.metadata or {}).get("reasoning_delta", "") for c in chunks).strip() == THINKING
+
+
+# --- review 23: parity of the streamed stripper with the non-streamed split ---------
+
+from abstractcore.architectures.response_postprocessing import strip_thinking_tags  # noqa: E402
+
+TAGS = dict(start_tag="<think>", end_tag="</think>")
+
+
+def _fmt():
+    from abstractcore.architectures import detect_architecture, get_architecture_format, get_model_capabilities
+
+    return dict(architecture_format=get_architecture_format(detect_architecture(MODEL)),
+                model_capabilities=get_model_capabilities(MODEL))
+
+
+def _stream_split(text: str, n: int, opened: bool = False):
+    s = IncrementalThinkingTagStripper(**TAGS)
+    if opened:
+        s.open_thinking()
+    visible = "".join(s.process(p) for p in _cut(text, n))
+    tail, reasoning = s.finalize()
+    return visible + tail, reasoning
+
+
+@pytest.mark.parametrize("n", [1, 3, 7, 1000])
+@pytest.mark.parametrize("text, opened", [
+    ("Answer: <think>r</think> 42", False),                         # whitespace mid-answer is kept
+    ("<think>r1</think>A1\n<think>r2</think>\n\nB2", False),        # a second block keeps the blank line
+    ("<think>r</think>\nFinal", False),                             # the ANSWER start drops it
+    ("reasoning cut off by the output lim", True),                  # truncated prompt-opened reply
+    ("r1</think>\n\nA1 <think>r2</think> B2", True),                # closing-only + a later block
+    ("<think>abc</think>\n\nx", True),                              # the model repeats the opened tag
+])
+def test_streamed_split_equals_the_non_streamed_split(n, text, opened):
+    streamed = _stream_split(text, n, opened)
+    whole = strip_thinking_tags(text, opened_by_prompt=opened, **_fmt())
+    assert streamed == whole, (streamed, whole)
+    assert "<think>" not in streamed[0] + (streamed[1] or "")
+    assert "</think>" not in streamed[0] + (streamed[1] or "")
+
+
+def test_truncated_prompt_opened_reply_is_reasoning_marked_truncated():
+    content, reasoning = strip_thinking_tags("half a thought", opened_by_prompt=True, **_fmt())
+    assert content == "" and reasoning == "half a thought (...)"

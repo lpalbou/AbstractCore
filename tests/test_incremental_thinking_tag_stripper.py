@@ -17,7 +17,9 @@ def test_incremental_thinking_tag_stripper_explicit_block_across_chunks() -> Non
 
     assert "<think>" not in out
     assert "</think>" not in out
-    assert out == "\nFinal"
+    # The answer starts at "Final": the non-streamed `strip_thinking_tags` returns
+    # "Final" for the same text, and streamed content must equal it.
+    assert out == "Final"
     assert reasoning == "hello"
 
 

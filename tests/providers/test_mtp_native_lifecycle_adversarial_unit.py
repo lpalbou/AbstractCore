@@ -289,7 +289,7 @@ def test_native_generation_does_not_silently_discard_supported_sampling_controls
     p.tool_handler = SimpleNamespace(supports_prompted=False)
     p._build_prompt = Mock(return_value="FULL PROMPT")
     p._prepare_generation_kwargs = lambda **kwargs: kwargs
-    p._postprocess_generated_text = lambda text: (text, None)
+    p._postprocess_generated_text = lambda text, **_: (text, None)
     p._calculate_usage = lambda prompt, text: {"input_tokens": len(prompt), "output_tokens": len(text)}
     p.generate_fn = Mock(return_value="ok")
     response = p._generate_internal("question", **{parameter: value})

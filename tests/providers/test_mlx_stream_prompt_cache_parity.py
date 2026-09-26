@@ -325,3 +325,19 @@ def test_mlx_stream_announces_a_prompt_opened_thinking_block():
     assert "".join(c.content for c in opened) == "Reasoning</think>Answer"
     plain = run("<|im_start|>assistant\n")
     assert all(THINKING_OPENED_BY_PROMPT not in (c.metadata or {}) for c in plain)
+
+
+@pytest.mark.parametrize("words, content, reasoning, finish", [
+    (["counting", " the letters"], "", "counting the letters (...)", "length"),
+    (["r1</think>", "\n\nA1 ", "<think>r2</think>", " B2"], "A1  B2", "r1\n\nr2", "stop"),
+])
+def test_mlx_sync_reply_knows_the_prompt_opened_thinking(words, content, reasoning, finish):
+    from abstractcore.architectures import detect_architecture, get_architecture_format, get_model_capabilities
+
+    p = _mlx_lm_provider(words)
+    p.architecture_config = get_architecture_format(detect_architecture("qwen3-4b"))
+    p.model_capabilities = get_model_capabilities("qwen3-4b")
+    sync = p._single_generate("q", 64, 0.0, 1.0, usage_prompt="<|im_start|>assistant\n<think>\n")
+    assert (sync.content, sync.metadata["reasoning"], sync.finish_reason) == (content, reasoning, finish)
+    chunks = list(p._stream_generate("q", 64, 0.0, 1.0, usage_prompt="<|im_start|>assistant\n<think>\n"))
+    assert chunks[-1].finish_reason == finish
