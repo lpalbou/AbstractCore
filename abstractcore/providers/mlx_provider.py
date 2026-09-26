@@ -4785,6 +4785,8 @@ class MLXProvider(BaseProvider):
                     input_embeddings=input_embeddings,
                     progress=progress,
                     cancel_event=cancel_event,
+                    usage_prompt=full_prompt,
+                    prompt_cache_telemetry=cache_telemetry,
                 )
 
                 # The streamed generator is consumed AFTER this function returns,
@@ -4830,14 +4832,13 @@ class MLXProvider(BaseProvider):
                         # "optimize" by extending the record from reply text.
                         self._record_fed_token_ids(prompt_cache_key.strip(), fed_ids_to_record)
                 if cache_telemetry is not None:
-                    native_result = getattr(self, "_mtp_last_result", None)
-                    if getattr(self, "_mtp_processor", None) is not None and native_result is not None:
-                        self._native_apc_telemetry(cache_telemetry, native_result)
-                    # Sync lane only, deliberately: the runtime's durable
-                    # llm_call lane forces stream=False, and that ledger is
-                    # the consumer this struct exists for.
+                    # Both lanes: the streamed lane attaches the same record to
+                    # its terminal chunk (`_stream_generate`), so a runtime that
+                    # streams records exactly what a non-streamed call does.
                     response.metadata = dict(response.metadata or {})
-                    response.metadata["prompt_cache"] = dict(cache_telemetry)
+                    response.metadata["prompt_cache"] = self._final_prompt_cache_telemetry(
+                        cache_telemetry
+                    )
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 
@@ -5249,63 +5250,19 @@ class MLXProvider(BaseProvider):
         generated, reasoning = self._postprocess_generated_text(raw_text)
         metadata = {"reasoning": reasoning} if reasoning else None
 
-        usage_text = (
-            usage_prompt
-            if isinstance(usage_prompt, str)
-            else (prompt if isinstance(prompt, str) else "")
-        )
-        usage = self._calculate_usage(usage_text, raw_text)
-
         native_result = getattr(self, "_mtp_last_result", None) if getattr(self, "_mtp_processor", None) is not None else None
         if native_result is not None:
-            usage["input_tokens"] = usage["prompt_tokens"] = int(native_result.prompt_tokens)
-            usage["cached_input_tokens"] = int(native_result.cached_tokens)
             metadata = dict(metadata or {})
-            metadata["performance"] = {"prompt_tokens_per_second": native_result.prompt_tps,
-                                       "generation_tokens_per_second": native_result.generation_tps,
-                                       "peak_memory_gb": native_result.peak_memory}
-            metadata.update(getattr(self, "_native_runtime_metadata", {}))
-
-        # Count what the model EMITTED, not what survived post-processing.
-        # `generated` is the text left after the thinking block is stripped, so a
-        # response whose whole budget went to reasoning reported `output_tokens: 0`
-        # -- a caller watching for runaway reasoning saw a free call.
-        n_out = self._count_tokens(raw_text)
-        if native_result is not None:
-            n_out = int(native_result.generation_tokens)
-        if n_out is not None:
-            usage["output_tokens"] = n_out
-            usage["completion_tokens"] = n_out
-
-        # The vision lane feeds expanded TOKEN IDS, and their length is the exact
-        # prompt size including the image's thousands of placeholder tokens. The
-        # text estimate below cannot see those -- an 11,844-token image was being
-        # reported as a 56-token prompt, which silently wrecks the context meter
-        # and every downstream cost figure.
-        if input_embeddings is not None and not isinstance(prompt, str):
-            try:
-                n_in = int(len(prompt))
-            except Exception:
-                n_in = 0
-            if n_in > 0:
-                usage["input_tokens"] = n_in
-                usage["prompt_tokens"] = n_in
-        usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
-
-        # A response cut off at `max_tokens` was indistinguishable from one the
-        # model chose to end. That is the difference between "the model answered"
-        # and "the model was interrupted mid-thought", and callers retry on one
-        # and not the other.
-        finish_reason = "stop"
-        if n_out is not None and isinstance(max_tokens, int) and max_tokens > 0:
-            if n_out >= max_tokens:
-                finish_reason = "length"
-        if reasoning and reasoning.endswith(TRUNCATED_REASONING_MARKER):
-            # An unterminated thinking block is proof of truncation even when the
-            # token count is off by the tokenizer's accounting of special tokens.
-            finish_reason = "length"
-        if native_result is not None and getattr(native_result, "finish_reason", None):
-            finish_reason = native_result.finish_reason
+            metadata.update(self._native_result_metadata(native_result))
+        usage, finish_reason = self._reply_usage_and_finish(
+            raw_text=raw_text,
+            reasoning=reasoning,
+            prompt=prompt,
+            usage_prompt=usage_prompt,
+            input_embeddings=input_embeddings,
+            max_tokens=max_tokens,
+            native_result=native_result,
+        )
 
         return GenerateResponse(
             content=generated,
@@ -5448,6 +5405,106 @@ class MLXProvider(BaseProvider):
             progress.complete(finish_reason=finish_reason, **counts)
         return "".join(parts)
 
+    def _native_result_metadata(self, native_result: Any) -> Dict[str, Any]:
+        """Performance + runtime metadata a native (mlx-vlm / native runtime) result reports."""
+        out: Dict[str, Any] = {
+            "performance": {
+                "prompt_tokens_per_second": native_result.prompt_tps,
+                "generation_tokens_per_second": native_result.generation_tps,
+                "peak_memory_gb": native_result.peak_memory,
+            }
+        }
+        out.update(getattr(self, "_native_runtime_metadata", {}))
+        return out
+
+    def _reply_usage_and_finish(
+        self,
+        *,
+        raw_text: str,
+        reasoning: Optional[str],
+        prompt: Any,
+        usage_prompt: Optional[str],
+        input_embeddings: Optional[Any],
+        max_tokens: int,
+        native_result: Optional[Any],
+    ) -> Tuple[Dict[str, int], str]:
+        """Usage and finish_reason of one finished reply, identical on BOTH lanes.
+
+        The sync lane (`_single_generate`) and the streamed lane's terminal
+        chunk (`_stream_generate`) call this with the same inputs, so a
+        streamed record accounts exactly like a non-streamed one.
+
+        `raw_text` is what the model EMITTED (stripped), before thinking is
+        split off; `usage_prompt` the full logical prompt (a delta feed passes
+        only the suffix as `prompt`).
+        """
+        usage_text = (
+            usage_prompt
+            if isinstance(usage_prompt, str)
+            else (prompt if isinstance(prompt, str) else "")
+        )
+        usage = self._calculate_usage(usage_text, raw_text)
+
+        if native_result is not None:
+            usage["input_tokens"] = usage["prompt_tokens"] = int(native_result.prompt_tokens)
+            usage["cached_input_tokens"] = int(native_result.cached_tokens)
+
+        # Count what the model EMITTED, not what survived post-processing.
+        # `generated` is the text left after the thinking block is stripped, so a
+        # response whose whole budget went to reasoning reported `output_tokens: 0`
+        # -- a caller watching for runaway reasoning saw a free call.
+        n_out = self._count_tokens(raw_text)
+        if native_result is not None:
+            n_out = int(native_result.generation_tokens)
+        if n_out is not None:
+            usage["output_tokens"] = n_out
+            usage["completion_tokens"] = n_out
+
+        # The vision lane feeds expanded TOKEN IDS, and their length is the exact
+        # prompt size including the image's thousands of placeholder tokens. The
+        # text estimate below cannot see those -- an 11,844-token image was being
+        # reported as a 56-token prompt, which silently wrecks the context meter
+        # and every downstream cost figure.
+        if input_embeddings is not None and not isinstance(prompt, str):
+            try:
+                n_in = int(len(prompt))
+            except Exception:
+                n_in = 0
+            if n_in > 0:
+                usage["input_tokens"] = n_in
+                usage["prompt_tokens"] = n_in
+        usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+
+        # A response cut off at `max_tokens` was indistinguishable from one the
+        # model chose to end. That is the difference between "the model answered"
+        # and "the model was interrupted mid-thought", and callers retry on one
+        # and not the other.
+        finish_reason = "stop"
+        if n_out is not None and isinstance(max_tokens, int) and max_tokens > 0:
+            if n_out >= max_tokens:
+                finish_reason = "length"
+        if reasoning and reasoning.endswith(TRUNCATED_REASONING_MARKER):
+            # An unterminated thinking block is proof of truncation even when the
+            # token count is off by the tokenizer's accounting of special tokens.
+            finish_reason = "length"
+        if native_result is not None and getattr(native_result, "finish_reason", None):
+            finish_reason = native_result.finish_reason
+        return usage, finish_reason
+
+    def _final_prompt_cache_telemetry(self, cache_telemetry: Dict[str, Any]) -> Dict[str, Any]:
+        """The `metadata["prompt_cache"]` record of a FINISHED call, same on both lanes.
+
+        Key mode (mlx-lm) decides everything before decoding
+        (`_prepare_cache_delta_feed`); the native APC lanes only learn
+        cached/fed counts and their store/skip counters once the generation
+        has run, so this must be called after the last token (sync: after
+        `_single_generate`; stream: on the terminal chunk).
+        """
+        native_result = getattr(self, "_mtp_last_result", None)
+        if getattr(self, "_mtp_processor", None) is not None and native_result is not None:
+            self._native_apc_telemetry(cache_telemetry, native_result)
+        return dict(cache_telemetry)
+
     def _count_tokens(self, text: str) -> Optional[int]:
         """Exact token count via the loaded tokenizer, or None if it cannot say."""
         if not text:
@@ -5488,12 +5545,26 @@ class MLXProvider(BaseProvider):
         input_embeddings: Optional[Any] = None,
         progress: Optional[Any] = None,
         cancel_event: Optional[threading.Event] = None,
+        usage_prompt: Optional[str] = None,
+        prompt_cache_telemetry: Optional[Dict[str, Any]] = None,
     ) -> Iterator[GenerateResponse]:
         """Generate real streaming response using MLX stream_generate with tool tag rewriting support
 
         `progress` reports generation snapshots (the caller already emitted the
         prefill event); `cancel_event` is checked per sampled token and stops
         the stream with `GenerationCancelledError` (generation_cancel.py).
+
+        TERMINAL CHUNK (sync/stream parity): the stream ends with exactly one
+        chunk carrying `finish_reason` and `usage`, and — when the call ran
+        with a prompt-cache key (`prompt_cache_telemetry`) — the same
+        `metadata["prompt_cache"]` record the non-streamed lane returns. The
+        native runtime's own final result is that chunk; the mlx-lm and
+        in-process mlx-vlm lanes, whose per-token responses carry no
+        accounting, get an empty-content terminal chunk computed with the sync
+        lane's `_reply_usage_and_finish` from the text they streamed. It is
+        built only after the source generator is exhausted: the native APC
+        lanes learn their cached/fed counts and store counters at that point.
+        A failed or cancelled stream has no terminal chunk (sync: no response).
         """
         from ..exceptions import GenerationCancelledError
         from .generation_cancel import cancelled_error
@@ -5501,6 +5572,8 @@ class MLXProvider(BaseProvider):
         stream_finish_reason = None
         stream_counts: Dict[str, Any] = {}
         source_gen = None
+        emitted_parts: List[str] = []
+        native_runtime_lane = getattr(self, "_native_runtime", None) is not None
         try:
             # Handle seed parameter (MLX supports seed via mx.random.seed)
             if seed is not None and getattr(self, "_native_runtime", None) is None:
@@ -5559,6 +5632,7 @@ class MLXProvider(BaseProvider):
                         progress.generation(**stream_counts)
                 # Each response has a .text attribute with the new token(s)
                 content = response.text
+                emitted_parts.append(str(content or ""))
 
                 # Apply tool tag rewriting if enabled
                 if rewriter and content:
@@ -5577,6 +5651,12 @@ class MLXProvider(BaseProvider):
                                  "output_tokens": response.generation_tokens, "completion_tokens": response.generation_tokens,
                                  "cached_input_tokens": response.cached_tokens,
                                  "total_tokens": response.prompt_tokens + response.generation_tokens}
+                        if prompt_cache_telemetry is not None:
+                            # The final result was observed (`_observe_native_runtime_result`)
+                            # before it was yielded, so the APC counts are final here.
+                            metadata["prompt_cache"] = self._final_prompt_cache_telemetry(
+                                prompt_cache_telemetry
+                            )
                 yield GenerateResponse(
                     content=content,
                     model=self.model,
@@ -5584,6 +5664,40 @@ class MLXProvider(BaseProvider):
                     usage=usage,
                     metadata=metadata,
                     raw_response=response,
+                )
+
+            if not native_runtime_lane:
+                # mlx-lm / in-process mlx-vlm: the source is exhausted (its own
+                # `finally` has recorded the APC counters), so the reply is final.
+                raw_text = "".join(emitted_parts).strip()
+                _, reasoning = self._postprocess_generated_text(raw_text)
+                native_result = (
+                    getattr(self, "_mtp_last_result", None)
+                    if getattr(self, "_mtp_processor", None) is not None
+                    else None
+                )
+                terminal_meta: Dict[str, Any] = {}
+                if native_result is not None:
+                    terminal_meta.update(self._native_result_metadata(native_result))
+                usage, finish_reason = self._reply_usage_and_finish(
+                    raw_text=raw_text,
+                    reasoning=reasoning,
+                    prompt=prompt,
+                    usage_prompt=usage_prompt,
+                    input_embeddings=input_embeddings,
+                    max_tokens=max_tokens,
+                    native_result=native_result,
+                )
+                if prompt_cache_telemetry is not None:
+                    terminal_meta["prompt_cache"] = self._final_prompt_cache_telemetry(
+                        prompt_cache_telemetry
+                    )
+                yield GenerateResponse(
+                    content="",
+                    model=self.model,
+                    finish_reason=finish_reason,
+                    usage=usage,
+                    metadata=terminal_meta or None,
                 )
 
         except GenerationCancelledError:
@@ -5711,8 +5825,15 @@ class MLXProvider(BaseProvider):
         input_embeddings: Optional[Any] = None,
         progress: Optional[Any] = None,
         cancel_event: Optional[threading.Event] = None,
+        usage_prompt: Optional[str] = None,
+        prompt_cache_telemetry: Optional[Dict[str, Any]] = None,
     ) -> Iterator[GenerateResponse]:
         """Stream generate with tool execution at the end
+
+        The terminal chunk (`finish_reason`, `usage`, `metadata["prompt_cache"]`;
+        see `_stream_generate`) is held back and yielded LAST on every lane, after
+        any provider-side tool-execution text, so "the last chunk carries the
+        accounting" holds whatever the lane.
 
         (`progress`/`cancel_event`: see `_stream_generate`. `_generate_core`
         passed `progress=` here before this signature accepted it, so every
@@ -5733,11 +5854,13 @@ class MLXProvider(BaseProvider):
             input_embeddings=input_embeddings,
             progress=progress,
             cancel_event=cancel_event,
+            usage_prompt=usage_prompt,
+            prompt_cache_telemetry=prompt_cache_telemetry,
         )
         try:
             for chunk in source:
                 collected_content += chunk.content or ""
-                if scheduled and chunk.finish_reason is not None:
+                if chunk.finish_reason is not None:
                     # A terminal describes the whole public response, including
                     # any explicitly requested provider-side tool execution.
                     terminal = copy.copy(chunk)
@@ -5769,7 +5892,7 @@ class MLXProvider(BaseProvider):
                         result_text = final_response.content[len(collected_content):]
                     if result_text:
                         yield GenerateResponse(content=result_text, model=self.model,
-                                               finish_reason=None if scheduled else "stop")
+                                               finish_reason=None if (scheduled or terminal is not None) else "stop")
             if terminal is not None:
                 yield terminal
         finally:

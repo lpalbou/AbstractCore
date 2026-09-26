@@ -5101,7 +5101,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                 last_seen_usage = processed_chunk.usage
                             _cm = getattr(processed_chunk, "metadata", None)
                             if isinstance(_cm, dict):
-                                for _mk in ("media_delivered", "media_dropped"):
+                                # `prompt_cache` (MLX key-mode / APC telemetry) is the
+                                # same kind of per-request fact, reported on the
+                                # provider's terminal chunk.
+                                for _mk in ("media_delivered", "media_dropped", "prompt_cache"):
                                     if _mk in _cm:
                                         media_meta[_mk] = _cm[_mk]
                             # Channel-separated reasoning arrives as per-chunk deltas
