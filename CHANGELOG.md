@@ -49,8 +49,16 @@ what the process holds on the accelerator.
   (`format`, `text`, `reason`) with a warning.
 - A tool call written as a ```` ```json ```` block (`{"name": ..., "arguments": ...}`,
   `{"tool_calls": [...]}`, a list of calls, or the OpenAI `function` shape) is now recognised while
-  streaming when the request has tools: it is kept out of the text and returned in `tool_calls`.
-  Any other ```` ```json ```` block, and every one when the request has no tools, stays text.
+  streaming when it names a tool the request offered: it is kept out of the text and returned in
+  `tool_calls`. Any other ```` ```json ```` block stays text, including one that names a tool the
+  request did not offer, and every one when the request has no tools.
+- Streaming a GPT-OSS model whose backend returns the raw Harmony transcript no longer holds the
+  whole answer back until the end. The `final` channel streams as text, `analysis` as reasoning
+  (`metadata["reasoning_delta"]`, joined into `metadata["reasoning"]` at the end), `commentary`
+  without a recipient as text, and a `to=` message as a tool call. The `<|channel|>` and other
+  framing tokens never appear in the text.
+- Two scheduled requests running at the same time on one MLX native-runtime provider can no longer
+  report each other's cached and fed token counts.
 - The last chunk of a stream is the one carrying the provider's `finish_reason` and `usage`. Text
   held back because it might have started a tool call is now sent before it; before, it came after
   with `finish_reason: "stop"`, which hid a `"length"` stop.

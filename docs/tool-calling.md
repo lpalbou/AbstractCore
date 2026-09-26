@@ -512,7 +512,8 @@ AbstractCore automatically detects model architecture and uses the appropriate t
 
 With `stream=True`, a tool call written as text is kept out of `chunk.content` and arrives in
 `chunk.tool_calls` once it is complete, even when its markers are split across chunks. This covers
-the formats in the table above and, when the request has `tools`, a fenced JSON block:
+the formats in the table above and, when it names one of the request's `tools`, a fenced JSON
+block:
 
 ````text
 ```json
@@ -521,8 +522,16 @@ the formats in the table above and, when the request has `tools`, a fenced JSON 
 ````
 
 The body can also be `{"tool_calls": [...]}`, a list of calls, or the OpenAI
-`{"type": "function", "function": {...}}` shape. Any other ```` ```json ```` block, such as a JSON
-answer, stays in the text, and so does every ```` ```json ```` block when the request has no tools.
+`{"type": "function", "function": {...}}` shape. Any other ```` ```json ```` block stays in the
+text: a JSON answer, a block naming a tool the request did not offer, and every
+```` ```json ```` block when the request has no tools.
+
+GPT-OSS models write Harmony transcripts. When the backend passes the raw transcript through, the
+stream is split by channel as it arrives: `final` is text, `analysis` is reasoning
+(`chunk.metadata["reasoning_delta"]`), `commentary` without a recipient is text, and a message
+addressed `to=functions.NAME` is a tool call. The framing tokens (`<|channel|>`, `<|message|>`,
+`<|end|>`, ...) never appear in the text. Ollama, LM Studio and vLLM usually split Harmony on the
+server, in which case the text and reasoning already arrive separately.
 
 If the model opens a tool call and the stream ends before it closes, or the call cannot be parsed,
 the text is not shown as the answer. The final chunk reports it instead, with a warning:
