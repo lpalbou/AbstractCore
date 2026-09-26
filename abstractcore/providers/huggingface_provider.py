@@ -7734,8 +7734,11 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             if stream:
-                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, top_k, tools, kwargs.get('tool_call_tags'), seed_value,
-                                                                     cancel_event=cancel_event)
+                return self._with_thinking_opened(
+                    input_text,
+                    self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, top_k, tools, kwargs.get('tool_call_tags'), seed_value,
+                                                                  cancel_event=cancel_event),
+                )
             else:
                 response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, seed_value,
                                                               cancel_event=cancel_event)
@@ -8703,7 +8706,10 @@ class HuggingFaceProvider(BaseProvider):
                 )
 
             if stream:
-                return self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools, kwargs.get('tool_call_tags'))
+                return self._with_thinking_opened(
+                    self._gguf_fallback_prompt_text(generation_kwargs.get("messages")),
+                    self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools, kwargs.get('tool_call_tags')),
+                )
             else:
                 response = self._single_generate_gguf(generation_kwargs)
                 if host_cancel is not None:
@@ -8810,6 +8816,52 @@ class HuggingFaceProvider(BaseProvider):
         # ChatML and chatml-function-calling.
         return ["<|im_end|>"]
 
+    def _thinking_opened_chunk(self, prompt_text: Any) -> Optional[GenerateResponse]:
+        """The leading stream chunk saying the rendered prompt opened the thinking block.
+
+        Qwen3.x templates with thinking on END the prompt with `<think>\n`, so the
+        model writes reasoning first and only the closing tag; without this flag
+        BaseProvider holds the whole reasoning until that tag (see
+        `IncrementalThinkingTagStripper.open_thinking`). None when it did not."""
+        from ..architectures.response_postprocessing import (
+            THINKING_OPENED_BY_PROMPT,
+            prompt_opens_thinking,
+        )
+
+        if not prompt_opens_thinking(
+            prompt_text,
+            architecture_format=getattr(self, "architecture_config", None),
+            model_capabilities=getattr(self, "model_capabilities", None),
+        ):
+            return None
+        return GenerateResponse(content="", model=self.model, metadata={THINKING_OPENED_BY_PROMPT: True})
+
+    def _with_thinking_opened(self, prompt_text: Any, stream: Iterator[GenerateResponse]) -> Iterator[GenerateResponse]:
+        """`stream`, led by `_thinking_opened_chunk(prompt_text)` when there is one."""
+        opened = self._thinking_opened_chunk(prompt_text)
+        if opened is not None:
+            yield opened
+        yield from stream
+
+    def _gguf_fallback_prompt_text(self, messages: Any) -> Optional[str]:
+        """The prompt `create_chat_completion` renders for `messages`, when knowable.
+
+        The fallback lane lets llama-cpp-python render the model's EMBEDDED
+        template (`chat_format` "chat_template.default"); the same template
+        through the same Jinja2ChatFormatter gives the same bytes. Built-in
+        chat formats (chatml, llama-2, ...) never open a thinking block, so
+        None there: only the prompt-opened-thinking hint depends on this."""
+        chat_format = str(getattr(getattr(self, "llm", None), "chat_format", "") or "")
+        if not chat_format.startswith("chat_template") or not isinstance(messages, list):
+            return None
+        try:
+            return self._gguf_render_llama_cpp_chat_template_prompt(
+                messages=messages, add_generation_prompt=True
+            )
+        except Exception as exc:  # the hint is advisory; the stream itself is unaffected
+            self.logger.debug(f"GGUF fallback prompt not re-renderable for the thinking hint: {exc}")
+            return None
+
     def _gguf_control_plane_can_stream(self, chat_messages: List[Dict[str, Any]]) -> bool:
         """Return True when control-plane streaming can safely handle the message payloads."""
         # Control-plane renderer/tokenizer only supports text content (strings / JSON-serializable).
@@ -8897,6 +8949,9 @@ class HuggingFaceProvider(BaseProvider):
             live_prompt_text=prompt_text,
             live_prompt_tokens=prompt_tokens,
         )
+        _opened = self._thinking_opened_chunk(prompt_text)
+        if _opened is not None:
+            yield _opened
 
         # Bring the context to `prompt_tokens`, preferring llama.cpp's RESIDENT KV
         # over a stored snapshot (see `_gguf_prefill_prompt_cache`). In a

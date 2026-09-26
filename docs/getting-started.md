@@ -213,6 +213,13 @@ for chunk in llm.generate("Write a short poem about distributed systems.", strea
 The last chunk of a stream carries the call's `finish_reason` and, when the provider reports it,
 `usage`. On MLX it also carries `metadata["prompt_cache"]` when the call has a `prompt_cache_key`,
 the same record a non-streamed call returns (see [Prompt Caching](prompt-caching.md)).
+Models that think in `<think>` blocks stream their reasoning as `chunk.metadata["reasoning_delta"]`
+while they think, and the answer as text after it. When the chat template itself opens the block
+(Qwen3.x with thinking on), this works on the lanes that render the template in-process: MLX,
+HuggingFace transformers and GGUF (llama.cpp). OpenAI-compatible servers (LM Studio, vLLM,
+llama.cpp server, ...) render the template on the server, so AbstractCore cannot tell that the
+block was opened: unless the server returns the reasoning separately (most do), the reasoning of
+such a model arrives in one piece when the model closes the block.
 For GPT-OSS models, the Harmony channels are split as the stream arrives: the `final` channel is
 the text, `analysis` is reasoning, and a reply cut off before `final` ends with empty text and
 `finish_reason: "length"` (see [Tool Calling](tool-calling.md#tool-calls-while-streaming)).

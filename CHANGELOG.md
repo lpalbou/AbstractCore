@@ -18,7 +18,10 @@ what the process holds on the accelerator.
   closed it: minutes for a long reasoning, with the first text arriving only with the answer. The
   reasoning now arrives as `metadata["reasoning_delta"]` from the first token (inline `<think>`
   blocks stream the same way), the answer follows as text, and the final record, including
-  `metadata["reasoning"]`, equals the non-streamed one. A streamed answer no longer starts with the
+  `metadata["reasoning"]`, equals the non-streamed one. This covers every lane that renders the chat
+  template in-process: MLX, HuggingFace transformers and GGUF (llama.cpp). OpenAI-compatible
+  servers render it themselves; there the reasoning streams only when the server sends it
+  separately. A streamed answer no longer starts with the
   blank lines the model writes after `</think>`.
 - `POST /acore/models/unload` and `unload_after` now free the model from every holder in the server
   process, not only from the server's own runtime, once no other managed runtime serves it. The
