@@ -947,8 +947,9 @@ Five checks, in order. Each one rules out a different way a cache can look healt
 1. **Did the cache engage at all?** A `generate` call that received a `prompt_cache_key` attaches
    `metadata.prompt_cache` to the response (`{mode, key, outcome, cached_tokens, fed_tokens}`, plus
    `degraded_reason` when degraded) on **MLX**, on the **GGUF control-plane path**, and on the
-   **transformers snapshot lane** (hybrid architectures). This struct is emitted on the non-streaming
-   path, which is the path a durable run ledger records.
+   **transformers snapshot lane** (hybrid architectures). On MLX it is also on the last chunk of a
+   streamed call, identical to the non-streamed record for the same prompt and key. On the GGUF
+   and transformers lanes, read it from a non-streamed call.
    **Two paths emit nothing and must be read another way**: the transformers crop lane (dense
    architectures) and GGUF models that resolve to `mode=keyed`. There the available evidence is wall
    clock and the `#FALLBACK` warnings, so design the comparison accordingly. On the paths that do

@@ -37,6 +37,23 @@ what the process holds on the accelerator.
 - `MLXProvider.load_model()` accepted `ttl_s` and `keep_alive` and ignored them without saying so.
   MLX has no idle or time-based unload; the response now lists them under `unsupported_options`
   with a warning.
+- A streamed MLX call now reports what a non-streamed one does. The stream ends with one chunk
+  carrying `finish_reason`, `usage` and, when the call has a `prompt_cache_key`,
+  `metadata["prompt_cache"]`, identical to the non-streamed response for the same prompt and key.
+  Before, MLX streams carried no usage or finish reason at all (except on the native runtime), and
+  the prompt-cache record was only attached to non-streamed calls, so hosts that need it, such as
+  AbstractRuntime, did not stream on MLX.
+- When a streamed model opens a tool call and never closes it, or writes one no parser accepts,
+  the text is no longer printed as the answer (it was, together with a second copy of the text
+  before it). It is reported on the final chunk as `metadata["unparsed_tool_call"]`
+  (`format`, `text`, `reason`) with a warning.
+- A tool call written as a ```` ```json ```` block (`{"name": ..., "arguments": ...}`,
+  `{"tool_calls": [...]}`, a list of calls, or the OpenAI `function` shape) is now recognised while
+  streaming when the request has tools: it is kept out of the text and returned in `tool_calls`.
+  Any other ```` ```json ```` block, and every one when the request has no tools, stays text.
+- The last chunk of a stream is the one carrying the provider's `finish_reason` and `usage`. Text
+  held back because it might have started a tool call is now sent before it; before, it came after
+  with `finish_reason: "stop"`, which hid a `"length"` stop.
 
 ### Added
 

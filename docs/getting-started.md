@@ -210,6 +210,17 @@ for chunk in llm.generate("Write a short poem about distributed systems.", strea
     print(chunk.content or "", end="", flush=True)
 ```
 
+The last chunk of a stream carries the call's `finish_reason` and, when the provider reports it,
+`usage`. On MLX it also carries `metadata["prompt_cache"]` when the call has a `prompt_cache_key`,
+the same record a non-streamed call returns (see [Prompt Caching](prompt-caching.md)).
+
+Streamed usage on OpenAI-compatible servers: AbstractCore asks for it with
+`stream_options: {"include_usage": true}`. A server that rejects that field is retried without it,
+and from then on that provider instance does not send it (`_stream_options_unsupported` is `True`).
+Usage still arrives if the server includes it in a chunk on its own, as LM Studio does on the last
+chunk; a server that does neither gives streamed calls without usage. AbstractCore does not make
+an extra non-streamed call to count tokens.
+
 ## Tool calling
 
 AbstractCore supports native tool calling (when the provider supports it) and prompted tool syntax (when it doesn’t).

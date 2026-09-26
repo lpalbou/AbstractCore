@@ -2679,6 +2679,17 @@ for chunk in llm.generate("Write a short poem about distributed systems.", strea
     print(chunk.content or "", end="", flush=True)
 ```
 
+The last chunk of a stream carries the call's `finish_reason` and, when the provider reports it,
+`usage`. On MLX it also carries `metadata["prompt_cache"]` when the call has a `prompt_cache_key`,
+the same record a non-streamed call returns (see [Prompt Caching](docs/prompt-caching.md)).
+
+Streamed usage on OpenAI-compatible servers: AbstractCore asks for it with
+`stream_options: {"include_usage": true}`. A server that rejects that field is retried without it,
+and from then on that provider instance does not send it (`_stream_options_unsupported` is `True`).
+Usage still arrives if the server includes it in a chunk on its own, as LM Studio does on the last
+chunk; a server that does neither gives streamed calls without usage. AbstractCore does not make
+an extra non-streamed call to count tokens.
+
 ## Tool calling
 
 AbstractCore supports native tool calling (when the provider supports it) and prompted tool syntax (when it doesn’t).
@@ -7154,6 +7165,30 @@ AbstractCore automatically detects model architecture and uses the appropriate t
 | **XML-based** | `<tool_call>...JSON...</tool_call>` | `<tool_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</tool_call>` |
 
 **Note:** AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.
+
+#### Tool calls while streaming
+
+With `stream=True`, a tool call written as text is kept out of `chunk.content` and arrives in
+`chunk.tool_calls` once it is complete, even when its markers are split across chunks. This covers
+the formats in the table above and, when the request has `tools`, a fenced JSON block:
+
+````text
+```json
+{"name": "get_weather", "arguments": {"city": "Paris"}}
+```
+````
+
+The body can also be `{"tool_calls": [...]}`, a list of calls, or the OpenAI
+`{"type": "function", "function": {...}}` shape. Any other ```` ```json ```` block, such as a JSON
+answer, stays in the text, and so does every ```` ```json ```` block when the request has no tools.
+
+If the model opens a tool call and the stream ends before it closes, or the call cannot be parsed,
+the text is not shown as the answer. The final chunk reports it instead, with a warning:
+
+```python
+chunk.metadata["unparsed_tool_call"]
+# {"format": "xml", "text": "<tool_call>{\"name\": \"search\", \"argu", "reason": "unclosed"}
+```
 
 ### Execution Responsibility (Recommended)
 
@@ -11735,8 +11770,9 @@ Five checks, in order. Each one rules out a different way a cache can look healt
 1. **Did the cache engage at all?** A `generate` call that received a `prompt_cache_key` attaches
    `metadata.prompt_cache` to the response (`{mode, key, outcome, cached_tokens, fed_tokens}`, plus
    `degraded_reason` when degraded) on **MLX**, on the **GGUF control-plane path**, and on the
-   **transformers snapshot lane** (hybrid architectures). This struct is emitted on the non-streaming
-   path, which is the path a durable run ledger records.
+   **transformers snapshot lane** (hybrid architectures). On MLX it is also on the last chunk of a
+   streamed call, identical to the non-streamed record for the same prompt and key. On the GGUF
+   and transformers lanes, read it from a non-streamed call.
    **Two paths emit nothing and must be read another way**: the transformers crop lane (dense
    architectures) and GGUF models that resolve to `mode=keyed`. There the available evidence is wall
    clock and the `#FALLBACK` warnings, so design the comparison accordingly. On the paths that do

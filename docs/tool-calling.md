@@ -508,6 +508,30 @@ AbstractCore automatically detects model architecture and uses the appropriate t
 
 **Note:** AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.
 
+#### Tool calls while streaming
+
+With `stream=True`, a tool call written as text is kept out of `chunk.content` and arrives in
+`chunk.tool_calls` once it is complete, even when its markers are split across chunks. This covers
+the formats in the table above and, when the request has `tools`, a fenced JSON block:
+
+````text
+```json
+{"name": "get_weather", "arguments": {"city": "Paris"}}
+```
+````
+
+The body can also be `{"tool_calls": [...]}`, a list of calls, or the OpenAI
+`{"type": "function", "function": {...}}` shape. Any other ```` ```json ```` block, such as a JSON
+answer, stays in the text, and so does every ```` ```json ```` block when the request has no tools.
+
+If the model opens a tool call and the stream ends before it closes, or the call cannot be parsed,
+the text is not shown as the answer. The final chunk reports it instead, with a warning:
+
+```python
+chunk.metadata["unparsed_tool_call"]
+# {"format": "xml", "text": "<tool_call>{\"name\": \"search\", \"argu", "reason": "unclosed"}
+```
+
 ### Execution Responsibility (Recommended)
 
 In passthrough mode, `response.tool_calls` are tool call *requests*. Execute them in your host/runtime (and apply your own safety policy) before sending tool results back to the model in a follow-up turn.
