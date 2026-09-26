@@ -1765,6 +1765,25 @@ names what is still held. A `process:` row can be unloaded by its `runtime_id`, 
 plus `model`. An embedding model can be unloaded with `task: "embedding"` and its `model`.
 Requests with `unload_after` use the same process-wide eject.
 
+The eject never takes a model that another owner in the process still uses. The server's managed
+runtimes and AbstractRuntime clients register the models they pool, lock or are loading, and names
+are matched case-insensitively and by local or hub-cache path. When you unload a managed runtime
+whose model another owner still claims, the runtime is unloaded, the weights stay, and
+`process_eject` reports `skipped: true` with the `claims`. An unload that targets such a model
+without a managed runtime of its own (a `process:` row, or `provider` plus `model` in another
+spelling) is refused with HTTP `409`:
+
+```json
+{"ok": false, "error": "model_in_use",
+ "detail": "... is still in use by ...; not ejected; unload it by its runtime_id",
+ "claims": [{"kind": "managed_runtime", "owner": "...", "runtime_id": "...", "model": "...", "locked": false}]}
+```
+
+`error` is `model_locked` when a claiming owner holds the model locked. Unload that owner's runtime
+by its `runtime_id` (with `force: true` when it is locked). For embedding models, an unload waits
+for embeddings that are running; if one is still running after the drain timeout (30 seconds),
+nothing is freed and the report carries `in_flight`.
+
 #### Host model-server sweep in `/acore/models/loaded`
 
 For unfiltered and text-generation listings, `GET /acore/models/loaded` merges a

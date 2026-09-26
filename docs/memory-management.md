@@ -12,7 +12,7 @@ Related pages:
 - [API Reference](api-reference.md) — full method signatures
 - [Prompt Caching](prompt-caching.md#cache-residency-and-memory) — sizing KV caches and per-key cost
 - [Native MLX Runtime](native-mlx-runtime.md) — shared native weights, request-owner leases, bounded queues and RAM/SSD prefix storage
-- [Server](server.md) — the HTTP routes (`/acore/memory`, `/acore/models/loaded`, `/acore/prompt_cache/*`)
+- [Server](server.md) — the HTTP routes (`/acore/memory`, `/acore/models/loaded`, `/acore/models/unload`, `/acore/prompt_cache/*`)
 
 ## Host memory snapshot
 
@@ -322,7 +322,8 @@ llm.unload_model(llm.model)
 print(get_memory_snapshot()["device"]["allocated_bytes"])  # back to near zero
 ```
 
-Verify the unload through `device.allocated_bytes`, not process RSS (see
+Verify the unload through `device.allocated_bytes` on MLX, or `device.process_held_bytes` for any
+in-process backend, not process RSS (see
 [Reading the snapshot](#reading-the-snapshot-process-local-accelerator-heap-and-process-rss)).
 
 An unload first **stops the generations running on the instance** and waits for them; an
@@ -353,7 +354,23 @@ report = eject("embeddings", "sentence-transformers/all-MiniLM-L6-v2")
 clients register the models they pool, lock or are loading (`register_claimant()`), and
 `eject_unclaimed()` skips a model any of them claims, matching names the way the eject does:
 case-insensitively, and by local or hub-cache path. The check and the eject run under one process
-lock (`residency_lock()`).
+lock (`residency_lock()`). A skipped eject returns `{"ok": true, "skipped": true, "claims": [...],
+"locked": ..., "reason": "..."}`, and `eject_unclaimed()` returns `None` for a provider whose
+weights live in another process (Ollama, LM Studio, remote APIs).
+
+```mermaid
+graph TD
+    REQ["eject_unclaimed(provider, model)"] --> LOCK["residency_lock()"]
+    LOCK --> CHECK{"Any registered claimant<br/>pools, locks or is loading it?"}
+    CHECK -->|yes| SKIP["skipped: true, claims, locked"]
+    CHECK -->|no| EJECT["eject(backend, model)"]
+    EJECT --> M["MLX: every holder, drafter,<br/>KV caches, allocator cache"]
+    EJECT --> H["HuggingFace: transformers and GGUF<br/>instances, torch MPS pool"]
+    EJECT --> E["Embeddings: in-process managers<br/>(reload on next embed)"]
+    M --> REP["report: ok, holders_unloaded,<br/>holders_refused, residual"]
+    H --> REP
+    E --> REP
+```
 
 The backend-specific functions are also available. For MLX, use `eject_model()`:
 
@@ -431,6 +448,10 @@ against unloading:
   `{"ok": false, "error": "model_locked", "detail": "...", "runtime_id": "..."}`. Pass
   `"force": true` to unlock and unload in one call; if the provider unload fails, the runtime
   stays registered and locked.
+- An unload that names a claimed model without targeting its runtime (another spelling of the
+  name, its hub-cache path, or a `process:` row) is refused with HTTP `409` and
+  `error: "model_locked"` (a claiming owner holds it locked) or `"model_in_use"`, with the
+  `claims` that keep it. See [Server](server.md#models-held-in-the-server-process).
 - Automatic cleanup never evicts a locked model: `unload_after` on chat requests skips locked
   runtimes, including requests that address the same server-resident model directly rather than
   through the managed runtime (matched with the same alias rules as the sweep).
@@ -580,6 +601,11 @@ route documentation):
   carry `source: "provider_server"`. Rows carry lock state, `modalities` where declared (text and
   sweep rows), `host_id` / `host_name`, and the per-model memory figures
   (`size_bytes` / `size_vram_bytes` / `est_weights_bytes` / `cache_bytes`) where known.
+- `GET /acore/models/loaded` also lists models the server process holds outside its managed
+  runtimes, including embedding models, with `runtime_id` `process:<task>:<provider>:<model>`.
+- `POST /acore/models/unload` (and `unload_after` on chat requests) — unload a runtime and eject the
+  model from every holder in the process unless another owner still claims it; the response
+  carries a `process_eject` report.
 - `POST /acore/models/lock` / `POST /acore/models/unlock` — lock or unlock a warm runtime, or adopt
   and lock a sweep-resident one; see [Locking a model in memory](#locking-a-model-in-memory).
 - `GET /acore/models/context_estimate` — the context-fit estimate; see

@@ -4033,6 +4033,38 @@ ollama pull gemma3:1b  # 1GB instead of 30GB
 llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 ```
 
+### Issue: Memory stays high after unloading a model
+
+**Symptoms:** `unload_model()` or `POST /acore/models/unload` succeeds, but the process still holds
+the model's memory.
+
+**Causes:** another holder in the same process keeps the model (MLX instances share weights;
+HuggingFace and embedding instances each hold a full copy), or another owner (a managed runtime, an
+AbstractRuntime client) still uses it.
+
+**Check:**
+
+```python
+from abstractcore.utils.memory import get_memory_snapshot
+from abstractcore.providers.process_residency import claims_for, resident_rows
+
+snap = get_memory_snapshot()
+print(snap["device"]["process_held_bytes"], snap["device"]["process_held_basis"])
+print(resident_rows())                                         # holders per model
+print(claims_for("mlx", "mlx-community/Qwen3-4B-4bit"))         # who still claims it
+```
+
+Over HTTP, `GET /acore/models/loaded` shows `process:` rows and `process_holders`.
+
+**Fix:** unload the claiming owner's runtime first, then eject the model from the whole process
+(`eject_unclaimed()` in Python, or `POST /acore/models/unload` with the `process:` row's
+`runtime_id`). A `409 model_in_use` or `409 model_locked` names the owner in `claims`. An embedding
+unload that reports `in_flight` succeeds once the running embeddings finish.
+
+**Verify:** `device.process_held_bytes` drops and the model no longer appears in
+`resident_rows()`. Do not use process RSS for this on Metal hosts. See
+[Memory and Model Residency](docs/memory-management.md#ejecting-a-model-from-the-whole-process).
+
 ### Issue: HuggingFace quantized Transformers model loads but generates nonsense
 
 Treat this as a model/runtime compatibility issue. AWQ, GPTQ, bitsandbytes, and
@@ -4577,6 +4609,49 @@ voice_id = clone.resources["voice"][0].resource_id
 outputs. Binary artifacts are grouped under `outputs`, while reusable resources
 such as cloned voices are grouped under `resources`. Plain `output="text"` with
 a prompt preserves the normal `GenerateResponse` path for compatibility.
+
+## Memory and model residency
+
+`get_memory_snapshot()` reports host RAM, this process and the accelerator in one call;
+`device["process_held_bytes"]` is the accelerator memory this process holds across MLX, torch and
+llama.cpp. `process_residency` lists and ejects models across every in-process backend (MLX,
+HuggingFace transformers and GGUF, embedding models):
+
+```python
+from abstractcore.utils.memory import get_memory_snapshot
+from abstractcore.providers.process_residency import eject_unclaimed, resident_rows
+
+print(get_memory_snapshot()["device"]["process_held_bytes"])
+print(resident_rows())                                    # every model alive in this process
+report = eject_unclaimed("mlx", "mlx-community/Qwen3-4B-4bit")  # skipped while another owner claims it
+```
+
+`eject(backend, model)` unloads every holder regardless of claims. See
+[Memory and Model Residency](docs/memory-management.md) for the snapshot fields, the claims registry and
+the HTTP routes.
+
+## Application identity (About screens)
+
+`abstractcore.utils.identity` gives AbstractFramework applications the facts an About screen
+shows, from a descriptor shipped with the package, without network access:
+
+```python
+from abstractcore.utils.identity import about_lines, app_identity, gateway_version_rows
+
+ident = app_identity("abstractcore")          # version defaults to the installed distribution
+print("\n".join(about_lines(ident)))
+rows = gateway_version_rows({"abstractgateway": "0.4.2", "abstractframework": "0.3.0", "packages": {}})
+```
+
+- `app_identity(app_id, version=None)` raises `KeyError` for an application the descriptor does not
+  know and `importlib.metadata.PackageNotFoundError` when no version is given and the distribution
+  is not installed; `known_app_ids()` lists the known ids.
+- `about_fields()` returns the ordered `(label, value)` rows (application, framework, author,
+  copyright, website, source, documentation, issues, feedback, contact); `about_lines()` renders
+  them as `label: value` text and `about_html()` as HTML with links.
+- `gateway_version_rows(payload, error=None)` turns a `GET /api/gateway/about` payload into the
+  same gateway rows the web applications show; an error or a payload without a gateway version
+  gives a single `Gateway → unavailable (...)` row.
 
 ## HTTP API (optional)
 
@@ -5841,16 +5916,42 @@ loaded state is reported as unknown/fail-closed. Instances list what they can ve
 `list_loaded_models()`, and `abstractcore.utils.residency.sweep_loaded_models()` sweeps
 the host's local model servers (Ollama, LM Studio) best-effort.
 `abstractcore.utils.memory.get_memory_snapshot()` reports host RAM, process RSS,
-device allocation, and the host identity; `device.allocated_bytes` — not process RSS,
-which behaves as a high-water mark on Metal hosts — is the signal that verifies an
-unload freed memory. GGUF loads that settle their context through the probe ladder
+device allocation, and the host identity; `device.process_held_bytes` is the accelerator
+memory this process holds across MLX, torch and llama.cpp, and `device.allocated_bytes`
+verifies an MLX unload — not process RSS, which behaves as a high-water mark on Metal
+hosts. GGUF loads that settle their context through the probe ladder
 record the settled context to a per-machine calibration store, which seeds later loads
 and powers `abstractcore.utils.context_estimate.estimate_context_fit()` — an analytical
 context-fit answer that never loads weights.
 See [Memory and Model Residency](docs/memory-management.md).
 
+`unload_model()` releases one instance's hold. Several holders can keep the same model alive
+in one process (MLX instances share weights; HuggingFace and embedding instances each hold a full
+copy), so `abstractcore.providers.process_residency` gives one door to every in-process backend:
+`resident_rows()` lists every model alive in the process, `eject()` unloads every holder, and
+`eject_unclaimed()` ejects only when no registered owner (the server's managed runtimes,
+AbstractRuntime clients) still pools, locks or is loading the model. The claim check and the eject
+run under one process lock.
+
+```mermaid
+graph TD
+    UNLOAD["POST /acore/models/unload<br/>or unload_after"] --> RT["Managed runtime:<br/>unload_model()"]
+    RT --> EU["process_residency.eject_unclaimed()"]
+    CLIENT["AbstractRuntime client<br/>default switch"] --> EU
+    EU -->|"check under residency_lock()"| CLAIMS["Registered claimants:<br/>server managed runtimes,<br/>runtime client pools and locks"]
+    CLAIMS -->|"model still claimed"| SKIP["Skipped report;<br/>HTTP 409 model_locked / model_in_use<br/>for a process-only unload"]
+    CLAIMS -->|"no claim"| EJ["process_residency.eject()"]
+    EJ --> MLX["mlx_residency.eject_model():<br/>every holder, drafter, KV caches,<br/>MLX allocator cache"]
+    EJ --> HF["hf_residency.eject_model():<br/>transformers and GGUF instances,<br/>torch MPS pool"]
+    EJ --> EMB["eject_embedding_models():<br/>in-process EmbeddingManagers<br/>(reload on next embed)"]
+    MLX --> SNAP["get_memory_snapshot():<br/>device.process_held_bytes,<br/>resident block"]
+    HF --> SNAP
+    EMB --> SNAP
+```
+
 In the OpenAI-compatible AbstractCore server (`abstractcore.server.app`), requests can set `unload_after` (default `false`)
-to call `llm.unload_model(model)` after the request completes. For providers that can unload shared server state (e.g. Ollama),
+to unload the model after the request completes; it uses the same process-wide eject as `POST /acore/models/unload`
+and skips locked runtimes. For providers that can unload shared server state (e.g. Ollama),
 this is disabled by default and must be explicitly enabled by the server operator.
 
 ```python
@@ -6270,20 +6371,22 @@ AbstractCore’s streaming system provides character-by-character streaming with
 
 ```mermaid
 graph TD
-    A[Stream Input] --> B[UnifiedStreamProcessor]
+    A[Provider chunks] --> B[UnifiedStreamProcessor]
+    B --> HS["IncrementalHarmonySplitter<br/>(raw Harmony transcripts)"]
+    HS -->|"final / commentary"| C
+    HS -->|"analysis"| R["metadata.reasoning_delta"]
+    HS -->|"to=functions.NAME"| TC
     B --> C[IncrementalToolDetector]
-    C --> D[Tag Rewriter]
-    D --> E[Tool Execution (optional)]
-    E --> F[Stream Output]
-
-    B --> G[Character-by-Character Handling]
-    G --> H[Intelligent Buffering]
-    H --> C
+    C -->|"text"| D["Tag Rewriter<br/>(when tool_call_tags is set)"]
+    C -->|"complete tool call"| TC["chunk.tool_calls"]
+    C -->|"unclosed or unparsable call"| U["metadata.unparsed_tool_call<br/>on the final chunk"]
+    D --> F[chunk.content]
+    B --> T["Terminal chunk (last):<br/>finish_reason, usage,<br/>prompt_cache on MLX"]
 
     style B fill:#4caf50
     style C fill:#2196f3
     style D fill:#ff9800
-    style E fill:#9c27b0
+    style HS fill:#9c27b0
 ```
 
 **Key Features**:
@@ -6303,7 +6406,18 @@ graph TD
    - Intelligent buffering for partial tool calls
    - Robust parsing with auto-repair for malformed JSON
 
-4. **Tool Call Tag Rewriting Integration**
+4. **Stream end parity**
+   - The last chunk carries the call's `finish_reason` and `usage`; on MLX it also carries
+     `metadata["prompt_cache"]` when the call has a `prompt_cache_key`, the same record a
+     non-streamed call returns
+   - A tool call that never closes, or that no parser accepts, is reported as
+     `metadata["unparsed_tool_call"]` instead of appearing in the text
+   - A ```` ```json ```` block is a tool call only when it names a tool offered for the call
+   - Raw Harmony (GPT-OSS) transcripts are split by channel as they arrive; framing tokens never
+     reach the text
+   - See [Tool Calling — Tool calls while streaming](docs/tool-calling.md#tool-calls-while-streaming)
+
+5. **Tool Call Tag Rewriting Integration**
    - Real-time format conversion during streaming
    - Support for multiple formats (Qwen3, LLaMA3, Gemma, XML, custom)
    - Designed to avoid large buffering while keeping tool calls structured
@@ -6360,14 +6474,14 @@ graph LR
     A --> C[System Prompt]
     A --> D[Provider Reference]
 
-    B --> E[generate()]
+    B --> E["generate()"]
     C --> E
     D --> E
 
     E --> F[Add to History]
     F --> G[Return Response]
 
-    A --> H[save()/load()]
+    A --> H["save() / load()"]
     H --> I[JSON Persistence]
 
     style A fill:#2196f3
@@ -14411,7 +14525,7 @@ Related pages:
 - [API Reference](docs/api-reference.md) — full method signatures
 - [Prompt Caching](docs/prompt-caching.md#cache-residency-and-memory) — sizing KV caches and per-key cost
 - [Native MLX Runtime](docs/native-mlx-runtime.md) — shared native weights, request-owner leases, bounded queues and RAM/SSD prefix storage
-- [Server](docs/server.md) — the HTTP routes (`/acore/memory`, `/acore/models/loaded`, `/acore/prompt_cache/*`)
+- [Server](docs/server.md) — the HTTP routes (`/acore/memory`, `/acore/models/loaded`, `/acore/models/unload`, `/acore/prompt_cache/*`)
 
 ## Host memory snapshot
 
@@ -14721,7 +14835,8 @@ llm.unload_model(llm.model)
 print(get_memory_snapshot()["device"]["allocated_bytes"])  # back to near zero
 ```
 
-Verify the unload through `device.allocated_bytes`, not process RSS (see
+Verify the unload through `device.allocated_bytes` on MLX, or `device.process_held_bytes` for any
+in-process backend, not process RSS (see
 [Reading the snapshot](docs/memory-management.md#reading-the-snapshot-process-local-accelerator-heap-and-process-rss)).
 
 An unload first **stops the generations running on the instance** and waits for them; an
@@ -14752,7 +14867,23 @@ report = eject("embeddings", "sentence-transformers/all-MiniLM-L6-v2")
 clients register the models they pool, lock or are loading (`register_claimant()`), and
 `eject_unclaimed()` skips a model any of them claims, matching names the way the eject does:
 case-insensitively, and by local or hub-cache path. The check and the eject run under one process
-lock (`residency_lock()`).
+lock (`residency_lock()`). A skipped eject returns `{"ok": true, "skipped": true, "claims": [...],
+"locked": ..., "reason": "..."}`, and `eject_unclaimed()` returns `None` for a provider whose
+weights live in another process (Ollama, LM Studio, remote APIs).
+
+```mermaid
+graph TD
+    REQ["eject_unclaimed(provider, model)"] --> LOCK["residency_lock()"]
+    LOCK --> CHECK{"Any registered claimant<br/>pools, locks or is loading it?"}
+    CHECK -->|yes| SKIP["skipped: true, claims, locked"]
+    CHECK -->|no| EJECT["eject(backend, model)"]
+    EJECT --> M["MLX: every holder, drafter,<br/>KV caches, allocator cache"]
+    EJECT --> H["HuggingFace: transformers and GGUF<br/>instances, torch MPS pool"]
+    EJECT --> E["Embeddings: in-process managers<br/>(reload on next embed)"]
+    M --> REP["report: ok, holders_unloaded,<br/>holders_refused, residual"]
+    H --> REP
+    E --> REP
+```
 
 The backend-specific functions are also available. For MLX, use `eject_model()`:
 
@@ -14830,6 +14961,10 @@ against unloading:
   `{"ok": false, "error": "model_locked", "detail": "...", "runtime_id": "..."}`. Pass
   `"force": true` to unlock and unload in one call; if the provider unload fails, the runtime
   stays registered and locked.
+- An unload that names a claimed model without targeting its runtime (another spelling of the
+  name, its hub-cache path, or a `process:` row) is refused with HTTP `409` and
+  `error: "model_locked"` (a claiming owner holds it locked) or `"model_in_use"`, with the
+  `claims` that keep it. See [Server](docs/server.md#models-held-in-the-server-process).
 - Automatic cleanup never evicts a locked model: `unload_after` on chat requests skips locked
   runtimes, including requests that address the same server-resident model directly rather than
   through the managed runtime (matched with the same alias rules as the sweep).
@@ -14979,6 +15114,11 @@ route documentation):
   carry `source: "provider_server"`. Rows carry lock state, `modalities` where declared (text and
   sweep rows), `host_id` / `host_name`, and the per-model memory figures
   (`size_bytes` / `size_vram_bytes` / `est_weights_bytes` / `cache_bytes`) where known.
+- `GET /acore/models/loaded` also lists models the server process holds outside its managed
+  runtimes, including embedding models, with `runtime_id` `process:<task>:<provider>:<model>`.
+- `POST /acore/models/unload` (and `unload_after` on chat requests) — unload a runtime and eject the
+  model from every holder in the process unless another owner still claims it; the response
+  carries a `process_eject` report.
 - `POST /acore/models/lock` / `POST /acore/models/unlock` — lock or unlock a warm runtime, or adopt
   and lock a sweep-resident one; see [Locking a model in memory](docs/memory-management.md#locking-a-model-in-memory).
 - `GET /acore/models/context_estimate` — the context-fit estimate; see
@@ -25163,6 +25303,25 @@ includes a `process_eject` report. When weights remain in memory, `ok` is `false
 names what is still held. A `process:` row can be unloaded by its `runtime_id`, or by `provider`
 plus `model`. An embedding model can be unloaded with `task: "embedding"` and its `model`.
 Requests with `unload_after` use the same process-wide eject.
+
+The eject never takes a model that another owner in the process still uses. The server's managed
+runtimes and AbstractRuntime clients register the models they pool, lock or are loading, and names
+are matched case-insensitively and by local or hub-cache path. When you unload a managed runtime
+whose model another owner still claims, the runtime is unloaded, the weights stay, and
+`process_eject` reports `skipped: true` with the `claims`. An unload that targets such a model
+without a managed runtime of its own (a `process:` row, or `provider` plus `model` in another
+spelling) is refused with HTTP `409`:
+
+```json
+{"ok": false, "error": "model_in_use",
+ "detail": "... is still in use by ...; not ejected; unload it by its runtime_id",
+ "claims": [{"kind": "managed_runtime", "owner": "...", "runtime_id": "...", "model": "...", "locked": false}]}
+```
+
+`error` is `model_locked` when a claiming owner holds the model locked. Unload that owner's runtime
+by its `runtime_id` (with `force: true` when it is locked). For embedding models, an unload waits
+for embeddings that are running; if one is still running after the drain timeout (30 seconds),
+nothing is freed and the report carries `in_flight`.
 
 #### Host model-server sweep in `/acore/models/loaded`
 

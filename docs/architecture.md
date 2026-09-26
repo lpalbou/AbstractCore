@@ -279,16 +279,42 @@ loaded state is reported as unknown/fail-closed. Instances list what they can ve
 `list_loaded_models()`, and `abstractcore.utils.residency.sweep_loaded_models()` sweeps
 the host's local model servers (Ollama, LM Studio) best-effort.
 `abstractcore.utils.memory.get_memory_snapshot()` reports host RAM, process RSS,
-device allocation, and the host identity; `device.allocated_bytes` — not process RSS,
-which behaves as a high-water mark on Metal hosts — is the signal that verifies an
-unload freed memory. GGUF loads that settle their context through the probe ladder
+device allocation, and the host identity; `device.process_held_bytes` is the accelerator
+memory this process holds across MLX, torch and llama.cpp, and `device.allocated_bytes`
+verifies an MLX unload — not process RSS, which behaves as a high-water mark on Metal
+hosts. GGUF loads that settle their context through the probe ladder
 record the settled context to a per-machine calibration store, which seeds later loads
 and powers `abstractcore.utils.context_estimate.estimate_context_fit()` — an analytical
 context-fit answer that never loads weights.
 See [Memory and Model Residency](memory-management.md).
 
+`unload_model()` releases one instance's hold. Several holders can keep the same model alive
+in one process (MLX instances share weights; HuggingFace and embedding instances each hold a full
+copy), so `abstractcore.providers.process_residency` gives one door to every in-process backend:
+`resident_rows()` lists every model alive in the process, `eject()` unloads every holder, and
+`eject_unclaimed()` ejects only when no registered owner (the server's managed runtimes,
+AbstractRuntime clients) still pools, locks or is loading the model. The claim check and the eject
+run under one process lock.
+
+```mermaid
+graph TD
+    UNLOAD["POST /acore/models/unload<br/>or unload_after"] --> RT["Managed runtime:<br/>unload_model()"]
+    RT --> EU["process_residency.eject_unclaimed()"]
+    CLIENT["AbstractRuntime client<br/>default switch"] --> EU
+    EU -->|"check under residency_lock()"| CLAIMS["Registered claimants:<br/>server managed runtimes,<br/>runtime client pools and locks"]
+    CLAIMS -->|"model still claimed"| SKIP["Skipped report;<br/>HTTP 409 model_locked / model_in_use<br/>for a process-only unload"]
+    CLAIMS -->|"no claim"| EJ["process_residency.eject()"]
+    EJ --> MLX["mlx_residency.eject_model():<br/>every holder, drafter, KV caches,<br/>MLX allocator cache"]
+    EJ --> HF["hf_residency.eject_model():<br/>transformers and GGUF instances,<br/>torch MPS pool"]
+    EJ --> EMB["eject_embedding_models():<br/>in-process EmbeddingManagers<br/>(reload on next embed)"]
+    MLX --> SNAP["get_memory_snapshot():<br/>device.process_held_bytes,<br/>resident block"]
+    HF --> SNAP
+    EMB --> SNAP
+```
+
 In the OpenAI-compatible AbstractCore server (`abstractcore.server.app`), requests can set `unload_after` (default `false`)
-to call `llm.unload_model(model)` after the request completes. For providers that can unload shared server state (e.g. Ollama),
+to unload the model after the request completes; it uses the same process-wide eject as `POST /acore/models/unload`
+and skips locked runtimes. For providers that can unload shared server state (e.g. Ollama),
 this is disabled by default and must be explicitly enabled by the server operator.
 
 ```python
@@ -708,20 +734,22 @@ AbstractCore’s streaming system provides character-by-character streaming with
 
 ```mermaid
 graph TD
-    A[Stream Input] --> B[UnifiedStreamProcessor]
+    A[Provider chunks] --> B[UnifiedStreamProcessor]
+    B --> HS["IncrementalHarmonySplitter<br/>(raw Harmony transcripts)"]
+    HS -->|"final / commentary"| C
+    HS -->|"analysis"| R["metadata.reasoning_delta"]
+    HS -->|"to=functions.NAME"| TC
     B --> C[IncrementalToolDetector]
-    C --> D[Tag Rewriter]
-    D --> E[Tool Execution (optional)]
-    E --> F[Stream Output]
-
-    B --> G[Character-by-Character Handling]
-    G --> H[Intelligent Buffering]
-    H --> C
+    C -->|"text"| D["Tag Rewriter<br/>(when tool_call_tags is set)"]
+    C -->|"complete tool call"| TC["chunk.tool_calls"]
+    C -->|"unclosed or unparsable call"| U["metadata.unparsed_tool_call<br/>on the final chunk"]
+    D --> F[chunk.content]
+    B --> T["Terminal chunk (last):<br/>finish_reason, usage,<br/>prompt_cache on MLX"]
 
     style B fill:#4caf50
     style C fill:#2196f3
     style D fill:#ff9800
-    style E fill:#9c27b0
+    style HS fill:#9c27b0
 ```
 
 **Key Features**:
@@ -741,7 +769,18 @@ graph TD
    - Intelligent buffering for partial tool calls
    - Robust parsing with auto-repair for malformed JSON
 
-4. **Tool Call Tag Rewriting Integration**
+4. **Stream end parity**
+   - The last chunk carries the call's `finish_reason` and `usage`; on MLX it also carries
+     `metadata["prompt_cache"]` when the call has a `prompt_cache_key`, the same record a
+     non-streamed call returns
+   - A tool call that never closes, or that no parser accepts, is reported as
+     `metadata["unparsed_tool_call"]` instead of appearing in the text
+   - A ```` ```json ```` block is a tool call only when it names a tool offered for the call
+   - Raw Harmony (GPT-OSS) transcripts are split by channel as they arrive; framing tokens never
+     reach the text
+   - See [Tool Calling — Tool calls while streaming](tool-calling.md#tool-calls-while-streaming)
+
+5. **Tool Call Tag Rewriting Integration**
    - Real-time format conversion during streaming
    - Support for multiple formats (Qwen3, LLaMA3, Gemma, XML, custom)
    - Designed to avoid large buffering while keeping tool calls structured
@@ -798,14 +837,14 @@ graph LR
     A --> C[System Prompt]
     A --> D[Provider Reference]
 
-    B --> E[generate()]
+    B --> E["generate()"]
     C --> E
     D --> E
 
     E --> F[Add to History]
     F --> G[Return Response]
 
-    A --> H[save()/load()]
+    A --> H["save() / load()"]
     H --> I[JSON Persistence]
 
     style A fill:#2196f3

@@ -362,6 +362,49 @@ outputs. Binary artifacts are grouped under `outputs`, while reusable resources
 such as cloned voices are grouped under `resources`. Plain `output="text"` with
 a prompt preserves the normal `GenerateResponse` path for compatibility.
 
+## Memory and model residency
+
+`get_memory_snapshot()` reports host RAM, this process and the accelerator in one call;
+`device["process_held_bytes"]` is the accelerator memory this process holds across MLX, torch and
+llama.cpp. `process_residency` lists and ejects models across every in-process backend (MLX,
+HuggingFace transformers and GGUF, embedding models):
+
+```python
+from abstractcore.utils.memory import get_memory_snapshot
+from abstractcore.providers.process_residency import eject_unclaimed, resident_rows
+
+print(get_memory_snapshot()["device"]["process_held_bytes"])
+print(resident_rows())                                    # every model alive in this process
+report = eject_unclaimed("mlx", "mlx-community/Qwen3-4B-4bit")  # skipped while another owner claims it
+```
+
+`eject(backend, model)` unloads every holder regardless of claims. See
+[Memory and Model Residency](memory-management.md) for the snapshot fields, the claims registry and
+the HTTP routes.
+
+## Application identity (About screens)
+
+`abstractcore.utils.identity` gives AbstractFramework applications the facts an About screen
+shows, from a descriptor shipped with the package, without network access:
+
+```python
+from abstractcore.utils.identity import about_lines, app_identity, gateway_version_rows
+
+ident = app_identity("abstractcore")          # version defaults to the installed distribution
+print("\n".join(about_lines(ident)))
+rows = gateway_version_rows({"abstractgateway": "0.4.2", "abstractframework": "0.3.0", "packages": {}})
+```
+
+- `app_identity(app_id, version=None)` raises `KeyError` for an application the descriptor does not
+  know and `importlib.metadata.PackageNotFoundError` when no version is given and the distribution
+  is not installed; `known_app_ids()` lists the known ids.
+- `about_fields()` returns the ordered `(label, value)` rows (application, framework, author,
+  copyright, website, source, documentation, issues, feedback, contact); `about_lines()` renders
+  them as `label: value` text and `about_html()` as HTML with links.
+- `gateway_version_rows(payload, error=None)` turns a `GET /api/gateway/about` payload into the
+  same gateway rows the web applications show; an error or a payload without a gateway version
+  gives a single `Gateway → unavailable (...)` row.
+
 ## HTTP API (optional)
 
 If you want an OpenAI-compatible `/v1` gateway, install and run the server:

@@ -864,6 +864,38 @@ ollama pull gemma3:1b  # 1GB instead of 30GB
 llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 ```
 
+### Issue: Memory stays high after unloading a model
+
+**Symptoms:** `unload_model()` or `POST /acore/models/unload` succeeds, but the process still holds
+the model's memory.
+
+**Causes:** another holder in the same process keeps the model (MLX instances share weights;
+HuggingFace and embedding instances each hold a full copy), or another owner (a managed runtime, an
+AbstractRuntime client) still uses it.
+
+**Check:**
+
+```python
+from abstractcore.utils.memory import get_memory_snapshot
+from abstractcore.providers.process_residency import claims_for, resident_rows
+
+snap = get_memory_snapshot()
+print(snap["device"]["process_held_bytes"], snap["device"]["process_held_basis"])
+print(resident_rows())                                         # holders per model
+print(claims_for("mlx", "mlx-community/Qwen3-4B-4bit"))         # who still claims it
+```
+
+Over HTTP, `GET /acore/models/loaded` shows `process:` rows and `process_holders`.
+
+**Fix:** unload the claiming owner's runtime first, then eject the model from the whole process
+(`eject_unclaimed()` in Python, or `POST /acore/models/unload` with the `process:` row's
+`runtime_id`). A `409 model_in_use` or `409 model_locked` names the owner in `claims`. An embedding
+unload that reports `in_flight` succeeds once the running embeddings finish.
+
+**Verify:** `device.process_held_bytes` drops and the model no longer appears in
+`resident_rows()`. Do not use process RSS for this on Metal hosts. See
+[Memory and Model Residency](memory-management.md#ejecting-a-model-from-the-whole-process).
+
 ### Issue: HuggingFace quantized Transformers model loads but generates nonsense
 
 Treat this as a model/runtime compatibility issue. AWQ, GPTQ, bitsandbytes, and

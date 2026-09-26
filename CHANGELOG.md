@@ -78,6 +78,10 @@ what the process holds on the accelerator.
   `metal_process_allocated_bytes`, and a `resident` block listing every in-process model across
   backends. GGUF rows whose cache figure includes the f16 KV-cache estimate carry
   `kv_bytes_estimated: true`.
+- `abstractcore.utils.identity`: `app_identity()`, `about_fields()`, `about_lines()`,
+  `about_html()` and `gateway_version_rows()` give every AbstractFramework application the same
+  About facts (version, framework, author, licence, source, documentation, issues, feedback) from a
+  descriptor shipped with the package.
 
 ## [2.15.3] - 2026-09-25
 
