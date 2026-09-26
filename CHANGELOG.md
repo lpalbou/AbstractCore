@@ -5,7 +5,11 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.16.1] - 2026-09-26
+
+Local MLX models now see the conversation exactly as their own chat template renders it, so agent
+loops with tool calls keep working on Qwen3.x MLX builds with thinking on, and every MLX response says
+which prompt renderer it used.
 
 ### Fixed
 
@@ -25,7 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chat-template renderer: the arguments reach the template as `{"raw_arguments": "<text>"}` instead of
   making every later call of the run fall back to the built-in renderer. Every MLX response names its
   renderer in `metadata["prompt_renderer"]` (`chat_template`, `builtin` or `builtin_fallback`, with
-  `metadata["prompt_renderer_reason"]` for a fallback).
+  `metadata["prompt_renderer_reason"]` for a fallback). A streamed call carries both keys on its last
+  chunk, including when the stream carries reasoning.
 
 ## [2.16.0] - 2026-09-26
 
