@@ -655,7 +655,9 @@ def test_voice_clone_global_route_prefixes_plain_remote_provider(client, monkeyp
     assert captured["clone"]["content_type"] == "audio/wav"
 
 
-def test_provider_scoped_voice_clone_routes_local_engine_to_capability_plugin(client, monkeypatch):
+@pytest.mark.parametrize("provider", ["omnivoice", "qwen3-tts"])
+@pytest.mark.parametrize("result_type", ["mapping", "string"])
+def test_provider_scoped_voice_clone_routes_local_engine_to_capability_plugin(client, monkeypatch, provider, result_type):
     captured = {}
 
     def register(registry):
@@ -672,6 +674,8 @@ def test_provider_scoped_voice_clone_routes_local_engine_to_capability_plugin(cl
 
             def clone(self, audio, **kwargs):
                 captured["clone"] = {"audio": audio, **kwargs}
+                if result_type == "string":
+                    return "voice-local"
                 return {"voice_id": "voice-local", "meta": {"engine": kwargs.get("cloning_engine")}}
 
         registry.register_voice_backend(backend_id="fake-voice", factory=lambda _owner: _Voice(), priority=0)
@@ -684,16 +688,17 @@ def test_provider_scoped_voice_clone_routes_local_engine_to_capability_plugin(cl
     _reset_audio_core(monkeypatch)
 
     resp = client.post(
-        "/omnivoice/v1/voice/clone",
+        f"/{provider}/v1/voice/clone",
         files={"file": ("reference.wav", b"wavref", "audio/wav")},
-        data={"name": "my_voice", "reference_text": "hello there"},
+        data={"name": "my_voice", "reference_text": "hello there", "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base"},
     )
 
     assert resp.status_code == 200
     assert resp.json()["voice_id"] == "voice-local"
     assert captured["clone"]["name"] == "my_voice"
     assert captured["clone"]["reference_text"] == "hello there"
-    assert captured["clone"]["cloning_engine"] == "omnivoice"
+    assert captured["clone"]["cloning_engine"] == provider
+    assert captured["clone"]["model"] == "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 
 
 def test_plugin_backed_audio_routes_return_503_for_missing_plugin_credentials(client, monkeypatch):

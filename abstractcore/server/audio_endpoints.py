@@ -2340,7 +2340,7 @@ async def voice_clone(
         if isinstance(out, dict):
             out.setdefault("ok", True)
             return out
-        voice_id = str(getattr(out, "resource_id", "") or getattr(out, "voice_id", "") or "").strip()
+        voice_id = str(out if isinstance(out, str) else (getattr(out, "resource_id", "") or getattr(out, "voice_id", "") or "")).strip()
         if not voice_id:
             raise RuntimeError("Voice clone backend did not return a usable voice id.")
         metadata = getattr(out, "metadata", None)
