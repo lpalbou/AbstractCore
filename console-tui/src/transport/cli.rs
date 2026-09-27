@@ -481,7 +481,9 @@ impl ConsoleTransport for CliTransport {
         let label = format!("abstractcore {}", args.join(" "));
         let (status, stdout, stderr) = cli::run_raw_at(&self.bin, &args, &label, self.read_timeout)
             .map_err(|e| match e.kind {
-                CliErrorKind::Timeout => TransportError::new(TransportErrorKind::Timeout, e.message),
+                CliErrorKind::Timeout => {
+                    TransportError::new(TransportErrorKind::Timeout, e.message)
+                }
                 _ => TransportError::unavailable(format!("could not start {}", e.message)),
             })?;
         match status.code().unwrap_or(-1) {

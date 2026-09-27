@@ -456,15 +456,17 @@ impl ArtifactRow {
     /// for it (`catalog`, `hf_api`) — the web console's rule. An estimate
     /// is never sent as a promise.
     pub fn expected_bytes(&self) -> Option<u64> {
-        self.download_bytes.filter(|n| *n > 0).filter(|_| {
-            matches!(self.size_source.as_deref(), Some("catalog" | "hf_api"))
-        })
+        self.download_bytes
+            .filter(|n| *n > 0)
+            .filter(|_| matches!(self.size_source.as_deref(), Some("catalog" | "hf_api")))
     }
 
     /// May this artifact be made the default text model? (The web
     /// console's rule: installed, text-capable, not an embedder.)
     pub fn can_be_text_default(&self) -> bool {
-        self.presence == "installed" && self.text_capable == Some(true) && self.embedding != Some(true)
+        self.presence == "installed"
+            && self.text_capable == Some(true)
+            && self.embedding != Some(true)
     }
 }
 
@@ -567,7 +569,10 @@ impl CatalogData {
             rows,
             providers,
             hub_ok: v.get("hub").and_then(|h| b(h, "ok")),
-            hub_errors: v.get("hub").map(|h| strings(h, "errors")).unwrap_or_default(),
+            hub_errors: v
+                .get("hub")
+                .map(|h| strings(h, "errors"))
+                .unwrap_or_default(),
         }
     }
 }
@@ -733,13 +738,16 @@ impl JobView {
             Some(j) if j.is_object() => j,
             _ => v,
         };
-        let admin_prompt = v.get("admin_prompt").filter(|p| p.is_object()).map(|p| AdminPrompt {
-            reason: s(p, "reason"),
-            command: s(p, "command"),
-            method: s(p, "method"),
-            button: s(p, "button"),
-            where_: s(p, "where"),
-        });
+        let admin_prompt = v
+            .get("admin_prompt")
+            .filter(|p| p.is_object())
+            .map(|p| AdminPrompt {
+                reason: s(p, "reason"),
+                command: s(p, "command"),
+                method: s(p, "method"),
+                button: s(p, "button"),
+                where_: s(p, "where"),
+            });
         let tools_prompt = v.get("tools_prompt").filter(|p| p.is_object()).map(|p| {
             let a = p.get("action").cloned().unwrap_or(Value::Null);
             ToolsPrompt {
@@ -811,10 +819,16 @@ impl JobView {
     /// command, else the tools command.
     pub fn copyable_command(&self) -> Option<&str> {
         if self.state.as_deref() == Some("needs_admin") {
-            return self.admin_prompt.as_ref().and_then(|p| p.command.as_deref());
+            return self
+                .admin_prompt
+                .as_ref()
+                .and_then(|p| p.command.as_deref());
         }
         if self.state.as_deref() == Some("needs_tools") {
-            return self.tools_prompt.as_ref().and_then(|p| p.command.as_deref());
+            return self
+                .tools_prompt
+                .as_ref()
+                .and_then(|p| p.command.as_deref());
         }
         None
     }
@@ -893,7 +907,12 @@ impl JobView {
 /// naming its `parent_job`).
 pub fn download_jobs_from_value(v: &Value) -> Vec<JobView> {
     let mut out = Vec::new();
-    for j in v.get("jobs").and_then(Value::as_array).into_iter().flatten() {
+    for j in v
+        .get("jobs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         let view = JobView::from_value(j);
         if view.job_id.is_empty() {
             continue;
@@ -902,7 +921,12 @@ pub fn download_jobs_from_value(v: &Value) -> Vec<JobView> {
         let group = view.kind == "download_group";
         out.push(view);
         if group {
-            for c in j.get("children").and_then(Value::as_array).into_iter().flatten() {
+            for c in j
+                .get("children")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
                 let mut child = JobView::from_value(c);
                 if child.job_id.is_empty() {
                     continue;
@@ -1019,10 +1043,18 @@ mod tests {
             Some("sudo sh -c 'curl -fsSL https://ollama.com/install.sh | sh'")
         );
         assert_eq!(j.continue_actions, vec!["recheck"]);
-        assert_eq!(j.admin_prompt.as_ref().unwrap().where_.as_deref(), Some("a terminal on the gateway host"));
+        assert_eq!(
+            j.admin_prompt.as_ref().unwrap().where_.as_deref(),
+            Some("a terminal on the gateway host")
+        );
         // Engine jobs count bytes as bytes_done/bytes_total.
         assert_eq!(j.fraction(), Some(0.1));
-        assert!(j.outcome_line().starts_with("⏸ install ollama needs an administrator"), "{}", j.outcome_line());
+        assert!(
+            j.outcome_line()
+                .starts_with("⏸ install ollama needs an administrator"),
+            "{}",
+            j.outcome_line()
+        );
         // The same job running again is not paused.
         let mut v = paused_ollama();
         v["state"] = json!("installing");
@@ -1061,8 +1093,14 @@ mod tests {
             text_default_from_value(&doc),
             Some(("lmstudio".into(), "qwen/qwen3-8b".into()))
         );
-        assert_eq!(text_default_from_value(&json!({"routes": [{"key": "output.text"}]})), None);
-        assert_eq!(served_model_id("lmstudio", "qwen/qwen3-8b@4bit"), "qwen/qwen3-8b");
+        assert_eq!(
+            text_default_from_value(&json!({"routes": [{"key": "output.text"}]})),
+            None
+        );
+        assert_eq!(
+            served_model_id("lmstudio", "qwen/qwen3-8b@4bit"),
+            "qwen/qwen3-8b"
+        );
         assert_eq!(served_model_id("ollama", "qwen3:8b"), "qwen3:8b");
         assert_eq!(served_model_id("mlx", "a@b"), "a@b");
     }
@@ -1087,9 +1125,13 @@ mod tests {
         assert!(e.action("stop").is_none());
         assert_eq!(e.active_job.as_ref().unwrap().job_id, "ei_7");
         // Contract B (the CLI): no action list at all, nothing gated.
-        assert!(EngineRow::from_value(&json!({"id": "mlx"})).actions.is_none());
-        let plan = LocationPlan::from_dry_run(&json!({"plan": {"target": "/Applications/Ollama.app",
-            "needs_admin": true, "admin_reason": "not writable"}})).unwrap();
+        assert!(EngineRow::from_value(&json!({"id": "mlx"}))
+            .actions
+            .is_none());
+        let plan =
+            LocationPlan::from_dry_run(&json!({"plan": {"target": "/Applications/Ollama.app",
+            "needs_admin": true, "admin_reason": "not writable"}}))
+            .unwrap();
         assert!(plan.needs_admin);
         assert!(LocationPlan::from_dry_run(&json!({"status": "completed"})).is_none());
     }

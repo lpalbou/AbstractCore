@@ -167,7 +167,10 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
     assert!(calls(&dir).contains("models delete mlx loaded-model --yes --force --json"));
 
     // A flag-shaped id never reaches the CLI.
-    assert!(t.start_download("ollama", "--rm", None).unwrap_err().is_refused());
+    assert!(t
+        .start_download("ollama", "--rm", None)
+        .unwrap_err()
+        .is_refused());
 
     // Download: a child job. Immediate refusal → Refused from start.
     let e = t.start_download("ollama", "refused", None).unwrap_err();
@@ -178,7 +181,9 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
     assert!(e.message.contains("boom"), "{e}");
 
     // A real one: running with the NDJSON progress, then completed.
-    let j = t.start_download("ollama", "qwen3:8b", Some(4_600_000_000)).unwrap();
+    let j = t
+        .start_download("ollama", "qwen3:8b", Some(4_600_000_000))
+        .unwrap();
     assert_eq!(j["schema"], "host_job_v1");
     assert_eq!(j["status"], "running", "{j}");
     assert_eq!(j["kind"], "download");
@@ -233,7 +238,10 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
         "{}",
         calls(&dir)
     );
-    assert!(t.models_catalog_hub("  ", None, false).unwrap_err().is_refused());
+    assert!(t
+        .models_catalog_hub("  ", None, false)
+        .unwrap_err()
+        .is_refused());
     let feed = t.download_jobs().unwrap();
     let listed: Vec<&str> = feed["jobs"]
         .as_array()
@@ -241,7 +249,10 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
         .iter()
         .map(|j| j["kind"].as_str().unwrap())
         .collect();
-    assert!(!listed.is_empty() && listed.iter().all(|k| *k == "download"), "{feed}");
+    assert!(
+        !listed.is_empty() && listed.iter().all(|k| *k == "download"),
+        "{feed}"
+    );
     let before = t.capability_defaults().unwrap();
     assert_eq!(before["routes"][1]["model"], "old");
     let after = t.set_text_default("ollama", "qwen3:8b").unwrap();
@@ -250,23 +261,33 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
         "{}",
         calls(&dir)
     );
-    assert_eq!(after["routes"][1]["provider"], "ollama", "a FRESH read answers: {after}");
+    assert_eq!(
+        after["routes"][1]["provider"], "ollama",
+        "a FRESH read answers: {after}"
+    );
     assert_eq!(after["routes"][1]["model"], "qwen3:8b");
     // The route is EXACTLY the new model: the previous model's endpoint,
     // reasoning level and options are cleared, never inherited (an
     // Ollama model behind LM Studio's :1234 is a broken route).
     for field in ["base_url", "reasoning", "options"] {
-        assert!(after["routes"][1].get(field).is_none(), "{field} survived: {after}");
+        assert!(
+            after["routes"][1].get(field).is_none(),
+            "{field} survived: {after}"
+        );
     }
     let e = t.set_text_default("ollama", "bad-model").unwrap_err();
     assert_eq!(e.kind, TransportErrorKind::Failed, "{e}");
     assert!(e.message.contains("Failed to set"), "{e}");
-    assert!(t.set_text_default("ollama", "--force").unwrap_err().is_refused());
+    assert!(t
+        .set_text_default("ollama", "--force")
+        .unwrap_err()
+        .is_refused());
     // …and the ones it has NOT: Unsupported, never a fake.
     for e in [
         t.engine_server("ollama", ServerAction::Start).unwrap_err(),
         t.engine_job_continue("cli-1", None).unwrap_err(),
-        t.engine_install_at("ollama", false, InstallLocation::System).unwrap_err(),
+        t.engine_install_at("ollama", false, InstallLocation::System)
+            .unwrap_err(),
     ] {
         assert_eq!(e.kind, TransportErrorKind::Unsupported, "{e}");
     }

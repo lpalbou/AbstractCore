@@ -287,9 +287,7 @@ impl ScreensStore {
     pub fn job_running(&self) -> bool {
         let working = |j: &JobView| j.is_active() && !j.is_paused();
         self.jobs.with_untracked(|v| v.iter().any(working))
-            || self
-                .job
-                .with_untracked(|j| j.as_ref().is_some_and(working))
+            || self.job.with_untracked(|j| j.as_ref().is_some_and(working))
     }
 
     /// The live job about this download, if one runs.
@@ -310,7 +308,11 @@ impl ScreensStore {
     pub fn active_install(&self, engine: &str) -> Option<JobView> {
         self.jobs.with_untracked(|v| {
             v.iter()
-                .find(|j| j.is_active() && j.kind == "engine_install" && j.engine.as_deref() == Some(engine))
+                .find(|j| {
+                    j.is_active()
+                        && j.kind == "engine_install"
+                        && j.engine.as_deref() == Some(engine)
+                })
                 .cloned()
         })
     }
@@ -364,8 +366,7 @@ pub fn upsert_job(s: &ScreensStore, view: JobView) {
 pub fn drop_placeholder(s: &ScreensStore, like: &JobView) {
     s.jobs
         .update(|v| v.retain(|j| !(j.job_id.is_empty() && j.same_subject(like))));
-    if s
-        .job
+    if s.job
         .with_untracked(|j| j.as_ref().is_some_and(|j| j.job_id.is_empty()))
     {
         s.job.set(None);
@@ -899,7 +900,9 @@ impl ScreensCtx {
             return;
         }
         let model = data::served_model_id(provider, artifact);
-        self.notice(format!("saving {provider} · {model} as the default text model…"));
+        self.notice(format!(
+            "saving {provider} · {model} as the default text model…"
+        ));
         self.send(ScreenCmd::SetTextDefault {
             provider: provider.into(),
             model,
@@ -1299,7 +1302,10 @@ pub fn confirm_install(cx: Scope, sctx: &ScreensCtx, engine: &EngineRow, host_os
         body_lines.push((format!("note      {n}"), true));
     }
     if !engine.install.steps.is_empty() {
-        body_lines.push((format!("steps     {}", engine.install.steps.join(" · ")), false));
+        body_lines.push((
+            format!("steps     {}", engine.install.steps.join(" · ")),
+            false,
+        ));
     }
     let width = body_lines
         .iter()

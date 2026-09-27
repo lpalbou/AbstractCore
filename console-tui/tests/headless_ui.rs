@@ -3094,7 +3094,10 @@ impl MockTransport {
     fn started(&self, doc: Value) -> Result<Value, TransportError> {
         *self.last_job.lock().unwrap() = Some(doc.clone());
         if let Some(id) = doc["job_id"].as_str() {
-            self.by_id.lock().unwrap().insert(id.to_string(), doc.clone());
+            self.by_id
+                .lock()
+                .unwrap()
+                .insert(id.to_string(), doc.clone());
         }
         Ok(doc)
     }
@@ -3171,7 +3174,9 @@ impl ConsoleTransport for MockTransport {
         self.record(format!("download {provider} {artifact}"));
         self.record(format!(
             "expected_bytes {provider} {artifact} {}",
-            expected_bytes.map(|n| n.to_string()).unwrap_or_else(|| "-".into())
+            expected_bytes
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "-".into())
         ));
         let n = {
             let mut d = self.downloads.lock().unwrap();
@@ -3276,7 +3281,13 @@ impl ConsoleTransport for MockTransport {
     fn cancel_download(&self, id: &str) -> Result<Value, TransportError> {
         self.record(format!("cancel_download {id}"));
         *self.cancelled.lock().unwrap() = true;
-        let mut j = self.by_id.lock().unwrap().get(id).cloned().expect("a started download");
+        let mut j = self
+            .by_id
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .expect("a started download");
         j["status"] = json!("cancelled");
         Ok(j)
     }
@@ -3286,7 +3297,10 @@ impl ConsoleTransport for MockTransport {
         engine: Option<&str>,
         fits_only: bool,
     ) -> Result<Value, TransportError> {
-        self.record(format!("hub q={q} engine={} fits={fits_only}", engine.unwrap_or("-")));
+        self.record(format!(
+            "hub q={q} engine={} fits={fits_only}",
+            engine.unwrap_or("-")
+        ));
         let mut c = fixture("model_catalog");
         let mut row = c["rows"][0].clone();
         row["id"] = json!("hf-hit");
@@ -3351,16 +3365,21 @@ impl ConsoleTransport for MockTransport {
         if location == InstallLocation::Auto {
             return self.engine_install(id, dry_run);
         }
-        self.record(format!("install {id} dry_run={dry_run} location={}", location.as_str()));
+        self.record(format!(
+            "install {id} dry_run={dry_run} location={}",
+            location.as_str()
+        ));
         if dry_run {
             let (target, admin) = match location {
                 InstallLocation::System => ("/Applications/Ollama.app", true),
                 _ => ("/Users/me/Applications/Ollama.app", false),
             };
-            return Ok(json!({"job_id": null, "kind": "engine_install", "engine": id,
+            return Ok(
+                json!({"job_id": null, "kind": "engine_install", "engine": id,
                 "dry_run": true, "status": "completed",
                 "plan": {"target": target, "needs_admin": admin,
-                         "admin_reason": if admin { "/Applications is not writable by this account" } else { "" }}}));
+                         "admin_reason": if admin { "/Applications is not writable by this account" } else { "" }}}),
+            );
         }
         self.started(Self::job_doc(
             "engine_install",
@@ -3369,14 +3388,26 @@ impl ConsoleTransport for MockTransport {
                    "location": location.as_str(), "message": "Downloading Ollama"}),
         ))
     }
-    fn engine_job_continue(&self, job_id: &str, action: Option<&str>) -> Result<Value, TransportError> {
+    fn engine_job_continue(
+        &self,
+        job_id: &str,
+        action: Option<&str>,
+    ) -> Result<Value, TransportError> {
         self.record(format!("continue {job_id} {}", action.unwrap_or("-")));
-        let mut doc = self.held.lock().unwrap().remove(job_id).expect("a held job");
+        let mut doc = self
+            .held
+            .lock()
+            .unwrap()
+            .remove(job_id)
+            .expect("a held job");
         doc["state"] = json!("installing");
         doc["admin_prompt"] = Value::Null;
         doc["continue_actions"] = json!([]);
         doc["message"] = json!("Continuing");
-        self.by_id.lock().unwrap().insert(job_id.to_string(), doc.clone());
+        self.by_id
+            .lock()
+            .unwrap()
+            .insert(job_id.to_string(), doc.clone());
         Ok(doc)
     }
     fn engine_server(&self, id: &str, action: ServerAction) -> Result<Value, TransportError> {
@@ -3921,7 +3952,10 @@ fn downloads_run_in_parallel_and_the_same_artifact_is_not_started_twice() {
     h.turns(2);
     h.key(b"c");
     let s = h.turns(2);
-    assert!(s.contains("Stop downloading") && s.contains("Keep downloading"), "{s}");
+    assert!(
+        s.contains("Stop downloading") && s.contains("Keep downloading"),
+        "{s}"
+    );
     h.key(b"\r"); // default = keep
     h.settle_until_contains("still downloading");
     assert!(!h.mock.called("cancel"), "{:?}", h.mock.calls());
@@ -3930,7 +3964,9 @@ fn downloads_run_in_parallel_and_the_same_artifact_is_not_started_twice() {
     h.key(b"2");
     h.turns(1);
     h.key(b"\r");
-    h.wait_for_call("the cancel", |calls| calls.iter().any(|c| c == "cancel_download download_2"));
+    h.wait_for_call("the cancel", |calls| {
+        calls.iter().any(|c| c == "cancel_download download_2")
+    });
     // A download is cancelled on the DOWNLOAD route, never the generic one.
     assert!(!h.mock.called("cancel download_"), "{:?}", h.mock.calls());
 }
@@ -3959,9 +3995,13 @@ fn a_paused_install_shows_its_command_continues_and_blocks_nothing() {
     // exact command on its own line.
     h.select_engine("ollama");
     let s = h.settle_until("the paused install", |s| {
-        s.contains("needs admin") && s.contains("sudo sh -c 'curl -fsSL https://ollama.com/install.sh | sh'")
+        s.contains("needs admin")
+            && s.contains("sudo sh -c 'curl -fsSL https://ollama.com/install.sh | sh'")
     });
-    assert!(s.contains("run this yourself, then press a (re-check)"), "{s}");
+    assert!(
+        s.contains("run this yourself, then press a (re-check)"),
+        "{s}"
+    );
     assert!(s.contains("a terminal on the gateway host"), "{s}");
     assert!(s.contains("a: Re-check"), "{s}");
     assert!(h.mock.called("job ei_paused"), "{:?}", h.mock.calls());
@@ -3985,7 +4025,9 @@ fn a_paused_install_shows_its_command_continues_and_blocks_nothing() {
     assert!(!h.mock.called("install ollama"), "{:?}", h.mock.calls());
     // a = the job's one continue action (recheck), then it finishes.
     h.key(b"a");
-    h.wait_for_call("the continue", |calls| calls.iter().any(|c| c == "continue ei_paused recheck"));
+    h.wait_for_call("the continue", |calls| {
+        calls.iter().any(|c| c == "continue ei_paused recheck")
+    });
     h.settle_until_contains("✓ install ollama completed");
 }
 
@@ -3998,17 +4040,28 @@ fn start_stop_s_follows_the_row_actions_and_refuses_with_reasons() {
     h.select_engine("lmstudio");
     h.key(b"s");
     h.settle_until_contains("✓ lmstudio is stopped");
-    assert!(h.mock.called("server lmstudio stop"), "{:?}", h.mock.calls());
+    assert!(
+        h.mock.called("server lmstudio stop"),
+        "{:?}",
+        h.mock.calls()
+    );
     // The outcome is verified with a fresh PROBING read.
     h.wait_for_call("the probing re-read", |calls| {
-        let at = calls.iter().position(|c| c == "server lmstudio stop").unwrap();
+        let at = calls
+            .iter()
+            .position(|c| c == "server lmstudio stop")
+            .unwrap();
         calls[at..].iter().any(|c| c == "engines_status probe=true")
     });
     h.select_engine("vllm");
     h.key(b"s");
     h.settle_until_contains("does not run on this host");
     assert_eq!(
-        h.mock.calls().iter().filter(|c| c.starts_with("server")).count(),
+        h.mock
+            .calls()
+            .iter()
+            .filter(|c| c.starts_with("server"))
+            .count(),
         1
     );
 }
@@ -4019,7 +4072,10 @@ fn optional_verbs_over_a_bare_transport_say_not_here_never_fake() {
     let mut h = harness_sized(Size::new(230, 34));
     h.load_fixtures();
     let s = h.open_models();
-    assert!(s.contains("Hugging Face: not here"), "the footer says so:\n{s}");
+    assert!(
+        s.contains("Hugging Face: not here"),
+        "the footer says so:\n{s}"
+    );
     h.key(b"h");
     h.settle_until_contains("Hugging Face search is not available over test-host");
     h.select_artifact("qwen/qwen3-8b@4bit");
@@ -4031,7 +4087,11 @@ fn optional_verbs_over_a_bare_transport_say_not_here_never_fake() {
     h.settle_until_contains("starting or stopping engine servers is not available over test-host");
     let calls = h.mock.calls();
     assert!(
-        !calls.iter().any(|c| c.starts_with("hub") || c.starts_with("set_default") || c.starts_with("server") || c == "download_jobs" || c == "defaults"),
+        !calls.iter().any(|c| c.starts_with("hub")
+            || c.starts_with("set_default")
+            || c.starts_with("server")
+            || c == "download_jobs"
+            || c == "defaults"),
         "no optional verb was called: {calls:?}"
     );
 }
@@ -4045,15 +4105,23 @@ fn app_engine_install_asks_where_with_the_two_real_plans() {
     h.select_engine("ollama");
     h.key(b"i");
     let s = h.settle_until("both plans in the question", |s| {
-        s.contains("/Users/me/Applications/Ollama.app") && s.contains("/Applications is not writable")
+        s.contains("/Users/me/Applications/Ollama.app")
+            && s.contains("/Applications is not writable")
     });
-    assert!(s.contains("Install just for you") && s.contains("Install for all users"), "{s}");
+    assert!(
+        s.contains("Install just for you") && s.contains("Install for all users"),
+        "{s}"
+    );
     assert!(h.mock.called("install ollama dry_run=true location=user"));
     assert!(h.mock.called("install ollama dry_run=true location=system"));
     // Default = cancel: nothing runs.
     h.key(b"\r");
     h.settle_until_contains("install cancelled — nothing ran");
-    assert!(!h.mock.called("install ollama dry_run=false"), "{:?}", h.mock.calls());
+    assert!(
+        !h.mock.called("install ollama dry_run=false"),
+        "{:?}",
+        h.mock.calls()
+    );
     // "for all users" sends location=system.
     h.key(b"i");
     h.turns(2);
@@ -4061,7 +4129,9 @@ fn app_engine_install_asks_where_with_the_two_real_plans() {
     h.turns(1);
     h.key(b"\r");
     h.wait_for_call("the located install", |calls| {
-        calls.iter().any(|c| c == "install ollama dry_run=false location=system")
+        calls
+            .iter()
+            .any(|c| c == "install ollama dry_run=false location=system")
     });
 }
 
@@ -4076,10 +4146,19 @@ fn hub_search_h_queries_hugging_face_and_an_empty_query_leaves() {
     h.type_text("tiny");
     h.turns(1);
     h.key(b"\r");
-    let s = h.settle_until("the hub rows", |s| s.contains("Tiny HF Hit") && !s.contains("Gemma 3 27B"));
+    let s = h.settle_until("the hub rows", |s| {
+        s.contains("Tiny HF Hit") && !s.contains("Gemma 3 27B")
+    });
     assert!(s.contains("Hugging Face"), "{s}");
-    assert!(s.contains("answered in part") && s.contains("rate limited"), "{s}");
-    assert!(h.mock.called("hub q=tiny engine=- fits=false"), "{:?}", h.mock.calls());
+    assert!(
+        s.contains("answered in part") && s.contains("rate limited"),
+        "{s}"
+    );
+    assert!(
+        h.mock.called("hub q=tiny engine=- fits=false"),
+        "{:?}",
+        h.mock.calls()
+    );
     // Empty Enter: back to the curated catalog.
     h.key(b"h");
     h.turns(2);
@@ -4089,7 +4168,9 @@ fn hub_search_h_queries_hugging_face_and_an_empty_query_leaves() {
     }
     h.turns(1);
     h.key(b"\r");
-    h.settle_until("the catalog back", |s| s.contains("Gemma 3 27B") && s.contains("no filter"));
+    h.settle_until("the catalog back", |s| {
+        s.contains("Gemma 3 27B") && s.contains("no filter")
+    });
 }
 
 #[test]
@@ -4099,7 +4180,9 @@ fn u_makes_an_installed_text_model_the_default_and_verifies_it() {
         json!({"routes": [{"key": "output.text", "provider": "mlx", "model": "other"}]});
     h.load_fixtures();
     h.open_models();
-    h.wait_for_call("the defaults read", |calls| calls.iter().any(|c| c == "defaults"));
+    h.wait_for_call("the defaults read", |calls| {
+        calls.iter().any(|c| c == "defaults")
+    });
     // Not downloaded yet: refused with the reason.
     h.select_artifact("qwen3:8b");
     h.key(b"u");
@@ -4110,18 +4193,25 @@ fn u_makes_an_installed_text_model_the_default_and_verifies_it() {
     assert!(s.contains("u makes it the default text model"), "{s}");
     h.key(b"u");
     h.settle_until_contains("✓ default text model: lmstudio · qwen/qwen3-8b");
-    assert!(h.mock.called("set_default lmstudio qwen/qwen3-8b"), "{:?}", h.mock.calls());
+    assert!(
+        h.mock.called("set_default lmstudio qwen/qwen3-8b"),
+        "{:?}",
+        h.mock.calls()
+    );
     let s = h.settle_until_contains("default text model");
     assert!(s.contains("default text lmstudio · qwen/qwen3-8b"), "{s}");
     // Pressing u again says so instead of rewriting it.
     h.key(b"u");
     h.settle_until_contains("is already the default text model");
     assert_eq!(
-        h.mock.calls().iter().filter(|c| c.starts_with("set_default")).count(),
+        h.mock
+            .calls()
+            .iter()
+            .filter(|c| c.starts_with("set_default"))
+            .count(),
         1
     );
 }
-
 
 // =======================================================================
 // 0.3.0 review fixes (M4 admin, M7 core bugs, video follow-ups).
@@ -4141,7 +4231,10 @@ fn an_empty_list_still_owns_the_screen_keys() {
     h.open_models();
     h.key(b"v");
     let s = h.settle_until_contains("no models on disk");
-    assert!(s.contains("v shows the downloads"), "the hint names where v goes:\n{s}");
+    assert!(
+        s.contains("v shows the downloads"),
+        "the hint names where v goes:\n{s}"
+    );
     h.key(b"v");
     let s = h.settle_until_contains("no downloads yet");
     assert!(s.contains(" downloads · 0 downloads"), "{s}");
@@ -4153,10 +4246,19 @@ fn an_empty_list_still_owns_the_screen_keys() {
     *h.mock.engines_error.lock().unwrap() = Some(TransportError::unavailable("gateway down"));
     h.key(b"0");
     h.settle_until_contains("could not list its engines");
-    let before = h.mock.calls().iter().filter(|c| *c == "engines_status probe=true").count();
+    let before = h
+        .mock
+        .calls()
+        .iter()
+        .filter(|c| *c == "engines_status probe=true")
+        .count();
     h.key(b"r");
     h.wait_for_call("the retry", |calls| {
-        calls.iter().filter(|c| *c == "engines_status probe=true").count() > before
+        calls
+            .iter()
+            .filter(|c| *c == "engines_status probe=true")
+            .count()
+            > before
     });
 }
 
@@ -4188,7 +4290,11 @@ fn downloads_adopted_from_the_feed_are_polled_to_the_end() {
         h.turn();
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert!(!h.screens.job_running(), "{:?}", h.screens.jobs.get_untracked());
+    assert!(
+        !h.screens.job_running(),
+        "{:?}",
+        h.screens.jobs.get_untracked()
+    );
     // Nothing runs, so q quits.
     h.key(b"q");
     h.turns(2);
@@ -4209,7 +4315,10 @@ fn a_paused_install_does_not_hold_the_quit() {
     h.open_engines();
     h.select_engine("ollama");
     h.settle_until_contains("needs admin");
-    assert!(h.screens.jobs.with_untracked(|v| v.iter().any(|j| j.is_paused())));
+    assert!(h
+        .screens
+        .jobs
+        .with_untracked(|v| v.iter().any(|j| j.is_paused())));
     assert!(!h.screens.job_running());
     h.key(b"q");
     h.turns(2);
@@ -4257,8 +4366,20 @@ fn read_only_access_refuses_every_host_changing_verb_with_the_reason() {
     refused(&mut h, b"s", "start or stop engines");
     h.select_engine("llamacpp");
     refused(&mut h, b"i", "install engines");
-    for verb in ["download ", "delete ", "install ", "server ", "set_default", "continue", "cancel"] {
-        assert!(!h.mock.called(verb), "{verb} reached the backend: {:?}", h.mock.calls());
+    for verb in [
+        "download ",
+        "delete ",
+        "install ",
+        "server ",
+        "set_default",
+        "continue",
+        "cancel",
+    ] {
+        assert!(
+            !h.mock.called(verb),
+            "{verb} reached the backend: {:?}",
+            h.mock.calls()
+        );
     }
 
     // The host signs in as an admin: the same key works.
@@ -4267,7 +4388,9 @@ fn read_only_access_refuses_every_host_changing_verb_with_the_reason() {
     h.settle_until_contains("Qwen3 8B");
     h.select_artifact("qwen3:8b");
     h.key(b"w");
-    h.wait_for_call("the download", |calls| calls.iter().any(|c| c == "download ollama qwen3:8b"));
+    h.wait_for_call("the download", |calls| {
+        calls.iter().any(|c| c == "download ollama qwen3:8b")
+    });
 }
 
 /// The footer pairs follow access AND capabilities.
@@ -4282,7 +4405,11 @@ fn hints_say_admin_only_and_not_here() {
     assert!(cat.contains(&("t", "type")), "{cat:?}");
     assert!(catalog::hints(TransportCaps::ALL, &Access::Admin).contains(&("w", "download")));
     let eng = engines::hints(TransportCaps::ALL, &ro);
-    for pair in [("i", "install: admin only"), ("s", "start/stop: admin only"), ("a", "continue: admin only")] {
+    for pair in [
+        ("i", "install: admin only"),
+        ("s", "start/stop: admin only"),
+        ("a", "continue: admin only"),
+    ] {
         assert!(eng.contains(&pair), "{eng:?}");
     }
     // A missing verb says so whoever asks.
@@ -4312,9 +4439,11 @@ fn t_filters_the_catalog_by_type_like_the_web_chips() {
     image["capabilities"] = json!({"image_generation": true});
     image["artifacts"][0]["artifact"] = json!("AbstractFramework/flux");
     doc["rows"].as_array_mut().unwrap().extend([video, image]);
-    h.screens.catalog.set(abstractcore_console::screens::Remote::Ready(
-        abstractcore_console::screens::CatalogData::from_value(&doc),
-    ));
+    h.screens
+        .catalog
+        .set(abstractcore_console::screens::Remote::Ready(
+            abstractcore_console::screens::CatalogData::from_value(&doc),
+        ));
     let s = h.settle_until_contains("Wan 2.2 TI2V");
     assert!(s.contains("type all"), "{s}");
     // text → thinking → tools → vision → audio → embedding → voice → image → video
@@ -4324,11 +4453,17 @@ fn t_filters_the_catalog_by_type_like_the_web_chips() {
     }
     let s = h.settle_until_contains("type Video");
     assert!(s.contains("Wan 2.2 TI2V"), "{s}");
-    assert!(!s.contains("Qwen3 8B") && !s.contains("FLUX Klein"), "only video rows:\n{s}");
+    assert!(
+        !s.contains("Qwen3 8B") && !s.contains("FLUX Klein"),
+        "only video rows:\n{s}"
+    );
     assert!(s.contains("1 artifacts"), "{s}");
     // The selection points into the FILTERED list.
     let sel = abstractcore_console::screens::catalog::selected_artifact(&h.screens, false);
-    assert_eq!(sel.map(|r| r.artifact).as_deref(), Some("AbstractFramework/wan2.2"));
+    assert_eq!(
+        sel.map(|r| r.artifact).as_deref(),
+        Some("AbstractFramework/wan2.2")
+    );
     h.key(b"t");
     let s = h.settle_until_contains("type all");
     assert!(s.contains("Qwen3 8B") && s.contains("FLUX Klein"), "{s}");
@@ -4348,18 +4483,24 @@ fn w_sends_the_catalog_size_only_when_the_catalog_vouches_for_it() {
     // An estimated size (no catalog/hf_api source) is never a promise.
     let mut doc = fixture("model_catalog");
     doc["rows"][1]["artifacts"][0]["size_source"] = json!("estimate");
-    h.screens.catalog.set(abstractcore_console::screens::Remote::Ready(
-        abstractcore_console::screens::CatalogData::from_value(&doc),
-    ));
+    h.screens
+        .catalog
+        .set(abstractcore_console::screens::Remote::Ready(
+            abstractcore_console::screens::CatalogData::from_value(&doc),
+        ));
     h.turns(2);
     h.select_artifact("gemma3:27b");
     h.key(b"w");
     h.wait_for_call("the unsized download", |calls| {
-        calls.iter().any(|c| c == "expected_bytes ollama gemma3:27b -")
+        calls
+            .iter()
+            .any(|c| c == "expected_bytes ollama gemma3:27b -")
     });
     h.select_artifact("qwen3:8b");
     h.key(b"w");
     h.wait_for_call("the sized download", |calls| {
-        calls.iter().any(|c| c == "expected_bytes ollama qwen3:8b 5200000000")
+        calls
+            .iter()
+            .any(|c| c == "expected_bytes ollama qwen3:8b 5200000000")
     });
 }

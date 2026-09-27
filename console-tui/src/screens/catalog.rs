@@ -95,7 +95,10 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
                     t.warn,
                 ));
             }
-            spans.push(span(" · c cancels the selected one · v back to the catalog", t.text_faint));
+            spans.push(span(
+                " · c cancels the selected one · v back to the catalog",
+                t.text_faint,
+            ));
             return line(spans);
         }
         if let (CatalogView::Catalog, Some(h)) = (view, hub.as_ref()) {
@@ -110,7 +113,9 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
                     if why.is_empty() {
                         " · Hugging Face answered in part: results may be incomplete".to_string()
                     } else {
-                        format!(" · Hugging Face answered in part ({why}): results may be incomplete")
+                        format!(
+                            " · Hugging Face answered in part ({why}): results may be incomplete"
+                        )
                     },
                     t.warn,
                 )),
@@ -136,7 +141,11 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
         if view == CatalogView::Catalog {
             spans.push(span(
                 format!(" · type {}", category_label(category)),
-                if category.is_some() { t.ok } else { t.text_muted },
+                if category.is_some() {
+                    t.ok
+                } else {
+                    t.text_muted
+                },
             ));
             spans.push(span(
                 if fits { " · fits only" } else { " · any fit" },
@@ -162,7 +171,11 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
         let w = abstracttui::app::use_viewport(tcx).get().w;
         // The installed list and the type filter apply locally: track
         // the filters here.
-        let _ = (store.query.get(), store.engine_filter.get(), store.category.get());
+        let _ = (
+            store.query.get(),
+            store.engine_filter.get(),
+            store.category.get(),
+        );
         // Every placeholder below holds focus (see `focus_holder`): the
         // screen's keys must work on an empty list too.
         match store.view.get() {
@@ -182,7 +195,11 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
                 other => focus_holder(
                     remote_line(
                         &t,
-                        if store.hub.get_untracked().is_some() { "Hugging Face" } else { "catalog" },
+                        if store.hub.get_untracked().is_some() {
+                            "Hugging Face"
+                        } else {
+                            "catalog"
+                        },
                         &other,
                     )
                     .expect("not ready"),
@@ -214,7 +231,9 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
                         installed_table(tcx, &t, &rows, store, w)
                     }
                 }
-                other => focus_holder(remote_line(&t, "installed models", &other).expect("not ready")),
+                other => {
+                    focus_holder(remote_line(&t, "installed models", &other).expect("not ready"))
+                }
             },
         }
     });
@@ -590,7 +609,10 @@ fn artifact_detail(t: &TokenSet, r: &ArtifactRow, store: &ScreensStore) -> View 
         _ => {}
     }
     if let Some(fr) = r.free_now_bytes {
-        spans.push(span(format!(" · {} free now", bytes_label(Some(fr))), t.text_faint));
+        spans.push(span(
+            format!(" · {} free now", bytes_label(Some(fr))),
+            t.text_faint,
+        ));
     }
     if r.disk_ok == Some(false) {
         spans.push(span(" · not enough disk", t.error));
@@ -609,15 +631,17 @@ fn artifact_detail(t: &TokenSet, r: &ArtifactRow, store: &ScreensStore) -> View 
         second.push(span(format!(" {n}"), t.text_faint));
     }
     let is_default = store.text_default.with(|d| {
-        d.ready().cloned().flatten().is_some_and(|(p, m)| {
-            p == r.provider && m == served_model_id(&r.provider, &r.artifact)
-        })
+        d.ready()
+            .cloned()
+            .flatten()
+            .is_some_and(|(p, m)| p == r.provider && m == served_model_id(&r.provider, &r.artifact))
     });
     match r.presence.as_str() {
         "installed" if is_default => second.push(span(" · default text model", t.ok)),
-        "installed" if r.can_be_text_default() => {
-            second.push(span(" · d deletes · u makes it the default text model", t.text_faint))
-        }
+        "installed" if r.can_be_text_default() => second.push(span(
+            " · d deletes · u makes it the default text model",
+            t.text_faint,
+        )),
         "installed" => second.push(span(" · d deletes", t.text_faint)),
         "absent" if r.downloadable => second.push(span(" · w downloads", t.text_faint)),
         _ => {}
@@ -648,9 +672,13 @@ fn downloads_table(cx: Scope, t: &TokenSet, data: &[JobView], store: ScreensStor
                     (None, "download_group") => "download all".into(),
                     _ => j.job_id.clone(),
                 },
-                j.percent.map(|p| format!("{p:.0}%")).unwrap_or_else(|| "—".into()),
+                j.percent
+                    .map(|p| format!("{p:.0}%"))
+                    .unwrap_or_else(|| "—".into()),
                 match (j.downloaded_bytes, j.total_bytes) {
-                    (Some(d), Some(tot)) => format!("{} / {}", bytes_label(Some(d)), bytes_label(Some(tot))),
+                    (Some(d), Some(tot)) => {
+                        format!("{} / {}", bytes_label(Some(d)), bytes_label(Some(tot)))
+                    }
                     (Some(d), None) => bytes_label(Some(d)),
                     _ => "—".into(),
                 },
@@ -660,7 +688,9 @@ fn downloads_table(cx: Scope, t: &TokenSet, data: &[JobView], store: ScreensStor
                     (Some(b), Some(e)) if b > 0.0 && j.is_active() => {
                         format!("{}/s · {e}s left", bytes_label(Some(b as u64)))
                     }
-                    (Some(b), _) if b > 0.0 && j.is_active() => format!("{}/s", bytes_label(Some(b as u64))),
+                    (Some(b), _) if b > 0.0 && j.is_active() => {
+                        format!("{}/s", bytes_label(Some(b as u64)))
+                    }
                     _ => "—".into(),
                 });
             }
@@ -730,7 +760,8 @@ fn download_selected(cx: Scope, sctx: &ScreensCtx) {
     match store.view.get_untracked() {
         CatalogView::Installed => {
             store.notice.set(Some(
-                "this list is what is already on disk — v shows the catalog to download from".into(),
+                "this list is what is already on disk — v shows the catalog to download from"
+                    .into(),
             ));
             return;
         }
@@ -950,9 +981,15 @@ fn use_as_default(sctx: &ScreensCtx) {
         return;
     };
     let why_not = if r.presence != "installed" {
-        Some(format!("{} is not downloaded yet — w first, then u", r.artifact))
+        Some(format!(
+            "{} is not downloaded yet — w first, then u",
+            r.artifact
+        ))
     } else if r.embedding == Some(true) {
-        Some(format!("{} is an embedding model — it cannot answer text", r.artifact))
+        Some(format!(
+            "{} is an embedding model — it cannot answer text",
+            r.artifact
+        ))
     } else if r.text_capable != Some(true) {
         Some(format!("{} is not a text model", r.model_name))
     } else {
@@ -963,13 +1000,14 @@ fn use_as_default(sctx: &ScreensCtx) {
         return;
     }
     let model = served_model_id(&r.provider, &r.artifact);
-    let already = store
-        .text_default
-        .with_untracked(|d| d.ready().cloned().flatten() == Some((r.provider.clone(), model.clone())));
+    let already = store.text_default.with_untracked(|d| {
+        d.ready().cloned().flatten() == Some((r.provider.clone(), model.clone()))
+    });
     if already {
-        store
-            .notice
-            .set(Some(format!("{} · {model} is already the default text model", r.provider)));
+        store.notice.set(Some(format!(
+            "{} · {model} is already the default text model",
+            r.provider
+        )));
         return;
     }
     sctx.set_text_default(&r.provider, &r.artifact);

@@ -250,7 +250,9 @@ impl Worker {
                             upsert_job(&s, j);
                         }
                         for j in done {
-                            let known = s.jobs.with_untracked(|v| v.iter().any(|x| x.job_id == j.job_id));
+                            let known = s
+                                .jobs
+                                .with_untracked(|v| v.iter().any(|x| x.job_id == j.job_id));
                             if known {
                                 s.jobs.update(|v| {
                                     if let Some(x) = v.iter_mut().find(|x| x.job_id == j.job_id) {
@@ -265,7 +267,10 @@ impl Worker {
                 Err(e) => self.post(move |s| s.feed.set(Remote::Failed(e))),
             },
             ScreenCmd::LoadTextDefault => {
-                let r = remote(self.transport.capability_defaults(), text_default_from_value);
+                let r = remote(
+                    self.transport.capability_defaults(),
+                    text_default_from_value,
+                );
                 self.post(move |s| s.text_default.set(r));
             }
             ScreenCmd::SetTextDefault { provider, model } => {
@@ -302,9 +307,8 @@ impl Worker {
                 // install permission (the gateway's rule).
                 let one = |loc: InstallLocation| -> Result<LocationPlan, TransportError> {
                     let v = self.transport.engine_install_at(&engine, true, loc)?;
-                    LocationPlan::from_dry_run(&v).ok_or_else(|| {
-                        TransportError::protocol("the dry run returned no `plan`")
-                    })
+                    LocationPlan::from_dry_run(&v)
+                        .ok_or_else(|| TransportError::protocol("the dry run returned no `plan`"))
                 };
                 let r = match (one(InstallLocation::User), one(InstallLocation::System)) {
                     (Ok(user), Ok(system)) => Remote::Ready(InstallPlans { user, system }),
@@ -318,10 +322,14 @@ impl Worker {
             }
             ScreenCmd::Adopt { job_id } => self.adopt(&job_id),
             ScreenCmd::Continue { job_id, action } => {
-                match self.transport.engine_job_continue(&job_id, action.as_deref()) {
+                match self
+                    .transport
+                    .engine_job_continue(&job_id, action.as_deref())
+                {
                     Ok(v) => {
                         let view = JobView::from_value(&v);
-                        self.paused_seen.retain(|k| !k.starts_with(&format!("{job_id}/")));
+                        self.paused_seen
+                            .retain(|k| !k.starts_with(&format!("{job_id}/")));
                         let msg = format!(
                             "continuing {} {}: {}",
                             view.verb(),
@@ -362,7 +370,9 @@ impl Worker {
                                 format!("⚠ {engine} was started but is not answering yet{said}")
                             }
                             (ServerAction::Stop, true) => format!("✓ {engine} is stopped{said}"),
-                            (ServerAction::Stop, false) => format!("⚠ {engine} is still running{said}"),
+                            (ServerAction::Stop, false) => {
+                                format!("⚠ {engine} is still running{said}")
+                            }
                         };
                         self.notice(msg);
                     }
@@ -441,7 +451,10 @@ impl Worker {
     /// Start a poll chain for `job_id` unless one runs (or it ended).
     /// `download` = poll it on the download route.
     fn watch(&mut self, job_id: &str, download: bool) {
-        if job_id.is_empty() || self.finished.contains(job_id) || !self.watching.insert(job_id.to_string()) {
+        if job_id.is_empty()
+            || self.finished.contains(job_id)
+            || !self.watching.insert(job_id.to_string())
+        {
             return;
         }
         schedule_job_poll(
@@ -468,7 +481,11 @@ impl Worker {
                 }
             }
             Err(e) => {
-                let msg = format!("could not read job {job_id} ({}: {})", e.headline(), e.message);
+                let msg = format!(
+                    "could not read job {job_id} ({}: {})",
+                    e.headline(),
+                    e.message
+                );
                 self.notice(msg);
             }
         }

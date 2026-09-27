@@ -137,7 +137,9 @@ pub fn engines(cx: Scope, sctx: &ScreensCtx) -> View {
         })
         .shortcut(KeyChord::plain(Key::Char('c')), {
             let s = sctx.clone();
-            move |_| match selected_engine(&s.store, false).and_then(|e| s.store.active_install(&e.id)) {
+            move |_| match selected_engine(&s.store, false)
+                .and_then(|e| s.store.active_install(&e.id))
+            {
                 Some(j) => s.cancel_job(&j),
                 None => s.cancel(),
             }
@@ -392,8 +394,11 @@ fn paused_detail(t: &TokenSet, first: Vec<crate::ui::util::SpanSpec>, j: &JobVie
         verbs.push("y copies the command".into());
     }
     verbs.push("c cancels".into());
-    col.child(line(vec![span(format!("   {}", verbs.join(" · ")), t.text_faint)]))
-        .build()
+    col.child(line(vec![span(
+        format!("   {}", verbs.join(" · ")),
+        t.text_faint,
+    )]))
+    .build()
 }
 
 /// The words for one `continue_actions` entry (the backend's button
@@ -454,7 +459,9 @@ fn install_selected(cx: Scope, sctx: &ScreensCtx) {
         Some(format!(
             "{}: {}",
             e.name,
-            a.reason.as_deref().unwrap_or("installing is not available right now")
+            a.reason
+                .as_deref()
+                .unwrap_or("installing is not available right now")
         ))
     } else if !e.install.available
         || e.install.argv.is_empty()
@@ -513,9 +520,15 @@ fn start_stop_selected(sctx: &ScreensCtx) {
             } else if e.installed != Some(true) {
                 format!("{} is not installed", e.name)
             } else if e.running.is_none() && e.base_url.is_some() {
-                format!("whether {} runs is not known yet — r probes it first", e.name)
+                format!(
+                    "whether {} runs is not known yet — r probes it first",
+                    e.name
+                )
             } else {
-                format!("{} is not a server: it runs inside the host when a model uses it", e.name)
+                format!(
+                    "{} is not a server: it runs inside the host when a model uses it",
+                    e.name
+                )
             };
             store.notice.set(Some(why));
         }
@@ -541,17 +554,17 @@ fn continue_selected(cx: Scope, sctx: &ScreensCtx) {
         return;
     };
     let Some(j) = store.active_install(&e.id).filter(|j| j.is_paused()) else {
-        store.notice.set(Some(format!("no {} install is waiting for anything", e.name)));
+        store.notice.set(Some(format!(
+            "no {} install is waiting for anything",
+            e.name
+        )));
         return;
     };
     match j.continue_actions.as_slice() {
         [] => sctx.continue_job(&j, None),
         [one] => sctx.continue_job(&j, Some(one)),
         many => {
-            let mut prompt = ChoicePrompt::new(format!(
-                "Continue the {} install?",
-                e.name
-            ));
+            let mut prompt = ChoicePrompt::new(format!("Continue the {} install?", e.name));
             for a in many {
                 prompt = prompt.option(a.as_str(), continue_label(&j, a));
             }

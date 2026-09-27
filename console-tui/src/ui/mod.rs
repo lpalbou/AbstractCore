@@ -832,18 +832,14 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                     // spelled out before it spends a byte.
                                     pairs.push(("w", "download weights"));
                                 }
-                                SCREEN_CATALOG => {
-                                    pairs.extend(crate::screens::catalog::hints(
-                                        screen_caps,
-                                        &screen_access.get(),
-                                    ))
-                                }
-                                SCREEN_ENGINES => {
-                                    pairs.extend(crate::screens::engines::hints(
-                                        screen_caps,
-                                        &screen_access.get(),
-                                    ))
-                                }
+                                SCREEN_CATALOG => pairs.extend(crate::screens::catalog::hints(
+                                    screen_caps,
+                                    &screen_access.get(),
+                                )),
+                                SCREEN_ENGINES => pairs.extend(crate::screens::engines::hints(
+                                    screen_caps,
+                                    &screen_access.get(),
+                                )),
                                 _ => {}
                             }
                             pairs.push(("g", "test default route"));

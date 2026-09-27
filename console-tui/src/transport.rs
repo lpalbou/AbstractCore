@@ -529,13 +529,23 @@ mod tests {
         fn engines_status(&self, _p: bool) -> Result<Value, TransportError> {
             Ok(json!({}))
         }
-        fn models_catalog(&self, _q: &str, _e: Option<&str>, _f: bool) -> Result<Value, TransportError> {
+        fn models_catalog(
+            &self,
+            _q: &str,
+            _e: Option<&str>,
+            _f: bool,
+        ) -> Result<Value, TransportError> {
             Ok(json!({}))
         }
         fn models_installed(&self, _p: Option<&str>) -> Result<Value, TransportError> {
             Ok(json!({}))
         }
-        fn start_download(&self, _p: &str, _a: &str, _b: Option<u64>) -> Result<Value, TransportError> {
+        fn start_download(
+            &self,
+            _p: &str,
+            _a: &str,
+            _b: Option<u64>,
+        ) -> Result<Value, TransportError> {
             Ok(json!({}))
         }
         fn delete_model(&self, _p: &str, _a: &str, _f: bool) -> Result<Value, TransportError> {
@@ -563,14 +573,16 @@ mod tests {
             t.set_text_default("p", "m").unwrap_err(),
             t.engine_job_continue("j", None).unwrap_err(),
             t.engine_server("ollama", ServerAction::Start).unwrap_err(),
-            t.engine_install_at("ollama", false, InstallLocation::User).unwrap_err(),
+            t.engine_install_at("ollama", false, InstallLocation::User)
+                .unwrap_err(),
         ] {
             assert_eq!(e.kind, TransportErrorKind::Unsupported, "{e}");
             assert_eq!(e.headline(), "not available here");
         }
         // Auto is just an install.
         assert_eq!(
-            t.engine_install_at("ollama", false, InstallLocation::Auto).unwrap()["engine"],
+            t.engine_install_at("ollama", false, InstallLocation::Auto)
+                .unwrap()["engine"],
             "ollama"
         );
         // The download verbs default to the generic job verbs.
