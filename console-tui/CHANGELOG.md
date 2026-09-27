@@ -57,7 +57,14 @@ hosts (the gateway console): see *Migrating from 0.2* below.
   lands in the journal and the notice — applied, kept (with what was
   recommended), already, and routes this computer cannot run with the
   reason ("output.video: nothing recommended runs on this computer —
-  …; left unset"). The report used to be discarded. The prompt no longer
+  …; left unset"), routes `--force` `cleared` (a broken route with
+  nothing runnable to replace it), and the report's totals (`cleared`
+  included). The report used to be discarded.
+- **Routes this computer cannot run are flagged** (optional Core fields):
+  a configured row with `route_unavailable` reads `cannot run here` and
+  its detail line says why; an unset row with
+  `recommendation_unavailable` says which recommendation cannot run and
+  why. The prompt no longer
   hardcodes the route list (video joined text, voice and image).
 
 ### Migrating from 0.2
@@ -81,7 +88,7 @@ hosts (the gateway console): see *Migrating from 0.2* below.
   view in `screens::data` (read fields; the parsers build them).
   `ScreensOptions` stays constructible with `..Default::default()`.
 
-Gate: `cargo build`, `cargo test --locked` (lib 90, headless 86 + 1 ignored,
+Gate: `cargo build`, `cargo test --locked` (lib 90, headless 87 + 1 ignored,
 cli_transport 5, doc 1), `cargo clippy --all-targets -D warnings` and
 `cargo fmt --check` clean; `cargo semver-checks` vs 0.2.0: major
 (7 major lints, expected for 0.3.0; 0 minor).

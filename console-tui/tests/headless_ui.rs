@@ -4504,3 +4504,51 @@ fn w_sends_the_catalog_size_only_when_the_catalog_vouches_for_it() {
             .any(|c| c == "expected_bytes ollama qwen3:8b 5200000000")
     });
 }
+
+/// Routes: Core's `route_unavailable` (a CONFIGURED route this computer
+/// cannot run) and `recommendation_unavailable` (why an UNSET row has
+/// no recommendation) are rendered — the first never reads "configured"
+/// as if it worked. Both optional: the fixture's other rows are unchanged.
+#[test]
+fn routes_screen_flags_routes_this_computer_cannot_run() {
+    let mut h = harness_sized(Size::new(200, 40));
+    h.load_fixtures();
+    let mut doc = routes_fixture();
+    for r in doc["routes"].as_array_mut().unwrap() {
+        if r["key"] == "output.voice" {
+            r["route_unavailable"] = json!({"provider": "supertonic", "model": "supertonic-3",
+                                             "reason": "Supertonic has no build for this CPU"});
+        }
+        if r["key"] == "output.video" {
+            r["recommendation_unavailable"] = json!({"provider": "mlx-gen", "model": "wan2.2",
+                                                     "reason": "MLX-Gen needs Apple silicon"});
+        }
+    }
+    h.store
+        .routes
+        .set(Loadable::Ready(RoutesData::from_value(&doc)));
+    h.goto_screen(3);
+    let s = h.select_route("output.voice");
+    let voice = s
+        .lines()
+        .find(|l| l.contains("output.voice") && l.contains("supertonic"))
+        .unwrap_or("");
+    assert!(voice.contains("cannot run here"), "state column:\n{s}");
+    assert!(
+        s.contains(
+            "configured but cannot run on this computer: Supertonic has no build for this CPU"
+        ),
+        "detail line:\n{s}"
+    );
+    let s = h.select_route("output.video");
+    assert!(
+        s.contains("the recommended mlx-gen · wan2.2 cannot run on this computer: MLX-Gen needs Apple silicon"),
+        "{s}"
+    );
+    // A row without either field keeps its old words.
+    let s = h.select_route("embedding.text");
+    assert!(
+        !s.contains("cannot run on this computer"),
+        "the detail line of a runnable row:\n{s}"
+    );
+}

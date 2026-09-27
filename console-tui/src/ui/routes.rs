@@ -204,6 +204,36 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                         t.text_muted,
                     ));
                 }
+                // A route this computer cannot run, in Core's words: the
+                // configured one (`route_unavailable`), or the reason an
+                // unset row has no recommendation (`recommendation_unavailable`).
+                if let Some(u) = r.route_unavailable.as_ref().filter(|_| r.configured) {
+                    spans.push(span(
+                        format!(
+                            "configured but cannot run on this computer: {} — a (replace mine) \
+                             swaps in what runs here  ",
+                            u.reason
+                        ),
+                        t.error,
+                    ));
+                } else if let Some(u) = r
+                    .recommendation_unavailable
+                    .as_ref()
+                    .filter(|_| !r.configured)
+                {
+                    let what = u.pair_text();
+                    spans.push(span(
+                        if what.is_empty() {
+                            format!("nothing recommended runs on this computer: {}  ", u.reason)
+                        } else {
+                            format!(
+                                "the recommended {what} cannot run on this computer: {}  ",
+                                u.reason
+                            )
+                        },
+                        t.warn,
+                    ));
+                }
                 if let Some(u) = &r.base_url {
                     spans.push(span(format!("base_url {u}  "), t.text_muted));
                 }

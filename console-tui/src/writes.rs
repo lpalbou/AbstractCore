@@ -1068,34 +1068,62 @@ pub fn apply_report_lines(doc: &Value) -> Result<Vec<String>, String> {
         }
     };
     let mut out = Vec::new();
+    // The report's own totals first (each optional: an older Core has no
+    // `cleared`), then one line per route.
+    let totals: Vec<String> = ["changed", "cleared", "kept", "already", "unavailable"]
+        .iter()
+        .filter_map(|k| {
+            doc.get(*k)
+                .and_then(Value::as_u64)
+                .filter(|n| *n > 0)
+                .map(|n| format!("{n} {k}"))
+        })
+        .collect();
+    if !totals.is_empty() {
+        out.push(totals.join(" · "));
+    }
     for r in rows {
         let key = r.get("key").and_then(Value::as_str).unwrap_or("?");
         let action = r.get("action").and_then(Value::as_str).unwrap_or("?");
+        let reason = r
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or("no reason given");
+        // A configured route this computer cannot run is never reported
+        // as fine, whatever the action (Core `route_unavailable`).
+        let cannot_run = r
+            .get("route_unavailable")
+            .and_then(|u| u.get("reason"))
+            .and_then(Value::as_str)
+            .map(|why| format!(" — yours cannot run on this computer: {why}"))
+            .unwrap_or_default();
         let line = match action {
             "apply" => format!("{key}: applied {}", pair(r.get("after"))),
             "overwrite" => format!(
-                "{key}: replaced {} with {}",
+                "{key}: replaced {} with {}{cannot_run}",
                 pair(r.get("before")),
                 pair(r.get("after"))
             ),
             "already" => format!("{key}: already {}", pair(r.get("after"))),
             "kept" => format!(
-                "{key}: kept yours {} (recommended {})",
+                "{key}: kept yours {} (recommended {}){cannot_run}",
                 pair(r.get("before")),
                 pair(r.get("recommended"))
             ),
+            "cleared" => format!(
+                "{key}: removed {}{cannot_run}; nothing recommended runs here either — {reason}",
+                pair(r.get("before"))
+            ),
             "unavailable" => {
-                let reason = r
-                    .get("reason")
-                    .and_then(Value::as_str)
-                    .unwrap_or("no reason given");
                 let before = pair(r.get("before"));
                 let left = if before == "unset" {
                     "left unset".to_string()
                 } else {
                     format!("left as {before}")
                 };
-                format!("{key}: nothing recommended runs on this computer — {reason}; {left}")
+                format!(
+                    "{key}: nothing recommended runs on this computer — {reason}; {left}{cannot_run}"
+                )
             }
             // A newer Core's word: shown verbatim, never dropped.
             other => format!("{key}: {other} {}", pair(r.get("after"))),
@@ -1249,6 +1277,29 @@ mod apply_report_tests {
                 "output.voice: kept yours openai · tts-1 (recommended supertonic · supertonic-3)",
                 "output.image: nothing recommended runs on this computer — MLX-Gen needs Apple silicon; left unset",
                 "output.video: nothing recommended runs on this computer — needs 58 GiB; left as mlx-gen · wan",
+            ]
+        );
+        // A newer Core: totals (with `cleared`), a cleared broken route,
+        // and a kept route flagged as not runnable here.
+        let doc = json!({"ok": true, "changed": 1, "cleared": 1, "kept": 1, "already": 0,
+            "routes": [
+            {"key": "output.image", "action": "cleared",
+             "before": {"provider": "mlx-gen", "model": "flux"}, "after": {},
+             "reason": "MLX-Gen needs Apple silicon",
+             "route_unavailable": {"provider": "mlx-gen", "model": "flux", "reason": "needs Apple silicon"}},
+            {"key": "output.voice", "action": "kept",
+             "before": {"provider": "supertonic", "model": "s3"},
+             "recommended": {"provider": "piper", "model": "p"},
+             "route_unavailable": {"provider": "supertonic", "model": "s3", "reason": "no arm64 wheel"}},
+        ]});
+        assert_eq!(
+            apply_report_lines(&doc).unwrap(),
+            vec![
+                "1 changed · 1 cleared · 1 kept",
+                "output.image: removed mlx-gen · flux — yours cannot run on this computer: needs \
+                 Apple silicon; nothing recommended runs here either — MLX-Gen needs Apple silicon",
+                "output.voice: kept yours supertonic · s3 (recommended piper · p) — yours cannot run \
+                 on this computer: no arm64 wheel",
             ]
         );
         assert!(apply_report_lines(&json!({"ok": false, "error": "boom"}))
