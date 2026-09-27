@@ -221,7 +221,7 @@ def test_probing_the_recommended_set_runs_no_download_tool(monkeypatch, linux_ho
     monkeypatch.setattr(mm, "_run_streaming", lambda *a, **k: pytest.fail("probe streamed a download"))
 
     plan = mm.recommended_plan()
-    assert plan["total"] == len(RECOMMENDED_MODEL_DOWNLOADS) - 1  # no Apple-only image on Linux
+    assert plan["total"] == len(RECOMMENDED_MODEL_DOWNLOADS) - 2  # no Apple-only image/video on Linux
     for row in plan["recommended"]:
         assert row["status"] in mm.PRESENCE_STATES
 
@@ -471,7 +471,7 @@ def test_models_status_json_is_machine_readable(monkeypatch, capsys, tmp_path, l
     payload = json.loads(out)
     assert payload["ok"] is True
     assert isinstance(payload["routes"], list) and payload["routes"]
-    assert payload["recommended"]["total"] == len(RECOMMENDED_MODEL_DOWNLOADS) - 1  # no Apple-only image on Linux
+    assert payload["recommended"]["total"] == len(RECOMMENDED_MODEL_DOWNLOADS) - 2  # no Apple-only image/video on Linux
     assert set(payload["providers"]) >= {"lmstudio", "ollama", "supertonic", "mlx-gen"}
     for row in payload["routes"]:
         assert row["availability"]["status"] in mm.PRESENCE_STATES

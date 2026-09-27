@@ -12,7 +12,11 @@ The rule now, per recommended route and host:
   - voice stays Supertonic everywhere (ONNX Runtime on CPU, every desktop OS);
   - text keeps its owner (`recommended_text_model`), which now also skips LM
     Studio where it has no build (Intel Macs) for the same model on Ollama;
-  - Apple silicon is BYTE-IDENTICAL to before (golden values below).
+  - Apple silicon is BYTE-IDENTICAL to before (golden values below), plus
+    the video row (2026-09-27, `output.video`, MLX-Gen Wan2.2 TI2V-5B), which
+    is written only where its measured memory fits (>= ~96 GiB of unified
+    memory) and reported unavailable everywhere else
+    (tests/config/test_recommended_video_route.py owns that matrix).
 """
 
 from __future__ import annotations
@@ -91,7 +95,7 @@ def test_no_route_or_download_names_an_engine_the_host_cannot_run(name):
 @pytest.mark.parametrize("name", NON_APPLE)
 def test_the_image_route_is_reported_unavailable_with_its_reason(name):
     unavailable = cd.recommended_unavailable_routes(_host(name))
-    assert set(unavailable) == {"output.image"}
+    assert set(unavailable) == {"output.image", "output.video"}
     row = unavailable["output.image"]
     assert (row["provider"], row["model"]) == ("mlx-gen", "AbstractFramework/flux.2-klein-4b-8bit")
     assert "Apple Silicon" in row["reason"]
@@ -108,12 +112,13 @@ def test_the_seed_never_writes_the_image_route(name):
 @pytest.mark.parametrize("name", NON_APPLE)
 def test_apply_reports_image_unavailable_and_writes_the_rest(name):
     plan = {p["key"]: p for p in cd.plan_recommended_capability_defaults({}, host=_host(name), force=True)}
-    assert list(plan) == ["input.text", "output.voice", "output.image"]
+    assert list(plan) == ["input.text", "output.voice", "output.image", "output.video"]
     assert plan["input.text"]["action"] == plan["output.voice"]["action"] == "apply"
-    image = plan["output.image"]
-    assert image["action"] == "unavailable" and image["changed"] is False
-    assert image["after"] == image["before"] == {} and image["download"] == {}
-    assert "Apple Silicon" in image["reason"]
+    for key in ("output.image", "output.video"):
+        row = plan[key]
+        assert row["action"] == "unavailable" and row["changed"] is False
+        assert row["after"] == row["before"] == {} and row["download"] == {}
+        assert "Apple Silicon" in row["reason"]
 
 
 def test_an_intel_mac_text_pick_is_the_ollama_build_of_the_portable_model():
@@ -128,7 +133,7 @@ def test_an_intel_mac_text_pick_is_the_ollama_build_of_the_portable_model():
 def test_a_host_with_no_supported_engine_gets_no_route_at_all():
     host = dict(synthetic_host("cpu16"), os="freebsd")
     assert cd.recommended_capability_default_routes(host) == {}
-    assert set(cd.recommended_unavailable_routes(host)) == {"input.text", "output.voice", "output.image"}
+    assert set(cd.recommended_unavailable_routes(host)) == {"input.text", "output.voice", "output.image", "output.video"}
 
 
 def test_an_unknown_recommended_provider_fails_loudly():
@@ -154,7 +159,7 @@ def test_a_fresh_linux_install_leaves_image_unset_and_the_grid_says_why(tmp_path
     assert "recommendation_unavailable" not in rows["output.image.text_to_image"]
 
     report = manager.apply_recommended_capability_defaults(force=True)
-    assert report["unavailable"] == 1 and report["changed"] == 0
+    assert report["unavailable"] == 2 and report["changed"] == 0
     assert "output.image" not in {k for k, r in manager.config.capability_defaults.routes.items() if r.configured()}
 
 
@@ -193,20 +198,22 @@ APPLE_TEXT = {
 }
 
 
-def _golden_apple_seed(text_model: str) -> str:
-    # The exact JSON the pre-fix seed wrote on Apple silicon.
-    return json.dumps(
-        {
-            "version": 1,
-            "routes": {
-                "input.text": {"provider": "mlx", "model": text_model, "options": MTP_OPTIONS},
-                "output.image": {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"},
-                "output.voice": {"provider": "supertonic", "model": "supertonic-3"},
-            },
-            "seeded": "recommended-v1",
-        },
-        sort_keys=False,
-    )
+# Where the recommended video model fits (measured memory; >= ~96 GiB).
+VIDEO_FITS = {"metal16": False, "metal64": False, "metal128": True}
+VIDEO = {"provider": "mlx-gen", "model": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"}
+
+
+def _golden_apple_seed(text_model: str, video: bool = False) -> str:
+    # The exact JSON the pre-fix seed wrote on Apple silicon; the video row is
+    # the one addition, only where the video model fits.
+    routes = {
+        "input.text": {"provider": "mlx", "model": text_model, "options": MTP_OPTIONS},
+        "output.image": {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"},
+        "output.voice": {"provider": "supertonic", "model": "supertonic-3"},
+    }
+    if video:
+        routes = dict(sorted({**routes, "output.video": dict(VIDEO)}.items()))
+    return json.dumps({"version": 1, "routes": routes, "seeded": "recommended-v1"}, sort_keys=False)
 
 
 @pytest.mark.parametrize("kind", sorted(APPLE_TEXT))
@@ -214,8 +221,8 @@ def test_apple_silicon_seed_is_byte_identical(kind, monkeypatch):
     monkeypatch.setattr(mc, "MTP_RECOMMENDED", False)
     host = synthetic_host(kind)
     seeded = cd.seed_recommended_capability_defaults(cd.CapabilityDefaultsConfig(), host=host)
-    assert json.dumps(seeded.to_dict(), sort_keys=False) == _golden_apple_seed(APPLE_TEXT[kind])
-    assert cd.recommended_unavailable_routes(host) == {}
+    assert json.dumps(seeded.to_dict(), sort_keys=False) == _golden_apple_seed(APPLE_TEXT[kind], VIDEO_FITS[kind])
+    assert set(cd.recommended_unavailable_routes(host)) == (set() if VIDEO_FITS[kind] else {"output.video"})
 
 
 @pytest.mark.parametrize("kind", sorted(APPLE_TEXT))
@@ -223,29 +230,36 @@ def test_apple_silicon_routes_downloads_and_plan_are_unchanged(kind, monkeypatch
     monkeypatch.setattr(mc, "MTP_RECOMMENDED", False)
     host = synthetic_host(kind)
     text = APPLE_TEXT[kind]
+    video = VIDEO_FITS[kind]
     routes = cd.recommended_capability_default_routes(host)
-    assert list(routes) == ["input.text", "output.voice", "output.image"]
+    assert list(routes) == ["input.text", "output.voice", "output.image"] + (["output.video"] if video else [])
     assert {k: v.to_dict() for k, v in routes.items()} == {
         "input.text": {"provider": "mlx", "model": text, "options": MTP_OPTIONS},
         "output.voice": {"provider": "supertonic", "model": "supertonic-3"},
         "output.image": {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"},
+        **({"output.video": dict(VIDEO)} if video else {}),
     }
     assert cd.recommended_model_downloads(host) == {
         "input.text": {"provider": "mlx", "artifact": text},
         "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
         "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
+        **({"output.video": {"provider": VIDEO["provider"], "artifact": VIDEO["model"]}} if video else {}),
     }
     plan = cd.plan_recommended_capability_defaults({}, host=host)
-    assert [p["key"] for p in plan] == ["input.text", "output.voice", "output.image"]
-    for entry in plan:
+    assert [p["key"] for p in plan] == ["input.text", "output.voice", "output.image", "output.video"]
+    for entry in list(plan[:3]) + (list(plan[3:]) if video else []):
         # The pre-fix entry shape, exactly: no `reason`, no new keys.
         assert set(entry) == {"key", "selector", "action", "changed", "recommended", "before", "after", "download"}
         assert entry["action"] == "apply"
     assert plan[2]["after"] == {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"}
+    if not video:
+        assert plan[3]["action"] == "unavailable" and plan[3]["after"] == {}
 
 
 def test_apple_silicon_grid_carries_no_unavailable_note(tmp_path, pin_host):
-    pin_host(synthetic_host("metal64"))
+    # 128 GiB: every recommended row runs, the video one included (a smaller
+    # Mac notes only the video row: test_recommended_video_route.py).
+    pin_host(synthetic_host("metal128"))
     manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
     manager.clear_capability_default("output", "image")
     rows = manager.list_capability_defaults()

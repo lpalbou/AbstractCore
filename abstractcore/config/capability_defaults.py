@@ -304,8 +304,9 @@ RECOMMENDED_SEED_VERSION = "recommended-v1"
 # NOT A HOST ANSWER: this is the full recommended stack. Every reader goes
 # through `recommended_capability_default_routes(host)`, which picks the text
 # row per host (Apple silicon: the unified-memory tier) and DROPS every row
-# whose engine cannot run on that host (`output.image` is MLX-Gen, Apple
-# silicon only) -- see `recommended_route_unavailable_reason`.
+# whose engine cannot run on that host (`output.image` and `output.video` are
+# MLX-Gen, Apple silicon only) or whose model does not fit it (`output.video`,
+# `_FIT_GATED_ROUTES`) -- see `recommended_unavailable_routes`.
 RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
     # Text: the 4-BIT quantized build (operator ruling 2026-08-01). The ROUTE
     # stores the bare LM Studio id because that is what the server serves when
@@ -318,6 +319,12 @@ RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
     ),
     "output.voice": CapabilityRouteDefault(provider="supertonic", model="supertonic-3"),
     "output.image": CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/flux.2-klein-4b-8bit"),
+    # Video: Wan2.2 TI2V-5B, ONE checkpoint for text-to-video AND
+    # image-to-video, so the modality cell answers both tasks. It is the only
+    # video model AbstractVision serves that is not a 40 GB A14B package; its
+    # engine (MLX-Gen) is Apple silicon only and it needs ~58 GiB of MLX
+    # memory (measured), so it is fit-gated (`_FIT_GATED_ROUTES`).
+    "output.video": CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
 }
 
 # Per-provider artifact references that FETCH each recommended model — the
@@ -329,6 +336,7 @@ RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
     "input.text": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit"},
     "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
     "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
+    "output.video": {"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},
 }
 
 
@@ -341,7 +349,13 @@ RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
 #   - every row whose engine cannot run on the host is DROPPED, never written
 #     as a route that fails at first use. It is reported instead, with the
 #     reason, by `recommended_unavailable_routes()` -- the grid then shows the
-#     row unset with that reason and apply-recommended reports it.
+#     row unset with that reason and apply-recommended reports it;
+#   - a FIT-GATED row (`_FIT_GATED_ROUTES`: video) is also dropped, the same
+#     way, where the catalog's fit estimate says its model does not fit the
+#     host's memory. Text is deliberately NOT gated (a tier that does not fit
+#     is still the tier, with a warning -- `recommended_text_model`): every
+#     install needs a text model, while a video model is an extra that is only
+#     worth writing where it can run at all.
 # Every writer and every download surface reads these functions, never the
 # tables directly, so a host seeds, applies, downloads and displays the same
 # pick.
@@ -366,12 +380,39 @@ _CPU_PORTABLE_PROVIDERS = {"supertonic": "Supertonic (ONNX Runtime, CPU)"}
 # What an operator can do instead, per route, appended to the reason. Provider
 # ids are abstractvision's own (`diffusers`, `sdcpp`); the curated catalog has
 # no artifact for them yet, which is why nothing is recommended in their place.
+# Video has NO local alternative off Apple silicon today: abstractvision's
+# Diffusers text-to-video is disabled for its only model (CogVideoX-2b,
+# `_TEMPORARILY_DISABLED_LOCAL_DIFFUSERS_TASKS`) and has no image-to-video,
+# stable-diffusion.cpp raises for both, and its registry marks LTX-2,
+# HunyuanVideo, CogVideoX 1.5, Mochi and SVD `backend: not_supported`. The
+# one remaining path is abstractvision's OpenAI-compatible backend pointed at
+# a video endpoint (its text_to_video/image_to_video paths). No built-in cloud
+# video provider exists yet.
+_VIDEO_NO_LOCAL_ENGINE = (
+    "no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path "
+    "is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint "
+    "(abstractvision openai-compatible backend)"
+)
 _UNAVAILABLE_NEXT_STEP = {
     "output.image": (
         "set output.image to an image engine this host runs: diffusers (install profile gpu), "
         "sdcpp (stable-diffusion.cpp, optional extra) or a cloud image provider"
     ),
+    "output.video": _VIDEO_NO_LOCAL_ENGINE,
 }
+# Next step when the engine runs but the model does not fit (fit-gated rows).
+_TOO_LARGE_NEXT_STEP = {
+    "output.video": (
+        "use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint "
+        "(abstractvision openai-compatible backend)"
+    ),
+}
+# Recommended rows written only where the catalog's fit estimate (the same one
+# the model browser's "fits this computer" filter uses: `fits` or `tight`)
+# says the model fits this host's memory.
+_FIT_GATED_ROUTES = frozenset({"output.video"})
+# What each mlx-gen route generates, for the reason sentence.
+_MLX_GEN_WORK = {"output.image": "image generation", "output.video": "video generation"}
 _DESKTOP_OSES = ("darwin", "linux", "windows")
 
 
@@ -385,8 +426,15 @@ def _host_platform(host: Mapping[str, Any]) -> Tuple[str, str, Optional[str]]:
     return os_id or "unknown", arch or "unknown", accelerator if isinstance(accelerator, str) else None
 
 
-def recommended_route_unavailable_reason(provider: Any, host: Mapping[str, Any]) -> Optional[str]:
-    """Why a recommended provider cannot run on `host`, or None when it can."""
+def recommended_route_unavailable_reason(
+    provider: Any, host: Mapping[str, Any], key: Optional[str] = None
+) -> Optional[str]:
+    """Why a recommended provider cannot run on `host`, or None when it can.
+
+    `key` (the route) only words the sentence ("MLX-Gen video generation").
+    Engine support only: the memory gate of fit-gated routes is
+    `recommended_unavailable_routes`.
+    """
 
     from .engines import _support
 
@@ -403,8 +451,61 @@ def recommended_route_unavailable_reason(provider: Any, host: Mapping[str, Any])
     if ok:
         return None
     if pid == "mlx-gen":
-        return f"MLX-Gen image generation needs MLX, and {reason}"
+        work = _MLX_GEN_WORK.get(str(key or ""), "image generation")
+        return f"MLX-Gen {work} needs MLX, and {reason}"
     return reason
+
+
+def _gib_text(value: Any) -> str:
+    return f"{float(value) / 1024**3:.1f} GiB"
+
+
+def _fit_gate_reason(key: str, download: Mapping[str, str], host: Mapping[str, Any]) -> Optional[str]:
+    """Why a fit-gated recommendation does not fit `host`, or None when it does.
+
+    The verdict is the catalog's own (`model_catalog.recommended_artifact_fit`:
+    measured run-time memory against the host ceiling), so the plan, the seed
+    and the model browser's fit filter agree. An `unknown` verdict (no memory
+    reading) is not a fit: nothing is written that cannot be vouched for.
+    """
+
+    from .model_catalog import recommended_artifact_fit
+
+    got = recommended_artifact_fit(download["provider"], download["artifact"], host)
+    fit = got["fit"]
+    verdict = fit.get("verdict")
+    if verdict in ("fits", "tight"):
+        return None
+    name = got["row"].get("display_name") or got["row"].get("id")
+    if verdict == "unknown" or not isinstance(fit.get("need_bytes"), int) or not isinstance(fit.get("usable_bytes"), int):
+        return f"{name} needs a lot of memory and this computer's memory could not be measured"
+    return (
+        f"{name} needs about {_gib_text(fit['need_bytes'])} of memory while it generates (measured), and this "
+        f"computer can give a model about {_gib_text(fit['usable_bytes'])}"
+    )
+
+
+def _unavailable_reasons(
+    routes: Mapping[str, CapabilityRouteDefault], downloads: Mapping[str, Mapping[str, str]], host: Mapping[str, Any]
+) -> Dict[str, str]:
+    """`{key: reason}` for every recommended row this host cannot run: its
+    engine has no build here, or (fit-gated rows) its model does not fit."""
+
+    out: Dict[str, str] = {}
+    for key, route in routes.items():
+        reason = recommended_route_unavailable_reason(route.provider, host, key)
+        if reason:
+            if key in _UNAVAILABLE_NEXT_STEP:
+                reason = f"{reason}; {_UNAVAILABLE_NEXT_STEP[key]}"
+            out[key] = reason
+            continue
+        if key in _FIT_GATED_ROUTES:
+            reason = _fit_gate_reason(key, downloads[key], host)
+            if reason:
+                if key in _TOO_LARGE_NEXT_STEP:
+                    reason = f"{reason}; {_TOO_LARGE_NEXT_STEP[key]}"
+                out[key] = reason
+    return out
 
 
 def _host_or_probe(host: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -440,22 +541,20 @@ def _full_recommendation(host: Mapping[str, Any]) -> Tuple[Dict[str, CapabilityR
 def recommended_unavailable_routes(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Dict[str, str]]:
     """Recommended rows this host cannot run: `{key: {provider, model, reason}}`.
 
-    Empty on Apple silicon. On every other host `output.image` is here (its
-    only recommended engine, MLX-Gen, is Apple silicon only; the curated
-    catalog has no other local image artifact), so the route stays UNSET with
-    this reason rather than seeded with a route that fails at first use.
+    On every host that is not Apple silicon `output.image` and `output.video`
+    are here (their only recommended engine, MLX-Gen, is Apple silicon only;
+    the curated catalog has no other local image or video artifact). On Apple
+    silicon `output.video` is here when its measured memory does not fit
+    (below ~96 GiB of unified memory). Such a route stays UNSET with this
+    reason rather than seeded with a route that fails at first use.
     """
 
     profile = _host_or_probe(host)
-    routes, _downloads = _full_recommendation(profile)
-    out: Dict[str, Dict[str, str]] = {}
-    for key, route in routes.items():
-        reason = recommended_route_unavailable_reason(route.provider, profile)
-        if reason:
-            if key in _UNAVAILABLE_NEXT_STEP:
-                reason = f"{reason}; {_UNAVAILABLE_NEXT_STEP[key]}"
-            out[key] = {"provider": str(route.provider or ""), "model": str(route.model or ""), "reason": reason}
-    return out
+    routes, downloads = _full_recommendation(profile)
+    return {
+        key: {"provider": str(routes[key].provider or ""), "model": str(routes[key].model or ""), "reason": reason}
+        for key, reason in _unavailable_reasons(routes, downloads, profile).items()
+    }
 
 
 def recommended_capability_default_routes(
@@ -464,12 +563,9 @@ def recommended_capability_default_routes(
     """The recommended routes this host can run (default host: this machine)."""
 
     profile = _host_or_probe(host)
-    routes, _downloads = _full_recommendation(profile)
-    return {
-        key: route
-        for key, route in routes.items()
-        if recommended_route_unavailable_reason(route.provider, profile) is None
-    }
+    routes, downloads = _full_recommendation(profile)
+    unavailable = _unavailable_reasons(routes, downloads, profile)
+    return {key: route for key, route in routes.items() if key not in unavailable}
 
 
 def recommended_model_downloads(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Dict[str, str]]:
@@ -477,21 +573,19 @@ def recommended_model_downloads(host: Optional[Mapping[str, Any]] = None) -> Dic
 
     profile = _host_or_probe(host)
     routes, downloads = _full_recommendation(profile)
-    return {
-        key: spec
-        for key, spec in downloads.items()
-        if recommended_route_unavailable_reason(routes[key].provider, profile) is None
-    }
+    unavailable = _unavailable_reasons(routes, downloads, profile)
+    return {key: spec for key, spec in downloads.items() if key not in unavailable}
 
 
 # The `--only` vocabulary: the words the operator says ("text", "voice",
-# "image") mapped to the route keys the recommendation actually writes. One
-# table so the CLI, the Gateway endpoint and both console-TUIs offer the same
-# three words and can never disagree about which row each one means.
+# "image", "video") mapped to the route keys the recommendation actually
+# writes. One table so the CLI, the Gateway endpoint and both console-TUIs
+# offer the same words and can never disagree about which row each one means.
 RECOMMENDED_SELECTORS: Dict[str, str] = {
     "text": "input.text",
     "voice": "output.voice",
     "image": "output.image",
+    "video": "output.video",
 }
 
 

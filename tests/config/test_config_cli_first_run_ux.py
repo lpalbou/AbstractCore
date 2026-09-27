@@ -71,7 +71,11 @@ def test_a_fresh_apple_silicon_install_still_seeds_the_image_route(capsys, monke
     d = Path(tempfile.mkdtemp())
     out = _run(capsys, "--config-file", str(d / "abstractcore.json"), "defaults")
     assert "mlx-gen/AbstractFramework/flux.2-klein-4b-8bit" in out
-    assert "no recommendation for this host" not in out
+    # A 64 GiB Mac runs MLX-Gen but the recommended video model does not fit
+    # its memory: the only row that says why is the video row.
+    flagged = [line for line in out.splitlines() if "no recommendation for this host" in line]
+    assert len(flagged) == 1 and flagged[0].startswith("- output.video:")
+    assert "needs about" in flagged[0] and "can give a model about" in flagged[0]
 
 
 def test_an_unconfigured_grid_names_the_command_that_fixes_it(capsys) -> None:

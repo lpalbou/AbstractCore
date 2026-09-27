@@ -205,18 +205,48 @@ def _fit_for_seed_artifact(row: Mapping[str, Any], art: Mapping[str, Any], host:
     quant = art.get("quant")
     if bits_for_quant(quant) is None and not quant and art.get("provider") in _ENGINE_DEFAULT_QUANT:
         quant = _ENGINE_DEFAULT_QUANT[str(art.get("provider"))]
-    return estimate_fit(
+    resident = _resident_bytes(art)
+    fit = estimate_fit(
         host=host,
         params_total=row.get("params_total"),
         params_source="catalog",
         quant=quant,
-        weight_bytes=size,
+        weight_bytes=resident if resident is not None else size,
         download_bytes=size,
         geometry=_seed_geometry(row),
         context=512 if caps.get("embedding") else (None if text_like else 1),
         max_tokens=caps.get("max_tokens"),
         disk_free_bytes=_disk_free_for(str(art.get("provider")), host),
     )
+    note = _resident_note(art)
+    if note:
+        fit["notes"] = list(fit.get("notes") or []) + [note]
+    return fit
+
+
+def recommended_artifact_fit(provider: str, artifact: str, host: Mapping[str, Any]) -> Dict[str, Any]:
+    """`{row, fit}` for one seed artifact a recommendation names, on `host`.
+
+    The memory gate of a recommended route whose model may not fit at all
+    (`output.video`). Works on the LIGHT host reading too (import-time seed):
+    with no measured ceiling it uses the host probe's own fallback basis, 75%
+    of RAM (`host_profile._FALLBACK_CEILING_FRACTION`), so the seed, the plan
+    and the catalog compare against the same number on such a host. Raises
+    when the artifact is not in the seed (a broken recommendation, never a
+    silent pass).
+    """
+
+    from ..utils.host_profile import _FALLBACK_CEILING_FRACTION
+
+    row_id = catalog_id_for(provider, artifact)
+    if row_id is None:
+        raise LookupError(f"recommended artifact {provider}:{artifact} is not in the catalog")
+    row, art = _seed_row_and_artifact(row_id, provider, artifact)
+    profile = dict(host)
+    ram = profile.get("ram_bytes")
+    if not isinstance(profile.get("ceiling_bytes"), (int, float)) and isinstance(ram, (int, float)) and ram > 0:
+        profile["ceiling_bytes"] = int(_FALLBACK_CEILING_FRACTION * ram)
+    return {"row": row, "fit": _fit_for_seed_artifact(row, art, profile)}
 
 
 def recommended_text_model(
@@ -532,7 +562,7 @@ def validate_catalog(data: Any) -> List[str]:
                     "capabilities_key", "tags", "starter", "artifacts")
     required_art = ("provider", "artifact", "quant", "download_bytes", "size_source", "verified")
     allowed_row = set(required_row) | {"notes", "capabilities_override", "kv_geometry"}
-    allowed_art = set(required_art) | {"recommended", "options", "upstream", "note"}
+    allowed_art = set(required_art) | {"recommended", "options", "upstream", "note", "resident"}
     seen: set = set()
     for i, row in enumerate(rows):
         where = f"rows[{i}]"
@@ -595,7 +625,46 @@ def validate_catalog(data: Any) -> List[str]:
                 errors.extend(_validate_upstream(aw, art, size))
             if "note" in art and (not isinstance(art.get("note"), str) or not art.get("note")):
                 errors.append(f"{aw}.note must be a non-empty string")
+            if "resident" in art:
+                errors.extend(_validate_resident(aw, art.get("resident")))
     return errors
+
+
+def _validate_resident(aw: str, resident: Any) -> List[str]:
+    """`{bytes, source}`: a MEASURED run-time memory need, never a guess --
+    `source` must say where and at which profile it was measured."""
+
+    if not isinstance(resident, dict):
+        return [f"{aw}.resident must be an object"]
+    errors: List[str] = []
+    for key in resident:
+        if key not in ("bytes", "source"):
+            errors.append(f"{aw}.resident has unknown field {key!r}")
+    value = resident.get("bytes")
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        errors.append(f"{aw}.resident.bytes must be a positive integer")
+    if not isinstance(resident.get("source"), str) or not resident.get("source"):
+        errors.append(f"{aw}.resident.source must say where the memory was measured")
+    return errors
+
+
+def _resident_bytes(art: Mapping[str, Any]) -> Optional[int]:
+    """The measured run-time memory of a seed artifact (`resident.bytes`), or None.
+
+    Video generation needs far more memory than its file size (the activations
+    of every frame), so for those artifacts the fit compares THIS against the
+    host, and the download size only against the disk."""
+
+    resident = art.get("resident")
+    value = resident.get("bytes") if isinstance(resident, Mapping) else None
+    return int(value) if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def _resident_note(art: Mapping[str, Any]) -> Optional[str]:
+    resident = art.get("resident")
+    if _resident_bytes(art) is None or not isinstance(resident, Mapping):
+        return None
+    return f"memory need is measured, not the file size: {resident.get('source')}"
 
 
 def _validate_kv_geometry(where: str, geo: Any) -> List[str]:
@@ -1055,12 +1124,15 @@ def _build_artifact(
     elif not text_like:
         context = 1  # image / voice engines: no KV cache worth budgeting
 
+    # A measured run-time memory need (video generation) replaces the file
+    # size as the weights the fit compares; the download size stays the disk need.
+    resident = _resident_bytes(art)
     fit = estimate_fit(
         host=host,
         params_total=params,
         params_source="name" if params_source in ("name", "assumed_quant") else params_source,
         quant=fit_quant,
-        weight_bytes=size if size_source in _EXACT_SIZE_SOURCES else None,
+        weight_bytes=resident if resident is not None else (size if size_source in _EXACT_SIZE_SOURCES else None),
         download_bytes=size if isinstance(size, int) else None,
         # The seed's KV geometry (hybrid models: full-attention layers only)
         # beats a local config read, which counts every layer as KV-cached.
@@ -1071,6 +1143,8 @@ def _build_artifact(
     )
     if assumed_note:
         fit["notes"] = [assumed_note] + list(fit.get("notes") or [])
+    if _resident_note(art):
+        fit["notes"] = list(fit.get("notes") or []) + [_resident_note(art)]
     if companions and companion_bytes is None:
         fit["notes"] = list(fit.get("notes") or []) + [
             f"companion size not recorded ({', '.join(companions)}): not included in download_bytes"
@@ -1101,6 +1175,8 @@ def _build_artifact(
         "options": json.loads(json.dumps(art.get("options") or {})),
         "download_bytes": size if isinstance(size, int) else None,
         "size_source": size_source,
+        # The measured run-time memory (`resident` in the seed), or None.
+        "resident_bytes": resident,
         "presence": {
             "status": presence.status,
             "location": presence.location,

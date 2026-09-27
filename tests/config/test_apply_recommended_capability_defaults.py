@@ -81,8 +81,8 @@ def test_empty_routes_are_filled(tmp_path) -> None:
 
     report = manager.apply_recommended_capability_defaults()
 
-    # Linux (`cuda24`): text + voice are applied; the image recommendation
-    # (MLX-Gen) cannot run here and is reported, never written.
+    # Linux (`cuda24`): text + voice are applied; the image and video
+    # recommendations (MLX-Gen) cannot run here and are reported, never written.
     runnable = recommended_capability_default_routes()
     assert set(runnable) == {"input.text", "output.voice"}
     assert report["changed"] == 2
@@ -92,10 +92,12 @@ def test_empty_routes_are_filled(tmp_path) -> None:
         assert routes[key]["model"] == recommended.model
         assert _row(report, key)["action"] == "apply"
     assert "output.image" not in routes
-    assert report["unavailable"] == 1
-    image = _row(report, "output.image")
-    assert image["action"] == "unavailable" and image["changed"] is False
-    assert "Apple Silicon" in image["reason"] and image["recommended"] == {}
+    assert "output.video" not in routes
+    assert report["unavailable"] == 2
+    for key in ("output.image", "output.video"):
+        row = _row(report, key)
+        assert row["action"] == "unavailable" and row["changed"] is False
+        assert "Apple Silicon" in row["reason"] and row["recommended"] == {}
 
 
 def test_a_route_configured_differently_is_kept_and_reported(tmp_path) -> None:
