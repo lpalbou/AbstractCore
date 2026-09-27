@@ -25,6 +25,17 @@ from abstractcore.config.capability_defaults import (
 )
 
 
+@pytest.fixture()
+def linux_host(monkeypatch):
+    """Pin a non-Apple host: the recommendation these tests name (LM Studio
+    text, no Apple-only image row) is Linux's, whatever machine runs them."""
+
+    from abstractcore.utils import host_profile as hp
+    from tests.models_engines_fakes import synthetic_host
+
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("cpu16"))
+
+
 # ---------------------------------------------------------------------------
 # Rule 3: served ids vs download refs
 # ---------------------------------------------------------------------------
@@ -183,7 +194,7 @@ def test_probe_never_raises_and_never_returns_a_bogus_state(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_probing_the_recommended_set_runs_no_download_tool(monkeypatch):
+def test_probing_the_recommended_set_runs_no_download_tool(monkeypatch, linux_host):
     """A grid render must be free. No subprocess that fetches, no hub call."""
 
     # The default local servers answer on the operator's LIVE :1234 / :11434;
@@ -210,16 +221,15 @@ def test_probing_the_recommended_set_runs_no_download_tool(monkeypatch):
     monkeypatch.setattr(mm, "_run_streaming", lambda *a, **k: pytest.fail("probe streamed a download"))
 
     plan = mm.recommended_plan()
-    assert plan["total"] == len(RECOMMENDED_MODEL_DOWNLOADS)
+    assert plan["total"] == len(RECOMMENDED_MODEL_DOWNLOADS) - 1  # no Apple-only image on Linux
     for row in plan["recommended"]:
         assert row["status"] in mm.PRESENCE_STATES
 
 
-def test_recommended_plan_would_download_only_absent_artifacts(monkeypatch):
+def test_recommended_plan_would_download_only_absent_artifacts(monkeypatch, linux_host):
     states = {
         "qwen/qwen3.5-9b@4bit": mm.PRESENCE_ABSENT,
-        "supertonic-3": mm.PRESENCE_INSTALLED,
-        "AbstractFramework/flux.2-klein-4b-8bit": mm.PRESENCE_UNKNOWN,
+        "supertonic-3": mm.PRESENCE_UNKNOWN,
     }
     monkeypatch.setattr(
         mm,
@@ -227,11 +237,24 @@ def test_recommended_plan_would_download_only_absent_artifacts(monkeypatch):
         lambda provider, artifact, **kw: mm.ModelPresence(provider, artifact, states[artifact]),
     )
     plan = mm.recommended_plan()
-    assert (plan["total"], plan["installed"], plan["absent"], plan["unknown"]) == (3, 1, 1, 1)
+    # Linux: the Apple-only image model is not part of the plan at all (a
+    # KeyError above would mean it was probed).
+    assert (plan["total"], plan["installed"], plan["absent"], plan["unknown"]) == (2, 0, 1, 1)
     assert [item["artifact"] for item in plan["would_download"]] == ["qwen/qwen3.5-9b@4bit"]
     # An `unknown` row is NOT queued for download: we do not spend gigabytes on
     # a guess, we tell the operator we could not tell.
-    assert all(item["artifact"] != "AbstractFramework/flux.2-klein-4b-8bit" for item in plan["would_download"])
+    assert all(item["artifact"] != "supertonic-3" for item in plan["would_download"])
+
+
+def test_recommended_plan_on_apple_silicon_includes_the_image_model(monkeypatch):
+    from abstractcore.utils import host_profile as hp
+    from tests.models_engines_fakes import synthetic_host
+
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal64"))
+    monkeypatch.setattr(mm, "probe", lambda p, a, **kw: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT))
+    plan = mm.recommended_plan()
+    assert plan["total"] == 3
+    assert "AbstractFramework/flux.2-klein-4b-8bit" in [item["artifact"] for item in plan["would_download"]]
 
 
 # ---------------------------------------------------------------------------
@@ -339,7 +362,7 @@ def test_ollama_download_streams_real_byte_progress(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_annotate_maps_the_recommended_route_to_its_quantized_artifact(monkeypatch):
+def test_annotate_maps_the_recommended_route_to_its_quantized_artifact(monkeypatch, linux_host):
     probed = []
 
     def fake_probe(provider, artifact, **kw):
@@ -367,7 +390,7 @@ def test_annotate_maps_the_recommended_route_to_its_quantized_artifact(monkeypat
     assert "download_artifact" not in unconfigured
 
 
-def test_a_covered_row_fetches_what_its_covering_row_fetches(monkeypatch):
+def test_a_covered_row_fetches_what_its_covering_row_fetches(monkeypatch, linux_host):
     """ONE set of files, ONE instruction.
 
     `input.image` served by the text model IS the text model's weights. Left to
@@ -438,7 +461,7 @@ def _run_cli(monkeypatch, capsys, argv):
     return code, capsys.readouterr().out
 
 
-def test_models_status_json_is_machine_readable(monkeypatch, capsys, tmp_path):
+def test_models_status_json_is_machine_readable(monkeypatch, capsys, tmp_path, linux_host):
     monkeypatch.setattr(mm, "probe", lambda p, a, **kw: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT))
     config_file = tmp_path / "abstractcore.json"
     code, out = _run_cli(
@@ -448,13 +471,13 @@ def test_models_status_json_is_machine_readable(monkeypatch, capsys, tmp_path):
     payload = json.loads(out)
     assert payload["ok"] is True
     assert isinstance(payload["routes"], list) and payload["routes"]
-    assert payload["recommended"]["total"] == len(RECOMMENDED_MODEL_DOWNLOADS)
+    assert payload["recommended"]["total"] == len(RECOMMENDED_MODEL_DOWNLOADS) - 1  # no Apple-only image on Linux
     assert set(payload["providers"]) >= {"lmstudio", "ollama", "supertonic", "mlx-gen"}
     for row in payload["routes"]:
         assert row["availability"]["status"] in mm.PRESENCE_STATES
 
 
-def test_models_download_recommended_dry_run_names_the_four_bit_artifact(monkeypatch, capsys):
+def test_models_download_recommended_dry_run_names_the_four_bit_artifact(monkeypatch, capsys, linux_host):
     monkeypatch.setattr(mm, "probe", lambda p, a, **kw: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT))
     monkeypatch.setattr(mm, "_lms_cli", lambda: "/usr/local/bin/lms")
     for name in ("_download_lmstudio", "_download_ollama", "_download_supertonic", "_download_huggingface"):
@@ -465,6 +488,7 @@ def test_models_download_recommended_dry_run_names_the_four_bit_artifact(monkeyp
     artifacts = {r["artifact"]: r for r in payload["results"]}
     assert artifacts["qwen/qwen3.5-9b@4bit"]["status"] == "planned"
     assert artifacts["qwen/qwen3.5-9b@4bit"]["command"][:2] == ["/usr/local/bin/lms", "get"]
+    assert "AbstractFramework/flux.2-klein-4b-8bit" not in artifacts, "no Apple-only download on Linux"
     assert payload["dry_run"] is True
 
 

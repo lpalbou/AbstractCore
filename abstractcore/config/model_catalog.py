@@ -91,7 +91,10 @@ _HOST_PREFERENCE = {
 #     memory >= 128         -> Qwen3.8 Flash-Next (qwen3.8-flash-next)
 #
 # Every other host keeps the portable default (`RECOMMENDED_MODEL_DOWNLOADS`
-# in capability_defaults). The catalog's `recommended`/`starter` flags, the
+# in capability_defaults) -- except where the portable default's engine has
+# no build: LM Studio does not run on Intel Macs (engines support matrix), so
+# there the same model's Ollama build (`_PORTABLE_TEXT_ENGINE_FALLBACK`) is
+# the pick, `basis: portable_engine_fallback`. The catalog's `recommended`/`starter` flags, the
 # fresh-install seed, `apply-recommended`, `models download --recommended` and
 # the Gateway's guide tiles all read `recommended_text_model()`; nothing else
 # may hold a tier table.
@@ -117,6 +120,12 @@ APPLE_TEXT_TIERS: Tuple[Dict[str, Any], ...] = (
      "plain": "mlx-community/Qwen3.8-Flash-Next-4bit", "mtp": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"},
 )
 _TIER_PROVIDER = "mlx"
+
+# The portable text model on an engine that runs where LM Studio does not
+# (Intel Macs). Same catalog row as the portable default; Ollama's bare tag
+# is its default Q4_K_M build, the 4-bit intent of `qwen/qwen3.5-9b@4bit`.
+# Must be a seed artifact of the portable row (a missing one raises).
+_PORTABLE_TEXT_ENGINE_FALLBACK = {"provider": "ollama", "artifact": "qwen3.5:9b"}
 
 
 def _tier_artifact(tier: Mapping[str, Any], mtp: Optional[bool] = None) -> str:
@@ -222,8 +231,11 @@ def recommended_text_model(
       model      the id the route stores (the served id; for MLX the repo id)
       options    route options: the portable route's MTP policy
                  (`speculation`), overlaid with the artifact's own options
-      basis      `apple_silicon_tiers` or `portable_default`
-      tier       the memory rule that chose it (`24 <= memory < 128 GiB`)
+      basis      `apple_silicon_tiers`, `portable_default`, or
+                 `portable_engine_fallback` (the portable engine has no build
+                 on this host, e.g. LM Studio on an Intel Mac)
+      tier       the rule that chose it (`24 <= memory < 128 GiB`; for the
+                 engine fallback, why the portable engine was skipped)
       fit        the catalog's fit block for this artifact on this host
       companions repos that must be downloaded with the artifact (an MTP
                  build's drafter), `[]` for most
@@ -262,10 +274,28 @@ def recommended_text_model(
             "mtp": use_mtp,
         }
     else:
+        from .capability_defaults import recommended_route_unavailable_reason
+
         portable = _portable_text_default()
         row_id = _portable_text_row_id()
-        row, art = _seed_row_and_artifact(row_id, portable["provider"], portable["artifact"])
-        out = dict(portable, catalog_id=row_id, basis="portable_default", tier=None, mtp=False)
+        unsupported = recommended_route_unavailable_reason(portable["provider"], profile)
+        if unsupported:
+            fallback = _PORTABLE_TEXT_ENGINE_FALLBACK
+            row, art = _seed_row_and_artifact(row_id, fallback["provider"], fallback["artifact"])
+            out = {
+                "provider": fallback["provider"],
+                "artifact": fallback["artifact"],
+                "model": fallback["artifact"],  # Ollama serves the tag it pulls
+                # The host-wide MTP policy, as on every other host.
+                "options": portable["options"],
+                "catalog_id": row_id,
+                "basis": "portable_engine_fallback",
+                "tier": f"{unsupported}: the portable model's {fallback['provider']} build",
+                "mtp": False,
+            }
+        else:
+            row, art = _seed_row_and_artifact(row_id, portable["provider"], portable["artifact"])
+            out = dict(portable, catalog_id=row_id, basis="portable_default", tier=None, mtp=False)
     out["memory_gib"] = round(memory, 2) if memory is not None else None
     if not fit:
         out.update(fit=None, fits=None, companions=None, companion_bytes=None, warning=None)
@@ -1193,6 +1223,15 @@ def catalog(
     # `recommended_text_model`).
     text_pick = recommended_text_model(profile)
     text_rows = {str(t["row"]) for t in APPLE_TEXT_TIERS} | {text_pick["catalog_id"], _portable_text_row_id()}
+    # A recommended row this host cannot run (Apple-only image generation on
+    # Linux/Windows/Intel Macs) is not part of THIS host's starter kit.
+    from .capability_defaults import RECOMMENDED_MODEL_DOWNLOADS, recommended_unavailable_routes
+
+    unavailable_starter_rows = {
+        catalog_id_for(RECOMMENDED_MODEL_DOWNLOADS[key]["provider"], RECOMMENDED_MODEL_DOWNLOADS[key]["artifact"])
+        for key in recommended_unavailable_routes(profile)
+        if key in RECOMMENDED_MODEL_DOWNLOADS
+    }
     tier_by_row = {str(t["row"]): t for t in APPLE_TEXT_TIERS}
 
     seed_rows = [r for r in seed["rows"] if _matches_query(r, query)]
@@ -1281,13 +1320,15 @@ def catalog(
                 "capabilities": caps,
                 "source": "curated",
                 "tags": list(seed_row.get("tags") or []),
-                "starter": (seed_row["id"] == text_pick["catalog_id"]) if seed_row["id"] in text_rows else bool(seed_row.get("starter")),
+                "starter": (seed_row["id"] == text_pick["catalog_id"]) if seed_row["id"] in text_rows else (bool(seed_row.get("starter")) and seed_row["id"] not in unavailable_starter_rows),
                 "notes": seed_row.get("notes"),
                 "artifacts": arts,
             }
             if arts:
                 tier = tier_by_row.get(seed_row["id"]) if accelerator == "metal" else None
                 forced = (_TIER_PROVIDER, _tier_artifact(tier)) if tier is not None else None
+                if text_pick["basis"] == "portable_engine_fallback" and seed_row["id"] == text_pick["catalog_id"]:
+                    forced = (text_pick["provider"], text_pick["artifact"])
                 if forced is not None and not any((a["provider"], a["artifact"]) == forced for a in arts):
                     forced = None  # an engine filter (`engine=ollama`) removed the tier artifact
                 _pick_recommended(row, accelerator, installed_engines, forced)

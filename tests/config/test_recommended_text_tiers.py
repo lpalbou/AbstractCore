@@ -88,12 +88,16 @@ def test_other_hosts_keep_the_portable_default(kind, mtp_switch):
     assert (pick["provider"], pick["artifact"], pick["model"]) == ("lmstudio", "qwen/qwen3.5-9b@4bit", "qwen/qwen3.5-9b")
     assert pick["options"] == route.options
     assert pick["basis"] == "portable_default" and pick["mtp"] is False
-    # The host-aware tables equal the portable ones exactly off Apple silicon.
+    # Off Apple silicon the host-aware tables are the full ones MINUS the
+    # Apple-only image row (MLX-Gen), which is reported as unavailable.
     routes = cd.recommended_capability_default_routes(synthetic_host(kind))
     assert {k: v.to_dict() for k, v in routes.items()} == {
-        k: v.to_dict() for k, v in cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items()
+        k: v.to_dict() for k, v in cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items() if k != "output.image"
     }
-    assert cd.recommended_model_downloads(synthetic_host(kind)) == cd.RECOMMENDED_MODEL_DOWNLOADS
+    assert cd.recommended_model_downloads(synthetic_host(kind)) == {
+        k: v for k, v in cd.RECOMMENDED_MODEL_DOWNLOADS.items() if k != "output.image"
+    }
+    assert set(cd.recommended_unavailable_routes(synthetic_host(kind))) == {"output.image"}
 
 
 def test_the_module_switch_is_what_decides(monkeypatch):

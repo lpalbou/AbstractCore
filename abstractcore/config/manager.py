@@ -1614,11 +1614,20 @@ class ConfigurationManager:
             "changed": sum(1 for row in applied if row["changed"]),
             "kept": sum(1 for row in applied if row["action"] == "kept"),
             "already": sum(1 for row in applied if row["action"] == "already"),
+            # Recommended routes whose engine cannot run on this host (each row
+            # carries its `reason`); never written.
+            "unavailable": sum(1 for row in applied if row["action"] == "unavailable"),
             "routes": applied,
         }
 
     def list_capability_defaults(self) -> list[Dict[str, Any]]:
         """Return all known capability routes with explicit persisted defaults."""
+        from .capability_defaults import recommended_unavailable_routes
+
+        # An UNSET row whose recommendation this host cannot run says why
+        # (`recommendation_unavailable`), so the grid reads "not configured:
+        # MLX-Gen needs Apple silicon" instead of a bare gap.
+        unavailable = recommended_unavailable_routes()
         rows: list[Dict[str, Any]] = []
         for spec in iter_capability_default_specs():
             route = self.get_capability_default(spec.key)
@@ -1642,6 +1651,8 @@ class ConfigurationManager:
                 row = self._decorate_sound_input_default(row)
             elif spec.key == capability_route_key("input", "music") and not row["configured"]:
                 row = self._decorate_music_input_default(row)
+            if spec.key in unavailable and not row["configured"]:
+                row["recommendation_unavailable"] = dict(unavailable[spec.key])
             rows.append(row)
         return self._decorate_route_hierarchy(rows)
 

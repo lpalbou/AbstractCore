@@ -301,8 +301,11 @@ RECOMMENDED_SEED_VERSION = "recommended-v1"
 # Ordinary rows once written: fully visible in every grid, overridable and
 # clearable from either entry point, and always beaten by request pins.
 # Text stores at input.text (the canonical storage key; output.text derives).
-# PORTABLE: on Apple silicon the text row is replaced by the unified-memory
-# tier -- read `recommended_capability_default_routes()`, never this table.
+# NOT A HOST ANSWER: this is the full recommended stack. Every reader goes
+# through `recommended_capability_default_routes(host)`, which picks the text
+# row per host (Apple silicon: the unified-memory tier) and DROPS every row
+# whose engine cannot run on that host (`output.image` is MLX-Gen, Apple
+# silicon only) -- see `recommended_route_unavailable_reason`.
 RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
     # Text: the 4-BIT quantized build (operator ruling 2026-08-01). The ROUTE
     # stores the bare LM Studio id because that is what the server serves when
@@ -321,7 +324,7 @@ RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
 # download surface resolves these, never the route's served id. Quantization
 # intent lives here (`@4bit`), because served ids drop the suffix when only
 # one quant is installed while download refs must name the exact artifact.
-# PORTABLE, like the routes above: read `recommended_model_downloads()`.
+# Like the routes above, never read directly: `recommended_model_downloads()`.
 RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
     "input.text": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit"},
     "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
@@ -329,18 +332,93 @@ RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
 }
 
 
-# HOST-AWARE VIEWS. The two tables above are the PORTABLE recommendation (any
-# host that is not Apple silicon). On Apple silicon the text row is chosen by
-# unified memory (operator ruling 2026-09-24) -- and that choice has ONE
-# owner, `model_catalog.recommended_text_model()`. Every writer and every
-# download surface reads these two functions, never the tables directly, so a
-# Mac seeds, applies, downloads and displays the same pick.
+# HOST-AWARE VIEWS. The two tables above are the full recommended stack; no
+# host gets them verbatim. Per host:
+#   - the text row is chosen by `model_catalog.recommended_text_model()` (its
+#     ONE owner): the unified-memory tier on Apple silicon (operator ruling
+#     2026-09-24), the portable LM Studio build elsewhere, and the same model's
+#     Ollama build where LM Studio has no build (Intel Macs);
+#   - every row whose engine cannot run on the host is DROPPED, never written
+#     as a route that fails at first use. It is reported instead, with the
+#     reason, by `recommended_unavailable_routes()` -- the grid then shows the
+#     row unset with that reason and apply-recommended reports it.
+# Every writer and every download surface reads these functions, never the
+# tables directly, so a host seeds, applies, downloads and displays the same
+# pick.
 
 
-def recommended_capability_default_routes(
-    host: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, CapabilityRouteDefault]:
-    """`RECOMMENDED_CAPABILITY_DEFAULT_ROUTES` for this host (default: this machine)."""
+# Where the engine behind each RECOMMENDED provider runs. A provider the
+# recommendation names but this table does not know raises: a silent "runs
+# everywhere" default is exactly how an Apple-only engine reached Linux hosts.
+#   mlx         MLX (Metal): Apple silicon only -- the engines support matrix
+#               (the Apple text tiers name it).
+#   mlx-gen     MLX-Gen runs on MLX: Apple silicon only, same rule.
+#   lmstudio    LM Studio: no Intel-Mac build -- the engines support matrix.
+#   ollama      Ollama: macOS, Linux, Windows -- the engines support matrix.
+#   supertonic  abstractvoice's Supertonic 3 runtime is ONNX Runtime on
+#               `CPUExecutionProvider` (abstractvoice/supertonic/runtime.py);
+#               onnxruntime publishes CPU wheels for Linux x86_64/aarch64,
+#               Windows amd64/arm64 and macOS arm64, and macOS x86_64 up to
+#               1.23.2 (the extra's floor is >=1.19.0). Runs on every desktop OS.
+_RECOMMENDED_PROVIDER_ENGINE = {"mlx": "mlx", "mlx-gen": "mlx", "lmstudio": "lmstudio", "ollama": "ollama"}
+_CPU_PORTABLE_PROVIDERS = {"supertonic": "Supertonic (ONNX Runtime, CPU)"}
+
+# What an operator can do instead, per route, appended to the reason. Provider
+# ids are abstractvision's own (`diffusers`, `sdcpp`); the curated catalog has
+# no artifact for them yet, which is why nothing is recommended in their place.
+_UNAVAILABLE_NEXT_STEP = {
+    "output.image": (
+        "set output.image to an image engine this host runs: diffusers (install profile gpu), "
+        "sdcpp (stable-diffusion.cpp, optional extra) or a cloud image provider"
+    ),
+}
+_DESKTOP_OSES = ("darwin", "linux", "windows")
+
+
+def _host_platform(host: Mapping[str, Any]) -> Tuple[str, str, Optional[str]]:
+    accelerator = host.get("accelerator")
+    os_id = str(host.get("os") or "").strip().lower()
+    arch = str(host.get("arch") or "").strip().lower()
+    if accelerator == "metal":
+        # `metal` IS Apple silicon (host_profile sets it for darwin/arm64 only).
+        os_id, arch = os_id or "darwin", arch or "arm64"
+    return os_id or "unknown", arch or "unknown", accelerator if isinstance(accelerator, str) else None
+
+
+def recommended_route_unavailable_reason(provider: Any, host: Mapping[str, Any]) -> Optional[str]:
+    """Why a recommended provider cannot run on `host`, or None when it can."""
+
+    from .engines import _support
+
+    pid = str(provider or "").strip().lower()
+    os_id, arch, accelerator = _host_platform(host)
+    if pid in _CPU_PORTABLE_PROVIDERS:
+        if os_id in _DESKTOP_OSES:
+            return None
+        return f"{_CPU_PORTABLE_PROVIDERS[pid]} has no supported build for {os_id}"
+    engine = _RECOMMENDED_PROVIDER_ENGINE.get(pid)
+    if engine is None:
+        raise ValueError(f"recommended provider {provider!r} has no host-support rule")
+    ok, reason = _support(engine, os_id, arch, accelerator)
+    if ok:
+        return None
+    if pid == "mlx-gen":
+        return f"MLX-Gen image generation needs MLX, and {reason}"
+    return reason
+
+
+def _host_or_probe(host: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    if host is not None:
+        return dict(host)
+    from ..utils.host_profile import host_profile
+
+    # The LIGHT reading: os / arch / Apple silicon / RAM, no GPU tool, no
+    # torch, no mlx (the import-time config seed runs this).
+    return host_profile(light=True)
+
+
+def _full_recommendation(host: Mapping[str, Any]) -> Tuple[Dict[str, CapabilityRouteDefault], Dict[str, Dict[str, str]]]:
+    """(routes, downloads) with the host's text pick, BEFORE the support filter."""
 
     from .model_catalog import recommended_text_model
 
@@ -350,22 +428,60 @@ def recommended_capability_default_routes(
         )
         for key, r in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items()
     }
+    downloads = {key: dict(spec) for key, spec in RECOMMENDED_MODEL_DOWNLOADS.items()}
     pick = recommended_text_model(host, fit=False)
     routes["input.text"] = CapabilityRouteDefault(
         provider=pick["provider"], model=pick["model"], options=dict(pick.get("options") or {})
     )
-    return routes
+    downloads["input.text"] = {"provider": pick["provider"], "artifact": pick["artifact"]}
+    return routes, downloads
+
+
+def recommended_unavailable_routes(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Dict[str, str]]:
+    """Recommended rows this host cannot run: `{key: {provider, model, reason}}`.
+
+    Empty on Apple silicon. On every other host `output.image` is here (its
+    only recommended engine, MLX-Gen, is Apple silicon only; the curated
+    catalog has no other local image artifact), so the route stays UNSET with
+    this reason rather than seeded with a route that fails at first use.
+    """
+
+    profile = _host_or_probe(host)
+    routes, _downloads = _full_recommendation(profile)
+    out: Dict[str, Dict[str, str]] = {}
+    for key, route in routes.items():
+        reason = recommended_route_unavailable_reason(route.provider, profile)
+        if reason:
+            if key in _UNAVAILABLE_NEXT_STEP:
+                reason = f"{reason}; {_UNAVAILABLE_NEXT_STEP[key]}"
+            out[key] = {"provider": str(route.provider or ""), "model": str(route.model or ""), "reason": reason}
+    return out
+
+
+def recommended_capability_default_routes(
+    host: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, CapabilityRouteDefault]:
+    """The recommended routes this host can run (default host: this machine)."""
+
+    profile = _host_or_probe(host)
+    routes, _downloads = _full_recommendation(profile)
+    return {
+        key: route
+        for key, route in routes.items()
+        if recommended_route_unavailable_reason(route.provider, profile) is None
+    }
 
 
 def recommended_model_downloads(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Dict[str, str]]:
-    """`RECOMMENDED_MODEL_DOWNLOADS` for this host (default: this machine)."""
+    """The downloads behind `recommended_capability_default_routes(host)`."""
 
-    from .model_catalog import recommended_text_model
-
-    downloads = {key: dict(spec) for key, spec in RECOMMENDED_MODEL_DOWNLOADS.items()}
-    pick = recommended_text_model(host, fit=False)
-    downloads["input.text"] = {"provider": pick["provider"], "artifact": pick["artifact"]}
-    return downloads
+    profile = _host_or_probe(host)
+    routes, downloads = _full_recommendation(profile)
+    return {
+        key: spec
+        for key, spec in downloads.items()
+        if recommended_route_unavailable_reason(routes[key].provider, profile) is None
+    }
 
 
 # The `--only` vocabulary: the words the operator says ("text", "voice",
@@ -397,7 +513,9 @@ def plan_recommended_capability_defaults(
     """What `apply-recommended` WOULD do to `routes`, one entry per route.
 
     The recommendation is this host's (`recommended_capability_default_routes`):
-    on Apple silicon the text route follows the unified-memory tiers.
+    on Apple silicon the text route follows the unified-memory tiers, and a
+    route whose recommended engine cannot run here is reported as
+    `unavailable` with its `reason` (never written, even with `force`).
 
     THE SEED WILL NOT DO THIS. `seed_recommended_capability_defaults` runs only
     when the store file has never existed, deliberately: an operator who
@@ -434,14 +552,34 @@ def plan_recommended_capability_defaults(
                 )
             wanted.add(key)
 
-    recommended_routes = recommended_capability_default_routes(host)
-    recommended_downloads = recommended_model_downloads(host)
+    profile = _host_or_probe(host)
+    recommended_routes = recommended_capability_default_routes(profile)
+    recommended_downloads = recommended_model_downloads(profile)
+    unavailable = recommended_unavailable_routes(profile)
     plan: list = []
-    for key, recommended in recommended_routes.items():
+    for key in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES:
         if wanted is not None and key not in wanted:
             continue
         current = routes.get(key)
         before = current.to_dict() if isinstance(current, CapabilityRouteDefault) else {}
+        if key in unavailable:
+            # Nothing this host can run: never written, never overwritten
+            # (not even with `force`), and said out loud with the reason.
+            plan.append(
+                {
+                    "key": key,
+                    "selector": recommended_selector_for_route(key),
+                    "action": "unavailable",
+                    "changed": False,
+                    "recommended": {},
+                    "before": before,
+                    "after": dict(before),
+                    "download": {},
+                    "reason": unavailable[key]["reason"],
+                }
+            )
+            continue
+        recommended = recommended_routes[key]
         configured = bool(before.get("provider") or before.get("model"))
         matches = (
             str(before.get("provider") or "") == str(recommended.provider or "")
@@ -484,7 +622,8 @@ def seed_recommended_capability_defaults(
     Only fills routes that are not already configured (defensive — the caller
     gates on file absence, so in practice all three are empty) and stamps the
     provenance marker so surfaces can label the values as recommended. The
-    recommendation is this host's (Apple silicon: the unified-memory tier).
+    recommendation is this host's (Apple silicon: the unified-memory tier); a
+    route this host cannot run is left unset (`recommended_unavailable_routes`).
     """
     for key, route in recommended_capability_default_routes(host).items():
         existing = config.routes.get(key)

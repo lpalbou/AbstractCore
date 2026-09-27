@@ -1546,6 +1546,9 @@ def _print_capability_defaults(payload: dict) -> None:
                 note = f"  # any {modality} task; overridden per task below"
                 if item.get("covered_by_tasks"):
                     source = "not needed — every task below has its own route"
+            unavailable = item.get("recommendation_unavailable")
+            if isinstance(unavailable, dict) and unavailable.get("reason"):
+                source = f"{source}; no recommendation for this host: {unavailable['reason']}"
             print(f"- {key}: {provider}/{model}{suffix} ({source}){note}")
         if key == TEXT_ROUTE_KEY:
             text_row = item
@@ -1849,6 +1852,7 @@ _APPLY_RECOMMENDED_GLYPH = {
     "overwrite": "♻️ ",
     "already": "=",
     "kept": "🙅",
+    "unavailable": "⛔",
 }
 
 
@@ -1874,6 +1878,9 @@ def _print_apply_recommended(payload: dict) -> None:
             kept_any = True
             recommended = _route_pair_text(row.get("recommended") or {})
             print(f"{head}: kept yours {before} (recommended {recommended})")
+        elif action == "unavailable":
+            left = f"left as {before}" if row.get("before") else "left unset"
+            print(f"{head}: nothing recommended runs on this host — {row.get('reason')}; {left}")
         else:
             print(f"{head}: {before} -> {after}")
     print()
