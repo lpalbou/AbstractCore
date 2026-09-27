@@ -113,17 +113,24 @@ A fresh install starts with recommended defaults so generation works out of
 the box. They depend on the host, and a route is only written when its engine
 runs there:
 
-| host | `input.text` | `output.voice` | `output.image` |
-| --- | --- | --- | --- |
-| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` |
-| Linux, Windows | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset |
-| Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset |
+| host | `input.text` | `output.voice` | `output.image` | `output.video` |
+| --- | --- | --- | --- | --- |
+| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (about 96 GiB of unified memory or more), else unset |
+| Linux, Windows | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
+| Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset | unset |
 
 Supertonic runs on ONNX Runtime on the CPU, so it works on every desktop OS.
 MLX-Gen needs Apple silicon. On other hosts the image route stays unset, and
 the grid (`recommendation_unavailable`) and `apply-recommended` (action
 `unavailable`) both give the reason. Set it to an image engine the host can
 run: `diffusers` (install profile `gpu`), `sdcpp`, or a cloud image provider.
+The video route (Wan2.2 TI2V-5B, one model for text-to-video and
+image-to-video) also runs on MLX-Gen, and it is written only where the model
+catalog's fit estimate says it fits: it needs about 58 GiB of memory while it
+generates at AbstractVision's default 1280x704 canvas (a measured figure, not
+its 16.9 GiB file size). AbstractFramework has no local video engine off Apple
+silicon today, so elsewhere the reason names the remaining option: an
+OpenAI-compatible video endpoint through AbstractVision.
 The defaults are ordinary routes — change or clear them with the commands below, and any
 provider or model supplied on a request always wins. The seed is written only
 when no configuration file exists yet; clearing a route is permanent, and a
