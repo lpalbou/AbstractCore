@@ -5,6 +5,60 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.0] - 2026-09-27
+
+Recommended defaults now fit the machine they are written on, video joins the model catalog and the
+recommendations, and the terminal console reaches parity with the web console's Models and Engines
+screens (`abstractcore-console` 0.3.0).
+
+### Added
+
+- Video in the model catalog: Wan2.2 TI2V-5B, T2V-A14B and I2V-A14B (MLX-Gen, Apple silicon), with a
+  `video` tag and a measured run-time memory per artifact (`resident_bytes`). The fit verdict uses that
+  measured figure instead of the file size (TI2V-5B is a 16.9 GiB download that needs about 58 GiB while
+  it generates). See [Local models](docs/models.md).
+- A recommended `output.video` route: MLX-Gen Wan2.2 TI2V-5B (one model for text-to-video and
+  image-to-video), written by the first-run seed, `abstractcore config apply-recommended` (also
+  `--only video`), "download all" and the catalog starter only on Apple silicon where the catalog's
+  fit says it fits (about 96 GiB of unified memory or more).
+- `route_unavailable: {provider, model, reason}` on configured capability routes this host cannot run
+  (an `mlx`, `mlx-gen` or `supertonic` route on a machine without that engine). `abstractcore config
+  defaults` prints it on the row. `apply-recommended` keeps and flags such a route; `apply-recommended
+  --force` replaces it with this host's recommendation, or removes it (new action `cleared`, counted in
+  the report) where nothing recommended runs. Server and cloud routes are never flagged.
+- `abstractcore-console` 0.3.0 (Rust crate): Hugging Face search (`h`), set the default text model
+  (`u`), a live downloads view, parallel downloads, a model-type filter (`t`, video included), engine
+  server start/stop (`s`), continuing a paused install (`a`, `y` copies its command), admin-gated
+  host-changing verbs for embedding consoles, and route/apply screens that show `route_unavailable`,
+  `recommendation_unavailable` and the `cleared` action. See [Terminal console](docs/console-tui.md).
+
+### Changed
+
+- Recommended capability defaults are host-aware for every route, not only text. A route is written
+  only where its engine runs: off Apple silicon `output.image` (MLX-Gen) and `output.video` stay unset;
+  Intel Macs get the Ollama build of the portable text model (LM Studio has no Intel build); hosts
+  with neither LM Studio nor Ollama (FreeBSD, 32-bit ARM, RISC-V) get no local text route. Each unset
+  route says why (`recommendation_unavailable` in the grid, action `unavailable` in the apply plan) and
+  names the next step. Apple silicon defaults are unchanged. The per-host table is in
+  [Centralized config](docs/centralized-config.md).
+- `abstractcore engines status` checks the CPU architecture: the Ollama and LM Studio install plans
+  report `available: false` with the reason on architectures and operating systems their vendors do
+  not build for (see [Local engines](docs/engines.md)).
+
+### Fixed
+
+- Cloning a voice with a local engine (`POST /{omnivoice|qwen3-tts}/v1/voice/clone`) returned HTTP 500
+  when the voice plugin answered with a plain voice id; it now returns the new voice.
+
+### Migrating `abstractcore-console` from 0.2
+
+0.3.0 is a breaking release for library hosts that embed the console screens (for example the
+gateway console): `ScreensCtx::new` takes a `Signal<Access>`, `ConsoleTransport::start_download`
+takes `expected_bytes`, a backend whose job route does not know download groups implements
+`download_job`, and the growing public types are `#[non_exhaustive]`. The full list is under
+"Migrating from 0.2" in `console-tui/CHANGELOG.md`. The `abstractcore-console` binary itself needs no
+migration.
+
 ## [2.16.1] - 2026-09-26
 
 Local MLX models now see the conversation exactly as their own chat template renders it, so agent

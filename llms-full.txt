@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-25
-Package version: 2.16.1
+Package version: 2.17.0
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -15222,7 +15222,7 @@ An **artifact** names the exact weights to fetch, quantization included:
 | `lmstudio` | `qwen/qwen3.5-9b@4bit` | LM Studio model id with `@quant`. A bare id lets LM Studio pick its default build. |
 | `mlx` | `mlx-community/Qwen3-8B-4bit` | A Hugging Face repo; MLX repos hold one quantization. |
 | `huggingface` | `unsloth/Qwen3-8B-GGUF:Q4_K_M` | A GGUF repo plus `:QUANT`. Only the matching `*Q4_K_M*.gguf` files are fetched. Without `:QUANT` the whole repo is downloaded. |
-| `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `supertonic-3` | Image and voice starters. |
+| `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit`, `supertonic-3` | Image starter (Apple silicon only), video starter (Apple silicon, only where its measured memory fits) and voice starter (every OS). |
 
 ## The host profile
 
@@ -15274,6 +15274,10 @@ joined from AbstractCore's model capability registry, and one entry per artifact
   the upstream file listing when the seed records an `upstream` check), `engine`
   (reported by the installed engine), `hf_api` (Hugging Face file listing), `estimate`
   (parameters x bits), or `unknown`;
+- `resident_bytes`: the MEASURED memory the engine needs while this artifact runs, for models
+  whose working memory is not their file size (the video rows), else `null`. The seed records it
+  with its source (machine, engine version, canvas and frame count); the fit uses it as `W` and the
+  download size only for the disk check, and the fit notes quote the source;
 - `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
 - `recommended`: exactly one artifact per row is pre-selected for this machine. On Apple silicon
   the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
@@ -15351,7 +15355,7 @@ An assumption can be wrong for a given tag: the Ollama registry lists `qwen3.5:0
 
 Filters: `q` (every word must start a word of the id, name, vendor, tags or artifacts),
 `--engine` (`ollama`, `lmstudio`, `mlx`, `huggingface`, or `llamacpp` for GGUF artifacts),
-`--fits` (keep `fits` and `tight` only), `--tag` (`chat`, `coding`, `vision`, `embedding`, ...).
+`--fits` (keep `fits` and `tight` only), `--tag` (`chat`, `coding`, `vision`, `embedding`, `image`, `voice`, `video`, ...).
 
 ### Hugging Face enrichment (`--hub`)
 
@@ -15368,7 +15372,8 @@ returned. Set `HF_TOKEN` for gated repos and higher rate limits.
 `fit` answers "will this run here" before any byte is downloaded:
 
 ```
-W    weights       exact artifact size, else parameters x bits / 8 x 1.03
+W    weights       measured run-time memory (`resident_bytes`) when recorded, else the exact
+                   artifact size, else parameters x bits / 8 x 1.03
 KV   KV cache      n x 2 x layers x kv_heads x head_dim x 2 bytes (f16), when the geometry is known;
                    otherwise n x 0.5 MiB x (parameters / 8e9)
 O    overhead      max(0.5 GiB, 5% of W)
@@ -15713,6 +15718,10 @@ no `pip` (a `uv` virtual environment), the plan uses
 `uv pip install --python <this interpreter> ...` instead. The plan block also lists
 `alternatives`, `requires_admin`, `url` and human `notes`.
 
+Ollama and LM Studio publish builds for x86_64 and arm64 only (LM Studio on macOS: Apple silicon
+only). On any other architecture (a 32-bit ARM board, RISC-V) or operating system (FreeBSD) the
+plan is `available: false` and its `notes` give the reason.
+
 ## Installing
 
 ```bash
@@ -15868,9 +15877,42 @@ target `output.text` are accepted for compatibility, but persist to
 ### Capability Routing Defaults
 
 A fresh install starts with recommended defaults so generation works out of
-the box: text on `lmstudio/qwen/qwen3.5-9b`, voice on `supertonic/supertonic-3`,
-and image on `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit`. They are
-ordinary routes — change or clear them with the commands below, and any
+the box. They depend on the host, and a route is only written when its engine
+runs there:
+
+| host | `input.text` | `output.voice` | `output.image` | `output.video` |
+| --- | --- | --- | --- | --- |
+| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (about 96 GiB of unified memory or more), else unset |
+| Linux, Windows (x86_64, arm64) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
+| Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset | unset |
+| anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset |
+
+Supertonic runs on ONNX Runtime on the CPU, which has builds for x86_64 and
+arm64 on Linux and Windows, and for macOS. Where neither LM Studio nor Ollama
+has a build, the text route stays unset too, and the reason says to use a
+cloud provider or a text server on another machine.
+MLX-Gen needs Apple silicon. On other hosts the image route stays unset, and
+the grid (`recommendation_unavailable`) and `apply-recommended` (action
+`unavailable`) both give the reason. Set it to an image engine the host can
+run: `diffusers` (install profile `gpu`), `sdcpp`, or a cloud image provider.
+The video route (Wan2.2 TI2V-5B, one model for text-to-video and
+image-to-video) also runs on MLX-Gen, and it is written only where the model
+catalog's fit estimate says it fits: it needs about 58 GiB of memory while it
+generates at AbstractVision's default 1280x704 canvas (a measured figure, not
+its 16.9 GiB file size). AbstractFramework has no local video engine off Apple
+silicon, so elsewhere the reason names the remaining option: an
+OpenAI-compatible video endpoint through AbstractVision.
+A route that is already configured but cannot run on this host — an
+`mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
+example `output.image: mlx-gen/...` kept from an install made before these
+defaults were host-aware — carries `route_unavailable: {provider, model,
+reason}` in the grid, and `abstractcore config defaults` prints it on the row.
+`apply-recommended` keeps it and flags it; `apply-recommended --force` replaces
+it with this host's recommendation, or removes it (action `cleared`) where
+nothing recommended runs here. Routes to a server (LM Studio, Ollama,
+OpenAI-compatible) and cloud routes are never flagged: the server may be on
+another machine.
+The defaults are ordinary routes — change or clear them with the commands below, and any
 provider or model supplied on a request always wins. The seed is written only
 when no configuration file exists yet; clearing a route is permanent, and a
 store you already have is never modified.
@@ -26306,13 +26348,47 @@ CLI for everything derived or written. It finds the CLI through
 | 1 | Overview | every config section's state; Enter jumps to its owner |
 | 2 | Model | default models and app defaults |
 | 3 | Providers | providers, endpoint profiles, API keys, model discovery |
-| 4 | Routes | capability routes (vision, audio, image, video, embeddings); `w` downloads a route's weights |
+| 4 | Routes | capability routes (vision, audio, image, video, embeddings); `w` downloads a route's weights, `a` applies the recommended routes |
 | 5 | Media | vision / audio / video settings |
 | 6 | Embeddings | the embeddings route |
 | 7 | Server | server, logging, timeouts, cache |
 | 8 | Review | the file identity and test evidence |
-| 9 | **Models** | the model catalog fitted to this host: `w` download, `d` delete, `/` filter, `f` fits only, `e` engine, `v` installed ⇄ catalog, `c` cancel |
-| 0 | **Engines** | Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face: `i` install (confirmed; shows the command and the host), `o` open the download page, `r` probe |
+| 9 | **Models** | the model catalog fitted to this host (see the keys below) |
+| 0 | **Engines** | Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face (see the keys below) |
+
+### Models keys
+
+| Key | Action |
+|---|---|
+| `w` | download the selected artifact; several downloads run at once |
+| `d` | delete an installed artifact (the confirm names what blocks it: a loaded model, a shared cache) |
+| `/` | filter by name, family, tag or artifact |
+| `t` | cycle the model type: text, thinking, tools, vision, audio, embedding, voice, image, video |
+| `f` | show only what fits this host |
+| `e` | cycle the engine |
+| `h` | search Hugging Face (an empty query returns to the catalog) |
+| `u` | make the selected installed text model the default text model (`output.text`); the route becomes exactly that model |
+| `v` | cycle catalog → installed → downloads (every download the backend knows, live) |
+| `c` | cancel the selected download (asks first) |
+| `r` | re-read the host, the catalog and what is installed |
+
+### Engines keys
+
+| Key | Action |
+|---|---|
+| `i` | install the selected engine (the confirm shows the command, the host it runs on, and any administrator step; a dry run is one of the answers) |
+| `o` | open the vendor's download page |
+| `r` | probe the local servers |
+| `c` | cancel the engine's install |
+| `s` | start or stop the engine's server (Ollama, LM Studio) |
+| `a` | continue an install that waits for an administrator or for developer tools |
+| `y` | copy that install's command |
+
+`s`, `a` and `y`, the install location (just you or all users) and
+Hugging Face search are optional backend verbs: over a backend without
+them the key answers "not available here" and the footer says "not
+here". The `abstractcore` CLI backend offers `h`, `u` and the downloads
+view; the gateway console offers them all.
 
 Models and Engines speak the same vocabulary as the web console and the
 gateway console: weights `installed / not downloaded / unknown /
@@ -26328,8 +26404,20 @@ Every action there is a CLI command you can run yourself:
 | Engines list | `abstractcore engines status [--probe] --json` |
 | `i` install | `abstractcore engines install <id> --yes [--dry-run] --json` |
 
-Downloads and installs run on the machine that runs the console. One job
-runs at a time; `c` cancels it, and `q` will not quit while it runs.
+Downloads and installs run on the machine that runs the console.
+Downloads run in parallel. An install that waits for a person (an
+administrator password, developer tools) blocks nothing and shows the
+exact command to run. `q` will not quit while a download or install is
+working; a waiting install does not hold it.
+
+## Who may change the host
+
+`w`, `d`, `u` and `c` on Models and `i`, `s`, `a` and `c` on Engines
+change the host, so they are administrator verbs, as in the web console.
+In `abstractcore-console` you are the local operator and every verb is
+yours. In the gateway console they follow your sign-in: a non-admin
+browses freely, each of these keys answers "only an admin can … —
+<reason>", and the footer marks them "admin only".
 
 ## Same screens in the gateway console
 
@@ -26337,7 +26425,8 @@ The Models and Engines screens are a library inside the crate
 (`abstractcore_console::screens`). `abstractgateway-console` mounts them
 over an HTTP transport to the gateway's `/api/gateway/models/*` and
 `/api/gateway/engines/*` routes, so a gateway operator sees the same
-screens, acting on the gateway host. See the crate README
+screens, acting on the gateway host, with the administrator rules of the
+gateway's sign-in. See the crate README
 (`console-tui/README.md`) for the library API.
 
 ---

@@ -133,7 +133,7 @@ image-to-video) also runs on MLX-Gen, and it is written only where the model
 catalog's fit estimate says it fits: it needs about 58 GiB of memory while it
 generates at AbstractVision's default 1280x704 canvas (a measured figure, not
 its 16.9 GiB file size). AbstractFramework has no local video engine off Apple
-silicon today, so elsewhere the reason names the remaining option: an
+silicon, so elsewhere the reason names the remaining option: an
 OpenAI-compatible video endpoint through AbstractVision.
 A route that is already configured but cannot run on this host — an
 `mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
