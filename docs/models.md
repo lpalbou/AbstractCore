@@ -39,7 +39,7 @@ An **artifact** names the exact weights to fetch, quantization included:
 | `lmstudio` | `qwen/qwen3.5-9b@4bit` | LM Studio model id with `@quant`. A bare id lets LM Studio pick its default build. |
 | `mlx` | `mlx-community/Qwen3-8B-4bit` | A Hugging Face repo; MLX repos hold one quantization. |
 | `huggingface` | `unsloth/Qwen3-8B-GGUF:Q4_K_M` | A GGUF repo plus `:QUANT`. Only the matching `*Q4_K_M*.gguf` files are fetched. Without `:QUANT` the whole repo is downloaded. |
-| `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `supertonic-3` | Image and voice starters. |
+| `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `supertonic-3` | Image starter (Apple silicon only) and voice starter (every OS). |
 
 ## The host profile
 

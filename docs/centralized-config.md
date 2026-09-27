@@ -110,9 +110,21 @@ target `output.text` are accepted for compatibility, but persist to
 ### Capability Routing Defaults
 
 A fresh install starts with recommended defaults so generation works out of
-the box: text on `lmstudio/qwen/qwen3.5-9b`, voice on `supertonic/supertonic-3`,
-and image on `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit`. They are
-ordinary routes — change or clear them with the commands below, and any
+the box. They depend on the host, and a route is only written when its engine
+runs there:
+
+| host | `input.text` | `output.voice` | `output.image` |
+| --- | --- | --- | --- |
+| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` |
+| Linux, Windows | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset |
+| Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset |
+
+Supertonic runs on ONNX Runtime on the CPU, so it works on every desktop OS.
+MLX-Gen needs Apple silicon. On other hosts the image route stays unset, and
+the grid (`recommendation_unavailable`) and `apply-recommended` (action
+`unavailable`) both give the reason. Set it to an image engine the host can
+run: `diffusers` (install profile `gpu`), `sdcpp`, or a cloud image provider.
+The defaults are ordinary routes — change or clear them with the commands below, and any
 provider or model supplied on a request always wins. The seed is written only
 when no configuration file exists yet; clearing a route is permanent, and a
 store you already have is never modified.
