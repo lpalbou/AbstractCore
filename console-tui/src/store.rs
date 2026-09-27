@@ -54,7 +54,12 @@ pub struct ConfigMirror {
 
 /// One capability route from `config defaults --json` — the derived,
 /// coverage-decorated view (main.py:1442-1452 + manager.py:1166-1182).
+///
+/// `#[non_exhaustive]`: it mirrors a payload that grows (0.3.0 added
+/// `recommendation_unavailable` / `route_unavailable`); read fields,
+/// build it with [`RouteRow::from_value`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct RouteRow {
     pub key: String,
     pub kind: String,
@@ -111,6 +116,7 @@ pub struct RouteRow {
 /// run (`recommendation_unavailable` / `route_unavailable`). Optional on
 /// the wire: an older Core sends neither and nothing changes.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct RouteUnavailable {
     pub provider: Option<String>,
     pub model: Option<String>,

@@ -137,11 +137,14 @@ pub fn engines(cx: Scope, sctx: &ScreensCtx) -> View {
         })
         .shortcut(KeyChord::plain(Key::Char('c')), {
             let s = sctx.clone();
-            move |_| match selected_engine(&s.store, false)
-                .and_then(|e| s.store.active_install(&e.id))
-            {
-                Some(j) => s.cancel_job(&j),
-                None => s.cancel(),
+            move |_| {
+                if !s.require_admin("cancel jobs") {
+                    return;
+                }
+                match selected_engine(&s.store, false).and_then(|e| s.store.active_install(&e.id)) {
+                    Some(j) => s.cancel_job(&j),
+                    None => s.cancel(),
+                }
             }
         })
         .shortcut(KeyChord::plain(Key::Char('s')), {
@@ -491,6 +494,9 @@ fn install_selected(cx: Scope, sctx: &ScreensCtx) {
 /// `s`: the row's own start/stop action (gateway v2 `actions`, which
 /// also carry the admin guard), refused with the reason otherwise.
 fn start_stop_selected(sctx: &ScreensCtx) {
+    if !sctx.require_admin("start or stop engines") {
+        return;
+    }
     let store = sctx.store;
     let Some(e) = selected_engine(&store, false) else {
         store.notice.set(Some("no engine selected".into()));
@@ -538,14 +544,14 @@ fn start_stop_selected(sctx: &ScreensCtx) {
 /// `a`: continue the selected engine's paused install. One offered
 /// action runs at once (the web's single button); several ask which.
 fn continue_selected(cx: Scope, sctx: &ScreensCtx) {
+    if !sctx.require_admin("continue an install") {
+        return;
+    }
     if !sctx.caps.engine_continue {
         sctx.store.notice.set(Some(format!(
             "continuing a paused install is not available over {}",
             sctx.host_label
         )));
-        return;
-    }
-    if !sctx.require_admin("continue an install") {
         return;
     }
     let store = sctx.store;

@@ -962,6 +962,9 @@ fn cancel_selected(cx: Scope, sctx: &ScreensCtx) {
 /// `u`: the selected INSTALLED, text-capable artifact becomes the
 /// default text model (`output.text`), verified from a fresh read.
 fn use_as_default(sctx: &ScreensCtx) {
+    if !sctx.require_admin("change the default model") {
+        return;
+    }
     let store = sctx.store;
     if !sctx.caps.text_default {
         store.notice.set(Some(format!(

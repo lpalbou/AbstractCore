@@ -4536,7 +4536,7 @@ fn routes_screen_flags_routes_this_computer_cannot_run() {
     assert!(voice.contains("cannot run here"), "state column:\n{s}");
     assert!(
         s.contains(
-            "configured but cannot run on this computer: Supertonic has no build for this CPU"
+            "configured but cannot run on this computer: Supertonic has no build for this CPU — Enter edits it, x clears it"
         ),
         "detail line:\n{s}"
     );
@@ -4551,4 +4551,35 @@ fn routes_screen_flags_routes_this_computer_cannot_run() {
         !s.contains("cannot run on this computer"),
         "the detail line of a runnable row:\n{s}"
     );
+}
+
+/// A read-only person hears "only an admin can …" FIRST — before any
+/// capability, selection or row-state answer ("is not a server", "no job
+/// is running", "not downloaded yet", "not available over …").
+#[test]
+fn the_admin_refusal_comes_before_every_state_answer() {
+    // A bare backend (no optional verbs) and rows in every awkward state.
+    let mut h = harness();
+    h.load_fixtures();
+    h.screens
+        .access
+        .set(Access::ReadOnly("not signed in".into()));
+    h.open_engines();
+    let refused = |h: &mut Harness, key: &[u8], what: &str| {
+        h.store.notice.set(None);
+        h.key(key);
+        h.settle_until_contains(&format!("only an admin can {what} — not signed in"));
+    };
+    h.select_engine("llamacpp"); // not a server, nothing running, no job
+    refused(&mut h, b"s", "start or stop engines");
+    refused(&mut h, b"c", "cancel jobs");
+    refused(&mut h, b"a", "continue an install");
+    h.select_engine("ollama");
+    refused(&mut h, b"i", "install engines");
+    h.open_models();
+    h.select_artifact("qwen3:8b"); // not downloaded: `u` would say so
+    refused(&mut h, b"u", "change the default model");
+    refused(&mut h, b"c", "cancel downloads");
+    h.select_artifact("gemma3:27b"); // nothing to delete
+    refused(&mut h, b"d", "delete models");
 }

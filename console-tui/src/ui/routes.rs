@@ -210,8 +210,8 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                 if let Some(u) = r.route_unavailable.as_ref().filter(|_| r.configured) {
                     spans.push(span(
                         format!(
-                            "configured but cannot run on this computer: {} — a (replace mine) \
-                             swaps in what runs here  ",
+                            "configured but cannot run on this computer: {} — Enter edits it, \
+                             x clears it  ",
                             u.reason
                         ),
                         t.error,

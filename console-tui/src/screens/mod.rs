@@ -168,7 +168,12 @@ pub enum CatalogView {
 /// reason ("Only an admin can download models"); these screens refuse
 /// them the same way. The HOST decides and keeps the signal current (see
 /// the module docs): the screens never guess who is signed in.
+///
+/// `#[non_exhaustive]`: a host builds a variant and hands the signal
+/// over; the screens are the only reader, so a later state (say, "the
+/// principal is still being read") arrives without breaking hosts.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Access {
     /// Every verb: the local operator (core console) or a signed-in
     /// administrator (gateway console).
@@ -405,14 +410,19 @@ impl Default for ScreensOptions {
 
 /// Commands for the screens' worker lane.
 ///
-/// `#[non_exhaustive]`: every new verb adds a command.
+/// `#[non_exhaustive]`, and so is every struct variant: a verb gains a
+/// command, a command gains a field. The lane is driven through the
+/// [`ScreensCtx`] methods (one per command); a host reads commands (logs,
+/// tests) and never builds one.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum ScreenCmd {
     LoadHost,
+    #[non_exhaustive]
     LoadEngines {
         probe: bool,
     },
+    #[non_exhaustive]
     LoadCatalog {
         q: String,
         engine: Option<String>,
@@ -425,43 +435,52 @@ pub enum ScreenCmd {
     /// The downloads feed: adopt live jobs this console is not watching.
     LoadDownloads,
     LoadTextDefault,
+    #[non_exhaustive]
     SetTextDefault {
         provider: String,
         model: String,
     },
     /// Both install plans of an app engine (two dry runs).
+    #[non_exhaustive]
     LoadPlans {
         engine: String,
     },
     /// Watch a job learned from elsewhere (an engine row's `active_job`).
+    #[non_exhaustive]
     Adopt {
         job_id: String,
     },
+    #[non_exhaustive]
     Continue {
         job_id: String,
         action: Option<String>,
     },
+    #[non_exhaustive]
     Server {
         engine: String,
         action: ServerAction,
     },
+    #[non_exhaustive]
     Download {
         provider: String,
         artifact: String,
         /// The catalog's vouched size ([`ArtifactRow::expected_bytes`]).
         expected_bytes: Option<u64>,
     },
+    #[non_exhaustive]
     Delete {
         provider: String,
         artifact: String,
         force: bool,
     },
+    #[non_exhaustive]
     Install {
         engine: String,
         dry_run: bool,
         location: InstallLocation,
     },
     PollJob(JobPoll),
+    #[non_exhaustive]
     Cancel {
         job_id: String,
         /// A model download / "download all" group: cancelled on the
@@ -578,7 +597,9 @@ impl ScreensCtx {
         self.store.notice.set(Some(msg.into()));
     }
 
-    /// The admin gate every host-changing verb passes (`what` = "download
+    /// The admin gate every host-changing verb passes FIRST — before any
+    /// capability, selection or state check, so a read-only person always
+    /// hears the one answer that applies to them (`what` = "download
     /// models", "install engines"…). `false` = refused, with the web
     /// console's sentence plus the host's reason as the notice.
     pub fn require_admin(&self, what: &str) -> bool {
@@ -829,14 +850,14 @@ impl ScreensCtx {
 
     /// `a`: continue a paused install with one of its `continue_actions`.
     pub fn continue_job(&self, job: &JobView, action: Option<&str>) {
+        if !self.require_admin("continue an install") {
+            return;
+        }
         if !self.caps.engine_continue {
             self.notice(format!(
                 "continuing a paused install is not available over {}",
                 self.host_label
             ));
-            return;
-        }
-        if !self.require_admin("continue an install") {
             return;
         }
         if !job.is_paused() || job.job_id.is_empty() {
@@ -863,14 +884,14 @@ impl ScreensCtx {
 
     /// `s`: start or stop an engine's server.
     pub fn server(&self, engine: &str, action: ServerAction) {
+        if !self.require_admin("start or stop engines") {
+            return;
+        }
         if !self.caps.engine_server {
             self.notice(format!(
                 "starting or stopping engine servers is not available over {}",
                 self.host_label
             ));
-            return;
-        }
-        if !self.require_admin("start or stop engines") {
             return;
         }
         self.notice(format!(
@@ -889,14 +910,14 @@ impl ScreensCtx {
     /// `u`: make an installed artifact the default text model (the route
     /// stores the SERVED id — see [`data::served_model_id`]).
     pub fn set_text_default(&self, provider: &str, artifact: &str) {
+        if !self.require_admin("change the default model") {
+            return;
+        }
         if !self.caps.text_default {
             self.notice(format!(
                 "changing the default text model is not available over {}",
                 self.host_label
             ));
-            return;
-        }
-        if !self.require_admin("change the default model") {
             return;
         }
         let model = data::served_model_id(provider, artifact);
