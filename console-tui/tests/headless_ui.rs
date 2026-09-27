@@ -3956,7 +3956,8 @@ fn start_stop_s_follows_the_row_actions_and_refuses_with_reasons() {
 
 #[test]
 fn optional_verbs_over_a_bare_transport_say_not_here_never_fake() {
-    let mut h = harness();
+    // Wide enough that the footer's tail (the optional verbs) shows.
+    let mut h = harness_sized(Size::new(230, 34));
     h.load_fixtures();
     let s = h.open_models();
     assert!(s.contains("Hugging Face: not here"), "the footer says so:\n{s}");

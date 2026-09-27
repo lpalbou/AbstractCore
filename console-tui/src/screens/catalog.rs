@@ -304,13 +304,13 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
 pub const HINTS: &[(&str, &str)] = &[
     ("w", "download"),
     ("d", "delete"),
-    ("h", "Hugging Face"),
-    ("u", "use as default"),
     ("/", "filter"),
     ("f", "fits only"),
     ("e", "engine"),
     ("v", "installed/downloads"),
     ("c", "cancel download"),
+    ("h", "Hugging Face"),
+    ("u", "use as default"),
 ];
 
 /// The footer pairs for a transport: a verb the backend lacks says so

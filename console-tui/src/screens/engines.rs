@@ -164,12 +164,12 @@ pub fn engines(cx: Scope, sctx: &ScreensCtx) -> View {
 /// full backend such as the gateway). [`hints`] tailors them.
 pub const HINTS: &[(&str, &str)] = &[
     ("i", "install"),
-    ("s", "start/stop"),
-    ("a", "continue paused install"),
-    ("y", "copy its command"),
     ("o", "open download page"),
     ("r", "probe"),
     ("c", "cancel install"),
+    ("s", "start/stop"),
+    ("a", "continue paused install"),
+    ("y", "copy its command"),
 ];
 
 /// The footer pairs for a transport: a verb the backend lacks says so

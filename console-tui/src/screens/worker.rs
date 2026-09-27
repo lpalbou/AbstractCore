@@ -446,7 +446,8 @@ impl Worker {
         }
         match self.transport.job(job_id) {
             Ok(v) => {
-                let view = JobView::from_value(&v);
+                let mut view = JobView::from_value(&v);
+                view.job_id = job_id.to_string();
                 if view.is_active() {
                     self.announce_pause(&view);
                     self.post(move |s| upsert_job(&s, view));
@@ -516,7 +517,10 @@ impl Worker {
         }
         match self.transport.job(&poll.job_id) {
             Ok(v) => {
-                let view = JobView::from_value(&v);
+                let mut view = JobView::from_value(&v);
+                // The answer is about the job ASKED for: a backend that
+                // echoes some upstream id must not fork the row.
+                view.job_id = poll.job_id.clone();
                 if !view.is_active() {
                     self.watching.remove(&poll.job_id);
                     self.finish(view);
