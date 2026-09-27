@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use abstracttui::reactive::WakeHandle;
 use serde_json::Value;
@@ -21,7 +21,10 @@ use super::data::{
     download_jobs_from_value, text_default_from_value, CatalogData, EnginesData, HostProfile,
     InstallPlans, InstalledData, JobView, LocationPlan,
 };
-use super::{drop_placeholder, error_notice, upsert_job, JobPoll, Remote, ScreenCmd, ScreensStore};
+use super::{
+    drop_placeholder, error_notice, is_download_kind, upsert_job, JobPoll, Remote, ScreenCmd,
+    ScreensStore,
+};
 use crate::transport::{
     ConsoleTransport, InstallLocation, ServerAction, TransportError, TransportErrorKind,
 };
@@ -231,11 +234,13 @@ impl Worker {
                         }
                     }
                     for j in &live {
-                        // Group children are polled through their group's
-                        // feed re-reads; a plain job gets its own chain.
-                        if j.kind == "download" && j.parent_job.is_none() {
-                            self.watch(&j.job_id);
-                        }
+                        // EVERY live download gets its own poll chain on
+                        // the download route: a "download all" group
+                        // (only that route knows it) and each of its
+                        // children too. Nothing re-reads the feed on its
+                        // own, so an unwatched job would stay "running"
+                        // here forever — and hold the quit guard.
+                        self.watch(&j.job_id, true);
                     }
                     self.post(move |s| {
                         // Live jobs always show; finished ones only when
@@ -328,7 +333,7 @@ impl Worker {
                                 upsert_job(&s, view);
                                 s.notice.set(Some(msg));
                             });
-                            self.watch(&job_id);
+                            self.watch(&job_id, false);
                         } else {
                             self.finish(view);
                         }
@@ -367,8 +372,14 @@ impl Worker {
                 self.post(|s| s.engines.set(Remote::Loading));
                 let _ = self.tx.send(ScreenCmd::LoadEngines { probe: true });
             }
-            ScreenCmd::Download { provider, artifact } => {
-                let res = self.transport.start_download(&provider, &artifact);
+            ScreenCmd::Download {
+                provider,
+                artifact,
+                expected_bytes,
+            } => {
+                let res = self
+                    .transport
+                    .start_download(&provider, &artifact, expected_bytes);
                 let like = JobView {
                     kind: "download".into(),
                     provider: Some(provider.clone()),
@@ -414,7 +425,7 @@ impl Worker {
                     let view = JobView::from_value(&v);
                     if view.is_active() {
                         self.post(move |s| upsert_job(&s, view));
-                        self.watch(&job_id);
+                        self.watch(&job_id, download);
                     } else {
                         self.finish(view);
                     }
@@ -428,17 +439,14 @@ impl Worker {
     }
 
     /// Start a poll chain for `job_id` unless one runs (or it ended).
-    fn watch(&mut self, job_id: &str) {
+    /// `download` = poll it on the download route.
+    fn watch(&mut self, job_id: &str, download: bool) {
         if job_id.is_empty() || self.finished.contains(job_id) || !self.watching.insert(job_id.to_string()) {
             return;
         }
         schedule_job_poll(
             &self.tx,
-            JobPoll {
-                job_id: job_id.to_string(),
-                since: Instant::now(),
-                errors: 0,
-            },
+            JobPoll::new(job_id, download),
             self.options.poll_interval,
         );
     }
@@ -453,9 +461,10 @@ impl Worker {
                 let mut view = JobView::from_value(&v);
                 view.job_id = job_id.to_string();
                 if view.is_active() {
+                    let download = is_download_kind(&view.kind);
                     self.announce_pause(&view);
                     self.post(move |s| upsert_job(&s, view));
-                    self.watch(job_id);
+                    self.watch(job_id, download);
                 }
             }
             Err(e) => {
@@ -490,6 +499,7 @@ impl Worker {
                 let view = JobView::from_value(&v);
                 if view.is_active() && !view.job_id.is_empty() {
                     let id = view.job_id.clone();
+                    let download = is_download_kind(&like.kind);
                     self.announce_pause(&view);
                     self.post(move |s| {
                         // A joined job answers with an id already listed:
@@ -497,7 +507,7 @@ impl Worker {
                         drop_placeholder(&s, &like);
                         upsert_job(&s, view);
                     });
-                    self.watch(&id);
+                    self.watch(&id, download);
                 } else {
                     self.finish(view);
                     self.post(move |s| drop_placeholder(&s, &like));
@@ -519,7 +529,12 @@ impl Worker {
             self.watching.remove(&poll.job_id);
             return;
         }
-        match self.transport.job(&poll.job_id) {
+        let answer = if poll.download {
+            self.transport.download_job(&poll.job_id)
+        } else {
+            self.transport.job(&poll.job_id)
+        };
+        match answer {
             Ok(v) => {
                 let mut view = JobView::from_value(&v);
                 // The answer is about the job ASKED for: a backend that

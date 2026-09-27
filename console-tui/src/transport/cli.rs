@@ -290,7 +290,15 @@ impl ConsoleTransport for CliTransport {
         self.run_sync(&args, self.read_timeout)
     }
 
-    fn start_download(&self, provider: &str, artifact: &str) -> Result<Value, TransportError> {
+    /// `expected_bytes` is not forwarded: `abstractcore models download`
+    /// has no size flag (the CLI's own job never runs the catalog disk
+    /// pre-check). The gateway transport forwards it.
+    fn start_download(
+        &self,
+        provider: &str,
+        artifact: &str,
+        _expected_bytes: Option<u64>,
+    ) -> Result<Value, TransportError> {
         refuse_flag_like("provider", provider)?;
         refuse_flag_like("artifact", artifact)?;
         self.start_child(ChildSpec {
@@ -449,7 +457,9 @@ impl ConsoleTransport for CliTransport {
 
     /// `config set-default output.text` prints a sentence, not JSON: its
     /// exit code decides, and the answer is a FRESH defaults read (the
-    /// screen verifies the route from it).
+    /// screen verifies the route from it). The route becomes exactly this
+    /// model: `""` clears the previous model's `base_url` and `reasoning`,
+    /// and `--option ""` its options (see the trait method).
     fn set_text_default(&self, provider: &str, model: &str) -> Result<Value, TransportError> {
         refuse_flag_like("provider", provider)?;
         refuse_flag_like("model", model)?;
@@ -461,6 +471,12 @@ impl ConsoleTransport for CliTransport {
             provider,
             "--model",
             model,
+            "--base-url",
+            "",
+            "--reasoning",
+            "",
+            "--option",
+            "",
         ];
         let label = format!("abstractcore {}", args.join(" "));
         let (status, stdout, stderr) = cli::run_raw_at(&self.bin, &args, &label, self.read_timeout)

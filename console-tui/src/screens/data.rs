@@ -4,6 +4,10 @@
 //! mistyped field is `None` and renders as "unknown" — never a guess
 //! (the contracts' own rule: unknown = `null`). The raw document is not
 //! kept; everything the screens print is a named field here.
+//!
+//! Every view struct is `#[non_exhaustive]`: it mirrors a contract that
+//! grows (a field per new contract key), so a host reads fields and
+//! never builds one — the `from_value` parsers do.
 
 use serde_json::Value;
 
@@ -73,6 +77,7 @@ pub fn params_label(n: Option<u64>) -> String {
 // ---------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct HostProfile {
     pub os: Option<String>,
     pub arch: Option<String>,
@@ -156,6 +161,7 @@ impl HostProfile {
 // ---------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct InstallPlan {
     pub available: bool,
     /// `brew | script | winget | pip | download_page` (None = no plan).
@@ -179,6 +185,7 @@ pub struct InstallPlan {
 /// stop, open_page, recheck, docs) — `enabled` + `reason` carry the
 /// gateway's own guard (admin-only, installs disabled, a job running).
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct EngineAction {
     pub id: String,
     pub label: Option<String>,
@@ -189,6 +196,7 @@ pub struct EngineAction {
 
 /// A gateway v2 row's `active_job` pointer (the engine's live install).
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct ActiveJobRef {
     pub job_id: String,
     pub state: Option<String>,
@@ -197,6 +205,7 @@ pub struct ActiveJobRef {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct EngineRow {
     pub id: String,
     pub name: String,
@@ -313,6 +322,7 @@ impl EngineRow {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct EnginesData {
     pub engines: Vec<EngineRow>,
 }
@@ -356,6 +366,7 @@ pub fn fit_label(verdict: &str) -> &'static str {
 
 /// One downloadable artifact of one catalog model — the Models table's row.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct ArtifactRow {
     pub model_id: String,
     pub model_name: String,
@@ -393,9 +404,63 @@ pub struct ArtifactRow {
     pub starter: bool,
     /// The row's origin: `curated`, `hf_search` (a hub search hit)…
     pub source: Option<String>,
+    /// The model's types ([`CATEGORIES`] ids) from its `capabilities`.
+    pub categories: Vec<&'static str>,
+}
+
+/// The Models screen's type filter (`t`): `(id, label)` in the web
+/// console's chip order (`MC_CAPS`, console_catalog.py), video included.
+pub const CATEGORIES: &[(&str, &str)] = &[
+    ("text", "Text"),
+    ("thinking", "Thinking"),
+    ("tools", "Tools"),
+    ("vision", "Vision"),
+    ("audio", "Audio"),
+    ("embedding", "Embedding"),
+    ("voice", "Voice"),
+    ("image", "Image"),
+    ("video", "Video"),
+];
+
+/// A catalog model's types from its contract-C `capabilities` — the web
+/// console's `mcRowCaps` rule, flag for flag (`tools` is `native` or
+/// `prompted`; a speech synthesizer is `voice`, not `audio`).
+pub fn categories_of(caps: &Value) -> Vec<&'static str> {
+    let on = |k: &str| b(caps, k) == Some(true);
+    let tools = matches!(
+        caps.get("tools").and_then(Value::as_str),
+        Some("native" | "prompted")
+    );
+    let mut out = Vec::new();
+    for (id, yes) in [
+        ("text", on("text")),
+        ("thinking", on("thinking")),
+        ("tools", tools),
+        ("vision", on("vision")),
+        ("audio", on("audio") && !on("speech_synthesis")),
+        ("embedding", on("embedding")),
+        ("voice", on("speech_synthesis")),
+        ("image", on("image_generation")),
+        ("video", on("video_generation")),
+    ] {
+        if yes {
+            out.push(id);
+        }
+    }
+    out
 }
 
 impl ArtifactRow {
+    /// The size a download may announce to the backend's disk pre-check:
+    /// the catalog's `download_bytes` only when its `size_source` vouches
+    /// for it (`catalog`, `hf_api`) — the web console's rule. An estimate
+    /// is never sent as a promise.
+    pub fn expected_bytes(&self) -> Option<u64> {
+        self.download_bytes.filter(|n| *n > 0).filter(|_| {
+            matches!(self.size_source.as_deref(), Some("catalog" | "hf_api"))
+        })
+    }
+
     /// May this artifact be made the default text model? (The web
     /// console's rule: installed, text-capable, not an embedder.)
     pub fn can_be_text_default(&self) -> bool {
@@ -417,6 +482,7 @@ pub fn served_model_id(provider: &str, artifact: &str) -> String {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct CatalogData {
     pub host: Option<HostProfile>,
     /// Flattened: one row per (model, artifact), catalog order.
@@ -444,6 +510,7 @@ impl CatalogData {
             let tags = strings(m, "tags");
             let caps = m.get("capabilities").cloned().unwrap_or(Value::Null);
             let (text_capable, embedding) = (b(&caps, "text"), b(&caps, "embedding"));
+            let categories = categories_of(&caps);
             let starter = b(m, "starter").unwrap_or(false);
             let source = s(m, "source");
             for a in m
@@ -482,6 +549,7 @@ impl CatalogData {
                     embedding,
                     starter,
                     source: source.clone(),
+                    categories: categories.clone(),
                 });
             }
         }
@@ -509,6 +577,7 @@ impl CatalogData {
 // ---------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct InstalledRow {
     pub provider: String,
     pub artifact: String,
@@ -540,6 +609,7 @@ impl InstalledRow {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct InstalledData {
     pub rows: Vec<InstalledRow>,
     pub engines_probed: Vec<String>,
@@ -587,6 +657,7 @@ impl InstalledData {
 // ---------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct JobView {
     pub job_id: String,
     /// `download | delete | engine_install`.
@@ -629,6 +700,7 @@ pub struct JobView {
 
 /// A paused install's administrator step (gateway `admin_prompt`).
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct AdminPrompt {
     pub reason: Option<String>,
     /// The EXACT command that runs elevated — for `method: manual`, the
@@ -643,6 +715,7 @@ pub struct AdminPrompt {
 
 /// A paused install's missing tools (gateway `tools_prompt`).
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct ToolsPrompt {
     pub reason: Option<String>,
     pub tools: Option<String>,
@@ -857,6 +930,7 @@ pub fn text_default_from_value(v: &Value) -> Option<(String, String)> {
 
 /// One install location's plan (from a dry run's `plan`).
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct LocationPlan {
     pub target: Option<String>,
     pub needs_admin: bool,
@@ -877,6 +951,7 @@ impl LocationPlan {
 
 /// Both real plans for an app engine: just this account vs every one.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct InstallPlans {
     pub user: LocationPlan,
     pub system: LocationPlan,

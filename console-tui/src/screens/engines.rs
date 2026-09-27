@@ -11,8 +11,8 @@ use abstracttui::prelude::*;
 
 use super::data::{bytes_label, EngineRow, JobView};
 use super::{
-    confirm_install, confirm_install_location, job_strip, remote_line, Remote, ScreensCtx,
-    ScreensStore,
+    confirm_install, confirm_install_location, focus_holder, job_strip, remote_line, Access,
+    Remote, ScreensCtx, ScreensStore,
 };
 use crate::transport::{ServerAction, TransportCaps};
 use crate::ui::util::{line, span, span_bold};
@@ -79,20 +79,22 @@ pub fn engines(cx: Scope, sctx: &ScreensCtx) -> View {
     let table = dyn_view_scoped(LayoutStyle::default().grow(1.0), move |tcx| {
         let t = theme.get().tokens;
         let w = abstracttui::app::use_viewport(tcx).get().w;
+        // Placeholders hold focus (see `focus_holder`): `r` must retry
+        // a failed read.
         match store.engines.get() {
-            Remote::Ready(d) if d.engines.is_empty() => line(vec![span(
+            Remote::Ready(d) if d.engines.is_empty() => focus_holder(line(vec![span(
                 " ∅ the backend reported no engines",
                 t.text_muted,
-            )]),
+            )])),
             Remote::Ready(d) => engines_table(tcx, &t, &d.engines, store, w),
             Remote::Failed(_) => {
                 // Never a dead end: the desktop engines' own pages.
-                line(vec![span(
+                focus_holder(line(vec![span(
                     " the backend could not list its engines — Ollama: https://ollama.com/download · LM Studio: https://lmstudio.ai/download",
                     t.text_muted,
-                )])
+                )]))
             }
-            _ => line(vec![span(String::new(), t.text)]),
+            _ => focus_holder(line(vec![span(String::new(), t.text)])),
         }
     });
 
@@ -161,7 +163,8 @@ pub fn engines(cx: Scope, sctx: &ScreensCtx) -> View {
 }
 
 /// The footer hint pairs for this screen with EVERY optional verb (a
-/// full backend such as the gateway). [`hints`] tailors them.
+/// full backend such as the gateway) and admin access. [`hints`] tailors
+/// them.
 pub const HINTS: &[(&str, &str)] = &[
     ("i", "install"),
     ("o", "open download page"),
@@ -172,9 +175,11 @@ pub const HINTS: &[(&str, &str)] = &[
     ("y", "copy its command"),
 ];
 
-/// The footer pairs for a transport: a verb the backend lacks says so
-/// ("not here") instead of silently doing nothing.
-pub fn hints(caps: TransportCaps) -> Vec<(&'static str, &'static str)> {
+/// The footer pairs for a transport and the person at the console: a
+/// verb the backend lacks says so ("not here"), a verb only an admin may
+/// run says so ("admin only") — never a key that silently does nothing.
+pub fn hints(caps: TransportCaps, access: &Access) -> Vec<(&'static str, &'static str)> {
+    let admin = access.is_admin();
     HINTS
         .iter()
         .filter_map(|&(k, label)| match k {
@@ -183,6 +188,10 @@ pub fn hints(caps: TransportCaps) -> Vec<(&'static str, &'static str)> {
             // there is no command to copy either.
             "a" if !caps.engine_continue => Some((k, "continue: not here")),
             "y" if !caps.engine_continue => None,
+            "i" if !admin => Some((k, "install: admin only")),
+            "c" if !admin => Some((k, "cancel: admin only")),
+            "s" if !admin => Some((k, "start/stop: admin only")),
+            "a" if !admin => Some((k, "continue: admin only")),
             _ => Some((k, label)),
         })
         .collect()
@@ -408,6 +417,9 @@ fn continue_label(j: &JobView, action: &str) -> String {
 
 /// `i`: refuse with the reason, or confirm with the exact argv.
 fn install_selected(cx: Scope, sctx: &ScreensCtx) {
+    if !sctx.require_admin("install engines") {
+        return;
+    }
     let store = sctx.store;
     let Some(e) = selected_engine(&store, false) else {
         store.notice.set(Some("no engine selected".into()));
@@ -513,6 +525,16 @@ fn start_stop_selected(sctx: &ScreensCtx) {
 /// `a`: continue the selected engine's paused install. One offered
 /// action runs at once (the web's single button); several ask which.
 fn continue_selected(cx: Scope, sctx: &ScreensCtx) {
+    if !sctx.caps.engine_continue {
+        sctx.store.notice.set(Some(format!(
+            "continuing a paused install is not available over {}",
+            sctx.host_label
+        )));
+        return;
+    }
+    if !sctx.require_admin("continue an install") {
+        return;
+    }
     let store = sctx.store;
     let Some(e) = selected_engine(&store, false) else {
         store.notice.set(Some("no engine selected".into()));

@@ -37,6 +37,7 @@
 //! | `y` | — | copy a paused install's command |
 //! | `o` | — | open the download page |
 //! | `/` | filter | — |
+//! | `t` | cycle the model type (text, thinking, tools, vision, audio, embedding, voice, image, video) | — |
 //! | `f` | toggle fits-only | — |
 //! | `e` | cycle engine filter | — |
 //! | `v` | catalog → installed → downloads | — |
@@ -47,6 +48,16 @@
 //! OPTIONAL transport verbs ([`TransportCaps`]): a transport without one
 //! gets the verb refused with "not available over this backend", and
 //! the footer ([`catalog::hints`], [`engines::hints`]) says so.
+//!
+//! # Who may change things ([`Access`])
+//!
+//! `w` `d` `u` `c` `i` `s` `a` change the host, so they are the web
+//! console's admin-only verbs. The host hands [`ScreensCtx::new`] a
+//! `Signal<Access>` it keeps current from its signed-in principal (the
+//! gateway console), or a constant [`Access::Admin`] (the core console:
+//! the local operator driving `abstractcore` on their own machine). With
+//! [`Access::ReadOnly`] every such verb is refused with the host's
+//! reason and the footer says "admin only"; browsing stays open.
 //!
 //! # Mounting (host crate)
 //!
@@ -62,7 +73,10 @@
 //! app.mount(move |cx| {
 //!     let transport: Arc<dyn ConsoleTransport> =
 //!         Arc::new(CliTransport::from_env().unwrap_or_else(|| CliTransport::new("abstractcore")));
-//!     let sctx = ScreensCtx::new(cx, transport, overlays.clone(), ScreensOptions::default());
+//!     // The local operator: every verb (a gateway console derives this
+//!     // signal from its signed-in principal instead).
+//!     let access = cx.signal(screens::Access::Admin);
+//!     let sctx = ScreensCtx::new(cx, transport, overlays.clone(), access, ScreensOptions::default());
 //!     let (a, b) = (sctx.clone(), sctx.clone());
 //!     PageHost::new()
 //!         .page("catalog", "9 Models", move |pcx| screens::catalog(pcx, &a))
@@ -92,7 +106,7 @@ pub use catalog::catalog;
 pub use data::{
     ActiveJobRef, AdminPrompt, ArtifactRow, CatalogData, EngineAction, EngineRow, EnginesData,
     HostProfile, InstallPlan, InstallPlans, InstalledData, InstalledRow, JobView, LocationPlan,
-    ToolsPrompt,
+    ToolsPrompt, CATEGORIES,
 };
 pub use engines::engines;
 pub use worker::{schedule_job_poll, spawn_worker};
@@ -134,7 +148,10 @@ impl<T> Remote<T> {
 }
 
 /// Which list the Models screen shows.
+///
+/// `#[non_exhaustive]`: 0.3.0 added [`Downloads`](CatalogView::Downloads).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CatalogView {
     /// Everything downloadable (contract C).
     #[default]
@@ -145,11 +162,38 @@ pub enum CatalogView {
     Downloads,
 }
 
+/// May the person at this console change the host?
+///
+/// The web console shows the same verbs disabled for a non-admin, with a
+/// reason ("Only an admin can download models"); these screens refuse
+/// them the same way. The HOST decides and keeps the signal current (see
+/// the module docs): the screens never guess who is signed in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// Every verb: the local operator (core console) or a signed-in
+    /// administrator (gateway console).
+    Admin,
+    /// Browse only. The string says why, in the host's words — it ends
+    /// every refusal: "only an admin can download models — {reason}"
+    /// (e.g. "signed in as ana, not an admin", "not signed in").
+    ReadOnly(String),
+}
+
+impl Access {
+    pub fn is_admin(&self) -> bool {
+        matches!(self, Access::Admin)
+    }
+}
+
 /// Most finished jobs the store keeps beside the live ones.
 pub const FINISHED_JOBS_KEPT: usize = 12;
 
 /// The screens' signals. `Copy`: every field is a signal handle.
+///
+/// `#[non_exhaustive]`: built by [`ScreensStore::create`] (through
+/// [`ScreensCtx::new`]); each release may add a signal.
 #[derive(Clone, Copy)]
+#[non_exhaustive]
 pub struct ScreensStore {
     pub host: Signal<Remote<HostProfile>>,
     pub engines: Signal<Remote<EnginesData>>,
@@ -177,6 +221,11 @@ pub struct ScreensStore {
     pub engine_filter: Signal<Option<String>>,
     /// `f`: only artifacts whose fit verdict is `fits`/`tight`.
     pub fits_only: Signal<bool>,
+    /// `t`: only models of this type (a [`CATEGORIES`] id; `None` = all)
+    /// — the web console's capability chips, filtered locally.
+    pub category: Signal<Option<&'static str>>,
+    /// Who may change the host — the HOST's signal (see [`Access`]).
+    pub access: Signal<Access>,
     pub view: Signal<CatalogView>,
     pub catalog_sel: Signal<usize>,
     pub installed_sel: Signal<usize>,
@@ -192,8 +241,13 @@ pub struct ScreensStore {
 }
 
 impl ScreensStore {
-    /// Fresh signals; `notice` = the host's signal when it has one.
-    pub fn create(cx: Scope, notice: Option<Signal<Option<String>>>) -> ScreensStore {
+    /// Fresh signals; `notice` = the host's signal when it has one,
+    /// `access` = the host's (see [`Access`]).
+    pub fn create(
+        cx: Scope,
+        notice: Option<Signal<Option<String>>>,
+        access: Signal<Access>,
+    ) -> ScreensStore {
         ScreensStore {
             host: cx.signal(Remote::NotAsked),
             engines: cx.signal(Remote::NotAsked),
@@ -209,6 +263,8 @@ impl ScreensStore {
             query: cx.signal(String::new()),
             engine_filter: cx.signal(None),
             fits_only: cx.signal(false),
+            category: cx.signal(None),
+            access,
             view: cx.signal(CatalogView::Catalog),
             catalog_sel: cx.signal(0),
             installed_sel: cx.signal(0),
@@ -224,13 +280,16 @@ impl ScreensStore {
         self.job.is_alive() && self.notice.is_alive() && self.catalog.is_alive()
     }
 
-    /// Any live job (paused installs included).
-    pub fn job_active(&self) -> bool {
-        self.jobs
-            .with_untracked(|v| v.iter().any(JobView::is_active))
+    /// Any job still WORKING — the one a host's quit should question.
+    /// A paused install is live but waits for a person: it blocks nothing,
+    /// quitting included (it resumes from the Engines screen, or the web
+    /// console, whenever someone continues it).
+    pub fn job_running(&self) -> bool {
+        let working = |j: &JobView| j.is_active() && !j.is_paused();
+        self.jobs.with_untracked(|v| v.iter().any(working))
             || self
                 .job
-                .with_untracked(|j| j.as_ref().is_some_and(JobView::is_active))
+                .with_untracked(|j| j.as_ref().is_some_and(working))
     }
 
     /// The live job about this download, if one runs.
@@ -344,7 +403,10 @@ impl Default for ScreensOptions {
 }
 
 /// Commands for the screens' worker lane.
+///
+/// `#[non_exhaustive]`: every new verb adds a command.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum ScreenCmd {
     LoadHost,
     LoadEngines {
@@ -385,6 +447,8 @@ pub enum ScreenCmd {
     Download {
         provider: String,
         artifact: String,
+        /// The catalog's vouched size ([`ArtifactRow::expected_bytes`]).
+        expected_bytes: Option<u64>,
     },
     Delete {
         provider: String,
@@ -406,13 +470,36 @@ pub enum ScreenCmd {
 }
 
 /// One job watch, carried across polls.
+///
+/// `#[non_exhaustive]`: build it with [`JobPoll::new`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct JobPoll {
     pub job_id: String,
+    /// A model download or "download all" group: polled on the download
+    /// route ([`ConsoleTransport::download_job`]), else the job route.
+    pub download: bool,
     /// When the watch began (the poll limit counts from here).
     pub since: Instant,
     /// Consecutive failed polls (three in a row end the watch).
     pub errors: u32,
+}
+
+impl JobPoll {
+    /// A fresh watch of `job_id`, starting now.
+    pub fn new(job_id: impl Into<String>, download: bool) -> JobPoll {
+        JobPoll {
+            job_id: job_id.into(),
+            download,
+            since: Instant::now(),
+            errors: 0,
+        }
+    }
+}
+
+/// Is this job kind polled/cancelled on the download route?
+pub(crate) fn is_download_kind(kind: &str) -> bool {
+    matches!(kind, "download" | "download_group")
 }
 
 /// Everything a screen needs: store, worker lane, host label, opener.
@@ -433,14 +520,20 @@ impl ScreensCtx {
     /// Create the store, spawn the worker over `transport`, and (without
     /// a shared notice signal) install the toast effect. Call once, in
     /// the mount scope, on the UI thread.
+    ///
+    /// `access` is the HOST's signal saying who may change the host
+    /// ([`Access`]); the host keeps it current (a sign-in, a sign-out, a
+    /// new gateway). A required argument on purpose: the admin-only
+    /// verbs have no default audience.
     pub fn new(
         cx: Scope,
         transport: Arc<dyn ConsoleTransport>,
         overlays: Overlays,
+        access: Signal<Access>,
         options: ScreensOptions,
     ) -> ScreensCtx {
         let own_notice = options.notice.is_none();
-        let store = ScreensStore::create(cx, options.notice);
+        let store = ScreensStore::create(cx, options.notice, access);
         let (tx, rx) = mpsc::channel::<ScreenCmd>();
         let host_label: Rc<str> = Rc::from(transport.host_label());
         let caps = transport.capabilities();
@@ -482,6 +575,19 @@ impl ScreensCtx {
 
     fn notice(&self, msg: impl Into<String>) {
         self.store.notice.set(Some(msg.into()));
+    }
+
+    /// The admin gate every host-changing verb passes (`what` = "download
+    /// models", "install engines"…). `false` = refused, with the web
+    /// console's sentence plus the host's reason as the notice.
+    pub fn require_admin(&self, what: &str) -> bool {
+        match self.store.access.get_untracked() {
+            Access::Admin => true,
+            Access::ReadOnly(why) => {
+                self.notice(format!("only an admin can {what} — {why}"));
+                false
+            }
+        }
     }
 
     /// Load the Models screen's data if it was never asked for.
@@ -600,8 +706,12 @@ impl ScreensCtx {
 
     /// `w`: start downloading one artifact. Downloads run in PARALLEL
     /// (the web console's behaviour); only the SAME artifact twice is
-    /// refused here — the backend would join it anyway.
-    pub fn download(&self, provider: &str, artifact: &str) {
+    /// refused here — the backend would join it anyway. `expected_bytes`
+    /// = [`ArtifactRow::expected_bytes`] (the backend's disk pre-check).
+    pub fn download(&self, provider: &str, artifact: &str, expected_bytes: Option<u64>) {
+        if !self.require_admin("download models") {
+            return;
+        }
         if let Some(j) = self.store.active_download(provider, artifact) {
             self.notice(format!(
                 "{provider} {artifact} is already downloading{} — c cancels it",
@@ -621,6 +731,7 @@ impl ScreensCtx {
             ScreenCmd::Download {
                 provider: provider.into(),
                 artifact: artifact.into(),
+                expected_bytes,
             },
         );
     }
@@ -628,6 +739,9 @@ impl ScreensCtx {
     /// `d` (after the confirm): delete one artifact — refused while that
     /// same artifact is still downloading.
     pub fn delete(&self, provider: &str, artifact: &str, force: bool) {
+        if !self.require_admin("delete models") {
+            return;
+        }
         if self.store.active_download(provider, artifact).is_some() {
             self.notice(format!(
                 "{provider} {artifact} is still downloading — cancel it (c) before deleting"
@@ -660,6 +774,9 @@ impl ScreensCtx {
     /// live install (a paused one says how to continue); another
     /// engine's install is the backend's call (it answers 409 "busy").
     pub fn install_at(&self, engine: &str, dry_run: bool, location: InstallLocation) {
+        if !self.require_admin("install engines") {
+            return;
+        }
         if location != InstallLocation::Auto && !self.caps.install_location {
             self.notice(format!(
                 "choosing where an engine goes is not available over {}",
@@ -718,6 +835,9 @@ impl ScreensCtx {
             ));
             return;
         }
+        if !self.require_admin("continue an install") {
+            return;
+        }
         if !job.is_paused() || job.job_id.is_empty() {
             self.notice(format!(
                 "{} {} is not waiting for anything",
@@ -749,6 +869,9 @@ impl ScreensCtx {
             ));
             return;
         }
+        if !self.require_admin("start or stop engines") {
+            return;
+        }
         self.notice(format!(
             "{} {engine}…",
             match action {
@@ -772,6 +895,9 @@ impl ScreensCtx {
             ));
             return;
         }
+        if !self.require_admin("change the default model") {
+            return;
+        }
         let model = data::served_model_id(provider, artifact);
         self.notice(format!("saving {provider} · {model} as the default text model…"));
         self.send(ScreenCmd::SetTextDefault {
@@ -782,6 +908,9 @@ impl ScreensCtx {
 
     /// Cancel one job (`c` picks which).
     pub fn cancel_job(&self, j: &JobView) {
+        if !self.require_admin("cancel jobs") {
+            return;
+        }
         if !j.is_active() {
             self.notice(format!("{} {} is not running", j.verb(), j.subject()));
         } else if j.job_id.is_empty() {
@@ -790,7 +919,7 @@ impl ScreensCtx {
             self.notice(format!("cancelling {} {}…", j.verb(), j.subject()));
             self.send(ScreenCmd::Cancel {
                 job_id: j.job_id.clone(),
-                download: matches!(j.kind.as_str(), "download" | "download_group"),
+                download: is_download_kind(&j.kind),
             });
         }
     }
@@ -966,6 +1095,9 @@ pub fn job_strip(sctx: &ScreensCtx, theme: ThemeSig) -> View {
 /// `c` on a download: the web console's two-step cancel — a question
 /// whose default KEEPS the download, "Stop download" danger-tinted.
 pub fn confirm_cancel_download(cx: Scope, sctx: &ScreensCtx, job: JobView) {
+    if !sctx.require_admin("cancel downloads") {
+        return;
+    }
     let s = sctx.clone();
     let what = match job.kind.as_str() {
         "download_group" => "every download of this group".to_string(),
@@ -985,6 +1117,21 @@ pub fn confirm_cancel_download(cx: Scope, sctx: &ScreensCtx, job: JobView) {
             s.notice(format!("still downloading {}", job.subject()));
         })
         .open(cx);
+}
+
+/// A table slot's stand-in (empty list, loading, failed read) that still
+/// OWNS FOCUS. The page's verbs are shortcuts on the page element, and a
+/// key only reaches them through the focus path: when the table that held
+/// focus is replaced by a one-line placeholder, nothing is focused and
+/// every key goes to the root — `v` could not leave an empty installed
+/// list, `o` could not open a download page after a failed engines read.
+pub fn focus_holder(view: View) -> View {
+    Element::new()
+        .style(LayoutStyle::column().grow(1.0))
+        .focusable()
+        .autofocus()
+        .child(view)
+        .build()
 }
 
 /// One honest line for a remote read that is not ready.
@@ -1014,6 +1161,9 @@ pub fn confirm_delete(
     size: Option<u64>,
     blockers: Vec<String>,
 ) {
+    if !sctx.require_admin("delete models") {
+        return;
+    }
     if blockers.iter().any(|b| b == "remote_engine") {
         sctx.notice(format!(
             "{provider} {artifact} lives on a remote engine — delete it on that host"
@@ -1130,6 +1280,9 @@ pub fn install_notes(engine: &EngineRow, host_os: Option<&str>) -> Vec<String> {
 /// `i`'s confirm: shows the exact argv, the host it runs on and the
 /// sudo/UAC notes; offers Install, a dry run, or cancel (default).
 pub fn confirm_install(cx: Scope, sctx: &ScreensCtx, engine: &EngineRow, host_os: Option<&str>) {
+    if !sctx.require_admin("install engines") {
+        return;
+    }
     let command = engine.install.argv.join(" ");
     let mut body_lines: Vec<(String, bool)> = vec![
         (format!("command   {command}"), false),
@@ -1192,6 +1345,9 @@ pub fn confirm_install(cx: Scope, sctx: &ScreensCtx, engine: &EngineRow, host_os
 /// question is open, and the body says where each lands and whether an
 /// administrator is needed — before anything is picked. Default: cancel.
 pub fn confirm_install_location(cx: Scope, sctx: &ScreensCtx, engine: &EngineRow) {
+    if !sctx.require_admin("install engines") {
+        return;
+    }
     sctx.load_plans(&engine.id);
     let store = sctx.store;
     let theme = use_theme(cx);

@@ -1,6 +1,6 @@
 //! The **Models** screen (page id `catalog`): browse what can be
 //! downloaded, see whether it fits this host, download (`w`, several at
-//! once), delete (`d`), filter (`/`, `f`, `e`), search Hugging Face
+//! once), delete (`d`), filter (`/`, `t` type, `f`, `e`), search Hugging Face
 //! (`h`), make an installed model the default text model (`u`), and
 //! cycle catalog → installed → downloads (`v`) — the downloads view is
 //! the live feed, where `c` cancels the selected download.
@@ -15,8 +15,8 @@ use super::data::{
     InstalledRow, JobView,
 };
 use super::{
-    confirm_cancel_download, confirm_delete, job_strip, open_filter, remote_line, CatalogView,
-    Remote, ScreensCtx, ScreensStore,
+    confirm_cancel_download, confirm_delete, focus_holder, is_download_kind, job_strip,
+    open_filter, remote_line, Access, CatalogView, Remote, ScreensCtx, ScreensStore, CATEGORIES,
 };
 use crate::transport::TransportCaps;
 use crate::ui::util::{line, span, span_bold};
@@ -59,10 +59,12 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
         let q = store.query.get();
         let fits = store.fits_only.get();
         let engine = store.engine_filter.get();
+        let category = store.category.get();
         let count = match view {
-            CatalogView::Catalog => store
-                .catalog
-                .with(|c| c.ready().map(|d| format!("{} artifacts", d.rows.len()))),
+            CatalogView::Catalog => store.catalog.with(|c| {
+                c.ready()
+                    .map(|d| format!("{} artifacts", catalog_rows(&store, &d.rows).len()))
+            }),
             CatalogView::Installed => store.installed.with(|i| {
                 i.ready()
                     .map(|d| format!("{} installed", installed_rows(&store, &d.rows).len()))
@@ -133,6 +135,10 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
         ));
         if view == CatalogView::Catalog {
             spans.push(span(
+                format!(" · type {}", category_label(category)),
+                if category.is_some() { t.ok } else { t.text_muted },
+            ));
+            spans.push(span(
                 if fits { " · fits only" } else { " · any fit" },
                 if fits { t.ok } else { t.text_muted },
             ));
@@ -154,32 +160,44 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
     let table = dyn_view_scoped(LayoutStyle::default().grow(1.0), move |tcx| {
         let t = theme.get().tokens;
         let w = abstracttui::app::use_viewport(tcx).get().w;
-        // The installed list filters locally: track the filters here.
-        let _ = (store.query.get(), store.engine_filter.get());
+        // The installed list and the type filter apply locally: track
+        // the filters here.
+        let _ = (store.query.get(), store.engine_filter.get(), store.category.get());
+        // Every placeholder below holds focus (see `focus_holder`): the
+        // screen's keys must work on an empty list too.
         match store.view.get() {
             CatalogView::Catalog => match store.catalog.get() {
-                Remote::Ready(d) if d.rows.is_empty() => line(vec![span(
-                    " ∅ nothing matches — / changes the filter, f toggles fits-only, e the engine",
-                    t.text_muted,
-                )]),
-                Remote::Ready(d) => catalog_table(tcx, &t, &d.rows, store, w),
-                other => remote_line(
-                    &t,
-                    if store.hub.get_untracked().is_some() { "Hugging Face" } else { "catalog" },
-                    &other,
-                )
-                .expect("not ready"),
+                Remote::Ready(d) => {
+                    let rows = catalog_rows(&store, &d.rows);
+                    if rows.is_empty() {
+                        focus_holder(line(vec![span(
+                            " ∅ nothing matches — / changes the filter, t the type, f toggles \
+                             fits-only, e the engine",
+                            t.text_muted,
+                        )]))
+                    } else {
+                        catalog_table(tcx, &t, &rows, store, w)
+                    }
+                }
+                other => focus_holder(
+                    remote_line(
+                        &t,
+                        if store.hub.get_untracked().is_some() { "Hugging Face" } else { "catalog" },
+                        &other,
+                    )
+                    .expect("not ready"),
+                ),
             },
             CatalogView::Downloads => {
                 let jobs = store.download_jobs(true);
                 if jobs.is_empty() {
-                    match store.feed.get() {
+                    focus_holder(match store.feed.get() {
                         Remote::Loading => line(vec![span(" ⟳ reading the downloads…", t.info)]),
                         _ => line(vec![span(
                             " ∅ no downloads yet — v shows the catalog, w downloads the selected model",
                             t.text_muted,
                         )]),
-                    }
+                    })
                 } else {
                     downloads_table(tcx, &t, &jobs, store, w)
                 }
@@ -188,15 +206,15 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
                 Remote::Ready(d) => {
                     let rows = installed_rows(&store, &d.rows);
                     if rows.is_empty() {
-                        line(vec![span(
-                            " ∅ no models on disk match — v shows the catalog",
+                        focus_holder(line(vec![span(
+                            " ∅ no models on disk match — v shows the downloads",
                             t.text_muted,
-                        )])
+                        )]))
                     } else {
                         installed_table(tcx, &t, &rows, store, w)
                     }
                 }
-                other => remote_line(&t, "installed models", &other).expect("not ready"),
+                other => focus_holder(remote_line(&t, "installed models", &other).expect("not ready")),
             },
         }
     });
@@ -255,6 +273,10 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
             let s = sctx.clone();
             move |_| cycle_engine(&s)
         })
+        .shortcut(KeyChord::plain(Key::Char('t')), {
+            let s = sctx.clone();
+            move |_| cycle_category(&s)
+        })
         .shortcut(KeyChord::plain(Key::Char('v')), {
             let s = sctx.clone();
             move |_| {
@@ -300,11 +322,13 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
 }
 
 /// The footer hint pairs for this screen with EVERY optional verb (a
-/// full backend such as the gateway). [`hints`] tailors them.
+/// full backend such as the gateway) and admin access. [`hints`] tailors
+/// them.
 pub const HINTS: &[(&str, &str)] = &[
     ("w", "download"),
     ("d", "delete"),
     ("/", "filter"),
+    ("t", "type"),
     ("f", "fits only"),
     ("e", "engine"),
     ("v", "installed/downloads"),
@@ -313,17 +337,49 @@ pub const HINTS: &[(&str, &str)] = &[
     ("u", "use as default"),
 ];
 
-/// The footer pairs for a transport: a verb the backend lacks says so
-/// ("not here") instead of silently doing nothing.
-pub fn hints(caps: TransportCaps) -> Vec<(&'static str, &'static str)> {
+/// The footer pairs for a transport and the person at the console: a
+/// verb the backend lacks says so ("not here"), a verb only an admin may
+/// run says so ("admin only") — never a key that silently does nothing.
+pub fn hints(caps: TransportCaps, access: &Access) -> Vec<(&'static str, &'static str)> {
+    let admin = access.is_admin();
     HINTS
         .iter()
         .map(|&(k, label)| match k {
             "h" if !caps.hub_search => (k, "Hugging Face: not here"),
             "u" if !caps.text_default => (k, "default: not here"),
+            "w" if !admin => (k, "download: admin only"),
+            "d" if !admin => (k, "delete: admin only"),
+            "c" if !admin => (k, "cancel: admin only"),
+            "u" if !admin => (k, "default: admin only"),
             _ => (k, label),
         })
         .collect()
+}
+
+/// The label of a type filter (`None` = all).
+fn category_label(id: Option<&str>) -> &'static str {
+    match id {
+        None => "all",
+        Some(id) => CATEGORIES
+            .iter()
+            .find(|(c, _)| *c == id)
+            .map(|(_, l)| *l)
+            .unwrap_or("all"),
+    }
+}
+
+/// Catalog rows after the type filter (`t`), catalog order. The other
+/// catalog filters are the backend's (the query string); this one is the
+/// web console's local chip filter.
+pub fn catalog_rows(store: &ScreensStore, rows: &[ArtifactRow]) -> Vec<ArtifactRow> {
+    match store.category.get_untracked() {
+        None => rows.to_vec(),
+        Some(c) => rows
+            .iter()
+            .filter(|r| r.categories.contains(&c))
+            .cloned()
+            .collect(),
+    }
 }
 
 /// Installed rows after the screen's filters (query + engine; the
@@ -352,7 +408,10 @@ pub fn selected_artifact(store: &ScreensStore, tracked: bool) -> Option<Artifact
     } else {
         store.catalog_sel.get_untracked()
     };
-    let pick = |c: &Remote<super::CatalogData>| c.ready().and_then(|d| d.rows.get(i).cloned());
+    let pick = |c: &Remote<super::CatalogData>| {
+        c.ready()
+            .and_then(|d| catalog_rows(store, &d.rows).get(i).cloned())
+    };
     if tracked {
         store.catalog.with(pick)
     } else {
@@ -664,6 +723,9 @@ fn installed_detail(t: &TokenSet, r: &InstalledRow) -> View {
 
 /// `w`.
 fn download_selected(cx: Scope, sctx: &ScreensCtx) {
+    if !sctx.require_admin("download models") {
+        return;
+    }
     let store = sctx.store;
     match store.view.get_untracked() {
         CatalogView::Installed => {
@@ -703,8 +765,9 @@ fn download_selected(cx: Scope, sctx: &ScreensCtx) {
         return;
     }
     let oversized = r.fit == "too_large" || r.disk_ok == Some(false);
+    let bytes = r.expected_bytes();
     if !oversized {
-        sctx.download(&r.provider, &r.artifact);
+        sctx.download(&r.provider, &r.artifact, bytes);
         return;
     }
     let reason = if r.disk_ok == Some(false) {
@@ -724,7 +787,7 @@ fn download_selected(cx: Scope, sctx: &ScreensCtx) {
         .on_resolve(move |outcome| {
             if let ChoiceOutcome::Answered(ans) = outcome {
                 if ans.selected.iter().any(|x| x == "go") {
-                    s.download(&p, &a);
+                    s.download(&p, &a, bytes);
                 }
             }
         })
@@ -733,6 +796,9 @@ fn download_selected(cx: Scope, sctx: &ScreensCtx) {
 
 /// `d`.
 fn delete_selected(cx: Scope, sctx: &ScreensCtx) {
+    if !sctx.require_admin("delete models") {
+        return;
+    }
     let store = sctx.store;
     let target = match store.view.get_untracked() {
         CatalogView::Downloads => {
@@ -775,6 +841,24 @@ fn delete_selected(cx: Scope, sctx: &ScreensCtx) {
     }
 }
 
+/// `t`: all → each [`CATEGORIES`] type → all (the web console's chips).
+fn cycle_category(sctx: &ScreensCtx) {
+    let store = sctx.store;
+    let next = match store.category.get_untracked() {
+        None => Some(CATEGORIES[0].0),
+        Some(cur) => CATEGORIES
+            .iter()
+            .position(|(c, _)| *c == cur)
+            .and_then(|i| CATEGORIES.get(i + 1))
+            .map(|(c, _)| *c),
+    };
+    store.category.set(next);
+    store.catalog_sel.set(0);
+    store
+        .notice
+        .set(Some(format!("type: {}", category_label(next))));
+}
+
 /// `e`: all → each seen engine → all.
 fn cycle_engine(sctx: &ScreensCtx) {
     let store = sctx.store;
@@ -806,6 +890,9 @@ fn cycle_engine(sctx: &ScreensCtx) {
 /// Downloads view, the selected catalog artifact's live download — else
 /// the one live job. Downloads ask first (the web's two-step cancel).
 fn cancel_selected(cx: Scope, sctx: &ScreensCtx) {
+    if !sctx.require_admin("cancel downloads") {
+        return;
+    }
     let store = sctx.store;
     let target = match store.view.get_untracked() {
         CatalogView::Downloads => match selected_download(&store, false) {
@@ -832,7 +919,7 @@ fn cancel_selected(cx: Scope, sctx: &ScreensCtx) {
                 .jobs
                 .with_untracked(|v| v.iter().filter(|j| j.is_active()).cloned().collect());
             match live.as_slice() {
-                [one] if matches!(one.kind.as_str(), "download" | "download_group") => {
+                [one] if is_download_kind(&one.kind) => {
                     confirm_cancel_download(cx, sctx, one.clone())
                 }
                 _ => sctx.cancel(),

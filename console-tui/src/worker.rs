@@ -860,7 +860,10 @@ fn execute_write(
     // verb applies. The alternative (failing at the CLI verb's turn)
     // half-applies multi-verb specs and reports an error that implies
     // nothing happened (M2 review P2-2).
-    let has_cli_verb = spec.verbs.iter().any(|v| matches!(v, WriteVerb::Cli(_)));
+    let has_cli_verb = spec
+        .verbs
+        .iter()
+        .any(|v| matches!(v, WriteVerb::Cli(_) | WriteVerb::ApplyRecommended(_)));
     if has_cli_verb && cli.is_none() {
         return Err(
             "abstractcore CLI not found — this write needs it ($ABSTRACTCORE_CLI); \
@@ -911,7 +914,8 @@ fn execute_write(
         }
     }
 
-    // 2. Verbs, in order.
+    // 2. Verbs, in order. A reporting verb's lines lead the proofs.
+    let mut reports: Vec<String> = Vec::new();
     for verb in &spec.verbs {
         match verb {
             WriteVerb::Cli(args) => {
@@ -930,6 +934,20 @@ fn execute_write(
                     ));
                 }
             }
+            WriteVerb::ApplyRecommended(args) => {
+                let cli = cli.expect("pre-checked above");
+                let argv: Vec<&str> = args.iter().map(Arg::value).collect();
+                let out = cli
+                    .run_json(&argv, WRITE_TIMEOUT)
+                    .map_err(|e| e.to_string())?;
+                if let Some(w) = out.fallback_warnings.first() {
+                    return Err(format!(
+                        "Python reported #FALLBACK during the write — the file may have been \
+                         RESET; press r and inspect immediately ({w})"
+                    ));
+                }
+                reports.extend(crate::writes::apply_report_lines(&out.value)?);
+            }
             WriteVerb::Rmw(op) => rmw_write(config_path, op)?,
         }
     }
@@ -937,7 +955,7 @@ fn execute_write(
     // 3. Verify every FILE expectation against a fresh re-read.
     let (_, raw) = config::load_with_raw(&config_path.path);
     let raw = raw.ok_or("post-write re-read failed — the file is missing or corrupt now?!")?;
-    let mut proofs = Vec::new();
+    let mut proofs = reports;
     for ex in &spec.expects {
         if ex.needs_routes() || ex.needs_profiles() {
             continue;
@@ -1327,6 +1345,47 @@ mod tests {
         };
         let err = execute_write(&cfg, Some(&silent), &spec3).unwrap_err();
         assert!(err.contains("is 3 (expected 9)"), "{err}");
+    }
+
+    /// `a` on Routes: the CLI's apply report IS the outcome the journal
+    /// carries — every route, the `unavailable` one with its reason. The
+    /// lane used to run the verb as a plain setter and throw the report
+    /// away ("verified: " and nothing else).
+    #[test]
+    fn apply_recommended_journals_the_cli_report() {
+        let s = Scratch::new("apply");
+        s.write(&json!({}));
+        let cfg = s.cfg_path();
+        let report = json!({"ok": true, "dry_run": false, "force": false, "routes": [
+            {"key": "input.text", "action": "already",
+             "after": {"provider": "lmstudio", "model": "qwen/qwen3.5-9b"}},
+            {"key": "output.image", "action": "unavailable", "before": {},
+             "reason": "MLX-Gen needs Apple silicon"}
+        ]});
+        let cli = s.fake_cli(&format!(
+            "echo \"$*\" > '{}/argv'; cat <<'EOF'\n{}\nEOF",
+            s.dir.display(),
+            serde_json::to_string_pretty(&report).unwrap()
+        ));
+        let spec = crate::writes::apply_recommended(false, s.stamp(), None);
+        let proofs = execute_write(&cfg, Some(&cli), &spec).expect("applied");
+        assert_eq!(
+            proofs,
+            vec![
+                "input.text: already lmstudio · qwen/qwen3.5-9b".to_string(),
+                "output.image: nothing recommended runs on this computer — MLX-Gen needs \
+                 Apple silicon; left unset"
+                    .to_string(),
+            ]
+        );
+        let argv = std::fs::read_to_string(s.dir.join("argv")).unwrap();
+        assert_eq!(argv.trim(), "config apply-recommended --json");
+
+        // A non-report answer is a FAILURE, never a silent "done".
+        let prose = s.fake_cli("echo 'Applied the recommended capability defaults'");
+        let spec = crate::writes::apply_recommended(true, s.stamp(), None);
+        let err = execute_write(&cfg, Some(&prose), &spec).unwrap_err();
+        assert!(err.contains("Applied the recommended"), "{err}");
     }
 
     #[test]

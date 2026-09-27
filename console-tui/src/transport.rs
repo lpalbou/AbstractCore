@@ -36,7 +36,8 @@
 //!     fn models_installed(&self, _provider: Option<&str>) -> Result<Value, TransportError> {
 //!         Ok(json!({"schema": "models_installed_v1", "rows": []}))
 //!     }
-//!     fn start_download(&self, _p: &str, _a: &str) -> Result<Value, TransportError> {
+//!     fn start_download(&self, _p: &str, _a: &str, _bytes: Option<u64>)
+//!         -> Result<Value, TransportError> {
 //!         Err(TransportError::refused("offline", None))
 //!     }
 //!     fn delete_model(&self, _p: &str, _a: &str, _force: bool) -> Result<Value, TransportError> {
@@ -55,7 +56,7 @@
 //!
 //! let t: std::sync::Arc<dyn ConsoleTransport> = std::sync::Arc::new(Offline);
 //! assert_eq!(t.host_label(), "this machine");
-//! assert!(t.start_download("ollama", "qwen3:8b").unwrap_err().is_refused());
+//! assert!(t.start_download("ollama", "qwen3:8b", None).unwrap_err().is_refused());
 //! ```
 
 pub mod cli;
@@ -66,7 +67,12 @@ pub use cli::CliTransport;
 
 /// What went wrong talking to the backend — classified so the screens
 /// can say what the operator can DO about it.
+///
+/// `#[non_exhaustive]`: a new backend answer gets a new class (0.3.0
+/// added [`Unsupported`](TransportErrorKind::Unsupported)); a host that
+/// matches on the kind keeps a wildcard arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TransportErrorKind {
     /// The backend is not there at all: no `abstractcore` binary, the
     /// gateway is unreachable, the process could not be spawned.
@@ -214,15 +220,16 @@ impl std::error::Error for TransportError {}
 /// | `engines_status` | `abstractcore engines status [--probe] --json` | `GET /api/gateway/engines` | B |
 /// | `models_catalog` | `abstractcore models catalog\|search … --json` | `GET /api/gateway/models/catalog` | C |
 /// | `models_installed` | `abstractcore models list [--provider X] --json` | `GET /api/gateway/models/installed` | D |
-/// | `start_download` | `abstractcore models download P A --json` | `POST /api/gateway/models/download` | E |
+/// | `start_download` | `abstractcore models download P A --json` | `POST /api/gateway/models/download {provider, artifact, expected_bytes?}` | E |
 /// | `delete_model` | `abstractcore models delete P A --yes [--force] --json` | `POST /api/gateway/models/delete` | E |
 /// | `engine_install` | `abstractcore engines install ID --yes [--dry-run] --json` | `POST /api/gateway/engines/{id}/install` | E |
 /// | `job` / `cancel_job` | the transport's own child jobs | `GET /api/gateway/jobs/{id}` / `POST …/cancel` | E |
+/// | `download_job` | = `job` (default) | `GET /api/gateway/models/download/{id}` (a `grp_…` group too) | E |
 /// | `cancel_download` | = `cancel_job` (default) | `POST /api/gateway/models/download/{id}/cancel {"via":"console"}` | E |
 /// | `models_catalog_hub` | `abstractcore models search Q --hub --json` | `GET /api/gateway/models/catalog?q=&hub=true` | C |
 /// | `download_jobs` | the transport's own download children | `GET /api/gateway/models/downloads` | E |
 /// | `capability_defaults` | `abstractcore config defaults --json` | `GET /api/gateway/config/capability-defaults` | — |
-/// | `set_text_default` | `abstractcore config set-default output.text --provider P --model M` | `PUT /api/gateway/config/capability-defaults/output/text` | — |
+/// | `set_text_default` | `abstractcore config set-default output.text --provider P --model M --base-url "" --reasoning "" --option ""` | `PUT /api/gateway/config/capability-defaults/output/text {provider, model, base_url: "", reasoning: "", options: {}}` | — |
 /// | `engine_install_at` | — (auto only) | `POST /api/gateway/engines/{id}/install {dry_run, location}` | E |
 /// | `engine_job_continue` | — | `POST /api/gateway/engines/jobs/{id}/continue {action}` | E |
 /// | `engine_server` | — | `POST /api/gateway/engines/{id}/start\|stop` | — |
@@ -248,8 +255,19 @@ pub trait ConsoleTransport: Send + Sync {
     ) -> Result<Value, TransportError>;
     /// Contract D: what is on disk now, per engine.
     fn models_installed(&self, provider: Option<&str>) -> Result<Value, TransportError>;
-    /// Contract E: start (or join) a download job.
-    fn start_download(&self, provider: &str, artifact: &str) -> Result<Value, TransportError>;
+    /// Contract E: start (or join) a download job. `expected_bytes` is
+    /// the catalog's own size for the artifact when the catalog vouches
+    /// for it ([`ArtifactRow::expected_bytes`]); a backend that can
+    /// pre-check the disk with it must forward it (the gateway's
+    /// `expected_bytes` body field, the web console's rule).
+    ///
+    /// [`ArtifactRow::expected_bytes`]: crate::screens::ArtifactRow::expected_bytes
+    fn start_download(
+        &self,
+        provider: &str,
+        artifact: &str,
+        expected_bytes: Option<u64>,
+    ) -> Result<Value, TransportError>;
     /// Contract E: delete an installed artifact. Without `force` the
     /// backend refuses a loaded model or a shared cache
     /// ([`TransportErrorKind::Refused`], blockers in the body).
@@ -294,6 +312,16 @@ pub trait ConsoleTransport: Send + Sync {
         self.cancel_job(id)
     }
 
+    /// One MODEL DOWNLOAD's current state — a "download all" group
+    /// (`download_group`) included, which only the download route knows
+    /// (gateway `GET /models/download/{id}`, answering `{"job": …}`: a
+    /// transport returns the job itself). The default is the generic
+    /// [`job`](ConsoleTransport::job), which is what the CLI transport's
+    /// child jobs need. The screens poll every download through this.
+    fn download_job(&self, id: &str) -> Result<Value, TransportError> {
+        self.job(id)
+    }
+
     /// Which optional verbs this transport implements.
     fn capabilities(&self) -> TransportCaps {
         TransportCaps::default()
@@ -334,10 +362,17 @@ pub trait ConsoleTransport: Send + Sync {
     }
 
     /// Make `provider`/`model` the default TEXT model (route
-    /// `output.text`) and answer the refreshed defaults document (CLI
-    /// `config set-default output.text --provider P --model M` then
-    /// `config defaults --json`; gateway
-    /// `PUT /config/capability-defaults/output/text`).
+    /// `output.text`) and answer the refreshed defaults document.
+    ///
+    /// The route becomes EXACTLY this model: the write also clears the
+    /// row's `base_url`, `reasoning` and `options`. Those described the
+    /// PREVIOUS model — a kept `base_url` pointed an Ollama model at LM
+    /// Studio's port, a kept reasoning level or speculation option names
+    /// a model that is no longer the route's. CLI: `config set-default
+    /// output.text --provider P --model M --base-url "" --reasoning ""
+    /// --option ""` then `config defaults --json`; gateway `PUT
+    /// /config/capability-defaults/output/text {provider, model,
+    /// base_url: "", reasoning: "", options: {}}`.
     fn set_text_default(&self, provider: &str, model: &str) -> Result<Value, TransportError> {
         let _ = (provider, model);
         Err(TransportError::unsupported(
@@ -390,7 +425,12 @@ pub trait ConsoleTransport: Send + Sync {
 
 /// Which optional [`ConsoleTransport`] verbs a transport implements.
 /// All `false` by default: a transport opts in verb by verb.
+///
+/// `#[non_exhaustive]`: every new optional verb adds a flag. Build one
+/// from [`TransportCaps::ALL`] or `TransportCaps::default()` and set
+/// fields (`let mut c = TransportCaps::default(); c.hub_search = true;`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TransportCaps {
     /// [`ConsoleTransport::models_catalog_hub`].
     pub hub_search: bool,
@@ -420,7 +460,10 @@ impl TransportCaps {
 }
 
 /// Where an app engine is installed (gateway `location`).
+///
+/// `#[non_exhaustive]`: the backend's location vocabulary may grow.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum InstallLocation {
     /// The backend decides (/Applications when writable, else
     /// ~/Applications).
@@ -492,7 +535,7 @@ mod tests {
         fn models_installed(&self, _p: Option<&str>) -> Result<Value, TransportError> {
             Ok(json!({}))
         }
-        fn start_download(&self, _p: &str, _a: &str) -> Result<Value, TransportError> {
+        fn start_download(&self, _p: &str, _a: &str, _b: Option<u64>) -> Result<Value, TransportError> {
             Ok(json!({}))
         }
         fn delete_model(&self, _p: &str, _a: &str, _f: bool) -> Result<Value, TransportError> {
@@ -501,11 +544,11 @@ mod tests {
         fn engine_install(&self, id: &str, _d: bool) -> Result<Value, TransportError> {
             Ok(json!({"engine": id}))
         }
-        fn job(&self, _id: &str) -> Result<Value, TransportError> {
-            Ok(json!({}))
+        fn job(&self, id: &str) -> Result<Value, TransportError> {
+            Ok(json!({"job_id": id, "via": "job"}))
         }
-        fn cancel_job(&self, _id: &str) -> Result<Value, TransportError> {
-            Ok(json!({}))
+        fn cancel_job(&self, id: &str) -> Result<Value, TransportError> {
+            Ok(json!({"job_id": id, "via": "cancel_job"}))
         }
     }
 
@@ -530,5 +573,8 @@ mod tests {
             t.engine_install_at("ollama", false, InstallLocation::Auto).unwrap()["engine"],
             "ollama"
         );
+        // The download verbs default to the generic job verbs.
+        assert_eq!(t.download_job("dl_1").unwrap()["via"], "job");
+        assert_eq!(t.cancel_download("dl_1").unwrap()["via"], "cancel_job");
     }
 }

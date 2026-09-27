@@ -484,8 +484,9 @@ fn clear_selected(cx: Scope, ctx: &Ctx) {
 /// Three answers, because the honest action has three: fill only the
 /// empty routes (safe, the default), replace the operator's choices too
 /// (the `--force` spelling, offered as its own option so it can never be
-/// the accidental one), or nothing. The routes the CLI keeps are named in
-/// its report, which rides the journal like every other write.
+/// the accidental one), or nothing. The CLI's report — every route:
+/// applied, kept, or not runnable on this computer with the reason —
+/// rides the journal and the notice (`WriteVerb::ApplyRecommended`).
 fn apply_recommended(cx: Scope, ctx: &Ctx) {
     if !ctx.writable_now() {
         return;
@@ -493,7 +494,11 @@ fn apply_recommended(cx: Scope, ctx: &Ctx) {
     let ctx_keep = ctx.clone();
     let ctx_force = ctx.clone();
     let prompt = abstracttui::app::ChoicePrompt::new(
-        "Apply the framework's recommended routes (text, voice, image)?".to_string(),
+        // No route list in this sentence: Core owns which routes it
+        // recommends (video joined text, voice and image) — the report
+        // the write journals names every one, with what happened to it.
+        "Apply the framework's recommended routes for this computer? The report names each one."
+            .to_string(),
     )
     .option("keep", "Apply — keep routes I configured")
     .option_with(

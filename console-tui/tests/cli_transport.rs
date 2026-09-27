@@ -46,12 +46,26 @@ case "$1 $2" in
     printf '{"schema":"host_job_v1","job_id":"dl_up","kind":"download","status":"completed","percent":100.0,"message":"success","command":["ollama","pull","%s"]}\n' "$4" ;;
   "models jobs") echo '{"jobs":[]}' ;;
   "config defaults")
-    if [ -f "$D/route" ]; then R="$(cat "$D/route")"; else R='"provider":"mlx","model":"old"'; fi
+    if [ -f "$D/route" ]; then R="$(cat "$D/route")"; else R='"provider":"lmstudio","model":"old","base_url":"http://localhost:1234/v1","reasoning":"high","options":{"speculation":{"mode":"native_mtp"}}'; fi
     printf '{"routes":[{"key":"input.text","provider":"mlx","model":"old"},{"key":"output.text",%s}]}\n' "$R" ;;
   "config set-default")
-    if [ "$7" = "bad-model" ]; then echo "❌ Error: Failed to set capability default for output.text"; exit 1; fi
-    printf '"provider":"%s","model":"%s"' "$5" "$7" > "$D/route"
-    echo "✅ Set capability default for $3" ;;
+    # Core's merge rule: a flag not passed KEEPS the stored field, "" clears it.
+    ROUTE="$3"; shift 3; P=""; M=""; CLEARED=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --provider) P="$2"; shift 2 ;;
+        --model) M="$2"; shift 2 ;;
+        --base-url|--reasoning|--option) if [ -z "$2" ]; then CLEARED="$CLEARED ${1#--}"; fi; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    if [ "$M" = "bad-model" ]; then echo "❌ Error: Failed to set capability default for $ROUTE"; exit 1; fi
+    R="\"provider\":\"$P\",\"model\":\"$M\""
+    case "$CLEARED" in *base-url*) ;; *) R="$R,\"base_url\":\"http://localhost:1234/v1\"" ;; esac
+    case "$CLEARED" in *reasoning*) ;; *) R="$R,\"reasoning\":\"high\"" ;; esac
+    case "$CLEARED" in *option*) ;; *) R="$R,\"options\":{\"speculation\":{\"mode\":\"native_mtp\"}}" ;; esac
+    printf '%s' "$R" > "$D/route"
+    echo "✅ Set capability default for $ROUTE" ;;
   *) echo "unknown: $*" >&2; exit 1 ;;
 esac
 "#;
@@ -153,18 +167,18 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
     assert!(calls(&dir).contains("models delete mlx loaded-model --yes --force --json"));
 
     // A flag-shaped id never reaches the CLI.
-    assert!(t.start_download("ollama", "--rm").unwrap_err().is_refused());
+    assert!(t.start_download("ollama", "--rm", None).unwrap_err().is_refused());
 
     // Download: a child job. Immediate refusal → Refused from start.
-    let e = t.start_download("ollama", "refused").unwrap_err();
+    let e = t.start_download("ollama", "refused", None).unwrap_err();
     assert!(e.is_refused(), "{e}");
     assert_eq!(e.message, "downloads are disabled here");
-    let e = t.start_download("ollama", "broken").unwrap_err();
+    let e = t.start_download("ollama", "broken", Some(10)).unwrap_err();
     assert_eq!(e.kind, TransportErrorKind::Failed, "{e}");
     assert!(e.message.contains("boom"), "{e}");
 
     // A real one: running with the NDJSON progress, then completed.
-    let j = t.start_download("ollama", "qwen3:8b").unwrap();
+    let j = t.start_download("ollama", "qwen3:8b", Some(4_600_000_000)).unwrap();
     assert_eq!(j["schema"], "host_job_v1");
     assert_eq!(j["status"], "running", "{j}");
     assert_eq!(j["kind"], "download");
@@ -238,6 +252,12 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
     );
     assert_eq!(after["routes"][1]["provider"], "ollama", "a FRESH read answers: {after}");
     assert_eq!(after["routes"][1]["model"], "qwen3:8b");
+    // The route is EXACTLY the new model: the previous model's endpoint,
+    // reasoning level and options are cleared, never inherited (an
+    // Ollama model behind LM Studio's :1234 is a broken route).
+    for field in ["base_url", "reasoning", "options"] {
+        assert!(after["routes"][1].get(field).is_none(), "{field} survived: {after}");
+    }
     let e = t.set_text_default("ollama", "bad-model").unwrap_err();
     assert_eq!(e.kind, TransportErrorKind::Failed, "{e}");
     assert!(e.message.contains("Failed to set"), "{e}");
@@ -256,7 +276,7 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
     let e = gone.host_profile().unwrap_err();
     assert_eq!(e.kind, TransportErrorKind::Unavailable, "{e}");
     assert_eq!(
-        gone.start_download("ollama", "x").unwrap_err().kind,
+        gone.start_download("ollama", "x", None).unwrap_err().kind,
         TransportErrorKind::Unavailable
     );
 
