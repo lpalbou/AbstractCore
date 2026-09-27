@@ -405,7 +405,11 @@ impl Worker {
                 self.started("install", &engine, res, like);
             }
             ScreenCmd::PollJob(poll) => self.poll(poll),
-            ScreenCmd::Cancel { job_id } => match self.transport.cancel_job(&job_id) {
+            ScreenCmd::Cancel { job_id, download } => match if download {
+                self.transport.cancel_download(&job_id)
+            } else {
+                self.transport.cancel_job(&job_id)
+            } {
                 Ok(v) => {
                     let view = JobView::from_value(&v);
                     if view.is_active() {

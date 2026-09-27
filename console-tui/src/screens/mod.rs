@@ -399,6 +399,9 @@ pub enum ScreenCmd {
     PollJob(JobPoll),
     Cancel {
         job_id: String,
+        /// A model download / "download all" group: cancelled on the
+        /// download route ([`ConsoleTransport::cancel_download`]).
+        download: bool,
     },
 }
 
@@ -787,6 +790,7 @@ impl ScreensCtx {
             self.notice(format!("cancelling {} {}…", j.verb(), j.subject()));
             self.send(ScreenCmd::Cancel {
                 job_id: j.job_id.clone(),
+                download: matches!(j.kind.as_str(), "download" | "download_group"),
             });
         }
     }

@@ -218,6 +218,7 @@ impl std::error::Error for TransportError {}
 /// | `delete_model` | `abstractcore models delete P A --yes [--force] --json` | `POST /api/gateway/models/delete` | E |
 /// | `engine_install` | `abstractcore engines install ID --yes [--dry-run] --json` | `POST /api/gateway/engines/{id}/install` | E |
 /// | `job` / `cancel_job` | the transport's own child jobs | `GET /api/gateway/jobs/{id}` / `POST …/cancel` | E |
+/// | `cancel_download` | = `cancel_job` (default) | `POST /api/gateway/models/download/{id}/cancel {"via":"console"}` | E |
 /// | `models_catalog_hub` | `abstractcore models search Q --hub --json` | `GET /api/gateway/models/catalog?q=&hub=true` | C |
 /// | `download_jobs` | the transport's own download children | `GET /api/gateway/models/downloads` | E |
 /// | `capability_defaults` | `abstractcore config defaults --json` | `GET /api/gateway/config/capability-defaults` | — |
@@ -282,6 +283,16 @@ pub trait ConsoleTransport: Send + Sync {
     // verb out (footer: "not here") instead of calling a default.
     //
     // [`capabilities`]: ConsoleTransport::capabilities
+
+    /// Cancel a MODEL DOWNLOAD (or a "download all" group). The web
+    /// console cancels downloads on their own route so the job records
+    /// who asked (gateway `POST /models/download/{id}/cancel
+    /// {"via":"console"}`); the default is the generic
+    /// [`cancel_job`](ConsoleTransport::cancel_job), which is what the
+    /// CLI transport's child jobs need.
+    fn cancel_download(&self, id: &str) -> Result<Value, TransportError> {
+        self.cancel_job(id)
+    }
 
     /// Which optional verbs this transport implements.
     fn capabilities(&self) -> TransportCaps {

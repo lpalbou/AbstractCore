@@ -3245,6 +3245,13 @@ impl ConsoleTransport for MockTransport {
     fn capabilities(&self) -> TransportCaps {
         self.caps
     }
+    fn cancel_download(&self, id: &str) -> Result<Value, TransportError> {
+        self.record(format!("cancel_download {id}"));
+        *self.cancelled.lock().unwrap() = true;
+        let mut j = self.by_id.lock().unwrap().get(id).cloned().expect("a started download");
+        j["status"] = json!("cancelled");
+        Ok(j)
+    }
     fn models_catalog_hub(
         &self,
         q: &str,
@@ -3873,7 +3880,9 @@ fn downloads_run_in_parallel_and_the_same_artifact_is_not_started_twice() {
     h.key(b"2");
     h.turns(1);
     h.key(b"\r");
-    h.wait_for_call("the cancel", |calls| calls.iter().any(|c| c == "cancel download_2"));
+    h.wait_for_call("the cancel", |calls| calls.iter().any(|c| c == "cancel_download download_2"));
+    // A download is cancelled on the DOWNLOAD route, never the generic one.
+    assert!(!h.mock.called("cancel download_"), "{:?}", h.mock.calls());
 }
 
 // ---------------------------------------------------------------------
