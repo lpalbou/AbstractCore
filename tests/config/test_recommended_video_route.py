@@ -200,12 +200,18 @@ def test_the_catalog_has_the_three_wan_video_rows(tmp_path, monkeypatch):
 def test_the_video_fit_uses_the_measured_memory_not_the_file_size(tmp_path, monkeypatch):
     seed = {a["artifact"]: a for r in mc.load_seed()["rows"] for a in r["artifacts"]}
     rows = _rows(tmp_path, monkeypatch, synthetic_host("metal128"), tags=["video"])
-    for rid, artifact in (("wan2.2-ti2v-5b", TI2V), ("wan2.2-t2v-a14b", T2V), ("wan2.2-i2v-a14b", I2V)):
+    art = rows["wan2.2-ti2v-5b"]["artifacts"][0]
+    assert art["download_bytes"] == seed[TI2V]["download_bytes"]
+    assert art["resident_bytes"] == seed[TI2V]["resident"]["bytes"]
+    assert art["fit"]["weight_bytes"] == seed[TI2V]["resident"]["bytes"]
+    assert any(n.startswith("memory need is measured") for n in art["fit"]["notes"])
+    # The A14B figures were measured at 384x224 with --low-ram only, far below the
+    # default canvas: no `resident`, so the fit falls back to the file size.
+    for rid, artifact in (("wan2.2-t2v-a14b", T2V), ("wan2.2-i2v-a14b", I2V)):
+        assert "resident" not in seed[artifact]
         art = rows[rid]["artifacts"][0]
-        assert art["download_bytes"] == seed[artifact]["download_bytes"]
-        assert art["resident_bytes"] == seed[artifact]["resident"]["bytes"]
-        assert art["fit"]["weight_bytes"] == seed[artifact]["resident"]["bytes"]
-        assert any(n.startswith("memory need is measured") for n in art["fit"]["notes"])
+        assert art.get("resident_bytes") is None
+        assert art["fit"]["weight_bytes"] == seed[artifact]["download_bytes"]
     # TI2V-5B: the file is 16.9 GiB, the run needs ~58 GiB. A file-size fit
     # would call it `fits` on a 64 GiB Mac; the measured one does not.
     mac64 = _rows(tmp_path / "b", monkeypatch, synthetic_host("metal64"), tags=["video"])

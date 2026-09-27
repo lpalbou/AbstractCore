@@ -14,9 +14,10 @@ screens (`abstractcore-console` 0.3.0).
 ### Added
 
 - Video in the model catalog: Wan2.2 TI2V-5B, T2V-A14B and I2V-A14B (MLX-Gen, Apple silicon), with a
-  `video` tag and a measured run-time memory per artifact (`resident_bytes`). The fit verdict uses that
-  measured figure instead of the file size (TI2V-5B is a 16.9 GiB download that needs about 58 GiB while
-  it generates). See [Local models](docs/models.md).
+  `video` tag. Where the run-time memory was measured at the default canvas (`resident_bytes`), the fit
+  verdict uses it instead of the file size (TI2V-5B is a 16.9 GiB download that needs about 58 GiB while
+  it generates); the A14B models have no such measurement yet, so their fit uses the file size.
+  See [Local models](docs/models.md).
 - A recommended `output.video` route: MLX-Gen Wan2.2 TI2V-5B (one model for text-to-video and
   image-to-video), written by the first-run seed, `abstractcore config apply-recommended` (also
   `--only video`), "download all" and the catalog starter only on Apple silicon where the catalog's

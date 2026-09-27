@@ -4211,11 +4211,7 @@
       "checked": "2026-09-27",
       "revision": "39ee5f1f630789956f29f40b5c2c6d48c6e9a798"
      },
-     "resident": {
-      "bytes": 29850022707,
-      "source": "MLX allocator peak 27.8 GiB re-measured after the 2026-06-12 runtime-precision fix, Apple M5 Max 128 GiB, 384x224, 33 frames, 12 steps, --low-ram (mlx-gen 0.38.0 README (PyPI), Wan A14B Measurements + 2026-07-05 correction); whole-process physical peak 33.0 GiB; the 1280x720, 81-frame default needs far more"
-     },
-     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory."
+     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory. Its fit uses the file size: the only published memory figure (about 28 GiB) was measured at 384x224 with --low-ram, far below AbstractVision's default canvas, so the real need at the default size is higher and unmeasured."
     }
    ],
    "capabilities_override": {
@@ -4255,11 +4251,7 @@
       "checked": "2026-09-27",
       "revision": "1a17fbea2649c576de844e08e79fe56296751efa"
      },
-     "resident": {
-      "bytes": 30279519436,
-      "source": "MLX allocator peak 28.2 GiB (BF16 row; q8 runs at BF16 memory since the 2026-06-12 runtime-precision fix), Apple M5 Max 128 GiB, 384x384, 33 frames, 12 steps, --low-ram (mlx-gen 0.38.0 README (PyPI), Wan A14B Measurements + 2026-07-05 correction); whole-process physical peak 33.7 GiB; the 1280x720, 81-frame default needs far more"
-     },
-     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory."
+     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory. Its fit uses the file size: the only published memory figure (about 28 GiB) was measured at 384x224 with --low-ram, far below AbstractVision's default canvas, so the real need at the default size is higher and unmeasured."
     }
    ],
    "capabilities_override": {
