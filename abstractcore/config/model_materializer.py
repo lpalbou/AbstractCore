@@ -402,7 +402,7 @@ _PROVIDER_NOTES: Dict[str, str] = {
     "openai-compatible": "shares OPENAI_API_KEY with openai (openai wins when both are set)",
     "huggingface": "HF_TOKEN only for gated/private repos; public weights need no key",
     "mlx": "Apple Silicon text/vision inference",
-    "mlx-gen": "image generation",
+    "mlx-gen": "image and video generation",
     "mlx-vlm": "vision",
     "mflux": "image generation",
     "diffusers": "image generation",

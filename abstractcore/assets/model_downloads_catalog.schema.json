@@ -96,7 +96,14 @@
           "additionalProperties": false
         },
         "note": {"type": "string", "minLength": 1},
-        "upstream": {"$ref": "#/$defs/upstream"}
+        "upstream": {"$ref": "#/$defs/upstream"},
+        "resident": {
+          "type": "object",
+          "description": "The MEASURED memory the engine needs while this artifact runs, for models whose working memory is not their file size (video generation). The fit verdict uses `bytes` instead of download_bytes; `source` says where and at which profile it was measured.",
+          "required": ["bytes", "source"],
+          "properties": {"bytes": {"type": "integer", "minimum": 1}, "source": {"type": "string", "minLength": 1}},
+          "additionalProperties": false
+        }
       },
       "if": {"required": ["upstream"]},
       "then": {"properties": {"download_bytes": {"type": "integer", "minimum": 1}, "size_source": {"const": "catalog"}}},

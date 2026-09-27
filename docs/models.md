@@ -39,7 +39,7 @@ An **artifact** names the exact weights to fetch, quantization included:
 | `lmstudio` | `qwen/qwen3.5-9b@4bit` | LM Studio model id with `@quant`. A bare id lets LM Studio pick its default build. |
 | `mlx` | `mlx-community/Qwen3-8B-4bit` | A Hugging Face repo; MLX repos hold one quantization. |
 | `huggingface` | `unsloth/Qwen3-8B-GGUF:Q4_K_M` | A GGUF repo plus `:QUANT`. Only the matching `*Q4_K_M*.gguf` files are fetched. Without `:QUANT` the whole repo is downloaded. |
-| `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `supertonic-3` | Image and voice starters. |
+| `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit`, `supertonic-3` | Image starter (Apple silicon only), video starter (Apple silicon, only where its measured memory fits) and voice starter (every OS). |
 
 ## The host profile
 
@@ -91,6 +91,10 @@ joined from AbstractCore's model capability registry, and one entry per artifact
   the upstream file listing when the seed records an `upstream` check), `engine`
   (reported by the installed engine), `hf_api` (Hugging Face file listing), `estimate`
   (parameters x bits), or `unknown`;
+- `resident_bytes`: the MEASURED memory the engine needs while this artifact runs, for models
+  whose working memory is not their file size (the video rows), else `null`. The seed records it
+  with its source (machine, engine version, canvas and frame count); the fit uses it as `W` and the
+  download size only for the disk check, and the fit notes quote the source;
 - `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
 - `recommended`: exactly one artifact per row is pre-selected for this machine. On Apple silicon
   the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
@@ -168,7 +172,7 @@ An assumption can be wrong for a given tag: the Ollama registry lists `qwen3.5:0
 
 Filters: `q` (every word must start a word of the id, name, vendor, tags or artifacts),
 `--engine` (`ollama`, `lmstudio`, `mlx`, `huggingface`, or `llamacpp` for GGUF artifacts),
-`--fits` (keep `fits` and `tight` only), `--tag` (`chat`, `coding`, `vision`, `embedding`, ...).
+`--fits` (keep `fits` and `tight` only), `--tag` (`chat`, `coding`, `vision`, `embedding`, `image`, `voice`, `video`, ...).
 
 ### Hugging Face enrichment (`--hub`)
 
@@ -185,7 +189,8 @@ returned. Set `HF_TOKEN` for gated repos and higher rate limits.
 `fit` answers "will this run here" before any byte is downloaded:
 
 ```
-W    weights       exact artifact size, else parameters x bits / 8 x 1.03
+W    weights       measured run-time memory (`resident_bytes`) when recorded, else the exact
+                   artifact size, else parameters x bits / 8 x 1.03
 KV   KV cache      n x 2 x layers x kv_heads x head_dim x 2 bytes (f16), when the geometry is known;
                    otherwise n x 0.5 MiB x (parameters / 8e9)
 O    overhead      max(0.5 GiB, 5% of W)

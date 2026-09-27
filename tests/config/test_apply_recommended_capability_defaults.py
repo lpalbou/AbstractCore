@@ -33,6 +33,7 @@ import pytest
 from abstractcore.config.capability_defaults import (
     RECOMMENDED_CAPABILITY_DEFAULT_ROUTES,
     RECOMMENDED_SELECTORS,
+    recommended_capability_default_routes,
 )
 from abstractcore.config.manager import ConfigurationManager
 
@@ -80,12 +81,23 @@ def test_empty_routes_are_filled(tmp_path) -> None:
 
     report = manager.apply_recommended_capability_defaults()
 
-    assert report["changed"] == len(RECOMMENDED_CAPABILITY_DEFAULT_ROUTES)
+    # Linux (`cuda24`): text + voice are applied; the image and video
+    # recommendations (MLX-Gen) cannot run here and are reported, never written.
+    runnable = recommended_capability_default_routes()
+    assert set(runnable) == {"input.text", "output.voice"}
+    assert report["changed"] == 2
     routes = _routes_on_disk(tmp_path)
-    for key, recommended in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items():
+    for key, recommended in runnable.items():
         assert routes[key]["provider"] == recommended.provider
         assert routes[key]["model"] == recommended.model
         assert _row(report, key)["action"] == "apply"
+    assert "output.image" not in routes
+    assert "output.video" not in routes
+    assert report["unavailable"] == 2
+    for key in ("output.image", "output.video"):
+        row = _row(report, key)
+        assert row["action"] == "unavailable" and row["changed"] is False
+        assert "Apple Silicon" in row["reason"] and row["recommended"] == {}
 
 
 def test_a_route_configured_differently_is_kept_and_reported(tmp_path) -> None:
@@ -145,12 +157,41 @@ def test_only_limits_the_blast_radius(tmp_path) -> None:
     for key in list(manager.config.capability_defaults.routes):
         manager.clear_capability_default(key)
 
+    report = manager.apply_recommended_capability_defaults(only=["voice"])
+
+    assert [row["key"] for row in report["routes"]] == ["output.voice"]
+    routes = _routes_on_disk(tmp_path)
+    assert "output.voice" in routes
+    assert "input.text" not in routes
+
+
+def test_only_image_on_apple_silicon_writes_the_image_route(tmp_path, monkeypatch) -> None:
+    from abstractcore.utils import host_profile as hp
+    from tests.models_engines_fakes import synthetic_host
+
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal64"))
+    manager = _manager(tmp_path)
+    for key in list(manager.config.capability_defaults.routes):
+        manager.clear_capability_default(key)
+
     report = manager.apply_recommended_capability_defaults(only=["image"])
 
     assert [row["key"] for row in report["routes"]] == ["output.image"]
     routes = _routes_on_disk(tmp_path)
-    assert "output.image" in routes
+    assert routes["output.image"]["provider"] == "mlx-gen"
     assert "output.voice" not in routes
+
+
+def test_only_image_off_apple_silicon_is_reported_unavailable_even_with_force(tmp_path) -> None:
+    manager = _manager(tmp_path)
+    manager.set_capability_default("output", "image", provider="diffusers", model="my/sdxl")
+
+    report = manager.apply_recommended_capability_defaults(only=["image"], force=True)
+
+    row = _row(report, "output.image")
+    assert row["action"] == "unavailable" and report["changed"] == 0
+    assert row["before"] == row["after"] == {"provider": "diffusers", "model": "my/sdxl"}
+    assert _routes_on_disk(tmp_path)["output.image"]["provider"] == "diffusers", "force never replaces it"
 
 
 def test_dry_run_writes_nothing_and_still_reports(tmp_path) -> None:
@@ -162,7 +203,7 @@ def test_dry_run_writes_nothing_and_still_reports(tmp_path) -> None:
     report = manager.apply_recommended_capability_defaults(dry_run=True)
 
     assert report["dry_run"] is True
-    assert report["changed"] == len(RECOMMENDED_CAPABILITY_DEFAULT_ROUTES)
+    assert report["changed"] == len(recommended_capability_default_routes())
     assert (tmp_path / "abstractcore.json").read_text(encoding="utf-8") == before
 
 
@@ -188,3 +229,5 @@ def test_the_cli_prints_before_and_after_and_names_what_it_kept(tmp_path, capsys
     assert "recommended lmstudio/qwen/qwen3.5-9b" in out
     assert "--force" in out, "the output names the way to overrule it"
     assert "Nothing was written" in out
+    image_line = next(line for line in out.splitlines() if "output.image" in line)
+    assert "nothing recommended runs on this host" in image_line and "left unset" in image_line

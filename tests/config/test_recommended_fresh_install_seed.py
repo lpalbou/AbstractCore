@@ -1,9 +1,10 @@
 """Fresh-install recommended defaults (operator ruling 2026-08-01).
 
 A brand-new install works out of the box on the recommended stack — text
-`lmstudio/qwen/qwen3.5-9b`, voice `supertonic/supertonic-3`, image
-`mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` — seeded exactly once, when
-no config file has ever existed. The seed writes ordinary rows: visible in
+`lmstudio/qwen/qwen3.5-9b`, voice `supertonic/supertonic-3`, and on Apple
+silicon image `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` (MLX-Gen runs
+nowhere else, so other hosts leave the image route unset) — seeded exactly
+once, when no config file has ever existed. The seed writes ordinary rows: visible in
 every grid, overridable and clearable from either entry point, always beaten
 by request pins. The `seeded` marker is provenance only; FILE EXISTENCE gates
 re-seeding, so a cleared route can never resurrect.
@@ -16,8 +17,8 @@ from pathlib import Path
 import pytest
 
 from abstractcore.config.capability_defaults import (
-    RECOMMENDED_CAPABILITY_DEFAULT_ROUTES,
     RECOMMENDED_SEED_VERSION,
+    recommended_capability_default_routes,
 )
 from abstractcore.config.manager import ConfigurationManager
 
@@ -47,11 +48,26 @@ def _configured_keys(manager: ConfigurationManager) -> set[str]:
     }
 
 
-def test_fresh_install_seeds_the_three_recommended_routes(fresh_config: Path) -> None:
+def test_fresh_install_seeds_the_routes_this_host_can_run(fresh_config: Path) -> None:
     manager = ConfigurationManager(config_file=fresh_config)
     routes = manager.config.capability_defaults.routes
     assert routes["input.text"].provider == "lmstudio"
     assert routes["input.text"].model == "qwen/qwen3.5-9b"
+    assert routes["output.voice"].provider == "supertonic"
+    assert routes["output.voice"].model == "supertonic-3"
+    # Linux (`cuda24`): MLX-Gen is Apple silicon only -- no broken image route.
+    assert "output.image" not in _configured_keys(manager)
+    assert manager.config.capability_defaults.seeded == RECOMMENDED_SEED_VERSION
+
+
+def test_fresh_apple_silicon_install_seeds_the_three_recommended_routes(fresh_config: Path, monkeypatch) -> None:
+    from abstractcore.utils import host_profile as hp
+    from tests.models_engines_fakes import synthetic_host
+
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal64"))
+    manager = ConfigurationManager(config_file=fresh_config)
+    routes = manager.config.capability_defaults.routes
+    assert routes["input.text"].provider == "mlx"
     assert routes["output.voice"].provider == "supertonic"
     assert routes["output.voice"].model == "supertonic-3"
     assert routes["output.image"].provider == "mlx-gen"
@@ -71,15 +87,15 @@ def test_the_marker_survives_persist_and_reload(fresh_config: Path) -> None:
     manager._save_config()
     reloaded = ConfigurationManager(config_file=fresh_config)
     assert reloaded.config.capability_defaults.seeded == RECOMMENDED_SEED_VERSION
-    assert _configured_keys(reloaded) >= set(RECOMMENDED_CAPABILITY_DEFAULT_ROUTES)
+    assert _configured_keys(reloaded) >= set(recommended_capability_default_routes())
 
 
 def test_a_cleared_recommended_route_never_resurrects(fresh_config: Path) -> None:
     manager = ConfigurationManager(config_file=fresh_config)
     manager._save_config()
-    assert manager.clear_capability_default("output", "image")
+    assert manager.clear_capability_default("output", "voice")
     reloaded = ConfigurationManager(config_file=fresh_config)
-    assert "output.image" not in _configured_keys(reloaded)
+    assert "output.voice" not in _configured_keys(reloaded)
 
 
 def test_an_operator_override_beats_the_seed_and_persists(fresh_config: Path) -> None:

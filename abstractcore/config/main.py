@@ -1530,6 +1530,10 @@ def _print_capability_defaults(payload: dict) -> None:
         # above its own children with a scary `not_configured` — so task rows
         # indent under their parent, the parent says what it is for, and a
         # parent nothing can reach says so instead of crying unconfigured.
+        broken = item.get("route_unavailable")
+        if isinstance(broken, dict) and broken.get("reason"):
+            # Configured, and it cannot run here: never printed as fine.
+            source = f"{source}; ⚠️ cannot run on this computer: {broken['reason']}"
         broad_key = str(item.get("broad_key") or "")
         if broad_key:
             if item.get("inherits_broad"):
@@ -1546,6 +1550,9 @@ def _print_capability_defaults(payload: dict) -> None:
                 note = f"  # any {modality} task; overridden per task below"
                 if item.get("covered_by_tasks"):
                     source = "not needed — every task below has its own route"
+            unavailable = item.get("recommendation_unavailable")
+            if isinstance(unavailable, dict) and unavailable.get("reason"):
+                source = f"{source}; no recommendation for this host: {unavailable['reason']}"
             print(f"- {key}: {provider}/{model}{suffix} ({source}){note}")
         if key == TEXT_ROUTE_KEY:
             text_row = item
@@ -1849,6 +1856,8 @@ _APPLY_RECOMMENDED_GLYPH = {
     "overwrite": "♻️ ",
     "already": "=",
     "kept": "🙅",
+    "unavailable": "⛔",
+    "cleared": "🧹",
 }
 
 
@@ -1859,6 +1868,7 @@ def _print_apply_recommended(payload: dict) -> None:
     print(f"{verb} the recommended capability defaults")
     print(f"- config_file: {payload.get('config_file')}")
     kept_any = False
+    broken_kept = False
     for row in payload.get("routes", []) or []:
         if not isinstance(row, dict):
             continue
@@ -1868,19 +1878,33 @@ def _print_apply_recommended(payload: dict) -> None:
         after = _route_pair_text(row.get("after") or {})
         selector = row.get("selector") or ""
         head = f"- {glyph} {row.get('key')}" + (f" ({selector})" if selector else "")
+        broken = row.get("route_unavailable") if isinstance(row.get("route_unavailable"), dict) else None
+        cannot_run = f" — yours cannot run on this computer: {broken.get('reason')}" if broken else ""
         if action == "already":
             print(f"{head}: {after} — already the recommendation")
         elif action == "kept":
             kept_any = True
+            broken_kept = broken_kept or bool(broken)
             recommended = _route_pair_text(row.get("recommended") or {})
-            print(f"{head}: kept yours {before} (recommended {recommended})")
+            print(f"{head}: kept yours {before} (recommended {recommended}){cannot_run}")
+        elif action == "unavailable":
+            broken_kept = broken_kept or bool(broken)
+            left = f"left as {before}" if row.get("before") else "left unset"
+            print(f"{head}: nothing recommended runs on this host — {row.get('reason')}; {left}{cannot_run}")
+        elif action == "cleared":
+            print(f"{head}: removed {before}{cannot_run}; nothing recommended runs here either — {row.get('reason')}")
         else:
-            print(f"{head}: {before} -> {after}")
+            print(f"{head}: {before} -> {after}{cannot_run}")
     print()
     if payload.get("dry_run"):
         print("Nothing was written (--dry-run). Drop --dry-run to apply.")
     if kept_any and not payload.get("force"):
         print("Routes you configured differently were KEPT. Add --force to replace them too.")
+    if broken_kept and not payload.get("force"):
+        print(
+            "Some kept routes cannot run on this computer. --force replaces each with this computer's "
+            "recommendation, or removes it where nothing recommended runs here."
+        )
     print("  abstractcore config defaults          # the resulting grid")
     print("  abstractcore models status            # are the weights on this machine")
 
@@ -2131,7 +2155,7 @@ def _handle_config_subcommand(argv: List[str]) -> int:
         default=None,
         metavar="WHICH",
         choices=sorted(RECOMMENDED_SELECTORS),
-        help="Limit to one recommendation (text|voice|image); repeatable",
+        help="Limit to one recommendation (text|voice|image|video); repeatable",
     )
     apply_recommended.add_argument(
         "--force",

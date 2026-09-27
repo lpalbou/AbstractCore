@@ -54,8 +54,28 @@ def test_a_fresh_install_shows_the_seeded_recommended_defaults(capsys) -> None:
 
     assert "lmstudio/qwen/qwen3.5-9b" in out
     assert "supertonic/supertonic-3" in out
-    assert "mlx-gen/AbstractFramework/flux.2-klein-4b-8bit" in out
     assert "No text-generation default" not in out
+    # This host is Linux (`cuda24`): MLX-Gen cannot run here, so the image row
+    # is NOT seeded with it; the grid shows the row unset and says why.
+    assert "mlx-gen" not in out
+    image_line = next(line for line in out.splitlines() if line.startswith("- output.image:"))
+    assert "-/-" in image_line
+    assert "no recommendation for this host" in image_line and "Apple Silicon" in image_line
+
+
+def test_a_fresh_apple_silicon_install_still_seeds_the_image_route(capsys, monkeypatch) -> None:
+    from abstractcore.utils import host_profile as hp
+    from tests.models_engines_fakes import synthetic_host
+
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal64"))
+    d = Path(tempfile.mkdtemp())
+    out = _run(capsys, "--config-file", str(d / "abstractcore.json"), "defaults")
+    assert "mlx-gen/AbstractFramework/flux.2-klein-4b-8bit" in out
+    # A 64 GiB Mac runs MLX-Gen but the recommended video model does not fit
+    # its memory: the only row that says why is the video row.
+    flagged = [line for line in out.splitlines() if "no recommendation for this host" in line]
+    assert len(flagged) == 1 and flagged[0].startswith("- output.video:")
+    assert "needs about" in flagged[0] and "can give a model about" in flagged[0]
 
 
 def test_an_unconfigured_grid_names_the_command_that_fixes_it(capsys) -> None:

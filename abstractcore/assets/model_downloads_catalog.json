@@ -1,8 +1,8 @@
 {
  "$schema": "./model_downloads_catalog.schema.json",
  "schema": "model_downloads_catalog_v1",
- "version": "2026-09-24",
- "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer. upstream={method, checked, revision?} records an id verified to exist upstream on that date (hf_api: HfApi.model_info(files_metadata=True), download_bytes = the weight files; ollama_registry: the registry manifest, download_bytes = the sum of its layers); such an artifact must carry its verified size. options carries route options the recommendation copies (the MTP builds: speculation).",
+ "version": "2026-09-27",
+ "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer. upstream={method, checked, revision?} records an id verified to exist upstream on that date (hf_api: HfApi.model_info(files_metadata=True), download_bytes = the weight files; ollama_registry: the registry manifest, download_bytes = the sum of its layers); such an artifact must carry its verified size. options carries route options the recommendation copies (the MTP builds: speculation). resident={bytes, source} (optional, per artifact) is the MEASURED memory the engine needs while it runs, for models whose working memory is not their file size (video generation): the fit verdict uses it instead of download_bytes, and `source` says where and at which profile it was measured.",
  "companion_sizes": {
   "mlx-community/Qwen3.5-4B-MTP-4bit": {
    "download_bytes": 67859512,
@@ -4138,6 +4138,138 @@
     "speech_synthesis": true
    },
    "notes": "The AbstractFramework fresh-install voice default (output.voice), fetched through abstractvoice."
+  },
+  {
+   "id": "wan2.2-ti2v-5b",
+   "family": "wan2.2",
+   "display_name": "Wan2.2 TI2V 5B (text/image to video)",
+   "vendor": "Wan-AI",
+   "params_total": 5000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "video",
+    "recommended"
+   ],
+   "starter": true,
+   "artifacts": [
+    {
+     "provider": "mlx-gen",
+     "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit",
+     "quant": "8bit",
+     "download_bytes": 18171394682,
+     "size_source": "catalog",
+     "verified": true,
+     "recommended": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-27",
+      "revision": "6875952a110b6bdbcfc00d72b1d89a8e02ab0fc3"
+     },
+     "resident": {
+      "bytes": 62784388684,
+      "source": "MLX allocator peak 58.47 GiB at AbstractVision's default 1280x704 canvas (17 frames, 20 steps; Apple M5 Max 128 GiB, mlx-gen 0.18.10; AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit validation/ti2v5b-clean/metrics.json, BF16 row: since the 2026-06-12 mlx-gen runtime-precision fix q8 Wan packages run at BF16 memory); at the smallest canvas AbstractVision accepts (832x480, 121 frames, 50 steps) mlx-gen measured a 25 GB MLX peak (mlx-gen docs/minimax-h3.md)"
+     },
+     "note": "Mixed q8/BF16 MLX-Gen package (16.9 GiB); q8 saves download only, it runs at BF16 memory. AbstractVision refuses TI2V-5B below 832x480."
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "vision": false,
+    "video_generation": true,
+    "text_to_video": true,
+    "image_to_video": true
+   },
+   "notes": "The AbstractFramework recommended video model (output.video): one checkpoint for text-to-video and image-to-video, run by AbstractVision through MLX-Gen (Apple silicon only). Recommended only where its measured memory fits."
+  },
+  {
+   "id": "wan2.2-t2v-a14b",
+   "family": "wan2.2",
+   "display_name": "Wan2.2 T2V A14B (text to video)",
+   "vendor": "Wan-AI",
+   "params_total": 27000000000,
+   "params_active": 14000000000,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "video",
+    "moe",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "mlx-gen",
+     "artifact": "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
+     "quant": "8bit",
+     "download_bytes": 42426638292,
+     "size_source": "catalog",
+     "verified": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-27",
+      "revision": "39ee5f1f630789956f29f40b5c2c6d48c6e9a798"
+     },
+     "resident": {
+      "bytes": 29850022707,
+      "source": "MLX allocator peak 27.8 GiB re-measured after the 2026-06-12 runtime-precision fix, Apple M5 Max 128 GiB, 384x224, 33 frames, 12 steps, --low-ram (mlx-gen 0.38.0 README (PyPI), Wan A14B Measurements + 2026-07-05 correction); whole-process physical peak 33.0 GiB; the 1280x720, 81-frame default needs far more"
+     },
+     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory."
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "vision": false,
+    "video_generation": true,
+    "text_to_video": true,
+    "image_to_video": false
+   },
+   "notes": "Wan2.2 A14B text-to-video (MoE, two 14B experts), run by AbstractVision through MLX-Gen (Apple silicon only). Its memory figure is a small low-RAM validation profile."
+  },
+  {
+   "id": "wan2.2-i2v-a14b",
+   "family": "wan2.2",
+   "display_name": "Wan2.2 I2V A14B (image to video)",
+   "vendor": "Wan-AI",
+   "params_total": 27000000000,
+   "params_active": 14000000000,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "video",
+    "moe",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "mlx-gen",
+     "artifact": "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit",
+     "quant": "8bit",
+     "download_bytes": 42428276692,
+     "size_source": "catalog",
+     "verified": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-27",
+      "revision": "1a17fbea2649c576de844e08e79fe56296751efa"
+     },
+     "resident": {
+      "bytes": 30279519436,
+      "source": "MLX allocator peak 28.2 GiB (BF16 row; q8 runs at BF16 memory since the 2026-06-12 runtime-precision fix), Apple M5 Max 128 GiB, 384x384, 33 frames, 12 steps, --low-ram (mlx-gen 0.38.0 README (PyPI), Wan A14B Measurements + 2026-07-05 correction); whole-process physical peak 33.7 GiB; the 1280x720, 81-frame default needs far more"
+     },
+     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory."
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "vision": false,
+    "video_generation": true,
+    "text_to_video": false,
+    "image_to_video": true
+   },
+   "notes": "Wan2.2 A14B image-to-video (MoE, two 14B experts), run by AbstractVision through MLX-Gen (Apple silicon only). Its memory figure is a small low-RAM validation profile."
   }
  ]
 }
