@@ -86,6 +86,11 @@ pub enum TransportErrorKind {
     Protocol,
     /// The caller is not allowed (HTTP 401): sign in / token.
     Unauthorized,
+    /// This backend has no such verb at all (the CLI transport cannot
+    /// start an engine server, the gateway can). Not a refusal and not a
+    /// failure: the screens say "not available over this backend" and
+    /// never fake the verb. See [`TransportCaps`].
+    Unsupported,
 }
 
 /// A transport failure: its class, one human line, and whatever JSON
@@ -134,6 +139,10 @@ impl TransportError {
         TransportError::new(TransportErrorKind::Protocol, message)
     }
 
+    pub fn unsupported(message: impl Into<String>) -> TransportError {
+        TransportError::new(TransportErrorKind::Unsupported, message)
+    }
+
     pub fn with_code(mut self, code: i32) -> TransportError {
         self.code = Some(code);
         self
@@ -158,6 +167,7 @@ impl TransportError {
             TransportErrorKind::Timeout => "timed out",
             TransportErrorKind::Protocol => "unexpected answer",
             TransportErrorKind::Unauthorized => "not authorized",
+            TransportErrorKind::Unsupported => "not available here",
         }
     }
 
@@ -208,6 +218,17 @@ impl std::error::Error for TransportError {}
 /// | `delete_model` | `abstractcore models delete P A --yes [--force] --json` | `POST /api/gateway/models/delete` | E |
 /// | `engine_install` | `abstractcore engines install ID --yes [--dry-run] --json` | `POST /api/gateway/engines/{id}/install` | E |
 /// | `job` / `cancel_job` | the transport's own child jobs | `GET /api/gateway/jobs/{id}` / `POST …/cancel` | E |
+/// | `models_catalog_hub` | `abstractcore models search Q --hub --json` | `GET /api/gateway/models/catalog?q=&hub=true` | C |
+/// | `download_jobs` | the transport's own download children | `GET /api/gateway/models/downloads` | E |
+/// | `capability_defaults` | `abstractcore config defaults --json` | `GET /api/gateway/config/capability-defaults` | — |
+/// | `set_text_default` | `abstractcore config set-default output.text --provider P --model M` | `PUT /api/gateway/config/capability-defaults/output/text` | — |
+/// | `engine_install_at` | — (auto only) | `POST /api/gateway/engines/{id}/install {dry_run, location}` | E |
+/// | `engine_job_continue` | — | `POST /api/gateway/engines/jobs/{id}/continue {action}` | E |
+/// | `engine_server` | — | `POST /api/gateway/engines/{id}/start\|stop` | — |
+///
+/// The rows from `models_catalog_hub` down are OPTIONAL (default:
+/// [`TransportErrorKind::Unsupported`]); [`ConsoleTransport::capabilities`]
+/// names the ones a transport implements.
 ///
 /// The three verbs return a `host_job_v1` document; a job that is not
 /// yet terminal is polled with [`ConsoleTransport::job`].
@@ -252,6 +273,181 @@ pub trait ConsoleTransport: Send + Sync {
     fn host_label(&self) -> String {
         "this machine".to_string()
     }
+
+    // ---- optional verbs (0.3.0) ------------------------------------
+    //
+    // Every verb below has a default that answers
+    // [`TransportErrorKind::Unsupported`], and [`capabilities`] says
+    // which ones a transport really implements — the screens grey a
+    // verb out (footer: "not here") instead of calling a default.
+    //
+    // [`capabilities`]: ConsoleTransport::capabilities
+
+    /// Which optional verbs this transport implements.
+    fn capabilities(&self) -> TransportCaps {
+        TransportCaps::default()
+    }
+
+    /// Contract C with the Hugging Face hub: exact sizes and hub search
+    /// rows for `q` (CLI `models search Q --hub`, gateway
+    /// `GET /models/catalog?q=&hub=true`).
+    fn models_catalog_hub(
+        &self,
+        q: &str,
+        engine: Option<&str>,
+        fits_only: bool,
+    ) -> Result<Value, TransportError> {
+        let _ = (q, engine, fits_only);
+        Err(TransportError::unsupported(
+            "this backend cannot search Hugging Face",
+        ))
+    }
+
+    /// Every download job the backend knows, newest first: `{"jobs":
+    /// [host_job_v1, …]}` (gateway `GET /models/downloads`; the CLI
+    /// transport lists the children it owns). Lets the Models screen
+    /// re-attach to downloads started elsewhere or before a restart.
+    fn download_jobs(&self) -> Result<Value, TransportError> {
+        Err(TransportError::unsupported(
+            "this backend cannot list its downloads",
+        ))
+    }
+
+    /// The capability routing defaults document (`{"routes": [{key,
+    /// provider, model, …}]}`: CLI `config defaults --json`, gateway
+    /// `GET /config/capability-defaults` — the same shape).
+    fn capability_defaults(&self) -> Result<Value, TransportError> {
+        Err(TransportError::unsupported(
+            "this backend cannot read the capability defaults",
+        ))
+    }
+
+    /// Make `provider`/`model` the default TEXT model (route
+    /// `output.text`) and answer the refreshed defaults document (CLI
+    /// `config set-default output.text --provider P --model M` then
+    /// `config defaults --json`; gateway
+    /// `PUT /config/capability-defaults/output/text`).
+    fn set_text_default(&self, provider: &str, model: &str) -> Result<Value, TransportError> {
+        let _ = (provider, model);
+        Err(TransportError::unsupported(
+            "this backend cannot change the default text model",
+        ))
+    }
+
+    /// [`engine_install`](ConsoleTransport::engine_install) with an
+    /// install location (app engines on macOS: `user` = ~/Applications,
+    /// `system` = /Applications). The default runs `Auto` as a plain
+    /// install and answers `Unsupported` for anything else.
+    fn engine_install_at(
+        &self,
+        id: &str,
+        dry_run: bool,
+        location: InstallLocation,
+    ) -> Result<Value, TransportError> {
+        match location {
+            InstallLocation::Auto => self.engine_install(id, dry_run),
+            other => Err(TransportError::unsupported(format!(
+                "this backend cannot choose where an engine is installed ({})",
+                other.as_str()
+            ))),
+        }
+    }
+
+    /// Resume an engine install job paused in `needs_admin` /
+    /// `needs_tools` (`action` = one of the job's `continue_actions`;
+    /// `None` = the backend's default). Answers the job.
+    fn engine_job_continue(
+        &self,
+        job_id: &str,
+        action: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        let _ = (job_id, action);
+        Err(TransportError::unsupported(
+            "this backend cannot continue a paused install",
+        ))
+    }
+
+    /// Start or stop a local engine SERVER (Ollama, LM Studio). Answers
+    /// `{running, message, …}` after the server answered (or not).
+    fn engine_server(&self, id: &str, action: ServerAction) -> Result<Value, TransportError> {
+        let _ = (id, action);
+        Err(TransportError::unsupported(
+            "this backend cannot start or stop engine servers",
+        ))
+    }
+}
+
+/// Which optional [`ConsoleTransport`] verbs a transport implements.
+/// All `false` by default: a transport opts in verb by verb.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TransportCaps {
+    /// [`ConsoleTransport::models_catalog_hub`].
+    pub hub_search: bool,
+    /// [`ConsoleTransport::capability_defaults`] +
+    /// [`ConsoleTransport::set_text_default`].
+    pub text_default: bool,
+    /// [`ConsoleTransport::download_jobs`].
+    pub downloads_feed: bool,
+    /// [`ConsoleTransport::engine_job_continue`].
+    pub engine_continue: bool,
+    /// [`ConsoleTransport::engine_server`].
+    pub engine_server: bool,
+    /// [`ConsoleTransport::engine_install_at`] beyond `Auto`.
+    pub install_location: bool,
+}
+
+impl TransportCaps {
+    /// Every optional verb (a full backend such as the gateway).
+    pub const ALL: TransportCaps = TransportCaps {
+        hub_search: true,
+        text_default: true,
+        downloads_feed: true,
+        engine_continue: true,
+        engine_server: true,
+        install_location: true,
+    };
+}
+
+/// Where an app engine is installed (gateway `location`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum InstallLocation {
+    /// The backend decides (/Applications when writable, else
+    /// ~/Applications).
+    #[default]
+    Auto,
+    /// Just this account (~/Applications): never a password.
+    User,
+    /// Every account (/Applications): an administrator step when this
+    /// account cannot write there.
+    System,
+}
+
+impl InstallLocation {
+    /// The wire word: `auto` / `user` / `system`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            InstallLocation::Auto => "auto",
+            InstallLocation::User => "user",
+            InstallLocation::System => "system",
+        }
+    }
+}
+
+/// [`ConsoleTransport::engine_server`]'s verb.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ServerAction {
+    Start,
+    Stop,
+}
+
+impl ServerAction {
+    /// The wire word: `start` / `stop`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ServerAction::Start => "start",
+            ServerAction::Stop => "stop",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -269,5 +465,59 @@ mod tests {
         assert_eq!(e.reasons(), vec!["loaded", "unload it first"]);
         assert_eq!(e.to_string(), "refused: model is loaded");
         assert!(TransportError::failed("x").reasons().is_empty());
+    }
+
+    struct Bare;
+    impl ConsoleTransport for Bare {
+        fn host_profile(&self) -> Result<Value, TransportError> {
+            Ok(json!({}))
+        }
+        fn engines_status(&self, _p: bool) -> Result<Value, TransportError> {
+            Ok(json!({}))
+        }
+        fn models_catalog(&self, _q: &str, _e: Option<&str>, _f: bool) -> Result<Value, TransportError> {
+            Ok(json!({}))
+        }
+        fn models_installed(&self, _p: Option<&str>) -> Result<Value, TransportError> {
+            Ok(json!({}))
+        }
+        fn start_download(&self, _p: &str, _a: &str) -> Result<Value, TransportError> {
+            Ok(json!({}))
+        }
+        fn delete_model(&self, _p: &str, _a: &str, _f: bool) -> Result<Value, TransportError> {
+            Ok(json!({}))
+        }
+        fn engine_install(&self, id: &str, _d: bool) -> Result<Value, TransportError> {
+            Ok(json!({"engine": id}))
+        }
+        fn job(&self, _id: &str) -> Result<Value, TransportError> {
+            Ok(json!({}))
+        }
+        fn cancel_job(&self, _id: &str) -> Result<Value, TransportError> {
+            Ok(json!({}))
+        }
+    }
+
+    #[test]
+    fn optional_verbs_default_to_unsupported_never_a_fake() {
+        let t = Bare;
+        assert_eq!(t.capabilities(), TransportCaps::default());
+        for e in [
+            t.models_catalog_hub("q", None, false).unwrap_err(),
+            t.download_jobs().unwrap_err(),
+            t.capability_defaults().unwrap_err(),
+            t.set_text_default("p", "m").unwrap_err(),
+            t.engine_job_continue("j", None).unwrap_err(),
+            t.engine_server("ollama", ServerAction::Start).unwrap_err(),
+            t.engine_install_at("ollama", false, InstallLocation::User).unwrap_err(),
+        ] {
+            assert_eq!(e.kind, TransportErrorKind::Unsupported, "{e}");
+            assert_eq!(e.headline(), "not available here");
+        }
+        // Auto is just an install.
+        assert_eq!(
+            t.engine_install_at("ollama", false, InstallLocation::Auto).unwrap()["engine"],
+            "ollama"
+        );
     }
 }

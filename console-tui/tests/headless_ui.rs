@@ -3014,6 +3014,10 @@ struct MockTransport {
     cancelled: Mutex<bool>,
     /// When set, `delete_model` refuses with this error.
     refuse_delete: Mutex<Option<TransportError>>,
+    /// Downloads started so far (each gets its own id, like a backend).
+    downloads: Mutex<u32>,
+    /// Every started job by id (a poll answers about ITS subject).
+    by_id: Mutex<std::collections::HashMap<String, Value>>,
 }
 
 impl MockTransport {
@@ -3050,6 +3054,9 @@ impl MockTransport {
 
     fn started(&self, doc: Value) -> Result<Value, TransportError> {
         *self.last_job.lock().unwrap() = Some(doc.clone());
+        if let Some(id) = doc["job_id"].as_str() {
+            self.by_id.lock().unwrap().insert(id.to_string(), doc.clone());
+        }
         Ok(doc)
     }
 }
@@ -3105,11 +3112,17 @@ impl ConsoleTransport for MockTransport {
     }
     fn start_download(&self, provider: &str, artifact: &str) -> Result<Value, TransportError> {
         self.record(format!("download {provider} {artifact}"));
+        let n = {
+            let mut d = self.downloads.lock().unwrap();
+            *d += 1;
+            *d
+        };
         self.started(Self::job_doc(
             "download",
             "running",
             json!({"provider": provider, "artifact": artifact, "percent": 0.0,
-                   "downloaded_bytes": 0, "message": "pulling manifest"}),
+                   "downloaded_bytes": 0, "message": "pulling manifest",
+                   "job_id": format!("download_{n}")}),
         ))
     }
     fn delete_model(
@@ -3150,22 +3163,32 @@ impl ConsoleTransport for MockTransport {
     fn job(&self, id: &str) -> Result<Value, TransportError> {
         self.record(format!("job {id}"));
         let last = self
-            .last_job
+            .by_id
             .lock()
             .unwrap()
-            .clone()
+            .get(id)
+            .cloned()
+            .or_else(|| self.last_job.lock().unwrap().clone())
             .expect("a job started");
         if *self.cancelled.lock().unwrap() {
             let mut j = last;
             j["status"] = json!("cancelled");
             return Ok(j);
         }
-        if let Some(next) = self.polls.lock().unwrap().pop_front() {
+        if let Some(mut next) = self.polls.lock().unwrap().pop_front() {
+            // The backend answers about the job it was asked for.
+            for k in ["job_id", "kind", "provider", "artifact", "engine"] {
+                if !last[k].is_null() {
+                    next[k] = last[k].clone();
+                }
+            }
+            next["job_id"] = json!(id);
             return Ok(next);
         }
         let mut j = last;
         j["status"] = json!("completed");
         j["percent"] = json!(100.0);
+        j["job_id"] = json!(id);
         Ok(j)
     }
     fn cancel_job(&self, id: &str) -> Result<Value, TransportError> {
@@ -3623,7 +3646,7 @@ fn open_o_hands_the_download_page_to_the_opener() {
 }
 
 #[test]
-fn a_second_verb_while_a_job_runs_is_refused_single_flight() {
+fn downloads_run_in_parallel_and_the_same_artifact_is_not_started_twice() {
     let mut h = harness();
     h.load_fixtures();
     h.open_models();
@@ -3631,19 +3654,56 @@ fn a_second_verb_while_a_job_runs_is_refused_single_flight() {
         .polls
         .lock()
         .unwrap()
-        .extend((0..400).map(|_| fixture("job_running")));
+        .extend((0..800).map(|_| fixture("job_running")));
     h.select_artifact("qwen3:8b");
     h.key(b"w");
     h.settle_until_contains("42%");
+    // A second, different download starts at once (the web console's
+    // behaviour) — no single-flight door.
     h.select_artifact("gemma3:27b");
     h.key(b"w");
-    h.settle_until_contains("is still running — c cancels it");
+    h.wait_for_call("the second download", |calls| {
+        calls.iter().any(|c| c == "download ollama gemma3:27b")
+    });
+    let s = h.settle_until("both downloads in the strip", |s| {
+        s.contains("download ollama qwen3:8b") && s.contains("download ollama gemma3:27b")
+    });
+    assert!(!s.contains("is still running"), "{s}");
+    let live = h
+        .screens
+        .jobs
+        .with_untracked(|v| v.iter().filter(|j| j.is_active()).count());
+    assert_eq!(live, 2, "two live jobs");
+    // The SAME artifact again is refused here (the backend would join).
+    h.key(b"w");
+    h.settle_until_contains("gemma3:27b is already downloading");
     assert_eq!(
         h.mock
             .calls()
             .iter()
             .filter(|c| c.starts_with("download"))
             .count(),
-        1
+        2
     );
+    // The downloads view lists both; c there asks before stopping.
+    h.key(b"v");
+    h.turns(2);
+    h.key(b"v");
+    let s = h.settle_until_contains("2 downloads · 2 running");
+    assert!(s.contains("qwen3:8b") && s.contains("gemma3:27b"), "{s}");
+    // Newest first: row 0 is the gemma download (download_2).
+    h.screens.downloads_sel.set(0);
+    h.turns(2);
+    h.key(b"c");
+    let s = h.turns(2);
+    assert!(s.contains("Stop downloading") && s.contains("Keep downloading"), "{s}");
+    h.key(b"\r"); // default = keep
+    h.settle_until_contains("still downloading");
+    assert!(!h.mock.called("cancel"), "{:?}", h.mock.calls());
+    h.key(b"c");
+    h.turns(2);
+    h.key(b"2");
+    h.turns(1);
+    h.key(b"\r");
+    h.wait_for_call("the cancel", |calls| calls.iter().any(|c| c == "cancel download_2"));
 }

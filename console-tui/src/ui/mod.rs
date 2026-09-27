@@ -722,6 +722,7 @@ fn header(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
 fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
     let store = ctx.store;
     let ui = ctx.ui;
+    let screen_caps = ctx.screens.caps;
     let engine_notices = abstracttui::app::use_startup_notices(cx);
     Element::new()
         // Chrome rows: pinned like the header — the hint line
@@ -830,10 +831,10 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                     pairs.push(("w", "download weights"));
                                 }
                                 SCREEN_CATALOG => {
-                                    pairs.extend_from_slice(crate::screens::catalog::HINTS)
+                                    pairs.extend(crate::screens::catalog::hints(screen_caps))
                                 }
                                 SCREEN_ENGINES => {
-                                    pairs.extend_from_slice(crate::screens::engines::HINTS)
+                                    pairs.extend(crate::screens::engines::hints(screen_caps))
                                 }
                                 _ => {}
                             }

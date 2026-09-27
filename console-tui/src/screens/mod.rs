@@ -27,16 +27,26 @@
 //!
 //! | key | Models | Engines |
 //! |---|---|---|
-//! | `w` | download the selected artifact | — |
+//! | `w` | download the selected artifact (downloads run in parallel) | — |
 //! | `d` | delete (confirm; shows blockers) | — |
-//! | `i` | — | install (confirm shows argv, host, sudo/UAC) |
+//! | `h` | search Hugging Face (Enter on an empty query leaves it) | — |
+//! | `u` | use the installed artifact as the default text model | — |
+//! | `i` | — | install (confirm shows argv, host, sudo/UAC; app engines: where) |
+//! | `s` | — | start / stop the engine's server |
+//! | `a` | — | continue a paused install (administrator step / tools / re-check) |
+//! | `y` | — | copy a paused install's command |
 //! | `o` | — | open the download page |
 //! | `/` | filter | — |
 //! | `f` | toggle fits-only | — |
 //! | `e` | cycle engine filter | — |
-//! | `v` | catalog ⇄ installed | — |
+//! | `v` | catalog → installed → downloads | — |
 //! | `r` | refresh | refresh (probes local servers) |
-//! | `c` | cancel the running job | cancel the running job |
+//! | `c` | cancel the selected/only download (asks first) | cancel the engine's install |
+//!
+//! `h`, `u`, `s`, `a`, the downloads feed and the install location are
+//! OPTIONAL transport verbs ([`TransportCaps`]): a transport without one
+//! gets the verb refused with "not available over this backend", and
+//! the footer ([`catalog::hints`], [`engines::hints`]) says so.
 //!
 //! # Mounting (host crate)
 //!
@@ -68,6 +78,7 @@ pub mod engines;
 mod worker;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
@@ -79,13 +90,16 @@ use abstracttui::widgets::Progress;
 
 pub use catalog::catalog;
 pub use data::{
-    ArtifactRow, CatalogData, EngineRow, EnginesData, HostProfile, InstallPlan, InstalledData,
-    InstalledRow, JobView,
+    ActiveJobRef, AdminPrompt, ArtifactRow, CatalogData, EngineAction, EngineRow, EnginesData,
+    HostProfile, InstallPlan, InstallPlans, InstalledData, InstalledRow, JobView, LocationPlan,
+    ToolsPrompt,
 };
 pub use engines::engines;
 pub use worker::{schedule_job_poll, spawn_worker};
 
-use crate::transport::{ConsoleTransport, TransportError};
+use crate::transport::{
+    ConsoleTransport, InstallLocation, ServerAction, TransportCaps, TransportError,
+};
 use crate::ui::util::{line, span, span_bold};
 
 /// Stable page ids (contract principle 2): "Models" is `catalog`,
@@ -127,7 +141,12 @@ pub enum CatalogView {
     Catalog,
     /// Everything already on disk (contract D).
     Installed,
+    /// Every download this console watches, live (the downloads feed).
+    Downloads,
 }
+
+/// Most finished jobs the store keeps beside the live ones.
+pub const FINISHED_JOBS_KEPT: usize = 12;
 
 /// The screens' signals. `Copy`: every field is a signal handle.
 #[derive(Clone, Copy)]
@@ -136,8 +155,22 @@ pub struct ScreensStore {
     pub engines: Signal<Remote<EnginesData>>,
     pub catalog: Signal<Remote<CatalogData>>,
     pub installed: Signal<Remote<InstalledData>>,
-    /// The latest job (running, or the last one to finish).
+    /// The job touched last (running, or the last one to finish) — the
+    /// strip's detail line. Every job lives in [`ScreensStore::jobs`].
     pub job: Signal<Option<JobView>>,
+    /// Every job this console watches, newest first: all live ones
+    /// (downloads run in PARALLEL; a paused install blocks nothing) plus
+    /// the last [`FINISHED_JOBS_KEPT`] finished.
+    pub jobs: Signal<Vec<JobView>>,
+    /// Hugging Face mode (`h`): the hub query the catalog shows.
+    pub hub: Signal<Option<String>>,
+    /// The configured default text model (`u` marks and sets it).
+    pub text_default: Signal<Remote<Option<(String, String)>>>,
+    /// An app engine's two install plans (`i`), keyed by engine id.
+    pub plans: Signal<HashMap<String, Remote<InstallPlans>>>,
+    /// The downloads feed read (`Ready(n)` = n jobs listed).
+    pub feed: Signal<Remote<usize>>,
+    pub downloads_sel: Signal<usize>,
     /// Free-text catalog filter (`/`).
     pub query: Signal<String>,
     /// Engine filter (`e` cycles through the catalog's providers).
@@ -167,6 +200,12 @@ impl ScreensStore {
             catalog: cx.signal(Remote::NotAsked),
             installed: cx.signal(Remote::NotAsked),
             job: cx.signal(None),
+            jobs: cx.signal(Vec::new()),
+            hub: cx.signal(None),
+            text_default: cx.signal(Remote::NotAsked),
+            plans: cx.signal(HashMap::new()),
+            feed: cx.signal(Remote::NotAsked),
+            downloads_sel: cx.signal(0),
             query: cx.signal(String::new()),
             engine_filter: cx.signal(None),
             fits_only: cx.signal(false),
@@ -185,9 +224,92 @@ impl ScreensStore {
         self.job.is_alive() && self.notice.is_alive() && self.catalog.is_alive()
     }
 
+    /// Any live job (paused installs included).
     pub fn job_active(&self) -> bool {
-        self.job
-            .with_untracked(|j| j.as_ref().is_some_and(JobView::is_active))
+        self.jobs
+            .with_untracked(|v| v.iter().any(JobView::is_active))
+            || self
+                .job
+                .with_untracked(|j| j.as_ref().is_some_and(JobView::is_active))
+    }
+
+    /// The live job about this download, if one runs.
+    pub fn active_download(&self, provider: &str, artifact: &str) -> Option<JobView> {
+        self.jobs.with_untracked(|v| {
+            v.iter()
+                .find(|j| {
+                    j.is_active()
+                        && j.kind == "download"
+                        && j.provider.as_deref() == Some(provider)
+                        && j.artifact.as_deref() == Some(artifact)
+                })
+                .cloned()
+        })
+    }
+
+    /// The live install job of this engine (running OR paused).
+    pub fn active_install(&self, engine: &str) -> Option<JobView> {
+        self.jobs.with_untracked(|v| {
+            v.iter()
+                .find(|j| j.is_active() && j.kind == "engine_install" && j.engine.as_deref() == Some(engine))
+                .cloned()
+        })
+    }
+
+    /// Download jobs (and "download all" groups), newest first.
+    pub fn download_jobs(&self, tracked: bool) -> Vec<JobView> {
+        let pick = |v: &Vec<JobView>| {
+            v.iter()
+                .filter(|j| matches!(j.kind.as_str(), "download" | "download_group"))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        if tracked {
+            self.jobs.with(pick)
+        } else {
+            self.jobs.with_untracked(pick)
+        }
+    }
+}
+
+/// Put one job into the list (UI thread): by id, else in place of its
+/// "starting…" placeholder (same subject, no id yet), else first. Keeps
+/// every live job and the newest [`FINISHED_JOBS_KEPT`] finished ones;
+/// `job` becomes this one.
+pub fn upsert_job(s: &ScreensStore, view: JobView) {
+    s.jobs.update(|v| {
+        let at = v
+            .iter()
+            .position(|j| !view.job_id.is_empty() && j.job_id == view.job_id)
+            .or_else(|| {
+                v.iter()
+                    .position(|j| j.job_id.is_empty() && j.same_subject(&view))
+            });
+        match at {
+            Some(i) => v[i] = view.clone(),
+            None => v.insert(0, view.clone()),
+        }
+        let mut finished = 0;
+        v.retain(|j| {
+            if j.is_active() {
+                return true;
+            }
+            finished += 1;
+            finished <= FINISHED_JOBS_KEPT
+        });
+    });
+    s.job.set(Some(view));
+}
+
+/// Drop a placeholder that never became a job (the verb was refused).
+pub fn drop_placeholder(s: &ScreensStore, like: &JobView) {
+    s.jobs
+        .update(|v| v.retain(|j| !(j.job_id.is_empty() && j.same_subject(like))));
+    if s
+        .job
+        .with_untracked(|j| j.as_ref().is_some_and(|j| j.job_id.is_empty()))
+    {
+        s.job.set(None);
     }
 }
 
@@ -233,8 +355,33 @@ pub enum ScreenCmd {
         engine: Option<String>,
         fits_only: bool,
         generation: u64,
+        /// Hugging Face mode: `q` is a hub query.
+        hub: bool,
     },
     LoadInstalled,
+    /// The downloads feed: adopt live jobs this console is not watching.
+    LoadDownloads,
+    LoadTextDefault,
+    SetTextDefault {
+        provider: String,
+        model: String,
+    },
+    /// Both install plans of an app engine (two dry runs).
+    LoadPlans {
+        engine: String,
+    },
+    /// Watch a job learned from elsewhere (an engine row's `active_job`).
+    Adopt {
+        job_id: String,
+    },
+    Continue {
+        job_id: String,
+        action: Option<String>,
+    },
+    Server {
+        engine: String,
+        action: ServerAction,
+    },
     Download {
         provider: String,
         artifact: String,
@@ -247,6 +394,7 @@ pub enum ScreenCmd {
     Install {
         engine: String,
         dry_run: bool,
+        location: InstallLocation,
     },
     PollJob(JobPoll),
     Cancel {
@@ -272,6 +420,8 @@ pub struct ScreensCtx {
     pub overlays: Overlays,
     /// Where installs/deletes run ("this machine (mbp)", "gateway.lan").
     pub host_label: Rc<str>,
+    /// The transport's optional verbs (asked once, at mount).
+    pub caps: TransportCaps,
     opener: Opener,
     modal: Rc<RefCell<Option<Modal>>>,
 }
@@ -290,6 +440,7 @@ impl ScreensCtx {
         let store = ScreensStore::create(cx, options.notice);
         let (tx, rx) = mpsc::channel::<ScreenCmd>();
         let host_label: Rc<str> = Rc::from(transport.host_label());
+        let caps = transport.capabilities();
         let wake = abstracttui::reactive::wake_handle();
         let _worker = spawn_worker(
             transport,
@@ -316,6 +467,7 @@ impl ScreensCtx {
             tx,
             overlays,
             host_label,
+            caps,
             opener: options.opener.unwrap_or_else(|| Rc::new(system_open)),
             modal: Rc::new(RefCell::new(None)),
         }
@@ -343,6 +495,22 @@ impl ScreensCtx {
             s.installed.set(Remote::Loading);
             self.send(ScreenCmd::LoadInstalled);
         }
+        if self.caps.downloads_feed && s.feed.with_untracked(Remote::is_not_asked) {
+            self.load_downloads();
+        }
+        if self.caps.text_default && s.text_default.with_untracked(Remote::is_not_asked) {
+            s.text_default.set(Remote::Loading);
+            self.send(ScreenCmd::LoadTextDefault);
+        }
+    }
+
+    /// Re-read the downloads feed (re-attaches to live downloads).
+    pub fn load_downloads(&self) {
+        if !self.caps.downloads_feed {
+            return;
+        }
+        self.store.feed.set(Remote::Loading);
+        self.send(ScreenCmd::LoadDownloads);
     }
 
     /// Load the Engines screen's data if it was never asked for.
@@ -364,12 +532,40 @@ impl ScreensCtx {
         let generation = s.catalog_gen.get_untracked() + 1;
         s.catalog_gen.set(generation);
         s.catalog.set(Remote::Loading);
+        let hub = s.hub.get_untracked();
         self.send(ScreenCmd::LoadCatalog {
-            q: s.query.get_untracked(),
+            q: hub.clone().unwrap_or_else(|| s.query.get_untracked()),
             engine: s.engine_filter.get_untracked(),
             fits_only: s.fits_only.get_untracked(),
             generation,
+            hub: hub.is_some(),
         });
+    }
+
+    /// `h`: search Hugging Face for `q` (empty = back to the catalog).
+    pub fn hub_search(&self, q: &str) {
+        let q = q.trim();
+        if q.is_empty() {
+            if self.store.hub.get_untracked().is_some() {
+                self.store.hub.set(None);
+                self.store.catalog_sel.set(0);
+                self.reload_catalog();
+                self.notice("back to the catalog");
+            }
+            return;
+        }
+        if !self.caps.hub_search {
+            self.notice(format!(
+                "Hugging Face search is not available over {}",
+                self.host_label
+            ));
+            return;
+        }
+        self.store.hub.set(Some(q.to_string()));
+        self.store.catalog_sel.set(0);
+        self.store.view.set(CatalogView::Catalog);
+        self.reload_catalog();
+        self.notice(format!("searching Hugging Face for \"{q}\"…"));
     }
 
     /// `r` on Models: host profile, catalog and installed list.
@@ -379,6 +575,11 @@ impl ScreensCtx {
         self.reload_catalog();
         self.store.installed.set(Remote::Loading);
         self.send(ScreenCmd::LoadInstalled);
+        self.load_downloads();
+        if self.caps.text_default {
+            self.store.text_default.set(Remote::Loading);
+            self.send(ScreenCmd::LoadTextDefault);
+        }
     }
 
     /// `r` on Engines: a PROBING status read (contacts local servers).
@@ -387,29 +588,22 @@ impl ScreensCtx {
         self.send(ScreenCmd::LoadEngines { probe: true });
     }
 
-    /// Single-flight door for the three verbs.
-    fn job_free(&self) -> bool {
-        if let Some(j) = self.store.job.get_untracked().filter(JobView::is_active) {
-            self.notice(format!(
-                "{} {} is still running — c cancels it",
-                j.verb(),
-                j.subject()
-            ));
-            return false;
-        }
-        true
-    }
-
-    /// Mark a verb as started (the strip shows it before the backend
+    /// Mark a verb as started (the list shows it before the backend
     /// answers) and send it.
     fn start(&self, placeholder: JobView, cmd: ScreenCmd) {
-        self.store.job.set(Some(placeholder));
+        upsert_job(&self.store, placeholder);
         self.send(cmd);
     }
 
-    /// `w`: start downloading one artifact.
+    /// `w`: start downloading one artifact. Downloads run in PARALLEL
+    /// (the web console's behaviour); only the SAME artifact twice is
+    /// refused here — the backend would join it anyway.
     pub fn download(&self, provider: &str, artifact: &str) {
-        if !self.job_free() {
+        if let Some(j) = self.store.active_download(provider, artifact) {
+            self.notice(format!(
+                "{provider} {artifact} is already downloading{} — c cancels it",
+                j.percent.map(|p| format!(" ({p:.0}%)")).unwrap_or_default()
+            ));
             return;
         }
         self.start(
@@ -428,9 +622,13 @@ impl ScreensCtx {
         );
     }
 
-    /// `d` (after the confirm): delete one artifact.
+    /// `d` (after the confirm): delete one artifact — refused while that
+    /// same artifact is still downloading.
     pub fn delete(&self, provider: &str, artifact: &str, force: bool) {
-        if !self.job_free() {
+        if self.store.active_download(provider, artifact).is_some() {
+            self.notice(format!(
+                "{provider} {artifact} is still downloading — cancel it (c) before deleting"
+            ));
             return;
         }
         self.start(
@@ -452,7 +650,29 @@ impl ScreensCtx {
 
     /// `i` (after the confirm): install an engine, or dry-run it.
     pub fn install(&self, engine: &str, dry_run: bool) {
-        if !self.job_free() {
+        self.install_at(engine, dry_run, InstallLocation::Auto);
+    }
+
+    /// `i` with a location (app engines). Refused while THIS engine has a
+    /// live install (a paused one says how to continue); another
+    /// engine's install is the backend's call (it answers 409 "busy").
+    pub fn install_at(&self, engine: &str, dry_run: bool, location: InstallLocation) {
+        if location != InstallLocation::Auto && !self.caps.install_location {
+            self.notice(format!(
+                "choosing where an engine goes is not available over {}",
+                self.host_label
+            ));
+            return;
+        }
+        if let Some(j) = self.store.active_install(engine).filter(|_| !dry_run) {
+            self.notice(if j.is_paused() {
+                format!(
+                    "the {engine} install is waiting ({}) — a continues it, c cancels it",
+                    j.paused_label().unwrap_or("paused")
+                )
+            } else {
+                format!("the {engine} install is still running — c cancels it")
+            });
             return;
         }
         self.start(
@@ -471,21 +691,120 @@ impl ScreensCtx {
             ScreenCmd::Install {
                 engine: engine.into(),
                 dry_run,
+                location,
             },
         );
     }
 
-    /// `c`: cancel the running job.
+    /// Ask for an app engine's two install plans (just me / everyone).
+    pub fn load_plans(&self, engine: &str) {
+        self.store.plans.update(|m| {
+            m.insert(engine.to_string(), Remote::Loading);
+        });
+        self.send(ScreenCmd::LoadPlans {
+            engine: engine.into(),
+        });
+    }
+
+    /// `a`: continue a paused install with one of its `continue_actions`.
+    pub fn continue_job(&self, job: &JobView, action: Option<&str>) {
+        if !self.caps.engine_continue {
+            self.notice(format!(
+                "continuing a paused install is not available over {}",
+                self.host_label
+            ));
+            return;
+        }
+        if !job.is_paused() || job.job_id.is_empty() {
+            self.notice(format!(
+                "{} {} is not waiting for anything",
+                job.verb(),
+                job.subject()
+            ));
+            return;
+        }
+        self.notice(match action {
+            Some("approve_admin") => format!(
+                "asking for the administrator password on {}…",
+                self.host_label
+            ),
+            Some("install_tools") => "opening Apple's tools installer on the host…".to_string(),
+            _ => format!("re-checking {}…", job.subject()),
+        });
+        self.send(ScreenCmd::Continue {
+            job_id: job.job_id.clone(),
+            action: action.map(str::to_string),
+        });
+    }
+
+    /// `s`: start or stop an engine's server.
+    pub fn server(&self, engine: &str, action: ServerAction) {
+        if !self.caps.engine_server {
+            self.notice(format!(
+                "starting or stopping engine servers is not available over {}",
+                self.host_label
+            ));
+            return;
+        }
+        self.notice(format!(
+            "{} {engine}…",
+            match action {
+                ServerAction::Start => "starting",
+                ServerAction::Stop => "stopping",
+            }
+        ));
+        self.send(ScreenCmd::Server {
+            engine: engine.into(),
+            action,
+        });
+    }
+
+    /// `u`: make an installed artifact the default text model (the route
+    /// stores the SERVED id — see [`data::served_model_id`]).
+    pub fn set_text_default(&self, provider: &str, artifact: &str) {
+        if !self.caps.text_default {
+            self.notice(format!(
+                "changing the default text model is not available over {}",
+                self.host_label
+            ));
+            return;
+        }
+        let model = data::served_model_id(provider, artifact);
+        self.notice(format!("saving {provider} · {model} as the default text model…"));
+        self.send(ScreenCmd::SetTextDefault {
+            provider: provider.into(),
+            model,
+        });
+    }
+
+    /// Cancel one job (`c` picks which).
+    pub fn cancel_job(&self, j: &JobView) {
+        if !j.is_active() {
+            self.notice(format!("{} {} is not running", j.verb(), j.subject()));
+        } else if j.job_id.is_empty() {
+            self.notice("the job has not started yet — press c again in a moment");
+        } else {
+            self.notice(format!("cancelling {} {}…", j.verb(), j.subject()));
+            self.send(ScreenCmd::Cancel {
+                job_id: j.job_id.clone(),
+            });
+        }
+    }
+
+    /// `c` with no screen-specific target: the one live job, or say
+    /// which ones run.
     pub fn cancel(&self) {
-        match self.store.job.get_untracked() {
-            Some(j) if j.is_active() && !j.job_id.is_empty() => {
-                self.notice(format!("cancelling {} {}…", j.verb(), j.subject()));
-                self.send(ScreenCmd::Cancel { job_id: j.job_id });
-            }
-            Some(j) if j.is_active() => {
-                self.notice("the job has not started yet — press c again in a moment")
-            }
-            _ => self.notice("no job is running"),
+        let live: Vec<JobView> = self
+            .store
+            .jobs
+            .with_untracked(|v| v.iter().filter(|j| j.is_active()).cloned().collect());
+        match live.as_slice() {
+            [] => self.notice("no job is running"),
+            [one] => self.cancel_job(one),
+            many => self.notice(format!(
+                "{} jobs are running — select the one to cancel (v shows the downloads)",
+                many.len()
+            )),
         }
     }
 
@@ -533,54 +852,92 @@ pub fn system_open(url: &str) -> Result<(), String> {
 
 type ThemeSig = Signal<&'static abstracttui::theme::Theme>;
 
-/// The job strip: two rows while a job exists (progress + last log
-/// line / CLI equivalent), zero otherwise.
+/// Most live jobs the strip lists one per row (the rest are counted).
+pub const STRIP_JOBS: usize = 3;
+
+/// One job as a strip row: bar, glyph, verb + subject, facts.
+fn job_row(t: &TokenSet, j: &JobView) -> View {
+    let (glyph, ink) = match j.status.as_str() {
+        "completed" => ("✓", t.ok),
+        "failed" => ("✗", t.error),
+        "cancelled" => ("⊘", t.warn),
+        _ if j.is_paused() => ("⏸", t.warn),
+        _ => ("⟳", t.info),
+    };
+    let mut facts = vec![span_bold(
+        format!(" {glyph} {} {} ", j.verb(), j.subject()),
+        ink,
+    )];
+    let mut info = Vec::new();
+    if let Some(p) = j.percent {
+        info.push(format!("{p:.0}%"));
+    }
+    if let (Some(d), Some(tot)) = (j.downloaded_bytes, j.total_bytes) {
+        info.push(format!(
+            "{} / {}",
+            data::bytes_label(Some(d)),
+            data::bytes_label(Some(tot))
+        ));
+    }
+    if let Some(bps) = j.bytes_per_second.filter(|b| *b > 0.0 && j.is_active()) {
+        info.push(format!("{}/s", data::bytes_label(Some(bps as u64))));
+    }
+    match j.paused_label() {
+        Some(p) if j.is_active() => info.push(p.to_string()),
+        _ => info.push(j.status.clone()),
+    }
+    facts.push(span(info.join(" · "), t.text_muted));
+    let bar = match j.fraction().filter(|_| !j.is_paused()) {
+        Some(fr) => Progress::new(fr)
+            .layout(LayoutStyle::default().w(24).h(1).shrink(0.0))
+            .element(t)
+            .build(),
+        None => Element::new()
+            .style(LayoutStyle::default().w(0).h(1))
+            .build(),
+    };
+    Element::new()
+        .style(LayoutStyle::row().gap(1).h(1).shrink(0.0))
+        .child(bar)
+        .child(line(facts))
+        .build()
+}
+
+/// The job strip: one row per LIVE job (up to [`STRIP_JOBS`], the rest
+/// counted), else the last finished job; then one detail row for the
+/// job touched last (its error / log line / CLI equivalent). Zero rows
+/// when nothing ever ran.
 pub fn job_strip(sctx: &ScreensCtx, theme: ThemeSig) -> View {
     let store = sctx.store;
     dyn_view(LayoutStyle::column().shrink(0.0), move || {
         let t = theme.get().tokens;
-        let Some(j) = store.job.get() else {
-            return Element::new().style(LayoutStyle::default().h(0)).build();
-        };
-        let (glyph, ink) = match j.status.as_str() {
-            "completed" => ("✓", t.ok),
-            "failed" => ("✗", t.error),
-            "cancelled" => ("⊘", t.warn),
-            _ => ("⟳", t.info),
-        };
-        let mut facts = vec![span_bold(
-            format!(" {glyph} {} {} ", j.verb(), j.subject()),
-            ink,
-        )];
-        let mut info = Vec::new();
-        if let Some(p) = j.percent {
-            info.push(format!("{p:.0}%"));
+        let jobs = store.jobs.get();
+        let last = store.job.get();
+        let live: Vec<&JobView> = jobs.iter().filter(|j| j.is_active()).collect();
+        let mut col = Element::new().style(LayoutStyle::column().shrink(0.0));
+        if live.is_empty() {
+            let Some(j) = last.as_ref() else {
+                return Element::new().style(LayoutStyle::default().h(0)).build();
+            };
+            col = col.child(job_row(&t, j));
+        } else {
+            for j in live.iter().take(STRIP_JOBS) {
+                col = col.child(job_row(&t, j));
+            }
         }
-        if let (Some(d), Some(tot)) = (j.downloaded_bytes, j.total_bytes) {
-            info.push(format!(
-                "{} / {}",
-                data::bytes_label(Some(d)),
-                data::bytes_label(Some(tot))
-            ));
-        }
-        info.push(j.status.clone());
-        facts.push(span(info.join(" · "), t.text_muted));
-        let bar = match j.fraction() {
-            Some(fr) => Progress::new(fr)
-                .layout(LayoutStyle::default().w(24).h(1).shrink(0.0))
-                .element(&t)
-                .build(),
-            None => Element::new()
-                .style(LayoutStyle::default().w(0).h(1))
-                .build(),
+        let Some(j) = last.as_ref().or(live.first().copied()) else {
+            return col.build();
         };
-        let first = Element::new()
-            .style(LayoutStyle::row().gap(1).h(1).shrink(0.0))
-            .child(bar)
-            .child(line(facts))
-            .build();
         let detail = if let Some(e) = j.error.as_ref().filter(|_| j.status == "failed") {
             span(format!("   {e}"), t.error)
+        } else if j.is_paused() {
+            span(
+                format!(
+                    "   {} — the Engines screen (0) shows what to run; a continues",
+                    j.message.as_deref().unwrap_or("waiting for a person")
+                ),
+                t.warn,
+            )
         } else if let Some(l) = j.log_tail.last().or(j.message.as_ref()) {
             span(format!("   {l}"), t.text_faint)
         } else if let Some(c) = &j.cli_equivalent {
@@ -589,15 +946,41 @@ pub fn job_strip(sctx: &ScreensCtx, theme: ThemeSig) -> View {
             span(String::new(), t.text_faint)
         };
         let mut second = vec![detail];
-        if j.is_active() {
+        if live.len() > STRIP_JOBS {
+            second.push(span(
+                format!("  · +{} more running", live.len() - STRIP_JOBS),
+                t.text_muted,
+            ));
+        }
+        if !live.is_empty() {
             second.push(span("  · c cancels", t.text_faint));
         }
-        Element::new()
-            .style(LayoutStyle::column().shrink(0.0))
-            .child(first)
-            .child(line(second))
-            .build()
+        col.child(line(second)).build()
     })
+}
+
+/// `c` on a download: the web console's two-step cancel — a question
+/// whose default KEEPS the download, "Stop download" danger-tinted.
+pub fn confirm_cancel_download(cx: Scope, sctx: &ScreensCtx, job: JobView) {
+    let s = sctx.clone();
+    let what = match job.kind.as_str() {
+        "download_group" => "every download of this group".to_string(),
+        _ => job.subject(),
+    };
+    ChoicePrompt::new(format!("Stop downloading {what}?"))
+        .option("keep", "Keep downloading")
+        .option_with(ChoiceOption::new("stop", "Stop download").danger(true))
+        .initial("keep")
+        .on_resolve(move |outcome| {
+            if let ChoiceOutcome::Answered(ans) = outcome {
+                if ans.selected.iter().any(|x| x == "stop") {
+                    s.cancel_job(&job);
+                    return;
+                }
+            }
+            s.notice(format!("still downloading {}", job.subject()));
+        })
+        .open(cx);
 }
 
 /// One honest line for a remote read that is not ready.
@@ -722,6 +1105,15 @@ pub fn install_notes(engine: &EngineRow, host_os: Option<&str>) -> Vec<String> {
         ),
         _ => {}
     }
+    if engine.install.needs_admin == Some(true) {
+        out.push(
+            engine
+                .install
+                .admin_reason
+                .clone()
+                .unwrap_or_else(|| "one step needs an administrator; you are asked first".into()),
+        );
+    }
     if let Some(n) = &engine.install.notes {
         out.push(n.clone());
     }
@@ -748,6 +1140,9 @@ pub fn confirm_install(cx: Scope, sctx: &ScreensCtx, engine: &EngineRow, host_os
     ];
     for n in install_notes(engine, host_os) {
         body_lines.push((format!("note      {n}"), true));
+    }
+    if !engine.install.steps.is_empty() {
+        body_lines.push((format!("steps     {}", engine.install.steps.join(" · ")), false));
     }
     let width = body_lines
         .iter()
@@ -783,6 +1178,110 @@ pub fn confirm_install(cx: Scope, sctx: &ScreensCtx, engine: &EngineRow, host_os
                     _ => sctx2.notice("install cancelled — nothing ran"),
                 }
             }
+        })
+        .open(cx);
+}
+
+/// `i` on an APP engine (Ollama / LM Studio on macOS) over a backend
+/// that can choose the location: the web console's two real choices.
+/// The two plans are asked for (two dry runs, nothing runs) while the
+/// question is open, and the body says where each lands and whether an
+/// administrator is needed — before anything is picked. Default: cancel.
+pub fn confirm_install_location(cx: Scope, sctx: &ScreensCtx, engine: &EngineRow) {
+    sctx.load_plans(&engine.id);
+    let store = sctx.store;
+    let theme = use_theme(cx);
+    let id = engine.id.clone();
+    let name = engine.name.clone();
+    let body_id = id.clone();
+    let body_name = name.clone();
+    let host = sctx.host_label.clone();
+    let prompt = ChoicePrompt::new(format!("Install {name} on {host}?"))
+        .body(move |_mcx| {
+            let (id, name) = (body_id.clone(), body_name.clone());
+            dyn_view(LayoutStyle::column(), move || {
+                let t = theme.get().tokens;
+                let plans = store.plans.with(|m| m.get(&id).cloned());
+                let mut col = Element::new().style(LayoutStyle::column());
+                match plans {
+                    Some(Remote::Ready(p)) => {
+                        let user = p.user.target.clone().unwrap_or_else(|| "~/Applications".into());
+                        let sys = p.system.target.clone().unwrap_or_else(|| "/Applications".into());
+                        col = col
+                            .child(line(vec![
+                                span_bold("just for you  ", t.text),
+                                span(user, t.text),
+                            ]))
+                            .child(line(vec![span(
+                                if p.user.needs_admin {
+                                    "              an administrator is needed".to_string()
+                                } else {
+                                    "              only your account sees it, no password".to_string()
+                                },
+                                if p.user.needs_admin { t.warn } else { t.text_muted },
+                            )]))
+                            .child(line(vec![
+                                span_bold("all users     ", t.text),
+                                span(sys, t.text),
+                            ]))
+                            .child(line(vec![span(
+                                if p.system.needs_admin {
+                                    format!(
+                                        "              administrator: {}",
+                                        p.system.admin_reason.clone().unwrap_or_else(|| {
+                                            "this account cannot write there; a password is asked first".into()
+                                        })
+                                    )
+                                } else {
+                                    "              no password needed".to_string()
+                                },
+                                if p.system.needs_admin { t.warn } else { t.text_muted },
+                            )]));
+                    }
+                    Some(Remote::Failed(e)) => {
+                        col = col
+                            .child(line(vec![span(
+                                format!("could not check the install locations: {}", e.message),
+                                t.warn,
+                            )]))
+                            .child(line(vec![span(
+                                "\"Let the host decide\" still works: /Applications when writable, else ~/Applications",
+                                t.text_muted,
+                            )]));
+                    }
+                    _ => {
+                        col = col.child(line(vec![span(
+                            format!("⟳ checking where {name} can go on this host…"),
+                            t.info,
+                        )]));
+                    }
+                }
+                col.build()
+            })
+        })
+        .body_rows(4)
+        .body_width(90)
+        .option_with(ChoiceOption::new("user", "Install just for you"))
+        .option_with(ChoiceOption::new("system", "Install for all users").danger(true))
+        .option("auto", "Let the host decide")
+        .option("cancel", "Cancel")
+        .initial("cancel");
+    let s = sctx.clone();
+    prompt
+        .on_resolve(move |outcome| {
+            if let ChoiceOutcome::Answered(ans) = outcome {
+                let at = match ans.selected.first().map(String::as_str) {
+                    Some("user") => Some(InstallLocation::User),
+                    Some("system") => Some(InstallLocation::System),
+                    Some("auto") => Some(InstallLocation::Auto),
+                    _ => None,
+                };
+                if let Some(loc) = at {
+                    s.install_at(&id, false, loc);
+                    return;
+                }
+            }
+            s.notice("install cancelled — nothing ran");
         })
         .open(cx);
 }

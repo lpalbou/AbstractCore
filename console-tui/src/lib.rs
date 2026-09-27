@@ -22,7 +22,10 @@ pub use screens::{
     catalog, engines, schedule_job_poll, spawn_worker, JobPoll, Remote, ScreenCmd, ScreensCtx,
     ScreensOptions, ScreensStore,
 };
-pub use transport::{CliTransport, ConsoleTransport, TransportError, TransportErrorKind};
+pub use transport::{
+    CliTransport, ConsoleTransport, InstallLocation, ServerAction, TransportCaps, TransportError,
+    TransportErrorKind,
+};
 
 use std::cell::RefCell;
 use std::rc::Rc;
