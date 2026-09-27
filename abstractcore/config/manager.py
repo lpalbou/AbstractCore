@@ -1599,7 +1599,11 @@ class ConfigurationManager:
         )
         applied: list = []
         for row in plan:
-            if row["changed"] and not dry_run:
+            if row["changed"] and not dry_run and row["action"] == "cleared":
+                # `force` and nothing on this host runs: neither the stored
+                # route nor any recommendation. The broken route goes, whole.
+                self.clear_capability_default(row["key"])
+            elif row["changed"] and not dry_run:
                 self.update_capability_default(
                     row["key"],
                     provider=row["recommended"].get("provider"),
@@ -1617,16 +1621,22 @@ class ConfigurationManager:
             # Recommended routes whose engine cannot run on this host (each row
             # carries its `reason`); never written.
             "unavailable": sum(1 for row in applied if row["action"] == "unavailable"),
+            # Configured routes this host cannot run, removed by `force`
+            # because nothing recommended runs here either.
+            "cleared": sum(1 for row in applied if row["action"] == "cleared"),
             "routes": applied,
         }
 
     def list_capability_defaults(self) -> list[Dict[str, Any]]:
         """Return all known capability routes with explicit persisted defaults."""
-        from .capability_defaults import recommended_unavailable_routes
+        from .capability_defaults import configured_routes_unavailable, recommended_unavailable_routes
 
         # An UNSET row whose recommendation this host cannot run says why
         # (`recommendation_unavailable`), so the grid reads "not configured:
-        # MLX-Gen needs Apple silicon" instead of a bare gap.
+        # MLX-Gen needs Apple silicon" instead of a bare gap. A CONFIGURED row
+        # this host cannot run says so too (`route_unavailable`, same shape):
+        # an install seeded before the host-aware recommendation still holds
+        # `output.image: mlx-gen/...` on Linux, and it must not read as fine.
         unavailable = recommended_unavailable_routes()
         rows: list[Dict[str, Any]] = []
         for spec in iter_capability_default_specs():
@@ -1654,6 +1664,15 @@ class ConfigurationManager:
             if spec.key in unavailable and not row["configured"]:
                 row["recommendation_unavailable"] = dict(unavailable[spec.key])
             rows.append(row)
+        broken = configured_routes_unavailable(
+            {row["key"]: row for row in rows if row["configured"] and not row.get("derived_from")}
+        )
+        for row in rows:
+            # A derived row (`output.text` <- `input.text`) is the same route.
+            source_key = row.get("derived_from") if row["configured"] else None
+            flag = broken.get(row["key"]) or (broken.get(source_key) if source_key else None)
+            if flag:
+                row["route_unavailable"] = dict(flag)
         return self._decorate_route_hierarchy(rows)
 
     @staticmethod

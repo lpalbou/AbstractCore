@@ -261,9 +261,11 @@ def recommended_text_model(
       model      the id the route stores (the served id; for MLX the repo id)
       options    route options: the portable route's MTP policy
                  (`speculation`), overlaid with the artifact's own options
-      basis      `apple_silicon_tiers`, `portable_default`, or
+      basis      `apple_silicon_tiers`, `portable_default`,
                  `portable_engine_fallback` (the portable engine has no build
-                 on this host, e.g. LM Studio on an Intel Mac)
+                 on this host, e.g. LM Studio on an Intel Mac), or
+                 `no_supported_engine` (neither has one, e.g. FreeBSD: the
+                 portable pick, which the routes report unavailable)
       tier       the rule that chose it (`24 <= memory < 128 GiB`; for the
                  engine fallback, why the portable engine was skipped)
       fit        the catalog's fit block for this artifact on this host
@@ -309,8 +311,24 @@ def recommended_text_model(
         portable = _portable_text_default()
         row_id = _portable_text_row_id()
         unsupported = recommended_route_unavailable_reason(portable["provider"], profile)
-        if unsupported:
-            fallback = _PORTABLE_TEXT_ENGINE_FALLBACK
+        fallback = _PORTABLE_TEXT_ENGINE_FALLBACK
+        fallback_unsupported = (
+            recommended_route_unavailable_reason(fallback["provider"], profile) if unsupported else None
+        )
+        if unsupported and fallback_unsupported:
+            # Neither engine runs here (FreeBSD, a 32-bit ARM board, ...): the
+            # pick stays the portable one and says why, and the route layer
+            # reports input.text unavailable with LM Studio's reason -- never a
+            # fallback that cannot run either.
+            row, art = _seed_row_and_artifact(row_id, portable["provider"], portable["artifact"])
+            out = dict(
+                portable,
+                catalog_id=row_id,
+                basis="no_supported_engine",
+                tier=f"{unsupported}; {fallback_unsupported}",
+                mtp=False,
+            )
+        elif unsupported:
             row, art = _seed_row_and_artifact(row_id, fallback["provider"], fallback["artifact"])
             out = {
                 "provider": fallback["provider"],
@@ -1396,7 +1414,9 @@ def catalog(
                 "capabilities": caps,
                 "source": "curated",
                 "tags": list(seed_row.get("tags") or []),
-                "starter": (seed_row["id"] == text_pick["catalog_id"]) if seed_row["id"] in text_rows else (bool(seed_row.get("starter")) and seed_row["id"] not in unavailable_starter_rows),
+                # No text engine runs here (`no_supported_engine`): no text
+                # starter either, like every other row this host cannot run.
+                "starter": (seed_row["id"] == text_pick["catalog_id"] and text_pick["basis"] != "no_supported_engine") if seed_row["id"] in text_rows else (bool(seed_row.get("starter")) and seed_row["id"] not in unavailable_starter_rows),
                 "notes": seed_row.get("notes"),
                 "artifacts": arts,
             }

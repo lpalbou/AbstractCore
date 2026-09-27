@@ -55,6 +55,10 @@ no `pip` (a `uv` virtual environment), the plan uses
 `uv pip install --python <this interpreter> ...` instead. The plan block also lists
 `alternatives`, `requires_admin`, `url` and human `notes`.
 
+Ollama and LM Studio publish builds for x86_64 and arm64 only (LM Studio on macOS: Apple silicon
+only). On any other architecture (a 32-bit ARM board, RISC-V) or operating system (FreeBSD) the
+plan is `available: false` and its `notes` give the reason.
+
 ## Installing
 
 ```bash

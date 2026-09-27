@@ -186,17 +186,54 @@ def _pip_argv(packages: List[str], extra: Optional[List[str]] = None, *, prefer_
 # ---------------------------------------------------------------------------
 
 
+# Published builds per (os, arch), from each vendor's own installer or package
+# index (checked 2026-09-27). `arch` is `host_profile.normalize_arch` output.
+#   LM Studio   lmstudio.ai/install.sh (llmster 0.0.25-1) maps Linux x86_64 ->
+#               linux-x64, Linux aarch64/arm64 -> linux-arm64, Darwin arm64 ->
+#               darwin-arm64 and refuses anything else; its darwin-x64 artifact
+#               404s (no Intel-Mac build). lmstudio.ai/install.ps1 accepts
+#               AMD64 and ARM64 only.
+#   Ollama      ollama.com/install.sh refuses every Linux arch but x86_64 and
+#               aarch64/arm64; the GitHub release (v0.34.4) ships
+#               linux-amd64/arm64, windows-amd64/arm64 and a universal darwin
+#               build.
+#   ONNX Rt.    PyPI onnxruntime: manylinux x86_64/aarch64, win_amd64/arm64,
+#               macOS arm64, and macOS x86_64 up to 1.23.2 (inside the
+#               `>=1.19.0` floor abstractvoice's Supertonic extras declare).
+_BUILD_ARCHES: Dict[str, Dict[str, Tuple[str, ...]]] = {
+    "lmstudio": {"darwin": ("arm64",), "linux": ("x86_64", "arm64"), "windows": ("x86_64", "arm64")},
+    "ollama": {"darwin": ("arm64", "x86_64"), "linux": ("x86_64", "arm64"), "windows": ("x86_64", "arm64")},
+    "onnxruntime": {"darwin": ("arm64", "x86_64"), "linux": ("x86_64", "arm64"), "windows": ("x86_64", "arm64")},
+}
+_BUILD_NAMES = {"lmstudio": "LM Studio", "ollama": "Ollama", "onnxruntime": "ONNX Runtime"}
+
+
+def _build_support(engine: str, os_id: str, arch: str) -> Tuple[bool, Optional[str]]:
+    name = _BUILD_NAMES[engine]
+    arches = _BUILD_ARCHES[engine].get(os_id)
+    if arches is None:
+        return False, f"{name} has no build for {os_id}"
+    if arch in arches:
+        return True, None
+    if engine == "lmstudio" and os_id == "darwin":
+        return False, "LM Studio on macOS requires Apple Silicon (arm64) and macOS 14+"
+    return False, f"{name} has no {os_id} build for {arch} (only {', '.join(arches)})"
+
+
 def _support(engine: str, os_id: str, arch: str, accelerator: Optional[str]) -> Tuple[bool, Optional[str]]:
+    """Whether `engine` has a build for this host, and why not.
+
+    `onnxruntime` is not an installable engine row (no `ENGINE_IDS` entry): it
+    is the runtime under abstractvoice's Supertonic voice, kept in this ONE
+    matrix so every host-support answer comes from the same place.
+    """
+
     if engine == "mlx":
         if os_id == "darwin" and arch == "arm64":
             return True, None
         return False, "MLX runs only on Apple Silicon Macs (macOS, arm64)"
-    if engine == "lmstudio":
-        if os_id == "darwin" and arch != "arm64":
-            return False, "LM Studio on macOS requires Apple Silicon (arm64) and macOS 14+"
-        if os_id in {"darwin", "linux", "windows"}:
-            return True, None
-        return False, f"LM Studio has no build for {os_id}"
+    if engine in _BUILD_ARCHES:
+        return _build_support(engine, os_id, arch)
     if engine == "vllm":
         if os_id == "linux" and accelerator == "cuda":
             return True, None
@@ -204,10 +241,10 @@ def _support(engine: str, os_id: str, arch: str, accelerator: Optional[str]) -> 
             "vLLM runs on Linux with an NVIDIA GPU (CUDA); on this host use a remote vLLM server "
             "through VLLM_BASE_URL instead"
         )
-    if engine in {"ollama", "llamacpp", "huggingface"}:
+    if engine in {"llamacpp", "huggingface"}:
         if os_id in {"darwin", "linux", "windows"}:
             return True, None
-        return False, f"no supported build for {os_id}"
+        return False, f"{_ENGINE_META[engine]['name']} has no supported build for {os_id}"
     return False, f"unknown engine {engine!r}"
 
 

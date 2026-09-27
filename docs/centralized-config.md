@@ -116,10 +116,14 @@ runs there:
 | host | `input.text` | `output.voice` | `output.image` | `output.video` |
 | --- | --- | --- | --- | --- |
 | Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (about 96 GiB of unified memory or more), else unset |
-| Linux, Windows | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
+| Linux, Windows (x86_64, arm64) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
 | Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset | unset |
+| anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset |
 
-Supertonic runs on ONNX Runtime on the CPU, so it works on every desktop OS.
+Supertonic runs on ONNX Runtime on the CPU, which has builds for x86_64 and
+arm64 on Linux and Windows, and for macOS. Where neither LM Studio nor Ollama
+has a build, the text route stays unset too, and the reason says to use a
+cloud provider or a text server on another machine.
 MLX-Gen needs Apple silicon. On other hosts the image route stays unset, and
 the grid (`recommendation_unavailable`) and `apply-recommended` (action
 `unavailable`) both give the reason. Set it to an image engine the host can
@@ -131,6 +135,16 @@ generates at AbstractVision's default 1280x704 canvas (a measured figure, not
 its 16.9 GiB file size). AbstractFramework has no local video engine off Apple
 silicon today, so elsewhere the reason names the remaining option: an
 OpenAI-compatible video endpoint through AbstractVision.
+A route that is already configured but cannot run on this host — an
+`mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
+example `output.image: mlx-gen/...` kept from an install made before these
+defaults were host-aware — carries `route_unavailable: {provider, model,
+reason}` in the grid, and `abstractcore config defaults` prints it on the row.
+`apply-recommended` keeps it and flags it; `apply-recommended --force` replaces
+it with this host's recommendation, or removes it (action `cleared`) where
+nothing recommended runs here. Routes to a server (LM Studio, Ollama,
+OpenAI-compatible) and cloud routes are never flagged: the server may be on
+another machine.
 The defaults are ordinary routes — change or clear them with the commands below, and any
 provider or model supplied on a request always wins. The seed is written only
 when no configuration file exists yet; clearing a route is permanent, and a

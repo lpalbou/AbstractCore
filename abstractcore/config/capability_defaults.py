@@ -361,21 +361,37 @@ RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
 # pick.
 
 
-# Where the engine behind each RECOMMENDED provider runs. A provider the
-# recommendation names but this table does not know raises: a silent "runs
-# everywhere" default is exactly how an Apple-only engine reached Linux hosts.
-#   mlx         MLX (Metal): Apple silicon only -- the engines support matrix
-#               (the Apple text tiers name it).
+# Where the engine behind each RECOMMENDED provider runs: the key into the ONE
+# host-support matrix (`engines._support`, which cites each vendor's builds).
+# A provider the recommendation names but this table does not know raises: a
+# silent "runs everywhere" default is exactly how an Apple-only engine reached
+# Linux hosts.
+#   mlx         MLX (Metal): Apple silicon only.
 #   mlx-gen     MLX-Gen runs on MLX: Apple silicon only, same rule.
-#   lmstudio    LM Studio: no Intel-Mac build -- the engines support matrix.
-#   ollama      Ollama: macOS, Linux, Windows -- the engines support matrix.
+#   lmstudio    LM Studio: x86_64/arm64 Linux and Windows, Apple-silicon macOS.
+#   ollama      Ollama: x86_64/arm64 Linux and Windows, macOS.
 #   supertonic  abstractvoice's Supertonic 3 runtime is ONNX Runtime on
-#               `CPUExecutionProvider` (abstractvoice/supertonic/runtime.py);
-#               onnxruntime publishes CPU wheels for Linux x86_64/aarch64,
-#               Windows amd64/arm64 and macOS arm64, and macOS x86_64 up to
-#               1.23.2 (the extra's floor is >=1.19.0). Runs on every desktop OS.
-_RECOMMENDED_PROVIDER_ENGINE = {"mlx": "mlx", "mlx-gen": "mlx", "lmstudio": "lmstudio", "ollama": "ollama"}
-_CPU_PORTABLE_PROVIDERS = {"supertonic": "Supertonic (ONNX Runtime, CPU)"}
+#               `CPUExecutionProvider` (abstractvoice/supertonic/runtime.py):
+#               x86_64/arm64 Linux and Windows, macOS.
+_RECOMMENDED_PROVIDER_ENGINE = {
+    "mlx": "mlx",
+    "mlx-gen": "mlx",
+    "lmstudio": "lmstudio",
+    "ollama": "ollama",
+    "supertonic": "onnxruntime",
+}
+# How a provider that runs ON another engine words the engine's refusal.
+_ENGINE_VIA = {"supertonic": "Supertonic voice runs on ONNX Runtime (CPU), and "}
+
+# CONFIGURED routes whose engine runs INSIDE this process (AbstractCore's MLX
+# provider, AbstractVision's MLX-Gen, AbstractVoice's Supertonic): such a route
+# can only run on this computer, so a host without the engine makes it fail at
+# first use, and every grid flags it (`route_unavailable`). Server providers
+# (LM Studio, Ollama, vLLM, OpenAI-compatible) are deliberately absent: their
+# route may address a server on another machine (a route or provider-profile
+# `base_url`), so this host's builds say nothing about whether it runs. Cloud
+# providers run anywhere.
+_IN_PROCESS_PROVIDERS = frozenset({"mlx", "mlx-gen", "supertonic"})
 
 # What an operator can do instead, per route, appended to the reason. Provider
 # ids are abstractvision's own (`diffusers`, `sdcpp`); the curated catalog has
@@ -394,6 +410,14 @@ _VIDEO_NO_LOCAL_ENGINE = (
     "(abstractvision openai-compatible backend)"
 )
 _UNAVAILABLE_NEXT_STEP = {
+    # Holds by construction: the text pick is LM Studio's build only where LM
+    # Studio runs or where Ollama does not run either
+    # (`model_catalog.recommended_text_model`, basis `no_supported_engine`).
+    "input.text": (
+        "no local text engine AbstractFramework recommends (LM Studio, Ollama) runs on this host; set "
+        "input.text to a cloud provider or to a text server on another machine (lmstudio, ollama or "
+        "openai-compatible, with its base_url)"
+    ),
     "output.image": (
         "set output.image to an image engine this host runs: diffusers (install profile gpu), "
         "sdcpp (stable-diffusion.cpp, optional extra) or a cloud image provider"
@@ -413,7 +437,6 @@ _TOO_LARGE_NEXT_STEP = {
 _FIT_GATED_ROUTES = frozenset({"output.video"})
 # What each mlx-gen route generates, for the reason sentence.
 _MLX_GEN_WORK = {"output.image": "image generation", "output.video": "video generation"}
-_DESKTOP_OSES = ("darwin", "linux", "windows")
 
 
 def _host_platform(host: Mapping[str, Any]) -> Tuple[str, str, Optional[str]]:
@@ -440,10 +463,6 @@ def recommended_route_unavailable_reason(
 
     pid = str(provider or "").strip().lower()
     os_id, arch, accelerator = _host_platform(host)
-    if pid in _CPU_PORTABLE_PROVIDERS:
-        if os_id in _DESKTOP_OSES:
-            return None
-        return f"{_CPU_PORTABLE_PROVIDERS[pid]} has no supported build for {os_id}"
     engine = _RECOMMENDED_PROVIDER_ENGINE.get(pid)
     if engine is None:
         raise ValueError(f"recommended provider {provider!r} has no host-support rule")
@@ -451,9 +470,12 @@ def recommended_route_unavailable_reason(
     if ok:
         return None
     if pid == "mlx-gen":
-        work = _MLX_GEN_WORK.get(str(key or ""), "image generation")
+        route_key = str(key or "")
+        work = _MLX_GEN_WORK.get(route_key) or _MLX_GEN_WORK.get(
+            capability_route_broad_key(route_key) or "", "image generation"
+        )
         return f"MLX-Gen {work} needs MLX, and {reason}"
-    return reason
+    return f"{_ENGINE_VIA.get(pid, '')}{reason}"
 
 
 def _gib_text(value: Any) -> str:
@@ -557,6 +579,59 @@ def recommended_unavailable_routes(host: Optional[Mapping[str, Any]] = None) -> 
     }
 
 
+def _recommended_key_for(key: str) -> Optional[str]:
+    """The recommended row that answers `key`: itself, or its modality cell."""
+
+    if key in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES:
+        return key
+    broad = capability_route_broad_key(key)
+    return broad if broad in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES else None
+
+
+def configured_routes_unavailable(
+    routes: Mapping[str, Any], host: Optional[Mapping[str, Any]] = None
+) -> Dict[str, Dict[str, str]]:
+    """CONFIGURED routes this host cannot run: `{key: {provider, model, reason}}`.
+
+    The shape of `recommended_unavailable_routes`, for what the operator (or an
+    older seed) actually stored. Only in-process providers are judged
+    (`_IN_PROCESS_PROVIDERS`); a route to a server or a cloud API may run from
+    here whatever this host's builds. The reason ends with what to do: the
+    host's own recommendation for that row when it has one, otherwise the
+    row's next step (image/video: the engines that do run here).
+
+    Field report behind it (2026-09-27): Linux, Windows and Intel-Mac installs
+    seeded before the host-aware recommendation still carry
+    `output.image: mlx-gen/...`, which fails at first use and read as fine.
+    """
+
+    judged: Dict[str, Tuple[str, str]] = {}
+    for key, value in routes.items():
+        route = clean_capability_route_default(value)
+        provider = str(route.provider or "").strip()
+        if provider.lower() in _IN_PROCESS_PROVIDERS:
+            judged[str(key)] = (provider, str(route.model or ""))
+    if not judged:
+        return {}
+    profile = _host_or_probe(host)
+    out: Dict[str, Dict[str, str]] = {}
+    recommended: Optional[Dict[str, CapabilityRouteDefault]] = None
+    for key, (provider, model) in judged.items():
+        reason = recommended_route_unavailable_reason(provider, profile, key)
+        if not reason:
+            continue
+        if recommended is None:
+            recommended = recommended_capability_default_routes(profile)
+        rec_key = _recommended_key_for(key)
+        pick = recommended.get(rec_key) if rec_key else None
+        if pick is not None:
+            reason = f"{reason}; this computer's recommended route is {pick.provider}/{pick.model}"
+        elif rec_key in _UNAVAILABLE_NEXT_STEP:
+            reason = f"{reason}; {_UNAVAILABLE_NEXT_STEP[rec_key]}"
+        out[key] = {"provider": provider, "model": model, "reason": reason}
+    return out
+
+
 def recommended_capability_default_routes(
     host: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, CapabilityRouteDefault]:
@@ -624,6 +699,14 @@ def plan_recommended_capability_defaults(
       `kept`       the operator configured something else -> UNTOUCHED unless
                    `force`, and reported so they can see what was skipped
       `overwrite`  `force`, and the operator's provider/model is replaced
+      `unavailable` nothing recommended runs on this host (`reason`); a
+                   configured route is kept
+      `cleared`    `force`, nothing recommended runs here, AND the configured
+                   route cannot run here either: it is removed, whole
+
+    A configured route this host cannot run (`configured_routes_unavailable`)
+    also carries `route_unavailable: {provider, model, reason}` on its entry,
+    whatever the action, so a broken route is never reported as fine.
 
     FIELD-PRESERVING like every other writer here: only `provider` and `model`
     come from the recommendation. A pinned `base_url`, a reasoning effort and
@@ -650,6 +733,9 @@ def plan_recommended_capability_defaults(
     recommended_routes = recommended_capability_default_routes(profile)
     recommended_downloads = recommended_model_downloads(profile)
     unavailable = recommended_unavailable_routes(profile)
+    broken = configured_routes_unavailable(
+        {key: routes[key] for key in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES if key in routes}, profile
+    )
     plan: list = []
     for key in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES:
         if wanted is not None and key not in wanted:
@@ -657,21 +743,25 @@ def plan_recommended_capability_defaults(
         current = routes.get(key)
         before = current.to_dict() if isinstance(current, CapabilityRouteDefault) else {}
         if key in unavailable:
-            # Nothing this host can run: never written, never overwritten
-            # (not even with `force`), and said out loud with the reason.
-            plan.append(
-                {
-                    "key": key,
-                    "selector": recommended_selector_for_route(key),
-                    "action": "unavailable",
-                    "changed": False,
-                    "recommended": {},
-                    "before": before,
-                    "after": dict(before),
-                    "download": {},
-                    "reason": unavailable[key]["reason"],
-                }
-            )
+            # Nothing this host can run is recommended: never written. A route
+            # the operator configured is kept (not even `force` replaces a
+            # working choice with nothing) -- unless it cannot run here either:
+            # then `force` clears it, and without `force` it is flagged.
+            cleared = force and key in broken
+            entry = {
+                "key": key,
+                "selector": recommended_selector_for_route(key),
+                "action": "cleared" if cleared else "unavailable",
+                "changed": cleared,
+                "recommended": {},
+                "before": before,
+                "after": {} if cleared else dict(before),
+                "download": {},
+                "reason": unavailable[key]["reason"],
+            }
+            if key in broken:
+                entry["route_unavailable"] = dict(broken[key])
+            plan.append(entry)
             continue
         recommended = recommended_routes[key]
         configured = bool(before.get("provider") or before.get("model"))
@@ -703,6 +793,10 @@ def plan_recommended_capability_defaults(
                 "before": before,
                 "after": after,
                 "download": dict(recommended_downloads.get(key, {})),
+                # The configured route cannot run on this host: `kept` rows
+                # say so (only `force` replaces them), `overwrite` rows say
+                # what was fixed.
+                **({"route_unavailable": dict(broken[key])} if key in broken else {}),
             }
         )
     return tuple(plan)
