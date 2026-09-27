@@ -915,6 +915,110 @@ mod tests {
         assert_eq!(done.outcome_line(), "✓ download ollama qwen3:8b completed");
     }
 
+    /// The gateway's `engine_install_job_v1` snapshot of Ollama on Linux
+    /// as a non-root user (engines_install.py: manual sudo, recheck).
+    fn paused_ollama() -> Value {
+        json!({
+            "schema": "host_job_v1", "engine_job_schema": "engine_install_job_v1",
+            "job_id": "ei_7", "kind": "engine_install", "engine": "ollama",
+            "engine_name": "Ollama", "state": "needs_admin", "status": "running",
+            "percent": 10.0, "bytes_done": 5, "bytes_total": 50,
+            "message": "Ollama's Linux installer writes /usr/local … Press \"I ran it -- re-check\" to continue.",
+            "admin_prompt": {"key": "ollama-linux-script", "reason": "needs root",
+                             "command": "sudo sh -c 'curl -fsSL https://ollama.com/install.sh | sh'",
+                             "method": "manual", "button": "I ran it -- re-check",
+                             "where": "a terminal on the gateway host"},
+            "tools_prompt": null, "continue_actions": ["recheck"],
+            "error": null, "can_cancel": true
+        })
+    }
+
+    #[test]
+    fn a_paused_install_is_active_paused_and_names_its_command() {
+        let j = JobView::from_value(&paused_ollama());
+        assert!(j.is_active(), "status stays running while paused");
+        assert!(j.is_paused());
+        assert_eq!(j.paused_label(), Some("needs an administrator"));
+        assert_eq!(
+            j.copyable_command(),
+            Some("sudo sh -c 'curl -fsSL https://ollama.com/install.sh | sh'")
+        );
+        assert_eq!(j.continue_actions, vec!["recheck"]);
+        assert_eq!(j.admin_prompt.as_ref().unwrap().where_.as_deref(), Some("a terminal on the gateway host"));
+        // Engine jobs count bytes as bytes_done/bytes_total.
+        assert_eq!(j.fraction(), Some(0.1));
+        assert!(j.outcome_line().starts_with("⏸ install ollama needs an administrator"), "{}", j.outcome_line());
+        // The same job running again is not paused.
+        let mut v = paused_ollama();
+        v["state"] = json!("installing");
+        let j = JobView::from_value(&v);
+        assert!(j.is_active() && !j.is_paused() && j.copyable_command().is_none());
+        // An engine job's error object reads as its message.
+        v["status"] = json!("failed");
+        v["error"] = json!({"code": "checksum_mismatch", "message": "bad sha"});
+        assert_eq!(JobView::from_value(&v).error.as_deref(), Some("bad sha"));
+    }
+
+    #[test]
+    fn downloads_feed_flattens_groups_and_reads_the_job_alias() {
+        let v = json!({"ok": true, "jobs": [
+            {"job": "grp_1", "kind": "download_group", "status": "running",
+             "children": [{"job_id": "dl_a", "kind": "download", "status": "running",
+                           "provider": "ollama", "artifact": "qwen3:8b"}]},
+            {"job": "dl_old", "kind": "download", "status": "completed",
+             "provider": "huggingface", "artifact": "x/y", "ended_reason": "done"},
+            {"kind": "download"}
+        ]});
+        let jobs = download_jobs_from_value(&v);
+        let ids: Vec<&str> = jobs.iter().map(|j| j.job_id.as_str()).collect();
+        assert_eq!(ids, vec!["grp_1", "dl_a", "dl_old"]);
+        assert_eq!(jobs[0].verb(), "download all");
+        assert_eq!(jobs[1].parent_job.as_deref(), Some("grp_1"));
+    }
+
+    #[test]
+    fn text_default_and_served_ids_follow_the_route_rules() {
+        let doc = json!({"routes": [
+            {"key": "input.text", "provider": "mlx", "model": "a"},
+            {"key": "output.text", "provider": "lmstudio", "model": "qwen/qwen3-8b"}
+        ]});
+        assert_eq!(
+            text_default_from_value(&doc),
+            Some(("lmstudio".into(), "qwen/qwen3-8b".into()))
+        );
+        assert_eq!(text_default_from_value(&json!({"routes": [{"key": "output.text"}]})), None);
+        assert_eq!(served_model_id("lmstudio", "qwen/qwen3-8b@4bit"), "qwen/qwen3-8b");
+        assert_eq!(served_model_id("ollama", "qwen3:8b"), "qwen3:8b");
+        assert_eq!(served_model_id("mlx", "a@b"), "a@b");
+    }
+
+    #[test]
+    fn v2_engine_rows_carry_actions_active_jobs_and_location_plans() {
+        let e = EngineRow::from_value(&json!({
+            "id": "ollama", "installed": true, "running": false,
+            "install": {"available": true, "method": "app", "needs_admin": true,
+                        "admin_reason": "not writable", "steps": ["a", "b"],
+                        "target": "/Applications/Ollama.app"},
+            "actions": [{"id": "start", "label": "Start", "enabled": false,
+                         "reason": "Only an administrator can install engines."},
+                        {"id": "docs", "enabled": true, "url": "https://docs.ollama.com"}],
+            "active_job": {"job_id": "ei_7", "state": "needs_admin", "percent": 10.0}
+        }));
+        assert!(e.is_app_install());
+        assert_eq!(e.install.needs_admin, Some(true));
+        assert_eq!(e.install.steps, vec!["a", "b"]);
+        let start = e.action("start").unwrap();
+        assert!(!start.enabled && start.reason.as_deref().unwrap().contains("administrator"));
+        assert!(e.action("stop").is_none());
+        assert_eq!(e.active_job.as_ref().unwrap().job_id, "ei_7");
+        // Contract B (the CLI): no action list at all, nothing gated.
+        assert!(EngineRow::from_value(&json!({"id": "mlx"})).actions.is_none());
+        let plan = LocationPlan::from_dry_run(&json!({"plan": {"target": "/Applications/Ollama.app",
+            "needs_admin": true, "admin_reason": "not writable"}})).unwrap();
+        assert!(plan.needs_admin);
+        assert!(LocationPlan::from_dry_run(&json!({"status": "completed"})).is_none());
+    }
+
     #[test]
     fn missing_fields_are_unknown_not_guessed() {
         let e = EngineRow::from_value(&json!({"id": "vllm", "supported_on_host": false}));

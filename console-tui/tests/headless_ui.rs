@@ -41,6 +41,22 @@ fn harness() -> Harness {
 }
 
 fn harness_sized(size: Size) -> Harness {
+    harness_with(size, MockTransport::default())
+}
+
+/// A harness whose Models/Engines backend implements every optional
+/// verb (the gateway's shape).
+fn harness_full() -> Harness {
+    harness_with(
+        Size::new(120, 40),
+        MockTransport {
+            caps: abstractcore_console::transport::TransportCaps::ALL,
+            ..MockTransport::default()
+        },
+    )
+}
+
+fn harness_with(size: Size, mock: MockTransport) -> Harness {
     abstracttui::app::set_theme_by_id("abstract-dark");
     let mut app = App::new(size);
     let overlays = app.overlays();
@@ -50,7 +66,7 @@ fn harness_sized(size: Size) -> Harness {
     let store_out = store_slot.clone();
     let ui_slot: Rc<RefCell<Option<UiState>>> = Rc::new(RefCell::new(None));
     let ui_out = ui_slot.clone();
-    let mock = Arc::new(MockTransport::default());
+    let mock = Arc::new(mock);
     let mock_mount = mock.clone();
     let screens_slot: Rc<RefCell<Option<ScreensStore>>> = Rc::new(RefCell::new(None));
     let screens_out = screens_slot.clone();
@@ -2987,7 +3003,9 @@ fn narrow_routes_grid_keeps_the_discriminating_tail() {
 // transport answering with the contract A–E fixtures.
 // =======================================================================
 
-use abstractcore_console::transport::{ConsoleTransport, TransportError};
+use abstractcore_console::transport::{
+    ConsoleTransport, InstallLocation, ServerAction, TransportCaps, TransportError,
+};
 
 fn fixture(name: &str) -> Value {
     let text = match name {
@@ -3018,6 +3036,16 @@ struct MockTransport {
     downloads: Mutex<u32>,
     /// Every started job by id (a poll answers about ITS subject).
     by_id: Mutex<std::collections::HashMap<String, Value>>,
+    /// Optional verbs this backend claims (default: none, like a bare
+    /// contract-H transport).
+    caps: TransportCaps,
+    /// Jobs whose polls answer this document unchanged (a PAUSED job
+    /// stays paused until someone continues it).
+    held: Mutex<std::collections::HashMap<String, Value>>,
+    /// Replaces the engines fixture when set.
+    engines_doc: Mutex<Option<Value>>,
+    /// The capability-defaults document (`u` writes into it).
+    defaults_doc: Mutex<Value>,
 }
 
 impl MockTransport {
@@ -3068,7 +3096,12 @@ impl ConsoleTransport for MockTransport {
     }
     fn engines_status(&self, probe: bool) -> Result<Value, TransportError> {
         self.record(format!("engines_status probe={probe}"));
-        Ok(fixture("engines_status"))
+        Ok(self
+            .engines_doc
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| fixture("engines_status")))
     }
     fn models_catalog(
         &self,
@@ -3162,6 +3195,9 @@ impl ConsoleTransport for MockTransport {
     }
     fn job(&self, id: &str) -> Result<Value, TransportError> {
         self.record(format!("job {id}"));
+        if let Some(doc) = self.held.lock().unwrap().get(id).cloned() {
+            return Ok(doc);
+        }
         let last = self
             .by_id
             .lock()
@@ -3206,6 +3242,138 @@ impl ConsoleTransport for MockTransport {
     fn host_label(&self) -> String {
         "test-host".into()
     }
+    fn capabilities(&self) -> TransportCaps {
+        self.caps
+    }
+    fn models_catalog_hub(
+        &self,
+        q: &str,
+        engine: Option<&str>,
+        fits_only: bool,
+    ) -> Result<Value, TransportError> {
+        self.record(format!("hub q={q} engine={} fits={fits_only}", engine.unwrap_or("-")));
+        let mut c = fixture("model_catalog");
+        let mut row = c["rows"][0].clone();
+        row["id"] = json!("hf-hit");
+        row["display_name"] = json!("Tiny HF Hit");
+        row["source"] = json!("hf_search");
+        row["artifacts"][0]["artifact"] = json!("org/tiny-hit");
+        row["artifacts"][0]["provider"] = json!("huggingface");
+        c["rows"] = json!([row]);
+        c["hub"] = json!({"ok": false, "errors": ["rate limited"]});
+        Ok(c)
+    }
+    fn download_jobs(&self) -> Result<Value, TransportError> {
+        self.record("download_jobs".into());
+        let jobs: Vec<Value> = self
+            .by_id
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|j| j["kind"] == "download")
+            .cloned()
+            .collect();
+        Ok(json!({"jobs": jobs}))
+    }
+    fn capability_defaults(&self) -> Result<Value, TransportError> {
+        self.record("defaults".into());
+        Ok(self.defaults_doc.lock().unwrap().clone())
+    }
+    fn set_text_default(&self, provider: &str, model: &str) -> Result<Value, TransportError> {
+        self.record(format!("set_default {provider} {model}"));
+        let doc = json!({"routes": [{"key": "output.text", "provider": provider, "model": model}]});
+        *self.defaults_doc.lock().unwrap() = doc.clone();
+        Ok(doc)
+    }
+    fn engine_install_at(
+        &self,
+        id: &str,
+        dry_run: bool,
+        location: InstallLocation,
+    ) -> Result<Value, TransportError> {
+        if location == InstallLocation::Auto {
+            return self.engine_install(id, dry_run);
+        }
+        self.record(format!("install {id} dry_run={dry_run} location={}", location.as_str()));
+        if dry_run {
+            let (target, admin) = match location {
+                InstallLocation::System => ("/Applications/Ollama.app", true),
+                _ => ("/Users/me/Applications/Ollama.app", false),
+            };
+            return Ok(json!({"job_id": null, "kind": "engine_install", "engine": id,
+                "dry_run": true, "status": "completed",
+                "plan": {"target": target, "needs_admin": admin,
+                         "admin_reason": if admin { "/Applications is not writable by this account" } else { "" }}}));
+        }
+        self.started(Self::job_doc(
+            "engine_install",
+            "running",
+            json!({"provider": null, "artifact": null, "engine": id, "percent": null,
+                   "location": location.as_str(), "message": "Downloading Ollama"}),
+        ))
+    }
+    fn engine_job_continue(&self, job_id: &str, action: Option<&str>) -> Result<Value, TransportError> {
+        self.record(format!("continue {job_id} {}", action.unwrap_or("-")));
+        let mut doc = self.held.lock().unwrap().remove(job_id).expect("a held job");
+        doc["state"] = json!("installing");
+        doc["admin_prompt"] = Value::Null;
+        doc["continue_actions"] = json!([]);
+        doc["message"] = json!("Continuing");
+        self.by_id.lock().unwrap().insert(job_id.to_string(), doc.clone());
+        Ok(doc)
+    }
+    fn engine_server(&self, id: &str, action: ServerAction) -> Result<Value, TransportError> {
+        self.record(format!("server {id} {}", action.as_str()));
+        Ok(json!({"ok": true, "engine": id, "action": action.as_str(),
+                  "running": action == ServerAction::Start}))
+    }
+}
+
+/// The gateway's paused Ollama install (Linux, not root): state
+/// `needs_admin`, status still `running`, a manual sudo command.
+fn paused_install_doc() -> Value {
+    json!({
+        "schema": "host_job_v1", "job_id": "ei_paused", "kind": "engine_install",
+        "engine": "ollama", "state": "needs_admin", "status": "running", "percent": 10.0,
+        "message": "Ollama's Linux installer needs root.",
+        "admin_prompt": {"command": "sudo sh -c 'curl -fsSL https://ollama.com/install.sh | sh'",
+                         "method": "manual", "button": "I ran it -- re-check",
+                         "where": "a terminal on the gateway host", "reason": "needs root"},
+        "continue_actions": ["recheck"], "provider": null, "artifact": null
+    })
+}
+
+/// The engines fixture with gateway v2 extras on Ollama: an app install,
+/// a Start action, and (optionally) the paused job as its active job.
+fn engines_v2(paused: bool) -> Value {
+    let mut d = fixture("engines_status");
+    for e in d["engines"].as_array_mut().unwrap() {
+        if e["id"] == "ollama" {
+            e["install"]["method"] = json!("app");
+            e["actions"] = json!([{"id": "install", "enabled": true},
+                                  {"id": "docs", "enabled": true}]);
+            if paused {
+                e["active_job"] = json!({"job_id": "ei_paused", "state": "needs_admin"});
+            }
+        }
+        if e["id"] == "mlx" {
+            e["actions"] = json!([{"id": "docs", "enabled": true}]);
+        }
+    }
+    let mut lm = d["engines"][0].clone();
+    lm["id"] = json!("lmstudio");
+    for e in d["engines"].as_array_mut().unwrap() {
+        if e["id"] == "lmstudio" {
+            *e = lm.clone();
+            e["name"] = json!("LM Studio");
+            e["installed"] = json!(true);
+            e["running"] = json!(true);
+            e["actions"] = json!([{"id": "stop", "label": "Stop", "enabled": true}]);
+            e["active_job"] = Value::Null;
+            e["install"]["method"] = json!("app");
+        }
+    }
+    d
 }
 
 impl Harness {
@@ -3706,4 +3874,190 @@ fn downloads_run_in_parallel_and_the_same_artifact_is_not_started_twice() {
     h.turns(1);
     h.key(b"\r");
     h.wait_for_call("the cancel", |calls| calls.iter().any(|c| c == "cancel download_2"));
+}
+
+// ---------------------------------------------------------------------
+// Parity with the web console: optional transport verbs (0.3.0)
+// ---------------------------------------------------------------------
+
+#[test]
+fn a_paused_install_shows_its_command_continues_and_blocks_nothing() {
+    let mut h = harness_full();
+    h.load_fixtures();
+    *h.mock.engines_doc.lock().unwrap() = Some(engines_v2(true));
+    h.mock
+        .held
+        .lock()
+        .unwrap()
+        .insert("ei_paused".into(), paused_install_doc());
+    h.mock
+        .by_id
+        .lock()
+        .unwrap()
+        .insert("ei_paused".into(), paused_install_doc());
+    h.open_engines();
+    // The row's active_job is adopted: the paused state shows, with the
+    // exact command on its own line.
+    h.select_engine("ollama");
+    let s = h.settle_until("the paused install", |s| {
+        s.contains("needs admin") && s.contains("sudo sh -c 'curl -fsSL https://ollama.com/install.sh | sh'")
+    });
+    assert!(s.contains("run this yourself, then press a (re-check)"), "{s}");
+    assert!(s.contains("a terminal on the gateway host"), "{s}");
+    assert!(s.contains("a: Re-check"), "{s}");
+    assert!(h.mock.called("job ei_paused"), "{:?}", h.mock.calls());
+    // y copies the command.
+    h.key(b"y");
+    h.settle_until_contains("copied: sudo sh -c");
+    // The paused install blocks NOTHING else: a download starts at once.
+    h.key(b"9");
+    h.settle_until_contains("Qwen3 8B");
+    h.select_artifact("qwen3:8b");
+    h.key(b"w");
+    h.wait_for_call("a download while the install is paused", |calls| {
+        calls.iter().any(|c| c == "download ollama qwen3:8b")
+    });
+    // …while installing Ollama again says how to go on instead.
+    h.key(b"0");
+    h.settle_until_contains("needs admin");
+    h.select_engine("ollama");
+    h.key(b"i");
+    h.settle_until_contains("a continues it, c cancels it");
+    assert!(!h.mock.called("install ollama"), "{:?}", h.mock.calls());
+    // a = the job's one continue action (recheck), then it finishes.
+    h.key(b"a");
+    h.wait_for_call("the continue", |calls| calls.iter().any(|c| c == "continue ei_paused recheck"));
+    h.settle_until_contains("✓ install ollama completed");
+}
+
+#[test]
+fn start_stop_s_follows_the_row_actions_and_refuses_with_reasons() {
+    let mut h = harness_full();
+    h.load_fixtures();
+    *h.mock.engines_doc.lock().unwrap() = Some(engines_v2(false));
+    h.open_engines();
+    h.select_engine("lmstudio");
+    h.key(b"s");
+    h.settle_until_contains("✓ lmstudio is stopped");
+    assert!(h.mock.called("server lmstudio stop"), "{:?}", h.mock.calls());
+    // The outcome is verified with a fresh PROBING read.
+    h.wait_for_call("the probing re-read", |calls| {
+        let at = calls.iter().position(|c| c == "server lmstudio stop").unwrap();
+        calls[at..].iter().any(|c| c == "engines_status probe=true")
+    });
+    h.select_engine("vllm");
+    h.key(b"s");
+    h.settle_until_contains("does not run on this host");
+    assert_eq!(
+        h.mock.calls().iter().filter(|c| c.starts_with("server")).count(),
+        1
+    );
+}
+
+#[test]
+fn optional_verbs_over_a_bare_transport_say_not_here_never_fake() {
+    let mut h = harness();
+    h.load_fixtures();
+    let s = h.open_models();
+    assert!(s.contains("Hugging Face: not here"), "the footer says so:\n{s}");
+    h.key(b"h");
+    h.settle_until_contains("Hugging Face search is not available over test-host");
+    h.select_artifact("qwen/qwen3-8b@4bit");
+    h.key(b"u");
+    h.settle_until_contains("changing the default text model is not available over test-host");
+    h.open_engines();
+    h.select_engine("ollama");
+    h.key(b"s");
+    h.settle_until_contains("starting or stopping engine servers is not available over test-host");
+    let calls = h.mock.calls();
+    assert!(
+        !calls.iter().any(|c| c.starts_with("hub") || c.starts_with("set_default") || c.starts_with("server") || c == "download_jobs" || c == "defaults"),
+        "no optional verb was called: {calls:?}"
+    );
+}
+
+#[test]
+fn app_engine_install_asks_where_with_the_two_real_plans() {
+    let mut h = harness_full();
+    h.load_fixtures();
+    *h.mock.engines_doc.lock().unwrap() = Some(engines_v2(false));
+    h.open_engines();
+    h.select_engine("ollama");
+    h.key(b"i");
+    let s = h.settle_until("both plans in the question", |s| {
+        s.contains("/Users/me/Applications/Ollama.app") && s.contains("/Applications is not writable")
+    });
+    assert!(s.contains("Install just for you") && s.contains("Install for all users"), "{s}");
+    assert!(h.mock.called("install ollama dry_run=true location=user"));
+    assert!(h.mock.called("install ollama dry_run=true location=system"));
+    // Default = cancel: nothing runs.
+    h.key(b"\r");
+    h.settle_until_contains("install cancelled — nothing ran");
+    assert!(!h.mock.called("install ollama dry_run=false"), "{:?}", h.mock.calls());
+    // "for all users" sends location=system.
+    h.key(b"i");
+    h.turns(2);
+    h.key(b"2");
+    h.turns(1);
+    h.key(b"\r");
+    h.wait_for_call("the located install", |calls| {
+        calls.iter().any(|c| c == "install ollama dry_run=false location=system")
+    });
+}
+
+#[test]
+fn hub_search_h_queries_hugging_face_and_an_empty_query_leaves() {
+    let mut h = harness_full();
+    h.load_fixtures();
+    h.open_models();
+    h.key(b"h");
+    let s = h.turns(2);
+    assert!(s.contains("Search Hugging Face"), "{s}");
+    h.type_text("tiny");
+    h.turns(1);
+    h.key(b"\r");
+    let s = h.settle_until("the hub rows", |s| s.contains("Tiny HF Hit") && !s.contains("Gemma 3 27B"));
+    assert!(s.contains("Hugging Face"), "{s}");
+    assert!(s.contains("answered in part") && s.contains("rate limited"), "{s}");
+    assert!(h.mock.called("hub q=tiny engine=- fits=false"), "{:?}", h.mock.calls());
+    // Empty Enter: back to the curated catalog.
+    h.key(b"h");
+    h.turns(2);
+    h.key(b"\x1b[F");
+    for _ in 0..4 {
+        h.key(&[0x7f]);
+    }
+    h.turns(1);
+    h.key(b"\r");
+    h.settle_until("the catalog back", |s| s.contains("Gemma 3 27B") && s.contains("no filter"));
+}
+
+#[test]
+fn u_makes_an_installed_text_model_the_default_and_verifies_it() {
+    let mut h = harness_full();
+    *h.mock.defaults_doc.lock().unwrap() =
+        json!({"routes": [{"key": "output.text", "provider": "mlx", "model": "other"}]});
+    h.load_fixtures();
+    h.open_models();
+    h.wait_for_call("the defaults read", |calls| calls.iter().any(|c| c == "defaults"));
+    // Not downloaded yet: refused with the reason.
+    h.select_artifact("qwen3:8b");
+    h.key(b"u");
+    h.settle_until_contains("is not downloaded yet");
+    // The installed LM Studio build: the route stores the SERVED id.
+    h.select_artifact("qwen/qwen3-8b@4bit");
+    let s = h.turns(2);
+    assert!(s.contains("u makes it the default text model"), "{s}");
+    h.key(b"u");
+    h.settle_until_contains("✓ default text model: lmstudio · qwen/qwen3-8b");
+    assert!(h.mock.called("set_default lmstudio qwen/qwen3-8b"), "{:?}", h.mock.calls());
+    let s = h.settle_until_contains("default text model");
+    assert!(s.contains("default text lmstudio · qwen/qwen3-8b"), "{s}");
+    // Pressing u again says so instead of rewriting it.
+    h.key(b"u");
+    h.settle_until_contains("is already the default text model");
+    assert_eq!(
+        h.mock.calls().iter().filter(|c| c.starts_with("set_default")).count(),
+        1
+    );
 }

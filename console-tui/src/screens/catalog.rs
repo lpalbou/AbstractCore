@@ -97,19 +97,22 @@ pub fn catalog(cx: Scope, sctx: &ScreensCtx) -> View {
             return line(spans);
         }
         if let (CatalogView::Catalog, Some(h)) = (view, hub.as_ref()) {
-            spans.push(span(format!(" · \"{h}\" · h changes it, empty leaves"), t.text_muted));
-            if let Some(d) = store.catalog.with(|c| c.ready().cloned()) {
-                if d.hub_ok == Some(false) {
-                    let why = if d.hub_errors.is_empty() {
-                        String::new()
+            spans.push(span(format!(" · \"{h}\""), t.text_muted));
+            let partial = store.catalog.with(|c| {
+                c.ready()
+                    .filter(|d| d.hub_ok == Some(false))
+                    .map(|d| d.hub_errors.join("; "))
+            });
+            match partial {
+                Some(why) => spans.push(span(
+                    if why.is_empty() {
+                        " · Hugging Face answered in part: results may be incomplete".to_string()
                     } else {
-                        format!(" ({})", d.hub_errors.join("; "))
-                    };
-                    spans.push(span(
-                        format!(" · Hugging Face answered in part — results may be incomplete{why}"),
-                        t.warn,
-                    ));
-                }
+                        format!(" · Hugging Face answered in part ({why}): results may be incomplete")
+                    },
+                    t.warn,
+                )),
+                None => spans.push(span(" · h changes it, an empty query leaves", t.text_faint)),
             }
             return line(spans);
         }
