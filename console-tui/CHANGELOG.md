@@ -6,6 +6,94 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-27
+
+Terminal-console parity with the gateway's web console for the shared
+**Models** (9) and **Engines** (0) screens. **Breaking** for library
+hosts (the gateway console): see *Migrating from 0.2* below.
+
+### Models and Engines
+
+- **Optional transport verbs** (`TransportCaps`, all off by default,
+  each answering `Unsupported` until a transport opts in): Hugging Face
+  search (`h`), the default text model (`u`), the downloads feed (the
+  Downloads view, `v`), app-engine install location (just me / all
+  users), continuing a paused install (`a`, `y` copies its command) and
+  engine servers (`s` start/stop). The footer says "not here" for a verb
+  the backend lacks.
+- **Downloads run in parallel**; a paused install (`needs_admin` /
+  `needs_tools`) blocks nothing. `c` asks before stopping a download
+  (the web's two-step cancel) and cancels it on the download route
+  (`ConsoleTransport::cancel_download`).
+- **Every download is polled on the download route**
+  (`ConsoleTransport::download_job`, default `job`), a "download all"
+  group and its children adopted from the feed included.
+- **Admin-only verbs** (`Access`): `w d u c` on Models and `i s a c` on
+  Engines follow a host-owned `Signal<Access>`. Read-only: each is
+  refused first, before any capability or state answer, with the web
+  console's sentence plus the host's reason
+  ("only an admin can download models — signed in as ana, not an
+  admin"), the footer says "admin only", browsing stays open. The core
+  console is the local operator: `Access::Admin`.
+- **`t` filters by model type** — text, thinking, tools, vision, audio,
+  embedding, voice, image, video: the web console's capability chips
+  (`capabilities.video_generation` included), filtered locally.
+- **`w` sends the catalog's size** (`expected_bytes`) when the catalog
+  vouches for it (`size_source` `catalog`/`hf_api`), so the gateway
+  pre-checks the disk. The CLI transport has no such flag to pass.
+- **`u` sets the route to exactly the chosen model**: the previous
+  model's `base_url`, `reasoning` and `options` are cleared.
+- **`q` refuses only while a job is WORKING**
+  (`ScreensStore::job_running`); a paused install never holds it.
+- **An empty or failed list keeps the screen's keys**
+  (`screens::focus_holder`): `v` leaves an empty installed list, `r`
+  retries a failed engines read.
+
+### Capability routes
+
+- **`a` (apply recommended) journals the CLI's report**: the write runs
+  `config apply-recommended [--force] --json` and every route's outcome
+  lands in the journal and the notice — applied, kept (with what was
+  recommended), already, and routes this computer cannot run with the
+  reason ("output.video: nothing recommended runs on this computer —
+  …; left unset"), routes `--force` `cleared` (a broken route with
+  nothing runnable to replace it), and the report's totals (`cleared`
+  included). The prompt names no route list: Core owns which routes it
+  recommends.
+- **Routes this computer cannot run are flagged** (optional Core fields):
+  a configured row with `route_unavailable` reads `cannot run here` and
+  its detail line says why (Enter edits it, x clears it); an unset row
+  with `recommendation_unavailable` says which recommendation cannot run
+  and why.
+
+### Migrating from 0.2
+
+- `ScreensCtx::new(cx, transport, overlays, access, options)`: pass a
+  `Signal<Access>` kept current from the signed-in principal.
+- `ConsoleTransport::start_download(provider, artifact, expected_bytes)`:
+  forward `expected_bytes` (gateway body field `expected_bytes`).
+- Implement `download_job` for a backend whose job route does not know
+  download groups (gateway `GET /models/download/{id}`).
+- `set_text_default` clears the route's `base_url`, `reasoning` and
+  `options` (gateway body `{provider, model, base_url: "", reasoning:
+  "", options: {}}`).
+- `ScreensStore::job_active` → `job_running` (paused installs excluded).
+- `catalog::hints(caps, &access)` / `engines::hints(caps, &access)`;
+  `HINTS` gained `t`.
+- `#[non_exhaustive]`: `TransportErrorKind`, `CatalogView`, `ScreenCmd`,
+  `InstallLocation`, `WriteVerb`, `Access` (match with a wildcard arm);
+  every `ScreenCmd` struct variant (drive the lane through the
+  `ScreensCtx` methods); `store::RouteRow` and `store::RouteUnavailable`;
+  `TransportCaps` (start from `ALL`/`default()` and set fields),
+  `JobPoll` (`JobPoll::new`), `ScreensStore` and every parsed contract
+  view in `screens::data` (read fields; the parsers build them).
+  `ScreensOptions` stays constructible with `..Default::default()`.
+
+Gate: `cargo build`, `cargo test --locked` (lib 90, headless 88 + 1 ignored,
+cli_transport 1, doc 5), `cargo clippy --all-targets -D warnings` and
+`cargo fmt --check` clean; `cargo semver-checks` vs 0.2.0: major
+(6 major lints, expected for 0.3.0; 0 minor).
+
 ## [0.2.0] — 2026-09-23
 
 First crates.io release (`cargo install abstractcore-console`). The crate

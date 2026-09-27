@@ -15,7 +15,7 @@ use abstracttui::testing::CaptureTerm;
 use serde_json::{json, Value};
 
 use abstractcore_console::config::{self, ConfigPath, FileState, PathSource};
-use abstractcore_console::screens::{ScreensCtx, ScreensOptions, ScreensStore};
+use abstractcore_console::screens::{Access, ScreensCtx, ScreensOptions, ScreensStore};
 use abstractcore_console::store::{
     AvailabilityData, ConfigMirror, Loadable, ProfilesData, RoutesData, Store,
 };
@@ -41,6 +41,22 @@ fn harness() -> Harness {
 }
 
 fn harness_sized(size: Size) -> Harness {
+    harness_with(size, MockTransport::default())
+}
+
+/// A harness whose Models/Engines backend implements every optional
+/// verb (the gateway's shape).
+fn harness_full() -> Harness {
+    harness_with(
+        Size::new(120, 40),
+        MockTransport {
+            caps: abstractcore_console::transport::TransportCaps::ALL,
+            ..MockTransport::default()
+        },
+    )
+}
+
+fn harness_with(size: Size, mock: MockTransport) -> Harness {
     abstracttui::app::set_theme_by_id("abstract-dark");
     let mut app = App::new(size);
     let overlays = app.overlays();
@@ -50,7 +66,7 @@ fn harness_sized(size: Size) -> Harness {
     let store_out = store_slot.clone();
     let ui_slot: Rc<RefCell<Option<UiState>>> = Rc::new(RefCell::new(None));
     let ui_out = ui_slot.clone();
-    let mock = Arc::new(MockTransport::default());
+    let mock = Arc::new(mock);
     let mock_mount = mock.clone();
     let screens_slot: Rc<RefCell<Option<ScreensStore>>> = Rc::new(RefCell::new(None));
     let screens_out = screens_slot.clone();
@@ -62,10 +78,14 @@ fn harness_sized(size: Size) -> Harness {
         let ui_state = UiState::create(cx);
         *ui_out.borrow_mut() = Some(ui_state);
         let opened_rec = opened_mount.clone();
+        // The core console's posture: the local operator (tests flip it
+        // to ReadOnly through `h.screens.access`).
+        let access = cx.signal(Access::Admin);
         let screens = ScreensCtx::new(
             cx,
             mock_mount.clone(),
             overlays.clone(),
+            access,
             ScreensOptions {
                 notice: Some(store.notice),
                 // Fast polls: a job walks running → completed in a few
@@ -2987,7 +3007,9 @@ fn narrow_routes_grid_keeps_the_discriminating_tail() {
 // transport answering with the contract A–E fixtures.
 // =======================================================================
 
-use abstractcore_console::transport::{ConsoleTransport, TransportError};
+use abstractcore_console::transport::{
+    ConsoleTransport, InstallLocation, ServerAction, TransportCaps, TransportError,
+};
 
 fn fixture(name: &str) -> Value {
     let text = match name {
@@ -3014,6 +3036,27 @@ struct MockTransport {
     cancelled: Mutex<bool>,
     /// When set, `delete_model` refuses with this error.
     refuse_delete: Mutex<Option<TransportError>>,
+    /// Downloads started so far (each gets its own id, like a backend).
+    downloads: Mutex<u32>,
+    /// Every started job by id (a poll answers about ITS subject).
+    by_id: Mutex<std::collections::HashMap<String, Value>>,
+    /// Optional verbs this backend claims (default: none, like a bare
+    /// contract-H transport).
+    caps: TransportCaps,
+    /// Jobs whose polls answer this document unchanged (a PAUSED job
+    /// stays paused until someone continues it).
+    held: Mutex<std::collections::HashMap<String, Value>>,
+    /// Replaces the engines fixture when set.
+    engines_doc: Mutex<Option<Value>>,
+    /// The capability-defaults document (`u` writes into it).
+    defaults_doc: Mutex<Value>,
+    /// Replaces the installed fixture when set (e.g. nothing installed).
+    installed_doc: Mutex<Option<Value>>,
+    /// Download jobs someone ELSE started (a "download all" group and its
+    /// children): listed by the feed, answered by `download_job` only.
+    foreign_downloads: Mutex<Vec<Value>>,
+    /// When set, `engines_status` fails with this error.
+    engines_error: Mutex<Option<TransportError>>,
 }
 
 impl MockTransport {
@@ -3050,6 +3093,12 @@ impl MockTransport {
 
     fn started(&self, doc: Value) -> Result<Value, TransportError> {
         *self.last_job.lock().unwrap() = Some(doc.clone());
+        if let Some(id) = doc["job_id"].as_str() {
+            self.by_id
+                .lock()
+                .unwrap()
+                .insert(id.to_string(), doc.clone());
+        }
         Ok(doc)
     }
 }
@@ -3061,7 +3110,15 @@ impl ConsoleTransport for MockTransport {
     }
     fn engines_status(&self, probe: bool) -> Result<Value, TransportError> {
         self.record(format!("engines_status probe={probe}"));
-        Ok(fixture("engines_status"))
+        if let Some(e) = self.engines_error.lock().unwrap().clone() {
+            return Err(e);
+        }
+        Ok(self
+            .engines_doc
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| fixture("engines_status")))
     }
     fn models_catalog(
         &self,
@@ -3101,15 +3158,37 @@ impl ConsoleTransport for MockTransport {
     }
     fn models_installed(&self, provider: Option<&str>) -> Result<Value, TransportError> {
         self.record(format!("installed provider={}", provider.unwrap_or("-")));
-        Ok(fixture("models_installed"))
+        Ok(self
+            .installed_doc
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| fixture("models_installed")))
     }
-    fn start_download(&self, provider: &str, artifact: &str) -> Result<Value, TransportError> {
+    fn start_download(
+        &self,
+        provider: &str,
+        artifact: &str,
+        expected_bytes: Option<u64>,
+    ) -> Result<Value, TransportError> {
         self.record(format!("download {provider} {artifact}"));
+        self.record(format!(
+            "expected_bytes {provider} {artifact} {}",
+            expected_bytes
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "-".into())
+        ));
+        let n = {
+            let mut d = self.downloads.lock().unwrap();
+            *d += 1;
+            *d
+        };
         self.started(Self::job_doc(
             "download",
             "running",
             json!({"provider": provider, "artifact": artifact, "percent": 0.0,
-                   "downloaded_bytes": 0, "message": "pulling manifest"}),
+                   "downloaded_bytes": 0, "message": "pulling manifest",
+                   "job_id": format!("download_{n}")}),
         ))
     }
     fn delete_model(
@@ -3149,23 +3228,36 @@ impl ConsoleTransport for MockTransport {
     }
     fn job(&self, id: &str) -> Result<Value, TransportError> {
         self.record(format!("job {id}"));
+        if let Some(doc) = self.held.lock().unwrap().get(id).cloned() {
+            return Ok(doc);
+        }
         let last = self
-            .last_job
+            .by_id
             .lock()
             .unwrap()
-            .clone()
+            .get(id)
+            .cloned()
+            .or_else(|| self.last_job.lock().unwrap().clone())
             .expect("a job started");
         if *self.cancelled.lock().unwrap() {
             let mut j = last;
             j["status"] = json!("cancelled");
             return Ok(j);
         }
-        if let Some(next) = self.polls.lock().unwrap().pop_front() {
+        if let Some(mut next) = self.polls.lock().unwrap().pop_front() {
+            // The backend answers about the job it was asked for.
+            for k in ["job_id", "kind", "provider", "artifact", "engine"] {
+                if !last[k].is_null() {
+                    next[k] = last[k].clone();
+                }
+            }
+            next["job_id"] = json!(id);
             return Ok(next);
         }
         let mut j = last;
         j["status"] = json!("completed");
         j["percent"] = json!(100.0);
+        j["job_id"] = json!(id);
         Ok(j)
     }
     fn cancel_job(&self, id: &str) -> Result<Value, TransportError> {
@@ -3183,6 +3275,193 @@ impl ConsoleTransport for MockTransport {
     fn host_label(&self) -> String {
         "test-host".into()
     }
+    fn capabilities(&self) -> TransportCaps {
+        self.caps
+    }
+    fn cancel_download(&self, id: &str) -> Result<Value, TransportError> {
+        self.record(format!("cancel_download {id}"));
+        *self.cancelled.lock().unwrap() = true;
+        let mut j = self
+            .by_id
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .expect("a started download");
+        j["status"] = json!("cancelled");
+        Ok(j)
+    }
+    fn models_catalog_hub(
+        &self,
+        q: &str,
+        engine: Option<&str>,
+        fits_only: bool,
+    ) -> Result<Value, TransportError> {
+        self.record(format!(
+            "hub q={q} engine={} fits={fits_only}",
+            engine.unwrap_or("-")
+        ));
+        let mut c = fixture("model_catalog");
+        let mut row = c["rows"][0].clone();
+        row["id"] = json!("hf-hit");
+        row["display_name"] = json!("Tiny HF Hit");
+        row["source"] = json!("hf_search");
+        row["artifacts"][0]["artifact"] = json!("org/tiny-hit");
+        row["artifacts"][0]["provider"] = json!("huggingface");
+        c["rows"] = json!([row]);
+        c["hub"] = json!({"ok": false, "errors": ["rate limited"]});
+        Ok(c)
+    }
+    fn download_jobs(&self) -> Result<Value, TransportError> {
+        self.record("download_jobs".into());
+        let mut jobs: Vec<Value> = self
+            .by_id
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|j| j["kind"] == "download")
+            .cloned()
+            .collect();
+        jobs.extend(self.foreign_downloads.lock().unwrap().iter().cloned());
+        Ok(json!({"jobs": jobs}))
+    }
+    /// The download route: a foreign job (a group only this route knows)
+    /// finishes on its first poll; everything else is the job route.
+    fn download_job(&self, id: &str) -> Result<Value, TransportError> {
+        self.record(format!("download_job {id}"));
+        let foreign = self
+            .foreign_downloads
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|j| j["job_id"] == id)
+            .cloned();
+        match foreign {
+            Some(mut j) => {
+                j["status"] = json!("completed");
+                j["percent"] = json!(100.0);
+                // The gateway's envelope: `{"ok": true, "job": {...}}`.
+                Ok(json!({"ok": true, "job": j}))
+            }
+            None => self.job(id),
+        }
+    }
+    fn capability_defaults(&self) -> Result<Value, TransportError> {
+        self.record("defaults".into());
+        Ok(self.defaults_doc.lock().unwrap().clone())
+    }
+    fn set_text_default(&self, provider: &str, model: &str) -> Result<Value, TransportError> {
+        self.record(format!("set_default {provider} {model}"));
+        let doc = json!({"routes": [{"key": "output.text", "provider": provider, "model": model}]});
+        *self.defaults_doc.lock().unwrap() = doc.clone();
+        Ok(doc)
+    }
+    fn engine_install_at(
+        &self,
+        id: &str,
+        dry_run: bool,
+        location: InstallLocation,
+    ) -> Result<Value, TransportError> {
+        if location == InstallLocation::Auto {
+            return self.engine_install(id, dry_run);
+        }
+        self.record(format!(
+            "install {id} dry_run={dry_run} location={}",
+            location.as_str()
+        ));
+        if dry_run {
+            let (target, admin) = match location {
+                InstallLocation::System => ("/Applications/Ollama.app", true),
+                _ => ("/Users/me/Applications/Ollama.app", false),
+            };
+            return Ok(
+                json!({"job_id": null, "kind": "engine_install", "engine": id,
+                "dry_run": true, "status": "completed",
+                "plan": {"target": target, "needs_admin": admin,
+                         "admin_reason": if admin { "/Applications is not writable by this account" } else { "" }}}),
+            );
+        }
+        self.started(Self::job_doc(
+            "engine_install",
+            "running",
+            json!({"provider": null, "artifact": null, "engine": id, "percent": null,
+                   "location": location.as_str(), "message": "Downloading Ollama"}),
+        ))
+    }
+    fn engine_job_continue(
+        &self,
+        job_id: &str,
+        action: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        self.record(format!("continue {job_id} {}", action.unwrap_or("-")));
+        let mut doc = self
+            .held
+            .lock()
+            .unwrap()
+            .remove(job_id)
+            .expect("a held job");
+        doc["state"] = json!("installing");
+        doc["admin_prompt"] = Value::Null;
+        doc["continue_actions"] = json!([]);
+        doc["message"] = json!("Continuing");
+        self.by_id
+            .lock()
+            .unwrap()
+            .insert(job_id.to_string(), doc.clone());
+        Ok(doc)
+    }
+    fn engine_server(&self, id: &str, action: ServerAction) -> Result<Value, TransportError> {
+        self.record(format!("server {id} {}", action.as_str()));
+        Ok(json!({"ok": true, "engine": id, "action": action.as_str(),
+                  "running": action == ServerAction::Start}))
+    }
+}
+
+/// The gateway's paused Ollama install (Linux, not root): state
+/// `needs_admin`, status still `running`, a manual sudo command.
+fn paused_install_doc() -> Value {
+    json!({
+        "schema": "host_job_v1", "job_id": "ei_paused", "kind": "engine_install",
+        "engine": "ollama", "state": "needs_admin", "status": "running", "percent": 10.0,
+        "message": "Ollama's Linux installer needs root.",
+        "admin_prompt": {"command": "sudo sh -c 'curl -fsSL https://ollama.com/install.sh | sh'",
+                         "method": "manual", "button": "I ran it -- re-check",
+                         "where": "a terminal on the gateway host", "reason": "needs root"},
+        "continue_actions": ["recheck"], "provider": null, "artifact": null
+    })
+}
+
+/// The engines fixture with gateway v2 extras on Ollama: an app install,
+/// a Start action, and (optionally) the paused job as its active job.
+fn engines_v2(paused: bool) -> Value {
+    let mut d = fixture("engines_status");
+    for e in d["engines"].as_array_mut().unwrap() {
+        if e["id"] == "ollama" {
+            e["install"]["method"] = json!("app");
+            e["actions"] = json!([{"id": "install", "enabled": true},
+                                  {"id": "docs", "enabled": true}]);
+            if paused {
+                e["active_job"] = json!({"job_id": "ei_paused", "state": "needs_admin"});
+            }
+        }
+        if e["id"] == "mlx" {
+            e["actions"] = json!([{"id": "docs", "enabled": true}]);
+        }
+    }
+    let mut lm = d["engines"][0].clone();
+    lm["id"] = json!("lmstudio");
+    for e in d["engines"].as_array_mut().unwrap() {
+        if e["id"] == "lmstudio" {
+            *e = lm.clone();
+            e["name"] = json!("LM Studio");
+            e["installed"] = json!(true);
+            e["running"] = json!(true);
+            e["actions"] = json!([{"id": "stop", "label": "Stop", "enabled": true}]);
+            e["active_job"] = Value::Null;
+            e["install"]["method"] = json!("app");
+        }
+    }
+    d
 }
 
 impl Harness {
@@ -3397,12 +3676,12 @@ fn download_w_polls_the_job_to_a_completion_toast() {
     assert!(h.mock.called("download ollama qwen3:8b"));
     let s = h.settle_until_contains("✓ download ollama qwen3:8b completed");
     assert!(s.contains("completed"), "{s}");
-    assert!(!h.screens.job_active());
+    assert!(!h.screens.job_running());
     // A finished download re-reads what is on disk and the catalog.
     h.wait_for_call("the post-job reloads", |calls| {
         let after = calls
             .iter()
-            .position(|c| c.starts_with("download"))
+            .position(|c| c.starts_with("download "))
             .unwrap();
         calls[after..].iter().any(|c| c.starts_with("installed"))
             && calls[after..].iter().any(|c| c.starts_with("catalog"))
@@ -3600,7 +3879,7 @@ fn install_then_cancel_c_stops_the_job() {
     h.key(b"\r");
     let s = h.settle_until_contains("Downloading ollama");
     assert!(s.contains("install ollama"), "{s}");
-    assert!(h.screens.job_active());
+    assert!(h.screens.job_running());
     // q refuses while it runs.
     h.key(b"q");
     h.settle_until_contains("models/engines job is running");
@@ -3608,7 +3887,7 @@ fn install_then_cancel_c_stops_the_job() {
     let s = h.settle_until_contains("⊘ install ollama cancelled");
     assert!(s.contains("cancelled"), "{s}");
     assert!(h.mock.called("cancel engine_install_1"));
-    assert!(!h.screens.job_active());
+    assert!(!h.screens.job_running());
 }
 
 #[test]
@@ -3623,7 +3902,7 @@ fn open_o_hands_the_download_page_to_the_opener() {
 }
 
 #[test]
-fn a_second_verb_while_a_job_runs_is_refused_single_flight() {
+fn downloads_run_in_parallel_and_the_same_artifact_is_not_started_twice() {
     let mut h = harness();
     h.load_fixtures();
     h.open_models();
@@ -3631,19 +3910,676 @@ fn a_second_verb_while_a_job_runs_is_refused_single_flight() {
         .polls
         .lock()
         .unwrap()
-        .extend((0..400).map(|_| fixture("job_running")));
+        .extend((0..800).map(|_| fixture("job_running")));
     h.select_artifact("qwen3:8b");
     h.key(b"w");
     h.settle_until_contains("42%");
+    // A second, different download starts at once (the web console's
+    // behaviour) — no single-flight door.
     h.select_artifact("gemma3:27b");
     h.key(b"w");
-    h.settle_until_contains("is still running — c cancels it");
+    h.wait_for_call("the second download", |calls| {
+        calls.iter().any(|c| c == "download ollama gemma3:27b")
+    });
+    let s = h.settle_until("both downloads in the strip", |s| {
+        s.contains("download ollama qwen3:8b") && s.contains("download ollama gemma3:27b")
+    });
+    assert!(!s.contains("is still running"), "{s}");
+    let live = h
+        .screens
+        .jobs
+        .with_untracked(|v| v.iter().filter(|j| j.is_active()).count());
+    assert_eq!(live, 2, "two live jobs");
+    // The SAME artifact again is refused here (the backend would join).
+    h.key(b"w");
+    h.settle_until_contains("gemma3:27b is already downloading");
     assert_eq!(
         h.mock
             .calls()
             .iter()
-            .filter(|c| c.starts_with("download"))
+            .filter(|c| c.starts_with("download "))
+            .count(),
+        2
+    );
+    // The downloads view lists both; c there asks before stopping.
+    h.key(b"v");
+    h.turns(2);
+    h.key(b"v");
+    let s = h.settle_until_contains("2 downloads · 2 running");
+    assert!(s.contains("qwen3:8b") && s.contains("gemma3:27b"), "{s}");
+    // Newest first: row 0 is the gemma download (download_2).
+    h.screens.downloads_sel.set(0);
+    h.turns(2);
+    h.key(b"c");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Stop downloading") && s.contains("Keep downloading"),
+        "{s}"
+    );
+    h.key(b"\r"); // default = keep
+    h.settle_until_contains("still downloading");
+    assert!(!h.mock.called("cancel"), "{:?}", h.mock.calls());
+    h.key(b"c");
+    h.turns(2);
+    h.key(b"2");
+    h.turns(1);
+    h.key(b"\r");
+    h.wait_for_call("the cancel", |calls| {
+        calls.iter().any(|c| c == "cancel_download download_2")
+    });
+    // A download is cancelled on the DOWNLOAD route, never the generic one.
+    assert!(!h.mock.called("cancel download_"), "{:?}", h.mock.calls());
+}
+
+// ---------------------------------------------------------------------
+// Parity with the web console: optional transport verbs (0.3.0)
+// ---------------------------------------------------------------------
+
+#[test]
+fn a_paused_install_shows_its_command_continues_and_blocks_nothing() {
+    let mut h = harness_full();
+    h.load_fixtures();
+    *h.mock.engines_doc.lock().unwrap() = Some(engines_v2(true));
+    h.mock
+        .held
+        .lock()
+        .unwrap()
+        .insert("ei_paused".into(), paused_install_doc());
+    h.mock
+        .by_id
+        .lock()
+        .unwrap()
+        .insert("ei_paused".into(), paused_install_doc());
+    h.open_engines();
+    // The row's active_job is adopted: the paused state shows, with the
+    // exact command on its own line.
+    h.select_engine("ollama");
+    let s = h.settle_until("the paused install", |s| {
+        s.contains("needs admin")
+            && s.contains("sudo sh -c 'curl -fsSL https://ollama.com/install.sh | sh'")
+    });
+    assert!(
+        s.contains("run this yourself, then press a (re-check)"),
+        "{s}"
+    );
+    assert!(s.contains("a terminal on the gateway host"), "{s}");
+    assert!(s.contains("a: Re-check"), "{s}");
+    assert!(h.mock.called("job ei_paused"), "{:?}", h.mock.calls());
+    // y copies the command.
+    h.key(b"y");
+    h.settle_until_contains("copied: sudo sh -c");
+    // The paused install blocks NOTHING else: a download starts at once.
+    h.key(b"9");
+    h.settle_until_contains("Qwen3 8B");
+    h.select_artifact("qwen3:8b");
+    h.key(b"w");
+    h.wait_for_call("a download while the install is paused", |calls| {
+        calls.iter().any(|c| c == "download ollama qwen3:8b")
+    });
+    // …while installing Ollama again says how to go on instead.
+    h.key(b"0");
+    h.settle_until_contains("needs admin");
+    h.select_engine("ollama");
+    h.key(b"i");
+    h.settle_until_contains("a continues it, c cancels it");
+    assert!(!h.mock.called("install ollama"), "{:?}", h.mock.calls());
+    // a = the job's one continue action (recheck), then it finishes.
+    h.key(b"a");
+    h.wait_for_call("the continue", |calls| {
+        calls.iter().any(|c| c == "continue ei_paused recheck")
+    });
+    h.settle_until_contains("✓ install ollama completed");
+}
+
+#[test]
+fn start_stop_s_follows_the_row_actions_and_refuses_with_reasons() {
+    let mut h = harness_full();
+    h.load_fixtures();
+    *h.mock.engines_doc.lock().unwrap() = Some(engines_v2(false));
+    h.open_engines();
+    h.select_engine("lmstudio");
+    h.key(b"s");
+    h.settle_until_contains("✓ lmstudio is stopped");
+    assert!(
+        h.mock.called("server lmstudio stop"),
+        "{:?}",
+        h.mock.calls()
+    );
+    // The outcome is verified with a fresh PROBING read.
+    h.wait_for_call("the probing re-read", |calls| {
+        let at = calls
+            .iter()
+            .position(|c| c == "server lmstudio stop")
+            .unwrap();
+        calls[at..].iter().any(|c| c == "engines_status probe=true")
+    });
+    h.select_engine("vllm");
+    h.key(b"s");
+    h.settle_until_contains("does not run on this host");
+    assert_eq!(
+        h.mock
+            .calls()
+            .iter()
+            .filter(|c| c.starts_with("server"))
             .count(),
         1
     );
+}
+
+#[test]
+fn optional_verbs_over_a_bare_transport_say_not_here_never_fake() {
+    // Wide enough that the footer's tail (the optional verbs) shows.
+    let mut h = harness_sized(Size::new(230, 34));
+    h.load_fixtures();
+    let s = h.open_models();
+    assert!(
+        s.contains("Hugging Face: not here"),
+        "the footer says so:\n{s}"
+    );
+    h.key(b"h");
+    h.settle_until_contains("Hugging Face search is not available over test-host");
+    h.select_artifact("qwen/qwen3-8b@4bit");
+    h.key(b"u");
+    h.settle_until_contains("changing the default text model is not available over test-host");
+    h.open_engines();
+    h.select_engine("ollama");
+    h.key(b"s");
+    h.settle_until_contains("starting or stopping engine servers is not available over test-host");
+    let calls = h.mock.calls();
+    assert!(
+        !calls.iter().any(|c| c.starts_with("hub")
+            || c.starts_with("set_default")
+            || c.starts_with("server")
+            || c == "download_jobs"
+            || c == "defaults"),
+        "no optional verb was called: {calls:?}"
+    );
+}
+
+#[test]
+fn app_engine_install_asks_where_with_the_two_real_plans() {
+    let mut h = harness_full();
+    h.load_fixtures();
+    *h.mock.engines_doc.lock().unwrap() = Some(engines_v2(false));
+    h.open_engines();
+    h.select_engine("ollama");
+    h.key(b"i");
+    let s = h.settle_until("both plans in the question", |s| {
+        s.contains("/Users/me/Applications/Ollama.app")
+            && s.contains("/Applications is not writable")
+    });
+    assert!(
+        s.contains("Install just for you") && s.contains("Install for all users"),
+        "{s}"
+    );
+    assert!(h.mock.called("install ollama dry_run=true location=user"));
+    assert!(h.mock.called("install ollama dry_run=true location=system"));
+    // Default = cancel: nothing runs.
+    h.key(b"\r");
+    h.settle_until_contains("install cancelled — nothing ran");
+    assert!(
+        !h.mock.called("install ollama dry_run=false"),
+        "{:?}",
+        h.mock.calls()
+    );
+    // "for all users" sends location=system.
+    h.key(b"i");
+    h.turns(2);
+    h.key(b"2");
+    h.turns(1);
+    h.key(b"\r");
+    h.wait_for_call("the located install", |calls| {
+        calls
+            .iter()
+            .any(|c| c == "install ollama dry_run=false location=system")
+    });
+}
+
+#[test]
+fn hub_search_h_queries_hugging_face_and_an_empty_query_leaves() {
+    let mut h = harness_full();
+    h.load_fixtures();
+    h.open_models();
+    h.key(b"h");
+    let s = h.turns(2);
+    assert!(s.contains("Search Hugging Face"), "{s}");
+    h.type_text("tiny");
+    h.turns(1);
+    h.key(b"\r");
+    let s = h.settle_until("the hub rows", |s| {
+        s.contains("Tiny HF Hit") && !s.contains("Gemma 3 27B")
+    });
+    assert!(s.contains("Hugging Face"), "{s}");
+    assert!(
+        s.contains("answered in part") && s.contains("rate limited"),
+        "{s}"
+    );
+    assert!(
+        h.mock.called("hub q=tiny engine=- fits=false"),
+        "{:?}",
+        h.mock.calls()
+    );
+    // Empty Enter: back to the curated catalog.
+    h.key(b"h");
+    h.turns(2);
+    h.key(b"\x1b[F");
+    for _ in 0..4 {
+        h.key(&[0x7f]);
+    }
+    h.turns(1);
+    h.key(b"\r");
+    h.settle_until("the catalog back", |s| {
+        s.contains("Gemma 3 27B") && s.contains("no filter")
+    });
+}
+
+#[test]
+fn u_makes_an_installed_text_model_the_default_and_verifies_it() {
+    let mut h = harness_full();
+    *h.mock.defaults_doc.lock().unwrap() =
+        json!({"routes": [{"key": "output.text", "provider": "mlx", "model": "other"}]});
+    h.load_fixtures();
+    h.open_models();
+    h.wait_for_call("the defaults read", |calls| {
+        calls.iter().any(|c| c == "defaults")
+    });
+    // Not downloaded yet: refused with the reason.
+    h.select_artifact("qwen3:8b");
+    h.key(b"u");
+    h.settle_until_contains("is not downloaded yet");
+    // The installed LM Studio build: the route stores the SERVED id.
+    h.select_artifact("qwen/qwen3-8b@4bit");
+    let s = h.turns(2);
+    assert!(s.contains("u makes it the default text model"), "{s}");
+    h.key(b"u");
+    h.settle_until_contains("✓ default text model: lmstudio · qwen/qwen3-8b");
+    assert!(
+        h.mock.called("set_default lmstudio qwen/qwen3-8b"),
+        "{:?}",
+        h.mock.calls()
+    );
+    let s = h.settle_until_contains("default text model");
+    assert!(s.contains("default text lmstudio · qwen/qwen3-8b"), "{s}");
+    // Pressing u again says so instead of rewriting it.
+    h.key(b"u");
+    h.settle_until_contains("is already the default text model");
+    assert_eq!(
+        h.mock
+            .calls()
+            .iter()
+            .filter(|c| c.starts_with("set_default"))
+            .count(),
+        1
+    );
+}
+
+// =======================================================================
+// 0.3.0 review fixes (M4 admin, M7 core bugs, video follow-ups).
+// =======================================================================
+
+/// M7: the screen's keys live on the page element and reach it only
+/// through the focus path. An EMPTY list replaced the table (the focus
+/// owner) with a one-line placeholder, so nothing was focused and `v`
+/// could not leave an empty installed list — the Downloads view was
+/// unreachable on a machine with nothing installed.
+#[test]
+fn an_empty_list_still_owns_the_screen_keys() {
+    let mut h = harness_full();
+    *h.mock.installed_doc.lock().unwrap() =
+        Some(json!({"schema": "models_installed_v1", "rows": []}));
+    h.load_fixtures();
+    h.open_models();
+    h.key(b"v");
+    let s = h.settle_until_contains("no models on disk");
+    assert!(
+        s.contains("v shows the downloads"),
+        "the hint names where v goes:\n{s}"
+    );
+    h.key(b"v");
+    let s = h.settle_until_contains("no downloads yet");
+    assert!(s.contains(" downloads · 0 downloads"), "{s}");
+    // …and back out of the (also empty) downloads view.
+    h.key(b"v");
+    h.settle_until_contains("Qwen3 8B");
+
+    // Engines: a failed read keeps `r` (retry) working.
+    *h.mock.engines_error.lock().unwrap() = Some(TransportError::unavailable("gateway down"));
+    h.key(b"0");
+    h.settle_until_contains("could not list its engines");
+    let before = h
+        .mock
+        .calls()
+        .iter()
+        .filter(|c| *c == "engines_status probe=true")
+        .count();
+    h.key(b"r");
+    h.wait_for_call("the retry", |calls| {
+        calls
+            .iter()
+            .filter(|c| *c == "engines_status probe=true")
+            .count()
+            > before
+    });
+}
+
+/// M7: downloads someone else started (a "download all" group and its
+/// children, adopted from the feed) are POLLED on the download route
+/// until they end — they used to stay "running" forever, holding the
+/// quit guard.
+#[test]
+fn downloads_adopted_from_the_feed_are_polled_to_the_end() {
+    let mut h = harness_full();
+    h.mock.foreign_downloads.lock().unwrap().extend([
+        json!({"schema": "host_job_v1", "job_id": "grp_1", "kind": "download_group",
+               "status": "running", "percent": 10.0, "label": "Download all"}),
+        json!({"schema": "host_job_v1", "job_id": "dl_child", "kind": "download",
+               "status": "running", "provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit",
+               "percent": 10.0, "parent_job": "grp_1"}),
+    ]);
+    h.load_fixtures();
+    h.open_models();
+    h.wait_for_call("both polled on the download route", |calls| {
+        calls.iter().any(|c| c == "download_job grp_1")
+            && calls.iter().any(|c| c == "download_job dl_child")
+    });
+    h.settle_until_contains("completed");
+    for _ in 0..50 {
+        if !h.screens.job_running() {
+            break;
+        }
+        h.turn();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !h.screens.job_running(),
+        "{:?}",
+        h.screens.jobs.get_untracked()
+    );
+    // Nothing runs, so q quits.
+    h.key(b"q");
+    h.turns(2);
+    assert!(h.app.quit_requested());
+}
+
+/// M7: a paused install waits for a person — it never holds `q`.
+#[test]
+fn a_paused_install_does_not_hold_the_quit() {
+    let mut h = harness_full();
+    h.load_fixtures();
+    *h.mock.engines_doc.lock().unwrap() = Some(engines_v2(true));
+    h.mock
+        .held
+        .lock()
+        .unwrap()
+        .insert("ei_paused".into(), paused_install_doc());
+    h.open_engines();
+    h.select_engine("ollama");
+    h.settle_until_contains("needs admin");
+    assert!(h
+        .screens
+        .jobs
+        .with_untracked(|v| v.iter().any(|j| j.is_paused())));
+    assert!(!h.screens.job_running());
+    h.key(b"q");
+    h.turns(2);
+    assert!(h.app.quit_requested(), "a paused install blocked q");
+}
+
+/// M4: with read-only access every host-changing verb is refused with the
+/// host's reason, the footer says "admin only", browsing stays open, and
+/// NOTHING reaches the backend. Admin again: the verbs work.
+#[test]
+fn read_only_access_refuses_every_host_changing_verb_with_the_reason() {
+    let mut h = harness_full();
+    *h.mock.engines_doc.lock().unwrap() = Some(engines_v2(true));
+    h.mock
+        .held
+        .lock()
+        .unwrap()
+        .insert("ei_paused".into(), paused_install_doc());
+    h.load_fixtures();
+    h.screens
+        .access
+        .set(Access::ReadOnly("signed in as ana, not an admin".into()));
+    let s = h.open_models();
+    assert!(s.contains("w download: admin only"), "footer:\n{s}");
+    let refused = |h: &mut Harness, key: &[u8], what: &str| {
+        h.key(key);
+        h.settle_until_contains(&format!(
+            "only an admin can {what} — signed in as ana, not an admin"
+        ));
+    };
+    h.select_artifact("qwen3:8b");
+    refused(&mut h, b"w", "download models");
+    h.select_artifact("qwen/qwen3-8b@4bit");
+    refused(&mut h, b"d", "delete models");
+    refused(&mut h, b"u", "change the default model");
+    refused(&mut h, b"c", "cancel downloads");
+    // Browsing is not a change.
+    h.key(b"f");
+    h.settle_until_contains("showing only what fits this host");
+    h.key(b"0");
+    h.settle_until_contains("needs admin");
+    h.select_engine("ollama");
+    refused(&mut h, b"a", "continue an install");
+    h.select_engine("lmstudio");
+    refused(&mut h, b"s", "start or stop engines");
+    h.select_engine("llamacpp");
+    refused(&mut h, b"i", "install engines");
+    for verb in [
+        "download ",
+        "delete ",
+        "install ",
+        "server ",
+        "set_default",
+        "continue",
+        "cancel",
+    ] {
+        assert!(
+            !h.mock.called(verb),
+            "{verb} reached the backend: {:?}",
+            h.mock.calls()
+        );
+    }
+
+    // The host signs in as an admin: the same key works.
+    h.screens.access.set(Access::Admin);
+    h.key(b"9");
+    h.settle_until_contains("Qwen3 8B");
+    h.select_artifact("qwen3:8b");
+    h.key(b"w");
+    h.wait_for_call("the download", |calls| {
+        calls.iter().any(|c| c == "download ollama qwen3:8b")
+    });
+}
+
+/// The footer pairs follow access AND capabilities.
+#[test]
+fn hints_say_admin_only_and_not_here() {
+    use abstractcore_console::screens::{catalog, engines};
+    let ro = Access::ReadOnly("not signed in".into());
+    let cat = catalog::hints(TransportCaps::ALL, &ro);
+    assert!(cat.contains(&("w", "download: admin only")), "{cat:?}");
+    assert!(cat.contains(&("d", "delete: admin only")), "{cat:?}");
+    assert!(cat.contains(&("u", "default: admin only")), "{cat:?}");
+    assert!(cat.contains(&("t", "type")), "{cat:?}");
+    assert!(catalog::hints(TransportCaps::ALL, &Access::Admin).contains(&("w", "download")));
+    let eng = engines::hints(TransportCaps::ALL, &ro);
+    for pair in [
+        ("i", "install: admin only"),
+        ("s", "start/stop: admin only"),
+        ("a", "continue: admin only"),
+    ] {
+        assert!(eng.contains(&pair), "{eng:?}");
+    }
+    // A missing verb says so whoever asks.
+    let bare = engines::hints(TransportCaps::default(), &ro);
+    assert!(bare.contains(&("s", "start/stop: not here")), "{bare:?}");
+}
+
+/// Video follow-up: `t` filters the catalog by model type, the web
+/// console's capability chips (video included), locally.
+#[test]
+fn t_filters_the_catalog_by_type_like_the_web_chips() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    // The catalog now answers a video model and an image model too.
+    let mut doc = fixture("model_catalog");
+    let mut video = doc["rows"][0].clone();
+    video["id"] = json!("wan");
+    video["display_name"] = json!("Wan 2.2 TI2V");
+    video["capabilities"] = json!({"video_generation": true, "text": false});
+    video["artifacts"] = json!([video["artifacts"][0].clone()]);
+    video["artifacts"][0]["artifact"] = json!("AbstractFramework/wan2.2");
+    video["artifacts"][0]["provider"] = json!("mlx-gen");
+    let mut image = video.clone();
+    image["id"] = json!("flux");
+    image["display_name"] = json!("FLUX Klein");
+    image["capabilities"] = json!({"image_generation": true});
+    image["artifacts"][0]["artifact"] = json!("AbstractFramework/flux");
+    doc["rows"].as_array_mut().unwrap().extend([video, image]);
+    h.screens
+        .catalog
+        .set(abstractcore_console::screens::Remote::Ready(
+            abstractcore_console::screens::CatalogData::from_value(&doc),
+        ));
+    let s = h.settle_until_contains("Wan 2.2 TI2V");
+    assert!(s.contains("type all"), "{s}");
+    // text → thinking → tools → vision → audio → embedding → voice → image → video
+    for _ in 0..9 {
+        h.key(b"t");
+        h.turns(2);
+    }
+    let s = h.settle_until_contains("type Video");
+    assert!(s.contains("Wan 2.2 TI2V"), "{s}");
+    assert!(
+        !s.contains("Qwen3 8B") && !s.contains("FLUX Klein"),
+        "only video rows:\n{s}"
+    );
+    assert!(s.contains("1 artifacts"), "{s}");
+    // The selection points into the FILTERED list.
+    let sel = abstractcore_console::screens::catalog::selected_artifact(&h.screens, false);
+    assert_eq!(
+        sel.map(|r| r.artifact).as_deref(),
+        Some("AbstractFramework/wan2.2")
+    );
+    h.key(b"t");
+    let s = h.settle_until_contains("type all");
+    assert!(s.contains("Qwen3 8B") && s.contains("FLUX Klein"), "{s}");
+    // Text: the text models, not the generators.
+    h.key(b"t");
+    let s = h.settle_until_contains("type Text");
+    assert!(s.contains("Qwen3 8B") && !s.contains("Wan 2.2 TI2V"), "{s}");
+}
+
+/// Minor: `w` hands the backend the catalog's vouched size (the gateway's
+/// disk pre-check); a size the catalog does not vouch for is not sent.
+#[test]
+fn w_sends_the_catalog_size_only_when_the_catalog_vouches_for_it() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    // An estimated size (no catalog/hf_api source) is never a promise.
+    let mut doc = fixture("model_catalog");
+    doc["rows"][1]["artifacts"][0]["size_source"] = json!("estimate");
+    h.screens
+        .catalog
+        .set(abstractcore_console::screens::Remote::Ready(
+            abstractcore_console::screens::CatalogData::from_value(&doc),
+        ));
+    h.turns(2);
+    h.select_artifact("gemma3:27b");
+    h.key(b"w");
+    h.wait_for_call("the unsized download", |calls| {
+        calls
+            .iter()
+            .any(|c| c == "expected_bytes ollama gemma3:27b -")
+    });
+    h.select_artifact("qwen3:8b");
+    h.key(b"w");
+    h.wait_for_call("the sized download", |calls| {
+        calls
+            .iter()
+            .any(|c| c == "expected_bytes ollama qwen3:8b 5200000000")
+    });
+}
+
+/// Routes: Core's `route_unavailable` (a CONFIGURED route this computer
+/// cannot run) and `recommendation_unavailable` (why an UNSET row has
+/// no recommendation) are rendered — the first never reads "configured"
+/// as if it worked. Both optional: the fixture's other rows are unchanged.
+#[test]
+fn routes_screen_flags_routes_this_computer_cannot_run() {
+    let mut h = harness_sized(Size::new(200, 40));
+    h.load_fixtures();
+    let mut doc = routes_fixture();
+    for r in doc["routes"].as_array_mut().unwrap() {
+        if r["key"] == "output.voice" {
+            r["route_unavailable"] = json!({"provider": "supertonic", "model": "supertonic-3",
+                                             "reason": "Supertonic has no build for this CPU"});
+        }
+        if r["key"] == "output.video" {
+            r["recommendation_unavailable"] = json!({"provider": "mlx-gen", "model": "wan2.2",
+                                                     "reason": "MLX-Gen needs Apple silicon"});
+        }
+    }
+    h.store
+        .routes
+        .set(Loadable::Ready(RoutesData::from_value(&doc)));
+    h.goto_screen(3);
+    let s = h.select_route("output.voice");
+    let voice = s
+        .lines()
+        .find(|l| l.contains("output.voice") && l.contains("supertonic"))
+        .unwrap_or("");
+    assert!(voice.contains("cannot run here"), "state column:\n{s}");
+    assert!(
+        s.contains(
+            "configured but cannot run on this computer: Supertonic has no build for this CPU — Enter edits it, x clears it"
+        ),
+        "detail line:\n{s}"
+    );
+    let s = h.select_route("output.video");
+    assert!(
+        s.contains("the recommended mlx-gen · wan2.2 cannot run on this computer: MLX-Gen needs Apple silicon"),
+        "{s}"
+    );
+    // A row without either field keeps its old words.
+    let s = h.select_route("embedding.text");
+    assert!(
+        !s.contains("cannot run on this computer"),
+        "the detail line of a runnable row:\n{s}"
+    );
+}
+
+/// A read-only person hears "only an admin can …" FIRST — before any
+/// capability, selection or row-state answer ("is not a server", "no job
+/// is running", "not downloaded yet", "not available over …").
+#[test]
+fn the_admin_refusal_comes_before_every_state_answer() {
+    // A bare backend (no optional verbs) and rows in every awkward state.
+    let mut h = harness();
+    h.load_fixtures();
+    h.screens
+        .access
+        .set(Access::ReadOnly("not signed in".into()));
+    h.open_engines();
+    let refused = |h: &mut Harness, key: &[u8], what: &str| {
+        h.store.notice.set(None);
+        h.key(key);
+        h.settle_until_contains(&format!("only an admin can {what} — not signed in"));
+    };
+    h.select_engine("llamacpp"); // not a server, nothing running, no job
+    refused(&mut h, b"s", "start or stop engines");
+    refused(&mut h, b"c", "cancel jobs");
+    refused(&mut h, b"a", "continue an install");
+    h.select_engine("ollama");
+    refused(&mut h, b"i", "install engines");
+    h.open_models();
+    h.select_artifact("qwen3:8b"); // not downloaded: `u` would say so
+    refused(&mut h, b"u", "change the default model");
+    refused(&mut h, b"c", "cancel downloads");
+    h.select_artifact("gemma3:27b"); // nothing to delete
+    refused(&mut h, b"d", "delete models");
 }

@@ -130,11 +130,20 @@ impl RmwOp {
     }
 }
 
+/// `#[non_exhaustive]`: the write vocabulary grows with the CLI (0.3.0
+/// added [`ApplyRecommended`](WriteVerb::ApplyRecommended)).
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum WriteVerb {
     /// `abstractcore <args>` — exit-0 `❌ Error:` lines are failures
     /// (the flags CLI's exit codes lie; probed).
     Cli(Vec<Arg>),
+    /// `abstractcore config apply-recommended [--force] --json`: a CLI
+    /// write whose JSON REPORT is the outcome — which routes changed,
+    /// which the operator's choice kept, which this host cannot run and
+    /// why. Its lines ([`apply_report_lines`]) ride the journal; a
+    /// decision this big must never read as a bare "done".
+    ApplyRecommended(Vec<Arg>),
     /// Direct read-modify-write: fresh read → mutate → tmp+rename 0600.
     Rmw(RmwOp),
 }
@@ -1014,17 +1023,114 @@ pub fn apply_recommended(
     if force {
         args.push(Arg::p("--force"));
     }
+    args.push(Arg::p("--json"));
     WriteSpec {
         label: if force {
             "apply recommended routes (replacing yours)".into()
         } else {
             "apply recommended routes (keeping yours)".into()
         },
-        verbs: vec![WriteVerb::Cli(args)],
+        verbs: vec![WriteVerb::ApplyRecommended(args)],
         expects: vec![],
         base_stamp: base,
         form_id,
     }
+}
+
+/// `apply-recommended --json`'s report, one line per route, in the CLI's
+/// own words (`abstractcore config apply-recommended` prints the same):
+/// what was applied or replaced, what was already the recommendation,
+/// what was KEPT (and what the recommendation would have been), and
+/// which routes this host cannot run — with the reason, left as they
+/// were. `Err` when the document is not that report.
+pub fn apply_report_lines(doc: &Value) -> Result<Vec<String>, String> {
+    if doc.get("ok").and_then(Value::as_bool) != Some(true) {
+        return Err(format!(
+            "apply-recommended did not report success: {}",
+            doc.get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("no `ok: true` in its report")
+        ));
+    }
+    let rows = doc
+        .get("routes")
+        .and_then(Value::as_array)
+        .ok_or("apply-recommended answered without its `routes` report")?;
+    let pair = |v: Option<&Value>| -> String {
+        let f = |k: &str| {
+            v.and_then(|v| v.get(k))
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        };
+        match (f("provider"), f("model")) {
+            (None, None) => "unset".to_string(),
+            (p, m) => format!("{} · {}", p.unwrap_or("?"), m.unwrap_or("?")),
+        }
+    };
+    let mut out = Vec::new();
+    // The report's own totals first (each optional: an older Core has no
+    // `cleared`), then one line per route.
+    let totals: Vec<String> = ["changed", "cleared", "kept", "already", "unavailable"]
+        .iter()
+        .filter_map(|k| {
+            doc.get(*k)
+                .and_then(Value::as_u64)
+                .filter(|n| *n > 0)
+                .map(|n| format!("{n} {k}"))
+        })
+        .collect();
+    if !totals.is_empty() {
+        out.push(totals.join(" · "));
+    }
+    for r in rows {
+        let key = r.get("key").and_then(Value::as_str).unwrap_or("?");
+        let action = r.get("action").and_then(Value::as_str).unwrap_or("?");
+        let reason = r
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or("no reason given");
+        // A configured route this computer cannot run is never reported
+        // as fine, whatever the action (Core `route_unavailable`).
+        let cannot_run = r
+            .get("route_unavailable")
+            .and_then(|u| u.get("reason"))
+            .and_then(Value::as_str)
+            .map(|why| format!(" — yours cannot run on this computer: {why}"))
+            .unwrap_or_default();
+        let line = match action {
+            "apply" => format!("{key}: applied {}", pair(r.get("after"))),
+            "overwrite" => format!(
+                "{key}: replaced {} with {}{cannot_run}",
+                pair(r.get("before")),
+                pair(r.get("after"))
+            ),
+            "already" => format!("{key}: already {}", pair(r.get("after"))),
+            "kept" => format!(
+                "{key}: kept yours {} (recommended {}){cannot_run}",
+                pair(r.get("before")),
+                pair(r.get("recommended"))
+            ),
+            "cleared" => format!(
+                "{key}: removed {}{cannot_run}; nothing recommended runs here either — {reason}",
+                pair(r.get("before"))
+            ),
+            "unavailable" => {
+                let before = pair(r.get("before"));
+                let left = if before == "unset" {
+                    "left unset".to_string()
+                } else {
+                    format!("left as {before}")
+                };
+                format!(
+                    "{key}: nothing recommended runs on this computer — {reason}; {left}{cannot_run}"
+                )
+            }
+            // A newer Core's word: shown verbatim, never dropped.
+            other => format!("{key}: {other} {}", pair(r.get("after"))),
+        };
+        out.push(line);
+    }
+    Ok(out)
 }
 
 pub fn clear_route(
@@ -1139,6 +1245,80 @@ pub fn set_audio_strategy(
         ],
         base_stamp: base,
         form_id,
+    }
+}
+
+#[cfg(test)]
+mod apply_report_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The apply report reaches the operator route by route — the
+    /// `unavailable` row WITH its reason, kept routes with what was
+    /// recommended instead.
+    #[test]
+    fn apply_report_names_every_route_including_what_cannot_run_here() {
+        let doc = json!({"ok": true, "routes": [
+            {"key": "input.text", "action": "apply",
+             "before": {}, "after": {"provider": "lmstudio", "model": "qwen/qwen3.5-9b"}},
+            {"key": "output.voice", "action": "kept",
+             "before": {"provider": "openai", "model": "tts-1"},
+             "recommended": {"provider": "supertonic", "model": "supertonic-3"}},
+            {"key": "output.image", "action": "unavailable",
+             "before": {}, "reason": "MLX-Gen needs Apple silicon"},
+            {"key": "output.video", "action": "unavailable",
+             "before": {"provider": "mlx-gen", "model": "wan"}, "reason": "needs 58 GiB"},
+        ]});
+        let lines = apply_report_lines(&doc).unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                "input.text: applied lmstudio · qwen/qwen3.5-9b",
+                "output.voice: kept yours openai · tts-1 (recommended supertonic · supertonic-3)",
+                "output.image: nothing recommended runs on this computer — MLX-Gen needs Apple silicon; left unset",
+                "output.video: nothing recommended runs on this computer — needs 58 GiB; left as mlx-gen · wan",
+            ]
+        );
+        // A newer Core: totals (with `cleared`), a cleared broken route,
+        // and a kept route flagged as not runnable here.
+        let doc = json!({"ok": true, "changed": 1, "cleared": 1, "kept": 1, "already": 0,
+            "routes": [
+            {"key": "output.image", "action": "cleared",
+             "before": {"provider": "mlx-gen", "model": "flux"}, "after": {},
+             "reason": "MLX-Gen needs Apple silicon",
+             "route_unavailable": {"provider": "mlx-gen", "model": "flux", "reason": "needs Apple silicon"}},
+            {"key": "output.voice", "action": "kept",
+             "before": {"provider": "supertonic", "model": "s3"},
+             "recommended": {"provider": "piper", "model": "p"},
+             "route_unavailable": {"provider": "supertonic", "model": "s3", "reason": "no arm64 wheel"}},
+        ]});
+        assert_eq!(
+            apply_report_lines(&doc).unwrap(),
+            vec![
+                "1 changed · 1 cleared · 1 kept",
+                "output.image: removed mlx-gen · flux — yours cannot run on this computer: needs \
+                 Apple silicon; nothing recommended runs here either — MLX-Gen needs Apple silicon",
+                "output.voice: kept yours supertonic · s3 (recommended piper · p) — yours cannot run \
+                 on this computer: no arm64 wheel",
+            ]
+        );
+        assert!(apply_report_lines(&json!({"ok": false, "error": "boom"}))
+            .unwrap_err()
+            .contains("boom"));
+        assert!(apply_report_lines(&json!({"ok": true})).is_err());
+    }
+
+    #[test]
+    fn apply_recommended_asks_for_the_json_report() {
+        for force in [false, true] {
+            let spec = apply_recommended(force, None, None);
+            let [WriteVerb::ApplyRecommended(args)] = spec.verbs.as_slice() else {
+                panic!("{:?}", spec.verbs)
+            };
+            let argv: Vec<&str> = args.iter().map(Arg::value).collect();
+            assert_eq!(argv.last(), Some(&"--json"), "{argv:?}");
+            assert_eq!(argv.contains(&"--force"), force, "{argv:?}");
+        }
     }
 }
 

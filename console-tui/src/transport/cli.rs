@@ -47,7 +47,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
 
-use super::{ConsoleTransport, TransportError, TransportErrorKind};
+use super::{ConsoleTransport, TransportCaps, TransportError, TransportErrorKind};
 use crate::cli::{self, CliErrorKind};
 
 /// Jobs kept for `job(id)` after they finish (contract E keeps ≤ 40).
@@ -290,7 +290,15 @@ impl ConsoleTransport for CliTransport {
         self.run_sync(&args, self.read_timeout)
     }
 
-    fn start_download(&self, provider: &str, artifact: &str) -> Result<Value, TransportError> {
+    /// `expected_bytes` is not forwarded: `abstractcore models download`
+    /// has no size flag (the CLI's own job never runs the catalog disk
+    /// pre-check). The gateway transport forwards it.
+    fn start_download(
+        &self,
+        provider: &str,
+        artifact: &str,
+        _expected_bytes: Option<u64>,
+    ) -> Result<Value, TransportError> {
         refuse_flag_like("provider", provider)?;
         refuse_flag_like("artifact", artifact)?;
         self.start_child(ChildSpec {
@@ -384,6 +392,104 @@ impl ConsoleTransport for CliTransport {
                 None => "this machine".to_string(),
             })
             .clone()
+    }
+
+    /// Hub search, the text default and the downloads feed exist here;
+    /// the abstractcore CLI has no engine-server verb, no install
+    /// location and no paused-install continuation, so those stay off
+    /// (the screens say "not here" instead of faking them).
+    fn capabilities(&self) -> TransportCaps {
+        TransportCaps {
+            hub_search: true,
+            text_default: true,
+            downloads_feed: true,
+            ..TransportCaps::default()
+        }
+    }
+
+    fn models_catalog_hub(
+        &self,
+        q: &str,
+        engine: Option<&str>,
+        fits_only: bool,
+    ) -> Result<Value, TransportError> {
+        let q = q.trim();
+        if q.is_empty() {
+            return Err(TransportError::refused(
+                "a Hugging Face search needs a query",
+                None,
+            ));
+        }
+        refuse_flag_like("query", q)?;
+        let mut args: Vec<&str> = vec!["models", "search", q, "--hub"];
+        if let Some(e) = engine {
+            refuse_flag_like("engine", e)?;
+            args.extend(["--engine", e]);
+        }
+        if fits_only {
+            args.push("--fits");
+        }
+        args.push("--json");
+        // The hub is a network call (cached 24 h by abstractcore).
+        self.run_sync(&args, self.probe_timeout)
+    }
+
+    /// The download children THIS transport owns, newest first — the
+    /// abstractcore job registry is per process, so there is nothing
+    /// else a CLI caller could list.
+    fn download_jobs(&self) -> Result<Value, TransportError> {
+        let jobs: Vec<Arc<ChildJob>> = self.jobs.lock().expect("jobs").clone();
+        let rows: Vec<Value> = jobs
+            .iter()
+            .rev()
+            .filter(|j| j.spec.kind == "download")
+            .map(|j| {
+                j.poll_exit();
+                j.snapshot()
+            })
+            .collect();
+        Ok(json!({"jobs": rows}))
+    }
+
+    fn capability_defaults(&self) -> Result<Value, TransportError> {
+        self.run_sync(&["config", "defaults", "--json"], self.read_timeout)
+    }
+
+    /// `config set-default output.text` prints a sentence, not JSON: its
+    /// exit code decides, and the answer is a FRESH defaults read (the
+    /// screen verifies the route from it). The route becomes exactly this
+    /// model: `""` clears the previous model's `base_url` and `reasoning`,
+    /// and `--option ""` its options (see the trait method).
+    fn set_text_default(&self, provider: &str, model: &str) -> Result<Value, TransportError> {
+        refuse_flag_like("provider", provider)?;
+        refuse_flag_like("model", model)?;
+        let args = [
+            "config",
+            "set-default",
+            "output.text",
+            "--provider",
+            provider,
+            "--model",
+            model,
+            "--base-url",
+            "",
+            "--reasoning",
+            "",
+            "--option",
+            "",
+        ];
+        let label = format!("abstractcore {}", args.join(" "));
+        let (status, stdout, stderr) = cli::run_raw_at(&self.bin, &args, &label, self.read_timeout)
+            .map_err(|e| match e.kind {
+                CliErrorKind::Timeout => {
+                    TransportError::new(TransportErrorKind::Timeout, e.message)
+                }
+                _ => TransportError::unavailable(format!("could not start {}", e.message)),
+            })?;
+        match status.code().unwrap_or(-1) {
+            0 => self.capability_defaults(),
+            code => Err(TransportError::failed(cli::error_line(&stdout, &stderr)).with_code(code)),
+        }
     }
 }
 

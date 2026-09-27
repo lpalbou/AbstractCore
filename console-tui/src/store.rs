@@ -54,7 +54,12 @@ pub struct ConfigMirror {
 
 /// One capability route from `config defaults --json` — the derived,
 /// coverage-decorated view (main.py:1442-1452 + manager.py:1166-1182).
+///
+/// `#[non_exhaustive]`: it mirrors a payload that grows (0.3.0 added
+/// `recommendation_unavailable` / `route_unavailable`); read fields,
+/// build it with [`RouteRow::from_value`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct RouteRow {
     pub key: String,
     pub kind: String,
@@ -99,6 +104,46 @@ pub struct RouteRow {
     /// writes `output.image` alone). The parent answers it, so it is not
     /// unconfigured in effect and must not be painted as a gap.
     pub inherits_broad: bool,
+    /// An UNSET row whose recommendation this computer cannot run
+    /// (Core `recommendation_unavailable`): "not configured" says why.
+    pub recommendation_unavailable: Option<RouteUnavailable>,
+    /// A CONFIGURED row whose in-process provider cannot run on this
+    /// computer (Core `route_unavailable`): never shown as fine.
+    pub route_unavailable: Option<RouteUnavailable>,
+}
+
+/// Core's `{provider, model, reason}` for a route this computer cannot
+/// run (`recommendation_unavailable` / `route_unavailable`). Optional on
+/// the wire: an older Core sends neither and nothing changes.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
+pub struct RouteUnavailable {
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub reason: String,
+}
+
+impl RouteUnavailable {
+    fn from_value(v: Option<&Value>) -> Option<RouteUnavailable> {
+        let v = v.filter(|v| v.is_object())?;
+        Some(RouteUnavailable {
+            provider: s(v, "provider").filter(|p| !p.is_empty()),
+            model: s(v, "model").filter(|m| !m.is_empty()),
+            reason: s(v, "reason").unwrap_or_else(|| "no reason given".into()),
+        })
+    }
+
+    /// "mlx-gen · model", or "" when Core named neither.
+    pub fn pair_text(&self) -> String {
+        match (&self.provider, &self.model) {
+            (None, None) => String::new(),
+            (p, m) => format!(
+                "{} · {}",
+                p.as_deref().unwrap_or("?"),
+                m.as_deref().unwrap_or("?")
+            ),
+        }
+    }
 }
 
 impl RouteRow {
@@ -133,6 +178,10 @@ impl RouteRow {
                 .unwrap_or_default(),
             covered_by_tasks: b(v, "covered_by_tasks").unwrap_or(false),
             inherits_broad: b(v, "inherits_broad").unwrap_or(false),
+            recommendation_unavailable: RouteUnavailable::from_value(
+                v.get("recommendation_unavailable"),
+            ),
+            route_unavailable: RouteUnavailable::from_value(v.get("route_unavailable")),
             key,
         })
     }
@@ -181,6 +230,11 @@ impl RouteRow {
             return format!("covered by {by}");
         }
         if self.configured {
+            // Configured is not the same as working: Core says this
+            // computer cannot run the provider (`route_unavailable`).
+            if self.route_unavailable.is_some() {
+                return "cannot run here".to_string();
+            }
             return "configured".to_string();
         }
         // AN UNSET PARENT WHOSE TASK ROWS ARE ALL SET IS NOT A PROBLEM.

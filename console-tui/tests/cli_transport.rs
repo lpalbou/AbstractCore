@@ -10,7 +10,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use abstractcore_console::transport::{CliTransport, ConsoleTransport, TransportErrorKind};
+use abstractcore_console::transport::{
+    CliTransport, ConsoleTransport, InstallLocation, ServerAction, TransportErrorKind,
+};
 use serde_json::Value;
 
 const FAKE: &str = r#"#!/bin/sh
@@ -43,6 +45,27 @@ case "$1 $2" in
     sleep 1
     printf '{"schema":"host_job_v1","job_id":"dl_up","kind":"download","status":"completed","percent":100.0,"message":"success","command":["ollama","pull","%s"]}\n' "$4" ;;
   "models jobs") echo '{"jobs":[]}' ;;
+  "config defaults")
+    if [ -f "$D/route" ]; then R="$(cat "$D/route")"; else R='"provider":"lmstudio","model":"old","base_url":"http://localhost:1234/v1","reasoning":"high","options":{"speculation":{"mode":"native_mtp"}}'; fi
+    printf '{"routes":[{"key":"input.text","provider":"mlx","model":"old"},{"key":"output.text",%s}]}\n' "$R" ;;
+  "config set-default")
+    # Core's merge rule: a flag not passed KEEPS the stored field, "" clears it.
+    ROUTE="$3"; shift 3; P=""; M=""; CLEARED=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --provider) P="$2"; shift 2 ;;
+        --model) M="$2"; shift 2 ;;
+        --base-url|--reasoning|--option) if [ -z "$2" ]; then CLEARED="$CLEARED ${1#--}"; fi; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    if [ "$M" = "bad-model" ]; then echo "❌ Error: Failed to set capability default for $ROUTE"; exit 1; fi
+    R="\"provider\":\"$P\",\"model\":\"$M\""
+    case "$CLEARED" in *base-url*) ;; *) R="$R,\"base_url\":\"http://localhost:1234/v1\"" ;; esac
+    case "$CLEARED" in *reasoning*) ;; *) R="$R,\"reasoning\":\"high\"" ;; esac
+    case "$CLEARED" in *option*) ;; *) R="$R,\"options\":{\"speculation\":{\"mode\":\"native_mtp\"}}" ;; esac
+    printf '%s' "$R" > "$D/route"
+    echo "✅ Set capability default for $ROUTE" ;;
   *) echo "unknown: $*" >&2; exit 1 ;;
 esac
 "#;
@@ -144,18 +167,23 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
     assert!(calls(&dir).contains("models delete mlx loaded-model --yes --force --json"));
 
     // A flag-shaped id never reaches the CLI.
-    assert!(t.start_download("ollama", "--rm").unwrap_err().is_refused());
+    assert!(t
+        .start_download("ollama", "--rm", None)
+        .unwrap_err()
+        .is_refused());
 
     // Download: a child job. Immediate refusal → Refused from start.
-    let e = t.start_download("ollama", "refused").unwrap_err();
+    let e = t.start_download("ollama", "refused", None).unwrap_err();
     assert!(e.is_refused(), "{e}");
     assert_eq!(e.message, "downloads are disabled here");
-    let e = t.start_download("ollama", "broken").unwrap_err();
+    let e = t.start_download("ollama", "broken", Some(10)).unwrap_err();
     assert_eq!(e.kind, TransportErrorKind::Failed, "{e}");
     assert!(e.message.contains("boom"), "{e}");
 
     // A real one: running with the NDJSON progress, then completed.
-    let j = t.start_download("ollama", "qwen3:8b").unwrap();
+    let j = t
+        .start_download("ollama", "qwen3:8b", Some(4_600_000_000))
+        .unwrap();
     assert_eq!(j["schema"], "host_job_v1");
     assert_eq!(j["status"], "running", "{j}");
     assert_eq!(j["kind"], "download");
@@ -200,12 +228,76 @@ fn cli_transport_against_a_fake_abstractcore_on_path() {
     let e = t.cancel_job("dl_elsewhere").unwrap_err();
     assert_eq!(e.kind, TransportErrorKind::NotFound, "{e}");
 
+    // Optional verbs the CLI HAS: hub search, the text default, the feed.
+    let caps = t.capabilities();
+    assert!(caps.hub_search && caps.text_default && caps.downloads_feed);
+    assert!(!caps.engine_server && !caps.engine_continue && !caps.install_location);
+    t.models_catalog_hub("qwen", Some("ollama"), true).unwrap();
+    assert!(
+        calls(&dir).contains("models search qwen --hub --engine ollama --fits --json"),
+        "{}",
+        calls(&dir)
+    );
+    assert!(t
+        .models_catalog_hub("  ", None, false)
+        .unwrap_err()
+        .is_refused());
+    let feed = t.download_jobs().unwrap();
+    let listed: Vec<&str> = feed["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|j| j["kind"].as_str().unwrap())
+        .collect();
+    assert!(
+        !listed.is_empty() && listed.iter().all(|k| *k == "download"),
+        "{feed}"
+    );
+    let before = t.capability_defaults().unwrap();
+    assert_eq!(before["routes"][1]["model"], "old");
+    let after = t.set_text_default("ollama", "qwen3:8b").unwrap();
+    assert!(
+        calls(&dir).contains("config set-default output.text --provider ollama --model qwen3:8b"),
+        "{}",
+        calls(&dir)
+    );
+    assert_eq!(
+        after["routes"][1]["provider"], "ollama",
+        "a FRESH read answers: {after}"
+    );
+    assert_eq!(after["routes"][1]["model"], "qwen3:8b");
+    // The route is EXACTLY the new model: the previous model's endpoint,
+    // reasoning level and options are cleared, never inherited (an
+    // Ollama model behind LM Studio's :1234 is a broken route).
+    for field in ["base_url", "reasoning", "options"] {
+        assert!(
+            after["routes"][1].get(field).is_none(),
+            "{field} survived: {after}"
+        );
+    }
+    let e = t.set_text_default("ollama", "bad-model").unwrap_err();
+    assert_eq!(e.kind, TransportErrorKind::Failed, "{e}");
+    assert!(e.message.contains("Failed to set"), "{e}");
+    assert!(t
+        .set_text_default("ollama", "--force")
+        .unwrap_err()
+        .is_refused());
+    // …and the ones it has NOT: Unsupported, never a fake.
+    for e in [
+        t.engine_server("ollama", ServerAction::Start).unwrap_err(),
+        t.engine_job_continue("cli-1", None).unwrap_err(),
+        t.engine_install_at("ollama", false, InstallLocation::System)
+            .unwrap_err(),
+    ] {
+        assert_eq!(e.kind, TransportErrorKind::Unsupported, "{e}");
+    }
+
     // A missing binary is "unavailable", never a panic.
     let gone = CliTransport::new(dir.join("nope"));
     let e = gone.host_profile().unwrap_err();
     assert_eq!(e.kind, TransportErrorKind::Unavailable, "{e}");
     assert_eq!(
-        gone.start_download("ollama", "x").unwrap_err().kind,
+        gone.start_download("ollama", "x", None).unwrap_err().kind,
         TransportErrorKind::Unavailable
     );
 

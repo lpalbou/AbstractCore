@@ -81,11 +81,14 @@ needs the CLI says so and names `$ABSTRACTCORE_CLI` as the fix.
 - **Models** (9): the model catalog fitted to this machine (host
   profile on top; fit `fits / tight / too large / partial offload /
   unknown`; weights `installed / not downloaded / unknown / remote`).
-  `w` downloads the selected artifact with live progress, `d` deletes
-  after a confirm that names what blocks it (a loaded model, a cache
-  another engine shares — forcing is a separate answer), `/` filters,
-  `f` shows only what fits, `e` picks the engine, `v` flips between the
-  catalog and what is installed, `c` cancels the running job.
+  `w` downloads the selected artifact with live progress (several at
+  once), `d` deletes after a confirm that names what blocks it (a loaded
+  model, a cache another engine shares — forcing is a separate answer),
+  `/` filters, `t` picks the model type (text, thinking, tools, vision,
+  audio, embedding, voice, image, video — the web console's chips), `f`
+  shows only what fits, `e` picks the engine, `h` searches Hugging Face,
+  `u` makes an installed text model the default text model, `v` cycles
+  catalog → installed → downloads, `c` cancels a download (asks first).
 - **Engines** (0): which engines are installed and running. `i` installs
   the selected one after a confirm that shows the exact command, the
   host it runs on and whether it needs sudo/UAC (or answers with a dry
@@ -125,13 +128,13 @@ the trait over its HTTP client and mounts the same screens:
 
 ```toml
 [dependencies]
-abstractcore-console = "0.2"
+abstractcore-console = "0.3"
 abstracttui = "0.3.6"   # the same engine version: one reactive runtime
 ```
 
 ```rust
 use std::sync::Arc;
-use abstractcore_console::screens::{self, ScreensCtx, ScreensOptions};
+use abstractcore_console::screens::{self, Access, ScreensCtx, ScreensOptions};
 use abstractcore_console::transport::{ConsoleTransport, TransportError};
 use serde_json::Value;
 
@@ -139,24 +142,34 @@ struct HttpTransport { /* your client */ }
 
 impl ConsoleTransport for HttpTransport {
     fn host_profile(&self) -> Result<Value, TransportError> { /* GET …/host/profile */ todo!() }
-    // engines_status, models_catalog, models_installed, start_download,
-    // delete_model, engine_install, job, cancel_job — one route each;
-    // map 403/409 to TransportError::refused(msg, Some(body)).
+    // engines_status, models_catalog, models_installed, start_download
+    // (forward expected_bytes), delete_model, engine_install, job,
+    // cancel_job — one route each; map 403/409 to
+    // TransportError::refused(msg, Some(body)). Optional verbs
+    // (download_job, cancel_download, hub search, …) are opted into
+    // through capabilities().
     fn host_label(&self) -> String { "gateway.example.lan".into() }
 }
 
-// In your mount closure (UI thread), once:
+// In your mount closure (UI thread), once. `access` is YOUR signal: keep
+// it current from the signed-in principal (Access::Admin, or
+// Access::ReadOnly("signed in as ana, not an admin")); the admin-only
+// verbs (w d u c on Models, i s a c on Engines) follow it.
+let access = cx.signal(Access::ReadOnly("not signed in".into()));
 let sctx = ScreensCtx::new(cx, Arc::new(HttpTransport { /* … */ }), overlays.clone(),
-    ScreensOptions { notice: Some(store.notice), ..ScreensOptions::default() });
+    access, ScreensOptions { notice: Some(store.notice), ..ScreensOptions::default() });
 // …then as two more PageHost pages:
 //   .page("catalog", "Models",  move |pcx| screens::catalog(pcx, &sctx_a))
 //   .page("engines", "Engines", move |pcx| screens::engines(pcx, &sctx_b))
 ```
 
 Each screen loads its data on first entry and binds its own keys
-(`w d / f e v r c` on Models, `i o r c` on Engines);
-`screens::catalog::HINTS` and `screens::engines::HINTS` are the footer
-pairs to show. Full API: <https://docs.rs/abstractcore-console>.
+(`w d / t f e v r c h u` on Models, `i o r c s a y` on Engines);
+`screens::catalog::hints(caps, &access)` and
+`screens::engines::hints(caps, &access)` are the footer pairs to show
+(a verb the backend lacks says "not here", an admin-only verb for a
+read-only person says "admin only"). Full API:
+<https://docs.rs/abstractcore-console>.
 
 ## Layout
 

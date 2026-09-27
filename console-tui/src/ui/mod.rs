@@ -326,8 +326,9 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
                 return;
             }
             // A download/install child dies with this process (its pipes
-            // close) — quitting would silently cancel it.
-            if ctx_q.screens.store.job_active() {
+            // close) — quitting would silently cancel it. (A paused
+            // install waits for a person and blocks nothing.)
+            if ctx_q.screens.store.job_running() {
                 ctx_q.store.notice.set(Some(
                     "a models/engines job is running — c on Models/Engines cancels it \
                      (Ctrl+C force-quits and stops it)"
@@ -722,6 +723,8 @@ fn header(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
 fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
     let store = ctx.store;
     let ui = ctx.ui;
+    let screen_caps = ctx.screens.caps;
+    let screen_access = ctx.screens.store.access;
     let engine_notices = abstracttui::app::use_startup_notices(cx);
     Element::new()
         // Chrome rows: pinned like the header — the hint line
@@ -829,12 +832,14 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                     // spelled out before it spends a byte.
                                     pairs.push(("w", "download weights"));
                                 }
-                                SCREEN_CATALOG => {
-                                    pairs.extend_from_slice(crate::screens::catalog::HINTS)
-                                }
-                                SCREEN_ENGINES => {
-                                    pairs.extend_from_slice(crate::screens::engines::HINTS)
-                                }
+                                SCREEN_CATALOG => pairs.extend(crate::screens::catalog::hints(
+                                    screen_caps,
+                                    &screen_access.get(),
+                                )),
+                                SCREEN_ENGINES => pairs.extend(crate::screens::engines::hints(
+                                    screen_caps,
+                                    &screen_access.get(),
+                                )),
                                 _ => {}
                             }
                             pairs.push(("g", "test default route"));

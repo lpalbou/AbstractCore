@@ -19,10 +19,13 @@ pub mod worker;
 pub mod writes;
 
 pub use screens::{
-    catalog, engines, schedule_job_poll, spawn_worker, JobPoll, Remote, ScreenCmd, ScreensCtx,
-    ScreensOptions, ScreensStore,
+    catalog, engines, schedule_job_poll, spawn_worker, Access, JobPoll, Remote, ScreenCmd,
+    ScreensCtx, ScreensOptions, ScreensStore,
 };
-pub use transport::{CliTransport, ConsoleTransport, TransportError, TransportErrorKind};
+pub use transport::{
+    CliTransport, ConsoleTransport, InstallLocation, ServerAction, TransportCaps, TransportError,
+    TransportErrorKind,
+};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -61,10 +64,12 @@ KEYS: 1-9, 0 screens (browse) · Ctrl+N/P next/prev · Tab focus ·
       r reload · Ctrl+L repaint · q (browse) / Ctrl+C quit
       on Capability routes: a applies the recommended routes ·
       w downloads the selected route's weights
-      on Models (9): w download · d delete · / filter · f fits only ·
-      e engine · v installed/catalog · r refresh · c cancel the job
+      on Models (9): w download · d delete · / filter · t type ·
+      f fits only · e engine · v catalog/installed/downloads ·
+      h Hugging Face · u use as default text model · r refresh ·
+      c cancel a download
       on Engines (0): i install (confirmed, shows the command) ·
-      o open the download page · r probe · c cancel the job
+      o open the download page · r probe · c cancel the install
 
 MOUSE: click selects a row · DOUBLE-CLICK opens its editor, the same
        door Enter opens (and refuses for the same reasons).
@@ -176,10 +181,16 @@ pub fn run_cli(argv: &[String]) -> i32 {
         *ui_out.borrow_mut() = Some(ui_state);
         let transport: std::sync::Arc<dyn ConsoleTransport> =
             std::sync::Arc::new(CliTransport::new(screens_bin.clone()));
+        // The core console drives `abstractcore` on the operator's own
+        // machine: the person at this terminal IS the local operator, so
+        // every Models/Engines verb is theirs (the gateway console derives
+        // this from its signed-in principal instead).
+        let access = cx.signal(screens::Access::Admin);
         let screens_ctx = ScreensCtx::new(
             cx,
             transport,
             overlays_screens.clone(),
+            access,
             ScreensOptions {
                 notice: Some(store.notice),
                 ..ScreensOptions::default()
