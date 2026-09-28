@@ -15,7 +15,10 @@ import importlib.metadata
 import io
 import logging
 import os
+import sys
+import types
 import wave
+from dataclasses import dataclass
 
 import pytest
 from fastapi.testclient import TestClient
@@ -52,10 +55,36 @@ class _EntryPoints:
         return list(self._eps) if group == "abstractcore.capabilities_plugins" else []
 
 
+# A stand-in for AbstractVoice's public `abstractvoice.engine_runtime` (the
+# route tests run in CI jobs without AbstractVoice installed);
+# `test_the_stand_in_matches_the_real_engine_runtime` pins it to the real one.
+_REMOTE_ENGINES = {"openai", "openai-compatible"}
+_LOCAL_ENGINES = {"piper", "supertonic", "faster-whisper", "omnivoice", "qwen3-tts"}
+_ALIASES = {"remote": "openai-compatible", "compatible": "openai-compatible", "proxy": "openai-compatible"}
+REMOTE_SPELLINGS = ["openai", "OpenAI", "openai-compatible", "openai_compatible", "remote", "compatible", "proxy"]
+
+
+@dataclass(frozen=True)
+class _Status:
+    engine: str
+    remote: bool
+
+
+def _stand_in_status(engine, *, kind=None):
+    text = str(engine or "").strip().lower().replace("_", "-")
+    eid = _ALIASES.get(text, text)
+    if eid not in _REMOTE_ENGINES | _LOCAL_ENGINES:
+        raise ValueError(f"unknown AbstractVoice engine {engine!r}")
+    return _Status(engine=eid, remote=eid in _REMOTE_ENGINES)
+
+
 @pytest.fixture()
 def seen(monkeypatch):
     """Install a fake voice/audio plugin recording, per call, the key AbstractVoice
     would authenticate with: the host setting, else its OPENAI_API_KEY fallback."""
+    runtime = types.ModuleType("abstractvoice.engine_runtime")
+    runtime.engine_runtime_status = _stand_in_status
+    monkeypatch.setitem(sys.modules, "abstractvoice.engine_runtime", runtime)
     calls: list = []
 
     def effective(owner):
@@ -189,6 +218,55 @@ def test_unauthenticated_requests_never_spend_the_env_key(seen, config, unauthen
     assert seen == []
 
 
+def _all_lanes(client, provider):
+    files = {"file": ("a.wav", b"abc", "audio/wav")}
+    return {
+        "speech": _speech(client, provider=provider),
+        "stream": _stream(client, provider=provider),
+        "stt": _stt(client, provider=provider),
+        "clone": _clone(client, provider=provider),
+        "path speech": client.post(f"/{provider}/v1/audio/speech", json={"input": "hi", "format": "wav"}),
+        "path stream": client.post(f"/{provider}/v1/audio/speech/stream", json={"input": "hi", "format": "wav"}),
+        "path stt": client.post(f"/{provider}/v1/audio/transcriptions", files=files),
+        "path clone": client.post(f"/{provider}/v1/voice/clone", files=files),
+    }
+
+
+@pytest.mark.parametrize("key_source", ["saved", "env"])
+@pytest.mark.parametrize("provider", REMOTE_SPELLINGS + ["no-such-engine"])
+def test_every_spelling_of_a_remote_or_unknown_engine_is_guarded_on_every_route(
+    seen, config, unauthenticated, monkeypatch, provider, key_source
+):
+    """AbstractVoice decides what is remote (`compatible`, `proxy`, ... are its
+    spellings of openai-compatible); an engine it does not know fails closed."""
+    if key_source == "saved":
+        config.set_api_key("openai", KEY_A)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("OPENAI_API_KEY", KEY_A)
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://compat.example.test/v1")
+    for lane, resp in _all_lanes(unauthenticated, provider).items():
+        assert resp.status_code == 401, (lane, resp.status_code, resp.text[:200])
+        assert _REFUSAL.split(" is configured")[0] in resp.json()["error"]["message"], lane
+    assert seen == []
+
+
+def test_without_abstractvoices_runtime_probe_every_engine_is_guarded(seen, config, unauthenticated, monkeypatch):
+    monkeypatch.setitem(sys.modules, "abstractvoice.engine_runtime", None)  # absent / too old: import raises
+    monkeypatch.setenv("OPENAI_API_KEY", KEY_A)
+    _assert_refused(_speech(unauthenticated, provider="piper"))
+    assert seen == []
+
+
+def test_the_stand_in_matches_the_real_engine_runtime():
+    real = pytest.importorskip("abstractvoice.engine_runtime")
+    for spelling in REMOTE_SPELLINGS + sorted(_LOCAL_ENGINES):
+        got, want = real.engine_runtime_status(spelling), _stand_in_status(spelling)
+        assert (got.engine, bool(got.remote)) == (want.engine, want.remote), spelling
+    with pytest.raises(ValueError):
+        real.engine_runtime_status("no-such-engine")
+
+
 def test_the_openai_model_path_applies_the_same_rule_to_the_saved_key(seen, config, unauthenticated, monkeypatch):
     config.set_api_key("openai", KEY_A)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -254,15 +332,42 @@ def test_keys_never_reach_logs(seen, config, authenticated, caplog):
     assert KEY_A not in caplog.text
 
 
-def test_the_catalog_gets_the_saved_key_only_for_authenticated_requests(seen, config, authenticated, monkeypatch):
+CATALOG_ROUTES = [
+    "/v1/audio/voices",
+    "/v1/audio/speech/providers",
+    "/v1/audio/speech/models",
+    "/v1/audio/transcriptions/providers",
+    "/v1/audio/transcriptions/models",
+    "/v1/voice/clone/providers",
+    "/v1/voice/clone/models",
+]
+
+
+def test_the_catalog_gets_the_saved_key_only_for_authenticated_requests(seen, config, authenticated):
     config.set_api_key("openai", KEY_A)
     assert authenticated.get("/v1/audio/speech/providers").status_code == 200
-    monkeypatch.delenv("ABSTRACTCORE_AUTH_TOKEN")
-    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
-    assert TestClient(app).get("/v1/audio/speech/providers").status_code == 200
-    assert [c[0] for c in seen] == ["catalog", "catalog"]
+    assert [c[0] for c in seen] == ["catalog"]
     assert seen[0][2]["voice_openai_api_key"] == KEY_A
-    assert seen[1][2]["voice_openai_api_key"] is None
+
+
+@pytest.mark.parametrize("key_source", ["saved", "env"])
+def test_unauthenticated_catalog_requests_never_spend_a_server_key(seen, config, unauthenticated, monkeypatch, key_source):
+    """Also under ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1 (the speech routes' rule)."""
+    if key_source == "saved":
+        config.set_api_key("openai", KEY_A)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("OPENAI_API_KEY", KEY_A)
+    for path in CATALOG_ROUTES:
+        resp = unauthenticated.get(path)
+        assert resp.status_code == 401, (path, resp.status_code)
+        assert "inbound server auth was not used" in resp.json()["error"]["message"]
+    assert seen == []
+
+
+def test_unauthenticated_catalog_requests_run_when_no_key_is_held(seen, config, unauthenticated):
+    assert unauthenticated.get("/v1/audio/speech/providers").status_code == 200
+    assert seen[-1][2]["voice_openai_api_key"] is None
 
 
 def test_clearing_a_configured_key_restores_the_env_value_it_shadowed(monkeypatch, tmp_path):

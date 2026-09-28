@@ -493,15 +493,33 @@ def _saved_openai_api_key() -> Optional[str]:
     return str(value or "").strip() or None
 
 
-# In-process voice engines that authenticate with an OpenAI key: the saved one
-# (handed over as AbstractVoice's host setting `voice_openai_api_key`) or
-# AbstractVoice's own OPENAI_API_KEY fallback.
-_OPENAI_KEYED_VOICE_ENGINES = frozenset({"openai", "openai-compatible"})
 _VOICE_ENGINE_CONFIG_KEYS = {"tts": "voice_tts_engine", "stt": "voice_stt_engine", "clone": "voice_cloning_engine"}
 # AbstractVoice's engines when neither the request nor the config names one
 # (abstractvoice/integrations/abstractcore_plugin.py, `_BaseVoice` settings:
 # TTS and STT default to "openai", cloning to "omnivoice").
 _ABSTRACTVOICE_DEFAULT_ENGINES = {"tts": "openai", "stt": "openai", "clone": "omnivoice"}
+
+
+def _voice_engine_spends_server_keys(engine: str) -> tuple[str, bool]:
+    """`(engine id, remote?)` in AbstractVoice's own words.
+
+    A remote AbstractVoice engine (OpenAI, an OpenAI-compatible server, under
+    any spelling AbstractVoice accepts: `remote`, `compatible`, `proxy`, ...)
+    authenticates with an OpenAI key: the saved one handed over as its host
+    setting `voice_openai_api_key`, or its own OPENAI_API_KEY fallback. The
+    answer is `abstractvoice.engine_runtime.engine_runtime_status(...).remote`;
+    an engine it does not know, or an AbstractVoice without that API, is
+    treated as remote (fail closed: it may still spend the env key).
+    """
+    try:
+        from abstractvoice.engine_runtime import engine_runtime_status
+    except ImportError:
+        return engine, True
+    try:
+        status = engine_runtime_status(engine)
+    except ValueError:
+        return engine, True
+    return status.engine, bool(status.remote)
 
 
 def _voice_core_for_request(request: Request, *, task: str, engine: Optional[str] = None) -> Any:
@@ -511,7 +529,8 @@ def _voice_core_for_request(request: Request, *, task: str, engine: Optional[str
     (`_guard_unauthenticated_server_provider_key_use`, the same guard as the
     `openai/...` model path): a request that is not server-authenticated
     never spends them. When the resolved engine (request, else config, else
-    AbstractVoice's default) authenticates with an OpenAI key:
+    AbstractVoice's default) is remote in AbstractVoice's own words
+    (`_voice_engine_spends_server_keys`):
     - a caller key (X-AbstractCore-Provider-API-Key) is the only key used;
     - else an unauthenticated request is refused (401) whenever the server
       holds a key (saved in the config, or OPENAI_API_KEY, which AbstractVoice
@@ -527,10 +546,13 @@ def _voice_core_for_request(request: Request, *, task: str, engine: Optional[str
         or _request_provider_value(config.get(_VOICE_ENGINE_CONFIG_KEYS[task]))
         or _ABSTRACTVOICE_DEFAULT_ENGINES[task]
     )
-    if resolved not in _OPENAI_KEYED_VOICE_ENGINES:
+    canonical, remote = _voice_engine_spends_server_keys(resolved)
+    if not remote:
         return _get_capability_core()
     caller_key = _provider_api_key_from_request(request)
-    _guard_unauthenticated_server_provider_key_use(resolved, explicit_provider_key=bool(caller_key), request=request)
+    # An unknown engine is judged against the key AbstractVoice falls back to.
+    guard_as = canonical if canonical in {"openai", "openai-compatible"} else "openai"
+    _guard_unauthenticated_server_provider_key_use(guard_as, explicit_provider_key=bool(caller_key), request=request)
     if caller_key:
         keys = {"voice_openai_api_key": caller_key, "voice_remote_api_key": caller_key}
     else:
@@ -689,7 +711,9 @@ def _server_has_provider_api_key(provider: str) -> bool:
     env_var = _provider_api_key_env_var(provider)
     if env_var and str(os.getenv(env_var) or "").strip():
         return True
-    if str(provider or "").strip().lower() == "openai" and _saved_openai_api_key():
+    if str(provider or "").strip().lower() in {"openai", "openai-compatible"} and _saved_openai_api_key():
+        # The saved OpenAI key is exported as OPENAI_API_KEY, the key both
+        # names authenticate with.
         return True
     try:
         from ..config import manager as config_manager_module
@@ -950,17 +974,14 @@ def _json_or_raw_audio_response(content: bytes, content_type: str, *, fallback_m
 
 
 def _server_has_audio_catalog_credential() -> bool:
-    return bool(str(os.getenv("OPENAI_API_KEY") or "").strip())
-
-
-def _server_allows_unauthenticated() -> bool:
-    return _bool_env("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", default=False)
+    return bool(str(os.getenv("OPENAI_API_KEY") or "").strip()) or bool(_saved_openai_api_key())
 
 
 def _guard_audio_catalog_credentials(*, request: Request, explicit_provider_key: bool) -> None:
+    """The speech routes' rule for discovery: a request that is not
+    server-authenticated never spends a key the server holds (saved or
+    OPENAI_API_KEY) — also with ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1."""
     if _request_has_server_auth(request) or explicit_provider_key:
-        return
-    if _server_allows_unauthenticated():
         return
     if not _server_has_audio_catalog_credential():
         return
