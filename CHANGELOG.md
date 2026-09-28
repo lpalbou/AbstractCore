@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.0] - 2026-09-28
+
+Capability routes say when their engine is not installed, Apple silicon fits account for the GPU
+memory limit macOS can raise, the saved OpenAI key reaches AbstractVoice, and the terminal console
+(`abstractcore-console` 0.4.0) never tries to open a browser on a machine without a display.
+
 ### Added
 
 - `engine_missing: {engine, name, reason, install[, engine_row]}` on capability routes whose
@@ -41,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   require `abstractvoice>=0.13.0`, the first release with the public engine runtime probe.
 - vLLM's engine row on a host without an NVIDIA GPU reads "vLLM needs Linux with an NVIDIA GPU
   (CUDA); use a remote vLLM server instead".
-- `abstractcore-console` (next release 0.4.0): `o` never launches a browser without a display (SSH
+- `abstractcore-console` 0.4.0: `o` never launches a browser without a display (SSH
   sessions; Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY`) and prints the link instead; routes
   whose engine is not installed read `engine not installed` with the install command; models that
   need a raised GPU limit show the command; remote-only engines read `remote only`.

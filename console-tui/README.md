@@ -142,7 +142,7 @@ the trait over its HTTP client and mounts the same screens:
 
 ```toml
 [dependencies]
-abstractcore-console = "0.3"
+abstractcore-console = "0.4"
 abstracttui = "0.3.6"   # the same engine version: one reactive runtime
 ```
 

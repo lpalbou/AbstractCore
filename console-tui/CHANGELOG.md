@@ -6,8 +6,10 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
-Next version: **0.4.0** (`cargo semver-checks` reports only a minor bump, but
-`Opener`'s error type changed, which breaks hosts that supply their own opener).
+## [0.4.0] — 2026-09-28
+
+Released with AbstractCore 2.18.0. A minor bump for `cargo semver-checks`, but
+`Opener`'s error type changed, which breaks hosts that supply their own opener.
 
 ### Added
 
@@ -15,7 +17,7 @@ Next version: **0.4.0** (`cargo semver-checks` reports only a minor bump, but
   and `display_from(os, env)`: an SSH session (`SSH_CONNECTION`, `SSH_CLIENT`,
   `SSH_TTY`) or Linux/BSD with neither `DISPLAY` nor `WAYLAND_DISPLAY` has no
   display, and `system_open` launches nothing there.
-- Routes: `engine_missing` (AbstractCore's next release) reads `engine not installed`; the
+- Routes: `engine_missing` (AbstractCore 2.18.0) reads `engine not installed`; the
   detail line gives Core's reason with the install command, and the Engines
   row that installs it. The apply-recommended report says which engine a
   written route still needs.
