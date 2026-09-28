@@ -15312,9 +15312,10 @@ model fits under macOS's default GPU memory limit (75% of unified memory):
 | 32 GiB to below 128 GiB | `qwen3.8-27b` | `mlx-community/Qwen3.8-27B-4bit` |
 | 128 GiB and above | `qwen3.8-flash-next` | `mlx-community/Qwen3.8-Flash-Next-4bit` |
 
-Qwen3 1.7B is the largest catalog text model that fits an 8 GB Mac; it does not read images. On a
-128 GB Mac, Flash-Next fits once the GPU memory limit is raised (the pick's `warning` gives the
-`sysctl` command).
+Qwen3 1.7B is the text model chosen for an 8 GB Mac (it fits; LFM2.5 2.6B 4-bit also fits,
+tightly); it does not read images, and it has no MTP build, so its route carries no `speculation`
+policy. On a 128 GB Mac, Flash-Next fits once the GPU memory limit is raised (the pick's `warning`
+gives the `sysctl` command).
 
 A Mac whose memory cannot be read gets the smallest tier, and the pick says so in `tier`. Every
 other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@4bit`.
@@ -15941,13 +15942,17 @@ Route `output.music` (text to music).
   Apple silicon bands also carry `memory_gib` (the sizes the row covers), `memory_gib_min` and
   `memory_gib_below` (the next row's first size, `null` for the last). The other classes carry
   `variants`, the platforms that answer the same as the reference.
-- `entries.<capability>`: `status` (`recommended`, `covered` or `unavailable`), `starter`,
-  `provider`, `engine`, `device`, `model` (what the route stores), `artifact` and
-  `download_provider` (what `abstractcore models download` fetches), `catalog_id`,
-  `display_name`, `download_bytes` (`null` when the catalog has no exact size), `memory_need_bytes`,
-  `memory_need_source` (`measured` or `estimated`), `fit`, `gpu_limit_command`, `covered_by`,
-  `reason` (for `unavailable`), `warning` (the sentence surfaces show for a doubtful fit) and
-  `notes`. The text entry also carries `basis` and `tier` from `recommended_text_model()`.
+- `entries.<capability>`: `capability` (the id), `label`, `route` and `tasks` (the
+  capability's `capabilities[]` fields, repeated so an entry reads on its own), `status`
+  (`recommended`, `covered` or `unavailable`), `starter`, `provider`, `engine`, `device`, `model`
+  (what the route stores), `artifact` and `download_provider` (what `abstractcore models
+  download` fetches), `catalog_id`, `display_name`, `download_bytes` (`null` when the catalog has
+  no exact size), `memory_need_bytes`, `memory_need_source` (`measured` or `estimated`), `fit`,
+  `gpu_limit_command`, `covered_by`, `smaller_canvas` (`null`, or `{canvas, memory_need_bytes,
+  memory_need_source, fit}`: the largest measured smaller output size, `WIDTHxHEIGHTxFRAMES`, at
+  which an `unavailable` video model still fits), `reason` (for `unavailable`), `warning` (the
+  sentence surfaces show for a doubtful fit) and `notes`. The text entry also carries `basis` and
+  `tier` from `recommended_text_model()`.
 
 `--host --json` emits the same schema with `host: {os, arch, accelerator, memory_gib,
 ceiling_bytes, ceiling_source}` and one `entries` object.
@@ -16194,7 +16199,9 @@ has a build, the text route stays unset too, and the reason says to use a
 cloud provider or a text server on another machine.
 MLX-Gen needs Apple silicon. On other hosts the image route stays unset, and
 the grid (`recommendation_unavailable`) and `apply-recommended` (action
-`unavailable`) both give the reason. Set it to an image engine the host can
+`unavailable`) both give the reason. The unset `input.image` row gives one too
+where the recommended text model does not read images (the 8 GB Apple silicon
+tier). Set it to an image engine the host can
 run: `diffusers` (install profile `gpu`), `sdcpp`, or a cloud image provider.
 The video route (Wan2.2 TI2V-5B, one model for text-to-video and
 image-to-video) also runs on MLX-Gen, and it is written only where the model
@@ -16220,6 +16227,11 @@ A route that is already configured but cannot run on this host — an
 example `output.image: mlx-gen/...` kept from an install made before these
 defaults were host-aware — carries `route_unavailable: {provider, model,
 reason}` in the grid, and `abstractcore config defaults` prints it on the row.
+So does an image or video route whose catalog model does not fit this
+computer's memory (for example the FLUX.2 klein 4B image route, about 8.5 GiB,
+saved on an 8 GB Mac), with the same reason the recommendation gives; a fit
+that is `tight`, or that needs the GPU memory `sysctl`, is not flagged.
+Checking never changes the saved routes.
 `apply-recommended` keeps it and flags it; `apply-recommended --force` replaces
 it with this host's recommendation, or removes it (action `cleared`) where
 nothing recommended runs here. Routes to a server (LM Studio, Ollama,

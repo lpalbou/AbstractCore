@@ -236,13 +236,14 @@ def recommended_models(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Di
     `gpu_limit_command` for `needs_gpu_limit`; `warning` is the sentence a
     surface shows for a verdict that deserves one. Text keeps its rule: a tier
     that may not fit is still the tier, with its warning. Fit-gated rows
-    (video, music) are `unavailable` where they do not fit.
+    (image, video, music) are `unavailable` where they do not fit.
     """
 
     from .capability_defaults import (
         RECOMMENDED_MODELS,
         _full_recommendation,
         _unavailable_reasons,
+        image_input_unavailable_reason,
         recommended_route_unavailable_reason,
     )
     from .manager import model_supports_input
@@ -295,10 +296,7 @@ def recommended_models(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Di
         out["vision"] = _entry(
             caps["vision"],
             status="unavailable",
-            reason=(
-                f"the recommended text model ({text['model']}) does not read images; set input.image to a "
-                "vision-capable model on another machine or a cloud provider"
-            ),
+            reason=image_input_unavailable_reason(routes["input.text"], None),
         )
 
     for cid, route_key, _label, _tasks in RECOMMENDATION_CAPABILITIES:

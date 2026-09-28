@@ -306,8 +306,10 @@ RECOMMENDED_SEED_VERSION = "recommended-v1"
 # Text is the exception to the table: its per-host pick (Apple silicon: the
 # unified-memory tier) belongs to `model_catalog.recommended_text_model()`;
 # the row below is the portable default that function starts from. Image
-# input (vision) is not a row either: the recommended text models read images,
-# so `input.image` is covered by `input.text` (`recommendations`).
+# input (vision) is not a row either: it is covered by `input.text` where the
+# host's recommended text model reads images (every tier but the 8 GB one,
+# Qwen3 1.7B), and reported unavailable where it does not
+# (`image_input_unavailable_reason`).
 #
 # STARTER rows (`starter=True`) are the fresh-install set (operator ruling
 # 2026-08-01): a new install should WORK out of the box on the framework's
@@ -409,12 +411,14 @@ RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
 #     as a route that fails at first use. It is reported instead, with the
 #     reason, by `recommended_unavailable_routes()` -- the grid then shows the
 #     row unset with that reason and apply-recommended reports it;
-#   - a FIT-GATED row (`_FIT_GATED_ROUTES`: video) is also dropped, the same
-#     way, where the catalog's fit estimate says its model does not fit the
-#     host's memory. Text is deliberately NOT gated (a tier that does not fit
-#     is still the tier, with a warning -- `recommended_text_model`): every
-#     install needs a text model, while a video model is an extra that is only
-#     worth writing where it can run at all.
+#   - a FIT-GATED row (`_FIT_GATED_ROUTES`: image, video, music) is also
+#     dropped, the same way, where the catalog's fit estimate says its model
+#     does not fit the host's memory (a CONFIGURED route on those rows is
+#     judged by the same verdict: `configured_routes_unavailable`). Text is
+#     deliberately NOT gated (a tier that does not fit is still the tier, with
+#     a warning -- `recommended_text_model`): every install needs a text model,
+#     while a generation model is an extra that is only worth writing where it
+#     can run at all.
 # Every writer and every download surface reads these functions, never the
 # tables directly, so a host seeds, applies, downloads and displays the same
 # pick.
@@ -576,9 +580,25 @@ def _fit_gate_reason(key: str, download: Mapping[str, str], host: Mapping[str, A
     reading) is not a fit: nothing is written that cannot be vouched for.
     """
 
+    return _fit_gate(key, download, host)[1]
+
+
+def _fit_gate(key: str, download: Mapping[str, str], host: Mapping[str, Any]) -> Tuple[str, Optional[str]]:
+    """`(verdict, reason)` of the fit gate: the catalog verdict for `download`
+    on `host`, and the reason sentence (None for `fits` / `tight`). ONE fit
+    rule for the recommendation (`_fit_gate_reason`) and for configured routes
+    (`configured_routes_unavailable`, which also accepts `needs_gpu_limit`)."""
+
     from .model_catalog import recommended_artifact_fit
 
     got = recommended_artifact_fit(download["provider"], download["artifact"], host)
+    verdict = str(got["fit"].get("verdict") or "unknown")
+    return verdict, _fit_gate_sentence(key, got, download, host)
+
+
+def _fit_gate_sentence(
+    key: str, got: Mapping[str, Any], download: Mapping[str, str], host: Mapping[str, Any]
+) -> Optional[str]:
     fit = got["fit"]
     verdict = fit.get("verdict")
     if verdict in ("fits", "tight"):
@@ -678,23 +698,60 @@ def _full_recommendation(
     return routes, downloads
 
 
+def image_input_unavailable_reason(
+    text_route: CapabilityRouteDefault, text_reason: Optional[str]
+) -> Optional[str]:
+    """Why `input.image` has no recommendation on a host, or None.
+
+    Image input is read by the host's recommended text model
+    (`recommendations`: `covered` by `input.text`), so it is unavailable when
+    text is (`text_reason`), or when that model does not read images (the 8 GB
+    Apple silicon tier, Qwen3 1.7B). One sentence for the grid, the plan and
+    `abstractcore models recommendations`.
+    """
+
+    if text_reason:
+        return text_reason
+    from .manager import model_supports_input
+
+    model = str(text_route.model or "")
+    if model_supports_input(model, "image"):
+        return None
+    return (
+        f"the recommended text model ({model}) does not read images; set input.image to a "
+        "vision-capable model on another machine or a cloud provider"
+    )
+
+
 def recommended_unavailable_routes(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Dict[str, str]]:
     """Recommended rows this host cannot run: `{key: {provider, model, reason}}`.
 
     On every host that is not Apple silicon `output.image` and `output.video`
     are here (their only recommended engine, MLX-Gen, is Apple silicon only;
     the curated catalog has no other local image or video artifact). On Apple
-    silicon `output.video` is here when its measured memory does not fit
-    (below ~96 GiB of unified memory). Such a route stays UNSET with this
-    reason rather than seeded with a route that fails at first use.
+    silicon the memory-gated rows (`_FIT_GATED_ROUTES`: image, video) are here
+    where the catalog says their model does not fit: `output.image` on an 8 GB
+    Mac (FLUX.2 klein 4B needs ~8.5 GiB), `output.video` below ~96 GiB of
+    unified memory. Such a route stays UNSET with this reason rather than
+    seeded with a route that fails at first use.
+
+    `input.image` is here when the host's recommended text model, which covers
+    it, does not read images (`image_input_unavailable_reason`; provider and
+    model name that text model).
     """
 
     profile = _host_or_probe(host)
     routes, downloads = _full_recommendation(profile)
-    return {
+    reasons = _unavailable_reasons(routes, downloads, profile)
+    out = {
         key: {"provider": str(routes[key].provider or ""), "model": str(routes[key].model or ""), "reason": reason}
-        for key, reason in _unavailable_reasons(routes, downloads, profile).items()
+        for key, reason in reasons.items()
     }
+    text = routes["input.text"]
+    image_reason = image_input_unavailable_reason(text, reasons.get("input.text"))
+    if image_reason:
+        out["input.image"] = {"provider": str(text.provider or ""), "model": str(text.model or ""), "reason": image_reason}
+    return out
 
 
 def _recommended_key_for(key: str) -> Optional[str]:
@@ -714,13 +771,20 @@ def configured_routes_unavailable(
     The shape of `recommended_unavailable_routes`, for what the operator (or an
     older seed) actually stored. Only in-process providers are judged
     (`_IN_PROCESS_PROVIDERS`); a route to a server or a cloud API may run from
-    here whatever this host's builds. The reason ends with what to do: the
-    host's own recommendation for that row when it has one, otherwise the
-    row's next step (image/video: the engines that do run here).
+    here whatever this host's builds. A route is unavailable when its engine
+    has no build here, or -- on a memory-gated capability (image, video) --
+    when the catalog says its model does not fit this host's memory, with the
+    recommendation's own verdict and sentence (`_configured_route_fit_reason`;
+    `tight` and `needs_gpu_limit` are not unavailable). The reason ends with
+    what to do: the host's own recommendation for that row when it has one,
+    otherwise the row's next step. Only a report: the stored routes are never
+    changed here.
 
-    Field report behind it (2026-09-27): Linux, Windows and Intel-Mac installs
-    seeded before the host-aware recommendation still carry
-    `output.image: mlx-gen/...`, which fails at first use and read as fine.
+    Field reports behind it: Linux, Windows and Intel-Mac installs seeded
+    before the host-aware recommendation still carry `output.image:
+    mlx-gen/...`, which fails at first use and read as fine (2026-09-27); an
+    8 GB Mac's saved FLUX.2 klein 4B image route (~8.5 GiB) read as fine and
+    ran out of memory at first use (2026-09-28).
     """
 
     judged: Dict[str, Tuple[str, str]] = {}
@@ -737,6 +801,18 @@ def configured_routes_unavailable(
     for key, (provider, model) in judged.items():
         reason = recommended_route_unavailable_reason(provider, profile, key)
         if not reason:
+            reason = _configured_route_fit_reason(key, provider, model, profile)
+            if not reason:
+                continue
+            # The memory reason already ends with what to do (`_TOO_LARGE_NEXT_STEP`);
+            # name this host's own pick only when one runs here.
+            if recommended is None:
+                recommended = recommended_capability_default_routes(profile)
+            rec_key = _recommended_key_for(key)
+            pick = recommended.get(rec_key) if rec_key else None
+            if pick is not None and (pick.provider, pick.model) != (provider, model):
+                reason = f"{reason}; this computer's recommended route is {pick.provider}/{pick.model}"
+            out[key] = {"provider": provider, "model": model, "reason": reason}
             continue
         if recommended is None:
             recommended = recommended_capability_default_routes(profile)
@@ -748,6 +824,32 @@ def configured_routes_unavailable(
             reason = f"{reason}; {_UNAVAILABLE_NEXT_STEP[rec_key]}"
         out[key] = {"provider": provider, "model": model, "reason": reason}
     return out
+
+
+def _configured_route_fit_reason(key: str, provider: str, model: str, host: Mapping[str, Any]) -> Optional[str]:
+    """Why a CONFIGURED route's model does not fit `host`, or None.
+
+    Judged only on the memory-gated capabilities (`_FIT_GATED_ROUTES`, a task
+    row by its modality) and only for a model the catalog knows (its memory
+    need is the catalog's): the same verdict and the same sentence as the
+    recommendation (`_fit_gate`). Unavailable means the catalog says it does
+    not fit (`too_large`, `partial_offload`); `fits`, `tight`,
+    `needs_gpu_limit` (fits after the `sysctl`) and `unknown` (no memory
+    reading) are not.
+    """
+
+    from .model_catalog import FITS_FILTER_VERDICTS
+
+    broad = key if key in _FIT_GATED_ROUTES else capability_route_broad_key(key)
+    if broad not in _FIT_GATED_ROUTES:
+        return None
+    try:
+        verdict, reason = _fit_gate(broad, {"provider": provider, "artifact": model}, host)
+    except LookupError:
+        return None  # not a catalog artifact: no memory need to judge
+    if verdict in FITS_FILTER_VERDICTS or verdict == "unknown":
+        return None
+    return reason
 
 
 def recommended_capability_default_routes(

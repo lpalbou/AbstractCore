@@ -128,7 +128,9 @@ has a build, the text route stays unset too, and the reason says to use a
 cloud provider or a text server on another machine.
 MLX-Gen needs Apple silicon. On other hosts the image route stays unset, and
 the grid (`recommendation_unavailable`) and `apply-recommended` (action
-`unavailable`) both give the reason. Set it to an image engine the host can
+`unavailable`) both give the reason. The unset `input.image` row gives one too
+where the recommended text model does not read images (the 8 GB Apple silicon
+tier). Set it to an image engine the host can
 run: `diffusers` (install profile `gpu`), `sdcpp`, or a cloud image provider.
 The video route (Wan2.2 TI2V-5B, one model for text-to-video and
 image-to-video) also runs on MLX-Gen, and it is written only where the model
@@ -154,6 +156,11 @@ A route that is already configured but cannot run on this host — an
 example `output.image: mlx-gen/...` kept from an install made before these
 defaults were host-aware — carries `route_unavailable: {provider, model,
 reason}` in the grid, and `abstractcore config defaults` prints it on the row.
+So does an image or video route whose catalog model does not fit this
+computer's memory (for example the FLUX.2 klein 4B image route, about 8.5 GiB,
+saved on an 8 GB Mac), with the same reason the recommendation gives; a fit
+that is `tight`, or that needs the GPU memory `sysctl`, is not flagged.
+Checking never changes the saved routes.
 `apply-recommended` keeps it and flags it; `apply-recommended --force` replaces
 it with this host's recommendation, or removes it (action `cleared`) where
 nothing recommended runs here. Routes to a server (LM Studio, Ollama,

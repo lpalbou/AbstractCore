@@ -213,7 +213,7 @@
      }
     }
    ],
-   "notes": "The Apple silicon text tier below 16 GiB of unified memory (model_catalog.APPLE_TEXT_TIERS), 8-bit build: the largest catalog text model that fits an 8 GB Mac's default GPU memory limit. It does not read images."
+   "notes": "The Apple silicon text tier below 16 GiB of unified memory (model_catalog.APPLE_TEXT_TIERS), 8-bit build: the text model chosen for an 8 GB Mac; it fits its default GPU memory limit (LFM2.5 2.6B 4-bit also fits, tightly). It does not read images."
   },
   {
    "id": "qwen3-4b",

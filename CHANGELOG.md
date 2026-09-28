@@ -37,8 +37,9 @@ are measured at AbstractVision's default canvas.
 
 - The Apple silicon text tiers recommend a model that fits: each tier starts at the first memory
   size Apple ships where its model fits macOS's default GPU memory limit. Below 16 GiB: Qwen3 1.7B
-  8-bit (`mlx-community/Qwen3-1.7B-8bit`, the largest catalog text model that fits 8 GB; it does
-  not read images); 16 to below 32 GiB: Qwen3.5 9B; 32 to below 128 GiB: Qwen3.8 27B; 128 GiB and
+  8-bit (`mlx-community/Qwen3-1.7B-8bit`, chosen for 8 GB, where LFM2.5 2.6B 4-bit also fits,
+  tightly; it does not read images, and its route carries no MTP `speculation` policy because the
+  model has no MTP build); 16 to below 32 GiB: Qwen3.5 9B; 32 to below 128 GiB: Qwen3.8 27B; 128 GiB and
   above: Qwen3.8 Flash-Next. A 24 GB Mac now gets Qwen3.5 9B (Qwen3.8 27B needs about 16.4 GiB,
   a 24 GB Mac gives a model about 16 GiB), and an 8 GB Mac Qwen3 1.7B. Existing routes are not
   changed; `apply-recommended` reports the new pick as `kept` unless you pass `--force`.
@@ -59,6 +60,17 @@ are measured at AbstractVision's default canvas.
   views and keep their values.
 - The reason a memory-gated recommendation is unavailable says whether the memory need is
   measured or estimated.
+
+### Fixed
+
+- A saved image or video route whose catalog model does not fit this computer's memory is flagged
+  `route_unavailable` (grid, `abstractcore config defaults`, `apply-recommended`) with the reason
+  the recommendation gives, from the same fit verdict: an 8 GB Mac's saved FLUX.2 klein 4B route
+  no longer reads as fine and runs out of memory at first use. A `tight` fit, or one that needs
+  the GPU memory `sysctl`, is not flagged; the check never changes the saved routes.
+- `input.image` says why it has no recommendation where the recommended text model does not read
+  images (`recommended_unavailable_routes`, the grid's `recommendation_unavailable`): an 8 GB Mac
+  showed it as "not configured" with no reason.
 
 ## [2.18.0] - 2026-09-28
 

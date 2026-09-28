@@ -70,6 +70,11 @@ def _expected(tier: str, mtp: bool) -> str:
     return (MTP if mtp else PLAIN)[tier]
 
 
+def _expected_options(tier: str) -> dict:
+    # Qwen3 1.7B has no MTP build (`APPLE_TEXT_TIERS` mtp: None): no speculation policy.
+    return {} if tier == "1.7b" else OPERATOR_MTP_OPTIONS
+
+
 # ---------------------------------------------------------------------------
 # The one function
 # ---------------------------------------------------------------------------
@@ -84,8 +89,10 @@ def test_apple_silicon_tier_by_unified_memory(kind, tier, mtp_switch):
     assert pick["catalog_id"] == ROW[tier]
     assert pick["basis"] == "apple_silicon_tiers"
     assert pick["mtp"] is (mtp_switch and tier != "1.7b")
-    # The MTP policy is host-wide (the portable route's), whichever build is picked.
-    assert pick["options"] == OPERATOR_MTP_OPTIONS == cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"].options
+    # The MTP policy is host-wide (the portable route's), whichever build is
+    # picked -- except for a tier whose model has no MTP build (1.7B): no policy.
+    assert OPERATOR_MTP_OPTIONS == cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"].options
+    assert pick["options"] == _expected_options(tier)
 
 
 @pytest.mark.parametrize("kind", ["cuda24", "cpu16", "rocm32"])
@@ -284,7 +291,7 @@ def test_seed_routes_and_downloads_follow_the_pick(kind, tier, mtp_switch):
     assert cd.recommended_model_downloads(h)["input.text"] == {"provider": "mlx", "artifact": expected}
     route = cd.recommended_capability_default_routes(h)["input.text"]
     assert (route.provider, route.model) == ("mlx", expected)
-    assert route.options == OPERATOR_MTP_OPTIONS
+    assert route.options == _expected_options(tier)
     seeded = cd.seed_recommended_capability_defaults(cd.CapabilityDefaultsConfig(), host=h)
     assert seeded.routes["input.text"].model == expected
     plan = {p["key"]: p for p in cd.plan_recommended_capability_defaults({}, host=h)}

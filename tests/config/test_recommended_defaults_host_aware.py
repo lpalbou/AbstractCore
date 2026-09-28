@@ -133,7 +133,10 @@ def test_an_intel_mac_text_pick_is_the_ollama_build_of_the_portable_model():
 def test_a_host_with_no_supported_engine_gets_no_route_at_all():
     host = dict(synthetic_host("cpu16"), os="freebsd")
     assert cd.recommended_capability_default_routes(host) == {}
-    assert set(cd.recommended_unavailable_routes(host)) == {"input.text", "output.voice", "output.image", "output.video"}
+    unavailable = cd.recommended_unavailable_routes(host)
+    assert set(unavailable) == {"input.text", "input.image", "output.voice", "output.image", "output.video"}
+    # Image input is read by the text model: unavailable for the same reason.
+    assert unavailable["input.image"]["reason"] == unavailable["input.text"]["reason"]
 
 
 def test_an_unknown_recommended_provider_fails_loudly():

@@ -95,10 +95,10 @@ _HOST_PREFERENCE = {
 # catalog's fit estimate says its model fits (`fits` or `tight`) under macOS's
 # default GPU memory limit (75% of unified memory):
 #
-#     memory <  16          -> Qwen3 1.7B 8-bit  (qwen3-1.7b): the largest
-#                              catalog text model that fits 8 GB; no
-#                              vision-capable one does (Qwen3.5 9B needs
-#                              ~6.4 GiB, an 8 GB Mac gives a model ~4 GiB)
+#     memory <  16          -> Qwen3 1.7B 8-bit  (qwen3-1.7b): chosen for
+#                              8 GB (LFM2.5 2.6B 4-bit also fits, tightly); no
+#                              vision-capable catalog model fits (Qwen3.5 9B
+#                              needs ~6.4 GiB, an 8 GB Mac gives a model ~4 GiB)
 #     16 <= memory < 32     -> Qwen3.5 9B        (qwen3.5-9b)
 #     32 <= memory < 128    -> Qwen3.8 27B       (qwen3.8-27b): needs ~16.4
 #                              GiB, a 24 GB Mac gives a model ~16 GiB
@@ -247,11 +247,12 @@ def _fit_for_seed_artifact(row: Mapping[str, Any], art: Mapping[str, Any], host:
 def recommended_artifact_fit(provider: str, artifact: str, host: Mapping[str, Any]) -> Dict[str, Any]:
     """`{row, artifact, fit}` for one seed artifact a recommendation names, on `host`.
 
-    The memory gate of a recommended route whose model may not fit at all
-    (`output.video`). Works on the LIGHT host reading too (import-time seed):
-    with no measured ceiling it uses the host probe's own fallback basis, 75%
-    of RAM (`host_profile._FALLBACK_CEILING_FRACTION`), so the seed, the plan
-    and the catalog compare against the same number on such a host. Raises
+    The memory gate of a route whose model may not fit at all (the
+    fit-gated rows: image, video, music; recommended or configured). Works on
+    the LIGHT host reading too (import-time seed): with no measured ceiling it
+    uses the host probe's own fallback basis, 75% of RAM
+    (`host_profile._FALLBACK_CEILING_FRACTION`), so the seed, the plan and the
+    catalog compare against the same number on such a host. Raises
     when the artifact is not in the seed (a broken recommendation, never a
     silent pass).
     """
@@ -319,14 +320,19 @@ def recommended_text_model(
         tier, rule = _apple_tier(memory)
         provider, artifact = _TIER_PROVIDER, _tier_artifact(tier, use_mtp)
         row, art = _seed_row_and_artifact(str(tier["row"]), provider, artifact)
+        # The route's MTP POLICY (`speculation`) is host-wide and the same as
+        # the portable route's: it asks for MTP wherever the loaded artifact
+        # can do it. An MTP build's own options overlay it. A tier whose model
+        # has no MTP build (`mtp: None`, Qwen3 1.7B) gets no policy: nothing
+        # is written for a capability the model does not have.
+        policy = dict(_portable_text_default()["options"])
+        if not tier["mtp"]:
+            policy.pop("speculation", None)
         out: Dict[str, Any] = {
             "provider": provider,
             "artifact": artifact,
             "model": artifact,  # an MLX route serves the repo id it downloads
-            # The route's MTP POLICY (`speculation`) is host-wide and the same
-            # as the portable route's: it asks for MTP wherever the loaded
-            # artifact can do it. An MTP build's own options overlay it.
-            "options": dict(_portable_text_default()["options"], **json.loads(json.dumps(art.get("options") or {}))),
+            "options": dict(policy, **json.loads(json.dumps(art.get("options") or {}))),
             "catalog_id": row["id"],
             "basis": "apple_silicon_tiers",
             "tier": rule,

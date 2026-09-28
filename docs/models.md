@@ -127,9 +127,10 @@ model fits under macOS's default GPU memory limit (75% of unified memory):
 | 32 GiB to below 128 GiB | `qwen3.8-27b` | `mlx-community/Qwen3.8-27B-4bit` |
 | 128 GiB and above | `qwen3.8-flash-next` | `mlx-community/Qwen3.8-Flash-Next-4bit` |
 
-Qwen3 1.7B is the largest catalog text model that fits an 8 GB Mac; it does not read images. On a
-128 GB Mac, Flash-Next fits once the GPU memory limit is raised (the pick's `warning` gives the
-`sysctl` command).
+Qwen3 1.7B is the text model chosen for an 8 GB Mac (it fits; LFM2.5 2.6B 4-bit also fits,
+tightly); it does not read images, and it has no MTP build, so its route carries no `speculation`
+policy. On a 128 GB Mac, Flash-Next fits once the GPU memory limit is raised (the pick's `warning`
+gives the `sysctl` command).
 
 A Mac whose memory cannot be read gets the smallest tier, and the pick says so in `tier`. Every
 other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@4bit`.

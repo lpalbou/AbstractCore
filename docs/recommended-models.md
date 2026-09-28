@@ -241,13 +241,17 @@ Route `output.music` (text to music).
   Apple silicon bands also carry `memory_gib` (the sizes the row covers), `memory_gib_min` and
   `memory_gib_below` (the next row's first size, `null` for the last). The other classes carry
   `variants`, the platforms that answer the same as the reference.
-- `entries.<capability>`: `status` (`recommended`, `covered` or `unavailable`), `starter`,
-  `provider`, `engine`, `device`, `model` (what the route stores), `artifact` and
-  `download_provider` (what `abstractcore models download` fetches), `catalog_id`,
-  `display_name`, `download_bytes` (`null` when the catalog has no exact size), `memory_need_bytes`,
-  `memory_need_source` (`measured` or `estimated`), `fit`, `gpu_limit_command`, `covered_by`,
-  `reason` (for `unavailable`), `warning` (the sentence surfaces show for a doubtful fit) and
-  `notes`. The text entry also carries `basis` and `tier` from `recommended_text_model()`.
+- `entries.<capability>`: `capability` (the id), `label`, `route` and `tasks` (the
+  capability's `capabilities[]` fields, repeated so an entry reads on its own), `status`
+  (`recommended`, `covered` or `unavailable`), `starter`, `provider`, `engine`, `device`, `model`
+  (what the route stores), `artifact` and `download_provider` (what `abstractcore models
+  download` fetches), `catalog_id`, `display_name`, `download_bytes` (`null` when the catalog has
+  no exact size), `memory_need_bytes`, `memory_need_source` (`measured` or `estimated`), `fit`,
+  `gpu_limit_command`, `covered_by`, `smaller_canvas` (`null`, or `{canvas, memory_need_bytes,
+  memory_need_source, fit}`: the largest measured smaller output size, `WIDTHxHEIGHTxFRAMES`, at
+  which an `unavailable` video model still fits), `reason` (for `unavailable`), `warning` (the
+  sentence surfaces show for a doubtful fit) and `notes`. The text entry also carries `basis` and
+  `tier` from `recommended_text_model()`.
 
 `--host --json` emits the same schema with `host: {os, arch, accelerator, memory_gib,
 ceiling_bytes, ceiling_source}` and one `entries` object.

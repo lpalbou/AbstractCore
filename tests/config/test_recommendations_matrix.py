@@ -90,7 +90,7 @@ def test_image_input_is_covered_by_the_text_model_where_it_reads_images(matrix):
     for cls in matrix["classes"]:
         vision, text = cls["entries"]["vision"], cls["entries"]["text"]
         if cls["id"] == "apple_silicon_8gb":
-            # The only text models that fit 8 GB (Qwen3 1.7B) do not read images.
+            # The 8 GB text model (Qwen3 1.7B) does not read images; no vision-capable catalog model fits 8 GB.
             assert vision["status"] == "unavailable" and "does not read images" in vision["reason"]
             continue
         assert vision["status"] == "covered" and vision["covered_by"] == "text", cls["id"]
@@ -169,7 +169,12 @@ def test_starter_cells_are_exactly_what_the_writers_download(matrix):
             if e["status"] == "recommended" and e["starter"]
         }
         assert from_matrix == cd.recommended_model_downloads(host), cls["id"]
-        unavailable = {route_of[cid] for cid, e in entries.items() if e["status"] == "unavailable" and e["starter"]}
+        # Image input is the starter text model's (covered, or unavailable with
+        # the reason where that model does not read images: 8 GB).
+        unavailable = {
+            route_of[cid] for cid, e in entries.items()
+            if e["status"] == "unavailable" and (e["starter"] or cid == "vision")
+        }
         assert unavailable == set(cd.recommended_unavailable_routes(host)), cls["id"]
 
 
