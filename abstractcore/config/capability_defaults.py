@@ -356,8 +356,9 @@ RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
     # Video: Wan2.2 TI2V-5B, ONE checkpoint for text-to-video AND
     # image-to-video, so the modality cell answers both tasks. It is the only
     # video model AbstractVision serves that is not a 40 GB A14B package; its
-    # engine (MLX-Gen) is Apple silicon only and it needs ~58 GiB of MLX
-    # memory (measured), so it is fit-gated (`_FIT_GATED_ROUTES`).
+    # engine (MLX-Gen) is Apple silicon only and it needs ~60.5 GiB of MLX
+    # memory at AbstractVision's default canvas (measured), so it is
+    # fit-gated (`_FIT_GATED_ROUTES`).
     "output.video": RecommendedModel(
         route=CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
         download={"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},
@@ -586,10 +587,12 @@ def _fit_gate_reason(key: str, download: Mapping[str, str], host: Mapping[str, A
     # "measured" only where the seed carries a measured run-time peak
     # (`resident`, the video rows); otherwise the need is the estimate from
     # the download (music).
-    basis = "measured" if isinstance((got.get("artifact") or {}).get("resident"), dict) else "estimated"
+    resident = (got.get("artifact") or {}).get("resident")
+    basis = "measured" if isinstance(resident, dict) else "estimated"
+    at_default = " at its default canvas" if isinstance(resident, dict) and resident.get("smaller_canvases") else ""
     reason = (
-        f"{name} needs about {_gib_text(fit['need_bytes'])} of memory while it generates ({basis}), and this "
-        f"computer can give a model about {_gib_text(fit['usable_bytes'])}"
+        f"{name} needs about {_gib_text(fit['need_bytes'])} of memory while it generates{at_default} ({basis}), "
+        f"and this computer can give a model about {_gib_text(fit['usable_bytes'])}"
     )
     if verdict == "needs_gpu_limit":
         # Not written (it needs an admin command first), but never a bare
@@ -597,6 +600,19 @@ def _fit_gate_reason(key: str, download: Mapping[str, str], host: Mapping[str, A
         from .model_catalog import gpu_limit_instruction
 
         return f"{reason}. {gpu_limit_instruction(fit)}"
+    # Not written either (a route runs at the default canvas unless the
+    # caller asks for less), but the smaller size it still runs at is said,
+    # measured, so the operator can choose it.
+    from .model_catalog import smaller_canvas_fit
+
+    smaller = smaller_canvas_fit(download["provider"], download["artifact"], host)
+    if smaller is not None:
+        w, h, frames = smaller["canvas"].split("x")
+        reason += (
+            f"; at {w}x{h} ({frames} frames) it needs about {_gib_text(smaller['fit']['need_bytes'])} (measured) and "
+            f"fits this computer: set {key} to {download['provider']}/{download['artifact']} yourself and generate "
+            f"at {w}x{h}"
+        )
     return f"{reason}{next_step}"
 
 

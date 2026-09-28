@@ -1,9 +1,12 @@
 """The recommended text model: Apple-silicon memory tiers, one function.
 
-Operator ruling 2026-09-24: on accelerator `metal` the text recommendation is
-chosen by unified memory (GiB as the host probe reports it): < 24 -> Qwen3.5
-9B, 24 <= m < 128 -> Qwen3.8 27B, >= 128 -> Qwen3.8 Flash-Next; the MLX lane
-is the recommended one. `model_catalog.MTP_RECOMMENDED` picks the MTP build of
+Operator rulings 2026-09-24 / 2026-09-28: on accelerator `metal` the text
+recommendation is chosen by unified memory (GiB as the host probe reports it)
+and MUST FIT: < 16 -> Qwen3 1.7B 8-bit, 16 <= m < 32 -> Qwen3.5 9B,
+32 <= m < 128 -> Qwen3.8 27B, >= 128 -> Qwen3.8 Flash-Next (on a 128 GB Mac
+it fits once the GPU memory limit is raised, accepted); the MLX lane is the
+recommended one. Each tier starts at the first memory size Apple ships where
+its model fits (`test_every_apple_memory_size_gets_a_text_model_that_fits`). `model_catalog.MTP_RECOMMENDED` picks the MTP build of
 each tier instead of the plain 4-bit one; every test here runs under BOTH
 values so flipping the switch is a one-line change.
 
@@ -23,22 +26,26 @@ from abstractcore.utils.model_fit import bits_for_quant
 from tests.models_engines_fakes import isolate_host, synthetic_host
 
 PLAIN = {
+    "1.7b": "mlx-community/Qwen3-1.7B-8bit",
     "9b": "mlx-community/Qwen3.5-9B-MLX-4bit",
     "27b": "mlx-community/Qwen3.8-27B-4bit",
     "flash": "mlx-community/Qwen3.8-Flash-Next-4bit",
 }
 MTP = {
+    "1.7b": "mlx-community/Qwen3-1.7B-8bit",  # no MTP build: the plain one either way
     "9b": "mlx-works/Qwen3.5-9B-oQ4e-mtp",
     "27b": "Jundot/Qwen3.8-27B-oQ4e-mtp",
     "flash": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
 }
-ROW = {"9b": "qwen3.5-9b", "27b": "qwen3.8-27b", "flash": "qwen3.8-flash-next"}
+ROW = {"1.7b": "qwen3-1.7b", "9b": "qwen3.5-9b", "27b": "qwen3.8-27b", "flash": "qwen3.8-flash-next"}
 OPERATOR_MTP_OPTIONS = {"speculation": {"mode": "native_mtp", "num_draft_tokens": 2, "require_acceleration": False}}
 
 TIER_BY_HOST = [
+    ("metal8", "1.7b"),
+    ("metal15.9", "1.7b"),
     ("metal16", "9b"),
-    ("metal23.9", "9b"),
-    ("metal24", "27b"),
+    ("metal24", "9b"),
+    ("metal31.9", "9b"),
     ("metal32", "27b"),
     ("metal64", "27b"),
     ("metal96", "27b"),
@@ -76,7 +83,7 @@ def test_apple_silicon_tier_by_unified_memory(kind, tier, mtp_switch):
     assert pick["model"] == pick["artifact"]
     assert pick["catalog_id"] == ROW[tier]
     assert pick["basis"] == "apple_silicon_tiers"
-    assert pick["mtp"] is mtp_switch
+    assert pick["mtp"] is (mtp_switch and tier != "1.7b")
     # The MTP policy is host-wide (the portable route's), whichever build is picked.
     assert pick["options"] == OPERATOR_MTP_OPTIONS == cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"].options
 
@@ -114,7 +121,7 @@ def test_the_module_switch_is_what_decides(monkeypatch):
 def test_unknown_memory_on_a_mac_says_so():
     host = dict(synthetic_host("metal64"), ram_bytes=None)
     pick = mc.recommended_text_model(host, mtp=False)
-    assert pick["artifact"] == PLAIN["9b"]
+    assert pick["artifact"] == PLAIN["1.7b"]
     assert "unknown" in pick["tier"] and pick["memory_gib"] is None
 
 
@@ -147,9 +154,45 @@ def test_fit_is_reported_never_a_silent_tier_change(host, kind, tier, mtp_switch
 
 
 def test_a_tier_that_does_not_fit_is_still_the_tier():
-    pick = mc.recommended_text_model(synthetic_host("metal24"), mtp=False)
-    assert pick["fit"]["verdict"] == "too_large"
-    assert pick["artifact"] == PLAIN["27b"] and pick["fits"] is False and pick["warning"]
+    """Between Apple's sizes (a 30 GiB reading) the tier is the memory rule's,
+    even where its estimate doubts it: never a silent move to another tier."""
+    pick = mc.recommended_text_model(dict(synthetic_host("metal64"), ram_bytes=int(8 * GIB), ceiling_bytes=int(3 * GIB)), mtp=False)
+    assert pick["artifact"] == PLAIN["1.7b"]
+    assert pick["fit"]["verdict"] == "too_large" and pick["fits"] is False and pick["warning"]
+
+
+# Apple silicon unified memory sizes (GiB), as recommendations.APPLE_MEMORY_SIZES_GIB.
+APPLE_SIZES = (8, 16, 18, 24, 32, 36, 48, 64, 96, 128, 192, 256, 512)
+
+
+@pytest.mark.parametrize("gib", APPLE_SIZES)
+def test_every_apple_memory_size_gets_a_text_model_that_fits(gib):
+    """Operator ruling 2026-09-28: a recommendation must FIT (under macOS's
+    default GPU memory limit, 75% of unified memory). The one accepted
+    exception is Flash-Next on a 128 GB Mac, which fits once the GPU memory
+    limit is raised (the warning carries the command)."""
+
+    pick = mc.recommended_text_model(synthetic_host(f"metal{gib}"), mtp=False)
+    verdict = pick["fit"]["verdict"]
+    if gib == 128:
+        assert (pick["artifact"], verdict) == (PLAIN["flash"], "needs_gpu_limit")
+        assert pick["fit"]["gpu_limit"]["command"] in pick["warning"]
+    else:
+        assert verdict in ("fits", "tight"), (gib, pick["artifact"], verdict)
+
+
+@pytest.mark.parametrize("gib", APPLE_SIZES)
+def test_each_tier_is_the_largest_tier_that_fits(gib):
+    """No bigger tier would fit this Mac: the tier starts exactly where its
+    model starts to fit, not one Apple size later."""
+
+    h = synthetic_host(f"metal{gib}")
+    pick = mc.recommended_text_model(h, mtp=False)
+    index = [t["row"] for t in mc.APPLE_TEXT_TIERS].index(pick["catalog_id"])
+    for bigger in mc.APPLE_TEXT_TIERS[index + 1:]:
+        row, art = mc._seed_row_and_artifact(bigger["row"], "mlx", bigger["plain"])
+        verdict = mc._fit_for_seed_artifact(row, art, h)["verdict"]
+        assert verdict not in ("fits", "tight"), (gib, bigger["row"], verdict)
 
 
 # ---------------------------------------------------------------------------
@@ -255,14 +298,14 @@ def test_materializer_downloads_and_plan_follow_the_pick(host, monkeypatch, mtp_
     from abstractcore.config import model_materializer as mm
     from abstractcore.utils import host_profile as hp
 
-    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal24"))
-    expected = _expected("27b", mtp_switch)
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal128"))
+    expected = _expected("flash", mtp_switch)
     items = {i["route"]: i for i in mm.recommended_downloads()}
     assert items["input.text"] == {"route": "input.text", "provider": "mlx", "artifact": expected}
     plan = {r["route"]: r for r in mm.recommended_plan()["recommended"]}
     text = plan["input.text"]
-    assert text["artifact"] == expected and text["catalog_id"] == "qwen3.8-27b"
-    assert text["fit_verdict"] == "too_large" and text["fits"] is False and text["warning"]
+    assert text["artifact"] == expected and text["catalog_id"] == "qwen3.8-flash-next"
+    assert text["fit_verdict"] == "needs_gpu_limit" and text["fits"] is False and "sudo sysctl" in text["warning"]
 
 
 def test_mlx_is_the_recommended_lane_on_a_mac(host, monkeypatch):
@@ -294,23 +337,27 @@ def test_mlx_is_the_recommended_lane_on_a_mac(host, monkeypatch):
 
 def test_every_tier_artifact_is_an_upstream_verified_seed_artifact():
     rows = {r["id"]: r for r in mc.load_seed()["rows"]}
-    assert [t["row"] for t in mc.APPLE_TEXT_TIERS] == [ROW["9b"], ROW["27b"], ROW["flash"]]
-    for key, tier in zip(("9b", "27b", "flash"), mc.APPLE_TEXT_TIERS):
+    assert [t["row"] for t in mc.APPLE_TEXT_TIERS] == [ROW["1.7b"], ROW["9b"], ROW["27b"], ROW["flash"]]
+    assert mc.APPLE_TEXT_TIERS[0]["mtp"] is None  # Qwen3 1.7B has no MTP build
+    for key, tier in zip(("9b", "27b", "flash"), mc.APPLE_TEXT_TIERS[1:]):
         assert (tier["plain"], tier["mtp"]) == (PLAIN[key], MTP[key])
-        for artifact in (tier["plain"], tier["mtp"]):
+    for tier in mc.APPLE_TEXT_TIERS:
+        for artifact in [a for a in (tier["plain"], tier["mtp"]) if a]:
             art = next(a for a in rows[tier["row"]]["artifacts"] if a["artifact"] == artifact)
             assert art["provider"] == "mlx"
             assert art["upstream"]["method"] == "hf_api"
             assert isinstance(art["download_bytes"], int) and art["download_bytes"] > 0
-        mtp_art = next(a for a in rows[tier["row"]]["artifacts"] if a["artifact"] == tier["mtp"])
         plain_art = next(a for a in rows[tier["row"]]["artifacts"] if a["artifact"] == tier["plain"])
-        assert mtp_art["options"] == OPERATOR_MTP_OPTIONS
         assert "options" not in plain_art
+        if tier["mtp"]:
+            mtp_art = next(a for a in rows[tier["row"]]["artifacts"] if a["artifact"] == tier["mtp"])
+            assert mtp_art["options"] == OPERATOR_MTP_OPTIONS
 
 
 def test_boundaries_are_exact():
     gib = 1024**3
-    for mem, row in ((23.999, ROW["9b"]), (24.0, ROW["27b"]), (127.999, ROW["27b"]), (128.0, ROW["flash"])):
+    for mem, row in ((15.999, ROW["1.7b"]), (16.0, ROW["9b"]), (31.999, ROW["9b"]), (32.0, ROW["27b"]),
+                     (127.999, ROW["27b"]), (128.0, ROW["flash"])):
         host = dict(synthetic_host("metal64"), ram_bytes=int(mem * gib))
         assert mc.recommended_text_model(host, mtp=False)["catalog_id"] == row, mem
 

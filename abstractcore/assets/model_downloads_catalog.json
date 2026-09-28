@@ -212,7 +212,8 @@
       "revision": "d7f544eead698dbd1f15126ef60b45a1e1933222"
      }
     }
-   ]
+   ],
+   "notes": "The Apple silicon text tier below 16 GiB of unified memory (model_catalog.APPLE_TEXT_TIERS), 8-bit build: the largest catalog text model that fits an 8 GB Mac's default GPU memory limit. It does not read images."
   },
   {
    "id": "qwen3-4b",
@@ -1177,7 +1178,7 @@
      }
     }
    ],
-   "notes": "The portable fresh-install text/vision default (RECOMMENDED_MODEL_DOWNLOADS input.text) and the Apple silicon tier below 24 GiB of unified memory (model_catalog.APPLE_TEXT_TIERS). mlx-community/Qwen3.5-9B-4bit and -MLX-4bit hold byte-identical weights upstream (checked 2026-09-24); the tier names -MLX-4bit.",
+   "notes": "The portable fresh-install text/vision default (RECOMMENDED_MODEL_DOWNLOADS input.text) and the Apple silicon tier for 16 GiB <= unified memory < 32 GiB (model_catalog.APPLE_TEXT_TIERS). mlx-community/Qwen3.5-9B-4bit and -MLX-4bit hold byte-identical weights upstream (checked 2026-09-24); the tier names -MLX-4bit.",
    "kv_geometry": {
     "n_layers": 8,
     "n_kv_heads": 4,
@@ -1489,7 +1490,7 @@
      }
     }
    ],
-   "notes": "The Apple silicon text tier for 24 GiB <= unified memory < 128 GiB (model_catalog.APPLE_TEXT_TIERS).",
+   "notes": "The Apple silicon text tier for 32 GiB <= unified memory < 128 GiB (model_catalog.APPLE_TEXT_TIERS): the first size Apple ships where it fits macOS's default GPU memory limit.",
    "kv_geometry": {
     "n_layers": 16,
     "n_kv_heads": 4,
@@ -4169,10 +4170,17 @@
       "revision": "6875952a110b6bdbcfc00d72b1d89a8e02ab0fc3"
      },
      "resident": {
-      "bytes": 62784388684,
-      "source": "MLX allocator peak 58.47 GiB at AbstractVision's default 1280x704 canvas (17 frames, 20 steps; Apple M5 Max 128 GiB, mlx-gen 0.18.10; AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit validation/ti2v5b-clean/metrics.json, BF16 row: since the 2026-06-12 mlx-gen runtime-precision fix q8 Wan packages run at BF16 memory); at the smallest canvas AbstractVision accepts (832x480, 121 frames, 50 steps) mlx-gen measured a 25 GB MLX peak (mlx-gen docs/minimax-h3.md)"
+      "bytes": 64941342932,
+      "source": "MLX allocator peak 60.48 GiB (mx.get_peak_memory) of a real AbstractVision text-to-video generation at its default TI2V-5B canvas (1280x704, 121 frames; 2 denoising steps: the peak does not depend on the step count; a 17-frame run at the same size peaked at 60.43 GiB, so the size of each frame, not the frame count, sets it): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30 source, 2026-09-28",
+      "smaller_canvases": [
+       {
+        "canvas": "832x480x121",
+        "bytes": 35121771780,
+        "source": "MLX allocator peak 32.71 GiB (mx.get_peak_memory) of a real AbstractVision text-to-video generation at 832x480, 121 frames (the smallest canvas AbstractVision accepts for TI2V-5B; 2 denoising steps): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30 source, 2026-09-28"
+       }
+      ]
      },
-     "note": "Mixed q8/BF16 MLX-Gen package (16.9 GiB); q8 saves download only, it runs at BF16 memory. AbstractVision refuses TI2V-5B below 832x480."
+     "note": "Mixed q8/BF16 MLX-Gen package (16.9 GiB); q8 saves download only, it runs at BF16 memory. At AbstractVision's default canvas (1280x704) it needs about 60.5 GiB while it generates (measured), so it fits Macs with 96 GiB or more; at 832x480, the smallest canvas AbstractVision accepts for it, about 32.7 GiB (measured). AbstractVision refuses TI2V-5B below 832x480."
     }
    ],
    "capabilities_override": {
@@ -4182,7 +4190,7 @@
     "text_to_video": true,
     "image_to_video": true
    },
-   "notes": "The AbstractFramework recommended video model (output.video): one checkpoint for text-to-video and image-to-video, run by AbstractVision through MLX-Gen (Apple silicon only). Recommended only where its measured memory fits."
+   "notes": "The AbstractFramework recommended video model (output.video): one checkpoint for text-to-video and image-to-video, run by AbstractVision through MLX-Gen (Apple silicon only). Recommended only where its measured memory at the default canvas fits; the smaller canvas it still runs at is measured too."
   },
   {
    "id": "wan2.2-t2v-a14b",

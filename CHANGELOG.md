@@ -28,6 +28,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Apple silicon text tiers recommend a model that fits: each tier starts at the first memory
+  size Apple ships where its model fits macOS's default GPU memory limit. Below 16 GiB: Qwen3 1.7B
+  8-bit (`mlx-community/Qwen3-1.7B-8bit`, the largest catalog text model that fits 8 GB; it does
+  not read images); 16 to below 32 GiB: Qwen3.5 9B; 32 to below 128 GiB: Qwen3.8 27B; 128 GiB and
+  above: Qwen3.8 Flash-Next. A 24 GB Mac now gets Qwen3.5 9B (Qwen3.8 27B needs about 16.4 GiB,
+  a 24 GB Mac gives a model about 16 GiB), and an 8 GB Mac Qwen3 1.7B. Existing routes are not
+  changed; `apply-recommended` reports the new pick as `kept` unless you pass `--force`.
+- Wan2.2 TI2V-5B's memory need is its MLX peak measured at AbstractVision's default canvas
+  (1280x704, 121 frames: 60.5 GiB) instead of a 17-frame validation profile (58.5 GiB); the
+  recommended video route still needs 96 GiB of unified memory. Its peak at 832x480, the smallest
+  canvas AbstractVision accepts for it, is measured too (32.7 GiB, catalog
+  `resident.smaller_canvases`): on a Mac where only that size fits (64 GiB) the route is still not
+  written, and the reason, the grid and `models recommendations` (`smaller_canvas`) say so, with
+  the route to set yourself.
 - `capability_defaults.RECOMMENDED_MODELS` is the one table of recommended models;
   `RECOMMENDED_CAPABILITY_DEFAULT_ROUTES` and `RECOMMENDED_MODEL_DOWNLOADS` are its starter-set
   views and keep their values.

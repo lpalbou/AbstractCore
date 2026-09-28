@@ -198,6 +198,7 @@ def _entry(cap: Tuple[str, str, str, Tuple[str, ...]], **fields: Any) -> Dict[st
         "fit": None,
         "gpu_limit_command": None,
         "covered_by": None,
+        "smaller_canvas": None,
         "reason": None,
         "warning": None,
         "notes": [],
@@ -242,9 +243,10 @@ def recommended_models(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Di
         RECOMMENDED_MODELS,
         _full_recommendation,
         _unavailable_reasons,
+        recommended_route_unavailable_reason,
     )
     from .manager import model_supports_input
-    from .model_catalog import _fit_warning, recommended_text_model
+    from .model_catalog import _fit_warning, recommended_text_model, smaller_canvas_fit
 
     profile = _host_or_probe(host)
     accelerator = str(profile.get("accelerator") or "none")
@@ -293,7 +295,10 @@ def recommended_models(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Di
         out["vision"] = _entry(
             caps["vision"],
             status="unavailable",
-            reason=f"the recommended text model ({text['model']}) does not read images",
+            reason=(
+                f"the recommended text model ({text['model']}) does not read images; set input.image to a "
+                "vision-capable model on another machine or a cloud provider"
+            ),
         )
 
     for cid, route_key, _label, _tasks in RECOMMENDATION_CAPABILITIES:
@@ -304,6 +309,14 @@ def recommended_models(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Di
         provider = str(route.provider)
         facts, row, fit = _artifact_facts(download["provider"], download["artifact"], profile, None)
         reason = unavailable.get(route_key)
+        smaller = None
+        if reason and facts["fit"] not in ("fits", "tight") and not recommended_route_unavailable_reason(provider, profile, route_key):
+            # The default canvas does not fit, the engine runs: the measured
+            # smaller size it still runs at, if any.
+            got = smaller_canvas_fit(download["provider"], download["artifact"], profile)
+            if got is not None:
+                smaller = {"canvas": got["canvas"], "memory_need_bytes": got["fit"]["need_bytes"],
+                           "memory_need_source": "measured", "fit": got["fit"]["verdict"]}
         out[cid] = _entry(
             caps[cid],
             status="unavailable" if reason else "recommended",
@@ -315,6 +328,7 @@ def recommended_models(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Di
             artifact=download["artifact"],
             download_provider=download["provider"],
             reason=reason,
+            smaller_canvas=smaller,
             warning=None if reason else _fit_warning(row, fit),
             notes=_device_notes(provider, accelerator),
             **facts,
@@ -340,7 +354,8 @@ def _signature(entries: Mapping[str, Mapping[str, Any]]) -> Tuple[Any, ...]:
     """What must be equal for two memory sizes to share one band."""
 
     return tuple(
-        (cid, e["status"], e["provider"], e["artifact"], e["fit"], e["gpu_limit_command"])
+        (cid, e["status"], e["provider"], e["artifact"], e["fit"], e["gpu_limit_command"],
+         (e["smaller_canvas"] or {}).get("canvas"), (e["smaller_canvas"] or {}).get("fit"))
         for cid, e in entries.items()
     )
 
@@ -491,6 +506,16 @@ def render_markdown(matrix: Mapping[str, Any]) -> str:
         for cls in matrix["classes"]:
             e = cls["entries"][cid]
             machine = _md_escape(cls["label"])
+            if e["status"] == "unavailable" and e["smaller_canvas"]:
+                sc = e["smaller_canvas"]
+                w, h, frames = sc["canvas"].split("x")
+                lines.append(
+                    f"| {machine} | At the default canvas: not available, it needs more memory. At {w}x{h} "
+                    f"({frames} frames): {_cell_model(e)}, set it yourself | {_md_escape(e['engine'])}, {e['device']} | "
+                    f"{_gb(e['download_bytes'])} | {_gb(sc['memory_need_bytes'])} at {w}x{h} (measured) | "
+                    f"{_FIT_WORDS.get(sc['fit'], sc['fit'])} at {w}x{h} |"
+                )
+                continue
             if e["status"] == "unavailable":
                 lines.append(f"| {machine} | Not available: {_md_escape(e['reason'])} | | | | |")
                 continue

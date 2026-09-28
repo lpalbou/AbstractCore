@@ -86,9 +86,13 @@ def test_every_cell_is_decided_with_the_facts_a_table_needs(matrix):
             assert e["gpu_limit_command"] is None, where
 
 
-def test_image_input_is_covered_by_the_text_model_everywhere(matrix):
+def test_image_input_is_covered_by_the_text_model_where_it_reads_images(matrix):
     for cls in matrix["classes"]:
         vision, text = cls["entries"]["vision"], cls["entries"]["text"]
+        if cls["id"] == "apple_silicon_8gb":
+            # The only text models that fit 8 GB (Qwen3 1.7B) do not read images.
+            assert vision["status"] == "unavailable" and "does not read images" in vision["reason"]
+            continue
         assert vision["status"] == "covered" and vision["covered_by"] == "text", cls["id"]
         assert (vision["provider"], vision["model"]) == (text["provider"], text["model"])
 
@@ -97,10 +101,11 @@ def test_image_input_is_covered_by_the_text_model_everywhere(matrix):
 # One source of truth
 # ---------------------------------------------------------------------------
 
-# The Apple silicon text tiers every surface showed before this matrix existed.
+# The Apple silicon text tiers (operator ruling 2026-09-28: each one fits).
 TEXT_BY_APPLE_GIB = {
-    **{g: "mlx-community/Qwen3.5-9B-MLX-4bit" for g in (8, 16, 18)},
-    **{g: "mlx-community/Qwen3.8-27B-4bit" for g in (24, 32, 36, 48, 64, 96)},
+    8: "mlx-community/Qwen3-1.7B-8bit",
+    **{g: "mlx-community/Qwen3.5-9B-MLX-4bit" for g in (16, 18, 24)},
+    **{g: "mlx-community/Qwen3.8-27B-4bit" for g in (32, 36, 48, 64, 96)},
     **{g: "mlx-community/Qwen3.8-Flash-Next-4bit" for g in (128, 192, 256, 512)},
 }
 TEXT_BY_CLASS = {
@@ -291,3 +296,55 @@ def test_cli_host_answers_for_this_machine(capsys, monkeypatch):
     assert payload["entries"]["video"]["status"] == "recommended"
     assert main(["models", "recommendations", "--host"]) == 0
     assert "Music generation: acestep" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Video: the measured need at the default canvas, and the smaller one
+# ---------------------------------------------------------------------------
+
+TI2V = "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"
+
+
+def _ti2v_resident():
+    _row, art = mc._seed_row_and_artifact("wan2.2-ti2v-5b", "mlx-gen", TI2V)
+    return art["resident"]
+
+
+def test_the_ti2v_memory_need_is_measured_at_abstractvisions_default_canvas():
+    """AbstractVision's TI2V-5B default is 1280x704, 121 frames (backends/mflux.py
+    WAN_DEFAULT_WIDTH/HEIGHT/FRAMES); the fit gate must use the peak measured
+    there, not at a 17-frame validation profile."""
+    resident = _ti2v_resident()
+    assert "1280x704, 121 frames" in resident["source"] and "mlx-gen 0.38.0" in resident["source"]
+    assert resident["bytes"] == 64941342932  # 60.48 GiB MLX peak
+    assert [(s["canvas"], s["bytes"]) for s in resident["smaller_canvases"]] == [("832x480x121", 35121771780)]
+
+
+def test_a_64_gb_mac_is_told_the_measured_canvas_video_still_runs_at(matrix):
+    sixty_four = _apple_class_for(matrix, 64)["entries"]["video"]
+    assert sixty_four["status"] == "unavailable"  # the default canvas does not fit: never written
+    assert sixty_four["smaller_canvas"] == {
+        "canvas": "832x480x121", "memory_need_bytes": sixty_four["smaller_canvas"]["memory_need_bytes"],
+        "memory_need_source": "measured", "fit": "fits",
+    }
+    assert "at 832x480 (121 frames) it needs about" in sixty_four["reason"]
+    assert "set output.video to mlx-gen/" + TI2V in sixty_four["reason"]
+    for gib in (8, 16, 24, 32, 48):
+        entry = _apple_class_for(matrix, gib)["entries"]["video"]
+        assert entry["smaller_canvas"] is None and "832x480" not in entry["reason"], gib
+    for gib in (96, 128, 192):
+        assert _apple_class_for(matrix, gib)["entries"]["video"]["status"] == "recommended", gib
+
+
+def test_the_validator_checks_smaller_canvases():
+    base = {"bytes": 100, "source": "measured here"}
+    assert mc._validate_resident("a", dict(base, smaller_canvases=[{"canvas": "832x480x121", "bytes": 50, "source": "m"}])) == []
+    assert mc._validate_resident("a", dict(base, smaller_canvases=[{"canvas": "832x480x121", "bytes": 150, "source": "m"}]))
+    assert mc._validate_resident("a", dict(base, smaller_canvases=[{"canvas": "832x480", "bytes": 50, "source": "m"}]))
+    assert mc._validate_resident("a", dict(base, smaller_canvases=[{"canvas": "832x480x121", "bytes": 50}]))
+    assert mc._validate_resident("a", dict(base, smaller_canvases=[]))
+
+
+def test_the_8_gb_vision_cell_says_what_to_do(matrix):
+    vision = _apple_class_for(matrix, 8)["entries"]["vision"]
+    assert vision["status"] == "unavailable" and "set input.image" in vision["reason"]
