@@ -2585,7 +2585,8 @@ def _handle_models_subcommand(argv: List[str]) -> int:
             "each capability default is on this machine; `list` shows everything installed "
             "per engine; `catalog`/`search` browse downloadable models with fit verdicts for "
             "this machine; `download`/`delete` act on one artifact; `jobs`/`cancel` follow "
-            "background work. `abstractcore config` decides which model a capability uses."
+            "background work; `recommendations` lists the recommended model for every capability "
+            "per machine class. `abstractcore config` decides which model a capability uses."
         ),
     )
     parser.add_argument("--config-file", default=None, help="Use a specific AbstractCore config JSON file")
@@ -2656,6 +2657,11 @@ def _handle_models_subcommand(argv: List[str]) -> int:
     from .models_engines_cli import add_models_subparsers
 
     add_models_subparsers(sub)
+
+    # recommendations: every capability x every machine class (or --host)
+    from .recommendations import add_recommendations_parser
+
+    add_recommendations_parser(sub)
 
     args = parser.parse_args(argv)
     if not getattr(args, "cmd", None):

@@ -24,6 +24,7 @@ from __future__ import annotations
 import functools
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -87,13 +88,23 @@ _HOST_PREFERENCE = {
 # The recommended text model: ONE function, every surface
 # ---------------------------------------------------------------------------
 #
-# Operator ruling 2026-09-24. On Apple silicon (accelerator `metal`) the
-# recommended text artifact is chosen by unified memory, in GiB as the host
-# probe reports it (`ram_bytes / 2**30`):
+# Operator rulings 2026-09-24 and 2026-09-28. On Apple silicon (accelerator
+# `metal`) the recommended text artifact is chosen by unified memory, in GiB
+# as the host probe reports it (`ram_bytes / 2**30`), and A RECOMMENDATION
+# MUST FIT: each tier starts at the first memory size Apple ships where the
+# catalog's fit estimate says its model fits (`fits` or `tight`) under macOS's
+# default GPU memory limit (75% of unified memory):
 #
-#     memory <  24          -> Qwen3.5 9B        (qwen3.5-9b)
-#     24 <= memory < 128    -> Qwen3.8 27B       (qwen3.8-27b)
-#     memory >= 128         -> Qwen3.8 Flash-Next (qwen3.8-flash-next)
+#     memory <  16          -> Qwen3 1.7B 8-bit  (qwen3-1.7b): the largest
+#                              catalog text model that fits 8 GB; no
+#                              vision-capable one does (Qwen3.5 9B needs
+#                              ~6.4 GiB, an 8 GB Mac gives a model ~4 GiB)
+#     16 <= memory < 32     -> Qwen3.5 9B        (qwen3.5-9b)
+#     32 <= memory < 128    -> Qwen3.8 27B       (qwen3.8-27b): needs ~16.4
+#                              GiB, a 24 GB Mac gives a model ~16 GiB
+#     memory >= 128         -> Qwen3.8 Flash-Next (qwen3.8-flash-next): on a
+#                              128 GB Mac it fits once the GPU memory limit is
+#                              raised (`needs_gpu_limit`, operator-accepted)
 #
 # Every other host keeps the portable default (`RECOMMENDED_MODEL_DOWNLOADS`
 # in capability_defaults) -- except where the portable default's engine has
@@ -113,11 +124,15 @@ MTP_RECOMMENDED = False
 # `speculation = {mode: native_mtp, num_draft_tokens: 2, require_acceleration:
 # false}`, the keys providers/speculation.py accepts); the pick copies them.
 
-# (upper bound in GiB, exclusive; None = no bound), catalog row, plain, MTP.
+# (upper bound in GiB, exclusive; None = no bound), catalog row, plain, MTP
+# (None: the row has no MTP build, the plain one is recommended either way).
 # Every artifact named here must be a seed artifact of that row carrying an
-# `upstream` verification record (enforced by tests/config/test_model_catalog.py).
+# `upstream` verification record (enforced by tests/config/test_model_catalog.py);
+# tests/config/test_recommended_text_tiers.py enforces the fit rule above.
 APPLE_TEXT_TIERS: Tuple[Dict[str, Any], ...] = (
-    {"below_gib": 24, "row": "qwen3.5-9b",
+    {"below_gib": 16, "row": "qwen3-1.7b",
+     "plain": "mlx-community/Qwen3-1.7B-8bit", "mtp": None},
+    {"below_gib": 32, "row": "qwen3.5-9b",
      "plain": "mlx-community/Qwen3.5-9B-MLX-4bit", "mtp": "mlx-works/Qwen3.5-9B-oQ4e-mtp"},
     {"below_gib": 128, "row": "qwen3.8-27b",
      "plain": "mlx-community/Qwen3.8-27B-4bit", "mtp": "Jundot/Qwen3.8-27B-oQ4e-mtp"},
@@ -135,7 +150,7 @@ _PORTABLE_TEXT_ENGINE_FALLBACK = {"provider": "ollama", "artifact": "qwen3.5:9b"
 
 def _tier_artifact(tier: Mapping[str, Any], mtp: Optional[bool] = None) -> str:
     use_mtp = MTP_RECOMMENDED if mtp is None else bool(mtp)
-    return str(tier["mtp"] if use_mtp else tier["plain"])
+    return str(tier["mtp"] if use_mtp and tier["mtp"] else tier["plain"])
 
 
 def _memory_gib(host: Mapping[str, Any]) -> Optional[float]:
@@ -230,7 +245,7 @@ def _fit_for_seed_artifact(row: Mapping[str, Any], art: Mapping[str, Any], host:
 
 
 def recommended_artifact_fit(provider: str, artifact: str, host: Mapping[str, Any]) -> Dict[str, Any]:
-    """`{row, fit}` for one seed artifact a recommendation names, on `host`.
+    """`{row, artifact, fit}` for one seed artifact a recommendation names, on `host`.
 
     The memory gate of a recommended route whose model may not fit at all
     (`output.video`). Works on the LIGHT host reading too (import-time seed):
@@ -241,17 +256,24 @@ def recommended_artifact_fit(provider: str, artifact: str, host: Mapping[str, An
     silent pass).
     """
 
-    from ..utils.host_profile import _FALLBACK_CEILING_FRACTION
-
     row_id = catalog_id_for(provider, artifact)
     if row_id is None:
         raise LookupError(f"recommended artifact {provider}:{artifact} is not in the catalog")
     row, art = _seed_row_and_artifact(row_id, provider, artifact)
+    return {"row": row, "artifact": art, "fit": recommended_artifact_fit_for(row, art, host)}
+
+
+def recommended_artifact_fit_for(row: Mapping[str, Any], art: Mapping[str, Any], host: Mapping[str, Any]) -> Dict[str, Any]:
+    """`_fit_for_seed_artifact` on `host`, with the host probe's fallback
+    ceiling (75% of RAM) where the reading has none (`recommended_artifact_fit`)."""
+
+    from ..utils.host_profile import _FALLBACK_CEILING_FRACTION
+
     profile = dict(host)
     ram = profile.get("ram_bytes")
     if not isinstance(profile.get("ceiling_bytes"), (int, float)) and isinstance(ram, (int, float)) and ram > 0:
         profile["ceiling_bytes"] = int(_FALLBACK_CEILING_FRACTION * ram)
-    return {"row": row, "fit": _fit_for_seed_artifact(row, art, profile)}
+    return _fit_for_seed_artifact(row, art, profile)
 
 
 def recommended_text_model(
@@ -308,7 +330,7 @@ def recommended_text_model(
             "catalog_id": row["id"],
             "basis": "apple_silicon_tiers",
             "tier": rule,
-            "mtp": use_mtp,
+            "mtp": use_mtp and bool(tier["mtp"]),
         }
     else:
         from .capability_defaults import recommended_route_unavailable_reason
@@ -668,20 +690,45 @@ def validate_catalog(data: Any) -> List[str]:
 
 
 def _validate_resident(aw: str, resident: Any) -> List[str]:
-    """`{bytes, source}`: a MEASURED run-time memory need, never a guess --
-    `source` must say where and at which profile it was measured."""
+    """`{bytes, source[, smaller_canvases]}`: a MEASURED run-time memory need at
+    the engine's default profile, never a guess -- `source` must say where and
+    at which profile it was measured. `smaller_canvases` (optional) lists
+    measured needs at smaller output sizes, `[{canvas, bytes, source}]`,
+    largest first, each below the default's."""
 
     if not isinstance(resident, dict):
         return [f"{aw}.resident must be an object"]
     errors: List[str] = []
     for key in resident:
-        if key not in ("bytes", "source"):
+        if key not in ("bytes", "source", "smaller_canvases"):
             errors.append(f"{aw}.resident has unknown field {key!r}")
     value = resident.get("bytes")
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         errors.append(f"{aw}.resident.bytes must be a positive integer")
+        value = None
     if not isinstance(resident.get("source"), str) or not resident.get("source"):
         errors.append(f"{aw}.resident.source must say where the memory was measured")
+    smaller = resident.get("smaller_canvases")
+    if smaller is not None:
+        if not isinstance(smaller, list) or not smaller:
+            return errors + [f"{aw}.resident.smaller_canvases must be a non-empty list"]
+        previous = value
+        for i, entry in enumerate(smaller):
+            ew = f"{aw}.resident.smaller_canvases[{i}]"
+            if not isinstance(entry, dict) or set(entry) != {"canvas", "bytes", "source"}:
+                errors.append(f"{ew} must be {{canvas, bytes, source}}")
+                continue
+            if not isinstance(entry["canvas"], str) or not re.fullmatch(r"\d+x\d+x\d+", entry["canvas"]):
+                errors.append(f"{ew}.canvas must be WIDTHxHEIGHTxFRAMES")
+            b = entry["bytes"]
+            if not isinstance(b, int) or isinstance(b, bool) or b <= 0:
+                errors.append(f"{ew}.bytes must be a positive integer")
+            elif previous is not None and b >= previous:
+                errors.append(f"{ew}.bytes must be below the previous (larger) canvas's")
+            else:
+                previous = b
+            if not isinstance(entry["source"], str) or not entry["source"]:
+                errors.append(f"{ew}.source must say where the memory was measured")
     return errors
 
 
@@ -695,6 +742,25 @@ def _resident_bytes(art: Mapping[str, Any]) -> Optional[int]:
     resident = art.get("resident")
     value = resident.get("bytes") if isinstance(resident, Mapping) else None
     return int(value) if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def smaller_canvas_fit(provider: str, artifact: str, host: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """The largest measured smaller canvas (`resident.smaller_canvases`) at
+    which a seed artifact fits `host` (`fits` or `tight`), as `{canvas,
+    bytes, fit}`, or None. For a video model whose default canvas does not
+    fit: the size at which it still runs on this computer, measured."""
+
+    row_id = catalog_id_for(provider, artifact)
+    if row_id is None:
+        raise LookupError(f"artifact {provider}:{artifact} is not in the catalog")
+    row, art = _seed_row_and_artifact(row_id, provider, artifact)
+    resident = art.get("resident") or {}
+    for entry in resident.get("smaller_canvases") or []:
+        variant = dict(art, resident={"bytes": entry["bytes"], "source": entry["source"]})
+        fit = recommended_artifact_fit_for(row, variant, host)
+        if fit.get("verdict") in ("fits", "tight"):
+            return {"canvas": entry["canvas"], "bytes": entry["bytes"], "fit": fit}
+    return None
 
 
 def _resident_note(art: Mapping[str, Any]) -> Optional[str]:
@@ -1198,6 +1264,18 @@ def _build_artifact(
         fit["notes"] = list(fit.get("notes") or []) + [f"the {engine} engine does not run on this host"]
     downloadable = supported and provider in mm.supported_providers() and presence.status != mm.PRESENCE_NOT_APPLICABLE
 
+    # The default canvas does not fit but a measured smaller one does (video):
+    # the size at which it still runs here.
+    smaller: Optional[Dict[str, Any]] = None
+    if supported and fit.get("verdict") not in ("fits", "tight") and (art.get("resident") or {}).get("smaller_canvases"):
+        got = smaller_canvas_fit(provider, artifact, host)
+        if got is not None:
+            smaller = {"canvas": got["canvas"], "need_bytes": got["fit"]["need_bytes"], "verdict": got["fit"]["verdict"]}
+            fit["notes"] = list(fit.get("notes") or []) + [
+                f"at {got['canvas']} (width x height x frames) it needs about "
+                f"{got['fit']['need_bytes'] / 1024**3:.1f} GiB (measured) and fits"
+            ]
+
     return {
         "provider": provider,
         "artifact": artifact,
@@ -1214,6 +1292,9 @@ def _build_artifact(
         "size_source": size_source,
         # The measured run-time memory (`resident` in the seed), or None.
         "resident_bytes": resident,
+        # `{canvas, need_bytes, verdict}` when only a measured smaller canvas
+        # fits this host (`resident.smaller_canvases`), else None.
+        "smaller_canvas": smaller,
         "presence": {
             "status": presence.status,
             "location": presence.location,

@@ -165,7 +165,7 @@ def test_the_starter_text_model_is_preselected_on_apple_silicon(host):
 
     rows = {r["id"]: r for r in mc.catalog(host=synthetic_host("metal128"))["rows"]}
     nine = rows["qwen3.5-9b"]
-    assert [a["artifact"] for a in nine["artifacts"] if a["recommended"]] == [mc._tier_artifact(mc.APPLE_TEXT_TIERS[0])]
+    assert [a["artifact"] for a in nine["artifacts"] if a["recommended"]] == [mc._tier_artifact(mc.APPLE_TEXT_TIERS[1])]
     assert nine["starter"] is False  # 128 GiB is the Flash-Next tier
     assert rows["qwen3.8-flash-next"]["starter"] is True
     assert [r["id"] for r in rows.values() if r["starter"] and "chat" in r["tags"]] == ["qwen3.8-flash-next"]

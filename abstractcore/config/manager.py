@@ -560,6 +560,42 @@ def resolve_config_file(
     return base / "abstractcore.json"
 
 
+def model_supports_input(model: str, modality: str) -> bool:
+    """Does `model` read `modality` input (`image`, `voice`, ...) itself?
+
+    The rule behind "input.image covered by input.text": the grid's coverage
+    decoration and `recommendations.recommended_models` both ask it.
+    """
+
+    try:
+        from ..providers.model_capabilities import (
+            ModelInputCapability,
+            model_matches_input_capabilities,
+            model_supports_capability_route,
+        )
+
+        normalized_modality = str(modality or "").strip().lower()
+        try:
+            if model_supports_capability_route(str(model or ""), capability_route_key("input", normalized_modality)):
+                return True
+        except Exception:
+            pass
+
+        capability = {
+            "image": ModelInputCapability.IMAGE,
+            "audio": ModelInputCapability.AUDIO,
+            "sound": ModelInputCapability.SOUND,
+            "voice": ModelInputCapability.VOICE,
+            "music": ModelInputCapability.MUSIC,
+            "video": ModelInputCapability.VIDEO,
+        }.get(normalized_modality)
+        if capability is None:
+            return False
+        return bool(model_matches_input_capabilities(str(model or ""), [capability]))
+    except Exception:
+        return False
+
+
 class ConfigurationManager:
     """Manages AbstractCore configuration."""
 
@@ -1802,33 +1838,7 @@ class ConfigurationManager:
 
     @staticmethod
     def _model_supports_input(model: str, modality: str) -> bool:
-        try:
-            from ..providers.model_capabilities import (
-                ModelInputCapability,
-                model_matches_input_capabilities,
-                model_supports_capability_route,
-            )
-
-            normalized_modality = str(modality or "").strip().lower()
-            try:
-                if model_supports_capability_route(str(model or ""), capability_route_key("input", normalized_modality)):
-                    return True
-            except Exception:
-                pass
-
-            capability = {
-                "image": ModelInputCapability.IMAGE,
-                "audio": ModelInputCapability.AUDIO,
-                "sound": ModelInputCapability.SOUND,
-                "voice": ModelInputCapability.VOICE,
-                "music": ModelInputCapability.MUSIC,
-                "video": ModelInputCapability.VIDEO,
-            }.get(normalized_modality)
-            if capability is None:
-                return False
-            return bool(model_matches_input_capabilities(str(model or ""), [capability]))
-        except Exception:
-            return False
+        return model_supports_input(model, modality)
 
     @staticmethod
     def _route_parts(kind: str, modality: Optional[str], task: Optional[str]) -> Tuple[str, str, Optional[str]]:

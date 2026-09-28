@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `abstractcore models recommendations [--host] [--json | --markdown] [--output PATH]`: the
+  recommended model for every capability (text, image input, speech output, speech input, image,
+  video, music) on every machine class (Apple silicon by unified memory, Linux or Windows with an
+  NVIDIA GPU, processor-only Linux or Windows, Intel Macs), or for this machine with `--host`.
+  Each cell is `recommended`, `covered` (image input is read by the text model) or `unavailable`
+  with the reason and what to use instead, and carries the engine, device, download size, memory
+  need, fit verdict and, where needed, the GPU memory `sysctl`. The JSON is
+  `model_recommendations_v1`; Python: `abstractcore.config.recommendations.recommended_models()`
+  and `recommendation_matrix()`. See [Recommended Models](docs/recommended-models.md), whose
+  tables are generated from the same data (`scripts/update_recommended_models_doc.py --check`).
+- Recommendations for speech input (Whisper base on AbstractVoice's faster-whisper engine) and
+  music (ACE-Step 1.5 XL turbo on AbstractMusic's `acestep` backend, memory-gated like video).
+  They are listed everywhere recommendations are shown and are not written by the fresh-install
+  defaults, `apply-recommended` or `models download --recommended`: set them with
+  `abstractcore config set-default`. Both models are in the download catalog with their verified
+  sizes.
+
+### Changed
+
+- The Apple silicon text tiers recommend a model that fits: each tier starts at the first memory
+  size Apple ships where its model fits macOS's default GPU memory limit. Below 16 GiB: Qwen3 1.7B
+  8-bit (`mlx-community/Qwen3-1.7B-8bit`, the largest catalog text model that fits 8 GB; it does
+  not read images); 16 to below 32 GiB: Qwen3.5 9B; 32 to below 128 GiB: Qwen3.8 27B; 128 GiB and
+  above: Qwen3.8 Flash-Next. A 24 GB Mac now gets Qwen3.5 9B (Qwen3.8 27B needs about 16.4 GiB,
+  a 24 GB Mac gives a model about 16 GiB), and an 8 GB Mac Qwen3 1.7B. Existing routes are not
+  changed; `apply-recommended` reports the new pick as `kept` unless you pass `--force`.
+- The recommended image route (FLUX.2 klein 4B, about 8.5 GiB) is memory-gated like video and
+  music: an 8 GB Mac gets no image route, with the reason.
+- Wan2.2 TI2V-5B's memory need is its MLX peak measured at AbstractVision's default canvas
+  (1280x704, 121 frames: 60.5 GiB) instead of a 17-frame validation profile (58.5 GiB); the
+  recommended video route still needs 96 GiB of unified memory. Its peak at 832x480, the smallest
+  canvas AbstractVision accepts for it, is measured too (32.7 GiB, catalog
+  `resident.smaller_canvases`): on a Mac where only that size fits (64 GiB) the route is still not
+  written, and the reason, the grid and `models recommendations` (`smaller_canvas`) say so, with
+  the route to set yourself.
+- Wan2.2 T2V-A14B 8-bit carries measured needs at smaller canvases (47.4 GiB at 832x480, 41.8 GiB
+  at 640x352, 81 frames). Catalog artifacts gain `smaller_canvas: {canvas, need_bytes, verdict}`
+  when only a measured smaller canvas fits the machine (T2V-A14B at 640x352 on a 64 GiB Mac).
+- `capability_defaults.RECOMMENDED_MODELS` is the one table of recommended models;
+  `RECOMMENDED_CAPABILITY_DEFAULT_ROUTES` and `RECOMMENDED_MODEL_DOWNLOADS` are its starter-set
+  views and keep their values.
+- The reason a memory-gated recommendation is unavailable says whether the memory need is
+  measured or estimated.
+
 ## [2.18.0] - 2026-09-28
 
 Capability routes say when their engine is not installed, Apple silicon fits account for the GPU

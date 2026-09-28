@@ -7,6 +7,10 @@ need (weights + KV cache + overhead, 16.4 GiB) with the USABLE memory (the
 sentence printed the need rounded to 16 and the raw ceiling. These tests pin
 need / usable / verdict / sentence to one another for the 27B tier row.
 
+Since the 2026-09-28 ruling (a recommendation must fit) a 24 GiB Mac gets the
+9B tier, so these tests ask the catalog's fit and warning for the 27B tier's
+artifact on that Mac directly (`_27b_on`): the same numbers, the same sentence.
+
 Offline: synthetic hosts, no engine, no hub.
 """
 
@@ -24,6 +28,14 @@ GIB = 1024**3
 MAC24 = dict(synthetic_host("metal24"), ceiling_bytes=18 * GIB, ceiling_source="metal_recommended", free_now_bytes=12 * GIB)
 
 
+def _27b_on(host: dict) -> dict:
+    """The 27B tier artifact's fit and warning on `host`, shaped like a pick."""
+    artifact = "mlx-community/Qwen3.8-27B-4bit"
+    row, art = mc._seed_row_and_artifact("qwen3.8-27b", "mlx", artifact)
+    fit = mc._fit_for_seed_artifact(row, art, host)
+    return {"artifact": artifact, "fit": fit, "fits": fit["verdict"] in ("fits", "tight"), "warning": mc._fit_warning(row, fit)}
+
+
 def _numbers(sentence: str) -> dict:
     need = re.search(r"needs about ([0-9.]+) GiB in total \(([0-9.]+) GiB of weights plus ([0-9.]+) GiB", sentence)
     usable = re.search(r"can give a model about ([0-9.]+) GiB \(the most this computer lets a model use is ([0-9.]+) GiB, and ([0-9.]+) GiB of that is kept free", sentence)
@@ -35,7 +47,7 @@ def _numbers(sentence: str) -> dict:
 
 
 def test_the_24_gib_mac_27b_warning_states_what_the_verdict_compared():
-    pick = mc.recommended_text_model(MAC24, mtp=False)
+    pick = _27b_on(MAC24)
     fit = pick["fit"]
     assert pick["artifact"] == "mlx-community/Qwen3.8-27B-4bit"
     assert fit["verdict"] == "too_large" and pick["fits"] is False
@@ -56,11 +68,11 @@ def test_the_24_gib_mac_27b_warning_states_what_the_verdict_compared():
 
 
 def test_a_tight_27b_on_a_bigger_ceiling_says_fits_but_tightly_with_consistent_numbers():
-    base = mc.recommended_text_model(MAC24, mtp=False)["fit"]
+    base = _27b_on(MAC24)["fit"]
     need = base["need_bytes"]
     # tight: 0.8 * usable < need <= usable, with usable = ceiling - 2 GiB
     ceiling = need + 2 * GIB + GIB // 2
-    pick = mc.recommended_text_model(dict(MAC24, ceiling_bytes=ceiling), mtp=False)
+    pick = _27b_on(dict(MAC24, ceiling_bytes=ceiling))
     fit = pick["fit"]
     assert fit["verdict"] == "tight" and pick["fits"] is True
     assert 0.8 * fit["usable_bytes"] < fit["need_bytes"] <= fit["usable_bytes"]

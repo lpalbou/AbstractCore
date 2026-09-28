@@ -22,6 +22,7 @@ Related pages: [Engines](engines.md) (installing Ollama, LM Studio, MLX, llama.c
 | Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
 | Delete | `abstractcore models delete <provider> <artifact> [--yes] [--dry-run] [--force] [--json]` | `POST /acore/models/delete` | `model_materializer.delete_artifact(...)` |
 | Follow background work | `abstractcore models jobs [<job_id>] [--kind K] [--status S] --json`, `abstractcore models cancel <job_id>` | `GET /acore/jobs`, `GET /acore/jobs/{id}`, `POST /acore/jobs/{id}/cancel` | `host_jobs.default_registry()` |
+| Recommended model per capability and machine | `abstractcore models recommendations [--host] [--json]` | none | `abstractcore.config.recommendations.recommended_models()` / `recommendation_matrix()` (see [Recommended Models](recommended-models.md)) |
 | Check that an installed model answers | `abstractcore models verify <artifact> [--provider P] [--json]` | none | `abstractcore.config.model_verify.verify_inference(...)` |
 | Repair missing `refs/main` | `abstractcore models repair-refs [--dry-run] [--cache-dir DIR] [--json]` | none | `model_materializer.repair_hf_refs(apply=...)` |
 
@@ -94,7 +95,12 @@ joined from AbstractCore's model capability registry, and one entry per artifact
 - `resident_bytes`: the MEASURED memory the engine needs while this artifact runs, for models
   whose working memory is not their file size (the video rows), else `null`. The seed records it
   with its source (machine, engine version, canvas and frame count); the fit uses it as `W` and the
-  download size only for the disk check, and the fit notes quote the source;
+  download size only for the disk check, and the fit notes quote the source. It is measured at the
+  engine's default canvas; the seed may also record measured needs at smaller canvases
+  (`resident.smaller_canvases`, Wan2.2 TI2V-5B at 832x480), which
+  [Recommended Models](recommended-models.md) reports where only the smaller size fits;
+- `smaller_canvas`: `{canvas, need_bytes, verdict}` when the default canvas does not fit this
+  machine but a measured smaller canvas does (`canvas` is `WIDTHxHEIGHTxFRAMES`), else `null`;
 - `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
 - `recommended`: exactly one artifact per row is pre-selected for this machine. On Apple silicon
   the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
@@ -111,18 +117,27 @@ One function decides it for every surface (the catalog flags, the fresh-install 
 Gateway's first-run guide): `abstractcore.config.model_catalog.recommended_text_model()`.
 
 On Apple silicon it is an MLX build chosen by the computer's unified memory, as the host profile
-reports it (`ram_bytes`, in GiB):
+reports it (`ram_bytes`, in GiB). Each tier starts at the first memory size Apple ships where its
+model fits under macOS's default GPU memory limit (75% of unified memory):
 
 | Unified memory | Row | Recommended build |
 |---|---|---|
-| below 24 GiB | `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MLX-4bit` |
-| 24 GiB to below 128 GiB | `qwen3.8-27b` | `mlx-community/Qwen3.8-27B-4bit` |
+| below 16 GiB | `qwen3-1.7b` | `mlx-community/Qwen3-1.7B-8bit` |
+| 16 GiB to below 32 GiB | `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MLX-4bit` |
+| 32 GiB to below 128 GiB | `qwen3.8-27b` | `mlx-community/Qwen3.8-27B-4bit` |
 | 128 GiB and above | `qwen3.8-flash-next` | `mlx-community/Qwen3.8-Flash-Next-4bit` |
+
+Qwen3 1.7B is the largest catalog text model that fits an 8 GB Mac; it does not read images. On a
+128 GB Mac, Flash-Next fits once the GPU memory limit is raised (the pick's `warning` gives the
+`sysctl` command).
 
 A Mac whose memory cannot be read gets the smallest tier, and the pick says so in `tier`. Every
 other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@4bit`.
 
-Each tier also lists an MTP build (native multi-token prediction: `mlx-works/Qwen3.5-9B-oQ4e-mtp`,
+The recommendations for the other capabilities (image input, speech, image, video, music) and
+the full table per kind of machine are on [Recommended Models](recommended-models.md).
+
+The three larger tiers also list an MTP build (native multi-token prediction: `mlx-works/Qwen3.5-9B-oQ4e-mtp`,
 `Jundot/Qwen3.8-27B-oQ4e-mtp`, `Jundot/Qwen3.8-Flash-Next-oQ4e-mtp`). The module switch
 `MTP_RECOMMENDED` (off) decides whether the tier recommends the MTP build instead of the plain
 one. Either way the text route keeps the recommendation's MTP policy

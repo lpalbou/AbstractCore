@@ -44,6 +44,7 @@ nav:
   - Media: media-handling-system.md
   - Embeddings: embeddings.md
   - Local Models: models.md
+  - Recommended Models: recommended-models.md
   - Local Engines: engines.md
   - Server: server.md
   - Web Console: console.md

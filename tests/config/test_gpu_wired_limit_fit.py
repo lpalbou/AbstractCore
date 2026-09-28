@@ -71,7 +71,8 @@ def test_a_raised_limit_that_is_still_too_small_says_how_much_more():
 
 def test_beyond_what_macos_can_grant_stays_too_large():
     # 27B 4-bit on a 24 GiB Mac: the limit it would need exceeds RAM - 8 GiB.
-    fit = mc.recommended_text_model(synthetic_host("metal24"), mtp=False)["fit"]
+    row, art = mc._seed_row_and_artifact("qwen3.8-27b", "mlx", "mlx-community/Qwen3.8-27B-4bit")
+    fit = mc._fit_for_seed_artifact(row, art, synthetic_host("metal24"))
     assert fit["verdict"] == "too_large" and "gpu_limit" not in fit
 
 
