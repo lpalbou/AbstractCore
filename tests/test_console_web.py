@@ -99,7 +99,7 @@ def test_shared_vocabulary_labels_are_exactly_the_contract() -> None:
     js = fragment("models")["js"]
     for status, label in (("installed", "installed"), ("absent", "not downloaded"), ("unknown", "unknown"), ("not_applicable", "remote")):
         assert f'{status}: {{ label: "{label}"' in js
-    for verdict, label in (("fits", "fits"), ("tight", "tight"), ("too_large", "too large"), ("partial_offload", "partial offload"), ("unknown", "unknown")):
+    for verdict, label in (("fits", "fits"), ("tight", "tight"), ("too_large", "too large"), ("partial_offload", "partial offload"), ("needs_gpu_limit", "needs GPU limit"), ("unknown", "unknown")):
         assert f'{verdict}: {{ label: "{label}"' in js
     for verb in (">Download</button>", ">Delete</button>", ">Install</button>", ">Open download page</button>"):
         assert verb in js, verb

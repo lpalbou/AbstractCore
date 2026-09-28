@@ -575,7 +575,7 @@ fn installed_table(
 fn artifact_detail(t: &TokenSet, r: &ArtifactRow, store: &ScreensStore) -> View {
     let fit_ink = match r.fit.as_str() {
         "fits" => t.ok,
-        "tight" | "partial_offload" => t.warn,
+        "tight" | "partial_offload" | "needs_gpu_limit" => t.warn,
         "too_large" => t.error,
         _ => t.text_muted,
     };
@@ -627,7 +627,11 @@ fn artifact_detail(t: &TokenSet, r: &ArtifactRow, store: &ScreensStore) -> View 
     if r.source.as_deref() == Some("hf_search") {
         second.push(span(" Hugging Face", t.accent));
     }
-    if let Some(n) = r.fit_notes.first() {
+    // Fits once the Mac's GPU memory limit is raised: the command IS the
+    // actionable line, so it takes the note's place (Core 0947).
+    if let Some(gl) = &r.gpu_limit {
+        second.push(span(format!(" {}", gl.instruction()), t.warn));
+    } else if let Some(n) = r.fit_notes.first() {
         second.push(span(format!(" {n}"), t.text_faint));
     }
     let is_default = store.text_default.with(|d| {

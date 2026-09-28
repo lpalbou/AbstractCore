@@ -499,12 +499,20 @@ def _fit_gate_reason(key: str, download: Mapping[str, str], host: Mapping[str, A
     if verdict in ("fits", "tight"):
         return None
     name = got["row"].get("display_name") or got["row"].get("id")
+    next_step = f"; {_TOO_LARGE_NEXT_STEP[key]}" if key in _TOO_LARGE_NEXT_STEP else ""
     if verdict == "unknown" or not isinstance(fit.get("need_bytes"), int) or not isinstance(fit.get("usable_bytes"), int):
-        return f"{name} needs a lot of memory and this computer's memory could not be measured"
-    return (
+        return f"{name} needs a lot of memory and this computer's memory could not be measured{next_step}"
+    reason = (
         f"{name} needs about {_gib_text(fit['need_bytes'])} of memory while it generates (measured), and this "
         f"computer can give a model about {_gib_text(fit['usable_bytes'])}"
     )
+    if verdict == "needs_gpu_limit":
+        # Not written (it needs an admin command first), but never a bare
+        # "too large": the reason carries the command that makes it fit.
+        from .model_catalog import gpu_limit_instruction
+
+        return f"{reason}. {gpu_limit_instruction(fit)}"
+    return f"{reason}{next_step}"
 
 
 def _unavailable_reasons(
@@ -524,8 +532,6 @@ def _unavailable_reasons(
         if key in _FIT_GATED_ROUTES:
             reason = _fit_gate_reason(key, downloads[key], host)
             if reason:
-                if key in _TOO_LARGE_NEXT_STEP:
-                    reason = f"{reason}; {_TOO_LARGE_NEXT_STEP[key]}"
                 out[key] = reason
     return out
 
@@ -706,7 +712,10 @@ def plan_recommended_capability_defaults(
 
     A configured route this host cannot run (`configured_routes_unavailable`)
     also carries `route_unavailable: {provider, model, reason}` on its entry,
-    whatever the action, so a broken route is never reported as fine.
+    whatever the action, so a broken route is never reported as fine. The
+    route an entry leaves in place carries `engine_missing: {engine, name,
+    reason, install}` when this host can run its in-process engine but the
+    engine is not installed (`route_engines.route_engine_missing`).
 
     FIELD-PRESERVING like every other writer here: only `provider` and `model`
     come from the recommendation. A pinned `base_url`, a reasoning effort and
@@ -728,6 +737,8 @@ def plan_recommended_capability_defaults(
                     f"Expected one of {', '.join(sorted(RECOMMENDED_SELECTORS))}."
                 )
             wanted.add(key)
+
+    from .route_engines import route_engine_missing
 
     profile = _host_or_probe(host)
     recommended_routes = recommended_capability_default_routes(profile)
@@ -799,6 +810,17 @@ def plan_recommended_capability_defaults(
                 **({"route_unavailable": dict(broken[key])} if key in broken else {}),
             }
         )
+    for entry in plan:
+        # The route this entry LEAVES in place, when its in-process engine is
+        # not installed here (`route_engines`): "apply" writes a route whose
+        # engine still has to be installed, and says so with the command. A
+        # route this host cannot run at all is `route_unavailable` instead.
+        after = entry["after"]
+        if not after.get("provider") or ("route_unavailable" in entry and after == entry["before"]):
+            continue
+        flag = route_engine_missing(after.get("provider"), after.get("model"), entry["key"])
+        if flag is not None:
+            entry["engine_missing"] = flag
     return tuple(plan)
 
 

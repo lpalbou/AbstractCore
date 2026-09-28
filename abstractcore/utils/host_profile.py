@@ -364,7 +364,17 @@ def _build_light_profile() -> Dict[str, Any]:
     arch = normalize_arch()
     ram_total, _available = _ram_total_and_available()
     metal = os_id == "darwin" and arch == "arm64"
+    # A GPU wired limit the operator raised (`iogpu.wired_limit_mb`, one
+    # sysctl read, no GPU tool) IS the ceiling, here as in the full probe, so
+    # the import-time seed and the catalog judge a fit against the same basis.
+    wired: Optional[int] = None
+    if metal:
+        from .memory import metal_wired_limit_bytes
+
+        wired = metal_wired_limit_bytes()
+    ceiling = {"ceiling_bytes": int(wired), "ceiling_source": "metal_wired_limit"} if wired else {}
     return {
+        **ceiling,
         "schema": HOST_PROFILE_SCHEMA,
         "os": os_id,
         "arch": arch,

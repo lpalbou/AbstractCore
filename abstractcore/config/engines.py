@@ -237,10 +237,9 @@ def _support(engine: str, os_id: str, arch: str, accelerator: Optional[str]) -> 
     if engine == "vllm":
         if os_id == "linux" and accelerator == "cuda":
             return True, None
-        return False, (
-            "vLLM runs on Linux with an NVIDIA GPU (CUDA); on this host use a remote vLLM server "
-            "through VLLM_BASE_URL instead"
-        )
+        # Plain words, shown verbatim by every console's engine row: what
+        # it needs, and what to do instead (the vLLM provider's base_url).
+        return False, "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead"
     if engine in {"llamacpp", "huggingface"}:
         if os_id in {"darwin", "linux", "windows"}:
             return True, None

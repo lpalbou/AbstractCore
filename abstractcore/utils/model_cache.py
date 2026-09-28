@@ -393,6 +393,30 @@ _GGUF_FIXED_SIZES: dict[int, int] = {
 }
 
 
+def is_gguf_model_ref(model: str) -> bool:
+    """Does this Hugging Face provider model reference name a GGUF model?
+
+    THE rule the provider's lane choice uses (`HuggingFaceProvider._is_gguf_model`):
+    a `.gguf` file name, an on-disk `.gguf` file or a directory holding one (a
+    trailing `:quant` selector is stripped first), or a repo id containing
+    "gguf" (`unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF`, the cache form
+    `unsloth--...-GGUF`). Anything else runs on Transformers.
+    """
+
+    if model.endswith(".gguf"):
+        return True
+    try:
+        head = model.split(":", 1)[0] if ":" in model else model
+        p = Path(head).expanduser()
+        if p.is_file() and p.suffix.lower() == ".gguf":
+            return True
+        if p.is_dir() and any(p.rglob("*.gguf")):
+            return True
+    except (OSError, ValueError):
+        pass
+    return "gguf" in model.lower()
+
+
 def _read_exact(f: BinaryIO, n: int) -> bytes:
     b = f.read(n)
     if len(b) != n:

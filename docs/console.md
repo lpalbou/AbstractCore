@@ -54,9 +54,12 @@ Weights status uses the same four labels everywhere in AbstractFramework:
 | `unknown` | The provider's tool could not be consulted (for example, the engine is not running). |
 | `remote` | Nothing to download: the model runs on a remote API. |
 
-Fit badges: `fits`, `tight`, `too large`, `partial offload`, `unknown`. Hover a badge to see the
-evidence: memory needed versus the usable ceiling, free memory now, whether the download fits on
-disk, the maximum context, the confidence of the estimate and any notes.
+Fit badges: `fits`, `tight`, `too large`, `partial offload`, `needs GPU limit`, `unknown`. Hover a
+badge to see the evidence: memory needed versus the usable ceiling, free memory now, whether the
+download fits on disk, the maximum context, the confidence of the estimate and any notes.
+`needs GPU limit` (Apple silicon) means the model fits once macOS lets the GPU use more memory;
+the notes carry the exact `sudo sysctl iogpu.wired_limit_mb=<MB>` command (see
+[Local models](models.md)).
 
 **Download** starts immediately (one click). **Delete** asks for confirmation, shows the files'
 location and size, and warns when the model is loaded or when the files are shared with another
@@ -181,7 +184,8 @@ The same Models and Engines screens exist in the terminal: `abstractcore-console
 terminal app, `cargo install abstractcore-console`) shows them as screen 9 "Models" and screen 0
 "Engines", with the same labels and keys (`w` download, `d` delete, `i` install, `o` open
 download page, `/` filter, `f` fits only, `c` cancel). It drives the `abstractcore` CLI on this
-machine, so it needs no server. See [Terminal console](console-tui.md).
+machine, so it needs no server. On a machine without a display (an SSH session, or Linux without
+`DISPLAY`/`WAYLAND_DISPLAY`) `o` prints the link instead of launching a browser. See [Terminal console](console-tui.md).
 
 ## Related
 

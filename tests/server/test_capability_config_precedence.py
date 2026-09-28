@@ -32,10 +32,14 @@ def clean_env(monkeypatch):
     return monkeypatch
 
 
-def _patch_config_routes(monkeypatch, routes: dict) -> None:
-    """Make get_capability_default(kind, modality) return the given routes."""
+def _patch_config_routes(monkeypatch, routes: dict, openai_key=None) -> None:
+    """Make get_capability_default(kind, modality) return the given routes
+    (and `config.api_keys.openai` the given saved key)."""
+    from types import SimpleNamespace
 
     class _Mgr:
+        config = SimpleNamespace(api_keys=SimpleNamespace(openai=openai_key))
+
         def get_capability_default(self, kind, modality=None, task=None):
             return dict(routes.get(f"{kind}.{modality}", {}))
 
@@ -143,3 +147,19 @@ def test_config_read_failure_degrades_to_env(clean_env, monkeypatch):
     monkeypatch.setattr("abstractcore.config.manager.get_config_manager", _boom)
     cfg = ae._capability_config()
     assert cfg["voice_tts_engine"] == "piper", "a config read failure must not lose the env compat path"
+
+
+def test_the_saved_openai_key_reaches_the_voice_plugin(clean_env, monkeypatch):
+    """The key saved in AbstractCore's config (Providers) is AbstractVoice's
+    host setting `voice_openai_api_key`, read fresh on every call."""
+    _patch_config_routes(monkeypatch, {}, openai_key="sk-saved")
+    assert ae._capability_config()["voice_openai_api_key"] == "sk-saved"
+    _patch_config_routes(monkeypatch, {}, openai_key="sk-rotated")
+    assert ae._capability_config()["voice_openai_api_key"] == "sk-rotated", "read per call, never cached"
+
+
+def test_no_saved_key_sets_nothing_and_env_fallback_is_untouched(clean_env, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    _patch_config_routes(monkeypatch, {}, openai_key=None)
+    cfg = ae._capability_config()
+    assert "voice_openai_api_key" not in cfg, "AbstractVoice keeps its own OPENAI_API_KEY fallback"

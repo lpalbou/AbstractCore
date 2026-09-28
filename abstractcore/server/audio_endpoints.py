@@ -471,7 +471,30 @@ def _capability_config() -> Dict[str, Any]:
 
     merged = dict(env_config)
     merged.update(config_defaults)  # config wins
+    # The OpenAI key saved in AbstractCore's config (Providers), read fresh on
+    # every call, reaches AbstractVoice as its host setting
+    # `voice_openai_api_key`; with none saved AbstractVoice keeps its own
+    # OPENAI_API_KEY fallback.
+    openai_key = _saved_openai_api_key()
+    if openai_key:
+        merged["voice_openai_api_key"] = openai_key
     return merged
+
+
+def _saved_openai_api_key() -> Optional[str]:
+    """`api_keys.openai` from the centralized config, or None.
+
+    An unreadable config degrades exactly like the route defaults above (the
+    env compat path; `_capability_config_from_config_defaults` already logged
+    the #FALLBACK warning for the same read).
+    """
+    try:
+        from ..config.manager import get_config_manager
+
+        value = get_config_manager().config.api_keys.openai
+    except Exception:
+        return None
+    return str(value or "").strip() or None
 
 
 def _get_capability_core() -> Any:

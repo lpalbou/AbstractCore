@@ -135,6 +135,12 @@ generates at AbstractVision's default 1280x704 canvas (a measured figure, not
 its 16.9 GiB file size). AbstractFramework has no local video engine off Apple
 silicon, so elsewhere the reason names the remaining option: an
 OpenAI-compatible video endpoint through AbstractVision.
+The larger Wan2.2 A14B 8-bit models (`AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`,
+`AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`) are in the catalog but not
+recommended: at AbstractVision's default A14B canvas (1280x720, 81 frames) each
+needs about 72 GiB while it generates (measured), so the catalog's fit reads
+`too_large` on 64 GiB Macs, `needs_gpu_limit` on 96 GiB Macs (with the
+command) and `fits` from 128 GiB.
 A route that is already configured but cannot run on this host — an
 `mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
 example `output.image: mlx-gen/...` kept from an install made before these
@@ -145,6 +151,19 @@ it with this host's recommendation, or removes it (action `cleared`) where
 nothing recommended runs here. Routes to a server (LM Studio, Ollama,
 OpenAI-compatible) and cloud routes are never flagged: the server may be on
 another machine.
+A route this host CAN run whose engine is not installed in this Python
+environment carries `engine_missing: {engine, name, reason, install}` instead
+(plus `engine_row` when the Engines screen installs it). The in-process
+engines judged are MLX (`mlx`: mlx-lm), MLX-Gen (`mlx-gen`: abstractvision and
+mlx-gen), llama.cpp (`huggingface` with a GGUF model: llama-cpp-python),
+Transformers (`huggingface` otherwise: transformers and torch) and every local
+voice engine on `input.voice` / `output.voice` (Supertonic, faster-whisper,
+...), whose answer comes from AbstractVoice's own `engine_runtime` probe
+(abstractvoice 0.13.0 or newer). `install` is the exact command. The flag is
+never combined with `route_unavailable`, and it is separate from the weights
+status ("not downloaded"). `apply-recommended` entries and the recommended
+download plan carry it too, and `abstractcore config defaults` and
+`abstractcore models status` print it.
 The defaults are ordinary routes — change or clear them with the commands below, and any
 provider or model supplied on a request always wins. The seed is written only
 when no configuration file exists yet; clearing a route is permanent, and a

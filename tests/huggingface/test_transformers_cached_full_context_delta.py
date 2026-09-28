@@ -110,17 +110,29 @@ def _provider() -> HuggingFaceProvider:
     p._gguf_prompt_cache_default_capacity_bytes = 512 << 20
     p._gguf_prompt_cache_pending_capacity_bytes = None
     # Chat template: plain concatenation so token streams extend cleanly.
-    p._transformers_build_prompt_fragment = (  # type: ignore[method-assign]
-        lambda *, prompt="", messages=None, system_prompt=None, tools=None,
-               add_generation_prompt=False, prefilled_modules=None, enable_thinking=None:
-        " ".join(
+    def _fragment(*, prompt="", messages=None, system_prompt=None, tools=None,
+                  add_generation_prompt=False, prefilled_modules=None, enable_thinking=None,
+                  reasoning_effort=None):
+        return " ".join(
             ([f"sys {system_prompt}"] if system_prompt else [])
             + [f"{m.get('role')} {m.get('content')}" for m in (messages or [])]
             + ([f"user {prompt}"] if prompt else [])
             + (["assistant"] if add_generation_prompt else [])
         )
-    )
+
+    p._transformers_build_prompt_fragment = _fragment  # type: ignore[method-assign]
     return p
+
+
+def test_the_fake_fragment_builder_keeps_the_real_signature():
+    """The stand-in above must take exactly the real method's keywords: when
+    the provider grows one (`reasoning_effort`, 2026-09), this goes RED here,
+    naming the drift, instead of four tests failing with a TypeError."""
+    import inspect
+
+    real = inspect.signature(HuggingFaceProvider._transformers_build_prompt_fragment)
+    fake = inspect.signature(_provider()._transformers_build_prompt_fragment)
+    assert [n for n in real.parameters if n != "self"] == list(fake.parameters)
 
 
 def _cached_call(p: HuggingFaceProvider, msgs: List[Dict[str, str]], key: str = "sess"):
@@ -233,9 +245,11 @@ def test_crop_verify_refuses_no_op_crops():
     assert state2.cache.get_seq_length() == 40
 
 
-def test_linear_layer_crop_warns_once():
-    """Hybrids that crop attention exactly but keep linear state are an
-    accepted APPROXIMATION — labeled once, never silent."""
+def test_linear_layer_crop_is_refused_untouched_and_warned_once():
+    """Hybrids whose linear-attention layers cannot roll back are REFUSED
+    (the 2026-08-03 contract in `_transformers_crop_cache`: a partial crop left
+    an inconsistent cache that produced empty completions). The refusal
+    happens BEFORE mutating, and is labeled once per provider, never silent."""
     from abstractcore.providers.huggingface_provider import _TransformersPromptCacheValue
 
     p = _provider()
@@ -259,12 +273,21 @@ def test_linear_layer_crop_warns_once():
             return self._len
 
     state = _TransformersPromptCacheValue(cache=_HybridCache())
-    assert p._transformers_crop_cache(state, 40) is True
-    assert len([w for w in warnings_log if "#FALLBACK" in w]) == 1
+    assert p._transformers_crop_cache(state, 40) is False
+    assert state.cache.get_seq_length() == 100, "refused before mutating: the attention half is not rolled back"
+    fallbacks = [w for w in warnings_log if "#FALLBACK" in w]
+    assert len(fallbacks) == 1 and "Qwen3_5LinearAttentionLayer" in fallbacks[0]
 
     state2 = _TransformersPromptCacheValue(cache=_HybridCache())
-    p._transformers_crop_cache(state2, 20)
+    assert p._transformers_crop_cache(state2, 20) is False
     assert len([w for w in warnings_log if "#FALLBACK" in w]) == 1  # once per provider
+
+    # The same cache WITHOUT the linear layer crops exactly: the refusal is
+    # about the layer class, not about cropping.
+    plain = _HybridCache()
+    plain.layers = [object()]
+    state3 = _TransformersPromptCacheValue(cache=plain)
+    assert p._transformers_crop_cache(state3, 40) is True and plain.get_seq_length() == 40
 
 
 def test_prompt_only_callers_keep_the_append_lane():

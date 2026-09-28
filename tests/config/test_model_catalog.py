@@ -15,6 +15,7 @@ import pytest
 
 from abstractcore.config import model_catalog as mc
 from abstractcore.config.capability_defaults import RECOMMENDED_MODEL_DOWNLOADS
+from abstractcore.utils.model_fit import FIT_VERDICTS
 from tests.models_engines_fakes import FakeHfApi, HubRateLimited, isolate_host, make_hf_repo, synthetic_host
 
 ASSETS = Path(mc.__file__).resolve().parent.parent / "assets"
@@ -92,6 +93,27 @@ def test_every_recommended_download_is_a_starter_row():
     assert qwen["id"] == "qwen3.5-9b"
 
 
+def test_every_voice_artifact_carries_its_download_size():
+    """A download prompt must never say "size not published" for a voice model:
+    every artifact of a voice row (TTS or STT) carries a real byte count with
+    `size_source: catalog` and a note saying where it was read."""
+
+    seed = mc.load_seed()
+    voice = [
+        (row["id"], art)
+        for row in seed["rows"]
+        for art in row["artifacts"]
+        if (row.get("capabilities_override") or {}).get("voice") or "voice" in (row.get("tags") or [])
+        or art["provider"] in {"supertonic", "faster-whisper", "piper"}
+    ]
+    assert voice, "the catalog has voice rows (supertonic-3 at least)"
+    for row_id, art in voice:
+        assert isinstance(art.get("download_bytes"), int) and art["download_bytes"] > 0, row_id
+        assert art.get("size_source") == "catalog" and art.get("note"), row_id
+    supertonic = next(art for row_id, art in voice if art["artifact"] == "supertonic-3")
+    assert supertonic["download_bytes"] == 401276744
+
+
 def test_catalog_id_lookup_is_tolerant_like_presence():
     assert mc.catalog_id_for("lmstudio", "qwen/qwen3.5-9b") == "qwen3.5-9b"
     assert mc.catalog_id_for("ollama", "gemma3:1b:latest") == "gemma-3-1b"
@@ -123,7 +145,7 @@ def test_catalog_payload_follows_contract_c(host):
             assert _ART_KEYS <= set(art)
             assert _FIT_KEYS <= set(art["fit"])
             assert art["presence"]["status"] in {"installed", "absent", "unknown", "not_applicable"}
-            assert art["fit"]["verdict"] in {"fits", "tight", "too_large", "partial_offload", "unknown"}
+            assert art["fit"]["verdict"] in set(FIT_VERDICTS)
             assert art["size_source"] in {"hf_api", "catalog", "engine", "estimate", "unknown"}
             assert art["quant_class"] in mc.QUANT_CLASSES
 

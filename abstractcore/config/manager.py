@@ -1630,6 +1630,7 @@ class ConfigurationManager:
     def list_capability_defaults(self) -> list[Dict[str, Any]]:
         """Return all known capability routes with explicit persisted defaults."""
         from .capability_defaults import configured_routes_unavailable, recommended_unavailable_routes
+        from .route_engines import routes_engine_missing
 
         # An UNSET row whose recommendation this host cannot run says why
         # (`recommendation_unavailable`), so the grid reads "not configured:
@@ -1664,15 +1665,22 @@ class ConfigurationManager:
             if spec.key in unavailable and not row["configured"]:
                 row["recommendation_unavailable"] = dict(unavailable[spec.key])
             rows.append(row)
-        broken = configured_routes_unavailable(
-            {row["key"]: row for row in rows if row["configured"] and not row.get("derived_from")}
-        )
+        own = {row["key"]: row for row in rows if row["configured"] and not row.get("derived_from")}
+        broken = configured_routes_unavailable(own)
+        # The host CAN run it but the engine is not installed here
+        # (`engine_missing`, route_engines.py): a third state, distinct from
+        # `route_unavailable` (never both: a host that cannot run the engine
+        # has nothing to install) and from weights "not downloaded".
+        missing = routes_engine_missing({key: row for key, row in own.items() if key not in broken})
         for row in rows:
             # A derived row (`output.text` <- `input.text`) is the same route.
             source_key = row.get("derived_from") if row["configured"] else None
             flag = broken.get(row["key"]) or (broken.get(source_key) if source_key else None)
             if flag:
                 row["route_unavailable"] = dict(flag)
+            engine = missing.get(row["key"]) or (missing.get(source_key) if source_key else None)
+            if engine:
+                row["engine_missing"] = dict(engine)
         return self._decorate_route_hierarchy(rows)
 
     @staticmethod

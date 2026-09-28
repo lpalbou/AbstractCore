@@ -110,6 +110,43 @@ pub struct RouteRow {
     /// A CONFIGURED row whose in-process provider cannot run on this
     /// computer (Core `route_unavailable`): never shown as fine.
     pub route_unavailable: Option<RouteUnavailable>,
+    /// A CONFIGURED row this computer CAN run whose in-process engine is
+    /// not installed here (Core `engine_missing`, 0.4.0): distinct from
+    /// `route_unavailable` (never both) and from weights "not downloaded".
+    pub engine_missing: Option<EngineMissing>,
+}
+
+/// Core's `engine_missing` (`route_engines.route_engine_missing`): the
+/// engine behind an in-process route is not installed on this machine.
+/// Optional on the wire: an older Core sends nothing and nothing changes.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
+pub struct EngineMissing {
+    /// `mlx`, `mlx-gen`, `llamacpp`, `huggingface`, or a voice engine id.
+    pub engine: String,
+    /// Human name ("MLX (mlx-lm)", "Supertonic").
+    pub name: String,
+    /// Core's plain sentence, the install command included.
+    pub reason: String,
+    /// The exact command that installs it (`None`: nothing to install —
+    /// e.g. a voice engine AbstractVoice does not have).
+    pub install: Option<String>,
+    /// The Engines screen row whose `i` installs it, when there is one.
+    pub engine_row: Option<String>,
+}
+
+impl EngineMissing {
+    pub fn from_value(v: Option<&Value>) -> Option<EngineMissing> {
+        let v = v.filter(|v| v.is_object())?;
+        let engine = s(v, "engine").unwrap_or_default();
+        Some(EngineMissing {
+            name: s(v, "name").unwrap_or_else(|| engine.clone()),
+            reason: s(v, "reason").unwrap_or_else(|| "its engine is not installed".into()),
+            install: s(v, "install").filter(|c| !c.is_empty()),
+            engine_row: s(v, "engine_row").filter(|r| !r.is_empty()),
+            engine,
+        })
+    }
 }
 
 /// Core's `{provider, model, reason}` for a route this computer cannot
@@ -182,6 +219,7 @@ impl RouteRow {
                 v.get("recommendation_unavailable"),
             ),
             route_unavailable: RouteUnavailable::from_value(v.get("route_unavailable")),
+            engine_missing: EngineMissing::from_value(v.get("engine_missing")),
             key,
         })
     }
@@ -234,6 +272,10 @@ impl RouteRow {
             // computer cannot run the provider (`route_unavailable`).
             if self.route_unavailable.is_some() {
                 return "cannot run here".to_string();
+            }
+            // ...and runnable is not the same as installed (`engine_missing`).
+            if self.engine_missing.is_some() {
+                return "engine not installed".to_string();
             }
             return "configured".to_string();
         }
@@ -1094,6 +1136,37 @@ mod tests {
     ///     configured`, because it IS the thing that would answer it;
     ///   - the parent stays EDITABLE either way — setting it is the
     ///     simple path, and what the fresh-install seed writes.
+    #[test]
+    fn a_route_whose_engine_is_not_installed_reads_so() {
+        let row = RouteRow::from_value(&json!({
+            "key": "input.text", "configured": true, "provider": "mlx", "model": "m",
+            "engine_missing": {"engine": "mlx", "name": "MLX (mlx-lm)", "reason": "MLX is not installed",
+                               "install": "pip install mlx-lm", "engine_row": "mlx"}
+        }))
+        .unwrap();
+        let m = row.engine_missing.clone().unwrap();
+        assert_eq!(
+            (
+                m.engine.as_str(),
+                m.install.as_deref(),
+                m.engine_row.as_deref()
+            ),
+            ("mlx", Some("pip install mlx-lm"), Some("mlx"))
+        );
+        assert_eq!(row.state_label(), "engine not installed");
+        // `route_unavailable` wins (the host cannot run it: nothing to install).
+        let broken = RouteRow::from_value(&json!({
+            "key": "input.text", "configured": true,
+            "route_unavailable": {"reason": "MLX needs Apple silicon"},
+            "engine_missing": {"engine": "mlx", "reason": "x"}
+        }))
+        .unwrap();
+        assert_eq!(broken.state_label(), "cannot run here");
+        // An older Core sends neither.
+        let old = RouteRow::from_value(&json!({"key": "input.text", "configured": true})).unwrap();
+        assert!(old.engine_missing.is_none() && old.state_label() == "configured");
+    }
+
     #[test]
     fn route_rows_render_the_broad_task_hierarchy() {
         let parent = |covered: bool| {

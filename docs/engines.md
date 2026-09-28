@@ -47,7 +47,7 @@ running anything. Commands come from a fixed table; nothing in them comes from a
 | LM Studio | desktop app from https://lmstudio.ai/download (or `brew install --cask lm-studio`); the command installs the headless daemon and `lms` CLI: `curl -fsSL https://lmstudio.ai/install.sh \| bash`. Apple silicon only | same headless install (may need `libatomic1`) | desktop app (or `winget install --id ElementLabs.LMStudio`); headless: `irm https://lmstudio.ai/install.ps1 \| iex` |
 | MLX | `python -m pip install mlx-lm` into this Python environment | not supported | not supported |
 | llama.cpp | `python -m pip install llama-cpp-python` (Metal build); alternative `brew install llama.cpp` | same pip install (CPU unless `CMAKE_ARGS=-DGGML_CUDA=on`) | same pip install (needs a C/C++ compiler without a matching wheel); alternative `winget install --id ggml.llamacpp` |
-| vLLM | not supported (use a remote vLLM through `VLLM_BASE_URL`) | NVIDIA GPU only: `python -m pip install vllm` | not supported |
+| vLLM | not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind `remote_only`) | NVIDIA GPU only: `python -m pip install vllm` | not supported (same reason) |
 | Hugging Face | `python -m pip install "abstractcore[huggingface]"` | same | same |
 
 Python-package installs target the interpreter running AbstractCore. When that environment has

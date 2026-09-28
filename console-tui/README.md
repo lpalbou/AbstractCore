@@ -80,7 +80,10 @@ needs the CLI says so and names `$ABSTRACTCORE_CLI` as the fix.
   different slot.
 - **Models** (9): the model catalog fitted to this machine (host
   profile on top; fit `fits / tight / too large / partial offload /
-  unknown`; weights `installed / not downloaded / unknown / remote`).
+  needs GPU limit / unknown`; weights `installed / not downloaded /
+  unknown / remote`). A model that fits once macOS lets the GPU use
+  more memory shows the exact `sudo sysctl iogpu.wired_limit_mb=…`
+  command on its detail line.
   `w` downloads the selected artifact with live progress (several at
   once), `d` deletes after a confirm that names what blocks it (a loaded
   model, a cache another engine shares — forcing is a separate answer),
@@ -93,7 +96,18 @@ needs the CLI says so and names `$ABSTRACTCORE_CLI` as the fix.
   the selected one after a confirm that shows the exact command, the
   host it runs on and whether it needs sudo/UAC (or answers with a dry
   run); `o` opens the vendor's download page (LM Studio is a desktop
-  app); `r` probes the local servers.
+  app); `r` probes the local servers. An engine this computer cannot
+  run says why in plain words (vLLM without an NVIDIA GPU reads
+  `remote only`: use a vLLM server on another machine).
+- **Routes**: a configured route reads `engine not installed` when this
+  computer can run it but its engine is missing here; the detail line
+  gives the exact install command.
+
+`o` never launches a browser on a machine without a display — an SSH
+session, or Linux/BSD with neither `DISPLAY` nor `WAYLAND_DISPLAY`. The
+notice prints the link for you to open on your own computer instead, and
+library hosts receive `OpenError::NoDisplay` from `ScreensCtx::open_url`
+(see `display_available` / `display_from`).
 
 Every Models/Engines action is an `abstractcore` CLI call you can run
 yourself — the job strip shows its CLI equivalent

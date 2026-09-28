@@ -1097,14 +1097,23 @@ pub fn apply_report_lines(doc: &Value) -> Result<Vec<String>, String> {
             .and_then(Value::as_str)
             .map(|why| format!(" — yours cannot run on this computer: {why}"))
             .unwrap_or_default();
+        // The route this leaves in place still needs its engine installed
+        // (Core `engine_missing`): said on the same line, with the command.
+        let engine = crate::store::EngineMissing::from_value(r.get("engine_missing"))
+            .map(|m| match m.install {
+                Some(cmd) => format!(" — {} is not installed here: {cmd}", m.name),
+                None => format!(" — {}", m.reason),
+            })
+            .unwrap_or_default();
+        let cannot_run = format!("{cannot_run}{engine}");
         let line = match action {
-            "apply" => format!("{key}: applied {}", pair(r.get("after"))),
+            "apply" => format!("{key}: applied {}{cannot_run}", pair(r.get("after"))),
             "overwrite" => format!(
                 "{key}: replaced {} with {}{cannot_run}",
                 pair(r.get("before")),
                 pair(r.get("after"))
             ),
-            "already" => format!("{key}: already {}", pair(r.get("after"))),
+            "already" => format!("{key}: already {}{cannot_run}", pair(r.get("after"))),
             "kept" => format!(
                 "{key}: kept yours {} (recommended {}){cannot_run}",
                 pair(r.get("before")),
@@ -1256,6 +1265,30 @@ mod apply_report_tests {
     /// The apply report reaches the operator route by route — the
     /// `unavailable` row WITH its reason, kept routes with what was
     /// recommended instead.
+    /// Core 0.4 `engine_missing`: the route an entry leaves in place still
+    /// needs its engine installed — said on the same line, with the command.
+    #[test]
+    fn apply_report_says_which_engine_still_needs_installing() {
+        let doc = json!({"ok": true, "routes": [
+            {"key": "output.voice", "action": "apply", "before": {},
+             "after": {"provider": "supertonic", "model": "supertonic-3"},
+             "engine_missing": {"engine": "supertonic", "name": "Supertonic",
+                                "reason": "Supertonic is not installed.",
+                                "install": "pip install \"abstractvoice[supertonic]\""}},
+            {"key": "output.image", "action": "already", "before": {},
+             "after": {"provider": "mlx-gen", "model": "flux"},
+             "engine_missing": {"engine": "voxtral", "name": "voxtral",
+                                "reason": "unknown AbstractVoice engine 'voxtral'", "install": null}},
+        ]});
+        assert_eq!(
+            apply_report_lines(&doc).unwrap(),
+            vec![
+                "output.voice: applied supertonic · supertonic-3 — Supertonic is not installed here: pip install \"abstractvoice[supertonic]\"",
+                "output.image: already mlx-gen · flux — unknown AbstractVoice engine 'voxtral'",
+            ]
+        );
+    }
+
     #[test]
     fn apply_report_names_every_route_including_what_cannot_run_here() {
         let doc = json!({"ok": true, "routes": [

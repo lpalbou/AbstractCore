@@ -19,8 +19,9 @@ pub mod worker;
 pub mod writes;
 
 pub use screens::{
-    catalog, engines, schedule_job_poll, spawn_worker, Access, JobPoll, Remote, ScreenCmd,
-    ScreensCtx, ScreensOptions, ScreensStore,
+    catalog, display_available, display_from, engines, schedule_job_poll, spawn_worker,
+    system_open, Access, JobPoll, OpenError, Opener, Remote, ScreenCmd, ScreensCtx, ScreensOptions,
+    ScreensStore,
 };
 pub use transport::{
     CliTransport, ConsoleTransport, InstallLocation, ServerAction, TransportCaps, TransportError,

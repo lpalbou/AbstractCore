@@ -34,6 +34,9 @@ struct Harness {
     screens: ScreensStore,
     /// URLs the `o` verb asked to open (never a real browser in tests).
     opened: Rc<RefCell<Vec<String>>>,
+    /// When set, the opener answers `OpenError::NoDisplay` (an SSH or
+    /// headless machine) and records nothing.
+    no_display: Rc<std::cell::Cell<bool>>,
 }
 
 fn harness() -> Harness {
@@ -72,12 +75,15 @@ fn harness_with(size: Size, mock: MockTransport) -> Harness {
     let screens_out = screens_slot.clone();
     let opened: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
     let opened_mount = opened.clone();
+    let no_display: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
+    let no_display_mount = no_display.clone();
     app.mount(move |cx| {
         let store = Store::create(cx);
         *store_out.borrow_mut() = Some(store);
         let ui_state = UiState::create(cx);
         *ui_out.borrow_mut() = Some(ui_state);
         let opened_rec = opened_mount.clone();
+        let no_display_rec = no_display_mount.clone();
         // The core console's posture: the local operator (tests flip it
         // to ReadOnly through `h.screens.access`).
         let access = cx.signal(Access::Admin);
@@ -92,6 +98,11 @@ fn harness_with(size: Size, mock: MockTransport) -> Harness {
                 // frames instead of seconds.
                 poll_interval: Duration::from_millis(10),
                 opener: Some(Rc::new(move |url: &str| {
+                    if no_display_rec.get() {
+                        return Err(abstractcore_console::OpenError::NoDisplay {
+                            why: "this is an SSH session".into(),
+                        });
+                    }
                     opened_rec.borrow_mut().push(url.to_string());
                     Ok(())
                 })),
@@ -145,6 +156,7 @@ fn harness_with(size: Size, mock: MockTransport) -> Harness {
         mock,
         screens,
         opened,
+        no_display,
     }
 }
 
@@ -3798,7 +3810,8 @@ fn engines_screen_renders_status_and_refuses_with_reasons() {
     for word in [
         "installed",
         "not installed",
-        "unsupported",
+        // vLLM on a host without CUDA: usable only as a remote server.
+        "remote only",
         "i: brew",
         "o: page",
     ] {
@@ -4582,4 +4595,104 @@ fn the_admin_refusal_comes_before_every_state_answer() {
     refused(&mut h, b"c", "cancel downloads");
     h.select_artifact("gemma3:27b"); // nothing to delete
     refused(&mut h, b"d", "delete models");
+}
+
+/// `o` on a machine with no display (SSH, headless Linux) launches
+/// nothing: the notice prints the URL for the person to open on their
+/// own computer, and nothing reaches a browser.
+#[test]
+fn open_without_a_display_shows_the_url_instead() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_engines();
+    h.select_engine("lmstudio");
+    h.no_display.set(true);
+    h.key(b"o");
+    // The URL leads the notice: a narrow terminal clips the tail, never the link.
+    let s = h.settle_until_contains("open https://lmstudio.ai/download on your computer");
+    assert!(s.contains("no display on this machine"), "{s}");
+    assert!(h.opened.borrow().is_empty(), "nothing was launched");
+}
+
+/// A vLLM row on a host without CUDA reads `remote only` and its detail
+/// line is the engine data's own plain reason.
+#[test]
+fn a_remote_only_engine_row_says_why_in_plain_words() {
+    let mut h = harness_sized(Size::new(120, 34));
+    h.load_fixtures();
+    h.open_engines();
+    let s = h.select_engine("vllm");
+    let row = s.lines().find(|l| l.contains("vLLM")).unwrap_or("");
+    assert!(row.contains("remote only"), "status + kind columns:\n{s}");
+    assert!(
+        s.contains(
+            "does not run on this computer: vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead"
+        ),
+        "{s}"
+    );
+}
+
+/// Routes: Core's `engine_missing` (the computer can run the route but
+/// its engine is not installed) reads `engine not installed`, and the
+/// detail line carries Core's sentence and the Engines row that installs it.
+#[test]
+fn routes_screen_flags_a_route_whose_engine_is_not_installed() {
+    let mut h = harness_sized(Size::new(220, 40));
+    h.load_fixtures();
+    let mut doc = routes_fixture();
+    for r in doc["routes"].as_array_mut().unwrap() {
+        if r["key"] == "output.voice" {
+            r["engine_missing"] = json!({"engine": "supertonic", "name": "Supertonic",
+                "reason": "Supertonic is not installed. Install it with: pip install \"abstractvoice[supertonic]\"",
+                "install": "pip install \"abstractvoice[supertonic]\""});
+        }
+    }
+    h.store
+        .routes
+        .set(Loadable::Ready(RoutesData::from_value(&doc)));
+    h.goto_screen(3);
+    let s = h.select_route("output.voice");
+    let voice = s
+        .lines()
+        .find(|l| l.contains("output.voice") && l.contains("supertonic"))
+        .unwrap_or("");
+    assert!(voice.contains("engine not installed"), "state column:\n{s}");
+    assert!(
+        s.contains("engine not installed: Supertonic is not installed. Install it with: pip install \"abstractvoice[supertonic]\""),
+        "detail line:\n{s}"
+    );
+    let s = h.select_route("embedding.text");
+    assert!(
+        !s.contains("engine not installed:"),
+        "a runnable row's detail line:\n{s}"
+    );
+}
+
+/// Models: a model that fits once the Mac's GPU memory limit is raised
+/// (Core `needs_gpu_limit`, backlog 0947) shows the verdict and the exact
+/// command on its detail line — never a bare "too large".
+#[test]
+fn catalog_detail_shows_the_gpu_limit_command() {
+    let mut h = harness_sized(Size::new(200, 34));
+    h.load_fixtures();
+    h.open_models();
+    let mut doc = fixture("model_catalog");
+    let art = &mut doc["rows"][0]["artifacts"][0];
+    art["fit"]["verdict"] = json!("needs_gpu_limit");
+    art["fit"]["gpu_limit"] = json!({"sysctl": "iogpu.wired_limit_mb", "current_mb": 0,
+        "required_mb": 117760, "command": "sudo sysctl iogpu.wired_limit_mb=117760",
+        "needs_admin": true, "resets_at_restart": true, "verdict_with_limit": "tight"});
+    let artifact = art["artifact"].as_str().unwrap().to_string();
+    h.screens
+        .catalog
+        .set(abstractcore_console::screens::Remote::Ready(
+            abstractcore_console::screens::CatalogData::from_value(&doc),
+        ));
+    h.turns(2);
+    let s = h.select_artifact(&artifact);
+    assert!(s.contains("fit needs GPU limit"), "{s}");
+    assert!(
+        s.contains("fits once macOS lets the GPU use 115 GiB: run `sudo sysctl iogpu.wired_limit_mb=117760`"),
+        "{s}"
+    );
 }

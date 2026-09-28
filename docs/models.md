@@ -204,7 +204,27 @@ need = W + KV + O          (n = min(8192, context window))
 | `tight` | `need <= Ceff`: runs, with little headroom |
 | `partial_offload` | CUDA only: too big for VRAM, but fits VRAM + 75% of RAM (slower) |
 | `too_large` | does not fit |
+| `needs_gpu_limit` | Apple silicon: does not fit the current ceiling, but fits once macOS lets the GPU use more memory (see below) |
 | `unknown` | no size and no parameter count, or no measurable ceiling |
+
+On Apple silicon the GPU may use only part of unified memory by default (Metal's recommended
+working set). An administrator can raise that limit with `sudo sysctl iogpu.wired_limit_mb=<MB>`;
+the setting lasts until the Mac restarts. When a model does not fit the current ceiling but fits
+under a limit macOS can grant (at most RAM minus 8 GiB), the verdict is `needs_gpu_limit` and the
+fit block carries `gpu_limit`:
+
+```json
+"gpu_limit": {"sysctl": "iogpu.wired_limit_mb", "current_mb": 0, "required_mb": 117760,
+              "command": "sudo sysctl iogpu.wired_limit_mb=117760", "needs_admin": true,
+              "resets_at_restart": true, "verdict_with_limit": "tight"}
+```
+
+`required_mb` is the smallest whole number of GiB that makes the model fit, and
+`verdict_with_limit` is the verdict you get after running `command`. Once the limit is set, it is
+the ceiling (`ceiling_source: metal_wired_limit`) and the fit notes name it. The recommended text
+model of the 128 GiB tier is an example: Qwen3.8 Flash-Next 4-bit needs about 109 GiB with its
+cache and fits after `sudo sysctl iogpu.wired_limit_mb=117760`. The `--fits` filter keeps
+`needs_gpu_limit` artifacts, and both consoles print the command on the model's detail line.
 
 The block also reports `need_bytes` (W + KV + O), `usable_bytes` (Ceff, the amount the verdict
 compares `need_bytes` with), `reserve_bytes` (ceiling minus Ceff), `overhead_bytes` (O),
