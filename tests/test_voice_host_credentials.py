@@ -78,3 +78,15 @@ def test_without_a_config_file_the_global_config_answers(tmp_path, no_plugins, m
     llm = _Provider("m")
     _ = llm.capabilities
     assert llm.config["voice_openai_api_key"] == "sk-global"
+
+
+def test_an_unreadable_config_sets_nothing(no_plugins, monkeypatch):
+    from abstractcore.config import manager as mgr
+
+    def boom():
+        raise RuntimeError("config unavailable")
+
+    monkeypatch.setattr(mgr, "get_config_manager", boom)
+    llm = _Provider("m")
+    _ = llm.capabilities
+    assert "voice_openai_api_key" not in llm.config

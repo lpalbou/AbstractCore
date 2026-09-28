@@ -190,15 +190,21 @@ class AbstractCoreInterface(ABC):
         if not isinstance(self.config, dict) or str(self.config.get("voice_openai_api_key") or "").strip():
             return
         config_file = self.config.get("_abstractcore_config_file")
-        if isinstance(config_file, str) and config_file.strip():
-            from ..config.manager import ConfigurationManager
+        try:
+            if isinstance(config_file, str) and config_file.strip():
+                from ..config.manager import ConfigurationManager
 
-            manager = ConfigurationManager(config_file=config_file.strip(), apply_env=False)
-        else:
-            from ..config.manager import get_config_manager
+                manager = ConfigurationManager(config_file=config_file.strip(), apply_env=False)
+            else:
+                from ..config.manager import get_config_manager
 
-            manager = get_config_manager()
-        key = str(getattr(manager.config.api_keys, "openai", None) or "").strip()
+                manager = get_config_manager()
+            key = str(manager.config.api_keys.openai or "").strip()
+        except Exception:
+            # An unreadable config degrades like the global defaults read
+            # above (lowest precedence, skipped): AbstractVoice then keeps its
+            # own OPENAI_API_KEY fallback, exactly as with no key saved.
+            return
         if key:
             self.config["voice_openai_api_key"] = key
 
