@@ -307,9 +307,9 @@ RECOMMENDED_SEED_VERSION = "recommended-v1"
 # unified-memory tier) belongs to `model_catalog.recommended_text_model()`;
 # the row below is the portable default that function starts from. Image
 # input (vision) is not a row either: it is covered by `input.text` where the
-# host's recommended text model reads images (every tier but the 8 GB one,
-# Qwen3 1.7B), and reported unavailable where it does not
-# (`image_input_unavailable_reason`).
+# host's recommended text model reads images (every recommended text model
+# does today), and reported unavailable where it does not, or where no text
+# engine runs (`image_input_unavailable_reason`).
 #
 # STARTER rows (`starter=True`) are the fresh-install set (operator ruling
 # 2026-08-01): a new install should WORK out of the box on the framework's
@@ -609,14 +609,29 @@ def _fit_gate_sentence(
         return f"{name} needs a lot of memory and this computer's memory could not be measured{next_step}"
     # "measured" only where the seed carries a measured run-time peak
     # (`resident`, the video rows); otherwise the need is the estimate from
-    # the download (music).
+    # the download (music). A measured figure is the ENGINE's (`measured_with`:
+    # AbstractVision/mlx-gen keeps the text encoder and VAE in memory), never
+    # worded as the model's own minimum (operator ruling 2026-09-28).
     resident = (got.get("artifact") or {}).get("resident")
-    basis = "measured" if isinstance(resident, dict) else "estimated"
-    at_default = " at its default canvas" if isinstance(resident, dict) and resident.get("smaller_canvases") else ""
-    reason = (
-        f"{name} needs about {_gib_text(fit['need_bytes'])} of memory while it generates{at_default} ({basis}), "
-        f"and this computer can give a model about {_gib_text(fit['usable_bytes'])}"
+    if isinstance(resident, dict) and resident.get("measured_with"):
+        basis = f"measured with {resident['measured_with']}; this engine's figure, not the model's minimum"
+    else:
+        basis = "measured" if isinstance(resident, dict) else "estimated"
+    at_default = (
+        " at its default canvas"
+        if isinstance(resident, dict) and resident.get("smaller_canvases") and not resident.get("measured_with")
+        else ""
     )
+    if fit.get("accelerator") == "metal" and isinstance(fit.get("ceiling_bytes"), int):
+        # Apple silicon: the GPU memory limit itself, then what is left after
+        # MLX's working buffers (`model_fit`), never the remainder alone.
+        room = (
+            f"and macOS's GPU memory limit on this Mac is about {_gib_text(fit['ceiling_bytes'])}, about "
+            f"{_gib_text(fit['usable_bytes'])} of it left for a model after working buffers"
+        )
+    else:
+        room = f"and this computer can give a model about {_gib_text(fit['usable_bytes'])}"
+    reason = f"{name} needs about {_gib_text(fit['need_bytes'])} of memory while it generates{at_default} ({basis}), {room}"
     if verdict == "needs_gpu_limit":
         # Not written (it needs an admin command first), but never a bare
         # "too large": the reason carries the command that makes it fit.
@@ -632,7 +647,7 @@ def _fit_gate_sentence(
     if smaller is not None:
         w, h, frames = smaller["canvas"].split("x")
         reason += (
-            f"; at {w}x{h} ({frames} frames) it needs about {_gib_text(smaller['fit']['need_bytes'])} (measured) and "
+            f"; at {w}x{h} ({frames} frames) it needs about {_gib_text(smaller['fit']['need_bytes'])} (measured with the same engine) and "
             f"fits this computer: set {key} to {download['provider']}/{download['artifact']} yourself and generate "
             f"at {w}x{h}"
         )
@@ -705,8 +720,8 @@ def image_input_unavailable_reason(
 
     Image input is read by the host's recommended text model
     (`recommendations`: `covered` by `input.text`), so it is unavailable when
-    text is (`text_reason`), or when that model does not read images (the 8 GB
-    Apple silicon tier, Qwen3 1.7B). One sentence for the grid, the plan and
+    text is (`text_reason`), or when that model does not read images. One
+    sentence for the grid, the plan and
     `abstractcore models recommendations`.
     """
 

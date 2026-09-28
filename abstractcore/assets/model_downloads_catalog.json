@@ -212,8 +212,7 @@
       "revision": "d7f544eead698dbd1f15126ef60b45a1e1933222"
      }
     }
-   ],
-   "notes": "The Apple silicon text tier below 16 GiB of unified memory (model_catalog.APPLE_TEXT_TIERS), 8-bit build: the text model chosen for an 8 GB Mac; it fits its default GPU memory limit (LFM2.5 2.6B 4-bit also fits, tightly). It does not read images."
+   ]
   },
   {
    "id": "qwen3-4b",
@@ -1178,7 +1177,7 @@
      }
     }
    ],
-   "notes": "The portable fresh-install text/vision default (RECOMMENDED_MODEL_DOWNLOADS input.text) and the Apple silicon tier for 16 GiB <= unified memory < 32 GiB (model_catalog.APPLE_TEXT_TIERS). mlx-community/Qwen3.5-9B-4bit and -MLX-4bit hold byte-identical weights upstream (checked 2026-09-24); the tier names -MLX-4bit.",
+   "notes": "The portable fresh-install text/vision default (RECOMMENDED_MODEL_DOWNLOADS input.text) and the Apple silicon tier below 24 GiB of unified memory (model_catalog.APPLE_TEXT_TIERS). mlx-community/Qwen3.5-9B-4bit and -MLX-4bit hold byte-identical weights upstream (checked 2026-09-24); the tier names -MLX-4bit.",
    "kv_geometry": {
     "n_layers": 8,
     "n_kv_heads": 4,
@@ -1490,7 +1489,7 @@
      }
     }
    ],
-   "notes": "The Apple silicon text tier for 32 GiB <= unified memory < 128 GiB (model_catalog.APPLE_TEXT_TIERS): the first size Apple ships where it fits macOS's default GPU memory limit.",
+   "notes": "The Apple silicon text tier for 24 GiB <= unified memory < 128 GiB (model_catalog.APPLE_TEXT_TIERS). On a 24 GB Mac it runs at macOS's default GPU memory limit with a small context, and with about 30k tokens of context after `sudo sysctl iogpu.wired_limit_mb=20480` (operator measurement, Mac mini 24 GB, 2026-09-28).",
    "kv_geometry": {
     "n_layers": 16,
     "n_kv_heads": 4,
@@ -4172,6 +4171,7 @@
      "resident": {
       "bytes": 64941342932,
       "source": "MLX allocator peak 60.48 GiB (mx.get_peak_memory) of a real AbstractVision text-to-video generation at its default TI2V-5B canvas (1280x704, 121 frames; 2 denoising steps: the peak does not depend on the step count; a 17-frame run at the same size peaked at 60.43 GiB, so the size of each frame, not the frame count, sets it): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30 source, 2026-09-28",
+      "measured_with": "AbstractVision/mlx-gen at 1280x704x121, which keeps the text encoder and VAE in memory",
       "smaller_canvases": [
        {
         "canvas": "832x480x121",
@@ -4180,7 +4180,7 @@
        }
       ]
      },
-     "note": "Mixed q8/BF16 MLX-Gen package (16.9 GiB); q8 saves download only, it runs at BF16 memory. At AbstractVision's default canvas (1280x704) it needs about 60.5 GiB while it generates (measured), so it fits Macs with 96 GiB or more; at 832x480, the smallest canvas AbstractVision accepts for it, about 32.7 GiB (measured). AbstractVision refuses TI2V-5B below 832x480."
+     "note": "Mixed q8/BF16 MLX-Gen package (16.9 GiB); q8 saves download only, it runs at BF16 memory. Measured with AbstractVision/mlx-gen, which keeps the text encoder and VAE in memory: about 60.5 GiB at its default canvas (1280x704, 121 frames), so this engine fits it on Macs with 96 GiB or more, and about 32.7 GiB at 832x480, the smallest canvas AbstractVision accepts for it. These are this engine's figures, not the model's own minimum: runtimes that offload the text encoder and VAE need far less. AbstractVision refuses TI2V-5B below 832x480."
     }
    ],
    "capabilities_override": {
@@ -4190,7 +4190,7 @@
     "text_to_video": true,
     "image_to_video": true
    },
-   "notes": "The AbstractFramework recommended video model (output.video): one checkpoint for text-to-video and image-to-video, run by AbstractVision through MLX-Gen (Apple silicon only). Recommended only where its measured memory at the default canvas fits; the smaller canvas it still runs at is measured too."
+   "notes": "The AbstractFramework recommended video model (output.video): one checkpoint for text-to-video and image-to-video, run by AbstractVision through MLX-Gen (Apple silicon only). Recommended only where the memory AbstractVision/mlx-gen was measured to use at the default canvas fits (the engine's figure, not the model's minimum); the smaller canvas it still runs at is measured too."
   },
   {
    "id": "wan2.2-t2v-a14b",
@@ -4223,6 +4223,7 @@
      "resident": {
       "bytes": 76865188666,
       "source": "MLX allocator peak 71.59 GiB (mx.get_peak_memory) of a real AbstractVision generation at its default A14B canvas (1280x720, 81 frames; 2 denoising steps, one per expert, streamed VAE decode; the inactive expert is released): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30, 2026-09-28",
+      "measured_with": "AbstractVision/mlx-gen at 1280x720x81",
       "smaller_canvases": [
        {
         "canvas": "832x480x81",
@@ -4278,7 +4279,8 @@
      },
      "resident": {
       "bytes": 76997538106,
-      "source": "MLX allocator peak 71.71 GiB (mx.get_peak_memory) of a real AbstractVision image-to-video generation at its default A14B canvas (1280x720 source image and output, 81 frames; 2 denoising steps, one per expert, streamed VAE decode; the inactive expert is released): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30, 2026-09-28"
+      "source": "MLX allocator peak 71.71 GiB (mx.get_peak_memory) of a real AbstractVision image-to-video generation at its default A14B canvas (1280x720 source image and output, 81 frames; 2 denoising steps, one per expert, streamed VAE decode; the inactive expert is released): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30, 2026-09-28",
+      "measured_with": "AbstractVision/mlx-gen at 1280x720x81"
      },
      "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory. At AbstractVision's default canvas (1280x720, 81 frames) it needs about 72 GiB while it generates (measured), so it fits Macs with 128 GiB or more, and 96 GiB Macs once the GPU memory limit is raised."
     }

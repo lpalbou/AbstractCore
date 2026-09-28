@@ -82,6 +82,10 @@ def test_every_cell_is_decided_with_the_facts_a_table_needs(matrix):
         assert e["download_bytes"] is None or e["download_bytes"] > 0, where
         if e["fit"] == "needs_gpu_limit":
             assert e["gpu_limit_command"].startswith("sudo sysctl iogpu.wired_limit_mb="), where
+        elif e["fit"] == "tight" and cid in ("text", "vision") and cls["family"] == "apple_silicon":
+            # A tight text fit on Apple silicon: the highest safe limit, for more context.
+            assert e["gpu_limit_command"].startswith("sudo sysctl iogpu.wired_limit_mb="), where
+            assert isinstance(e["context"]["raised_max_tokens"], int), where
         else:
             assert e["gpu_limit_command"] is None, where
 
@@ -89,10 +93,6 @@ def test_every_cell_is_decided_with_the_facts_a_table_needs(matrix):
 def test_image_input_is_covered_by_the_text_model_where_it_reads_images(matrix):
     for cls in matrix["classes"]:
         vision, text = cls["entries"]["vision"], cls["entries"]["text"]
-        if cls["id"] == "apple_silicon_8gb":
-            # The 8 GB text model (Qwen3 1.7B) does not read images; no vision-capable catalog model fits 8 GB.
-            assert vision["status"] == "unavailable" and "does not read images" in vision["reason"]
-            continue
         assert vision["status"] == "covered" and vision["covered_by"] == "text", cls["id"]
         assert (vision["provider"], vision["model"]) == (text["provider"], text["model"])
 
@@ -101,11 +101,10 @@ def test_image_input_is_covered_by_the_text_model_where_it_reads_images(matrix):
 # One source of truth
 # ---------------------------------------------------------------------------
 
-# The Apple silicon text tiers (operator ruling 2026-09-28: each one fits).
+# The Apple silicon text tiers (operator rulings 2026-09-24 and 2026-09-28).
 TEXT_BY_APPLE_GIB = {
-    8: "mlx-community/Qwen3-1.7B-8bit",
-    **{g: "mlx-community/Qwen3.5-9B-MLX-4bit" for g in (16, 18, 24)},
-    **{g: "mlx-community/Qwen3.8-27B-4bit" for g in (32, 36, 48, 64, 96)},
+    **{g: "mlx-community/Qwen3.5-9B-MLX-4bit" for g in (8, 16, 18)},
+    **{g: "mlx-community/Qwen3.8-27B-4bit" for g in (24, 32, 36, 48, 64, 96)},
     **{g: "mlx-community/Qwen3.8-Flash-Next-4bit" for g in (128, 192, 256, 512)},
 }
 TEXT_BY_CLASS = {
@@ -204,7 +203,9 @@ def test_video_is_memory_gated_on_apple_silicon(matrix):
         video = _apple_class_for(matrix, gib)["entries"]["video"]
         if gib < 96:
             assert video["status"] == "unavailable", gib
-            assert "(measured)" in video["reason"] and "more unified memory" in video["reason"]
+            # The engine's measured figure, never worded as the model's need.
+            assert "measured with AbstractVision/mlx-gen at 1280x704x121" in video["reason"]
+            assert "not the model's minimum" in video["reason"] and "more unified memory" in video["reason"]
         else:
             assert video["status"] == "recommended" and video["fit"] in ("fits", "tight"), gib
             assert video["memory_need_source"] == "measured"
@@ -213,8 +214,20 @@ def test_video_is_memory_gated_on_apple_silicon(matrix):
 def test_the_128_gb_text_tier_carries_the_sysctl(matrix):
     text = _apple_class_for(matrix, 128)["entries"]["text"]
     assert text["fit"] == "needs_gpu_limit"
-    assert text["gpu_limit_command"] == "sudo sysctl iogpu.wired_limit_mb=117760"
-    assert "sudo sysctl iogpu.wired_limit_mb=117760" in text["warning"]
+    # 128 GiB - max(4 GiB, 12.5%) = 112 GiB: the limit the need fits under.
+    assert text["gpu_limit_command"] == "sudo sysctl iogpu.wired_limit_mb=114688"
+    assert "sudo sysctl iogpu.wired_limit_mb=114688" in text["warning"]
+
+
+def test_the_24_gb_text_tier_says_small_context_and_the_command_for_more(matrix):
+    """The operator's measurement (Mac mini, 24 GB): Qwen3.8 27B 4-bit runs out
+    of the box with a small context, ~30k tokens at 20480 MB."""
+    text = _apple_class_for(matrix, 24)["entries"]["text"]
+    assert text["artifact"] == "mlx-community/Qwen3.8-27B-4bit" and text["fit"] == "tight"
+    assert text["context"]["small"] is True and text["context"]["max_tokens"] < 8192
+    assert text["gpu_limit_command"] == "sudo sysctl iogpu.wired_limit_mb=20480"
+    assert 25_000 <= text["context"]["raised_max_tokens"] <= 40_000
+    assert "sudo sysctl iogpu.wired_limit_mb=20480" in text["warning"]
 
 
 def test_speech_input_follows_the_ctranslate2_builds():
@@ -350,9 +363,13 @@ def test_the_validator_checks_smaller_canvases():
     assert mc._validate_resident("a", dict(base, smaller_canvases=[]))
 
 
-def test_the_8_gb_vision_cell_says_what_to_do(matrix):
-    vision = _apple_class_for(matrix, 8)["entries"]["vision"]
-    assert vision["status"] == "unavailable" and "set input.image" in vision["reason"]
+def test_the_8_gb_text_cell_keeps_the_tier_with_its_warning(matrix):
+    """Operator ruling 2026-09-28: 8 GB gets the 9B tier (no smaller tier);
+    the estimate doubts it and the cell says so."""
+    text = _apple_class_for(matrix, 8)["entries"]["text"]
+    assert text["artifact"] == "mlx-community/Qwen3.5-9B-MLX-4bit" and text["status"] == "recommended"
+    assert text["fit"] == "too_large" and "may not fit" in text["warning"]
+    assert _apple_class_for(matrix, 8)["entries"]["vision"]["status"] == "covered"
 
 
 def test_the_catalog_shows_the_smaller_canvas_where_only_it_fits(tmp_path, monkeypatch):
@@ -389,7 +406,7 @@ def test_image_generation_is_memory_gated_too(matrix):
     """A recommendation must fit (2026-09-28): FLUX.2 klein 4B (~8.5 GiB) is not
     written on an 8 GB Mac; from 16 GB it is."""
     small = _apple_class_for(matrix, 8)["entries"]["image"]
-    assert small["status"] == "unavailable" and "can give a model about" in small["reason"]
+    assert small["status"] == "unavailable" and "macOS's GPU memory limit on this Mac is about 6.0 GiB" in small["reason"]
     assert "output.image" in cd.recommended_unavailable_routes(rec._apple_host(8))
     for gib in (16, 24, 64, 128):
         assert _apple_class_for(matrix, gib)["entries"]["image"]["status"] == "recommended", gib

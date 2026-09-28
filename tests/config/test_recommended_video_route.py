@@ -98,7 +98,8 @@ def test_a_mac_whose_memory_the_video_model_does_not_fit_gets_the_numbers(name):
     assert fit["verdict"] == "too_large"
     # The sentence carries the two amounts the verdict compared.
     assert f"needs about {fit['need_bytes'] / 1024**3:.1f} GiB" in reason
-    assert f"can give a model about {fit['usable_bytes'] / 1024**3:.1f} GiB" in reason
+    assert f"about {fit['usable_bytes'] / 1024**3:.1f} GiB of it left for a model" in reason
+    assert f"GPU memory limit on this Mac is about {fit['ceiling_bytes'] / 1024**3:.1f} GiB" in reason
     assert "MLX" not in reason.split(";")[0], "the engine runs here: memory is the reason"
     # The image row still runs on every Apple silicon Mac.
     assert "output.image" in cd.recommended_capability_default_routes(host)
@@ -229,7 +230,8 @@ def test_a14b_8bit_per_memory_band_at_the_default_canvas(artifact):
     assert fit("metal64")["verdict"] == "too_large" and "gpu_limit" not in fit("metal64")
     f96 = fit("metal96")
     assert f96["verdict"] == "needs_gpu_limit"
-    assert f96["gpu_limit"]["command"] == "sudo sysctl iogpu.wired_limit_mb=81920"
+    # need + 2 GiB of working buffers, whole GiB (78 GiB), under 96 - 12 GiB.
+    assert f96["gpu_limit"]["command"] == "sudo sysctl iogpu.wired_limit_mb=79872"
     assert fit("metal128")["verdict"] in ("fits", "tight")
     # The recommendation per band is unchanged: TI2V-5B from ~96 GiB, and no
     # A14B route anywhere (it does not fit 64-95 GiB at the default canvas).

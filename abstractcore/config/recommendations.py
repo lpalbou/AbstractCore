@@ -144,11 +144,13 @@ def _device_notes(provider: str, accelerator: str) -> List[str]:
 
 
 def _artifact_facts(
-    provider: str, artifact: str, host: Mapping[str, Any], fit: Optional[Mapping[str, Any]]
+    provider: str, artifact: str, host: Mapping[str, Any], fit: Optional[Mapping[str, Any]], *, text: bool = False
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """`(facts, row, fit)` for one recommended artifact: the entry's catalog
     fields (name, sizes, fit verdict), its seed row and its fit block (the
-    catalog's own, `recommended_artifact_fit`, unless the caller has it)."""
+    catalog's own, `recommended_artifact_fit`, unless the caller has it).
+    `text`: a text model, whose tight Apple silicon fit also carries the
+    raised-limit command and the context it gives (`context`)."""
 
     from .model_catalog import _companions, _seed_row_and_artifact, catalog_id_for, recommended_artifact_fit
 
@@ -163,6 +165,24 @@ def _artifact_facts(
     if isinstance(size, int) and isinstance(companion_bytes, int):
         size += companion_bytes
     verdict = fit.get("verdict")
+    raised = (
+        fit.get("raised_limit")
+        if text and verdict == "tight" and isinstance(fit.get("raised_limit"), Mapping)
+        else None
+    )
+    if verdict == "needs_gpu_limit":
+        command = (fit.get("gpu_limit") or {}).get("command")
+    else:
+        # A tight Apple silicon fit: the highest safe GPU memory limit, for
+        # more context (`model_fit.raised_limit`).
+        command = raised.get("command") if raised else None
+    context = None
+    if text and (raised or fit.get("small_context")):
+        context = {
+            "small": bool(fit.get("small_context")),
+            "max_tokens": fit.get("max_context"),
+            "raised_max_tokens": (raised or {}).get("max_context"),
+        }
     facts = {
         "catalog_id": row_id,
         "display_name": row.get("display_name") or row_id,
@@ -170,7 +190,8 @@ def _artifact_facts(
         "memory_need_bytes": fit.get("need_bytes") if isinstance(fit.get("need_bytes"), int) else None,
         "memory_need_source": "measured" if isinstance((art.get("resident") or {}).get("bytes"), int) else "estimated",
         "fit": verdict,
-        "gpu_limit_command": (fit.get("gpu_limit") or {}).get("command") if verdict == "needs_gpu_limit" else None,
+        "gpu_limit_command": command,
+        "context": context,
     }
     return facts, row, dict(fit)
 
@@ -197,6 +218,7 @@ def _entry(cap: Tuple[str, str, str, Tuple[str, ...]], **fields: Any) -> Dict[st
         "memory_need_source": None,
         "fit": None,
         "gpu_limit_command": None,
+        "context": None,
         "covered_by": None,
         "smaller_canvas": None,
         "reason": None,
@@ -258,7 +280,7 @@ def recommended_models(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Di
 
     text = recommended_text_model(profile)
     text_reason = unavailable.get("input.text")
-    text_facts, _row, _fit = _artifact_facts(text["provider"], text["artifact"], profile, text.get("fit") or {})
+    text_facts, _row, _fit = _artifact_facts(text["provider"], text["artifact"], profile, text.get("fit") or {}, text=True)
     out["text"] = _entry(
         caps["text"],
         status="unavailable" if text_reason else "recommended",
@@ -290,7 +312,7 @@ def recommended_models(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Di
             download_provider=text["provider"],
             reason=text_reason,
             **{k: text_facts[k] for k in ("catalog_id", "display_name", "download_bytes", "memory_need_bytes",
-                                          "memory_need_source", "fit", "gpu_limit_command")},
+                                          "memory_need_source", "fit", "gpu_limit_command", "context")},
         )
     else:
         out["vision"] = _entry(
@@ -353,6 +375,7 @@ def _signature(entries: Mapping[str, Mapping[str, Any]]) -> Tuple[Any, ...]:
 
     return tuple(
         (cid, e["status"], e["provider"], e["artifact"], e["fit"], e["gpu_limit_command"],
+         tuple(sorted((e["context"] or {}).items())),
          (e["smaller_canvas"] or {}).get("canvas"), (e["smaller_canvas"] or {}).get("fit"))
         for cid, e in entries.items()
     )
@@ -478,6 +501,12 @@ _FIT_WORDS = {
 }
 
 
+def _tokens(n: int) -> str:
+    from .model_catalog import _tokens as tokens
+
+    return tokens(n)
+
+
 def _cell_model(e: Mapping[str, Any]) -> str:
     if e["status"] == "covered":
         return f"the text model (`{e['model']}`)"
@@ -510,7 +539,7 @@ def render_markdown(matrix: Mapping[str, Any]) -> str:
                 lines.append(
                     f"| {machine} | At the default canvas: not available, it needs more memory. At {w}x{h} "
                     f"({frames} frames): {_cell_model(e)}, set it yourself | {_md_escape(e['engine'])}, {e['device']} | "
-                    f"{_gb(e['download_bytes'])} | {_gb(sc['memory_need_bytes'])} at {w}x{h} (measured) | "
+                    f"{_gb(e['download_bytes'])} | {_gb(sc['memory_need_bytes'])} at {w}x{h} (measured with AbstractVision/mlx-gen) | "
                     f"{_FIT_WORDS.get(sc['fit'], sc['fit'])} at {w}x{h} |"
                 )
                 continue
@@ -518,11 +547,20 @@ def render_markdown(matrix: Mapping[str, Any]) -> str:
                 lines.append(f"| {machine} | Not available: {_md_escape(e['reason'])} | | | | |")
                 continue
             fit = _FIT_WORDS.get(e["fit"], str(e["fit"]))
-            if e["gpu_limit_command"]:
+            ctx = e.get("context") or {}
+            if ctx.get("small"):
+                fit = "fits with a small context"
+                if isinstance(ctx.get("max_tokens"), int):
+                    fit += f" (about {_tokens(ctx['max_tokens'])} tokens)"
+            if e["gpu_limit_command"] and e["fit"] == "tight":
+                more = f" (about {_tokens(ctx['raised_max_tokens'])} tokens)" if isinstance(ctx.get("raised_max_tokens"), int) else ""
+                fit = f"{fit}; more context{more} after `{e['gpu_limit_command']}`"
+            elif e["gpu_limit_command"]:
                 fit = f"{fit}: `{e['gpu_limit_command']}`"
             need = _gb(e["memory_need_bytes"])
             if e["memory_need_source"] == "measured":
-                need += " (measured)"
+                # The engine's measured figure, not the model's minimum.
+                need += " (measured with AbstractVision/mlx-gen)"
             lines.append(
                 f"| {machine} | {_cell_model(e)} | {_md_escape(e['engine'])}, {e['device']} | "
                 f"{_gb(e['download_bytes'])} | {need} | {fit} |"

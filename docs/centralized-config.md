@@ -117,7 +117,7 @@ music (`output.music`), which are not written for you:
 
 | host | `input.text` | `output.voice` | `output.image` | `output.video` |
 | --- | --- | --- | --- | --- |
-| Apple silicon | `mlx`, chosen by unified memory (Qwen3 1.7B below 16 GiB, Qwen3.5 9B below 32 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (about 96 GiB of unified memory or more), else unset |
+| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (about 96 GiB of unified memory or more), else unset |
 | Linux, Windows (x86_64, arm64) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
 | Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset | unset |
 | anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset |
@@ -129,23 +129,24 @@ cloud provider or a text server on another machine.
 MLX-Gen needs Apple silicon. On other hosts the image route stays unset, and
 the grid (`recommendation_unavailable`) and `apply-recommended` (action
 `unavailable`) both give the reason. The unset `input.image` row gives one too
-where the recommended text model does not read images (the 8 GB Apple silicon
-tier). Set it to an image engine the host can
+where the recommended text model does not read images, or where no text
+engine runs. Set it to an image engine the host can
 run: `diffusers` (install profile `gpu`), `sdcpp`, or a cloud image provider.
 The video route (Wan2.2 TI2V-5B, one model for text-to-video and
 image-to-video) also runs on MLX-Gen, and it is written only where the model
-catalog's fit estimate says it fits: it needs about 60.5 GiB of memory while it
-generates at AbstractVision's default 1280x704 canvas (a measured figure, not
-its 16.9 GiB file size), so from 96 GiB of unified memory. At 832x480, the
-smallest canvas AbstractVision accepts for it, it needs about 32.7 GiB
-(measured); on a Mac where only that size fits (64 GiB) the route is not
+catalog's fit estimate says it fits: measured with AbstractVision/mlx-gen at
+1280x704x121, which keeps the text encoder and VAE in memory, it peaks at about
+60.5 GiB (not its 16.9 GiB file size), so from 96 GiB of unified memory. That
+is this engine's figure, not the model's own requirement: runtimes that offload
+need far less. At 832x480, the smallest canvas AbstractVision accepts for it,
+the same engine needs about 32.7 GiB (measured); on a Mac where only that size fits (64 GiB) the route is not
 written, and the reason says so with the route to set yourself. AbstractFramework has no local video engine off Apple
 silicon, so elsewhere the reason names the remaining option: an
 OpenAI-compatible video endpoint through AbstractVision.
 The larger Wan2.2 A14B 8-bit models (`AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`,
 `AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`) are in the catalog but not
 recommended: at AbstractVision's default A14B canvas (1280x720, 81 frames) each
-needs about 72 GiB while it generates (measured), so the catalog's fit reads
+needs about 72 GiB while it generates (measured with AbstractVision/mlx-gen), so the catalog's fit reads
 `too_large` on 64 GiB Macs, `needs_gpu_limit` on 96 GiB Macs (with the
 command), `tight` on 128 GiB Macs and `fits` from 192 GiB. Text-to-video A14B
 also has measured needs at smaller canvases (about 47.4 GiB at 832x480 and

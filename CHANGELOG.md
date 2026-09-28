@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.18.1] - 2026-09-28
 
 `abstractcore models recommendations` shows the recommended model for every capability on every
-kind of machine, and every recommendation fits the machine it is made for: the Apple silicon text
-tiers start where their model fits, the image route is memory-gated, and the Wan2.2 video figures
-are measured at AbstractVision's default canvas.
+kind of machine. On Apple silicon the fit estimate matches the measured GPU memory limit, a text
+model that runs only with a small context says so with the `sysctl` command for more, the image
+route is memory-gated, and the Wan2.2 video figures are labelled as AbstractVision/mlx-gen's
+measurements.
 
 ### Added
 
@@ -35,19 +36,29 @@ are measured at AbstractVision's default canvas.
 
 ### Changed
 
-- The Apple silicon text tiers recommend a model that fits: each tier starts at the first memory
-  size Apple ships where its model fits macOS's default GPU memory limit. Below 16 GiB: Qwen3 1.7B
-  8-bit (`mlx-community/Qwen3-1.7B-8bit`, chosen for 8 GB, where LFM2.5 2.6B 4-bit also fits,
-  tightly; it does not read images, and its route carries no MTP `speculation` policy because the
-  model has no MTP build); 16 to below 32 GiB: Qwen3.5 9B; 32 to below 128 GiB: Qwen3.8 27B; 128 GiB and
-  above: Qwen3.8 Flash-Next. A 24 GB Mac now gets Qwen3.5 9B (Qwen3.8 27B needs about 16.4 GiB,
-  a 24 GB Mac gives a model about 16 GiB), and an 8 GB Mac Qwen3 1.7B. Existing routes are not
-  changed; `apply-recommended` reports the new pick as `kept` unless you pass `--force`.
+- Apple silicon fit estimates follow the operator's measurement on a 24 GB Mac mini (default GPU
+  memory limit ~17.8 GB, ~75% of RAM; Qwen3.8 27B 4-bit runs with a small context by default and
+  with about 30k tokens at `iogpu.wired_limit_mb=20480`). MLX's working reserve inside the limit is
+  a flat 2 GiB (was max(2 GiB, 5%)); the highest GPU memory limit suggested leaves macOS
+  max(4 GiB, 12.5% of RAM) (was RAM minus 8 GiB): 20480 MB on 24 GB, 114688 MB on 128 GB (the
+  Flash-Next command was 117760). A text model whose weights fit but not 8k tokens of context is
+  `tight` with `small_context: true` and `max_context`, and a `tight` Apple silicon fit carries
+  `raised_limit: {command, required_mb, max_context, ...}`. The sentences name the GPU memory
+  limit and what is left after the working buffers ("macOS's GPU memory limit on this Mac is
+  18.0 GiB, and after 2.0 GiB of working buffers about 16.0 GiB is left for a model").
+  `models recommendations` entries gain `context: {small, max_tokens, raised_max_tokens}`, and
+  their `gpu_limit_command` also carries that command for a tight text fit.
+- The Apple silicon text tiers are unchanged from 2.18.0 (operator ruling): below 24 GiB Qwen3.5
+  9B (an 8 GB Mac keeps it, with the warning that it may not fit), 24 to below 128 GiB Qwen3.8 27B,
+  128 GiB and above Qwen3.8 Flash-Next. A text tier whose model has no MTP build would carry no
+  MTP `speculation` policy.
 - The recommended image route (FLUX.2 klein 4B, about 8.5 GiB) is memory-gated like video and
   music: an 8 GB Mac gets no image route, with the reason.
-- Wan2.2 TI2V-5B's memory need is its MLX peak measured at AbstractVision's default canvas
+- Wan2.2 TI2V-5B's memory need is AbstractVision/mlx-gen's peak measured at its default canvas
   (1280x704, 121 frames: 60.5 GiB) instead of a 17-frame validation profile (58.5 GiB); the
-  recommended video route still needs 96 GiB of unified memory. Its peak at 832x480, the smallest
+  recommended video route still needs 96 GiB of unified memory. Every sentence labels it as that
+  engine's figure (it keeps the text encoder and VAE in memory), not the model's own requirement:
+  catalog `resident.measured_with`. Its peak at 832x480, the smallest
   canvas AbstractVision accepts for it, is measured too (32.7 GiB, catalog
   `resident.smaller_canvases`): on a Mac where only that size fits (64 GiB) the route is still not
   written, and the reason, the grid and `models recommendations` (`smaller_canvas`) say so, with
@@ -69,8 +80,8 @@ are measured at AbstractVision's default canvas.
   no longer reads as fine and runs out of memory at first use. A `tight` fit, or one that needs
   the GPU memory `sysctl`, is not flagged; the check never changes the saved routes.
 - `input.image` says why it has no recommendation where the recommended text model does not read
-  images (`recommended_unavailable_routes`, the grid's `recommendation_unavailable`): an 8 GB Mac
-  showed it as "not configured" with no reason.
+  images or no text engine runs (`recommended_unavailable_routes`, the grid's
+  `recommendation_unavailable`), instead of a bare "not configured".
 
 ## [2.18.0] - 2026-09-28
 

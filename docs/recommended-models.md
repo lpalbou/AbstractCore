@@ -32,31 +32,34 @@ catalog's `starter` flags, the Gateway's first-run guide, this page and the Abst
 website.
 
 - **Text** follows `recommended_text_model()`. On Apple silicon it is an MLX build chosen by
-  unified memory, and each tier starts where its model fits: below 16 GiB Qwen3 1.7B (8-bit), 16
-  to below 32 GiB Qwen3.5 9B, 32 to below 128 GiB Qwen3.8 27B, 128 GiB and above Qwen3.8
-  Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Other computers use the LM
-  Studio build `qwen/qwen3.5-9b@4bit`, or the same model's Ollama build where LM Studio has no
-  build (Intel Macs).
+  unified memory: below 24 GiB Qwen3.5 9B (4-bit; it fits from 16 GB, and an 8 GB Mac keeps it
+  with a warning), 24 to below 128 GiB Qwen3.8 27B (4-bit; on a 24 GB Mac it runs with a small
+  context at the default GPU memory limit, and with about 30k tokens after raising it), 128 GiB
+  and above Qwen3.8 Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Other
+  computers use the LM Studio build `qwen/qwen3.5-9b@4bit`, or the same model's Ollama build where
+  LM Studio has no build (Intel Macs).
 - **Image input** is read by the recommended text model where it accepts images, so `input.image`
-  is covered by `input.text` and needs no second model. Every tier from 16 GB up reads images;
-  the 8 GB tier (Qwen3 1.7B) does not, because no vision-capable catalog model fits 8 GB.
+  is covered by `input.text` and needs no second model. Every recommended text model reads
+  images; where it does not (or no text engine runs), `input.image` is reported unavailable with
+  the reason.
 - **Speech output** is Supertonic 3 on ONNX Runtime, on the processor, on every desktop platform.
 - **Speech input** is Whisper base on AbstractVoice's faster-whisper engine (CTranslate2). It uses
   CUDA on an NVIDIA GPU and the processor elsewhere, including Apple silicon.
 - **Image generation** is FLUX.2 klein 4B (8-bit) on MLX-Gen, which runs on Apple silicon only.
 - **Video generation** is Wan2.2 TI2V 5B (8-bit) on MLX-Gen: one checkpoint for text-to-video
-  and image-to-video, on Apple silicon only. Its memory need depends on the output size, not the
-  frame count: about 60.5 GiB at AbstractVision's default 1280x704 canvas and 32.7 GiB at 832x480,
-  the smallest size it accepts (both measured). The recommendation follows the default canvas;
-  where only 832x480 fits (64 GB Macs) the table says so and you set the route yourself.
+  and image-to-video, on Apple silicon only. The memory figures are AbstractVision/mlx-gen's,
+  measured at 1280x704x121 (about 60.5 GiB) and at 832x480x121 (32.7 GiB), with the text encoder
+  and VAE kept in memory. They are this engine's figures, not the model's own requirement:
+  runtimes that offload those parts need far less (Wan 2.2 runs TI2V-5B at 720p on one 24 GB GPU
+  with offloading). The recommendation follows AbstractVision's default canvas; where only
+  832x480 fits (64 GB Macs) the table says so and you set the route yourself.
 - **Music** is ACE-Step 1.5 XL turbo on AbstractMusic's `acestep` backend (Diffusers on PyTorch:
   CUDA, Apple MPS in bfloat16, or the processor in float32).
 
-A recommendation must fit the machine. A capability is **not available** on a machine when its
-engine has no build for the platform, or, for image, video and music, when the model does not fit
-the machine's memory; the entry then says why and what to use instead. Text always has an entry:
-each Apple silicon tier starts where its model fits, so the text model always fits (on a 128 GB
-Mac, after raising the GPU memory limit).
+A capability is **not available** on a machine when its engine has no build for the platform, or,
+for image, video and music, when the model does not fit the machine's memory; the entry then says
+why and what to use instead. Text always has an entry: a tier whose estimate doubts it (8 GB) is
+still the tier, with its warning.
 
 ### Starter set and opt-in recommendations
 
@@ -77,10 +80,12 @@ Hugging Face cache only, so download it first. The engines install with
 ### Fit verdicts on this page
 
 Download sizes and memory needs come from the catalog (see [Local Models](models.md#fit-verdicts)).
-Memory needs are estimates from the model files, except where the catalog records a measured
-peak (video). On Apple silicon the verdicts assume macOS's default GPU memory limit, 75% of unified
-memory; "fits after raising the GPU memory limit" shows the `sysctl` command that makes the model
-fit (it asks for your password and lasts until the Mac restarts). The other machine classes are
+Memory needs are estimates from the model files, except where the catalog records a peak measured
+with AbstractVision/mlx-gen (video). On Apple silicon the verdicts assume macOS's default GPU
+memory limit, 75% of unified memory (see [GPU memory on Apple silicon](#gpu-memory-on-apple-silicon));
+"fits after raising the GPU memory limit" shows the `sysctl` command that makes the model fit, and
+"fits with a small context" shows the command that gives it more context (both ask for your
+password and last until the Mac restarts). The other machine classes are
 evaluated on the reference machine each row names. Run `abstractcore models recommendations
 --host` for your own machine's verdicts.
 
@@ -102,14 +107,14 @@ Route `input.text` (text generation).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | `mlx-community/Qwen3-1.7B-8bit` | MLX (AbstractCore), Apple GPU (Metal) | 1.7 GiB | 3.1 GiB | fits |
+| Apple silicon Mac, 8 GB | `mlx-community/Qwen3.5-9B-MLX-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | may not fit |
 | Apple silicon Mac, 16 GB | `mlx-community/Qwen3.5-9B-MLX-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
 | Apple silicon Mac, 18 GB | `mlx-community/Qwen3.5-9B-MLX-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
-| Apple silicon Mac, 24 GB | `mlx-community/Qwen3.5-9B-MLX-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
+| Apple silicon Mac, 24 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits with a small context (about 1.1k tokens); more context (about 34k tokens) after `sudo sysctl iogpu.wired_limit_mb=20480` |
 | Apple silicon Mac, 32 GB, 36 GB or 48 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 64 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 96 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
-| Apple silicon Mac, 128 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=117760` |
+| Apple silicon Mac, 128 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=114688` |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits |
 | Linux or Windows with an NVIDIA GPU | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@4bit`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 5.6 GiB | fits |
 | Linux or Windows, processor only | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@4bit`) | LM Studio, processor | unknown | 5.6 GiB | fits |
@@ -121,14 +126,14 @@ Route `input.image` (image understanding).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | Not available: the recommended text model (mlx-community/Qwen3-1.7B-8bit) does not read images; set input.image to a vision-capable model on another machine or a cloud provider | | | | |
+| Apple silicon Mac, 8 GB | the text model (`mlx-community/Qwen3.5-9B-MLX-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | may not fit |
 | Apple silicon Mac, 16 GB | the text model (`mlx-community/Qwen3.5-9B-MLX-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
 | Apple silicon Mac, 18 GB | the text model (`mlx-community/Qwen3.5-9B-MLX-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
-| Apple silicon Mac, 24 GB | the text model (`mlx-community/Qwen3.5-9B-MLX-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
+| Apple silicon Mac, 24 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits with a small context (about 1.1k tokens); more context (about 34k tokens) after `sudo sysctl iogpu.wired_limit_mb=20480` |
 | Apple silicon Mac, 32 GB, 36 GB or 48 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 64 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 96 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
-| Apple silicon Mac, 128 GB | the text model (`mlx-community/Qwen3.8-Flash-Next-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=117760` |
+| Apple silicon Mac, 128 GB | the text model (`mlx-community/Qwen3.8-Flash-Next-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=114688` |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | the text model (`mlx-community/Qwen3.8-Flash-Next-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits |
 | Linux or Windows with an NVIDIA GPU | the text model (`qwen/qwen3.5-9b`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 5.6 GiB | fits |
 | Linux or Windows, processor only | the text model (`qwen/qwen3.5-9b`) | LM Studio, processor | unknown | 5.6 GiB | fits |
@@ -178,7 +183,7 @@ Route `output.image` (text to image).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | Not available: FLUX.2 [klein] 4B (8-bit) needs about 8.5 GiB of memory while it generates (estimated), and this computer can give a model about 4.0 GiB; use a Mac with more unified memory, or a cloud image provider | | | | |
+| Apple silicon Mac, 8 GB | Not available: FLUX.2 [klein] 4B (8-bit) needs about 8.5 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use a Mac with more unified memory, or a cloud image provider | | | | |
 | Apple silicon Mac, 16 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits, tightly |
 | Apple silicon Mac, 18 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 24 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
@@ -197,15 +202,15 @@ Route `output.video` (text to video, image to video).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates at its default canvas (measured), and this computer can give a model about 4.0 GiB; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
-| Apple silicon Mac, 16 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates at its default canvas (measured), and this computer can give a model about 10.0 GiB; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
-| Apple silicon Mac, 18 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates at its default canvas (measured), and this computer can give a model about 11.5 GiB; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
-| Apple silicon Mac, 24 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates at its default canvas (measured), and this computer can give a model about 16.0 GiB; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
-| Apple silicon Mac, 32 GB, 36 GB or 48 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates at its default canvas (measured), and this computer can give a model about 22.0 GiB; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
-| Apple silicon Mac, 64 GB | At the default canvas: not available, it needs more memory. At 832x480 (121 frames): `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit`, set it yourself | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 34.3 GiB at 832x480 (measured) | fits at 832x480 |
-| Apple silicon Mac, 96 GB | `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 63.5 GiB (measured) | fits, tightly |
-| Apple silicon Mac, 128 GB | `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 63.5 GiB (measured) | fits |
-| Apple silicon Mac, 192 GB, 256 GB or 512 GB | `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 63.5 GiB (measured) | fits |
+| Apple silicon Mac, 8 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates (measured with AbstractVision/mlx-gen at 1280x704x121, which keeps the text encoder and VAE in memory; this engine's figure, not the model's minimum), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
+| Apple silicon Mac, 16 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates (measured with AbstractVision/mlx-gen at 1280x704x121, which keeps the text encoder and VAE in memory; this engine's figure, not the model's minimum), and macOS's GPU memory limit on this Mac is about 12.0 GiB, about 10.0 GiB of it left for a model after working buffers; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
+| Apple silicon Mac, 18 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates (measured with AbstractVision/mlx-gen at 1280x704x121, which keeps the text encoder and VAE in memory; this engine's figure, not the model's minimum), and macOS's GPU memory limit on this Mac is about 13.5 GiB, about 11.5 GiB of it left for a model after working buffers; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
+| Apple silicon Mac, 24 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates (measured with AbstractVision/mlx-gen at 1280x704x121, which keeps the text encoder and VAE in memory; this engine's figure, not the model's minimum), and macOS's GPU memory limit on this Mac is about 18.0 GiB, about 16.0 GiB of it left for a model after working buffers; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
+| Apple silicon Mac, 32 GB, 36 GB or 48 GB | Not available: Wan2.2 TI2V 5B (text/image to video) needs about 63.5 GiB of memory while it generates (measured with AbstractVision/mlx-gen at 1280x704x121, which keeps the text encoder and VAE in memory; this engine's figure, not the model's minimum), and macOS's GPU memory limit on this Mac is about 24.0 GiB, about 22.0 GiB of it left for a model after working buffers; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
+| Apple silicon Mac, 64 GB | At the default canvas: not available, it needs more memory. At 832x480 (121 frames): `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit`, set it yourself | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 34.3 GiB at 832x480 (measured with AbstractVision/mlx-gen) | fits at 832x480 |
+| Apple silicon Mac, 96 GB | `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 63.5 GiB (measured with AbstractVision/mlx-gen) | fits, tightly |
+| Apple silicon Mac, 128 GB | `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 63.5 GiB (measured with AbstractVision/mlx-gen) | fits |
+| Apple silicon Mac, 192 GB, 256 GB or 512 GB | `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 63.5 GiB (measured with AbstractVision/mlx-gen) | fits |
 | Linux or Windows with an NVIDIA GPU | Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
 | Linux or Windows, processor only | Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
 | Intel Mac | Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
@@ -216,8 +221,8 @@ Route `output.music` (text to music).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | Not available: ACE-Step 1.5 XL turbo (music) needs about 10.9 GiB of memory while it generates (estimated), and this computer can give a model about 4.0 GiB; use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, with its API key) | | | | |
-| Apple silicon Mac, 16 GB | Not available: ACE-Step 1.5 XL turbo (music) needs about 10.9 GiB of memory while it generates (estimated), and this computer can give a model about 10.0 GiB; use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, with its API key) | | | | |
+| Apple silicon Mac, 8 GB | Not available: ACE-Step 1.5 XL turbo (music) needs about 10.9 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, with its API key) | | | | |
+| Apple silicon Mac, 16 GB | Not available: ACE-Step 1.5 XL turbo (music) needs about 10.9 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 12.0 GiB, about 10.0 GiB of it left for a model after working buffers; use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, with its API key) | | | | |
 | Apple silicon Mac, 18 GB | `ACE-Step/acestep-v15-xl-turbo-diffusers` | ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16) | 10.3 GiB | 10.9 GiB | fits, tightly |
 | Apple silicon Mac, 24 GB | `ACE-Step/acestep-v15-xl-turbo-diffusers` | ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16) | 10.3 GiB | 10.9 GiB | fits |
 | Apple silicon Mac, 32 GB, 36 GB or 48 GB | `ACE-Step/acestep-v15-xl-turbo-diffusers` | ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16) | 10.3 GiB | 10.9 GiB | fits |
@@ -230,6 +235,67 @@ Route `output.music` (text to music).
 | Intel Mac | Not available: ACE-Step music generation runs on PyTorch, and current PyTorch builds for macOS require Apple Silicon (arm64); the last Intel-Mac build is 2.2.2; set output.music to a cloud music backend (acemusic or elevenlabs-music, with its API key) | | | | |
 
 <!-- END GENERATED: recommended-models -->
+
+## GPU memory on Apple silicon
+
+macOS lets the GPU use only part of unified memory. By default that limit is about 75% of it: on a
+24 GB Mac mini it was measured at about 17.8 GB. AbstractCore reads the real limit on your Mac
+(`abstractcore models recommendations --host`); the tables above assume 75%.
+
+MLX keeps about 2 GiB of that limit for its working buffers; the rest holds the weights and the
+context (KV cache). On a 24 GB Mac, Qwen3.8 27B 4-bit (about 16.2 GB of weights) therefore runs at
+the default limit with only a small context. Raising the limit gives it more:
+
+```bash
+sudo sysctl iogpu.wired_limit_mb=20480
+```
+
+That value is safe on a 24 GB Mac and gives about 30k tokens of context (measured); a 32 GB Mac
+reaches about 120k tokens at its default limit. Do not go beyond about 21 GB on a 24 GB Mac (about
+40k tokens): apps may crash. The highest value AbstractCore suggests leaves macOS max(4 GiB, 12.5%
+of RAM): 20480 MB on a 24 GB Mac, 28672 MB on 32 GB, 114688 MB on 128 GB. AbstractCore only prints
+the command; it never runs `sudo`. The setting lasts until the Mac restarts, and
+`sudo sysctl iogpu.wired_limit_mb=0` returns to the default.
+
+### Keeping the limit across restarts
+
+To keep it, an administrator can add a LaunchDaemon that runs the command at boot. AbstractCore
+never installs this; it is your machine's configuration. Save as
+`/Library/LaunchDaemons/local.iogpu.wired-limit.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>local.iogpu.wired-limit</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/sbin/sysctl</string>
+    <string>iogpu.wired_limit_mb=20480</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+```
+
+Then load it:
+
+```bash
+sudo chown root:wheel /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+sudo chmod 644 /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+```
+
+Use 20480 on a 24 GB Mac. Do not use 21504 unless you know what you're doing. To remove it:
+
+```bash
+sudo launchctl bootout system /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+sudo rm /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+sudo sysctl iogpu.wired_limit_mb=0
+```
 
 ## The JSON export
 
@@ -247,11 +313,14 @@ Route `output.music` (text to music).
   (what the route stores), `artifact` and `download_provider` (what `abstractcore models
   download` fetches), `catalog_id`, `display_name`, `download_bytes` (`null` when the catalog has
   no exact size), `memory_need_bytes`, `memory_need_source` (`measured` or `estimated`), `fit`,
-  `gpu_limit_command`, `covered_by`, `smaller_canvas` (`null`, or `{canvas, memory_need_bytes,
-  memory_need_source, fit}`: the largest measured smaller output size, `WIDTHxHEIGHTxFRAMES`, at
-  which an `unavailable` video model still fits), `reason` (for `unavailable`), `warning` (the
-  sentence surfaces show for a doubtful fit) and `notes`. The text entry also carries `basis` and
-  `tier` from `recommended_text_model()`.
+  `gpu_limit_command` (for `needs_gpu_limit`, and for a text fit that is `tight` on Apple
+  silicon: the command for more context), `context` (`null`, or `{small, max_tokens,
+  raised_max_tokens}` for such a text fit: whether it runs only with a small context, the context
+  at the default limit and after the command), `covered_by`, `smaller_canvas` (`null`, or
+  `{canvas, memory_need_bytes, memory_need_source, fit}`: the largest measured smaller output
+  size, `WIDTHxHEIGHTxFRAMES`, at which an `unavailable` video model still fits), `reason` (for
+  `unavailable`), `warning` (the sentence surfaces show for a doubtful fit) and `notes`. The text
+  entry also carries `basis` and `tier` from `recommended_text_model()`.
 
 `--host --json` emits the same schema with `host: {os, arch, accelerator, memory_gib,
 ceiling_bytes, ceiling_source}` and one `entries` object.

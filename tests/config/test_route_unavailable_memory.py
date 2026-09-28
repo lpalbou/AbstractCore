@@ -16,8 +16,8 @@ The contract:
   - the saved config is never changed by the check.
 
 Also here (same wave): `input.image` on a host whose recommended text model
-does not read images reports why (`recommended_unavailable_routes`), and the
-8 GB text tier, whose model has no MTP drafter, is not written with an MTP
+does not read images reports why (`recommended_unavailable_routes`), and a
+text tier whose model has no MTP build is not written with an MTP
 `speculation` policy.
 """
 
@@ -131,22 +131,33 @@ def test_a_model_outside_the_catalog_is_not_judged_by_memory():
 # ---------------------------------------------------------------------------
 
 
-def test_image_input_on_an_8gb_mac_reports_the_recommendations_reason(tmp_path, pin_host):
-    unavailable = cd.recommended_unavailable_routes(MAC8)
-    vision = rec.recommended_models(MAC8)["vision"]
+@pytest.fixture()
+def text_reads_no_images(monkeypatch):
+    """A host whose recommended text model does not read images (the 2.18.1
+    staging 8 GB tier was one; no tier is today): the one rule decides it."""
+    from abstractcore.config import manager as mgr
+
+    real = mgr.model_supports_input
+    monkeypatch.setattr(mgr, "model_supports_input", lambda model, modality: False if modality == "image" else real(model, modality))
+
+
+def test_image_input_reports_the_recommendations_reason_where_text_reads_no_images(tmp_path, pin_host, text_reads_no_images):
+    mac16 = synthetic_host("metal16")
+    unavailable = cd.recommended_unavailable_routes(mac16)
+    vision = rec.recommended_models(mac16)["vision"]
     assert vision["status"] == "unavailable"
     assert unavailable["input.image"]["reason"] == vision["reason"]
     assert "does not read images" in vision["reason"]
-    pin_host(MAC8)
+    pin_host(mac16)
     manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
     row = _rows(manager)["input.image"]
     assert row["configured"] is False
     assert row["recommendation_unavailable"]["reason"] == vision["reason"]
 
 
-def test_image_input_is_not_unavailable_where_the_text_model_reads_images():
-    assert "input.image" not in cd.recommended_unavailable_routes(synthetic_host("metal16"))
-    assert "input.image" not in cd.recommended_unavailable_routes(synthetic_host("cuda24"))
+@pytest.mark.parametrize("kind", ["metal8", "metal16", "cuda24"])
+def test_image_input_is_not_unavailable_where_the_text_model_reads_images(kind):
+    assert "input.image" not in cd.recommended_unavailable_routes(synthetic_host(kind))
 
 
 # ---------------------------------------------------------------------------
@@ -154,14 +165,16 @@ def test_image_input_is_not_unavailable_where_the_text_model_reads_images():
 # ---------------------------------------------------------------------------
 
 
-def test_the_8gb_text_tier_carries_no_speculation_policy():
+def test_a_tier_without_an_mtp_build_carries_no_speculation_policy(monkeypatch):
+    tiers = list(mc.APPLE_TEXT_TIERS)
+    tiers[0] = dict(tiers[0], mtp=None)
+    monkeypatch.setattr(mc, "APPLE_TEXT_TIERS", tuple(tiers))
     pick = mc.recommended_text_model(MAC8, fit=False)
-    assert pick["artifact"] == "mlx-community/Qwen3-1.7B-8bit"
     assert "speculation" not in pick["options"]
     assert "speculation" not in cd.recommended_capability_default_routes(MAC8)["input.text"].options
 
 
-@pytest.mark.parametrize("gib", [16, 32, 128])
+@pytest.mark.parametrize("gib", [8, 16, 32, 128])
 def test_tiers_with_an_mtp_build_keep_the_policy(gib):
     pick = mc.recommended_text_model(synthetic_host(f"metal{gib}"), fit=False)
     assert pick["options"]["speculation"]["mode"] == "native_mtp"

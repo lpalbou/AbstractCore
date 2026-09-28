@@ -11,21 +11,30 @@ the model geometry. The formulas are the ones fixed in the models exploration
     KV   n x 2 x layers x kv_heads x head_dim x 2   (f16)
          unknown geometry -> n x 0.5 MiB x (P / 8e9), labelled rough
     O    overhead          max(0.5 GiB, 5% of W)
-    C    host ceiling      host_profile.ceiling_bytes
-    Ceff C - max(2 GiB, 5% of C)            (the context estimator's reserve)
-                           returned as `usable_bytes` (and the reserve as
-                           `reserve_bytes`): the verdict compares `need_bytes`
-                           with THIS, never with the ceiling itself
+    C    host ceiling      host_profile.ceiling_bytes (Apple silicon: the GPU
+                           memory limit, by default ~75% of unified memory;
+                           measured 17.8 GB on a 24 GB Mac mini)
+    Ceff C - reserve       Apple silicon: C - 2 GiB (MLX's working buffers);
+                           elsewhere C - max(2 GiB, 5% of C) (the context
+                           estimator's reserve). Returned as `usable_bytes`
+                           (and the reserve as `reserve_bytes`): the verdict
+                           compares `need_bytes` with THIS
 
     need = W + KV(n) + O
     fits       need <= 0.8 Ceff
-    tight      need <= Ceff
+    tight      need <= Ceff; on Apple silicon also when only the weights and
+               working memory fit (W + O + one token of KV <= Ceff):
+               `small_context: true`, the context it runs with is
+               `max_context`. A tight Apple silicon fit carries
+               `raised_limit`: the highest safe limit (below) as a command,
+               with the `max_context` it leaves
     too_large  otherwise; on CUDA "partial_offload" when W <= VRAM + 0.75 RAM
     needs_gpu_limit
                Apple silicon only: too_large at the current ceiling, but a
                GPU wired limit L (`sudo sysctl iogpu.wired_limit_mb=<MB>`) with
-               need <= Ceff(L) and L <= RAM - 8 GiB would make it fit. The
-               `gpu_limit` block carries the exact command and value. The
+               need <= Ceff(L) and L <= RAM - max(4 GiB, 12.5% of RAM) would
+               make it fit. The `gpu_limit` block carries the exact command
+               and value. The
                ceiling is `iogpu.wired_limit_mb` whenever it is set (> 0):
                `host_profile` reads it first (`ceiling_source`
                `metal_wired_limit`), so a raised limit makes the model `fits`
@@ -62,10 +71,21 @@ MIB = 1024**2
 FIT_VERDICTS = ("fits", "tight", "too_large", "partial_offload", "needs_gpu_limit", "unknown")
 
 # Apple silicon: the most of its unified memory the GPU may be given with
-# `iogpu.wired_limit_mb` while macOS keeps enough to run. A model that needs a
-# limit above RAM minus this stays `too_large`.
-GPU_LIMIT_OS_HEADROOM_BYTES = 8 * 1024**3
+# `iogpu.wired_limit_mb` while macOS keeps enough to run: RAM minus
+# max(4 GiB, 12.5% of RAM) (`gpu_limit_max_bytes`; operator ruling
+# 2026-09-28). On a 24 GB Mac that is 20480 MB, the value the operator's own
+# measurement (Mac mini, 24 GB, Qwen3.8 27B 4-bit) runs safely at, with about
+# 30k tokens of context; above ~21 GiB there apps may crash. On a 128 GB Mac it
+# is 112 GiB. A model that needs a limit above it stays `too_large`.
+GPU_LIMIT_OS_RESERVE_MIN_BYTES = 4 * 1024**3
+GPU_LIMIT_OS_RESERVE_FRACTION = 0.125
 GPU_LIMIT_SYSCTL = "iogpu.wired_limit_mb"
+# The reserve inside a Metal GPU limit for MLX's working buffers (compute
+# graph, fragmentation, the allocator's cache): a flat 2 GiB, not a share of
+# the limit -- those buffers do not grow with the machine. Checked against the
+# same measurement: Qwen3.8 27B 4-bit (15.2 GiB of weights) at 20480 MB leaves
+# about 30k tokens of cache (estimate: ~34k).
+METAL_WORKING_RESERVE_BYTES = 2 * 1024**3
 CONFIDENCE_ORDER = ("exact", "estimated", "rough", "unknown")
 
 # Effective bits per weight INCLUDING quantization metadata (scales, zero
@@ -224,42 +244,79 @@ def _worst(*levels: str) -> str:
     return CONFIDENCE_ORDER[worst]
 
 
-def _usable(ceiling: int) -> int:
-    """`Ceff`: the ceiling minus the system reserve (max(2 GiB, 5%))."""
+def _usable(ceiling: int, host: Optional[Mapping[str, Any]] = None) -> int:
+    """`Ceff`: the ceiling minus the reserve. On Apple silicon (`metal`) the
+    ceiling is the GPU limit and the reserve is MLX's working buffers, a flat
+    `METAL_WORKING_RESERVE_BYTES`; elsewhere max(2 GiB, 5%)."""
 
+    if host is not None and host.get("accelerator") == "metal":
+        return ceiling - METAL_WORKING_RESERVE_BYTES
     return ceiling - max(2 * GIB, int(0.05 * ceiling))
+
+
+def gpu_limit_max_bytes(ram: Any) -> Optional[int]:
+    """The highest `iogpu.wired_limit_mb` a Mac with `ram` bytes should use:
+    RAM minus max(4 GiB, 12.5% of RAM), whole MiB (24 GiB -> 20480 MB,
+    128 GiB -> 114688 MB). None without a RAM reading."""
+
+    if isinstance(ram, bool) or not isinstance(ram, (int, float)) or ram <= 0:
+        return None
+    reserve = max(GPU_LIMIT_OS_RESERVE_MIN_BYTES, int(GPU_LIMIT_OS_RESERVE_FRACTION * ram))
+    return (int(ram) - reserve) // MIB * MIB
+
+
+def _limit_block(limit: int, ceiling: int, host: Mapping[str, Any]) -> Dict[str, Any]:
+    required_mb = limit // MIB
+    raised = host.get("ceiling_source") == "metal_wired_limit"
+    return {
+        "sysctl": GPU_LIMIT_SYSCTL,
+        "current_mb": int(ceiling // MIB) if raised else 0,
+        "required_mb": int(required_mb),
+        "command": f"sudo sysctl {GPU_LIMIT_SYSCTL}={required_mb}",
+        "needs_admin": True,
+        "resets_at_restart": True,
+    }
 
 
 def _gpu_limit_for(need: int, ceiling: int, host: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     """The `iogpu.wired_limit_mb` value that makes `need` fit on this Mac, or None.
 
     The value is the smallest whole GiB `L` with `need <= Ceff(L)`; None when
-    that exceeds RAM minus `GPU_LIMIT_OS_HEADROOM_BYTES` (macOS must keep
-    enough to run) or is not above the current ceiling.
+    that exceeds `gpu_limit_max_bytes(RAM)` (macOS must keep enough to run) or
+    is not above the current ceiling.
     """
 
     if host.get("accelerator") != "metal":
         return None
-    ram = host.get("ram_bytes")
-    if isinstance(ram, bool) or not isinstance(ram, (int, float)) or ram <= 0:
+    cap = gpu_limit_max_bytes(host.get("ram_bytes"))
+    if cap is None:
         return None
-    limit_gib = -(-max(need + 2 * GIB, int(need / 0.95) + 1) // GIB)
-    limit = int(limit_gib * GIB)
-    while _usable(limit) < need:  # rounding guard: never suggest a value that still misses
-        limit += GIB
-    if limit <= ceiling or limit > int(ram) - GPU_LIMIT_OS_HEADROOM_BYTES:
+    limit = -(-(need + METAL_WORKING_RESERVE_BYTES) // GIB) * GIB
+    if limit <= ceiling or limit > cap:
         return None
-    required_mb = limit // (1024 * 1024)
-    raised = host.get("ceiling_source") == "metal_wired_limit"
-    return {
-        "sysctl": GPU_LIMIT_SYSCTL,
-        "current_mb": int(ceiling // (1024 * 1024)) if raised else 0,
-        "required_mb": int(required_mb),
-        "command": f"sudo sysctl {GPU_LIMIT_SYSCTL}={required_mb}",
-        "needs_admin": True,
-        "resets_at_restart": True,
-        "verdict_with_limit": "fits" if need <= 0.8 * _usable(limit) else "tight",
-    }
+    return dict(
+        _limit_block(limit, ceiling, host),
+        verdict_with_limit="fits" if need <= 0.8 * _usable(limit, host) else "tight",
+    )
+
+
+def _raised_limit_for(
+    W: int, O: int, kv_per_token: Optional[int], mt: Optional[int], ceiling: int, host: Mapping[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """For a Metal fit that is only `tight` at the current limit: the highest
+    safe limit (`gpu_limit_max_bytes`) as a command, with the context it leaves
+    (`max_context`), or None when it is not above the current ceiling."""
+
+    if host.get("accelerator") != "metal":
+        return None
+    cap = gpu_limit_max_bytes(host.get("ram_bytes"))
+    if cap is None or cap <= ceiling:
+        return None
+    block = _limit_block(cap, ceiling, host)
+    if kv_per_token:
+        max_ctx = max(0, int((_usable(cap, host) - W - O) // kv_per_token))
+        block["max_context"] = min(max_ctx, mt) if mt else max_ctx
+    return block
 
 
 def _kv_bytes_per_token(geometry: Optional[Mapping[str, Any]]) -> Optional[int]:
@@ -367,6 +424,9 @@ def estimate_fit(
         "context": n,
         "ceiling_bytes": ceiling,
         "ceiling_source": host.get("ceiling_source"),
+        # `metal`: the ceiling is the GPU memory limit macOS sets (or the one
+        # raised with the sysctl) and the reserve is MLX's working buffers.
+        "accelerator": host.get("accelerator"),
         # What the verdict actually compares `need_bytes` against: the ceiling
         # minus the reserve kept for the system (`Ceff`), and the overhead
         # inside `need_bytes`. A sentence that states the ceiling while the
@@ -401,7 +461,7 @@ def estimate_fit(
 
     O = int(max(0.5 * GIB, 0.05 * W))
     need = W + (KV or 0) + O
-    c_eff = _usable(ceiling)
+    c_eff = _usable(ceiling, host)
     if host.get("ceiling_source") == "metal_wired_limit":
         notes.append(
             f"memory ceiling from {GPU_LIMIT_SYSCTL} = {ceiling // (1024 * 1024)} MB "
@@ -412,11 +472,21 @@ def estimate_fit(
     base["reserve_bytes"] = int(ceiling - c_eff)
     base["overhead_bytes"] = int(O)
 
+    # Apple silicon: the weights and working memory fit, but not the budgeted
+    # context -- it RUNS, with a smaller context (`small_context`, the room
+    # left is `max_context`). Operator measurement 2026-09-28: Qwen3.8 27B
+    # 4-bit runs out of the box on a 24 GB Mac with a small context.
+    # Context-bearing models only (`n > 1`): a generation model budgeted at
+    # one token (image, video, music) has no context to shrink.
+    small_context = bool(
+        host.get("accelerator") == "metal" and n > 1 and kv_per_token and need > c_eff and W + O + kv_per_token <= c_eff
+    )
     if need <= 0.8 * c_eff:
         verdict = "fits"
-    elif need <= c_eff:
+    elif need <= c_eff or small_context:
         verdict = "tight"
-        notes.append("fits with little headroom; close other models first")
+        if not small_context:
+            notes.append("fits with little headroom; close other models first")
     else:
         verdict = "too_large"
         if host.get("accelerator") == "cuda":
@@ -434,6 +504,11 @@ def estimate_fit(
                 "(admin; resets at restart)"
             )
     base["verdict"] = verdict
+    base["small_context"] = small_context
+    if verdict == "tight" and n > 1:
+        raised = _raised_limit_for(W, O, kv_per_token, mt, ceiling, host)
+        if raised is not None:
+            base["raised_limit"] = raised
 
     if free_now is not None:
         base["fits_now"] = bool(need <= free_now)
@@ -446,6 +521,8 @@ def estimate_fit(
         if mt:
             max_ctx = min(max_ctx, mt)
         base["max_context"] = max_ctx
+        if small_context:
+            notes.append(f"fits only with a small context: about {max_ctx} tokens at this memory limit")
 
     base["confidence"] = _worst(weights_conf, kv_conf if kv_conf != "unknown" else "rough")
     return base

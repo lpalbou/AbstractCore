@@ -75,7 +75,7 @@ def test_a_fresh_apple_silicon_install_still_seeds_the_image_route(capsys, monke
     # its memory: the only row that says why is the video row.
     flagged = [line for line in out.splitlines() if "no recommendation for this host" in line]
     assert len(flagged) == 1 and flagged[0].startswith("- output.video:")
-    assert "needs about" in flagged[0] and "can give a model about" in flagged[0]
+    assert "needs about" in flagged[0] and "macOS's GPU memory limit on this Mac is about 48.0 GiB" in flagged[0]
 
 
 def test_an_unconfigured_grid_names_the_command_that_fixes_it(capsys) -> None:

@@ -88,20 +88,22 @@ _HOST_PREFERENCE = {
 # The recommended text model: ONE function, every surface
 # ---------------------------------------------------------------------------
 #
-# Operator rulings 2026-09-24 and 2026-09-28. On Apple silicon (accelerator
-# `metal`) the recommended text artifact is chosen by unified memory, in GiB
-# as the host probe reports it (`ram_bytes / 2**30`), and A RECOMMENDATION
-# MUST FIT: each tier starts at the first memory size Apple ships where the
-# catalog's fit estimate says its model fits (`fits` or `tight`) under macOS's
-# default GPU memory limit (75% of unified memory):
+# Operator rulings 2026-09-24 and 2026-09-28 (the second one after the
+# operator's own measurement on a 24 GB Mac mini: Qwen3.8 27B 4-bit runs out
+# of the box with a small context, and with about 30k tokens of context once
+# `sudo sysctl iogpu.wired_limit_mb=20480` raises the GPU memory limit). On
+# Apple silicon (accelerator `metal`) the recommended text artifact is chosen
+# by unified memory, in GiB as the host probe reports it
+# (`ram_bytes / 2**30`):
 #
-#     memory <  16          -> Qwen3 1.7B 8-bit  (qwen3-1.7b): chosen for
-#                              8 GB (LFM2.5 2.6B 4-bit also fits, tightly); no
-#                              vision-capable catalog model fits (Qwen3.5 9B
-#                              needs ~6.4 GiB, an 8 GB Mac gives a model ~4 GiB)
-#     16 <= memory < 32     -> Qwen3.5 9B        (qwen3.5-9b)
-#     32 <= memory < 128    -> Qwen3.8 27B       (qwen3.8-27b): needs ~16.4
-#                              GiB, a 24 GB Mac gives a model ~16 GiB
+#     memory <  24          -> Qwen3.5 9B        (qwen3.5-9b): fits from
+#                              16 GB; on an 8 GB Mac the pick stays, with the
+#                              fit warning
+#     24 <= memory < 128    -> Qwen3.8 27B       (qwen3.8-27b): on a 24 GB
+#                              Mac it fits with a small context at the
+#                              default limit (`tight`, `small_context`), and
+#                              the fit's `raised_limit` gives the command
+#                              for more context
 #     memory >= 128         -> Qwen3.8 Flash-Next (qwen3.8-flash-next): on a
 #                              128 GB Mac it fits once the GPU memory limit is
 #                              raised (`needs_gpu_limit`, operator-accepted)
@@ -125,14 +127,13 @@ MTP_RECOMMENDED = False
 # false}`, the keys providers/speculation.py accepts); the pick copies them.
 
 # (upper bound in GiB, exclusive; None = no bound), catalog row, plain, MTP
-# (None: the row has no MTP build, the plain one is recommended either way).
+# (None: the row has no MTP build, the plain one is recommended either way,
+# and the route carries no MTP `speculation` policy).
 # Every artifact named here must be a seed artifact of that row carrying an
 # `upstream` verification record (enforced by tests/config/test_model_catalog.py);
 # tests/config/test_recommended_text_tiers.py enforces the fit rule above.
 APPLE_TEXT_TIERS: Tuple[Dict[str, Any], ...] = (
-    {"below_gib": 16, "row": "qwen3-1.7b",
-     "plain": "mlx-community/Qwen3-1.7B-8bit", "mtp": None},
-    {"below_gib": 32, "row": "qwen3.5-9b",
+    {"below_gib": 24, "row": "qwen3.5-9b",
      "plain": "mlx-community/Qwen3.5-9B-MLX-4bit", "mtp": "mlx-works/Qwen3.5-9B-oQ4e-mtp"},
     {"below_gib": 128, "row": "qwen3.8-27b",
      "plain": "mlx-community/Qwen3.8-27B-4bit", "mtp": "Jundot/Qwen3.8-27B-oQ4e-mtp"},
@@ -323,7 +324,7 @@ def recommended_text_model(
         # The route's MTP POLICY (`speculation`) is host-wide and the same as
         # the portable route's: it asks for MTP wherever the loaded artifact
         # can do it. An MTP build's own options overlay it. A tier whose model
-        # has no MTP build (`mtp: None`, Qwen3 1.7B) gets no policy: nothing
+        # has no MTP build (`mtp: None`) gets no policy: nothing
         # is written for a capability the model does not have.
         policy = dict(_portable_text_default()["options"])
         if not tier["mtp"]:
@@ -426,6 +427,21 @@ def _fit_amounts(fit: Mapping[str, Any]) -> str:
     if isinstance(weights, int) and 0 < weights < need:
         w_g = _gib(weights, d)
         split = f" ({w_g:.{d}f} GiB of weights plus {need_g - w_g:.{d}f} GiB for its working memory and cache)"
+    if fit.get("accelerator") == "metal" and isinstance(ceiling, int) and ceiling > usable:
+        # Apple silicon: say the GPU memory limit itself (macOS's default is
+        # ~75% of unified memory: 18 GiB on a 24 GB Mac, measured ~17.8), then
+        # what is left after MLX's working buffers -- never the remainder alone
+        # as "what this computer can give".
+        c_g = _gib(ceiling, d)
+        which = (
+            "the GPU memory limit raised on this Mac"
+            if fit.get("ceiling_source") == "metal_wired_limit"
+            else "macOS's GPU memory limit on this Mac"
+        )
+        return (
+            f" It needs about {need_g:.{d}f} GiB in total{split}; {which} is {c_g:.{d}f} GiB, and after "
+            f"{c_g - usable_g:.{d}f} GiB of working buffers about {usable_g:.{d}f} GiB is left for a model."
+        )
     reserve = ""
     if isinstance(ceiling, int) and ceiling > usable:
         c_g = _gib(ceiling, d)
@@ -437,6 +453,36 @@ def _fit_amounts(fit: Mapping[str, Any]) -> str:
         f" It needs about {need_g:.{d}f} GiB in total{split}; this computer can give a model about "
         f"{usable_g:.{d}f} GiB{reserve}."
     )
+
+
+def raised_limit_instruction(fit: Mapping[str, Any]) -> Optional[str]:
+    """The sentence for a `tight` Apple silicon fit that has a `raised_limit`:
+    the context it runs with now, and the command (with the context it gives)
+    for more. None when the fit has no `raised_limit`."""
+
+    rl = fit.get("raised_limit")
+    if not isinstance(rl, Mapping):
+        return None
+    now = fit.get("max_context")
+    later = rl.get("max_context")
+    gib = int(rl["required_mb"]) / 1024
+    parts = []
+    if isinstance(now, int):
+        parts.append(f"At this limit it has room for about {_tokens(now)} tokens of context.")
+    more = f" (about {_tokens(later)} tokens)" if isinstance(later, int) else ""
+    parts.append(
+        f"For more context{more}, let the GPU use {gib:.0f} GiB: run `{rl['command']}` in a terminal "
+        "(asks for your password; lasts until the Mac restarts)."
+    )
+    return " ".join(parts)
+
+
+def _tokens(n: int) -> str:
+    if n >= 10_000:
+        return f"{round(n / 1000):.0f}k"
+    if n >= 1000:
+        return f"{n / 1000:.1f}k"
+    return str(n)
 
 
 def gpu_limit_instruction(fit: Mapping[str, Any]) -> str:
@@ -469,9 +515,17 @@ def _fit_warning(row: Mapping[str, Any], fit: Mapping[str, Any]) -> Optional[str
     if verdict == "needs_gpu_limit":
         return f"{name} is the recommendation for this computer's memory.{amounts} {gpu_limit_instruction(fit)}"
     if verdict == "tight":
+        raised = raised_limit_instruction(fit)
+        if fit.get("small_context"):
+            return (
+                f"{name} is the recommendation for this computer's memory and AbstractCore's estimate says it "
+                f"fits with a small context.{amounts} Close other models before loading it."
+                + (f" {raised}" if raised else "")
+            )
         return (
             f"{name} is the recommendation for this computer's memory and AbstractCore's estimate says it "
             f"fits, but tightly.{amounts} Close other models before loading it."
+            + (f" {raised}" if raised else "")
         )
     if verdict == "partial_offload":
         return (
@@ -696,9 +750,11 @@ def validate_catalog(data: Any) -> List[str]:
 
 
 def _validate_resident(aw: str, resident: Any) -> List[str]:
-    """`{bytes, source[, smaller_canvases]}`: a MEASURED run-time memory need at
-    the engine's default profile, never a guess -- `source` must say where and
-    at which profile it was measured. `smaller_canvases` (optional) lists
+    """`{bytes, source[, measured_with, smaller_canvases]}`: a MEASURED run-time
+    memory need at the engine's default profile, never a guess -- `source` must
+    say where and at which profile it was measured; `measured_with` is the
+    short label every sentence quotes (engine and output size), so the figure
+    reads as that engine's, not as the model's own minimum. `smaller_canvases` (optional) lists
     measured needs at smaller output sizes, `[{canvas, bytes, source}]`,
     largest first, each below the default's."""
 
@@ -706,8 +762,10 @@ def _validate_resident(aw: str, resident: Any) -> List[str]:
         return [f"{aw}.resident must be an object"]
     errors: List[str] = []
     for key in resident:
-        if key not in ("bytes", "source", "smaller_canvases"):
+        if key not in ("bytes", "source", "measured_with", "smaller_canvases"):
             errors.append(f"{aw}.resident has unknown field {key!r}")
+    if "measured_with" in resident and (not isinstance(resident["measured_with"], str) or not resident["measured_with"]):
+        errors.append(f"{aw}.resident.measured_with must name the engine and output size it was measured with")
     value = resident.get("bytes")
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         errors.append(f"{aw}.resident.bytes must be a positive integer")

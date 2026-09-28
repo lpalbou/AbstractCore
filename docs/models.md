@@ -103,7 +103,7 @@ joined from AbstractCore's model capability registry, and one entry per artifact
   machine but a measured smaller canvas does (`canvas` is `WIDTHxHEIGHTxFRAMES`), else `null`;
 - `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
 - `recommended`: exactly one artifact per row is pre-selected for this machine. On Apple silicon
-  the four text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
+  the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
   LM Studio, Ollama, Hugging Face. Elsewhere the curated starter wins when the host can run it,
   then the order is Ollama, LM Studio, Hugging Face. Both prefer artifacts that fit and engines
   that are installed. LM Studio and Ollama builds stay listed and downloadable on a Mac;
@@ -117,20 +117,20 @@ One function decides it for every surface (the catalog flags, the fresh-install 
 Gateway's first-run guide): `abstractcore.config.model_catalog.recommended_text_model()`.
 
 On Apple silicon it is an MLX build chosen by the computer's unified memory, as the host profile
-reports it (`ram_bytes`, in GiB). Each tier starts at the first memory size Apple ships where its
-model fits under macOS's default GPU memory limit (75% of unified memory):
+reports it (`ram_bytes`, in GiB):
 
 | Unified memory | Row | Recommended build |
 |---|---|---|
-| below 16 GiB | `qwen3-1.7b` | `mlx-community/Qwen3-1.7B-8bit` |
-| 16 GiB to below 32 GiB | `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MLX-4bit` |
-| 32 GiB to below 128 GiB | `qwen3.8-27b` | `mlx-community/Qwen3.8-27B-4bit` |
+| below 24 GiB | `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MLX-4bit` |
+| 24 GiB to below 128 GiB | `qwen3.8-27b` | `mlx-community/Qwen3.8-27B-4bit` |
 | 128 GiB and above | `qwen3.8-flash-next` | `mlx-community/Qwen3.8-Flash-Next-4bit` |
 
-Qwen3 1.7B is the text model chosen for an 8 GB Mac (it fits; LFM2.5 2.6B 4-bit also fits,
-tightly); it does not read images, and it has no MTP build, so its route carries no `speculation`
-policy. On a 128 GB Mac, Flash-Next fits once the GPU memory limit is raised (the pick's `warning`
-gives the `sysctl` command).
+Qwen3.5 9B fits from 16 GB; on an 8 GB Mac it stays the pick, and its `warning` says the estimate
+doubts it. On a 24 GB Mac, Qwen3.8 27B runs at macOS's default GPU memory limit with a small
+context (verdict `tight`, `small_context`), and the pick's `warning` gives the `sysctl` command for
+more context (about 30k tokens at 20480 MB, measured on a 24 GB Mac mini). On a 128 GB Mac,
+Flash-Next fits once the GPU memory limit is raised. See [GPU memory on Apple
+silicon](recommended-models.md#gpu-memory-on-apple-silicon).
 
 A Mac whose memory cannot be read gets the smallest tier, and the pick says so in `tier`. Every
 other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@4bit`.
@@ -210,41 +210,48 @@ W    weights       measured run-time memory (`resident_bytes`) when recorded, el
 KV   KV cache      n x 2 x layers x kv_heads x head_dim x 2 bytes (f16), when the geometry is known;
                    otherwise n x 0.5 MiB x (parameters / 8e9)
 O    overhead      max(0.5 GiB, 5% of W)
-Ceff usable       ceiling - max(2 GiB, 5% of ceiling)
+Ceff usable       Apple silicon: ceiling - 2 GiB (MLX's working buffers)
+                  elsewhere: ceiling - max(2 GiB, 5% of ceiling)
 need = W + KV + O          (n = min(8192, context window))
 ```
 
 | Verdict | Meaning |
 |---|---|
 | `fits` | `need <= 0.8 x Ceff` |
-| `tight` | `need <= Ceff`: runs, with little headroom |
+| `tight` | `need <= Ceff`: runs, with little headroom. On Apple silicon also when only the weights and working memory fit (`small_context: true`): it runs with the context in `max_context` |
 | `partial_offload` | CUDA only: too big for VRAM, but fits VRAM + 75% of RAM (slower) |
 | `too_large` | does not fit |
 | `needs_gpu_limit` | Apple silicon: does not fit the current ceiling, but fits once macOS lets the GPU use more memory (see below) |
 | `unknown` | no size and no parameter count, or no measurable ceiling |
 
 On Apple silicon the GPU may use only part of unified memory by default (Metal's recommended
-working set). An administrator can raise that limit with `sudo sysctl iogpu.wired_limit_mb=<MB>`;
-the setting lasts until the Mac restarts. When a model does not fit the current ceiling but fits
-under a limit macOS can grant (at most RAM minus 8 GiB), the verdict is `needs_gpu_limit` and the
-fit block carries `gpu_limit`:
+working set, about 75% of unified memory: 18 GiB on a 24 GB Mac, where macOS reports about 17.8).
+When the host profile cannot read it, the ceiling is 75% of RAM. An administrator can raise that
+limit with `sudo sysctl iogpu.wired_limit_mb=<MB>`; the setting lasts until the Mac restarts. The
+highest limit AbstractCore suggests leaves macOS max(4 GiB, 12.5% of RAM): 20480 MB on a 24 GB Mac,
+114688 MB on a 128 GB Mac. When a model does not fit the current ceiling but fits under that limit,
+the verdict is `needs_gpu_limit` and the fit block carries `gpu_limit`:
 
 ```json
-"gpu_limit": {"sysctl": "iogpu.wired_limit_mb", "current_mb": 0, "required_mb": 117760,
-              "command": "sudo sysctl iogpu.wired_limit_mb=117760", "needs_admin": true,
+"gpu_limit": {"sysctl": "iogpu.wired_limit_mb", "current_mb": 0, "required_mb": 114688,
+              "command": "sudo sysctl iogpu.wired_limit_mb=114688", "needs_admin": true,
               "resets_at_restart": true, "verdict_with_limit": "tight"}
 ```
+
+A `tight` fit on Apple silicon carries `raised_limit` instead (same keys, without
+`verdict_with_limit`, plus `max_context`): the highest limit above, and the context it leaves.
+AbstractCore only prints these commands; it never runs them.
 
 `required_mb` is the smallest whole number of GiB that makes the model fit, and
 `verdict_with_limit` is the verdict you get after running `command`. Once the limit is set, it is
 the ceiling (`ceiling_source: metal_wired_limit`) and the fit notes name it. The recommended text
 model of the 128 GiB tier is an example: Qwen3.8 Flash-Next 4-bit needs about 109 GiB with its
-cache and fits after `sudo sysctl iogpu.wired_limit_mb=117760`. The `--fits` filter keeps
+cache and fits after `sudo sysctl iogpu.wired_limit_mb=114688`. The `--fits` filter keeps
 `needs_gpu_limit` artifacts, and both consoles print the command on the model's detail line.
 
 The block also reports `need_bytes` (W + KV + O), `usable_bytes` (Ceff, the amount the verdict
 compares `need_bytes` with), `reserve_bytes` (ceiling minus Ceff), `overhead_bytes` (O),
-`ceiling_bytes`, `free_now_bytes`, `fits_now` (whether it
+`ceiling_bytes`, `accelerator`, `small_context`, `free_now_bytes`, `fits_now` (whether it
 fits in memory that is free right now), `disk_ok` (download size plus 5 GiB headroom against
 free disk), `max_context` (largest context beside the weights, capped at the model window),
 `confidence` (`exact`, `estimated`, `rough`, `unknown`) and human `notes`. Mixture-of-experts
