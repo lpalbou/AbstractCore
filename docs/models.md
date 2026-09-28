@@ -103,7 +103,7 @@ joined from AbstractCore's model capability registry, and one entry per artifact
   machine but a measured smaller canvas does (`canvas` is `WIDTHxHEIGHTxFRAMES`), else `null`;
 - `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
 - `recommended`: exactly one artifact per row is pre-selected for this machine. On Apple silicon
-  the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
+  the four text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
   LM Studio, Ollama, Hugging Face. Elsewhere the curated starter wins when the host can run it,
   then the order is Ollama, LM Studio, Hugging Face. Both prefer artifacts that fit and engines
   that are installed. LM Studio and Ollama builds stay listed and downloadable on a Mac;

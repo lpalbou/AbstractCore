@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.1] - 2026-09-28
+
+`abstractcore models recommendations` shows the recommended model for every capability on every
+kind of machine, and every recommendation fits the machine it is made for: the Apple silicon text
+tiers start where their model fits, the image route is memory-gated, and the Wan2.2 video figures
+are measured at AbstractVision's default canvas.
+
 ### Added
 
 - `abstractcore models recommendations [--host] [--json | --markdown] [--output PATH]`: the
