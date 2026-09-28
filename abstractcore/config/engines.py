@@ -39,6 +39,7 @@ import os
 import platform
 import plistlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -179,6 +180,14 @@ def _pip_argv(packages: List[str], extra: Optional[List[str]] = None, *, prefer_
     if use_uv:
         return "pip", ["uv", "pip", "install", "--python", sys.executable, *packages, *(extra or [])]
     return "pip", [sys.executable, "-m", "pip", "install", *packages, *(extra or [])]
+
+
+def pip_install_command(*packages: str) -> str:
+    """The shell command installing `packages` into THIS interpreter's
+    environment: the engine rows' own argv (`_pip_argv`), for every install
+    hint that names a Python package."""
+
+    return shlex.join(_pip_argv(list(packages))[1])
 
 
 # ---------------------------------------------------------------------------

@@ -25,9 +25,14 @@ installed here decides whether they work.
 VOICE: AbstractVoice owns which packages each of its engines needs
 (Supertonic: onnxruntime, faster-whisper: faster_whisper, ...), so the answer
 is its public `engine_runtime_status` (abstractvoice >= the `voice` extra's
-floor in pyproject.toml). An AbstractVoice too old to have that API raises:
+floor in pyproject.toml). An AbstractVoice too old to have that API is itself
+the missing engine of every local voice route (upgrade command included):
 guessing its engines' packages here is exactly the drift the API exists to
-stop. With AbstractVoice absent, every local voice route is missing it.
+stop, and one old package must not take the whole grid down. With
+AbstractVoice absent, every local voice route is missing it.
+
+Every install command core writes itself targets THIS interpreter
+(`engines.pip_install_command`, the Engines screen rows' argv).
 
 Every check is `importlib.util.find_spec` / package metadata: nothing is
 imported, so a grid of every route costs milliseconds.
@@ -66,6 +71,12 @@ def _distributed(dist: str) -> bool:
         return True
     except metadata.PackageNotFoundError:
         return False
+
+
+def _pip_command(*packages: str) -> str:
+    from .engines import pip_install_command
+
+    return pip_install_command(*packages)
 
 
 def _engine_plan_command(engine_id: str) -> str:
@@ -108,7 +119,7 @@ def _mlx_gen() -> Optional[Dict[str, Any]]:
         return None
     # AbstractVision's own documented install for its MLX-Gen backend (the
     # command its OptionalDependencyMissingError prints).
-    install = 'pip install "abstractvision[mlx-gen]"'
+    install = _pip_command("abstractvision[mlx-gen]")
     return _missing(
         "mlx-gen",
         "MLX-Gen (AbstractVision)",
@@ -122,7 +133,7 @@ def _voice(provider: str) -> Optional[Dict[str, Any]]:
     if provider in _REMOTE_VOICE_PROVIDERS:
         return None
     if not _distributed("abstractvoice"):
-        install = 'pip install "abstractcore[voice]"'
+        install = _pip_command("abstractcore[voice]")
         return _missing(
             provider,
             "AbstractVoice",
@@ -132,12 +143,16 @@ def _voice(provider: str) -> Optional[Dict[str, Any]]:
         )
     try:
         from abstractvoice.engine_runtime import engine_runtime_status
-    except ImportError as exc:
-        raise RuntimeError(
+    except ImportError:
+        install = _pip_command(f"abstractvoice>={ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR}")
+        return _missing(
+            provider,
+            "AbstractVoice",
             f"abstractvoice {_dist_version('abstractvoice')} has no public engine runtime probe "
-            f"(abstractvoice.engine_runtime); AbstractCore needs abstractvoice>={ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR}: "
-            f'pip install "abstractvoice>={ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR}"'
-        ) from exc
+            f"(abstractvoice.engine_runtime); AbstractCore needs abstractvoice>={ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR}. "
+            f"Install it with: {install}",
+            install,
+        )
     try:
         status = engine_runtime_status(provider)
     except ValueError as exc:

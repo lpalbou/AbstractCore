@@ -155,7 +155,8 @@ def test_transformers_needs_torch_too(packages):
 def test_mlx_gen_needs_abstractvision_and_the_mlx_gen_runtime(packages):
     flag = re_mod.route_engine_missing("mlx-gen", FLUX, "output.image")
     assert flag["engine"] == "mlx-gen"
-    assert flag["install"] == 'pip install "abstractvision[mlx-gen]"'
+    assert flag["install"] == engines.pip_install_command("abstractvision[mlx-gen]")
+    assert sys.executable in flag["install"], "installs into THIS interpreter, like the engine rows"
     assert "abstractvision, mlx-gen missing" in flag["reason"]
     packages(dists={"abstractvision"})
     assert "(mlx-gen missing)" in re_mod.route_engine_missing("mlx-gen", FLUX, "output.video")["reason"]
@@ -186,15 +187,68 @@ def test_an_engine_abstractvoice_does_not_have_is_reported_in_its_words(packages
 
 def test_without_abstractvoice_every_local_voice_route_is_missing_it(packages):
     flag = re_mod.route_engine_missing("supertonic", "supertonic-3", "output.voice")
-    assert flag["name"] == "AbstractVoice" and flag["install"] == 'pip install "abstractcore[voice]"'
+    assert flag["name"] == "AbstractVoice" and flag["install"] == engines.pip_install_command("abstractcore[voice]")
+    assert sys.executable in flag["install"]
 
 
-def test_an_abstractvoice_without_the_probe_fails_loudly(packages, monkeypatch):
-    packages(dists={"abstractvoice"})
+def _old_abstractvoice(monkeypatch):
+    """abstractvoice 0.12: installed, but without `abstractvoice.engine_runtime`."""
     monkeypatch.setitem(sys.modules, "abstractvoice", types.ModuleType("abstractvoice"))
     monkeypatch.setitem(sys.modules, "abstractvoice.engine_runtime", None)  # import raises
-    with pytest.raises(RuntimeError, match=rf"abstractvoice>={re_mod.ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR}"):
-        re_mod.route_engine_missing("supertonic", "supertonic-3", "output.voice")
+    monkeypatch.setattr(re_mod, "_dist_version", lambda dist: "0.12.0")
+
+
+def test_an_abstractvoice_without_the_probe_is_the_missing_engine(packages, monkeypatch):
+    packages(dists={"abstractvoice"})
+    _old_abstractvoice(monkeypatch)
+    flag = re_mod.route_engine_missing("supertonic", "supertonic-3", "output.voice")
+    floor = re_mod.ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR
+    install = engines.pip_install_command(f"abstractvoice>={floor}")
+    assert flag == {
+        "engine": "supertonic",
+        "name": "AbstractVoice",
+        "reason": (
+            "abstractvoice 0.12.0 has no public engine runtime probe (abstractvoice.engine_runtime); "
+            f"AbstractCore needs abstractvoice>={floor}. Install it with: {install}"
+        ),
+        "install": install,
+    }
+    assert sys.executable in install
+
+
+def test_an_old_abstractvoice_never_takes_the_grid_down(tmp_path, pin_host, packages, monkeypatch):
+    pin_host(MAC)
+    packages(dists={"abstractvoice"})
+    _old_abstractvoice(monkeypatch)
+    manager = _store(
+        tmp_path,
+        {
+            "output.voice": {"provider": "supertonic", "model": "supertonic-3"},
+            "input.voice": {"provider": "faster-whisper", "model": "base"},
+            "input.text": {"provider": "mlx", "model": MLX_TEXT},
+        },
+    )
+    rows = _rows(manager)
+    for key in ("output.voice", "input.voice"):
+        assert "abstractvoice.engine_runtime" in rows[key]["engine_missing"]["reason"]
+    assert rows["input.text"]["engine_missing"]["engine"] == "mlx", "the other rows are still judged"
+
+
+def test_pip_install_command_targets_this_interpreter(monkeypatch):
+    """One helper for every Python install hint: `uv pip install --python <this
+    interpreter>` in a pip-less uv venv, else `<this interpreter> -m pip install`."""
+    import importlib.util as ilu
+
+    real_find_spec = ilu.find_spec
+    monkeypatch.setattr(engines.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    monkeypatch.setattr(engines.importlib.util, "find_spec", lambda name, *a: None if name == "pip" else real_find_spec(name, *a))
+    assert engines.pip_install_command("abstractvoice>=0.13.0") == shlex.join(
+        ["uv", "pip", "install", "--python", sys.executable, "abstractvoice>=0.13.0"]
+    )
+    monkeypatch.setattr(engines.importlib.util, "find_spec", lambda name, *a: object() if name == "pip" else real_find_spec(name, *a))
+    assert engines.pip_install_command("abstractvoice>=0.13.0") == shlex.join(
+        [sys.executable, "-m", "pip", "install", "abstractvoice>=0.13.0"]
+    )
 
 
 @pytest.mark.parametrize(
