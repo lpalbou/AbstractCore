@@ -683,17 +683,24 @@ def _follow(job_id: str) -> Dict[str, Any]:
 def _engines_open(args: argparse.Namespace) -> int:
     from .engines import engine_download_url
 
+    from ..utils.display import no_display_reason, open_url
+
     url = engine_download_url(args.engine)
     opened = False
+    not_opened = None
     if not args.no_browser:
-        try:
-            import webbrowser
-
-            opened = bool(webbrowser.open(url))
-        except Exception:
-            opened = False
+        # Never launch a browser without a display (SSH session, headless
+        # Linux): the URL is printed for the person to open on their computer.
+        not_opened = no_display_reason()
+        if not_opened is None:
+            opened = open_url(url)
     if args.json:
-        _print_json({"engine": args.engine.lower(), "url": url, "opened": opened})
+        payload = {"engine": args.engine.lower(), "url": url, "opened": opened}
+        if not_opened:
+            payload["not_opened"] = not_opened
+        _print_json(payload)
     else:
         print(url)
+        if not_opened:
+            print(f"Open this link on your computer (no display here: {not_opened}).", file=sys.stderr)
     return EXIT_OK
