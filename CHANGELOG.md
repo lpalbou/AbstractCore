@@ -52,12 +52,17 @@ server has not authenticated), and neither `abstractcore engines open` nor the t
 ### Changed
 
 - Server audio routes without a `provider/model` (the AbstractVoice path: speech, speech stream,
-  transcriptions, voice clone) apply the same rule as `model=openai/...`: when the engine that
-  would run is `openai` or `openai-compatible` and the server holds an OpenAI key (saved, or
-  `OPENAI_API_KEY`, which AbstractVoice would fall back to), a request that is not
-  server-authenticated gets `401` (also with `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`); an
-  explicit `X-AbstractCore-Provider-API-Key` is then the only key used. Local engines are
-  unaffected. Catalog routes pass the saved key to AbstractVoice only for authenticated requests.
+  transcriptions, voice clone, and their `/{provider}/v1/...` forms) apply the same rule as
+  `model=openai/...`: when the engine that would run is remote in AbstractVoice's own words
+  (`abstractvoice.engine_runtime`: OpenAI or an OpenAI-compatible server, under every spelling it
+  accepts, such as `remote`, `compatible` or `proxy`), or is an engine AbstractVoice does not know,
+  and the server holds an OpenAI key (saved, or `OPENAI_API_KEY`, which AbstractVoice would fall
+  back to), a request that is not server-authenticated gets `401` (also with
+  `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`); an explicit `X-AbstractCore-Provider-API-Key`
+  is then the only key used. Local engines are unaffected. The audio discovery routes
+  (`/v1/audio/voices`, `.../providers`, `.../models`) follow the same rule: the saved key counts as
+  server-held, `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` no longer exempts them, and they pass
+  the saved key to AbstractVoice only for authenticated requests.
 - `abstractcore engines open` prints the link and launches nothing without a display (SSH session;
   Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY`), with the reason (`not_opened` in `--json`):
   the console crate's rule, now also `abstractcore.utils.display` in Python.
