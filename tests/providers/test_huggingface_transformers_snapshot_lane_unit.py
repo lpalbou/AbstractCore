@@ -43,21 +43,39 @@ MODEL_ID = "Qwen/Qwen3.5-4B"
 ANSWER_TOKEN = 9  # arbitrary fixed generated token id
 
 
-def _load_tokenizer():
-    try:
-        from transformers import AutoTokenizer
+_TOKENIZER_FILES = ("tokenizer_config.json", "tokenizer.json")
+_TOKENIZER: Any = None
 
-        return AutoTokenizer.from_pretrained(MODEL_ID, local_files_only=True)
-    except Exception:
+
+def _cached_snapshot_dir() -> Optional[str]:
+    """The cached snapshot directory holding the tokenizer, or None.
+
+    Filesystem only: `try_to_load_from_cache` never opens a connection, and
+    loading from the snapshot DIRECTORY (not the repo id) keeps transformers
+    off the Hub code path entirely (`from_pretrained(repo_id,
+    local_files_only=True)` still builds Hub headers, and huggingface_hub
+    >= 1.33 fetches its agent registry from huggingface.co while doing so).
+    """
+    from huggingface_hub import try_to_load_from_cache
+
+    paths = [try_to_load_from_cache(MODEL_ID, name) for name in _TOKENIZER_FILES]
+    if not all(isinstance(p, str) and os.path.isfile(p) for p in paths):
         return None
+    return os.path.dirname(paths[0])
 
 
-_TOKENIZER = _load_tokenizer()
+@pytest.fixture(scope="module", autouse=True)
+def _tokenizer():
+    """Load the real tokenizer at test time (never at collection), or skip."""
+    global _TOKENIZER
+    snapshot = _cached_snapshot_dir()
+    if snapshot is None:
+        pytest.skip(f"{MODEL_ID} tokenizer not in the local HF cache (offline unit test)")
+    from transformers import AutoTokenizer
 
-pytestmark = pytest.mark.skipif(
-    _TOKENIZER is None,
-    reason=f"{MODEL_ID} tokenizer not in the local HF cache (offline unit test)",
-)
+    _TOKENIZER = AutoTokenizer.from_pretrained(snapshot, local_files_only=True)
+    yield _TOKENIZER
+    _TOKENIZER = None
 
 
 # ---------------------------------------------------------------- fake caches
