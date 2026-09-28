@@ -580,6 +580,10 @@ class ConfigurationManager:
         # _load_config/_apply_api_keys_to_env run (init-order rule: config-
         # restored state initializes before the load call that consumes it).
         self._shadowed_key_warned: set = set()
+        # Env vars this manager exported from configured keys, with the value
+        # the environment held before (None = unset): clearing a configured key
+        # restores that value, so a removed key stops being used in-process.
+        self._exported_api_key_env: Dict[str, Tuple[Optional[str], str]] = {}
         # THE STORE AS THIS MANAGER LAST SAW IT (see `_save_config`): the raw
         # document at load time, then the document each save publishes. It is
         # the BASELINE of the three-way merge that keeps a save from reverting
@@ -688,8 +692,23 @@ class ConfigurationManager:
                             f"configured key applies (operator ruling dm#201). Unset the env var or "
                             f"clear the configured key to silence this."
                         )
+                before = self._exported_api_key_env.get(env_var, (os.environ.get(env_var),))[0]
+                self._exported_api_key_env[env_var] = (before, key)
                 os.environ[env_var] = key
                 applied_this_pass.add(env_var)
+            # A key cleared from the config: undo this manager's export (unless
+            # something else changed the variable since), restoring the value
+            # the environment held before.
+            for env_var, (before, exported) in list(self._exported_api_key_env.items()):
+                if env_var in applied_this_pass:
+                    continue
+                del self._exported_api_key_env[env_var]
+                if os.environ.get(env_var) != exported:
+                    continue
+                if before is None:
+                    os.environ.pop(env_var, None)
+                else:
+                    os.environ[env_var] = before
         except Exception:
             # Never fail config initialization.
             pass

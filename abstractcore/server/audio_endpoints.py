@@ -471,13 +471,9 @@ def _capability_config() -> Dict[str, Any]:
 
     merged = dict(env_config)
     merged.update(config_defaults)  # config wins
-    # The OpenAI key saved in AbstractCore's config (Providers), read fresh on
-    # every call, reaches AbstractVoice as its host setting
-    # `voice_openai_api_key`; with none saved AbstractVoice keeps its own
-    # OPENAI_API_KEY fallback.
-    openai_key = _saved_openai_api_key()
-    if openai_key:
-        merged["voice_openai_api_key"] = openai_key
+    # Credentials are NOT behavior config: the saved OpenAI key is handed to
+    # AbstractVoice per request, only when the request may spend it
+    # (`_voice_core_for_request`).
     return merged
 
 
@@ -497,8 +493,62 @@ def _saved_openai_api_key() -> Optional[str]:
     return str(value or "").strip() or None
 
 
+# In-process voice engines that authenticate with an OpenAI key: the saved one
+# (handed over as AbstractVoice's host setting `voice_openai_api_key`) or
+# AbstractVoice's own OPENAI_API_KEY fallback.
+_OPENAI_KEYED_VOICE_ENGINES = frozenset({"openai", "openai-compatible"})
+_VOICE_ENGINE_CONFIG_KEYS = {"tts": "voice_tts_engine", "stt": "voice_stt_engine", "clone": "voice_cloning_engine"}
+# AbstractVoice's engines when neither the request nor the config names one
+# (abstractvoice/integrations/abstractcore_plugin.py, `_BaseVoice` settings:
+# TTS and STT default to "openai", cloning to "omnivoice").
+_ABSTRACTVOICE_DEFAULT_ENGINES = {"tts": "openai", "stt": "openai", "clone": "omnivoice"}
+
+
+def _voice_core_for_request(request: Request, *, task: str, engine: Optional[str] = None) -> Any:
+    """The capability core for one in-process voice request (`task`: tts/stt/clone).
+
+    Server-held OpenAI credentials follow ONE rule on both audio lanes
+    (`_guard_unauthenticated_server_provider_key_use`, the same guard as the
+    `openai/...` model path): a request that is not server-authenticated
+    never spends them. When the resolved engine (request, else config, else
+    AbstractVoice's default) authenticates with an OpenAI key:
+    - a caller key (X-AbstractCore-Provider-API-Key) is the only key used;
+    - else an unauthenticated request is refused (401) whenever the server
+      holds a key (saved in the config, or OPENAI_API_KEY, which AbstractVoice
+      would otherwise fall back to);
+    - else an authenticated request gets the saved key, read fresh now.
+    A core carrying a key is built for this request only and never cached, so
+    a rotated or removed key takes effect on the next call. Local engines use
+    the shared key-free core.
+    """
+    config = _capability_config()
+    resolved = (
+        _request_provider_value(engine)
+        or _request_provider_value(config.get(_VOICE_ENGINE_CONFIG_KEYS[task]))
+        or _ABSTRACTVOICE_DEFAULT_ENGINES[task]
+    )
+    if resolved not in _OPENAI_KEYED_VOICE_ENGINES:
+        return _get_capability_core()
+    caller_key = _provider_api_key_from_request(request)
+    _guard_unauthenticated_server_provider_key_use(resolved, explicit_provider_key=bool(caller_key), request=request)
+    if caller_key:
+        keys = {"voice_openai_api_key": caller_key, "voice_remote_api_key": caller_key}
+    else:
+        # Past the guard: the request is authenticated, or no key is held.
+        saved = _saved_openai_api_key()
+        keys = {"voice_openai_api_key": saved} if saved else {}
+    if not keys:
+        return _get_capability_core()
+    from .capability_generation import create_capability_generation_core
+
+    return create_capability_generation_core(**{**config, **keys})
+
+
 def _get_capability_core() -> Any:
-    """Create/reuse a tiny BaseProvider host for capability plugins."""
+    """Create/reuse the shared, credential-free host for capability plugins.
+
+    It never carries a provider key (see `_voice_core_for_request`).
+    """
     global _CORE
     with _CORE_LOCK:
         if _CORE is not None:
@@ -638,6 +688,8 @@ def _validate_request_base_url(base_url: Any) -> Optional[str]:
 def _server_has_provider_api_key(provider: str) -> bool:
     env_var = _provider_api_key_env_var(provider)
     if env_var and str(os.getenv(env_var) or "").strip():
+        return True
+    if str(provider or "").strip().lower() == "openai" and _saved_openai_api_key():
         return True
     try:
         from ..config import manager as config_manager_module
@@ -936,6 +988,10 @@ def _audio_catalog_core(request: Request, *, base_url: Optional[str], api_key: O
         config["voice_remote_base_url"] = base_url_s
     if provider_api_key:
         config["voice_remote_api_key"] = provider_api_key
+    elif _request_has_server_auth(request):
+        saved = _saved_openai_api_key()
+        if saved:
+            config["voice_openai_api_key"] = saved
     from .capability_generation import create_capability_generation_core
 
     return create_capability_generation_core(**config)
@@ -1033,7 +1089,7 @@ async def audio_transcriptions(
 
     filename = str(getattr(file, "filename", "") or "audio.wav")
     content_type = str(getattr(file, "content_type", "") or "audio/wav")
-    core = _get_capability_core()
+    core = _voice_core_for_request(request, task="stt", engine=request_provider)
     try:
         result = core.generate(
             media={
@@ -2008,7 +2064,7 @@ def _audio_speech_impl(
 
     fmt = fmt or "wav"
 
-    core = _get_capability_core()
+    core = _voice_core_for_request(request, task="tts", engine=request_provider)
     try:
         result = core.generate(
             text=str(input_text),
@@ -2118,7 +2174,7 @@ def _audio_speech_stream_impl(
             detail="Streaming TTS is not available for remote audio providers yet. Use /v1/audio/speech.",
         )
 
-    core = _get_capability_core()
+    core = _voice_core_for_request(request, task="tts", engine=request_provider)
     cancel_event = threading.Event()
     try:
         stream = core.voice.tts_stream(
@@ -2344,7 +2400,7 @@ async def voice_clone(
             raise HTTPException(status_code=_provider_exception_status(e), detail=f"Voice clone failed: {e}") from e
         return out
 
-    core = _get_capability_core()
+    core = _voice_core_for_request(request, task="clone", engine=request_provider)
     try:
         out = core.voice.clone(
             bytes(audio_bytes),

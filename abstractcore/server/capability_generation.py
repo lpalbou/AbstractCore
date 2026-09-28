@@ -33,6 +33,12 @@ class ServerCapabilityProvider(BaseProvider):
         self._server_voice_facade = voice_facade
         self._server_audio_facade = audio_facade
 
+    def _seed_host_voice_credentials(self) -> None:
+        """Never self-seed the saved OpenAI key: the server hands credentials
+        over per request, only to requests allowed to spend them
+        (`audio_endpoints._voice_core_for_request`)."""
+        return None
+
     @property
     def vision(self) -> Any:
         if self._server_vision_facade is not None:

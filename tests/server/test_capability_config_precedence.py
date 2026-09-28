@@ -149,13 +149,11 @@ def test_config_read_failure_degrades_to_env(clean_env, monkeypatch):
     assert cfg["voice_tts_engine"] == "piper", "a config read failure must not lose the env compat path"
 
 
-def test_the_saved_openai_key_reaches_the_voice_plugin(clean_env, monkeypatch):
-    """The key saved in AbstractCore's config (Providers) is AbstractVoice's
-    host setting `voice_openai_api_key`, read fresh on every call."""
+def test_behavior_config_never_carries_the_saved_openai_key(clean_env, monkeypatch):
+    """Credentials are handed to AbstractVoice per request, only when the
+    request may spend them (tests/server/test_server_voice_credentials.py)."""
     _patch_config_routes(monkeypatch, {}, openai_key="sk-saved")
-    assert ae._capability_config()["voice_openai_api_key"] == "sk-saved"
-    _patch_config_routes(monkeypatch, {}, openai_key="sk-rotated")
-    assert ae._capability_config()["voice_openai_api_key"] == "sk-rotated", "read per call, never cached"
+    assert "voice_openai_api_key" not in ae._capability_config()
 
 
 def test_no_saved_key_sets_nothing_and_env_fallback_is_untouched(clean_env, monkeypatch):
