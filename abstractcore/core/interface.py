@@ -169,10 +169,38 @@ class AbstractCoreInterface(ABC):
                     if ks and vs:
                         merged_prefs[ks] = vs
 
+            self._seed_host_voice_credentials()
+
             from ..capabilities.registry import CapabilityRegistry
 
             self._capability_registry = CapabilityRegistry(self, preferred_backends=merged_prefs or None)
         return self._capability_registry
+
+    def _seed_host_voice_credentials(self) -> None:
+        """Hand the OpenAI key saved in AbstractCore's config to the voice plugin.
+
+        AbstractVoice reads `voice_openai_api_key` from the host's plugin config
+        (never an env var). The key comes from the config file this instance
+        was created for (`_abstractcore_config_file`: the gateway's core config
+        when the runtime creates it), else the global config. A value passed to
+        `create_llm(..., voice_openai_api_key=...)` wins; with no key configured
+        nothing is set and AbstractVoice keeps its own `OPENAI_API_KEY` fallback.
+        """
+
+        if not isinstance(self.config, dict) or str(self.config.get("voice_openai_api_key") or "").strip():
+            return
+        config_file = self.config.get("_abstractcore_config_file")
+        if isinstance(config_file, str) and config_file.strip():
+            from ..config.manager import ConfigurationManager
+
+            manager = ConfigurationManager(config_file=config_file.strip(), apply_env=False)
+        else:
+            from ..config.manager import get_config_manager
+
+            manager = get_config_manager()
+        key = str(getattr(manager.config.api_keys, "openai", None) or "").strip()
+        if key:
+            self.config["voice_openai_api_key"] = key
 
     @property
     def capability_host_context(self):
