@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `resident.smaller_canvases`): on a Mac where only that size fits (64 GiB) the route is still not
   written, and the reason, the grid and `models recommendations` (`smaller_canvas`) say so, with
   the route to set yourself.
+- Wan2.2 T2V-A14B 8-bit carries measured needs at smaller canvases (47.4 GiB at 832x480, 41.8 GiB
+  at 640x352, 81 frames). Catalog artifacts gain `smaller_canvas: {canvas, need_bytes, verdict}`
+  when only a measured smaller canvas fits the machine (T2V-A14B at 640x352 on a 64 GiB Mac).
 - `capability_defaults.RECOMMENDED_MODELS` is the one table of recommended models;
   `RECOMMENDED_CAPABILITY_DEFAULT_ROUTES` and `RECOMMENDED_MODEL_DOWNLOADS` are its starter-set
   views and keep their values.

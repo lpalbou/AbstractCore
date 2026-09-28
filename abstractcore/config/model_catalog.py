@@ -1264,6 +1264,18 @@ def _build_artifact(
         fit["notes"] = list(fit.get("notes") or []) + [f"the {engine} engine does not run on this host"]
     downloadable = supported and provider in mm.supported_providers() and presence.status != mm.PRESENCE_NOT_APPLICABLE
 
+    # The default canvas does not fit but a measured smaller one does (video):
+    # the size at which it still runs here.
+    smaller: Optional[Dict[str, Any]] = None
+    if supported and fit.get("verdict") not in ("fits", "tight") and (art.get("resident") or {}).get("smaller_canvases"):
+        got = smaller_canvas_fit(provider, artifact, host)
+        if got is not None:
+            smaller = {"canvas": got["canvas"], "need_bytes": got["fit"]["need_bytes"], "verdict": got["fit"]["verdict"]}
+            fit["notes"] = list(fit.get("notes") or []) + [
+                f"at {got['canvas']} (width x height x frames) it needs about "
+                f"{got['fit']['need_bytes'] / 1024**3:.1f} GiB (measured) and fits"
+            ]
+
     return {
         "provider": provider,
         "artifact": artifact,
@@ -1280,6 +1292,9 @@ def _build_artifact(
         "size_source": size_source,
         # The measured run-time memory (`resident` in the seed), or None.
         "resident_bytes": resident,
+        # `{canvas, need_bytes, verdict}` when only a measured smaller canvas
+        # fits this host (`resident.smaller_canvases`), else None.
+        "smaller_canvas": smaller,
         "presence": {
             "status": presence.status,
             "location": presence.location,

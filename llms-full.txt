@@ -15284,6 +15284,8 @@ joined from AbstractCore's model capability registry, and one entry per artifact
   engine's default canvas; the seed may also record measured needs at smaller canvases
   (`resident.smaller_canvases`, Wan2.2 TI2V-5B at 832x480), which
   [Recommended Models](docs/recommended-models.md) reports where only the smaller size fits;
+- `smaller_canvas`: `{canvas, need_bytes, verdict}` when the default canvas does not fit this
+  machine but a measured smaller canvas does (`canvas` is `WIDTHxHEIGHTxFRAMES`), else `null`;
 - `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
 - `recommended`: exactly one artifact per row is pre-selected for this machine. On Apple silicon
   the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
@@ -16208,7 +16210,10 @@ The larger Wan2.2 A14B 8-bit models (`AbstractFramework/wan2.2-t2v-a14b-diffuser
 recommended: at AbstractVision's default A14B canvas (1280x720, 81 frames) each
 needs about 72 GiB while it generates (measured), so the catalog's fit reads
 `too_large` on 64 GiB Macs, `needs_gpu_limit` on 96 GiB Macs (with the
-command) and `fits` from 128 GiB.
+command), `tight` on 128 GiB Macs and `fits` from 192 GiB. Text-to-video A14B
+also has measured needs at smaller canvases (about 47.4 GiB at 832x480 and
+41.8 GiB at 640x352, 81 frames): on a 64 GiB Mac the catalog entry's
+`smaller_canvas` says it runs at 640x352.
 A route that is already configured but cannot run on this host — an
 `mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
 example `output.image: mlx-gen/...` kept from an install made before these

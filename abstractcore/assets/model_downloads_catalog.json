@@ -4222,9 +4222,21 @@
      },
      "resident": {
       "bytes": 76865188666,
-      "source": "MLX allocator peak 71.59 GiB (mx.get_peak_memory) of a real AbstractVision generation at its default A14B canvas (1280x720, 81 frames; 2 denoising steps, one per expert, streamed VAE decode; the inactive expert is released): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30, 2026-09-28"
+      "source": "MLX allocator peak 71.59 GiB (mx.get_peak_memory) of a real AbstractVision generation at its default A14B canvas (1280x720, 81 frames; 2 denoising steps, one per expert, streamed VAE decode; the inactive expert is released): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30, 2026-09-28",
+      "smaller_canvases": [
+       {
+        "canvas": "832x480x81",
+        "bytes": 50851376762,
+        "source": "MLX allocator peak 47.36 GiB (mx.get_peak_memory) of a real AbstractVision text-to-video generation at 832x480, 81 frames (2 denoising steps, one per expert): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30 source, 2026-09-28"
+       },
+       {
+        "canvas": "640x352x81",
+        "bytes": 44855309454,
+        "source": "MLX allocator peak 41.77 GiB (mx.get_peak_memory) of a real AbstractVision text-to-video generation at 640x352, 81 frames (2 denoising steps, one per expert): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30 source, 2026-09-28"
+       }
+      ]
      },
-     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory. At AbstractVision's default canvas (1280x720, 81 frames) it needs about 72 GiB while it generates (measured), so it fits Macs with 128 GiB or more, and 96 GiB Macs once the GPU memory limit is raised."
+     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory. At AbstractVision's default canvas (1280x720, 81 frames) it needs about 72 GiB while it generates (measured), so it fits Macs with 128 GiB or more, and 96 GiB Macs once the GPU memory limit is raised. Smaller canvases need less (measured): about 47.4 GiB at 832x480 and 41.8 GiB at 640x352 (81 frames), so a 64 GiB Mac runs it at 640x352."
     }
    ],
    "capabilities_override": {

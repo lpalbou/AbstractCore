@@ -145,7 +145,10 @@ The larger Wan2.2 A14B 8-bit models (`AbstractFramework/wan2.2-t2v-a14b-diffuser
 recommended: at AbstractVision's default A14B canvas (1280x720, 81 frames) each
 needs about 72 GiB while it generates (measured), so the catalog's fit reads
 `too_large` on 64 GiB Macs, `needs_gpu_limit` on 96 GiB Macs (with the
-command) and `fits` from 128 GiB.
+command), `tight` on 128 GiB Macs and `fits` from 192 GiB. Text-to-video A14B
+also has measured needs at smaller canvases (about 47.4 GiB at 832x480 and
+41.8 GiB at 640x352, 81 frames): on a 64 GiB Mac the catalog entry's
+`smaller_canvas` says it runs at 640x352.
 A route that is already configured but cannot run on this host — an
 `mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
 example `output.image: mlx-gen/...` kept from an install made before these

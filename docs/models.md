@@ -99,6 +99,8 @@ joined from AbstractCore's model capability registry, and one entry per artifact
   engine's default canvas; the seed may also record measured needs at smaller canvases
   (`resident.smaller_canvases`, Wan2.2 TI2V-5B at 832x480), which
   [Recommended Models](recommended-models.md) reports where only the smaller size fits;
+- `smaller_canvas`: `{canvas, need_bytes, verdict}` when the default canvas does not fit this
+  machine but a measured smaller canvas does (`canvas` is `WIDTHxHEIGHTxFRAMES`), else `null`;
 - `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
 - `recommended`: exactly one artifact per row is pre-selected for this machine. On Apple silicon
   the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,

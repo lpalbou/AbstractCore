@@ -348,3 +348,33 @@ def test_the_validator_checks_smaller_canvases():
 def test_the_8_gb_vision_cell_says_what_to_do(matrix):
     vision = _apple_class_for(matrix, 8)["entries"]["vision"]
     assert vision["status"] == "unavailable" and "set input.image" in vision["reason"]
+
+
+def test_the_catalog_shows_the_smaller_canvas_where_only_it_fits(tmp_path, monkeypatch):
+    from tests.models_engines_fakes import isolate_host
+
+    isolate_host(tmp_path, monkeypatch)
+
+    def ti2v(gib):
+        rows = {r["id"]: r for r in mc.catalog(host=synthetic_host(f"metal{gib}"))["rows"]}
+        return next(a for a in rows["wan2.2-ti2v-5b"]["artifacts"] if a["artifact"] == TI2V)
+
+    at64 = ti2v(64)
+    assert at64["fit"]["verdict"] == "too_large"
+    assert at64["smaller_canvas"]["canvas"] == "832x480x121" and at64["smaller_canvas"]["verdict"] == "fits"
+    assert any("at 832x480x121" in n for n in at64["fit"]["notes"])
+    assert ti2v(96)["smaller_canvas"] is None  # the default canvas fits
+    assert ti2v(32)["smaller_canvas"] is None  # nothing measured fits
+
+
+def test_a14b_text_to_video_runs_at_640x352_on_a_64_gb_mac(tmp_path, monkeypatch):
+    """Measured 2026-09-28 (mlx-gen 0.38.0): 47.36 GiB at 832x480x81, 41.77 GiB
+    at 640x352x81; the default canvas (1280x720x81, 71.59 GiB) stays the fit."""
+    a14b = "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"
+    _row, art = mc._seed_row_and_artifact("wan2.2-t2v-a14b", "mlx-gen", a14b)
+    assert [(s["canvas"], s["bytes"]) for s in art["resident"]["smaller_canvases"]] == [
+        ("832x480x81", 50851376762), ("640x352x81", 44855309454)]
+    got = mc.smaller_canvas_fit("mlx-gen", a14b, synthetic_host("metal64"))
+    assert got["canvas"] == "640x352x81" and got["fit"]["verdict"] in ("fits", "tight")
+    assert mc.recommended_artifact_fit("mlx-gen", a14b, synthetic_host("metal64"))["fit"]["verdict"] == "too_large"
+    assert mc.smaller_canvas_fit("mlx-gen", a14b, synthetic_host("metal48")) is None
