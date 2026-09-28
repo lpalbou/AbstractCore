@@ -4126,10 +4126,11 @@
      "provider": "supertonic",
      "artifact": "supertonic-3",
      "quant": null,
-     "download_bytes": null,
-     "size_source": "unknown",
+     "download_bytes": 401276744,
+     "size_source": "catalog",
      "verified": true,
-     "recommended": true
+     "recommended": true,
+     "note": "401,276,744 bytes: the 16 files abstractvoice's Supertonic prefetch downloads (4 ONNX graphs, tts.json, unicode_indexer.json, 10 voice styles) from Supertone/supertonic-3 at the revision it pins (724fb5ab), read with HfApi.model_info(files_metadata=True) on 2026-09-28; a real download reports 401 MB."
     }
    ],
    "capabilities_override": {
@@ -4211,7 +4212,11 @@
       "checked": "2026-09-27",
       "revision": "39ee5f1f630789956f29f40b5c2c6d48c6e9a798"
      },
-     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory. Its fit uses the file size: the only published memory figure (about 28 GiB) was measured at 384x224 with --low-ram, far below AbstractVision's default canvas, so the real need at the default size is higher and unmeasured."
+     "resident": {
+      "bytes": 76865188666,
+      "source": "MLX allocator peak 71.59 GiB (mx.get_peak_memory) of a real AbstractVision generation at its default A14B canvas (1280x720, 81 frames; 2 denoising steps, one per expert, streamed VAE decode; the inactive expert is released): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.30, 2026-09-28"
+     },
+     "note": "Mixed q8/BF16 MLX-Gen package (39.7 GiB); q8 saves download only, it runs at BF16 memory. At AbstractVision's default canvas (1280x720, 81 frames) it needs about 72 GiB while it generates (measured), so it fits Macs with 128 GiB or more, and 96 GiB Macs once the GPU memory limit is raised."
     }
    ],
    "capabilities_override": {
@@ -4221,7 +4226,7 @@
     "text_to_video": true,
     "image_to_video": false
    },
-   "notes": "Wan2.2 A14B text-to-video (MoE, two 14B experts), run by AbstractVision through MLX-Gen (Apple silicon only). Its memory figure is a small low-RAM validation profile."
+   "notes": "Wan2.2 A14B text-to-video (MoE, two 14B experts), run by AbstractVision through MLX-Gen (Apple silicon only). Its memory need is measured at AbstractVision's default canvas."
   },
   {
    "id": "wan2.2-i2v-a14b",
