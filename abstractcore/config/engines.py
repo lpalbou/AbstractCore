@@ -209,12 +209,28 @@ def pip_install_command(*packages: str) -> str:
 #   ONNX Rt.    PyPI onnxruntime: manylinux x86_64/aarch64, win_amd64/arm64,
 #               macOS arm64, and macOS x86_64 up to 1.23.2 (inside the
 #               `>=1.19.0` floor abstractvoice's Supertonic extras declare).
+#   CTranslate2 PyPI ctranslate2 4.8.2 (checked 2026-09-28): macosx arm64 and
+#               x86_64, manylinux x86_64/aarch64, win_amd64 -- no Windows
+#               arm64 wheel. It runs abstractvoice's faster-whisper speech
+#               input (CUDA or processor; no Metal backend).
+#   PyTorch     PyPI torch 2.14.0 (checked 2026-09-28): macosx arm64,
+#               manylinux x86_64/aarch64, win_amd64. The last macOS x86_64
+#               wheel is 2.2.2, below what current Diffusers pipelines need.
+#               It runs abstractmusic's ACE-Step music generation.
 _BUILD_ARCHES: Dict[str, Dict[str, Tuple[str, ...]]] = {
     "lmstudio": {"darwin": ("arm64",), "linux": ("x86_64", "arm64"), "windows": ("x86_64", "arm64")},
     "ollama": {"darwin": ("arm64", "x86_64"), "linux": ("x86_64", "arm64"), "windows": ("x86_64", "arm64")},
     "onnxruntime": {"darwin": ("arm64", "x86_64"), "linux": ("x86_64", "arm64"), "windows": ("x86_64", "arm64")},
+    "ctranslate2": {"darwin": ("arm64", "x86_64"), "linux": ("x86_64", "arm64"), "windows": ("x86_64",)},
+    "torch": {"darwin": ("arm64",), "linux": ("x86_64", "arm64"), "windows": ("x86_64",)},
 }
-_BUILD_NAMES = {"lmstudio": "LM Studio", "ollama": "Ollama", "onnxruntime": "ONNX Runtime"}
+_BUILD_NAMES = {
+    "lmstudio": "LM Studio",
+    "ollama": "Ollama",
+    "onnxruntime": "ONNX Runtime",
+    "ctranslate2": "CTranslate2",
+    "torch": "PyTorch",
+}
 
 
 def _build_support(engine: str, os_id: str, arch: str) -> Tuple[bool, Optional[str]]:
@@ -226,15 +242,19 @@ def _build_support(engine: str, os_id: str, arch: str) -> Tuple[bool, Optional[s
         return True, None
     if engine == "lmstudio" and os_id == "darwin":
         return False, "LM Studio on macOS requires Apple Silicon (arm64) and macOS 14+"
+    if engine == "torch" and os_id == "darwin":
+        return False, "current PyTorch builds for macOS require Apple Silicon (arm64); the last Intel-Mac build is 2.2.2"
     return False, f"{name} has no {os_id} build for {arch} (only {', '.join(arches)})"
 
 
 def _support(engine: str, os_id: str, arch: str, accelerator: Optional[str]) -> Tuple[bool, Optional[str]]:
     """Whether `engine` has a build for this host, and why not.
 
-    `onnxruntime` is not an installable engine row (no `ENGINE_IDS` entry): it
-    is the runtime under abstractvoice's Supertonic voice, kept in this ONE
-    matrix so every host-support answer comes from the same place.
+    `onnxruntime`, `ctranslate2` and `torch` are not installable engine rows
+    (no `ENGINE_IDS` entry): they are the runtimes under abstractvoice's
+    Supertonic voice and faster-whisper speech input and abstractmusic's
+    ACE-Step, kept in this ONE matrix so every host-support answer comes from
+    the same place.
     """
 
     if engine == "mlx":

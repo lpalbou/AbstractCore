@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `abstractcore models recommendations [--host] [--json | --markdown] [--output PATH]`: the
+  recommended model for every capability (text, image input, speech output, speech input, image,
+  video, music) on every machine class (Apple silicon by unified memory, Linux or Windows with an
+  NVIDIA GPU, processor-only Linux or Windows, Intel Macs), or for this machine with `--host`.
+  Each cell is `recommended`, `covered` (image input is read by the text model) or `unavailable`
+  with the reason and what to use instead, and carries the engine, device, download size, memory
+  need, fit verdict and, where needed, the GPU memory `sysctl`. The JSON is
+  `model_recommendations_v1`; Python: `abstractcore.config.recommendations.recommended_models()`
+  and `recommendation_matrix()`. See [Recommended Models](docs/recommended-models.md), whose
+  tables are generated from the same data (`scripts/update_recommended_models_doc.py --check`).
+- Recommendations for speech input (Whisper base on AbstractVoice's faster-whisper engine) and
+  music (ACE-Step 1.5 XL turbo on AbstractMusic's `acestep` backend, memory-gated like video).
+  They are listed everywhere recommendations are shown and are not written by the fresh-install
+  defaults, `apply-recommended` or `models download --recommended`: set them with
+  `abstractcore config set-default`. Both models are in the download catalog with their verified
+  sizes.
+
+### Changed
+
+- `capability_defaults.RECOMMENDED_MODELS` is the one table of recommended models;
+  `RECOMMENDED_CAPABILITY_DEFAULT_ROUTES` and `RECOMMENDED_MODEL_DOWNLOADS` are its starter-set
+  views and keep their values.
+- The reason a memory-gated recommendation is unavailable says whether the memory need is
+  measured or estimated.
+
 ## [2.18.0] - 2026-09-28
 
 Capability routes say when their engine is not installed, Apple silicon fits account for the GPU

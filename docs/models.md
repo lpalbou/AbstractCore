@@ -22,6 +22,7 @@ Related pages: [Engines](engines.md) (installing Ollama, LM Studio, MLX, llama.c
 | Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
 | Delete | `abstractcore models delete <provider> <artifact> [--yes] [--dry-run] [--force] [--json]` | `POST /acore/models/delete` | `model_materializer.delete_artifact(...)` |
 | Follow background work | `abstractcore models jobs [<job_id>] [--kind K] [--status S] --json`, `abstractcore models cancel <job_id>` | `GET /acore/jobs`, `GET /acore/jobs/{id}`, `POST /acore/jobs/{id}/cancel` | `host_jobs.default_registry()` |
+| Recommended model per capability and machine | `abstractcore models recommendations [--host] [--json]` | none | `abstractcore.config.recommendations.recommended_models()` / `recommendation_matrix()` (see [Recommended Models](recommended-models.md)) |
 | Check that an installed model answers | `abstractcore models verify <artifact> [--provider P] [--json]` | none | `abstractcore.config.model_verify.verify_inference(...)` |
 | Repair missing `refs/main` | `abstractcore models repair-refs [--dry-run] [--cache-dir DIR] [--json]` | none | `model_materializer.repair_hf_refs(apply=...)` |
 
@@ -121,6 +122,9 @@ reports it (`ram_bytes`, in GiB):
 
 A Mac whose memory cannot be read gets the smallest tier, and the pick says so in `tier`. Every
 other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@4bit`.
+
+The recommendations for the other capabilities (image input, speech, image, video, music) and
+the full table per kind of machine are on [Recommended Models](recommended-models.md).
 
 Each tier also lists an MTP build (native multi-token prediction: `mlx-works/Qwen3.5-9B-oQ4e-mtp`,
 `Jundot/Qwen3.8-27B-oQ4e-mtp`, `Jundot/Qwen3.8-Flash-Next-oQ4e-mtp`). The module switch

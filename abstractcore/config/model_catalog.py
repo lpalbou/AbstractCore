@@ -230,7 +230,7 @@ def _fit_for_seed_artifact(row: Mapping[str, Any], art: Mapping[str, Any], host:
 
 
 def recommended_artifact_fit(provider: str, artifact: str, host: Mapping[str, Any]) -> Dict[str, Any]:
-    """`{row, fit}` for one seed artifact a recommendation names, on `host`.
+    """`{row, artifact, fit}` for one seed artifact a recommendation names, on `host`.
 
     The memory gate of a recommended route whose model may not fit at all
     (`output.video`). Works on the LIGHT host reading too (import-time seed):
@@ -251,7 +251,7 @@ def recommended_artifact_fit(provider: str, artifact: str, host: Mapping[str, An
     ram = profile.get("ram_bytes")
     if not isinstance(profile.get("ceiling_bytes"), (int, float)) and isinstance(ram, (int, float)) and ram > 0:
         profile["ceiling_bytes"] = int(_FALLBACK_CEILING_FRACTION * ram)
-    return {"row": row, "fit": _fit_for_seed_artifact(row, art, profile)}
+    return {"row": row, "artifact": art, "fit": _fit_for_seed_artifact(row, art, profile)}
 
 
 def recommended_text_model(

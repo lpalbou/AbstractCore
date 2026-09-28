@@ -1,7 +1,7 @@
 {
  "$schema": "./model_downloads_catalog.schema.json",
  "schema": "model_downloads_catalog_v1",
- "version": "2026-09-27",
+ "version": "2026-09-28",
  "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer. upstream={method, checked, revision?} records an id verified to exist upstream on that date (hf_api: HfApi.model_info(files_metadata=True), download_bytes = the weight files; ollama_registry: the registry manifest, download_bytes = the sum of its layers); such an artifact must carry its verified size. options carries route options the recommendation copies (the MTP builds: speculation). resident={bytes, source} (optional, per artifact) is the MEASURED memory the engine needs while it runs, for models whose working memory is not their file size (video generation): the fit verdict uses it instead of download_bytes, and `source` says where and at which profile it was measured.",
  "companion_sizes": {
   "mlx-community/Qwen3.5-4B-MTP-4bit": {
@@ -4271,6 +4271,79 @@
     "image_to_video": true
    },
    "notes": "Wan2.2 A14B image-to-video (MoE, two 14B experts), run by AbstractVision through MLX-Gen (Apple silicon only). Its memory need is measured at AbstractVision's default canvas."
+  },
+  {
+   "id": "faster-whisper-base",
+   "family": "whisper",
+   "display_name": "Whisper base (speech to text)",
+   "vendor": "OpenAI",
+   "params_total": 74000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": null,
+   "tags": [
+    "voice",
+    "speech-to-text"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "Systran/faster-whisper-base",
+     "quant": "f16",
+     "download_bytes": 147886409,
+     "size_source": "catalog",
+     "verified": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-28",
+      "revision": "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66"
+     },
+     "note": "147,886,409 bytes: the whole repo (6 files) at revision ebe41f70, read with the Hugging Face model API on 2026-09-28. faster-whisper's own fetch takes the 4 model files (147,882,941 bytes). CTranslate2 conversion by Systran of OpenAI Whisper base."
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "audio": true,
+    "speech_recognition": true
+   },
+   "notes": "The AbstractFramework recommended speech input model (input.voice), run by AbstractVoice's faster-whisper engine (CTranslate2): CUDA on an NVIDIA GPU, the processor elsewhere."
+  },
+  {
+   "id": "acestep-v15-xl-turbo",
+   "family": "ace-step",
+   "display_name": "ACE-Step 1.5 XL turbo (music)",
+   "vendor": "ACE-Step",
+   "params_total": null,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": null,
+   "tags": [
+    "music"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "diffusers",
+     "artifact": "ACE-Step/acestep-v15-xl-turbo-diffusers",
+     "quant": "bf16",
+     "download_bytes": 11105348328,
+     "size_source": "catalog",
+     "verified": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-28",
+      "revision": "200ba991ae448051e14b0183157e35c2d27c9fb0"
+     },
+     "note": "11,105,348,328 bytes: the whole Diffusers repo (22 files) at revision 200ba991, read with the Hugging Face model API on 2026-09-28. BF16 weights; on the processor AbstractMusic runs it in float32, about twice this in memory."
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "vision": false,
+    "music_generation": true
+   },
+   "notes": "The AbstractFramework recommended music model (output.music), run by AbstractMusic's acestep backend (Diffusers AceStepPipeline on PyTorch: CUDA, Apple MPS in bfloat16, or the processor in float32). AbstractMusic loads it from the local Hugging Face cache only: download it first. Its memory need is estimated from the download (not measured)."
   }
  ]
 }

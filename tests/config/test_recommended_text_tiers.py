@@ -521,10 +521,14 @@ def test_validator_rejects_bad_speculation_options():
 
 def test_every_upstream_artifact_is_eight_bit_or_a_tier_or_a_reverified_id():
     """No row was invented: an upstream-verified artifact is an 8-bit twin, a
-    tier build, or an existing id whose size was re-read upstream."""
+    tier build, an existing id whose size was re-read upstream, or the
+    download of a capability recommendation (`RECOMMENDED_MODELS`)."""
+
+    from abstractcore.config.capability_defaults import RECOMMENDED_MODELS
 
     tier_ids = set(PLAIN.values()) | set(MTP.values())
     reverified = {"mlx-community/Qwen3.5-9B-4bit", "mlx-community/Qwen3.8-27B-4bit"}
+    reverified |= {r.download["artifact"] for r in RECOMMENDED_MODELS.values()}
     for r in mc.load_seed()["rows"]:
         for a in r["artifacts"]:
             if "upstream" not in a:

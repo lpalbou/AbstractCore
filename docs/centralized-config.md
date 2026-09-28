@@ -111,7 +111,9 @@ target `output.text` are accepted for compatibility, but persist to
 
 A fresh install starts with recommended defaults so generation works out of
 the box. They depend on the host, and a route is only written when its engine
-runs there:
+runs there. [Recommended Models](recommended-models.md) lists every
+recommendation per kind of machine, including speech input (`input.voice`) and
+music (`output.music`), which are not written for you:
 
 | host | `input.text` | `output.voice` | `output.image` | `output.video` |
 | --- | --- | --- | --- | --- |

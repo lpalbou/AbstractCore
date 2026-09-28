@@ -292,51 +292,109 @@ def clean_capability_route_default(value: Any) -> CapabilityRouteDefault:
 
 RECOMMENDED_SEED_VERSION = "recommended-v1"
 
-# Fresh-install recommended defaults (operator ruling 2026-08-01): a new
-# install should WORK out of the box on the framework's recommended local
-# stack rather than refuse until configured. Seeded ONLY when the config file
-# does not exist yet — never merged into an existing store (an operator who
-# cleared a route meant it), and never on the corrupt-file fallback (those
-# settings are recoverable and must not be replaced by recommendations).
-# Ordinary rows once written: fully visible in every grid, overridable and
-# clearable from either entry point, and always beaten by request pins.
-# Text stores at input.text (the canonical storage key; output.text derives).
-# NOT A HOST ANSWER: this is the full recommended stack. Every reader goes
-# through `recommended_capability_default_routes(host)`, which picks the text
-# row per host (Apple silicon: the unified-memory tier) and DROPS every row
-# whose engine cannot run on that host (`output.image` and `output.video` are
-# MLX-Gen, Apple silicon only) or whose model does not fit it (`output.video`,
-# `_FIT_GATED_ROUTES`) -- see `recommended_unavailable_routes`.
-RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
+# THE RECOMMENDED MODEL PER CAPABILITY: one table, every surface.
+#
+# `RECOMMENDED_MODELS` holds, per capability route, the recommended route
+# (provider/model, what the route stores), the download that fetches its
+# weights, and whether it belongs to the fresh-install STARTER set. It is the
+# full recommendation, NOT a host answer: every reader goes through the
+# host-aware functions below (`recommended_capability_default_routes(host)`,
+# `recommended_model_downloads(host)`, `recommended_unavailable_routes(host)`),
+# and `recommendations.recommended_models(host)` / `recommendation_matrix()`
+# render all of it per machine class (`abstractcore models recommendations`).
+#
+# Text is the exception to the table: its per-host pick (Apple silicon: the
+# unified-memory tier) belongs to `model_catalog.recommended_text_model()`;
+# the row below is the portable default that function starts from. Image
+# input (vision) is not a row either: the recommended text models read images,
+# so `input.image` is covered by `input.text` (`recommendations`).
+#
+# STARTER rows (`starter=True`) are the fresh-install set (operator ruling
+# 2026-08-01): a new install should WORK out of the box on the framework's
+# recommended local stack rather than refuse until configured. The seed writes
+# them ONLY when the config file does not exist yet -- never merged into an
+# existing store (an operator who cleared a route meant it), and never on the
+# corrupt-file fallback. `apply-recommended` and `models download
+# --recommended` act on the same starter set. Rows with `starter=False`
+# (speech input, music) are recommendations every listing shows, which no
+# writer applies on its own: the operator sets them (`abstractcore config
+# set-default`). Text stores at input.text (the canonical storage key;
+# output.text derives).
+@dataclass(frozen=True)
+class RecommendedModel:
+    """One capability's recommendation: the route, its download, starter or not."""
+
+    route: CapabilityRouteDefault
+    download: Mapping[str, str]
+    starter: bool
+
+
+RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
     # Text: the 4-BIT quantized build (operator ruling 2026-08-01). The ROUTE
     # stores the bare LM Studio id because that is what the server serves when
     # a single quant is installed; the 4-bit choice is pinned by the download
-    # artifact reference below, which is what actually fetches the weights.
-    "input.text": CapabilityRouteDefault(
-        provider="lmstudio", model="qwen/qwen3.5-9b",
-        options={"speculation": {"mode": "native_mtp", "num_draft_tokens": 2,
-                                 "require_acceleration": False}},
+    # artifact reference, which is what actually fetches the weights.
+    "input.text": RecommendedModel(
+        route=CapabilityRouteDefault(
+            provider="lmstudio", model="qwen/qwen3.5-9b",
+            options={"speculation": {"mode": "native_mtp", "num_draft_tokens": 2,
+                                     "require_acceleration": False}},
+        ),
+        download={"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit"},
+        starter=True,
     ),
-    "output.voice": CapabilityRouteDefault(provider="supertonic", model="supertonic-3"),
-    "output.image": CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/flux.2-klein-4b-8bit"),
+    "output.voice": RecommendedModel(
+        route=CapabilityRouteDefault(provider="supertonic", model="supertonic-3"),
+        download={"provider": "supertonic", "artifact": "supertonic-3"},
+        starter=True,
+    ),
+    "output.image": RecommendedModel(
+        route=CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/flux.2-klein-4b-8bit"),
+        download={"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
+        starter=True,
+    ),
     # Video: Wan2.2 TI2V-5B, ONE checkpoint for text-to-video AND
     # image-to-video, so the modality cell answers both tasks. It is the only
     # video model AbstractVision serves that is not a 40 GB A14B package; its
     # engine (MLX-Gen) is Apple silicon only and it needs ~58 GiB of MLX
     # memory (measured), so it is fit-gated (`_FIT_GATED_ROUTES`).
-    "output.video": CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
+    "output.video": RecommendedModel(
+        route=CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
+        download={"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},
+        starter=True,
+    ),
+    # Speech input: AbstractVoice's faster-whisper engine (CTranslate2: CUDA on
+    # an NVIDIA GPU, the processor elsewhere -- it has no Metal backend) with
+    # AbstractVoice's own default model, `base`. faster-whisper resolves
+    # `base` to the Hugging Face repo below in the standard Hugging Face cache,
+    # which is where `models download huggingface <repo>` puts it.
+    "input.voice": RecommendedModel(
+        route=CapabilityRouteDefault(provider="faster-whisper", model="base"),
+        download={"provider": "huggingface", "artifact": "Systran/faster-whisper-base"},
+        starter=False,
+    ),
+    # Music: AbstractMusic's `acestep` backend (Diffusers AceStepPipeline on
+    # PyTorch: CUDA, Apple MPS in bfloat16, or the processor in float32) with
+    # the one checkpoint AbstractMusic marks recommended and validated,
+    # ACE-Step 1.5 XL turbo. AbstractMusic loads it from the local Hugging
+    # Face cache only, so it must be downloaded first. Fit-gated like video.
+    "output.music": RecommendedModel(
+        route=CapabilityRouteDefault(provider="acestep", model="ACE-Step/acestep-v15-xl-turbo-diffusers"),
+        download={"provider": "diffusers", "artifact": "ACE-Step/acestep-v15-xl-turbo-diffusers"},
+        starter=False,
+    ),
 }
 
-# Per-provider artifact references that FETCH each recommended model — the
-# download surface resolves these, never the route's served id. Quantization
-# intent lives here (`@4bit`), because served ids drop the suffix when only
-# one quant is installed while download refs must name the exact artifact.
-# Like the routes above, never read directly: `recommended_model_downloads()`.
+# The STARTER views of the table: what the fresh-install seed,
+# `apply-recommended` and `models download --recommended` act on. Derived,
+# never edited: `RECOMMENDED_MODELS` is the one place a recommendation lives.
+# Like the table, never read directly for a host answer: use the host-aware
+# functions below.
+RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
+    key: rec.route for key, rec in RECOMMENDED_MODELS.items() if rec.starter
+}
 RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
-    "input.text": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit"},
-    "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
-    "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
-    "output.video": {"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},
+    key: dict(rec.download) for key, rec in RECOMMENDED_MODELS.items() if rec.starter
 }
 
 
@@ -373,15 +431,27 @@ RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
 #   supertonic  abstractvoice's Supertonic 3 runtime is ONNX Runtime on
 #               `CPUExecutionProvider` (abstractvoice/supertonic/runtime.py):
 #               x86_64/arm64 Linux and Windows, macOS.
+#   faster-whisper  abstractvoice's speech input runs on CTranslate2
+#               (abstractvoice/adapters/stt_faster_whisper.py): macOS,
+#               x86_64/arm64 Linux, x86_64 Windows.
+#   acestep     abstractmusic's ACE-Step backend is a Diffusers pipeline on
+#               PyTorch (abstractmusic/backends/acestep.py): Apple-silicon
+#               macOS, x86_64/arm64 Linux, x86_64 Windows.
 _RECOMMENDED_PROVIDER_ENGINE = {
     "mlx": "mlx",
     "mlx-gen": "mlx",
     "lmstudio": "lmstudio",
     "ollama": "ollama",
     "supertonic": "onnxruntime",
+    "faster-whisper": "ctranslate2",
+    "acestep": "torch",
 }
 # How a provider that runs ON another engine words the engine's refusal.
-_ENGINE_VIA = {"supertonic": "Supertonic voice runs on ONNX Runtime (CPU), and "}
+_ENGINE_VIA = {
+    "supertonic": "Supertonic voice runs on ONNX Runtime (CPU), and ",
+    "faster-whisper": "faster-whisper speech input runs on CTranslate2, and ",
+    "acestep": "ACE-Step music generation runs on PyTorch, and ",
+}
 
 # CONFIGURED routes whose engine runs INSIDE this process (AbstractCore's MLX
 # provider, AbstractVision's MLX-Gen, AbstractVoice's Supertonic): such a route
@@ -423,6 +493,13 @@ _UNAVAILABLE_NEXT_STEP = {
         "sdcpp (stable-diffusion.cpp, optional extra) or a cloud image provider"
     ),
     "output.video": _VIDEO_NO_LOCAL_ENGINE,
+    # Engine ids are abstractvoice's (`transformers-asr`, `openai`).
+    "input.voice": (
+        "set input.voice to another speech-to-text engine: transformers-asr (AbstractVoice, PyTorch) "
+        "or a cloud provider (openai)"
+    ),
+    # Backend ids are abstractmusic's (`acemusic`, `elevenlabs-music`).
+    "output.music": "set output.music to a cloud music backend (acemusic or elevenlabs-music, with its API key)",
 }
 # Next step when the engine runs but the model does not fit (fit-gated rows).
 _TOO_LARGE_NEXT_STEP = {
@@ -430,11 +507,15 @@ _TOO_LARGE_NEXT_STEP = {
         "use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint "
         "(abstractvision openai-compatible backend)"
     ),
+    "output.music": (
+        "use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, "
+        "with its API key)"
+    ),
 }
 # Recommended rows written only where the catalog's fit estimate (the same one
 # the model browser's "fits this computer" filter uses: `fits` or `tight`)
 # says the model fits this host's memory.
-_FIT_GATED_ROUTES = frozenset({"output.video"})
+_FIT_GATED_ROUTES = frozenset({"output.video", "output.music"})
 # What each mlx-gen route generates, for the reason sentence.
 _MLX_GEN_WORK = {"output.image": "image generation", "output.video": "video generation"}
 
@@ -502,8 +583,12 @@ def _fit_gate_reason(key: str, download: Mapping[str, str], host: Mapping[str, A
     next_step = f"; {_TOO_LARGE_NEXT_STEP[key]}" if key in _TOO_LARGE_NEXT_STEP else ""
     if verdict == "unknown" or not isinstance(fit.get("need_bytes"), int) or not isinstance(fit.get("usable_bytes"), int):
         return f"{name} needs a lot of memory and this computer's memory could not be measured{next_step}"
+    # "measured" only where the seed carries a measured run-time peak
+    # (`resident`, the video rows); otherwise the need is the estimate from
+    # the download (music).
+    basis = "measured" if isinstance((got.get("artifact") or {}).get("resident"), dict) else "estimated"
     reason = (
-        f"{name} needs about {_gib_text(fit['need_bytes'])} of memory while it generates (measured), and this "
+        f"{name} needs about {_gib_text(fit['need_bytes'])} of memory while it generates ({basis}), and this "
         f"computer can give a model about {_gib_text(fit['usable_bytes'])}"
     )
     if verdict == "needs_gpu_limit":
@@ -546,18 +631,26 @@ def _host_or_probe(host: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     return host_profile(light=True)
 
 
-def _full_recommendation(host: Mapping[str, Any]) -> Tuple[Dict[str, CapabilityRouteDefault], Dict[str, Dict[str, str]]]:
-    """(routes, downloads) with the host's text pick, BEFORE the support filter."""
+def _full_recommendation(
+    host: Mapping[str, Any], *, starter_only: bool = True
+) -> Tuple[Dict[str, CapabilityRouteDefault], Dict[str, Dict[str, str]]]:
+    """(routes, downloads) with the host's text pick, BEFORE the support filter.
+
+    `starter_only` (the writers' view) keeps the fresh-install starter rows;
+    `False` is every row of `RECOMMENDED_MODELS` (`recommendations`).
+    """
 
     from .model_catalog import recommended_text_model
 
+    table = {key: rec for key, rec in RECOMMENDED_MODELS.items() if rec.starter or not starter_only}
     routes = {
         key: CapabilityRouteDefault(
-            provider=r.provider, model=r.model, base_url=r.base_url, reasoning=r.reasoning, options=dict(r.options)
+            provider=rec.route.provider, model=rec.route.model, base_url=rec.route.base_url,
+            reasoning=rec.route.reasoning, options=dict(rec.route.options),
         )
-        for key, r in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items()
+        for key, rec in table.items()
     }
-    downloads = {key: dict(spec) for key, spec in RECOMMENDED_MODEL_DOWNLOADS.items()}
+    downloads = {key: dict(rec.download) for key, rec in table.items()}
     pick = recommended_text_model(host, fit=False)
     routes["input.text"] = CapabilityRouteDefault(
         provider=pick["provider"], model=pick["model"], options=dict(pick.get("options") or {})

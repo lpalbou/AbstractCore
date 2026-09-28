@@ -173,6 +173,7 @@ The **Models** tab lists models that fit this machine and downloads one in a cli
 **Engines** tab installs Ollama, LM Studio, MLX or llama.cpp with one confirmation that shows
 the exact command. Each action prints its CLI twin (`abstractcore models download ...`,
 `abstractcore engines install ...`). See [Local Models](docs/models.md),
+[Recommended Models](docs/recommended-models.md),
 [Local Engines](docs/engines.md) and [Web Console](docs/console.md).
 
 Local/offline example (requires Ollama running with `ollama pull qwen3:4b`
@@ -595,6 +596,7 @@ Core features:
 - [Session Management](docs/session.md) — conversation history, persistence, and compaction
 - [Embeddings](docs/embeddings.md) — embeddings API and RAG building blocks
 - [Local Models](docs/models.md) — model catalog with fit verdicts, installed models, download and delete
+- [Recommended Models](docs/recommended-models.md) — the recommended model for text, vision, speech, image, video and music on every kind of machine (`abstractcore models recommendations`)
 - [Local Engines](docs/engines.md) — engine detection and one-command installs
 - [Async Guide](docs/async-guide.md) — async patterns, concurrency, best practices
 - [Centralized Config](docs/centralized-config.md) — `~/.abstractcore/config/abstractcore.json` + CLI config commands
