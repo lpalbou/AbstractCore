@@ -258,6 +258,14 @@ def server_holds_keys(monkeypatch):
     SPENT.clear()
     yield
     SPENT.clear()
+    # The enumeration reached real vision lanes: drop the backends and jobs
+    # they cached, or later tests see them as resident models.
+    from abstractcore.server import vision_endpoints
+
+    with vision_endpoints._BACKEND_CACHE_LOCK:
+        vision_endpoints._BACKEND_CACHE.clear()
+    with vision_endpoints._JOBS_LOCK:
+        vision_endpoints._JOBS.clear()
 
 
 def test_the_walk_sees_the_included_routers():
