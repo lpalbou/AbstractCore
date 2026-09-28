@@ -77,6 +77,18 @@ server has not authenticated), and neither `abstractcore engines open` nor the t
   `X-AbstractCore-Provider-API-Key` is handed to the remote music backends in place of the
   server's keys. Local music on a server holding none of these keys works unauthenticated. This is
   an interim rule until AbstractMusic can say which of its backends are remote.
+- The capability discovery routes (`/v1/capabilities`, `/v1/capabilities/{capability}/providers`,
+  `/v1/capabilities/{capability}/models`, `/v1/audio/music/providers`, `/v1/audio/music/models`,
+  `/v1/audio/music/provider-details`) follow the same rules: they call into the plugins, which
+  probe their remote providers with the keys they read, so a request that is not
+  server-authenticated gets `401` while the server holds a key the capability could spend (OpenAI
+  for voice, audio and vision; the music keys for music; both for `/v1/capabilities` and for any
+  other capability). A caller's own key is handed to the plugins in place of the server's.
+- Music requests: an unknown backend selector (body `provider` or route prefix, e.g.
+  `/elevenlabs/v1/audio/music`; AbstractMusic's ElevenLabs selector is `elevenlabs-music`) is
+  refused with `400` instead of running another backend; a selected backend that is not installed
+  is refused (`501`) instead of falling back to another one; a caller's own key reaches only the
+  backend the request selected.
 - `abstractcore engines open` prints the link and launches nothing without a display (SSH session;
   Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY`), with the reason (`not_opened` in `--json`):
   the console crate's rule, now also `abstractcore.utils.display` in Python.

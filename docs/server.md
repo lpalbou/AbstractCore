@@ -1048,8 +1048,13 @@ While the server holds a music provider key (`ACEMUSIC_API_KEY` or `ELEVENLABS_A
 environment or as the `music_acemusic_api_key` / `music_elevenlabs_api_key` route option), a
 music request that is not server-authenticated gets `401`, whatever backend it names and also
 with `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`; an explicit
-`X-AbstractCore-Provider-API-Key` is then used in place of the server's keys. Local music on a
-server that holds none of these keys works unauthenticated.
+`X-AbstractCore-Provider-API-Key` is then used in place of the server's keys, and only by the
+backend the request selected. Local music on a server that holds none of these keys works
+unauthenticated. An unknown backend selector is refused with `400` (the ElevenLabs selector is
+`elevenlabs-music`), and a selected backend that is not installed is refused with `501`; neither
+ever runs another backend. The music and capability discovery routes (`/v1/audio/music/providers`,
+`/v1/audio/music/models`, `/v1/audio/music/provider-details`, `/v1/capabilities...`) follow the
+same key rule.
 
 Examples:
 
