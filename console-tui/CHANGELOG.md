@@ -6,6 +6,39 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
+Next version: **0.4.0** (`cargo semver-checks` reports only a minor bump, but
+`Opener`'s error type changed, which breaks hosts that supply their own opener).
+
+### Added
+
+- `OpenError` (`NoDisplay { why }`, `Refused`, `Failed`), `display_available()`
+  and `display_from(os, env)`: an SSH session (`SSH_CONNECTION`, `SSH_CLIENT`,
+  `SSH_TTY`) or Linux/BSD with neither `DISPLAY` nor `WAYLAND_DISPLAY` has no
+  display, and `system_open` launches nothing there.
+- Routes: `engine_missing` (AbstractCore's next release) reads `engine not installed`; the
+  detail line gives Core's reason with the install command, and the Engines
+  row that installs it. The apply-recommended report says which engine a
+  written route still needs.
+- Models: fit `needs GPU limit` with the exact `sudo sysctl
+  iogpu.wired_limit_mb=…` command on the detail line (`ArtifactRow::gpu_limit`,
+  `GpuLimit`).
+
+### Changed
+
+- **Breaking:** `Opener` is `Rc<dyn Fn(&str) -> Result<(), OpenError>>`, and
+  `ScreensCtx::open_url` returns that result. On `NoDisplay` the notice reads
+  "open <url> on your computer — no display on this machine (<why>)".
+- Engines: a `remote_only` engine (vLLM without CUDA) reads `remote only`, the
+  kind column is in words, and the detail line prints the engine's own reason.
+
+### Migrating from 0.3
+
+- A custom opener returns `Err(OpenError::Failed(msg))` where it returned
+  `Err(msg)`; handle or explicitly ignore the `Result` from `open_url`.
+
+Gate: `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test`
+(stable and MSRV 1.87) green.
+
 ## [0.3.0] — 2026-09-27
 
 Terminal-console parity with the gateway's web console for the shared

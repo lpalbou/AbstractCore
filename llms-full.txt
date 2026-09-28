@@ -14069,7 +14069,7 @@ install every optional Transformers quantization runtime, because those runtimes
 platform-specific and can carry dependency pins that conflict with the rest of the local stack.
 Fresh installs resolve the newest compatible Transformers release allowed by AbstractCore's
 dependency range. Very new architectures such as Gemma4 require a recent Transformers build.
-Audio/voice capability extras use `abstractvoice>=0.11.2` without installing
+Audio/voice capability extras use `abstractvoice>=0.13.0` without installing
 OmniVoice, torch, or torchaudio. Local OmniVoice engines are part of the
 explicit local aggregate profiles such as `abstractcore[all-apple]` and
 `abstractcore[all-gpu]`.
@@ -15387,7 +15387,27 @@ need = W + KV + O          (n = min(8192, context window))
 | `tight` | `need <= Ceff`: runs, with little headroom |
 | `partial_offload` | CUDA only: too big for VRAM, but fits VRAM + 75% of RAM (slower) |
 | `too_large` | does not fit |
+| `needs_gpu_limit` | Apple silicon: does not fit the current ceiling, but fits once macOS lets the GPU use more memory (see below) |
 | `unknown` | no size and no parameter count, or no measurable ceiling |
+
+On Apple silicon the GPU may use only part of unified memory by default (Metal's recommended
+working set). An administrator can raise that limit with `sudo sysctl iogpu.wired_limit_mb=<MB>`;
+the setting lasts until the Mac restarts. When a model does not fit the current ceiling but fits
+under a limit macOS can grant (at most RAM minus 8 GiB), the verdict is `needs_gpu_limit` and the
+fit block carries `gpu_limit`:
+
+```json
+"gpu_limit": {"sysctl": "iogpu.wired_limit_mb", "current_mb": 0, "required_mb": 117760,
+              "command": "sudo sysctl iogpu.wired_limit_mb=117760", "needs_admin": true,
+              "resets_at_restart": true, "verdict_with_limit": "tight"}
+```
+
+`required_mb` is the smallest whole number of GiB that makes the model fit, and
+`verdict_with_limit` is the verdict you get after running `command`. Once the limit is set, it is
+the ceiling (`ceiling_source: metal_wired_limit`) and the fit notes name it. The recommended text
+model of the 128 GiB tier is an example: Qwen3.8 Flash-Next 4-bit needs about 109 GiB with its
+cache and fits after `sudo sysctl iogpu.wired_limit_mb=117760`. The `--fits` filter keeps
+`needs_gpu_limit` artifacts, and both consoles print the command on the model's detail line.
 
 The block also reports `need_bytes` (W + KV + O), `usable_bytes` (Ceff, the amount the verdict
 compares `need_bytes` with), `reserve_bytes` (ceiling minus Ceff), `overhead_bytes` (O),
@@ -15710,7 +15730,7 @@ running anything. Commands come from a fixed table; nothing in them comes from a
 | LM Studio | desktop app from https://lmstudio.ai/download (or `brew install --cask lm-studio`); the command installs the headless daemon and `lms` CLI: `curl -fsSL https://lmstudio.ai/install.sh \| bash`. Apple silicon only | same headless install (may need `libatomic1`) | desktop app (or `winget install --id ElementLabs.LMStudio`); headless: `irm https://lmstudio.ai/install.ps1 \| iex` |
 | MLX | `python -m pip install mlx-lm` into this Python environment | not supported | not supported |
 | llama.cpp | `python -m pip install llama-cpp-python` (Metal build); alternative `brew install llama.cpp` | same pip install (CPU unless `CMAKE_ARGS=-DGGML_CUDA=on`) | same pip install (needs a C/C++ compiler without a matching wheel); alternative `winget install --id ggml.llamacpp` |
-| vLLM | not supported (use a remote vLLM through `VLLM_BASE_URL`) | NVIDIA GPU only: `python -m pip install vllm` | not supported |
+| vLLM | not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind `remote_only`) | NVIDIA GPU only: `python -m pip install vllm` | not supported (same reason) |
 | Hugging Face | `python -m pip install "abstractcore[huggingface]"` | same | same |
 
 Python-package installs target the interpreter running AbstractCore. When that environment has
@@ -15902,6 +15922,12 @@ generates at AbstractVision's default 1280x704 canvas (a measured figure, not
 its 16.9 GiB file size). AbstractFramework has no local video engine off Apple
 silicon, so elsewhere the reason names the remaining option: an
 OpenAI-compatible video endpoint through AbstractVision.
+The larger Wan2.2 A14B 8-bit models (`AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`,
+`AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`) are in the catalog but not
+recommended: at AbstractVision's default A14B canvas (1280x720, 81 frames) each
+needs about 72 GiB while it generates (measured), so the catalog's fit reads
+`too_large` on 64 GiB Macs, `needs_gpu_limit` on 96 GiB Macs (with the
+command) and `fits` from 128 GiB.
 A route that is already configured but cannot run on this host — an
 `mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
 example `output.image: mlx-gen/...` kept from an install made before these
@@ -15912,6 +15938,19 @@ it with this host's recommendation, or removes it (action `cleared`) where
 nothing recommended runs here. Routes to a server (LM Studio, Ollama,
 OpenAI-compatible) and cloud routes are never flagged: the server may be on
 another machine.
+A route this host CAN run whose engine is not installed in this Python
+environment carries `engine_missing: {engine, name, reason, install}` instead
+(plus `engine_row` when the Engines screen installs it). The in-process
+engines judged are MLX (`mlx`: mlx-lm), MLX-Gen (`mlx-gen`: abstractvision and
+mlx-gen), llama.cpp (`huggingface` with a GGUF model: llama-cpp-python),
+Transformers (`huggingface` otherwise: transformers and torch) and every local
+voice engine on `input.voice` / `output.voice` (Supertonic, faster-whisper,
+...), whose answer comes from AbstractVoice's own `engine_runtime` probe
+(abstractvoice 0.13.0 or newer). `install` is the exact command. The flag is
+never combined with `route_unavailable`, and it is separate from the weights
+status ("not downloaded"). `apply-recommended` entries and the recommended
+download plan carry it too, and `abstractcore config defaults` and
+`abstractcore models status` print it.
 The defaults are ordinary routes — change or clear them with the commands below, and any
 provider or model supplied on a request always wins. The seed is written only
 when no configuration file exists yet; clearing a route is permanent, and a
@@ -26183,9 +26222,12 @@ Weights status uses the same four labels everywhere in AbstractFramework:
 | `unknown` | The provider's tool could not be consulted (for example, the engine is not running). |
 | `remote` | Nothing to download: the model runs on a remote API. |
 
-Fit badges: `fits`, `tight`, `too large`, `partial offload`, `unknown`. Hover a badge to see the
-evidence: memory needed versus the usable ceiling, free memory now, whether the download fits on
-disk, the maximum context, the confidence of the estimate and any notes.
+Fit badges: `fits`, `tight`, `too large`, `partial offload`, `needs GPU limit`, `unknown`. Hover a
+badge to see the evidence: memory needed versus the usable ceiling, free memory now, whether the
+download fits on disk, the maximum context, the confidence of the estimate and any notes.
+`needs GPU limit` (Apple silicon) means the model fits once macOS lets the GPU use more memory;
+the notes carry the exact `sudo sysctl iogpu.wired_limit_mb=<MB>` command (see
+[Local models](docs/models.md)).
 
 **Download** starts immediately (one click). **Delete** asks for confirmation, shows the files'
 location and size, and warns when the model is loaded or when the files are shared with another
@@ -26310,7 +26352,8 @@ The same Models and Engines screens exist in the terminal: `abstractcore-console
 terminal app, `cargo install abstractcore-console`) shows them as screen 9 "Models" and screen 0
 "Engines", with the same labels and keys (`w` download, `d` delete, `i` install, `o` open
 download page, `/` filter, `f` fits only, `c` cancel). It drives the `abstractcore` CLI on this
-machine, so it needs no server. See [Terminal console](docs/console-tui.md).
+machine, so it needs no server. On a machine without a display (an SSH session, or Linux without
+`DISPLAY`/`WAYLAND_DISPLAY`) `o` prints the link instead of launching a browser. See [Terminal console](docs/console-tui.md).
 
 ## Related
 

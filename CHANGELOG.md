@@ -5,6 +5,52 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `engine_missing: {engine, name, reason, install[, engine_row]}` on capability routes whose
+  in-process engine is not installed in this Python environment: MLX (mlx-lm), MLX-Gen
+  (abstractvision + mlx-gen), llama.cpp (GGUF models on the `huggingface` provider), Transformers
+  (other `huggingface` models) and every local voice engine (Supertonic, faster-whisper, ...), whose
+  answer is AbstractVoice's own `abstractvoice.engine_runtime` probe. It appears on
+  `config defaults` rows, `apply-recommended` entries and the recommended download plan, and the
+  CLI prints it. It is distinct from `route_unavailable` (this host cannot run the engine at all)
+  and from weights that are not downloaded. See [Centralized config](docs/centralized-config.md).
+- Fit verdict `needs_gpu_limit` (Apple silicon): the model does not fit the current GPU memory
+  limit but fits under one macOS can grant; `fit.gpu_limit` carries the exact
+  `sudo sysctl iogpu.wired_limit_mb=<MB>` command, the value and the verdict after it. A raised
+  `iogpu.wired_limit_mb` is the ceiling in the light host reading too. The 128 GiB tier's
+  recommended text model reports this verdict with its command instead of `too_large`, and the
+  `--fits` filter keeps such models. See [Local models](docs/models.md).
+- The OpenAI API key saved in AbstractCore's config reaches the voice plugin as AbstractVoice's host
+  setting `voice_openai_api_key`: from the config file an instance was created for (the gateway's
+  core config), else the global config, and fresh on every call in the server's audio routes. An
+  explicit `create_llm(..., voice_openai_api_key=...)` wins; with no key saved nothing is set.
+- Wan2.2 T2V-A14B and I2V-A14B 8-bit carry their measured run-time memory (`resident`): about
+  72 GiB each at AbstractVision's default canvas (1280x720, 81 frames), so their fit reads
+  `too_large` on 64 GiB Macs, `needs_gpu_limit` on 96 GiB Macs and `fits` from 128 GiB. The
+  recommended video route is unchanged (Wan2.2 TI2V-5B from about 96 GiB).
+- The Supertonic voice artifact (`supertonic-3`) carries its download size (401,276,744 bytes).
+- CI job `local-models`: the whole suite with CPU torch, Transformers and llama.cpp installed; the
+  release workflow requires it.
+
+### Changed
+
+- The voice extras (`voice`, `audio`, `all`, `all-apple`, `all-gpu`, `all-non-mlx`, `full-dev`)
+  require `abstractvoice>=0.13.0`, the first release with the public engine runtime probe.
+- vLLM's engine row on a host without an NVIDIA GPU reads "vLLM needs Linux with an NVIDIA GPU
+  (CUDA); use a remote vLLM server instead".
+- `abstractcore-console` (next release 0.4.0): `o` never launches a browser without a display (SSH
+  sessions; Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY`) and prints the link instead; routes
+  whose engine is not installed read `engine not installed` with the install command; models that
+  need a raised GPU limit show the command; remote-only engines read `remote only`.
+
+### Fixed
+
+- Five local-model tests (Transformers cached lane, GGUF control plane) match the provider's
+  current signatures and cache contracts.
+
 ## [2.17.0] - 2026-09-27
 
 Recommended defaults now fit the machine they are written on, video joins the model catalog and the

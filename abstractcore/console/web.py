@@ -274,6 +274,9 @@ _JS_TEMPLATE = r"""
     tight: { label: "tight", tone: "warn" },
     too_large: { label: "too large", tone: "err" },
     partial_offload: { label: "partial offload", tone: "warn" },
+    // Fits once the Mac's GPU memory limit is raised; the fit notes (the
+    // badge title) carry the exact sysctl command.
+    needs_gpu_limit: { label: "needs GPU limit", tone: "warn" },
     unknown: { label: "unknown", tone: "muted" },
   };
   const JOB_LABELS = {

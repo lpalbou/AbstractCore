@@ -205,17 +205,37 @@ def test_the_video_fit_uses_the_measured_memory_not_the_file_size(tmp_path, monk
     assert art["resident_bytes"] == seed[TI2V]["resident"]["bytes"]
     assert art["fit"]["weight_bytes"] == seed[TI2V]["resident"]["bytes"]
     assert any(n.startswith("memory need is measured") for n in art["fit"]["notes"])
-    # The A14B figures were measured at 384x224 with --low-ram only, far below the
-    # default canvas: no `resident`, so the fit falls back to the file size.
+    # The A14B 8-bit packages are measured at AbstractVision's default canvas
+    # (1280x720, 81 frames): ~72 GiB each, not their 39.7 GiB files (backlog 0948).
     for rid, artifact in (("wan2.2-t2v-a14b", T2V), ("wan2.2-i2v-a14b", I2V)):
-        assert "resident" not in seed[artifact]
+        resident = seed[artifact]["resident"]
+        assert "1280x720" in resident["source"] and "81 frames" in resident["source"] and "mx.get_peak_memory" in resident["source"]
         art = rows[rid]["artifacts"][0]
-        assert art.get("resident_bytes") is None
-        assert art["fit"]["weight_bytes"] == seed[artifact]["download_bytes"]
+        assert art["resident_bytes"] == resident["bytes"] > seed[artifact]["download_bytes"]
+        assert art["fit"]["weight_bytes"] == resident["bytes"]
     # TI2V-5B: the file is 16.9 GiB, the run needs ~58 GiB. A file-size fit
     # would call it `fits` on a 64 GiB Mac; the measured one does not.
     mac64 = _rows(tmp_path / "b", monkeypatch, synthetic_host("metal64"), tags=["video"])
     assert mac64["wan2.2-ti2v-5b"]["artifacts"][0]["fit"]["verdict"] == "too_large"
+
+
+@pytest.mark.parametrize("artifact", [T2V, I2V])
+def test_a14b_8bit_per_memory_band_at_the_default_canvas(artifact):
+    """Measured ~72 GiB at the default canvas: too large for a 64 GiB Mac (so
+    it is NOT the 64-95 GiB video recommendation), fits a 96 GiB Mac once the
+    GPU limit is raised (the command is said), fits 128 GiB."""
+
+    fit = lambda name: mc.recommended_artifact_fit("mlx-gen", artifact, synthetic_host(name))["fit"]  # noqa: E731
+    assert fit("metal64")["verdict"] == "too_large" and "gpu_limit" not in fit("metal64")
+    f96 = fit("metal96")
+    assert f96["verdict"] == "needs_gpu_limit"
+    assert f96["gpu_limit"]["command"] == "sudo sysctl iogpu.wired_limit_mb=81920"
+    assert fit("metal128")["verdict"] in ("fits", "tight")
+    # The recommendation per band is unchanged: TI2V-5B from ~96 GiB, and no
+    # A14B route anywhere (it does not fit 64-95 GiB at the default canvas).
+    for name in ("metal64", "metal96", "metal128"):
+        routes = cd.recommended_capability_default_routes(synthetic_host(name))
+        assert all(r.model not in (T2V, I2V) for r in routes.values())
 
 
 def test_the_fits_filter_hides_video_where_it_cannot_run(tmp_path, monkeypatch):
