@@ -39,6 +39,7 @@ from ..capabilities import vision_catalog as _vision_catalog
 from ..capabilities.errors import CapabilityUnavailableError
 from ..utils.structured_logging import get_logger
 from .capability_generation import ServerVisionFacade, create_capability_generation_core
+from .credentials import guard_catalog_credentials
 
 logger = get_logger(__name__)
 
@@ -1573,39 +1574,12 @@ def _validate_request_base_url(base_url: Any) -> Optional[str]:
     )
 
 
-def _server_has_vision_catalog_credential() -> bool:
-    return bool(str(os.getenv("OPENAI_API_KEY") or "").strip())
-
-
-def _server_allows_unauthenticated() -> bool:
-    return _env_bool("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", default=False)
-
-
 def _looks_like_openai_api(base_url: Any) -> bool:
     return "api.openai.com" in str(base_url or "").lower()
 
 
 def _vision_catalog_api_key_for_base_url(base_url: Any) -> Optional[str]:
     return _env("OPENAI_API_KEY")
-
-
-def _guard_vision_catalog_credentials(*, request: Request, explicit_provider_key: bool) -> None:
-    if _request_has_server_auth(request) or explicit_provider_key:
-        return
-    if _server_allows_unauthenticated():
-        return
-    if not _server_has_vision_catalog_credential():
-        return
-    raise HTTPException(
-        status_code=401,
-        detail=(
-            "Server-held vision/OpenAI credentials are configured, but inbound server auth was not used. "
-            "Set ABSTRACTCORE_AUTH_TOKEN and send "
-            "Authorization: Bearer <server-token>, or pass an explicit "
-            "provider key with X-AbstractCore-Provider-API-Key for this request."
-        ),
-        headers={"WWW-Authenticate": "Bearer"},
-    )
 
 
 def _vision_catalog_config_from_env() -> Dict[str, Any]:
@@ -1695,7 +1669,7 @@ def _vision_catalog_core(request: Request, *, base_url: Optional[str], api_key: 
         explicit_key = ""
     provider_api_key = explicit_key or _provider_api_key_from_request(request)
     base_url_s = _validate_request_base_url(base_url)
-    _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+    guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
     config = _vision_catalog_config_from_env()
     if base_url_s:
         config["vision_base_url"] = base_url_s
@@ -4109,7 +4083,7 @@ async def _images_generations_impl(
     width, height, extra = _image_generation_request_parts(payload, request_model=request_model, task="text_to_image")
     provider_api_key = _provider_api_key_from_request(request)
     if _is_remote_vision_request(request_model, task="text_to_image"):
-        _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+        guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
     core, OptionalDependencyMissingError = _create_vision_generation_core(
         request_model,
         task="text_to_image",
@@ -4220,7 +4194,7 @@ async def _videos_generations_impl(
     width, height, fps, num_frames, extra = _video_generation_request_parts(payload, request_model=request_model, task="text_to_video")
     provider_api_key = _provider_api_key_from_request(request)
     if _is_remote_vision_request(request_model, "video", task="text_to_video"):
-        _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+        guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
     core, OptionalDependencyMissingError = _create_vision_generation_core(
         request_model,
         modality="video",
@@ -4316,7 +4290,7 @@ async def jobs_images_generations(request: Request, payload: ImageGenerationBody
     width, height, extra = _image_generation_request_parts(payload, request_model=request_model, task="text_to_image")
     provider_api_key = _provider_api_key_from_request(request)
     if _is_remote_vision_request(request_model, task="text_to_image"):
-        _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+        guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
 
     core, OptionalDependencyMissingError = _create_vision_generation_core(
         request_model,
@@ -4449,7 +4423,7 @@ async def jobs_videos_generations(request: Request, payload: VideoGenerationBody
     width, height, fps, num_frames, extra = _video_generation_request_parts(payload, request_model=request_model, task="text_to_video")
     provider_api_key = _provider_api_key_from_request(request)
     if _is_remote_vision_request(request_model, "video", task="text_to_video"):
-        _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+        guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
 
     core, OptionalDependencyMissingError = _create_vision_generation_core(
         request_model,
@@ -4678,7 +4652,7 @@ if _HAS_MULTIPART:
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model, task="image_to_image"):
-            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
             task="image_to_image",
@@ -4865,7 +4839,7 @@ if _HAS_MULTIPART:
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model, task="image_to_image"):
-            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
             task="image_to_image",
@@ -5020,7 +4994,7 @@ if _HAS_MULTIPART:
         request_model = _scoped_request_model_for_request(route_model, route_provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model, task="image_upscale"):
-            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
             task="image_upscale",
@@ -5134,7 +5108,7 @@ if _HAS_MULTIPART:
         request_model = _scoped_request_model_for_request(route_model, route_provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model, task="image_upscale"):
-            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
             task="image_upscale",
@@ -5271,7 +5245,7 @@ if _HAS_MULTIPART:
         # resolution previously defaulted to the image route (the P1
         # cross-modality bleed the t2v lanes already fixed).
         if _is_remote_vision_request(request_model, "video", task="image_to_video"):
-            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
             modality="video",
@@ -5453,7 +5427,7 @@ if _HAS_MULTIPART:
         # resolution previously defaulted to the image route (the P1
         # cross-modality bleed the t2v lanes already fixed).
         if _is_remote_vision_request(request_model, "video", task="image_to_video"):
-            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
             modality="video",

@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..capabilities.errors import CapabilityUnavailableError
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 from ..utils.structured_logging import get_logger
+from .credentials import guard_catalog_credentials, saved_openai_api_key as _saved_openai_api_key
 
 logger = get_logger(__name__)
 
@@ -475,22 +476,6 @@ def _capability_config() -> Dict[str, Any]:
     # AbstractVoice per request, only when the request may spend it
     # (`_voice_core_for_request`).
     return merged
-
-
-def _saved_openai_api_key() -> Optional[str]:
-    """`api_keys.openai` from the centralized config, or None.
-
-    An unreadable config degrades exactly like the route defaults above (the
-    env compat path; `_capability_config_from_config_defaults` already logged
-    the #FALLBACK warning for the same read).
-    """
-    try:
-        from ..config.manager import get_config_manager
-
-        value = get_config_manager().config.api_keys.openai
-    except Exception:
-        return None
-    return str(value or "").strip() or None
 
 
 _VOICE_ENGINE_CONFIG_KEYS = {"tts": "voice_tts_engine", "stt": "voice_stt_engine", "clone": "voice_cloning_engine"}
@@ -973,37 +958,13 @@ def _json_or_raw_audio_response(content: bytes, content_type: str, *, fallback_m
     return Response(content=content, media_type=media_type)
 
 
-def _server_has_audio_catalog_credential() -> bool:
-    return bool(str(os.getenv("OPENAI_API_KEY") or "").strip()) or bool(_saved_openai_api_key())
-
-
-def _guard_audio_catalog_credentials(*, request: Request, explicit_provider_key: bool) -> None:
-    """The speech routes' rule for discovery: a request that is not
-    server-authenticated never spends a key the server holds (saved or
-    OPENAI_API_KEY) — also with ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1."""
-    if _request_has_server_auth(request) or explicit_provider_key:
-        return
-    if not _server_has_audio_catalog_credential():
-        return
-    raise HTTPException(
-        status_code=401,
-        detail=(
-            "Server-held audio/OpenAI credentials are configured, but inbound server auth was not used. "
-            "Set ABSTRACTCORE_AUTH_TOKEN and send "
-            "Authorization: Bearer <server-token>, or pass an explicit "
-            "provider key with X-AbstractCore-Provider-API-Key for this request."
-        ),
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-
 def _audio_catalog_core(request: Request, *, base_url: Optional[str], api_key: Optional[str]) -> Any:
     explicit_key = str(api_key).strip() if isinstance(api_key, str) else ""
     if _is_placeholder_api_key(explicit_key):
         explicit_key = ""
     provider_api_key = explicit_key or _provider_api_key_from_request(request)
     base_url_s = _validate_request_base_url(base_url)
-    _guard_audio_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+    guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="audio")
     config = _capability_config()
     if base_url_s:
         config["voice_remote_base_url"] = base_url_s

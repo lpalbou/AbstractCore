@@ -607,8 +607,10 @@ Thin clients can preflight the configured media surface without importing
 
 These routes instantiate only the selected capability backend needed for deep
 catalog discovery. Shallow plugin availability remains available through the
-library `llm.capabilities.status()` call. Server-held provider keys remain behind
-server auth; per-request upstream key overrides must use
+library `llm.capabilities.status()` call. Server-held provider keys (the OpenAI key saved in the
+config, or `OPENAI_API_KEY`) remain behind server auth, also with
+`ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`, on these routes and on image/video generation
+through OpenAI or an OpenAI-compatible upstream; per-request upstream key overrides must use
 `X-AbstractCore-Provider-API-Key`. For tooling/Swagger UI convenience, these catalog routes also accept an `api_key` query parameter (redacted from server logs).
 
 #### Images (generate/edit)

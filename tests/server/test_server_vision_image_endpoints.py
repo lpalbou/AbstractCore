@@ -53,7 +53,18 @@ def client():
     return TestClient(app)
 
 
-def test_images_generations_without_model_uses_configured_openai_compatible_default(client, monkeypatch):
+@pytest.fixture()
+def authed_client(monkeypatch):
+    """A server-authenticated caller: the only kind that may spend the
+    server's OPENAI_API_KEY (unauthenticated callers get 401, also with
+    ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1)."""
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "srv-token-test")
+    c = TestClient(app)
+    c.headers.update({"Authorization": "Bearer srv-token-test"})
+    return c
+
+
+def test_images_generations_without_model_uses_configured_openai_compatible_default(authed_client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
@@ -62,7 +73,7 @@ def test_images_generations_without_model_uses_configured_openai_compatible_defa
     monkeypatch.setenv("OPENAI_API_KEY", "vision-key")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
-    resp = client.post("/v1/images/generations", json={"prompt": "hello", "width": 64, "height": 64, "response_format": "b64_json"})
+    resp = authed_client.post("/v1/images/generations", json={"prompt": "hello", "width": 64, "height": 64, "response_format": "b64_json"})
 
     assert resp.status_code == 200
     data = resp.json()
@@ -75,7 +86,7 @@ def test_images_generations_without_model_uses_configured_openai_compatible_defa
     assert call["json"]["size"] == "64x64"
 
 
-def test_images_edits_without_model_uses_configured_openai_compatible_default(client, monkeypatch):
+def test_images_edits_without_model_uses_configured_openai_compatible_default(authed_client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
@@ -85,7 +96,7 @@ def test_images_edits_without_model_uses_configured_openai_compatible_default(cl
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
     files = {"image": ("image.png", b"\x89PNG\r\n\x1a\nabc", "image/png")}
-    resp = client.post("/v1/images/edits", data={"prompt": "edit"}, files=files)
+    resp = authed_client.post("/v1/images/edits", data={"prompt": "edit"}, files=files)
     assert resp.status_code == 200
     data = resp.json()
     assert base64.b64decode(data["data"][0]["b64_json"]) == _PNG_BYTES
@@ -231,7 +242,7 @@ def _assert_proxy_call_has_no_timeout(call: dict[str, Any]) -> None:
     assert call["client_timeout"] is None
 
 
-def test_openai_compatible_generation_proxy_success(client, monkeypatch):
+def test_openai_compatible_generation_proxy_success(authed_client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
@@ -239,7 +250,7 @@ def test_openai_compatible_generation_proxy_success(client, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "provider-key")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
-    resp = client.post(
+    resp = authed_client.post(
         "/v1/images/generations",
         json={
             "prompt": "a red square",
@@ -276,7 +287,7 @@ def test_openai_compatible_generation_proxy_success(client, monkeypatch):
     assert "height" not in call["json"]
 
 
-def test_provider_scoped_images_generation_prefixes_plain_model(client, monkeypatch):
+def test_provider_scoped_images_generation_prefixes_plain_model(authed_client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
@@ -284,7 +295,7 @@ def test_provider_scoped_images_generation_prefixes_plain_model(client, monkeypa
     monkeypatch.setenv("OPENAI_API_KEY", "provider-key")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
-    resp = client.post(
+    resp = authed_client.post(
         "/openai-compatible/v1/images/generations",
         json={
             "prompt": "a red square",
@@ -330,14 +341,14 @@ def test_images_generations_accepts_request_base_url_override_and_provider_key(c
     assert call["json"]["size"] == "128x128"
 
 
-def test_provider_scoped_openai_images_generation_defaults_to_openai_api(client, monkeypatch):
+def test_provider_scoped_openai_images_generation_defaults_to_openai_api(authed_client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
-    resp = client.post(
+    resp = authed_client.post(
         "/openai/v1/images/generations",
         json={"prompt": "a red square", "model": "gpt-image-1", "response_format": "b64_json"},
     )
@@ -375,7 +386,7 @@ def test_openai_compatible_generation_proxy_allows_backend_specific_extra(client
     assert call["json"]["guidance_scale"] == 7.5
 
 
-def test_openai_compatible_video_generation_proxy_success(client, monkeypatch):
+def test_openai_compatible_video_generation_proxy_success(authed_client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
@@ -383,7 +394,7 @@ def test_openai_compatible_video_generation_proxy_success(client, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "provider-key")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
-    resp = client.post(
+    resp = authed_client.post(
         "/v1/videos/generations",
         json={
             "prompt": "a red square slowly rotating",
@@ -472,7 +483,7 @@ def test_images_generation_schema_uses_width_height_not_size(client):
     assert "additionalProp1" not in str(body_schema)
 
 
-def test_openai_compatible_edit_proxy_success_with_abstractvision_env(client, monkeypatch):
+def test_openai_compatible_edit_proxy_success_with_abstractvision_env(authed_client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
@@ -483,7 +494,7 @@ def test_openai_compatible_edit_proxy_success_with_abstractvision_env(client, mo
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
     files = {"image": ("image.png", _PNG_BYTES, "image/png")}
-    resp = client.post("/v1/images/edits", data={"prompt": "make it watercolor"}, files=files)
+    resp = authed_client.post("/v1/images/edits", data={"prompt": "make it watercolor"}, files=files)
 
     assert resp.status_code == 200
     data = resp.json()
@@ -1739,3 +1750,75 @@ def test_images_generations_uses_task_route_over_broad_route(client, monkeypatch
     call = _FakeProxyClient.calls[0]
     assert call["url"] == "https://task.example/v1/custom/gen", "task route base_url + path option must win"
     assert call["json"]["model"] == "t2i-task-model", "task route model must beat the broad route model"
+
+
+# ------------------------------------------- server-held keys (one rule, shared guard)
+_VISION_REFUSAL = "Server-held vision/OpenAI credentials are configured, but inbound server auth was not used"
+
+
+def _hold_key(monkeypatch, source: str) -> None:
+    if source == "env":
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-SENTINEL-SERVER")
+        return
+    from types import SimpleNamespace
+
+    class _SavedKeyMgr:
+        config = SimpleNamespace(api_keys=SimpleNamespace(openai="sk-SENTINEL-SERVER"))
+
+        def get_capability_default(self, kind, modality=None, task=None):
+            return {"source": "not_configured"}
+
+    monkeypatch.setattr("abstractcore.config.manager.get_config_manager", lambda: _SavedKeyMgr())
+
+
+@pytest.mark.parametrize("source", ["env", "saved"])
+def test_unauthenticated_vision_requests_never_spend_a_server_key(client, monkeypatch, source):
+    """Also with ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1: the audio routes' rule
+    (`abstractcore.server.credentials.guard_catalog_credentials`)."""
+    from abstractcore.server import vision_endpoints
+
+    monkeypatch.delenv("ABSTRACTCORE_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
+    _hold_key(monkeypatch, source)
+    _FakeProxyClient.calls = []
+    monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
+
+    responses = {
+        "GET /v1/vision/providers/": client.get("/v1/vision/providers/"),
+        "POST /v1/images/generations": client.post(
+            "/v1/images/generations", json={"prompt": "x", "model": "openai-compatible/gpt-image-2", "response_format": "b64_json"}
+        ),
+        "POST /openai/v1/images/generations": client.post(
+            "/openai/v1/images/generations", json={"prompt": "x", "model": "gpt-image-2", "response_format": "b64_json"}
+        ),
+    }
+    for name, resp in responses.items():
+        assert resp.status_code == 401, (name, resp.status_code, resp.text[:200])
+        assert _VISION_REFUSAL in resp.json()["error"]["message"], name
+    assert _FakeProxyClient.calls == [], "nothing may reach the upstream with the server's key"
+
+
+def test_vision_discovery_runs_unauthenticated_when_no_key_is_held(client, monkeypatch):
+    monkeypatch.delenv("ABSTRACTCORE_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
+    assert client.get("/v1/vision/providers/").status_code != 401
+
+
+def test_a_caller_key_is_spent_instead_of_the_servers(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    monkeypatch.delenv("ABSTRACTCORE_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
+    _hold_key(monkeypatch, "env")
+    _FakeProxyClient.calls = []
+    monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
+    resp = client.post(
+        "/v1/images/generations",
+        json={"prompt": "x", "model": "openai-compatible/gpt-image-2", "response_format": "b64_json"},
+        headers={"X-AbstractCore-Provider-API-Key": "sk-caller-own"},
+    )
+    assert resp.status_code == 200, resp.text[:200]
+    sent = str(_FakeProxyClient.calls[0])
+    assert "sk-caller-own" in sent and "sk-SENTINEL-SERVER" not in sent

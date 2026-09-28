@@ -63,6 +63,13 @@ server has not authenticated), and neither `abstractcore engines open` nor the t
   (`/v1/audio/voices`, `.../providers`, `.../models`) follow the same rule: the saved key counts as
   server-held, `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` no longer exempts them, and they pass
   the saved key to AbstractVoice only for authenticated requests.
+- The vision routes guarded by server-held OpenAI credentials (`/v1/vision/providers/`,
+  `/v1/vision/models` and the other vision discovery routes, and image/video generation, edits and
+  upscale through OpenAI or an OpenAI-compatible upstream) apply the same rule, through the one
+  guard the audio discovery routes use (`abstractcore.server.credentials`): an unauthenticated
+  request gets `401` when the server holds an OpenAI key (saved or `OPENAI_API_KEY`), also with
+  `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`; an explicit `X-AbstractCore-Provider-API-Key` is
+  spent instead.
 - `abstractcore engines open` prints the link and launches nothing without a display (SSH session;
   Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY`), with the reason (`not_opened` in `--json`):
   the console crate's rule, now also `abstractcore.utils.display` in Python.
