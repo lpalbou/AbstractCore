@@ -68,6 +68,10 @@ abstractcore engines install ollama --yes --json  # NDJSON host_job_v1 lines, fi
 abstractcore engines open lmstudio                # print and open the download page
 ```
 
+`engines open` prints the link and launches nothing when there is no display: in an SSH
+session, or on Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY` (`--json` then carries
+`"opened": false` and the reason in `not_opened`).
+
 HTTP: `POST /acore/engines/{id}/install` with `{"dry_run": false, "force": false}` returns a
 job; follow it with `GET /acore/jobs/{id}`.
 

@@ -159,7 +159,9 @@ mlx-gen), llama.cpp (`huggingface` with a GGUF model: llama-cpp-python),
 Transformers (`huggingface` otherwise: transformers and torch) and every local
 voice engine on `input.voice` / `output.voice` (Supertonic, faster-whisper,
 ...), whose answer comes from AbstractVoice's own `engine_runtime` probe
-(abstractvoice 0.13.0 or newer). `install` is the exact command. The flag is
+(abstractvoice 0.13.0 or newer; an older AbstractVoice is itself the missing
+engine of those routes, with its upgrade command). `install` is the exact
+command, targeting this Python interpreter. The flag is
 never combined with `route_unavailable`, and it is separate from the weights
 status ("not downloaded"). `apply-recommended` entries and the recommended
 download plan carry it too, and `abstractcore config defaults` and

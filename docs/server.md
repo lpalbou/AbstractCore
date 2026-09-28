@@ -917,6 +917,17 @@ Those local/plugin paths use the same internal `generate(..., output=...)`
 dispatcher as the Python API; provider/model remote routes keep their
 OpenAI-compatible HTTP wire behavior.
 
+Server-held OpenAI credentials follow one rule on both paths. When the engine
+that would run (the request's `provider`, else the configured voice route,
+else AbstractVoice's default, `openai`) is `openai` or `openai-compatible`, a
+request that is not server-authenticated gets `401` whenever the server holds
+an OpenAI key (saved with `abstractcore --set-api-key openai`, or
+`OPENAI_API_KEY`), exactly like `model=openai/...`; an explicit
+`X-AbstractCore-Provider-API-Key` is then the only key used. An authenticated
+request gets the saved key, read on every request: a rotated key is used on
+the next call and a removed one is no longer sent. Local engines (Supertonic,
+Piper, faster-whisper, ...) never receive a key.
+
 Install for remote audio:
 ```bash
 pip install "abstractcore[server,remote]"

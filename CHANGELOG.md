@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.18.0] - 2026-09-28
 
 Capability routes say when their engine is not installed, Apple silicon fits account for the GPU
-memory limit macOS can raise, the saved OpenAI key reaches AbstractVoice, and the terminal console
-(`abstractcore-console` 0.4.0) never tries to open a browser on a machine without a display.
+memory limit macOS can raise, the saved OpenAI key reaches AbstractVoice (never for a request the
+server has not authenticated), and neither `abstractcore engines open` nor the terminal console
+(`abstractcore-console` 0.4.0) tries to open a browser on a machine without a display.
 
 ### Added
 
@@ -19,7 +20,11 @@ memory limit macOS can raise, the saved OpenAI key reaches AbstractVoice, and th
   in-process engine is not installed in this Python environment: MLX (mlx-lm), MLX-Gen
   (abstractvision + mlx-gen), llama.cpp (GGUF models on the `huggingface` provider), Transformers
   (other `huggingface` models) and every local voice engine (Supertonic, faster-whisper, ...), whose
-  answer is AbstractVoice's own `abstractvoice.engine_runtime` probe. It appears on
+  answer is AbstractVoice's own `abstractvoice.engine_runtime` probe (an AbstractVoice older than
+  0.13.0 is itself the missing engine of those routes, with its upgrade command, and the rest of
+  the grid is unaffected). `install` targets this Python interpreter, like the Engines screen's
+  rows (`uv pip install --python <interpreter> ...` in a pip-less uv environment, else
+  `<interpreter> -m pip install ...`). It appears on
   `config defaults` rows, `apply-recommended` entries and the recommended download plan, and the
   CLI prints it. It is distinct from `route_unavailable` (this host cannot run the engine at all)
   and from weights that are not downloaded. See [Centralized config](docs/centralized-config.md).
@@ -31,8 +36,11 @@ memory limit macOS can raise, the saved OpenAI key reaches AbstractVoice, and th
   `--fits` filter keeps such models. See [Local models](docs/models.md).
 - The OpenAI API key saved in AbstractCore's config reaches the voice plugin as AbstractVoice's host
   setting `voice_openai_api_key`: from the config file an instance was created for (the gateway's
-  core config), else the global config, and fresh on every call in the server's audio routes. An
-  explicit `create_llm(..., voice_openai_api_key=...)` wins; with no key saved nothing is set.
+  core config), else the global config. An explicit `create_llm(..., voice_openai_api_key=...)`
+  wins; with no key saved nothing is set. In the server's audio routes the key is read on every
+  request and handed over only to server-authenticated requests whose voice engine is `openai` or
+  `openai-compatible`, on a capability host built for that request (never cached): a rotated key
+  is used on the next call, a removed one is no longer sent. See [Server](docs/server.md).
 - Wan2.2 T2V-A14B and I2V-A14B 8-bit carry their measured run-time memory (`resident`): about
   72 GiB each at AbstractVision's default canvas (1280x720, 81 frames), so their fit reads
   `too_large` on 64 GiB Macs, `needs_gpu_limit` on 96 GiB Macs and `fits` from 128 GiB. The
@@ -43,6 +51,16 @@ memory limit macOS can raise, the saved OpenAI key reaches AbstractVoice, and th
 
 ### Changed
 
+- Server audio routes without a `provider/model` (the AbstractVoice path: speech, speech stream,
+  transcriptions, voice clone) apply the same rule as `model=openai/...`: when the engine that
+  would run is `openai` or `openai-compatible` and the server holds an OpenAI key (saved, or
+  `OPENAI_API_KEY`, which AbstractVoice would fall back to), a request that is not
+  server-authenticated gets `401` (also with `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`); an
+  explicit `X-AbstractCore-Provider-API-Key` is then the only key used. Local engines are
+  unaffected. Catalog routes pass the saved key to AbstractVoice only for authenticated requests.
+- `abstractcore engines open` prints the link and launches nothing without a display (SSH session;
+  Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY`), with the reason (`not_opened` in `--json`):
+  the console crate's rule, now also `abstractcore.utils.display` in Python.
 - The voice extras (`voice`, `audio`, `all`, `all-apple`, `all-gpu`, `all-non-mlx`, `full-dev`)
   require `abstractvoice>=0.13.0`, the first release with the public engine runtime probe.
 - vLLM's engine row on a host without an NVIDIA GPU reads "vLLM needs Linux with an NVIDIA GPU
@@ -56,6 +74,12 @@ memory limit macOS can raise, the saved OpenAI key reaches AbstractVoice, and th
 
 - Five local-model tests (Transformers cached lane, GGUF control plane) match the provider's
   current signatures and cache contracts.
+- The Transformers snapshot-lane tests load their tokenizer at test time from the cached snapshot
+  directory, and skip without network when it is not cached: loading it by repo id at collection
+  made huggingface_hub 1.33 contact huggingface.co, and the test network guard failed the
+  `local-models` job.
+- Clearing a configured API key (`set_api_key(provider, "")`) restores the environment variable
+  value it had shadowed (or unsets it), so the removed key stops being used in this process.
 
 ## [2.17.0] - 2026-09-27
 

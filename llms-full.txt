@@ -15751,6 +15751,10 @@ abstractcore engines install ollama --yes --json  # NDJSON host_job_v1 lines, fi
 abstractcore engines open lmstudio                # print and open the download page
 ```
 
+`engines open` prints the link and launches nothing when there is no display: in an SSH
+session, or on Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY` (`--json` then carries
+`"opened": false` and the reason in `not_opened`).
+
 HTTP: `POST /acore/engines/{id}/install` with `{"dry_run": false, "force": false}` returns a
 job; follow it with `GET /acore/jobs/{id}`.
 
@@ -15946,7 +15950,9 @@ mlx-gen), llama.cpp (`huggingface` with a GGUF model: llama-cpp-python),
 Transformers (`huggingface` otherwise: transformers and torch) and every local
 voice engine on `input.voice` / `output.voice` (Supertonic, faster-whisper,
 ...), whose answer comes from AbstractVoice's own `engine_runtime` probe
-(abstractvoice 0.13.0 or newer). `install` is the exact command. The flag is
+(abstractvoice 0.13.0 or newer; an older AbstractVoice is itself the missing
+engine of those routes, with its upgrade command). `install` is the exact
+command, targeting this Python interpreter. The flag is
 never combined with `route_unavailable`, and it is separate from the weights
 status ("not downloaded"). `apply-recommended` entries and the recommended
 download plan carry it too, and `abstractcore config defaults` and
@@ -24587,6 +24593,17 @@ If `model` is omitted, the endpoint delegates to local capability plugins
 Those local/plugin paths use the same internal `generate(..., output=...)`
 dispatcher as the Python API; provider/model remote routes keep their
 OpenAI-compatible HTTP wire behavior.
+
+Server-held OpenAI credentials follow one rule on both paths. When the engine
+that would run (the request's `provider`, else the configured voice route,
+else AbstractVoice's default, `openai`) is `openai` or `openai-compatible`, a
+request that is not server-authenticated gets `401` whenever the server holds
+an OpenAI key (saved with `abstractcore --set-api-key openai`, or
+`OPENAI_API_KEY`), exactly like `model=openai/...`; an explicit
+`X-AbstractCore-Provider-API-Key` is then the only key used. An authenticated
+request gets the saved key, read on every request: a rotated key is used on
+the next call and a removed one is no longer sent. Local engines (Supertonic,
+Piper, faster-whisper, ...) never receive a key.
 
 Install for remote audio:
 ```bash
