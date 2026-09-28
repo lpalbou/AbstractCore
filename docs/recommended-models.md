@@ -52,10 +52,11 @@ website.
 - **Music** is ACE-Step 1.5 XL turbo on AbstractMusic's `acestep` backend (Diffusers on PyTorch:
   CUDA, Apple MPS in bfloat16, or the processor in float32).
 
-A capability is **not available** on a machine when its engine has no build for the platform, or,
-for video and music, when the model does not fit the machine's memory. The entry then says why
-and what to use instead. Video and music are memory-gated because a model that cannot fit is not
-worth installing; text is not gated, because every installation needs a text model.
+A recommendation must fit the machine. A capability is **not available** on a machine when its
+engine has no build for the platform, or, for image, video and music, when the model does not fit
+the machine's memory; the entry then says why and what to use instead. Text always has an entry:
+each Apple silicon tier starts where its model fits, so the text model always fits (on a 128 GB
+Mac, after raising the GPU memory limit).
 
 ### Starter set and opt-in recommendations
 
@@ -177,7 +178,7 @@ Route `output.image` (text to image).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | may not fit |
+| Apple silicon Mac, 8 GB | Not available: FLUX.2 [klein] 4B (8-bit) needs about 8.5 GiB of memory while it generates (estimated), and this computer can give a model about 4.0 GiB; use a Mac with more unified memory, or a cloud image provider | | | | |
 | Apple silicon Mac, 16 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits, tightly |
 | Apple silicon Mac, 18 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 24 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |

@@ -117,7 +117,7 @@ music (`output.music`), which are not written for you:
 
 | host | `input.text` | `output.voice` | `output.image` | `output.video` |
 | --- | --- | --- | --- | --- |
-| Apple silicon | `mlx`, chosen by unified memory (Qwen3 1.7B below 16 GiB, Qwen3.5 9B below 32 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (about 96 GiB of unified memory or more), else unset |
+| Apple silicon | `mlx`, chosen by unified memory (Qwen3 1.7B below 16 GiB, Qwen3.5 9B below 32 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (about 96 GiB of unified memory or more), else unset |
 | Linux, Windows (x86_64, arm64) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
 | Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset | unset |
 | anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset |

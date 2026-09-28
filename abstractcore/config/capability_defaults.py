@@ -504,6 +504,7 @@ _UNAVAILABLE_NEXT_STEP = {
 }
 # Next step when the engine runs but the model does not fit (fit-gated rows).
 _TOO_LARGE_NEXT_STEP = {
+    "output.image": "use a Mac with more unified memory, or a cloud image provider",
     "output.video": (
         "use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint "
         "(abstractvision openai-compatible backend)"
@@ -516,7 +517,9 @@ _TOO_LARGE_NEXT_STEP = {
 # Recommended rows written only where the catalog's fit estimate (the same one
 # the model browser's "fits this computer" filter uses: `fits` or `tight`)
 # says the model fits this host's memory.
-_FIT_GATED_ROUTES = frozenset({"output.video", "output.music"})
+# Image joined 2026-09-28 (operator ruling: a recommendation must fit): FLUX.2
+# klein 4B needs ~8.5 GiB, which an 8 GB Mac cannot give a model.
+_FIT_GATED_ROUTES = frozenset({"output.image", "output.video", "output.music"})
 # What each mlx-gen route generates, for the reason sentence.
 _MLX_GEN_WORK = {"output.image": "image generation", "output.video": "video generation"}
 

@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   above: Qwen3.8 Flash-Next. A 24 GB Mac now gets Qwen3.5 9B (Qwen3.8 27B needs about 16.4 GiB,
   a 24 GB Mac gives a model about 16 GiB), and an 8 GB Mac Qwen3 1.7B. Existing routes are not
   changed; `apply-recommended` reports the new pick as `kept` unless you pass `--force`.
+- The recommended image route (FLUX.2 klein 4B, about 8.5 GiB) is memory-gated like video and
+  music: an 8 GB Mac gets no image route, with the reason.
 - Wan2.2 TI2V-5B's memory need is its MLX peak measured at AbstractVision's default canvas
   (1280x704, 121 frames: 60.5 GiB) instead of a 17-frame validation profile (58.5 GiB); the
   recommended video route still needs 96 GiB of unified memory. Its peak at 832x480, the smallest

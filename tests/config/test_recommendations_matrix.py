@@ -378,3 +378,13 @@ def test_a14b_text_to_video_runs_at_640x352_on_a_64_gb_mac(tmp_path, monkeypatch
     assert got["canvas"] == "640x352x81" and got["fit"]["verdict"] in ("fits", "tight")
     assert mc.recommended_artifact_fit("mlx-gen", a14b, synthetic_host("metal64"))["fit"]["verdict"] == "too_large"
     assert mc.smaller_canvas_fit("mlx-gen", a14b, synthetic_host("metal48")) is None
+
+
+def test_image_generation_is_memory_gated_too(matrix):
+    """A recommendation must fit (2026-09-28): FLUX.2 klein 4B (~8.5 GiB) is not
+    written on an 8 GB Mac; from 16 GB it is."""
+    small = _apple_class_for(matrix, 8)["entries"]["image"]
+    assert small["status"] == "unavailable" and "can give a model about" in small["reason"]
+    assert "output.image" in cd.recommended_unavailable_routes(rec._apple_host(8))
+    for gib in (16, 24, 64, 128):
+        assert _apple_class_for(matrix, gib)["entries"]["image"]["status"] == "recommended", gib
