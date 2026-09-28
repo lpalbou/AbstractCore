@@ -136,6 +136,10 @@ def test_fit_is_reported_never_a_silent_tier_change(host, kind, tier, mtp_switch
     if verdict in ("too_large", "partial_offload"):
         assert pick["fits"] is False
         assert pick["warning"] and "may not fit" in pick["warning"]
+    elif verdict == "needs_gpu_limit":
+        # Fits once the GPU limit is raised: the warning carries the command.
+        assert pick["fits"] is False
+        assert pick["fit"]["gpu_limit"]["command"] in pick["warning"]
     elif verdict == "tight":
         assert pick["fits"] is True and "tightly" in pick["warning"]
     else:
@@ -189,7 +193,10 @@ def test_the_operators_128_gib_mac_reads_the_real_numbers():
     host = dict(synthetic_host("metal128"), ceiling_bytes=int(107.52 * GIB), ceiling_source="metal_recommended")
     pick = mc.recommended_text_model(host, mtp=False)
     assert pick["artifact"] == PLAIN["flash"]
-    assert pick["fit"]["verdict"] == "too_large"
+    # Backlog 0947: it fits once macOS lets the GPU use more memory, and the
+    # warning says exactly how -- never a bare too_large next to the tier.
+    assert pick["fit"]["verdict"] == "needs_gpu_limit"
+    assert "sudo sysctl iogpu.wired_limit_mb=117760" in pick["warning"]
     # The sentence states what the verdict compared: the TOTAL need against
     # the USABLE memory (107.52 GiB ceiling minus the 5% system reserve).
     assert "needs about 109.2 GiB in total" in pick["warning"]

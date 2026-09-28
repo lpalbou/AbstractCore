@@ -55,28 +55,32 @@ def test_server_extra_stays_vision_runtime_light() -> None:
     all_gpu_block = _extract_optional_dependency_block(text, key="all-gpu")
     full_dev_block = _extract_optional_dependency_block(text, key="full-dev")
 
+    # Every abstractvoice pin carries the floor the route engine check needs
+    # (`abstractvoice.engine_runtime`): the constant and pyproject move together.
+    from abstractcore.config.route_engines import ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR as voice_floor
+
     assert "abstractvision" not in server_block
     assert "abstractvoice" not in server_block
-    assert "abstractvoice>=0.11.2" in voice_block
+    assert f"abstractvoice>={voice_floor}" in voice_block
     assert "abstractmusic" not in voice_block
-    assert "abstractvoice>=0.11.2" in audio_block
+    assert f"abstractvoice>={voice_floor}" in audio_block
     _assert_block_has_dependency_prefix(vision_block, "abstractvision>=")
     _assert_block_has_dependency_prefix(vision_diffusers_block, "abstractvision[huggingface]>=")
     _assert_block_has_dependency_prefix(vision_sdcpp_block, "abstractvision[sdcpp]>=")
     _assert_block_has_dependency_prefix(vision_local_block, "abstractvision[local]>=")
     assert "abstractmusic>=0.1.15" in music_block
     assert "abstract3d>=0.1.0" in scene3d_block
-    assert "abstractvoice[all-apple]>=0.11.2" in all_apple_block
+    assert f"abstractvoice[all-apple]>={voice_floor}" in all_apple_block
     assert "omnivoice>=0.1.5" in all_apple_block
     _assert_block_has_dependency_prefix(all_apple_block, "abstractvision[all-apple]>=")
     assert "abstractmusic[all-apple]>=0.1.15" in all_apple_block
     assert "vllm" not in all_apple_block
-    assert "abstractvoice[all-gpu]>=0.11.2" in all_gpu_block
+    assert f"abstractvoice[all-gpu]>={voice_floor}" in all_gpu_block
     assert "omnivoice>=0.1.5" in all_gpu_block
     _assert_block_has_dependency_prefix(all_gpu_block, "abstractvision[all-gpu]>=")
     assert "abstractmusic[all-gpu]>=0.1.15" in all_gpu_block
     assert "mlx-lm" not in all_gpu_block
-    assert "abstractvoice>=0.11.2" in full_dev_block
+    assert f"abstractvoice>={voice_floor}" in full_dev_block
     assert "omnivoice>=0.1.5" in full_dev_block
     _assert_block_has_dependency_prefix(full_dev_block, "abstractvision>=")
     assert "abstractmusic>=0.1.15" in full_dev_block

@@ -46,6 +46,11 @@ __all__ = [
 ]
 
 MODEL_CATALOG_SCHEMA = "model_catalog_v1"
+# The verdicts the "fits this computer" filter keeps. `needs_gpu_limit` is in:
+# a model that fits once the operator runs the command in `fit.gpu_limit`
+# (the 128 GiB tier's recommendation, backlog 0947) must not vanish from the
+# filter that recommends it.
+FITS_FILTER_VERDICTS = ("fits", "tight", "needs_gpu_limit")
 SEED_SCHEMA = "model_downloads_catalog_v1"
 _HUB_TTL_S = 24 * 3600
 _HUB_SEARCH_LIMIT = 20
@@ -406,6 +411,18 @@ def _fit_amounts(fit: Mapping[str, Any]) -> str:
     )
 
 
+def gpu_limit_instruction(fit: Mapping[str, Any]) -> str:
+    """The sentence every surface shows for a `needs_gpu_limit` verdict:
+    the exact command, the value, and what it costs (admin, until restart)."""
+
+    gl = fit.get("gpu_limit") or {}
+    gib = int(gl["required_mb"]) / 1024
+    return (
+        f"It fits once macOS lets the GPU use {gib:.0f} GiB: run `{gl['command']}` in a terminal "
+        "(asks for your password; lasts until the Mac restarts), then load it."
+    )
+
+
 def _fit_warning(row: Mapping[str, Any], fit: Mapping[str, Any]) -> Optional[str]:
     """One sentence per verdict that deserves one: `too_large` /
     `partial_offload` (may not fit) and `tight` (fits, little headroom).
@@ -417,10 +434,12 @@ def _fit_warning(row: Mapping[str, Any], fit: Mapping[str, Any]) -> Optional[str
     """
 
     verdict = fit.get("verdict")
-    if verdict not in ("too_large", "partial_offload", "tight"):
+    if verdict not in ("too_large", "partial_offload", "tight", "needs_gpu_limit"):
         return None
     name = row.get("display_name") or row.get("id")
     amounts = _fit_amounts(fit)
+    if verdict == "needs_gpu_limit":
+        return f"{name} is the recommendation for this computer's memory.{amounts} {gpu_limit_instruction(fit)}"
     if verdict == "tight":
         return (
             f"{name} is the recommendation for this computer's memory and AbstractCore's estimate says it "
@@ -1241,7 +1260,7 @@ def _pick_recommended(
         curated[0]["recommended"] = True
         return
     order = _HOST_PREFERENCE.get(accelerator, _HOST_PREFERENCE["none"])
-    verdict_rank = {"fits": 0, "tight": 1, "partial_offload": 2, "unknown": 3, "too_large": 4}
+    verdict_rank = {"fits": 0, "tight": 1, "partial_offload": 2, "needs_gpu_limit": 2, "unknown": 3, "too_large": 4}
 
     def rank(a: Mapping[str, Any]) -> Tuple[int, int, int, int]:
         installed = 0 if (a.get("presence") or {}).get("status") == "installed" else 1
@@ -1296,7 +1315,9 @@ def catalog(
     q        free text (all tokens must match id/family/name/vendor/tags/artifacts)
     engine   keep only artifacts for this provider/engine (ollama, lmstudio,
              mlx, huggingface, llamacpp, ...)
-    fits     keep only artifacts whose verdict is `fits` or `tight` on this host
+    fits     keep only artifacts that fit this host (`FITS_FILTER_VERDICTS`:
+             `fits`, `tight`, or `needs_gpu_limit` -- fits once the Mac's GPU
+             memory limit is raised, the command in `fit.gpu_limit`)
     hub      enrich HF-hosted artifacts with exact sizes from the Hugging Face
              API and, when `q` is given, append `hf_search` rows
     tags     keep only rows carrying every tag (e.g. ["embedding"])
@@ -1491,7 +1512,7 @@ def catalog(
         for row in rows_out:
             row["artifacts"] = [
                 a for a in row["artifacts"]
-                if a.get("supported_on_host") and (a.get("fit") or {}).get("verdict") in ("fits", "tight")
+                if a.get("supported_on_host") and (a.get("fit") or {}).get("verdict") in FITS_FILTER_VERDICTS
             ]
     rows_out = [r for r in rows_out if r["artifacts"]]
 

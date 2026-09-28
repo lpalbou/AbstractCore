@@ -54,6 +54,7 @@ class _FakeLlama:
         self.n_tokens = 0
         self.cache = None
         self.eval_calls: List[List[int]] = []
+        self.loaded_states = 0
 
     def token_bos(self) -> int:
         return 1
@@ -73,6 +74,7 @@ class _FakeLlama:
         self.n_tokens = 0
 
     def load_state(self, state: LlamaState) -> None:
+        self.loaded_states += 1
         self._tokens = [int(t) for t in state.input_ids[: state.n_tokens].tolist()]
         self.n_tokens = len(self._tokens)
 
@@ -168,21 +170,30 @@ def test_plain_generate_persists_prefill_snapshot() -> None:
 def test_warm_turn_loads_snapshot_instead_of_reprefilling() -> None:
     """The persisted snapshot must be LOADED on the next same-key turn so the
     shared prefix is not re-evaluated. Driven with an identical prompt (the
-    rendering-independent form of the mechanism): turn 1 prefills the whole
-    prompt; turn 2 finds turn-1's snapshot as a complete token prefix, loads it,
-    and evals nothing. (Growing-prefix suffix-only reuse is proven live against
-    real Qwen3/Gemma-4 GGUFs; here we pin the load path without depending on
-    chat-template thinking-scaffold rendering.)"""
+    rendering-independent form of the mechanism). The current contract
+    (`_gguf_prefill_prompt_cache`, 2026-08-05):
+
+      - turn 1 prefills the WHOLE prompt, in two evals: the stable head, then
+        the volatile generation tail (`<|im_end|>...assistant`), with the
+        snapshot stored at the boundary between them (`snapshot_at_boundary`);
+      - turn 2 loads that snapshot and evaluates only what lies past it --
+        never zero tokens (invariant 1: a restore that covers the whole prompt
+        would leave no logits to sample from), never the whole prompt again.
+
+    (Growing-prefix suffix-only reuse is proven live against real Qwen3/Gemma-4
+    GGUFs; here we pin the load path without depending on chat-template
+    thinking-scaffold rendering.)"""
     p = _provider()
     msgs = [{"role": "user", "content": "first question"}]
     _drive(p, "sess", msgs)
-    turn1_prefill = len(p.llm.eval_calls[-1])
-    assert turn1_prefill > 0  # cold prefill of the whole prompt
+    turn1_prefill = sum(len(c) for c in p.llm.eval_calls)
+    assert turn1_prefill > 0 and p.llm.loaded_states == 0  # cold prefill of the whole prompt
 
     p.llm.eval_calls.clear()
     _drive(p, "sess", msgs)  # identical prompt, same key
-    # The whole prompt is already a saved snapshot → loaded, zero re-eval.
-    assert p.llm.eval_calls == [] or sum(len(c) for c in p.llm.eval_calls) < turn1_prefill
+    turn2_fed = sum(len(c) for c in p.llm.eval_calls)
+    assert p.llm.loaded_states == 1, "the boundary snapshot is restored"
+    assert 1 <= turn2_fed < turn1_prefill // 2, (turn1_prefill, turn2_fed)
 
 
 def test_snapshots_stay_ram_bounded_across_growing_turns() -> None:

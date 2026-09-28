@@ -228,6 +228,11 @@ def test_apple_silicon_seed_is_byte_identical(kind, monkeypatch):
 @pytest.mark.parametrize("kind", sorted(APPLE_TEXT))
 def test_apple_silicon_routes_downloads_and_plan_are_unchanged(kind, monkeypatch):
     monkeypatch.setattr(mc, "MTP_RECOMMENDED", False)
+    # Every engine installed (`engine_missing` would otherwise add its key:
+    # test_route_engine_missing.py owns that state).
+    from abstractcore.config import route_engines
+
+    monkeypatch.setattr(route_engines, "route_engine_missing", lambda *a, **k: None)
     host = synthetic_host(kind)
     text = APPLE_TEXT[kind]
     video = VIDEO_FITS[kind]

@@ -3545,6 +3545,7 @@ def recommended_plan(*, base_urls: Optional[Dict[str, str]] = None) -> Dict[str,
     """
 
     from .model_catalog import recommended_text_model
+    from .route_engines import route_engine_missing
 
     urls = {k.lower(): v for k, v in (base_urls or {}).items()}
     # The text row says WHY it is the pick and whether it fits this host
@@ -3557,6 +3558,11 @@ def recommended_plan(*, base_urls: Optional[Dict[str, str]] = None) -> Dict[str,
             presence = probe(item["provider"], item["artifact"], base_url=urls.get(item["provider"].lower()))
             row = dict(item)
             row.update(presence.to_dict())
+            # Weights are one half of "ready": the engine that runs them may
+            # not be installed here (`engine_missing`, route_engines.py).
+            engine = route_engine_missing(item["provider"], item["artifact"], item["route"])
+            if engine is not None:
+                row["engine_missing"] = engine
             if item["route"] == "input.text" and (item["provider"], item["artifact"]) == (text_pick["provider"], text_pick["artifact"]):
                 row.update(
                     catalog_id=text_pick["catalog_id"],

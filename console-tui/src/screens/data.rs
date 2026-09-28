@@ -293,10 +293,16 @@ impl EngineRow {
         self.install.method.as_deref() == Some("app")
     }
 
-    /// `installed` / `not installed` / `unsupported` / `unknown`.
+    /// `installed` / `not installed` / `remote only` / `unsupported` /
+    /// `unknown`. `remote only` = this host cannot run it, but a server
+    /// of it on another machine can be used (vLLM on a CPU box).
     pub fn install_label(&self) -> &'static str {
         if self.supported_on_host == Some(false) {
-            return "unsupported";
+            return if self.kind.as_deref() == Some("remote_only") {
+                "remote only"
+            } else {
+                "unsupported"
+            };
         }
         match self.installed {
             Some(true) => "installed",
@@ -360,7 +366,39 @@ pub fn fit_label(verdict: &str) -> &'static str {
         "tight" => "tight",
         "too_large" => "too large",
         "partial_offload" => "partial offload",
+        "needs_gpu_limit" => "needs GPU limit",
         _ => "unknown",
+    }
+}
+
+/// Core's `fit.gpu_limit` (backlog 0947): the model fits once macOS lets
+/// the GPU wire this much memory — `command` sets it (admin; lasts until
+/// the Mac restarts).
+#[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
+pub struct GpuLimit {
+    pub required_mb: u64,
+    pub command: String,
+}
+
+impl GpuLimit {
+    fn from_value(v: Option<&Value>) -> Option<GpuLimit> {
+        let v = v.filter(|v| v.is_object())?;
+        Some(GpuLimit {
+            required_mb: u(v, "required_mb")?,
+            command: s(v, "command")?,
+        })
+    }
+
+    /// The sentence the detail line prints: the value, the exact
+    /// command, and what it costs.
+    pub fn instruction(&self) -> String {
+        format!(
+            "fits once macOS lets the GPU use {} GiB: run `{}` (asks for your password; \
+             lasts until the Mac restarts)",
+            self.required_mb / 1024,
+            self.command
+        )
     }
 }
 
@@ -379,8 +417,11 @@ pub struct ArtifactRow {
     /// `installed | absent | unknown | not_applicable`.
     pub presence: String,
     pub presence_location: Option<String>,
-    /// `fits | tight | too_large | partial_offload | unknown`.
+    /// `fits | tight | too_large | partial_offload | needs_gpu_limit | unknown`.
     pub fit: String,
+    /// `needs_gpu_limit` only: the Mac's GPU memory limit that makes it
+    /// fit (Core `fit.gpu_limit`), with the exact command.
+    pub gpu_limit: Option<GpuLimit>,
     pub need_bytes: Option<u64>,
     pub fits_now: Option<bool>,
     pub disk_ok: Option<bool>,
@@ -535,6 +576,7 @@ impl CatalogData {
                     presence: s(&p, "status").unwrap_or_else(|| "unknown".into()),
                     presence_location: s(&p, "location"),
                     fit: s(&fit, "verdict").unwrap_or_else(|| "unknown".into()),
+                    gpu_limit: GpuLimit::from_value(fit.get("gpu_limit")),
                     need_bytes: u(&fit, "need_bytes"),
                     fits_now: b(&fit, "fits_now"),
                     disk_ok: b(&fit, "disk_ok"),
@@ -993,6 +1035,17 @@ mod tests {
         assert_eq!(weights_label("whatever"), "unknown");
         assert_eq!(fit_label("too_large"), "too large");
         assert_eq!(fit_label("partial_offload"), "partial offload");
+        assert_eq!(fit_label("needs_gpu_limit"), "needs GPU limit");
+        let gl = GpuLimit::from_value(Some(&json!({"required_mb": 117760,
+            "command": "sudo sysctl iogpu.wired_limit_mb=117760"})))
+        .unwrap();
+        assert!(gl.instruction().starts_with(
+            "fits once macOS lets the GPU use 115 GiB: run `sudo sysctl iogpu.wired_limit_mb=117760`"
+        ));
+        assert!(
+            GpuLimit::from_value(Some(&json!({"required_mb": 1}))).is_none(),
+            "no command, no line"
+        );
         assert_eq!(bytes_label(Some(5_200_000_000)), "4.8 GiB");
         assert_eq!(bytes_label(None), "—");
         assert_eq!(params_label(Some(8_200_000_000)), "8.2B");
@@ -1141,6 +1194,10 @@ mod tests {
         let e = EngineRow::from_value(&json!({"id": "vllm", "supported_on_host": false}));
         assert_eq!(e.name, "vllm");
         assert_eq!(e.install_label(), "unsupported");
+        let remote = EngineRow::from_value(
+            &json!({"id": "vllm", "kind": "remote_only", "supported_on_host": false}),
+        );
+        assert_eq!(remote.install_label(), "remote only");
         assert_eq!(e.running_label(), "—");
         assert!(!e.install.available);
         let c = CatalogData::from_value(&json!({"rows": [{"id": "m", "artifacts": [{}]}]}));

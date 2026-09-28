@@ -15,6 +15,7 @@ import pytest
 
 from abstractcore.config import model_catalog as mc
 from abstractcore.config.capability_defaults import RECOMMENDED_MODEL_DOWNLOADS
+from abstractcore.utils.model_fit import FIT_VERDICTS
 from tests.models_engines_fakes import FakeHfApi, HubRateLimited, isolate_host, make_hf_repo, synthetic_host
 
 ASSETS = Path(mc.__file__).resolve().parent.parent / "assets"
@@ -123,7 +124,7 @@ def test_catalog_payload_follows_contract_c(host):
             assert _ART_KEYS <= set(art)
             assert _FIT_KEYS <= set(art["fit"])
             assert art["presence"]["status"] in {"installed", "absent", "unknown", "not_applicable"}
-            assert art["fit"]["verdict"] in {"fits", "tight", "too_large", "partial_offload", "unknown"}
+            assert art["fit"]["verdict"] in set(FIT_VERDICTS)
             assert art["size_source"] in {"hf_api", "catalog", "engine", "estimate", "unknown"}
             assert art["quant_class"] in mc.QUANT_CLASSES
 

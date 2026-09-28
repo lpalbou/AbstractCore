@@ -379,7 +379,36 @@ pub fn drop_placeholder(s: &ScreensStore, like: &JobView) {
 }
 
 /// Opens a URL on the machine running the console (`o`).
-pub type Opener = Rc<dyn Fn(&str) -> Result<(), String>>;
+pub type Opener = Rc<dyn Fn(&str) -> Result<(), OpenError>>;
+
+/// Why an [`Opener`] did not open a URL.
+///
+/// `NoDisplay` is the one a host must act on: this machine has no screen a
+/// browser could appear on (an SSH session, or Linux/BSD with neither
+/// `DISPLAY` nor `WAYLAND_DISPLAY`), NOTHING was launched, and the person
+/// needs the URL itself — [`ScreensCtx::open_url`] says so in its notice,
+/// and a host (the gateway console's Apps → Open) shows the link instead.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum OpenError {
+    /// No display here; `why` in plain words. Nothing was launched.
+    NoDisplay { why: String },
+    /// Refused before anything ran (only http(s) links are opened).
+    Refused(String),
+    /// The system opener could not be started.
+    Failed(String),
+}
+
+impl std::fmt::Display for OpenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OpenError::NoDisplay { why } => write!(f, "no display on this machine ({why})"),
+            OpenError::Refused(why) | OpenError::Failed(why) => f.write_str(why),
+        }
+    }
+}
+
+impl std::error::Error for OpenError {}
 
 /// Knobs for [`ScreensCtx::new`].
 #[derive(Clone)]
@@ -965,12 +994,22 @@ impl ScreensCtx {
         }
     }
 
-    /// `o`: open a URL with the configured opener.
-    pub fn open_url(&self, url: &str) {
-        match (self.opener)(url) {
+    /// `o`: open a URL with the configured opener, and say what happened.
+    ///
+    /// The outcome is returned so a host can act on it: on
+    /// [`OpenError::NoDisplay`] nothing was launched and the person needs
+    /// the link itself (the notice already prints it).
+    pub fn open_url(&self, url: &str) -> Result<(), OpenError> {
+        let outcome = (self.opener)(url);
+        match &outcome {
             Ok(()) => self.notice(format!("opened {url}")),
+            // The URL LEADS: a narrow terminal clips the tail, never the link.
+            Err(OpenError::NoDisplay { why }) => self.notice(format!(
+                "open {url} on your computer — no display on this machine ({why})"
+            )),
             Err(e) => self.notice(format!("could not open {url}: {e} — open it yourself")),
         }
+        outcome
     }
 
     /// Close the one modal these screens may hold (the filter input).
@@ -981,11 +1020,71 @@ impl ScreensCtx {
     }
 }
 
-/// The system opener: fixed argv, the URL as ONE argument, never a shell.
-pub fn system_open(url: &str) -> Result<(), String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err("only http(s) links are opened".into());
+/// Is there a display a browser could open on, here? `Err(why)` when not.
+///
+/// Reads the real environment; [`display_from`] is the rule.
+pub fn display_available() -> Result<(), String> {
+    let os = if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "unix"
+    };
+    display_from(os, &|key| std::env::var_os(key))
+}
+
+/// The display rule, for `os` = `macos` | `windows` | `unix` (Linux, BSD)
+/// and an environment lookup:
+///
+/// - an SSH session (`SSH_CONNECTION`, `SSH_CLIENT` or `SSH_TTY` set) has no
+///   display of the person's own: `open`/`xdg-open` would put a browser on
+///   the REMOTE machine's screen, or fail — on every OS;
+/// - on `unix`, a graphical session sets `DISPLAY` (X11) or
+///   `WAYLAND_DISPLAY`; with neither, there is no screen at all (a headless
+///   server, a container, a text console).
+pub fn display_from(
+    os: &str,
+    env: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+) -> Result<(), String> {
+    let set = |key: &str| env(key).is_some_and(|v| !v.is_empty());
+    if ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"]
+        .iter()
+        .any(|k| set(k))
+    {
+        return Err(
+            "this is an SSH session: a browser would open on the remote machine, not yours".into(),
+        );
     }
+    if os == "unix" && !set("DISPLAY") && !set("WAYLAND_DISPLAY") {
+        return Err("no graphical session: DISPLAY and WAYLAND_DISPLAY are unset".into());
+    }
+    Ok(())
+}
+
+/// The system opener: fixed argv, the URL as ONE argument, never a shell.
+/// Never launches anything without a display ([`display_available`]):
+/// that is [`OpenError::NoDisplay`], and the host shows the URL instead.
+pub fn system_open(url: &str) -> Result<(), OpenError> {
+    open_gated(url, display_available(), launch)
+}
+
+/// The gate order, testable without a real opener: refuse non-http(s),
+/// then refuse without a display — `launch` runs only past both.
+fn open_gated(
+    url: &str,
+    display: Result<(), String>,
+    launch: impl FnOnce(&str) -> Result<(), OpenError>,
+) -> Result<(), OpenError> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(OpenError::Refused("only http(s) links are opened".into()));
+    }
+    display.map_err(|why| OpenError::NoDisplay { why })?;
+    launch(url)
+}
+
+/// `open` / `explorer` / `xdg-open` with the URL as ONE argument.
+fn launch(url: &str) -> Result<(), OpenError> {
     let (prog, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
         ("open", vec![url])
     } else if cfg!(target_os = "windows") {
@@ -1000,7 +1099,7 @@ pub fn system_open(url: &str) -> Result<(), String> {
         .stderr(std::process::Stdio::null())
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("{prog}: {e}"))
+        .map_err(|e| OpenError::Failed(format!("{prog}: {e}")))
 }
 
 // ---------------------------------------------------------------------
@@ -1531,5 +1630,84 @@ pub fn error_notice(verb: &str, subject: &str, e: &TransportError) -> String {
             e.message,
             reasons.join(", ")
         )
+    }
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::display_from;
+    use std::ffi::OsString;
+
+    fn env(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<OsString> {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| OsString::from(*v))
+        }
+    }
+
+    #[test]
+    fn linux_without_display_or_wayland_has_no_display() {
+        let why = display_from("unix", &env(&[])).unwrap_err();
+        assert!(
+            why.contains("DISPLAY and WAYLAND_DISPLAY are unset"),
+            "{why}"
+        );
+        assert!(
+            display_from("unix", &env(&[("DISPLAY", "")])).is_err(),
+            "empty is unset"
+        );
+        assert!(display_from("unix", &env(&[("DISPLAY", ":0")])).is_ok());
+        assert!(display_from("unix", &env(&[("WAYLAND_DISPLAY", "wayland-0")])).is_ok());
+    }
+
+    #[test]
+    fn an_ssh_session_has_no_display_on_every_os() {
+        for os in ["macos", "windows", "unix"] {
+            for key in ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"] {
+                let pairs: &'static [(&'static str, &'static str)] = match key {
+                    "SSH_CONNECTION" => &[
+                        ("SSH_CONNECTION", "1.2.3.4 5 6.7.8.9 22"),
+                        ("DISPLAY", ":0"),
+                    ],
+                    "SSH_CLIENT" => &[("SSH_CLIENT", "1.2.3.4 5 22"), ("DISPLAY", ":0")],
+                    _ => &[("SSH_TTY", "/dev/ttys001"), ("DISPLAY", ":0")],
+                };
+                let why = display_from(os, &env(pairs)).unwrap_err();
+                assert!(why.contains("SSH session"), "{os} {key}: {why}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_local_mac_or_windows_desktop_has_one() {
+        assert!(display_from("macos", &env(&[])).is_ok());
+        assert!(display_from("windows", &env(&[])).is_ok());
+    }
+
+    #[test]
+    fn nothing_is_launched_without_a_display() {
+        let launched = std::cell::Cell::new(false);
+        let out = super::open_gated("https://example.org", Err("SSH".into()), |_| {
+            launched.set(true);
+            Ok(())
+        });
+        assert_eq!(out, Err(super::OpenError::NoDisplay { why: "SSH".into() }));
+        assert!(!launched.get());
+        let out = super::open_gated("https://example.org", Ok(()), |u| {
+            assert_eq!(u, "https://example.org");
+            launched.set(true);
+            Ok(())
+        });
+        assert!(out.is_ok() && launched.get());
+    }
+
+    #[test]
+    fn system_open_refuses_non_http_before_anything_else() {
+        assert!(matches!(
+            super::system_open("file:///etc/passwd"),
+            Err(super::OpenError::Refused(_))
+        ));
     }
 }

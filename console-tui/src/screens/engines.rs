@@ -117,7 +117,10 @@ pub fn engines(cx: Scope, sctx: &ScreensCtx) -> View {
             let s = sctx.clone();
             move |_| match selected_engine(&s.store, false) {
                 Some(e) => match e.open_url() {
-                    Some(url) => s.open_url(url),
+                    // The notice reports every outcome (no display: the URL).
+                    Some(url) => {
+                        let _ = s.open_url(url);
+                    }
                     None => s
                         .store
                         .notice
@@ -239,7 +242,13 @@ fn engines_table(cx: Scope, t: &TokenSet, data: &[EngineRow], store: ScreensStor
                     .unwrap_or_else(|| "—".into()),
             );
             if w >= 90 {
-                row.push(e.kind.clone().unwrap_or_else(|| "—".into()));
+                // Core's ids in words (`remote_only` → `remote only`).
+                row.push(
+                    e.kind
+                        .as_deref()
+                        .map(|k| k.replace('_', " "))
+                        .unwrap_or_else(|| "—".into()),
+                );
             }
             row.push(install_cell(e));
             row
@@ -307,9 +316,16 @@ fn engine_detail(t: &TokenSet, e: &EngineRow, job: Option<&JobView>) -> View {
         return paused_detail(t, first, j);
     }
     let second = if e.supported_on_host == Some(false) {
+        // The engine data's own plain reason, verbatim ("vLLM needs Linux
+        // with an NVIDIA GPU (CUDA); use a remote vLLM server instead").
         vec![span(
             format!(
-                "   not supported on this host: {}",
+                "   {}: {}",
+                if e.kind.as_deref() == Some("remote_only") {
+                    "does not run on this computer"
+                } else {
+                    "not supported on this host"
+                },
                 e.unsupported_reason.as_deref().unwrap_or("no reason given")
             ),
             t.warn,

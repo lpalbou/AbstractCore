@@ -5780,36 +5780,11 @@ class HuggingFaceProvider(BaseProvider):
         }
 
     def _is_gguf_model(self, model: str) -> bool:
-        """Detect if the model is a GGUF model"""
-        # Check if it's a .gguf file path
-        if model.endswith('.gguf'):
-            return True
+        """Detect if the model is a GGUF model (`model_cache.is_gguf_model_ref`,
+        shared with the route engine check so both choose the same lane)."""
+        from ..utils.model_cache import is_gguf_model_ref
 
-        # Local filesystem path (a .gguf FILE, or a DIRECTORY containing .gguf
-        # files). A user pointing --model at an on-disk model — the LM Studio
-        # layout ~/.lmstudio/models/org/Model[/ | :quant] is the common one —
-        # must be recognized as GGUF even when the name carries no "gguf" token.
-        # A trailing ":quant" selector is stripped before the path test.
-        try:
-            head = model.split(":", 1)[0] if ":" in model else model
-            p = Path(head).expanduser()
-            if p.is_file() and p.suffix.lower() == '.gguf':
-                return True
-            if p.is_dir() and any(p.rglob("*.gguf")):
-                return True
-        except (OSError, ValueError):
-            pass
-
-        # Check if it's a HF repo with GGUF in the name (various formats)
-        model_lower = model.lower()
-        if 'gguf' in model_lower:
-            # Handle formats like:
-            # - "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF"
-            # - "unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF" (cache format)
-            # - "repo/model-GGUF"
-            return True
-
-        return False
+        return is_gguf_model_ref(model)
 
     def _is_vision_model(self, model: str) -> bool:
         """Detect if the model is a vision model that requires special handling"""

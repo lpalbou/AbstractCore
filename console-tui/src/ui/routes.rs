@@ -216,6 +216,18 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                         ),
                         t.error,
                     ));
+                } else if let Some(m) = r.engine_missing.as_ref().filter(|_| r.configured) {
+                    // Runnable here, not installed: Core's sentence carries
+                    // the exact install command; `i` on Engines runs it when
+                    // the engine has a row there.
+                    let via = match &m.engine_row {
+                        Some(row) => format!(" (Engines: {row}, i installs it)"),
+                        None => String::new(),
+                    };
+                    spans.push(span(
+                        format!("engine not installed: {}{via}  ", m.reason),
+                        t.warn,
+                    ));
                 } else if let Some(u) = r
                     .recommendation_unavailable
                     .as_ref()
@@ -310,7 +322,7 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
         .build()
 }
 
-/// `d` — download the selected route's model weights.
+/// `w` — download the selected route's model weights.
 ///
 /// NEVER AUTOMATIC, ALWAYS CONFIRMED. This is the one verb in the
 /// console that spends gigabytes, so it names the artifact and the

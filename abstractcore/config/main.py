@@ -1534,6 +1534,10 @@ def _print_capability_defaults(payload: dict) -> None:
         if isinstance(broken, dict) and broken.get("reason"):
             # Configured, and it cannot run here: never printed as fine.
             source = f"{source}; ⚠️ cannot run on this computer: {broken['reason']}"
+        engine = item.get("engine_missing")
+        if isinstance(engine, dict) and engine.get("reason"):
+            # This computer can run it, but its engine is not installed here.
+            source = f"{source}; ⚠️ engine not installed: {engine['reason']}"
         broad_key = str(item.get("broad_key") or "")
         if broad_key:
             if item.get("inherits_broad"):
@@ -1880,6 +1884,10 @@ def _print_apply_recommended(payload: dict) -> None:
         head = f"- {glyph} {row.get('key')}" + (f" ({selector})" if selector else "")
         broken = row.get("route_unavailable") if isinstance(row.get("route_unavailable"), dict) else None
         cannot_run = f" — yours cannot run on this computer: {broken.get('reason')}" if broken else ""
+        engine = row.get("engine_missing") if isinstance(row.get("engine_missing"), dict) else None
+        if engine:
+            # The route this leaves in place still needs its engine installed.
+            cannot_run += f" — engine not installed: {engine.get('reason')}"
         if action == "already":
             print(f"{head}: {after} — already the recommendation")
         elif action == "kept":
@@ -2347,6 +2355,11 @@ def _print_models_status(payload: dict) -> None:
         instruction = availability.get("instruction")
         if instruction and status in {"absent", "unknown"}:
             print(f"     → {instruction}")
+        engine = row.get("engine_missing")
+        if isinstance(engine, dict) and engine.get("reason"):
+            # Weights are half of "ready": the engine that runs them is not
+            # installed here (never folded into "not downloaded").
+            print(f"     ⚠️ engine not installed: {engine['reason']}")
 
     if unconfigured and not payload.get("show_all"):
         print(f"   ({len(unconfigured)} route(s) not configured — nothing to download; --all lists them)")
@@ -2366,6 +2379,10 @@ def _print_models_status(payload: dict) -> None:
         gaps = gaps if gaps is not None else (plan.get("would_download") or [])
         for item in gaps:
             print(f"  missing: {item['provider']} {item['artifact']}  ({item['route']})")
+        for item in plan.get("recommended") or []:
+            engine = item.get("engine_missing") if isinstance(item, dict) else None
+            if isinstance(engine, dict) and engine.get("install") and not item.get("route_answered"):
+                print(f"  engine not installed for {item['route']}: {engine['install']}")
         if gaps:
             print("  abstractcore models download --recommended        # fetch exactly these")
             print("  abstractcore models download --recommended --dry-run")

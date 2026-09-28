@@ -1,0 +1,204 @@
+"""Is the engine behind an in-process route INSTALLED on this machine?
+
+A capability route can fail at first use for three different reasons, and
+every grid says which one (they are never folded together):
+
+    route_unavailable  this HOST cannot run the engine at all (MLX on Linux):
+                       `capability_defaults.configured_routes_unavailable`
+    engine_missing     the host can run it, but the engine's software is not
+                       installed in this Python environment: THIS module
+    weights            the engine is here, the model files are not
+                       ("not downloaded"): `model_materializer.probe`
+
+Only IN-PROCESS engines are judged: software this process imports to run the
+route. A server provider (LM Studio, Ollama, vLLM, OpenAI-compatible) may be
+running on another machine, and a cloud provider runs anywhere, so nothing
+installed here decides whether they work.
+
+    provider      engine        installed when                      owner of the answer
+    mlx           mlx           `mlx_lm` is importable              AbstractCore's MLX provider
+    huggingface   llamacpp      `llama_cpp` is importable           AbstractCore's GGUF lane
+                  huggingface   `transformers` and `torch`          AbstractCore's Transformers lane
+    mlx-gen       mlx-gen       `abstractvision` and `mlx-gen`      AbstractVision's MLX-Gen backend
+    voice routes  <engine>      abstractvoice's own answer          `abstractvoice.engine_runtime`
+
+VOICE: AbstractVoice owns which packages each of its engines needs
+(Supertonic: onnxruntime, faster-whisper: faster_whisper, ...), so the answer
+is its public `engine_runtime_status` (abstractvoice >= the `voice` extra's
+floor in pyproject.toml). An AbstractVoice too old to have that API raises:
+guessing its engines' packages here is exactly the drift the API exists to
+stop. With AbstractVoice absent, every local voice route is missing it.
+
+Every check is `importlib.util.find_spec` / package metadata: nothing is
+imported, so a grid of every route costs milliseconds.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import shlex
+from importlib import metadata
+from typing import Any, Dict, Mapping, Optional, Tuple
+
+__all__ = ["ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR", "route_engine_missing", "routes_engine_missing"]
+
+# The first AbstractVoice with `abstractvoice.engine_runtime` (the public
+# runtime probe). Mirrors the floor of the `voice` extra in pyproject.toml;
+# the release stager raises both together.
+ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR = "0.13.0"
+
+# Voice providers that run remotely: AbstractVoice needs nothing beyond its
+# core install for them, and whether they are configured is not a runtime
+# question.
+_REMOTE_VOICE_PROVIDERS = frozenset({"openai", "openai-compatible"})
+
+
+def _importable(module: str) -> bool:
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _distributed(dist: str) -> bool:
+    try:
+        metadata.distribution(dist)
+        return True
+    except metadata.PackageNotFoundError:
+        return False
+
+
+def _engine_plan_command(engine_id: str) -> str:
+    """The Engines screen's own install command for a Python engine row
+    (`engines.engine_install_plan`: the one allowlist)."""
+
+    from .engines import engine_install_plan
+
+    plan = engine_install_plan(engine_id)
+    argv = plan.get("argv") or []
+    return shlex.join(str(a) for a in argv)
+
+
+def _missing(engine: str, name: str, reason: str, install: Optional[str], engine_row: Optional[str] = None) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"engine": engine, "name": name, "reason": reason, "install": install}
+    if engine_row:
+        # The Engines screen row that installs it (`i` there runs `install`).
+        out["engine_row"] = engine_row
+    return out
+
+
+def _python_engine(engine: str, name: str, modules: Tuple[str, ...], what: str) -> Optional[Dict[str, Any]]:
+    absent = [m for m in modules if not _importable(m)]
+    if not absent:
+        return None
+    install = _engine_plan_command(engine)
+    return _missing(
+        engine,
+        name,
+        f"{name} is not installed in this Python environment ({', '.join(absent)} missing); {what}. "
+        f"Install it with: {install}",
+        install,
+        engine_row=engine,
+    )
+
+
+def _mlx_gen() -> Optional[Dict[str, Any]]:
+    absent = [d for d in ("abstractvision", "mlx-gen") if not _distributed(d)]
+    if not absent:
+        return None
+    # AbstractVision's own documented install for its MLX-Gen backend (the
+    # command its OptionalDependencyMissingError prints).
+    install = 'pip install "abstractvision[mlx-gen]"'
+    return _missing(
+        "mlx-gen",
+        "MLX-Gen (AbstractVision)",
+        f"MLX-Gen image and video generation is not installed in this Python environment "
+        f"({', '.join(absent)} missing). Install it with: {install}",
+        install,
+    )
+
+
+def _voice(provider: str) -> Optional[Dict[str, Any]]:
+    if provider in _REMOTE_VOICE_PROVIDERS:
+        return None
+    if not _distributed("abstractvoice"):
+        install = 'pip install "abstractcore[voice]"'
+        return _missing(
+            provider,
+            "AbstractVoice",
+            f"voice runs in AbstractVoice, which is not installed in this Python environment. "
+            f"Install it with: {install}",
+            install,
+        )
+    try:
+        from abstractvoice.engine_runtime import engine_runtime_status
+    except ImportError as exc:
+        raise RuntimeError(
+            f"abstractvoice {_dist_version('abstractvoice')} has no public engine runtime probe "
+            f"(abstractvoice.engine_runtime); AbstractCore needs abstractvoice>={ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR}: "
+            f'pip install "abstractvoice>={ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR}"'
+        ) from exc
+    try:
+        status = engine_runtime_status(provider)
+    except ValueError as exc:
+        # Not an engine AbstractVoice has: the route cannot run, and its own
+        # words say which engines exist.
+        return _missing(provider, provider, str(exc), None)
+    if status.installed:
+        return None
+    return _missing(status.engine, status.label, str(status.reason), status.install_command)
+
+
+def _dist_version(dist: str) -> str:
+    try:
+        return metadata.version(dist)
+    except metadata.PackageNotFoundError:
+        return "(unknown version)"
+
+
+def route_engine_missing(provider: Any, model: Any = None, key: Any = None) -> Optional[Dict[str, Any]]:
+    """`{engine, name, reason, install[, engine_row]}` when the in-process
+    engine behind this route is not installed here, else None.
+
+    `key` is the route key (`output.voice`, `input.voice`, ...): voice routes
+    are AbstractVoice engines whatever their provider id. `model` decides the
+    Hugging Face lane (a GGUF reference runs on llama.cpp, anything else on
+    Transformers). Providers that are not in-process return None.
+    """
+
+    pid = str(provider or "").strip().lower()
+    if not pid:
+        return None
+    route_key = str(key or "").strip().lower()
+    if route_key in ("input.voice", "output.voice"):
+        return _voice(pid)
+    if pid == "mlx":
+        return _python_engine("mlx", "MLX (mlx-lm)", ("mlx_lm",), "the mlx provider runs models with it")
+    if pid == "mlx-gen":
+        return _mlx_gen()
+    if pid == "huggingface":
+        from ..utils.model_cache import is_gguf_model_ref
+
+        if is_gguf_model_ref(str(model or "")):
+            return _python_engine(
+                "llamacpp", "llama.cpp (llama-cpp-python)", ("llama_cpp",), "GGUF models run in it"
+            )
+        return _python_engine(
+            "huggingface", "Hugging Face Transformers", ("transformers", "torch"), "Transformers models run in it"
+        )
+    return None
+
+
+def routes_engine_missing(routes: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """`{key: engine_missing}` for every route in `{key: route-like}` whose
+    in-process engine is not installed (the grid, the apply plan)."""
+
+    from .capability_defaults import clean_capability_route_default
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, value in routes.items():
+        route = clean_capability_route_default(value)
+        flag = route_engine_missing(route.provider, route.model, key)
+        if flag is not None:
+            out[str(key)] = flag
+    return out
