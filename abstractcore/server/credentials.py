@@ -21,6 +21,7 @@ from typing import Any, List, Mapping, Optional
 from fastapi import HTTPException, Request
 
 __all__ = [
+    "MUSIC_BACKEND_KEY_CONFIG",
     "MUSIC_SERVER_KEYS",
     "guard_catalog_credentials",
     "guard_music_credentials",
@@ -44,6 +45,12 @@ __all__ = [
 MUSIC_SERVER_KEYS = {
     "ACEMUSIC_API_KEY": "music_acemusic_api_key",
     "ELEVENLABS_API_KEY": "music_elevenlabs_api_key",
+}
+# Which AbstractMusic backend reads which owner key (its `_REMOTE_CONFIG_PREFIX`):
+# a caller's own key is handed only to the backend the request selected.
+MUSIC_BACKEND_KEY_CONFIG = {
+    "abstractmusic:acemusic": "music_acemusic_api_key",
+    "abstractmusic:elevenlabs-music": "music_elevenlabs_api_key",
 }
 
 

@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..capabilities.errors import CapabilityUnavailableError
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 from ..utils.structured_logging import get_logger
-from .credentials import MUSIC_SERVER_KEYS, guard_catalog_credentials, guard_music_credentials
+from .credentials import MUSIC_BACKEND_KEY_CONFIG, MUSIC_SERVER_KEYS, guard_catalog_credentials, guard_music_credentials
 from .credentials import saved_openai_api_key as _saved_openai_api_key
 
 logger = get_logger(__name__)
@@ -887,17 +887,50 @@ def _optional_int(value: Any, *, field: str) -> Optional[int]:
         raise HTTPException(status_code=422, detail=f"Invalid {field}: expected an integer.") from e
 
 
+from ..capabilities.music_selectors import MUSIC_BACKEND_NAMES
 from ..capabilities.music_selectors import resolve_music_backend_id as _music_backend_selector
+
+
+def _requested_music_backend(data: Dict[str, Any], *, path_provider: Optional[str] = None) -> Optional[str]:
+    """The music backend id the request selects (body `provider`, else the
+    route prefix), None when it selects none. An unknown selector is refused
+    (400): it must never fall back to another backend, least of all with the
+    caller's key."""
+    for selector in (data.get("provider"), path_provider):
+        if selector in (None, ""):
+            continue
+        backend = _music_backend_selector(selector)
+        if backend is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown music backend selector {str(selector)!r}. "
+                    f"Known selectors: {', '.join(sorted(MUSIC_BACKEND_NAMES))}."
+                ),
+            )
+        return backend
+    return None
+
+
+def _music_caller_key_config(backend: Optional[str]) -> tuple:
+    """The owner keys a caller key is handed over as: only the selected
+    backend's (none for a local backend); with no selection, the configured
+    backend's, else every remote backend's (whichever the registry picks sees
+    only the caller's key)."""
+    if backend is None:
+        backend = _music_backend_selector(_capability_config().get("music_backend"))
+    if backend is None:
+        return tuple(MUSIC_SERVER_KEYS.values())
+    key = MUSIC_BACKEND_KEY_CONFIG.get(backend)
+    return (key,) if key else ()
 
 
 def _music_capability_core_for_request(
     data: Dict[str, Any], *, path_provider: Optional[str] = None, caller_key: Optional[str] = None
 ) -> Any:
     """Return a capability host honoring request-level music backend/model
-    overrides; a caller key replaces every server-held music key."""
-    backend = _music_backend_selector(data.get("provider"), allow_unknown=True)
-    if backend is None:
-        backend = _music_backend_selector(path_provider)
+    overrides; a caller key reaches only the selected backend (`_music_caller_key_config`)."""
+    backend = _requested_music_backend(data, path_provider=path_provider)
     model = _optional_text(data.get("model") or data.get("music_model_id"))
 
     overrides: Dict[str, Any] = {}
@@ -922,7 +955,7 @@ def _music_capability_core_for_request(
         if value is not None:
             overrides[config_key] = value
     if caller_key:
-        for config_key in MUSIC_SERVER_KEYS.values():
+        for config_key in _music_caller_key_config(backend):
             overrides[config_key] = caller_key
 
     if not overrides:
@@ -2559,8 +2592,11 @@ def _audio_music_impl(request: Request, payload: AudioMusicRequest, *, path_prov
             "format": fmt,
         }
     )
-    if data.get("provider") is not None:
-        output_spec["provider"] = data.get("provider")
+    # The selected backend (body `provider` or route prefix) is pinned for the
+    # call: the registry runs exactly it or refuses, never another backend.
+    selected_backend = _requested_music_backend(data, path_provider=path_provider)  # 400 on an unknown selector
+    if selected_backend is not None:
+        output_spec["provider"] = selected_backend
     if data.get("duration_s") is not None:
         output_spec["duration_s"] = _optional_float(data.get("duration_s"), field="duration_s")
     if data.get("guidance_scale") is not None:

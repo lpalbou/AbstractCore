@@ -7803,11 +7803,49 @@ class _ServerCapabilityOwner:
         raise RuntimeError("Server capability discovery owner does not expose text generation.")
 
 
-def _server_capability_registry() -> CapabilityRegistry:
-    try:
-        from .audio_endpoints import _get_capability_core
+# Capability discovery surfaces whose plugins authenticate with a key, and the
+# owner-config keys a caller's own key is handed over as (the plugins read
+# them before their env fallbacks). A capability not listed here gets no
+# caller key, so a caller key never exempts it from the guard.
+def _discovery_caller_key_config() -> Dict[str, tuple]:
+    from .credentials import MUSIC_SERVER_KEYS
 
-        core = _get_capability_core()
+    voice = ("voice_openai_api_key", "voice_remote_api_key")
+    return {"voice": voice, "audio": voice, "vision": ("vision_api_key",), "music": tuple(MUSIC_SERVER_KEYS.values())}
+
+
+def _server_capability_registry(http_request: Request, capability: Optional[str]) -> CapabilityRegistry:
+    """The capability registry one discovery request may read (`capability`:
+    the capability it asks about, None for all of them).
+
+    Discovery calls into the plugins, which spend the keys they read (the
+    server's OpenAI key, ACEMUSIC_API_KEY, ...), so every route reading the
+    registry is guarded by the shared rule (`credentials`): a request that is
+    not server-authenticated is refused while the server holds a key the
+    capability could spend, unless it brings its own key, which is then the
+    only key those plugins see (a registry built for this request).
+    """
+    from .audio_endpoints import _capability_config, _get_capability_core
+    from .credentials import guard_catalog_credentials, guard_music_credentials
+
+    cap = str(capability or "").strip().lower() or None
+    key_config = _discovery_caller_key_config()
+    caller_key = _provider_api_key_from_request(http_request)
+    forwarded = key_config if cap is None else ({cap: key_config[cap]} if cap in key_config else {})
+    explicit = bool(caller_key) and bool(forwarded)
+    config = _capability_config()
+    if cap in (None, "music"):
+        guard_music_credentials(request=http_request, explicit_provider_key=explicit, config=config)
+    if cap != "music":
+        guard_catalog_credentials(request=http_request, explicit_provider_key=explicit, surface=cap or "capability")
+    try:
+        if explicit:
+            from .capability_generation import create_capability_generation_core
+
+            keys = {name: caller_key for names in forwarded.values() for name in names}
+            core = create_capability_generation_core(**{**config, **keys})
+        else:
+            core = _get_capability_core()
         capabilities = getattr(core, "capabilities", None)
         if capabilities is not None:
             return capabilities
@@ -8016,8 +8054,8 @@ def clear_task_capability_default(
     summary="List Capability Plugins",
     description="Inspect optional capability plugin availability and registered backend metadata.",
 )
-def list_capability_plugins():
-    registry = _server_capability_registry()
+def list_capability_plugins(http_request: Request):
+    registry = _server_capability_registry(http_request, None)
     try:
         return {
             "ok": True,
@@ -8036,10 +8074,11 @@ def list_capability_plugins():
     description="List normalized provider availability for one optional capability plugin.",
 )
 def list_capability_providers(
+    http_request: Request,
     capability: str = FastAPIPath(..., description="Capability id such as voice, audio, vision, or music."),
     task: Optional[str] = Query(None, description="Optional canonical task filter."),
 ):
-    registry = _server_capability_registry()
+    registry = _server_capability_registry(http_request, capability)
     try:
         return {
             "ok": True,
@@ -8059,11 +8098,12 @@ def list_capability_providers(
     description="List normalized model availability for one optional capability plugin.",
 )
 def list_capability_models(
+    http_request: Request,
     capability: str = FastAPIPath(..., description="Capability id such as voice, audio, vision, or music."),
     task: Optional[str] = Query(None, description="Optional canonical task filter."),
     provider: Optional[str] = Query(None, description="Optional provider filter."),
 ):
-    registry = _server_capability_registry()
+    registry = _server_capability_registry(http_request, capability)
     try:
         return {
             "ok": True,
@@ -8083,8 +8123,10 @@ def list_capability_models(
     summary="List Music Providers",
     description="List normalized provider availability for the music capability plugin.",
 )
-def list_music_providers(task: Optional[str] = Query("text_to_music", description="Optional music task filter.")):
-    registry = _server_capability_registry()
+def list_music_providers(
+    http_request: Request, task: Optional[str] = Query("text_to_music", description="Optional music task filter.")
+):
+    registry = _server_capability_registry(http_request, "music")
     try:
         return {
             "ok": True,
@@ -8104,10 +8146,11 @@ def list_music_providers(task: Optional[str] = Query("text_to_music", descriptio
     description="List normalized model availability for the music capability plugin.",
 )
 def list_music_models(
+    http_request: Request,
     task: Optional[str] = Query("text_to_music", description="Optional music task filter."),
     provider: Optional[str] = Query(None, description="Optional provider filter."),
 ):
-    registry = _server_capability_registry()
+    registry = _server_capability_registry(http_request, "music")
     try:
         return {
             "ok": True,
@@ -8132,8 +8175,10 @@ def list_music_models(
         "explains the rest. Requires abstractmusic >= 0.1.14."
     ),
 )
-def list_music_provider_details(task: Optional[str] = Query("text_to_music", description="Optional music task filter.")):
-    registry = _server_capability_registry()
+def list_music_provider_details(
+    http_request: Request, task: Optional[str] = Query("text_to_music", description="Optional music task filter.")
+):
+    registry = _server_capability_registry(http_request, "music")
     try:
         return {
             "ok": True,
