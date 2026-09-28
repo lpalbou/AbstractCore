@@ -279,3 +279,103 @@ def test_music_provider_details_route_501_when_plugin_unavailable(client, monkey
     body = resp.json()
     assert body["ok"] is False
     assert 'pip install "abstractcore[music]"' in body["error"]
+
+
+# ------------------------------------------------ server-held music keys (interim)
+_MUSIC_REFUSAL = "Server-held music ("
+
+
+def _owner_seeing_plugin(seen: list):
+    """A plugin recording the key each call would authenticate with: the
+    owner config key AbstractMusic reads first, else its env fallback."""
+    import os
+
+    def register(registry):
+        class _Music:
+            backend_id = "abstractmusic:acemusic"
+
+            def __init__(self, owner):
+                self._owner = owner
+
+            def t2m(self, prompt: str, **kwargs):
+                cfg = getattr(self._owner, "config", {}) or {}
+                seen.append(cfg.get("music_acemusic_api_key") or os.environ.get("ACEMUSIC_API_KEY"))
+                return b"wav-bytes"
+
+        registry.register_music_backend(backend_id="abstractmusic:acemusic", factory=lambda owner: _Music(owner), priority=0)
+
+    return _FakeEntryPoint(name="fake", value="tests.fake_music_owner:register", obj=register)
+
+
+@pytest.fixture()
+def unauthenticated_music(monkeypatch):
+    import abstractcore.server.audio_endpoints as ae
+
+    for name in ("ABSTRACTCORE_AUTH_TOKEN", "ACEMUSIC_API_KEY", "ELEVENLABS_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
+    monkeypatch.setattr(ae, "_CORE", None)
+    seen: list = []
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_owner_seeing_plugin(seen)]))
+    return TestClient(app), seen
+
+
+@pytest.mark.parametrize("env_var", ["ACEMUSIC_API_KEY", "ELEVENLABS_API_KEY"])
+@pytest.mark.parametrize("path", ["/v1/audio/music", "/acemusic/v1/audio/music", "/diffusers/v1/audio/music"])
+def test_unauthenticated_music_never_spends_a_server_held_key(unauthenticated_music, monkeypatch, env_var, path):
+    """Fail closed whatever backend is named (interim until AbstractMusic says
+    which backends are remote), also with ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1."""
+    client, seen = unauthenticated_music
+    monkeypatch.setenv(env_var, "sk-SENTINEL-MUSIC")
+    resp = client.post(path, json={"prompt": "x"})
+    assert resp.status_code == 401, resp.text[:200]
+    assert _MUSIC_REFUSAL in resp.json()["error"]["message"] and env_var in resp.json()["error"]["message"]
+    assert seen == []
+
+
+def test_a_music_key_held_in_the_capability_config_counts(unauthenticated_music, monkeypatch):
+    import abstractcore.server.audio_endpoints as ae
+
+    client, seen = unauthenticated_music
+    real = ae._capability_config
+    monkeypatch.setattr(ae, "_capability_config", lambda: {**real(), "music_elevenlabs_api_key": "sk-SENTINEL-MUSIC"})
+    assert client.post("/v1/audio/music", json={"prompt": "x"}).status_code == 401
+    assert seen == []
+
+
+def test_local_music_without_server_held_keys_runs_unauthenticated(unauthenticated_music):
+    client, seen = unauthenticated_music
+    assert client.post("/v1/audio/music", json={"prompt": "x"}).status_code == 200
+    assert seen == [None]
+
+
+def test_a_caller_key_is_spent_instead_of_the_servers_music_key(unauthenticated_music, monkeypatch):
+    client, seen = unauthenticated_music
+    monkeypatch.setenv("ACEMUSIC_API_KEY", "sk-SENTINEL-MUSIC")
+    resp = client.post("/v1/audio/music", json={"prompt": "x"}, headers={"X-AbstractCore-Provider-API-Key": "sk-caller-own"})
+    assert resp.status_code == 200, resp.text[:200]
+    assert seen == ["sk-caller-own"]
+
+
+def test_authenticated_music_may_spend_the_server_key(unauthenticated_music, monkeypatch):
+    client, seen = unauthenticated_music
+    monkeypatch.setenv("ACEMUSIC_API_KEY", "sk-SENTINEL-MUSIC")
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "srv-token-test")
+    resp = TestClient(app).post("/v1/audio/music", json={"prompt": "x"}, headers={"Authorization": "Bearer srv-token-test"})
+    assert resp.status_code == 200, resp.text[:200]
+    assert seen == ["sk-SENTINEL-MUSIC"]
+
+
+def test_music_server_keys_match_what_abstractmusic_reads():
+    """The constant is AbstractMusic's complete set of provider keys (when its source is here)."""
+    import pathlib
+    import re
+
+    from abstractcore.server.credentials import MUSIC_SERVER_KEYS
+
+    am = pytest.importorskip("abstractmusic")
+    root = pathlib.Path(am.__file__).parent
+    found = set()
+    for path in root.rglob("*.py"):
+        found |= set(re.findall(r'"([A-Z0-9_]+_API_KEY)"', path.read_text(encoding="utf-8")))
+    assert found == set(MUSIC_SERVER_KEYS)

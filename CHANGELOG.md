@@ -70,6 +70,13 @@ server has not authenticated), and neither `abstractcore engines open` nor the t
   request gets `401` when the server holds an OpenAI key (saved or `OPENAI_API_KEY`), also with
   `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`; an explicit `X-AbstractCore-Provider-API-Key` is
   spent instead.
+- `/v1/audio/music` and `/{provider}/v1/audio/music`: while the server holds a key AbstractMusic
+  reads (`ACEMUSIC_API_KEY`, `ELEVENLABS_API_KEY`, in the environment or as the matching
+  `music_*_api_key` route option), a request that is not server-authenticated gets `401` whatever
+  backend it names, also with `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`; an explicit
+  `X-AbstractCore-Provider-API-Key` is handed to the remote music backends in place of the
+  server's keys. Local music on a server holding none of these keys works unauthenticated. This is
+  an interim rule until AbstractMusic can say which of its backends are remote.
 - `abstractcore engines open` prints the link and launches nothing without a display (SSH session;
   Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY`), with the reason (`not_opened` in `--json`):
   the console crate's rule, now also `abstractcore.utils.display` in Python.

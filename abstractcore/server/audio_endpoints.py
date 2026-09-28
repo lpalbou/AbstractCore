@@ -29,7 +29,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..capabilities.errors import CapabilityUnavailableError
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 from ..utils.structured_logging import get_logger
-from .credentials import guard_catalog_credentials, saved_openai_api_key as _saved_openai_api_key
+from .credentials import MUSIC_SERVER_KEYS, guard_catalog_credentials, guard_music_credentials
+from .credentials import saved_openai_api_key as _saved_openai_api_key
 
 logger = get_logger(__name__)
 
@@ -889,8 +890,11 @@ def _optional_int(value: Any, *, field: str) -> Optional[int]:
 from ..capabilities.music_selectors import resolve_music_backend_id as _music_backend_selector
 
 
-def _music_capability_core_for_request(data: Dict[str, Any], *, path_provider: Optional[str] = None) -> Any:
-    """Return a capability host honoring request-level music backend/model overrides."""
+def _music_capability_core_for_request(
+    data: Dict[str, Any], *, path_provider: Optional[str] = None, caller_key: Optional[str] = None
+) -> Any:
+    """Return a capability host honoring request-level music backend/model
+    overrides; a caller key replaces every server-held music key."""
     backend = _music_backend_selector(data.get("provider"), allow_unknown=True)
     if backend is None:
         backend = _music_backend_selector(path_provider)
@@ -917,6 +921,9 @@ def _music_capability_core_for_request(data: Dict[str, Any], *, path_provider: O
         value = data.get(request_key)
         if value is not None:
             overrides[config_key] = value
+    if caller_key:
+        for config_key in MUSIC_SERVER_KEYS.values():
+            overrides[config_key] = caller_key
 
     if not overrides:
         return _get_capability_core()
@@ -2490,7 +2497,7 @@ _AUDIO_MUSIC_RESPONSES = {
 }
 
 
-def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Optional[str] = None):
+def _audio_music_impl(request: Request, payload: AudioMusicRequest, *, path_provider: Optional[str] = None):
     """Text-to-music endpoint (extension; no official OpenAI equivalent).
 
     Delegates to the `music` capability plugin (typically `abstractmusic`).
@@ -2563,7 +2570,9 @@ def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Optional[str
     if data.get("seed") is not None:
         output_spec["seed"] = _optional_int(data.get("seed"), field="seed")
 
-    core = _music_capability_core_for_request(data, path_provider=path_provider)
+    caller_key = _provider_api_key_from_request(request)
+    guard_music_credentials(request=request, explicit_provider_key=bool(caller_key), config=_capability_config())
+    core = _music_capability_core_for_request(data, path_provider=path_provider, caller_key=caller_key)
     try:
         result = core.generate(text=str(prompt), output=output_spec)
         music_items = getattr(result, "outputs", {}).get("music", [])
@@ -2586,8 +2595,8 @@ def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Optional[str
     response_class=Response,
     responses=_AUDIO_MUSIC_RESPONSES,
 )
-def audio_music(payload: AudioMusicRequest = Body(...)):
-    return _audio_music_impl(payload)
+def audio_music(request: Request, payload: AudioMusicRequest = Body(...)):
+    return _audio_music_impl(request, payload)
 
 
 @provider_router.post(
@@ -2596,10 +2605,11 @@ def audio_music(payload: AudioMusicRequest = Body(...)):
     responses=_AUDIO_MUSIC_RESPONSES,
 )
 def provider_audio_music(
+    request: Request,
     payload: AudioMusicRequest = Body(...),
     provider: str = FastAPIPath(
         ...,
         description="Music backend route prefix, e.g. `acemusic`, `acestep`, `stable-audio`, or `diffusers`.",
     ),
 ):
-    return _audio_music_impl(payload, path_provider=provider)
+    return _audio_music_impl(request, payload, path_provider=provider)
