@@ -152,7 +152,13 @@ def _artifact_facts(
     `text`: a text model, whose tight Apple silicon fit also carries the
     raised-limit command and the context it gives (`context`)."""
 
-    from .model_catalog import _companions, _seed_row_and_artifact, catalog_id_for, recommended_artifact_fit
+    from .model_catalog import (
+        _companions,
+        _seed_row_and_artifact,
+        catalog_id_for,
+        measured_context_note,
+        recommended_artifact_fit,
+    )
 
     row_id = catalog_id_for(provider, artifact)
     if row_id is None:
@@ -178,10 +184,10 @@ def _artifact_facts(
         command = raised.get("command") if raised else None
     context = None
     if text and (raised or fit.get("small_context")):
+        # No estimated token count: only a MEASURED one (`MEASURED_CONTEXT`).
         context = {
             "small": bool(fit.get("small_context")),
-            "max_tokens": fit.get("max_context"),
-            "raised_max_tokens": (raised or {}).get("max_context"),
+            "measured": measured_context_note(row_id, raised),
         }
     facts = {
         "catalog_id": row_id,
@@ -420,8 +426,8 @@ def recommendation_matrix() -> Dict[str, Any]:
                 "family": "apple_silicon",
                 "label": f"Apple silicon Mac, {_gib_list(sizes)}",
                 "reference": (
-                    f"unified memory {_gib_list(sizes)}; fit verdicts assume macOS's default GPU memory "
-                    "limit (75% of unified memory)"
+                    f"unified memory {_gib_list(sizes)}; fit verdicts assume a GPU memory limit of 75% of "
+                    "unified memory (`models recommendations --host` reads this Mac's own)"
                 ),
                 "platform": _platform(host),
                 "memory_gib": sizes,
@@ -501,12 +507,6 @@ _FIT_WORDS = {
 }
 
 
-def _tokens(n: int) -> str:
-    from .model_catalog import _tokens as tokens
-
-    return tokens(n)
-
-
 def _cell_model(e: Mapping[str, Any]) -> str:
     if e["status"] == "covered":
         return f"the text model (`{e['model']}`)"
@@ -549,12 +549,9 @@ def render_markdown(matrix: Mapping[str, Any]) -> str:
             fit = _FIT_WORDS.get(e["fit"], str(e["fit"]))
             ctx = e.get("context") or {}
             if ctx.get("small"):
-                fit = "fits with a small context"
-                if isinstance(ctx.get("max_tokens"), int):
-                    fit += f" (about {_tokens(ctx['max_tokens'])} tokens)"
+                fit = "tight: runs with a small context by default"
             if e["gpu_limit_command"] and e["fit"] == "tight":
-                more = f" (about {_tokens(ctx['raised_max_tokens'])} tokens)" if isinstance(ctx.get("raised_max_tokens"), int) else ""
-                fit = f"{fit}; more context{more} after `{e['gpu_limit_command']}`"
+                fit += f"; {ctx['measured']}" if ctx.get("measured") else f"; more context after `{e['gpu_limit_command']}`"
             elif e["gpu_limit_command"]:
                 fit = f"{fit}: `{e['gpu_limit_command']}`"
             need = _gb(e["memory_need_bytes"])
@@ -616,6 +613,8 @@ def _text_lines(entries: Mapping[str, Mapping[str, Any]]) -> List[str]:
             continue
         what = f"covered by the text model ({e['model']})" if e["status"] == "covered" else f"{e['provider']} {e['model']}"
         fit = f", {_FIT_WORDS.get(e['fit'], e['fit'])}" if e["fit"] else ""
+        if (e.get("context") or {}).get("small"):
+            fit = ", tight: runs with a small context by default"
         lines.append(f"  {e['label']}: {what} [{e['device']}; download {_gb(e['download_bytes'])}; needs {_gb(e['memory_need_bytes'])}{fit}]")
         if e.get("warning"):
             lines.append(f"    {e['warning']}")

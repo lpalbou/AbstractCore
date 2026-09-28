@@ -12,29 +12,32 @@ the model geometry. The formulas are the ones fixed in the models exploration
          unknown geometry -> n x 0.5 MiB x (P / 8e9), labelled rough
     O    overhead          max(0.5 GiB, 5% of W)
     C    host ceiling      host_profile.ceiling_bytes (Apple silicon: the GPU
-                           memory limit, by default ~75% of unified memory;
-                           measured 17.8 GB on a 24 GB Mac mini)
-    Ceff C - reserve       Apple silicon: C - 2 GiB (MLX's working buffers);
-                           elsewhere C - max(2 GiB, 5% of C) (the context
-                           estimator's reserve). Returned as `usable_bytes`
-                           (and the reserve as `reserve_bytes`): the verdict
-                           compares `need_bytes` with THIS
+                           memory limit macOS reports -- measured 17.8 GB,
+                           i.e. 16.6 GiB or ~69% of RAM, on a 24 GB Mac mini
+                           -- or, when it cannot be read, 75% of RAM)
+    Ceff C - reserve       Apple silicon: C - 2 GiB (what MLX uses beside the
+                           weights and the cache); elsewhere C - max(2 GiB, 5%
+                           of C) (the context estimator's reserve). Returned
+                           as `usable_bytes` (and the reserve as
+                           `reserve_bytes`): the verdict compares `need_bytes`
+                           with THIS
 
     need = W + KV(n) + O
     fits       need <= 0.8 Ceff
-    tight      need <= Ceff; on Apple silicon also when only the weights and
-               working memory fit (W + O + one token of KV <= Ceff):
-               `small_context: true`, the context it runs with is
-               `max_context`. A tight Apple silicon fit carries
-               `raised_limit`: the highest safe limit (below) as a command,
-               with the `max_context` it leaves
+    tight      need <= Ceff; on Apple silicon also when the weights fit
+               under the limit itself (W <= C) but not n tokens of context:
+               `small_context: true` -- it runs, with a small context (the
+               operator's measurement: 16.2 GB of Qwen3.8 27B weights run
+               under a 17.8 GB limit). No token count is claimed for it. A
+               tight Apple silicon fit carries `raised_limit`: the highest
+               safe limit (below) as a command
     too_large  otherwise; on CUDA "partial_offload" when W <= VRAM + 0.75 RAM
     needs_gpu_limit
-               Apple silicon only: too_large at the current ceiling, but a
-               GPU wired limit L (`sudo sysctl iogpu.wired_limit_mb=<MB>`) with
-               need <= Ceff(L) and L <= RAM - max(4 GiB, 12.5% of RAM) would
-               make it fit. The `gpu_limit` block carries the exact command
-               and value. The
+               Apple silicon only: too_large at the current ceiling, but fits
+               under the highest safe GPU wired limit L = RAM - max(4 GiB,
+               12.5% of RAM) (need <= Ceff(L)). The `gpu_limit` block carries
+               that ONE value as the exact command (24 GB -> 20480, 128 GB ->
+               114688). The
                ceiling is `iogpu.wired_limit_mb` whenever it is set (> 0):
                `host_profile` reads it first (`ceiling_source`
                `metal_wired_limit`), so a raised limit makes the model `fits`
@@ -75,16 +78,18 @@ FIT_VERDICTS = ("fits", "tight", "too_large", "partial_offload", "needs_gpu_limi
 # max(4 GiB, 12.5% of RAM) (`gpu_limit_max_bytes`; operator ruling
 # 2026-09-28). On a 24 GB Mac that is 20480 MB, the value the operator's own
 # measurement (Mac mini, 24 GB, Qwen3.8 27B 4-bit) runs safely at, with about
-# 30k tokens of context; above ~21 GiB there apps may crash. On a 128 GB Mac it
-# is 112 GiB. A model that needs a limit above it stays `too_large`.
+# 30k tokens of context; above 21504 MB there apps may crash. On a 128 GB Mac
+# it is 114688 MB. It is the ONE value ever suggested; a model that needs more
+# stays `too_large`.
 GPU_LIMIT_OS_RESERVE_MIN_BYTES = 4 * 1024**3
 GPU_LIMIT_OS_RESERVE_FRACTION = 0.125
 GPU_LIMIT_SYSCTL = "iogpu.wired_limit_mb"
-# The reserve inside a Metal GPU limit for MLX's working buffers (compute
-# graph, fragmentation, the allocator's cache): a flat 2 GiB, not a share of
-# the limit -- those buffers do not grow with the machine. Checked against the
-# same measurement: Qwen3.8 27B 4-bit (15.2 GiB of weights) at 20480 MB leaves
-# about 30k tokens of cache (estimate: ~34k).
+# What MLX uses inside a Metal GPU limit beside the weights and the KV cache
+# (compute graph, fragmentation, the allocator's cache): a flat 2 GiB, not a
+# share of the limit. It decides whether the budgeted context fits (`fits` /
+# `tight`), never whether the model runs: that is the weights against the
+# limit itself (`small_context`). The same measurement puts it at 2-3 GiB
+# (15.2 GiB of weights, ~30k tokens = ~1.8 GiB of cache at 20480 MB).
 METAL_WORKING_RESERVE_BYTES = 2 * 1024**3
 CONFIDENCE_ORDER = ("exact", "estimated", "rough", "unknown")
 
@@ -281,9 +286,8 @@ def _limit_block(limit: int, ceiling: int, host: Mapping[str, Any]) -> Dict[str,
 def _gpu_limit_for(need: int, ceiling: int, host: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     """The `iogpu.wired_limit_mb` value that makes `need` fit on this Mac, or None.
 
-    The value is the smallest whole GiB `L` with `need <= Ceff(L)`; None when
-    that exceeds `gpu_limit_max_bytes(RAM)` (macOS must keep enough to run) or
-    is not above the current ceiling.
+    The value is `gpu_limit_max_bytes(RAM)`, the highest safe limit; None when
+    `need` does not fit even there or it is not above the current ceiling.
     """
 
     if host.get("accelerator") != "metal":
@@ -291,32 +295,28 @@ def _gpu_limit_for(need: int, ceiling: int, host: Mapping[str, Any]) -> Optional
     cap = gpu_limit_max_bytes(host.get("ram_bytes"))
     if cap is None:
         return None
-    limit = -(-(need + METAL_WORKING_RESERVE_BYTES) // GIB) * GIB
-    if limit <= ceiling or limit > cap:
+    # ONE value: the highest safe limit (operator ruling 2026-09-28), never a
+    # second, smaller "just enough" number.
+    if cap <= ceiling or need > _usable(cap, host):
         return None
     return dict(
-        _limit_block(limit, ceiling, host),
-        verdict_with_limit="fits" if need <= 0.8 * _usable(limit, host) else "tight",
+        _limit_block(cap, ceiling, host),
+        verdict_with_limit="fits" if need <= 0.8 * _usable(cap, host) else "tight",
     )
 
 
-def _raised_limit_for(
-    W: int, O: int, kv_per_token: Optional[int], mt: Optional[int], ceiling: int, host: Mapping[str, Any]
-) -> Optional[Dict[str, Any]]:
+def _raised_limit_for(ceiling: int, host: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     """For a Metal fit that is only `tight` at the current limit: the highest
-    safe limit (`gpu_limit_max_bytes`) as a command, with the context it leaves
-    (`max_context`), or None when it is not above the current ceiling."""
+    safe limit (`gpu_limit_max_bytes`) as a command, or None when it is not
+    above the current ceiling. No context estimate is attached: where a
+    measured one exists the catalog says it (`model_catalog`)."""
 
     if host.get("accelerator") != "metal":
         return None
     cap = gpu_limit_max_bytes(host.get("ram_bytes"))
     if cap is None or cap <= ceiling:
         return None
-    block = _limit_block(cap, ceiling, host)
-    if kv_per_token:
-        max_ctx = max(0, int((_usable(cap, host) - W - O) // kv_per_token))
-        block["max_context"] = min(max_ctx, mt) if mt else max_ctx
-    return block
+    return _limit_block(cap, ceiling, host)
 
 
 def _kv_bytes_per_token(geometry: Optional[Mapping[str, Any]]) -> Optional[int]:
@@ -472,15 +472,14 @@ def estimate_fit(
     base["reserve_bytes"] = int(ceiling - c_eff)
     base["overhead_bytes"] = int(O)
 
-    # Apple silicon: the weights and working memory fit, but not the budgeted
-    # context -- it RUNS, with a smaller context (`small_context`, the room
-    # left is `max_context`). Operator measurement 2026-09-28: Qwen3.8 27B
-    # 4-bit runs out of the box on a 24 GB Mac with a small context.
-    # Context-bearing models only (`n > 1`): a generation model budgeted at
-    # one token (image, video, music) has no context to shrink.
-    small_context = bool(
-        host.get("accelerator") == "metal" and n > 1 and kv_per_token and need > c_eff and W + O + kv_per_token <= c_eff
-    )
+    # Apple silicon: the weights fit under the GPU limit itself, but not the
+    # budgeted context -- it RUNS, with a small context (`small_context`).
+    # Operator measurement 2026-09-28: 16.2 GB of Qwen3.8 27B 4-bit weights
+    # run out of the box under a 24 GB Mac mini's 17.8 GB limit; operator
+    # ruling the same day: the 8 GB Mac's Qwen3.5 9B is "tight", not "may not
+    # fit". Context-bearing models only (`n > 1`): a generation model budgeted
+    # at one token (image, video, music) has no context to shrink.
+    small_context = bool(host.get("accelerator") == "metal" and n > 1 and need > c_eff and W <= ceiling)
     if need <= 0.8 * c_eff:
         verdict = "fits"
     elif need <= c_eff or small_context:
@@ -506,7 +505,7 @@ def estimate_fit(
     base["verdict"] = verdict
     base["small_context"] = small_context
     if verdict == "tight" and n > 1:
-        raised = _raised_limit_for(W, O, kv_per_token, mt, ceiling, host)
+        raised = _raised_limit_for(ceiling, host)
         if raised is not None:
             base["raised_limit"] = raised
 
@@ -520,9 +519,11 @@ def estimate_fit(
         max_ctx = max(0, int(room // kv_per_token))
         if mt:
             max_ctx = min(max_ctx, mt)
-        base["max_context"] = max_ctx
-        if small_context:
-            notes.append(f"fits only with a small context: about {max_ctx} tokens at this memory limit")
+        # A small-context fit claims no token count: the estimate there is
+        # below the working reserve's own error (operator review 2026-09-28).
+        base["max_context"] = None if small_context else max_ctx
+    if small_context:
+        notes.append("runs only with a small context at this memory limit; close other apps first")
 
     base["confidence"] = _worst(weights_conf, kv_conf if kv_conf != "unknown" else "rough")
     return base

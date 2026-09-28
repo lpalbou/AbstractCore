@@ -428,10 +428,10 @@ def _fit_amounts(fit: Mapping[str, Any]) -> str:
         w_g = _gib(weights, d)
         split = f" ({w_g:.{d}f} GiB of weights plus {need_g - w_g:.{d}f} GiB for its working memory and cache)"
     if fit.get("accelerator") == "metal" and isinstance(ceiling, int) and ceiling > usable:
-        # Apple silicon: say the GPU memory limit itself (macOS's default is
-        # ~75% of unified memory: 18 GiB on a 24 GB Mac, measured ~17.8), then
-        # what is left after MLX's working buffers -- never the remainder alone
-        # as "what this computer can give".
+        # Apple silicon: say the GPU memory limit itself (what macOS reports:
+        # 17.8 GB = 16.6 GiB measured on a 24 GB Mac mini; 75% of RAM when it
+        # cannot be read), then what is left after MLX's working buffers --
+        # never the remainder alone as "what this computer can give".
         c_g = _gib(ceiling, d)
         which = (
             "the GPU memory limit raised on this Mac"
@@ -455,26 +455,45 @@ def _fit_amounts(fit: Mapping[str, Any]) -> str:
     )
 
 
-def raised_limit_instruction(fit: Mapping[str, Any]) -> Optional[str]:
+# MEASURED context at a raised GPU memory limit, per catalog row and
+# `iogpu.wired_limit_mb`: the only token counts any sentence states (an
+# estimate at these margins is below the working reserve's own error).
+MEASURED_CONTEXT: Dict[Tuple[str, int], Dict[str, Any]] = {
+    ("qwen3.8-27b", 20480): {
+        "tokens": 30000,
+        "where": "a 24 GB Mac mini",
+        "source": "operator measurement 2026-09-28 (Qwen3.8 27B 4-bit, mlx-lm/Ollama/LM Studio/AbstractFramework)",
+    },
+}
+
+
+def measured_context_note(row_id: Any, raised: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """`about 30k tokens after `<command>` (measured on a 24 GB Mac mini)` for a
+    raised limit with a measured context, else None."""
+
+    if not isinstance(raised, Mapping):
+        return None
+    got = MEASURED_CONTEXT.get((str(row_id or ""), int(raised.get("required_mb") or 0)))
+    if not got:
+        return None
+    return f"about {_tokens(got['tokens'])} tokens after `{raised['command']}` (measured on {got['where']})"
+
+
+def raised_limit_instruction(fit: Mapping[str, Any], row: Optional[Mapping[str, Any]] = None) -> Optional[str]:
     """The sentence for a `tight` Apple silicon fit that has a `raised_limit`:
-    the context it runs with now, and the command (with the context it gives)
-    for more. None when the fit has no `raised_limit`."""
+    the command for more context, with the context it gives where it was
+    measured (`MEASURED_CONTEXT`). None when the fit has no `raised_limit`."""
 
     rl = fit.get("raised_limit")
     if not isinstance(rl, Mapping):
         return None
-    now = fit.get("max_context")
-    later = rl.get("max_context")
     gib = int(rl["required_mb"]) / 1024
-    parts = []
-    if isinstance(now, int):
-        parts.append(f"At this limit it has room for about {_tokens(now)} tokens of context.")
-    more = f" (about {_tokens(later)} tokens)" if isinstance(later, int) else ""
-    parts.append(
+    got = MEASURED_CONTEXT.get((str((row or {}).get("id") or ""), int(rl["required_mb"])))
+    more = f" (about {_tokens(got['tokens'])} tokens, measured on {got['where']})" if got else ""
+    return (
         f"For more context{more}, let the GPU use {gib:.0f} GiB: run `{rl['command']}` in a terminal "
         "(asks for your password; lasts until the Mac restarts)."
     )
-    return " ".join(parts)
 
 
 def _tokens(n: int) -> str:
@@ -515,11 +534,25 @@ def _fit_warning(row: Mapping[str, Any], fit: Mapping[str, Any]) -> Optional[str
     if verdict == "needs_gpu_limit":
         return f"{name} is the recommendation for this computer's memory.{amounts} {gpu_limit_instruction(fit)}"
     if verdict == "tight":
-        raised = raised_limit_instruction(fit)
+        raised = raised_limit_instruction(fit, row)
         if fit.get("small_context"):
+            # Runs, with a small context: the weights against the limit
+            # itself, and no token count (operator ruling 2026-09-28).
+            weights, ceiling = fit.get("weight_bytes"), fit.get("ceiling_bytes")
+            room = ""
+            if isinstance(weights, int) and isinstance(ceiling, int):
+                which = (
+                    "the GPU memory limit raised on this Mac"
+                    if fit.get("ceiling_source") == "metal_wired_limit"
+                    else "macOS's GPU memory limit on this Mac"
+                )
+                room = (
+                    f" Its weights ({_gib(weights, 1):.1f} GiB) fit {which} ({_gib(ceiling, 1):.1f} GiB), with "
+                    "little room left for context."
+                )
             return (
-                f"{name} is the recommendation for this computer's memory and AbstractCore's estimate says it "
-                f"fits with a small context.{amounts} Close other models before loading it."
+                f"{name} is the recommendation for this computer's memory. Tight: it runs with a small context "
+                f"by default; close other apps first.{room}"
                 + (f" {raised}" if raised else "")
             )
         return (
@@ -530,13 +563,11 @@ def _fit_warning(row: Mapping[str, Any], fit: Mapping[str, Any]) -> Optional[str
     if verdict == "partial_offload":
         return (
             f"{name} is the recommendation for this computer's memory, but AbstractCore's estimate says it "
-            f"does not fit in the graphics memory and will run partly on the processor, slowly.{amounts} "
-            "A smaller model from the catalog is the safe choice."
+            f"does not fit in the graphics memory and will run partly on the processor, slowly.{amounts}"
         )
     return (
         f"{name} is the recommendation for this computer's memory, but AbstractCore's estimate says it "
-        f"may not fit.{amounts} It can fail to load or run slowly; a smaller model from the catalog is the "
-        "safe choice."
+        f"may not fit.{amounts} It can fail to load or run slowly."
     )
 
 

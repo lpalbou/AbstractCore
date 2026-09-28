@@ -848,9 +848,9 @@ def _configured_route_fit_reason(key: str, provider: str, model: str, host: Mapp
     row by its modality) and only for a model the catalog knows (its memory
     need is the catalog's): the same verdict and the same sentence as the
     recommendation (`_fit_gate`). Unavailable means the catalog says it does
-    not fit (`too_large`, `partial_offload`); `fits`, `tight`,
-    `needs_gpu_limit` (fits after the `sysctl`) and `unknown` (no memory
-    reading) are not.
+    not fit (`too_large`, `partial_offload`) at any measured canvas; `fits`,
+    `tight`, `needs_gpu_limit` (fits after the `sysctl`), `unknown` (no memory
+    reading) and a model with a measured smaller canvas that fits are not.
     """
 
     from .model_catalog import FITS_FILTER_VERDICTS
@@ -863,6 +863,13 @@ def _configured_route_fit_reason(key: str, provider: str, model: str, host: Mapp
     except LookupError:
         return None  # not a catalog artifact: no memory need to judge
     if verdict in FITS_FILTER_VERDICTS or verdict == "unknown":
+        return None
+    # A measured smaller canvas this Mac runs it at (TI2V-5B at 832x480 and
+    # T2V-A14B at 640x352 on a 64 GB Mac): the route is the one our own reason
+    # tells the operator to set -- never flagged, never cleared by `--force`.
+    from .model_catalog import smaller_canvas_fit
+
+    if smaller_canvas_fit(provider, model, host) is not None:
         return None
     return reason
 

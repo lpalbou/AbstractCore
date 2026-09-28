@@ -58,6 +58,12 @@ def _store(tmp_path, routes: dict) -> ConfigurationManager:
     return ConfigurationManager(config_file=cfg, apply_env=False)
 
 
+def _stored_route(manager, key: str) -> dict:
+    raw = json.loads(manager.config_file.read_text(encoding="utf-8"))
+    route = raw["capability_defaults"]["routes"].get(key) or {}
+    return {k: route[k] for k in ("provider", "model") if k in route}
+
+
 def _rows(manager) -> dict:
     return {row["key"]: row for row in manager.list_capability_defaults()}
 
@@ -178,3 +184,36 @@ def test_a_tier_without_an_mtp_build_carries_no_speculation_policy(monkeypatch):
 def test_tiers_with_an_mtp_build_keep_the_policy(gib):
     pick = mc.recommended_text_model(synthetic_host(f"metal{gib}"), fit=False)
     assert pick["options"]["speculation"]["mode"] == "native_mtp"
+
+
+# ---------------------------------------------------------------------------
+# A saved video route our own reason told a 64 GB user to set is never flagged
+# ---------------------------------------------------------------------------
+
+TI2V = "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"
+T2V_A14B = "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"
+
+
+@pytest.mark.parametrize("key,model,canvas", [
+    ("output.video", TI2V, "832x480"),
+    ("output.video.text_to_video", T2V_A14B, "640x352"),
+])
+def test_a_video_route_that_runs_at_a_measured_smaller_canvas_is_not_flagged(tmp_path, pin_host, key, model, canvas):
+    mac64 = synthetic_host("metal64")
+    assert mc.recommended_artifact_fit("mlx-gen", model, mac64)["fit"]["verdict"] == "too_large"
+    assert mc.smaller_canvas_fit("mlx-gen", model, mac64)["canvas"].startswith(canvas)
+    if key == "output.video":
+        # The recommendation's own reason tells this Mac to set exactly this route.
+        assert f"set output.video to mlx-gen/{model} yourself" in cd.recommended_unavailable_routes(mac64)[key]["reason"]
+    assert cd.configured_routes_unavailable({key: {"provider": "mlx-gen", "model": model}}, mac64) == {}
+    pin_host(mac64)
+    manager = _store(tmp_path, {key: {"provider": "mlx-gen", "model": model}})
+    report = manager.apply_recommended_capability_defaults(force=True)
+    assert report["cleared"] == 0, "--force never clears the route the reason told the user to set"
+    assert _stored_route(manager, key) == {"provider": "mlx-gen", "model": model}
+
+
+def test_a_video_route_with_no_fitting_canvas_is_still_flagged():
+    mac32 = synthetic_host("metal32")
+    assert mc.smaller_canvas_fit("mlx-gen", TI2V, mac32) is None
+    assert "output.video" in cd.configured_routes_unavailable({"output.video": {"provider": "mlx-gen", "model": TI2V}}, mac32)

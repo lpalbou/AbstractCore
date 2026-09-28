@@ -63,13 +63,12 @@ def test_the_24_gib_mac_27b_warning_states_what_the_verdict_compared():
     assert fit["reserve_bytes"] == 2 * GIB
     assert fit["need_bytes"] == fit["weight_bytes"] + fit["kv_bytes"] + fit["overhead_bytes"]
     assert fit["need_bytes"] > fit["usable_bytes"] > fit["weight_bytes"] + fit["overhead_bytes"]
-    n = _numbers(pick["warning"])
-    assert (n["need"], n["usable"], n["ceiling"]) == (16.4, 16.0, 18.0)
-    # Its parts add up on screen.
-    assert round(n["weights"] + n["rest"], 1) == n["need"]
-    assert round(n["ceiling"] - n["reserve"], 1) == n["usable"]
-    assert "fits with a small context" in pick["warning"] and "may not fit" not in pick["warning"]
+    # The sentence compares what decides "it runs": the weights against the
+    # limit itself -- and claims no token count.
+    assert "Its weights (15.2 GiB) fit macOS's GPU memory limit on this Mac (18.0 GiB)" in pick["warning"]
+    assert "Tight: it runs with a small context by default" in pick["warning"] and "may not fit" not in pick["warning"]
     assert "can give a model about" not in pick["warning"], "the limit itself is said, not the remainder alone"
+    assert "tokens of context" not in pick["warning"]
 
 
 def test_a_tight_27b_on_a_bigger_ceiling_says_fits_but_tightly_with_consistent_numbers():

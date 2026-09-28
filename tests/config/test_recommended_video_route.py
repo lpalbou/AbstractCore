@@ -230,8 +230,8 @@ def test_a14b_8bit_per_memory_band_at_the_default_canvas(artifact):
     assert fit("metal64")["verdict"] == "too_large" and "gpu_limit" not in fit("metal64")
     f96 = fit("metal96")
     assert f96["verdict"] == "needs_gpu_limit"
-    # need + 2 GiB of working buffers, whole GiB (78 GiB), under 96 - 12 GiB.
-    assert f96["gpu_limit"]["command"] == "sudo sysctl iogpu.wired_limit_mb=79872"
+    # The one safe value: 96 GiB - max(4 GiB, 12.5%) = 84 GiB.
+    assert f96["gpu_limit"]["command"] == "sudo sysctl iogpu.wired_limit_mb=86016"
     assert fit("metal128")["verdict"] in ("fits", "tight")
     # The recommendation per band is unchanged: TI2V-5B from ~96 GiB, and no
     # A14B route anywhere (it does not fit 64-95 GiB at the default canvas).

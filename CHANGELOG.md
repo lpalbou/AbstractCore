@@ -36,18 +36,21 @@ measurements.
 
 ### Changed
 
-- Apple silicon fit estimates follow the operator's measurement on a 24 GB Mac mini (default GPU
-  memory limit ~17.8 GB, ~75% of RAM; Qwen3.8 27B 4-bit runs with a small context by default and
-  with about 30k tokens at `iogpu.wired_limit_mb=20480`). MLX's working reserve inside the limit is
-  a flat 2 GiB (was max(2 GiB, 5%)); the highest GPU memory limit suggested leaves macOS
-  max(4 GiB, 12.5% of RAM) (was RAM minus 8 GiB): 20480 MB on 24 GB, 114688 MB on 128 GB (the
-  Flash-Next command was 117760). A text model whose weights fit but not 8k tokens of context is
-  `tight` with `small_context: true` and `max_context`, and a `tight` Apple silicon fit carries
-  `raised_limit: {command, required_mb, max_context, ...}`. The sentences name the GPU memory
-  limit and what is left after the working buffers ("macOS's GPU memory limit on this Mac is
-  18.0 GiB, and after 2.0 GiB of working buffers about 16.0 GiB is left for a model").
-  `models recommendations` entries gain `context: {small, max_tokens, raised_max_tokens}`, and
-  their `gpu_limit_command` also carries that command for a tight text fit.
+- Apple silicon fit estimates follow the operator's measurement on a 24 GB Mac mini (GPU memory
+  limit 17.8 GB = 16.6 GiB; Qwen3.8 27B 4-bit, 16.2 GB of weights, runs out of the box with a small
+  context, and with about 30k tokens at `iogpu.wired_limit_mb=20480`). A text model whose weights
+  fit under the GPU memory limit itself but not 8k tokens of context is `tight` with
+  `small_context: true` ("Tight: it runs with a small context by default; close other apps
+  first"), with no estimated token count; the 8 GB Mac's Qwen3.5 9B and the 24 GB Mac's Qwen3.8 27B
+  read so. The only GPU memory limit ever suggested is the highest safe one, RAM minus
+  max(4 GiB, 12.5% of RAM) (was the smallest whole GiB that fits, under RAM minus 8 GiB): 20480 MB
+  on 24 GB, 114688 MB on 128 GB (the Flash-Next command was 117760); a `tight` Apple silicon fit
+  carries it as `raised_limit`, and the one measured context is stated with it. MLX's reserve
+  beside the weights and cache is a flat 2 GiB (was max(2 GiB, 5%)). The sentences name the GPU
+  memory limit itself, never only the remainder as "what this computer can give a model", and no
+  longer say "a smaller model from the catalog is the safe choice". `models recommendations`
+  entries gain `context: {small, measured}`, and their `gpu_limit_command` also carries the
+  command for a tight text fit.
 - The Apple silicon text tiers are unchanged from 2.18.0 (operator ruling): below 24 GiB Qwen3.5
   9B (an 8 GB Mac keeps it, with the warning that it may not fit), 24 to below 128 GiB Qwen3.8 27B,
   128 GiB and above Qwen3.8 Flash-Next. A text tier whose model has no MTP build would carry no
@@ -78,7 +81,10 @@ measurements.
   `route_unavailable` (grid, `abstractcore config defaults`, `apply-recommended`) with the reason
   the recommendation gives, from the same fit verdict: an 8 GB Mac's saved FLUX.2 klein 4B route
   no longer reads as fine and runs out of memory at first use. A `tight` fit, or one that needs
-  the GPU memory `sysctl`, is not flagged; the check never changes the saved routes.
+  the GPU memory `sysctl`, is not flagged, nor is a video route that runs at a measured smaller
+  canvas (the route the reason tells a 64 GB Mac to set); the check never changes the saved routes.
+- `abstractcore config apply-recommended --force` can now clear a saved image or video route whose
+  model does not fit this Mac, where nothing recommended runs either.
 - `input.image` says why it has no recommendation where the recommended text model does not read
   images or no text engine runs (`recommended_unavailable_routes`, the grid's
   `recommendation_unavailable`), instead of a bare "not configured".

@@ -32,9 +32,10 @@ catalog's `starter` flags, the Gateway's first-run guide, this page and the Abst
 website.
 
 - **Text** follows `recommended_text_model()`. On Apple silicon it is an MLX build chosen by
-  unified memory: below 24 GiB Qwen3.5 9B (4-bit; it fits from 16 GB, and an 8 GB Mac keeps it
-  with a warning), 24 to below 128 GiB Qwen3.8 27B (4-bit; on a 24 GB Mac it runs with a small
-  context at the default GPU memory limit, and with about 30k tokens after raising it), 128 GiB
+  unified memory: below 24 GiB Qwen3.5 9B (4-bit; it fits from 16 GB, and on an 8 GB Mac it is
+  tight: it runs with a small context; close other apps first), 24 to below 128 GiB Qwen3.8 27B
+  (4-bit; on a 24 GB Mac it runs with a small context by default, and with about 30k tokens after
+  `sudo sysctl iogpu.wired_limit_mb=20480`, measured), 128 GiB
   and above Qwen3.8 Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Other
   computers use the LM Studio build `qwen/qwen3.5-9b@4bit`, or the same model's Ollama build where
   LM Studio has no build (Intel Macs).
@@ -82,10 +83,12 @@ Hugging Face cache only, so download it first. The engines install with
 Download sizes and memory needs come from the catalog (see [Local Models](models.md#fit-verdicts)).
 Memory needs are estimates from the model files, except where the catalog records a peak measured
 with AbstractVision/mlx-gen (video). On Apple silicon the verdicts assume macOS's default GPU
-memory limit, 75% of unified memory (see [GPU memory on Apple silicon](#gpu-memory-on-apple-silicon));
-"fits after raising the GPU memory limit" shows the `sysctl` command that makes the model fit, and
-"fits with a small context" shows the command that gives it more context (both ask for your
-password and last until the Mac restarts). The other machine classes are
+memory limit of 75% of unified memory, AbstractCore's fallback when it cannot read your Mac's own
+(see [GPU memory on Apple silicon](#gpu-memory-on-apple-silicon)). "fits after raising the GPU
+memory limit" shows the `sysctl` command that makes the model fit, and "tight: runs with a small
+context by default" shows the command that gives it more context (both ask for your password and
+last until the Mac restarts). No table states an estimated context size; the one token count shown
+was measured. The other machine classes are
 evaluated on the reference machine each row names. Run `abstractcore models recommendations
 --host` for your own machine's verdicts.
 
@@ -107,10 +110,10 @@ Route `input.text` (text generation).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | `mlx-community/Qwen3.5-9B-MLX-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | may not fit |
+| Apple silicon Mac, 8 GB | `mlx-community/Qwen3.5-9B-MLX-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | tight: runs with a small context by default |
 | Apple silicon Mac, 16 GB | `mlx-community/Qwen3.5-9B-MLX-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
 | Apple silicon Mac, 18 GB | `mlx-community/Qwen3.5-9B-MLX-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
-| Apple silicon Mac, 24 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits with a small context (about 1.1k tokens); more context (about 34k tokens) after `sudo sysctl iogpu.wired_limit_mb=20480` |
+| Apple silicon Mac, 24 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | tight: runs with a small context by default; about 30k tokens after `sudo sysctl iogpu.wired_limit_mb=20480` (measured on a 24 GB Mac mini) |
 | Apple silicon Mac, 32 GB, 36 GB or 48 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 64 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 96 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
@@ -126,10 +129,10 @@ Route `input.image` (image understanding).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | the text model (`mlx-community/Qwen3.5-9B-MLX-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | may not fit |
+| Apple silicon Mac, 8 GB | the text model (`mlx-community/Qwen3.5-9B-MLX-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | tight: runs with a small context by default |
 | Apple silicon Mac, 16 GB | the text model (`mlx-community/Qwen3.5-9B-MLX-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
 | Apple silicon Mac, 18 GB | the text model (`mlx-community/Qwen3.5-9B-MLX-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 5.7 GiB | 6.4 GiB | fits |
-| Apple silicon Mac, 24 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits with a small context (about 1.1k tokens); more context (about 34k tokens) after `sudo sysctl iogpu.wired_limit_mb=20480` |
+| Apple silicon Mac, 24 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | tight: runs with a small context by default; about 30k tokens after `sudo sysctl iogpu.wired_limit_mb=20480` (measured on a 24 GB Mac mini) |
 | Apple silicon Mac, 32 GB, 36 GB or 48 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 64 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 96 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
@@ -238,23 +241,25 @@ Route `output.music` (text to music).
 
 ## GPU memory on Apple silicon
 
-macOS lets the GPU use only part of unified memory. By default that limit is about 75% of it: on a
-24 GB Mac mini it was measured at about 17.8 GB. AbstractCore reads the real limit on your Mac
-(`abstractcore models recommendations --host`); the tables above assume 75%.
+macOS lets the GPU use only part of unified memory. On a 24 GB Mac mini that limit was measured at
+17.8 GB (16.6 GiB, about 69% of its memory). AbstractCore reads the real limit on your Mac
+(`abstractcore models recommendations --host`); when it cannot, and in the tables above, it
+assumes 75% of unified memory.
 
-MLX keeps about 2 GiB of that limit for its working buffers; the rest holds the weights and the
-context (KV cache). On a 24 GB Mac, Qwen3.8 27B 4-bit (about 16.2 GB of weights) therefore runs at
-the default limit with only a small context. Raising the limit gives it more:
+A model runs when its weights fit under that limit; what is left holds the context (KV cache) and
+the working memory MLX needs beside it (about 2 GiB). On a 24 GB Mac, Qwen3.8 27B 4-bit (about
+16.2 GB of weights) therefore runs out of the box with a small context. Raising the limit gives it
+more:
 
 ```bash
 sudo sysctl iogpu.wired_limit_mb=20480
 ```
 
-That value is safe on a 24 GB Mac and gives about 30k tokens of context (measured); a 32 GB Mac
-reaches about 120k tokens at its default limit. Do not go beyond about 21 GB on a 24 GB Mac (about
-40k tokens): apps may crash. The highest value AbstractCore suggests leaves macOS max(4 GiB, 12.5%
-of RAM): 20480 MB on a 24 GB Mac, 28672 MB on 32 GB, 114688 MB on 128 GB. AbstractCore only prints
-the command; it never runs `sudo`. The setting lasts until the Mac restarts, and
+That value is safe on a 24 GB Mac and gives about 30k tokens of context (measured). Do not go
+beyond 21504 MB on a 24 GB Mac: apps may crash. The one value AbstractCore suggests, whenever a
+model needs more GPU memory or more context, leaves macOS max(4 GiB, 12.5% of RAM): 20480 MB on a
+24 GB Mac, 28672 MB on 32 GB, 114688 MB on 128 GB. AbstractCore only prints the command; it never
+runs `sudo`. The setting lasts until the Mac restarts, and
 `sudo sysctl iogpu.wired_limit_mb=0` returns to the default.
 
 ### Keeping the limit across restarts
@@ -314,9 +319,9 @@ sudo sysctl iogpu.wired_limit_mb=0
   download` fetches), `catalog_id`, `display_name`, `download_bytes` (`null` when the catalog has
   no exact size), `memory_need_bytes`, `memory_need_source` (`measured` or `estimated`), `fit`,
   `gpu_limit_command` (for `needs_gpu_limit`, and for a text fit that is `tight` on Apple
-  silicon: the command for more context), `context` (`null`, or `{small, max_tokens,
-  raised_max_tokens}` for such a text fit: whether it runs only with a small context, the context
-  at the default limit and after the command), `covered_by`, `smaller_canvas` (`null`, or
+  silicon: the command for more context), `context` (`null`, or `{small, measured}` for such a
+  text fit: whether it runs only with a small context by default, and the measured context after
+  the command where one was measured, else `null`; no estimated token count), `covered_by`, `smaller_canvas` (`null`, or
   `{canvas, memory_need_bytes, memory_need_source, fit}`: the largest measured smaller output
   size, `WIDTHxHEIGHTxFRAMES`, at which an `unavailable` video model still fits), `reason` (for
   `unavailable`), `warning` (the sentence surfaces show for a doubtful fit) and `notes`. The text

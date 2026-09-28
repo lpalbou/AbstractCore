@@ -83,9 +83,11 @@ def test_every_cell_is_decided_with_the_facts_a_table_needs(matrix):
         if e["fit"] == "needs_gpu_limit":
             assert e["gpu_limit_command"].startswith("sudo sysctl iogpu.wired_limit_mb="), where
         elif e["fit"] == "tight" and cid in ("text", "vision") and cls["family"] == "apple_silicon":
-            # A tight text fit on Apple silicon: the highest safe limit, for more context.
-            assert e["gpu_limit_command"].startswith("sudo sysctl iogpu.wired_limit_mb="), where
-            assert isinstance(e["context"]["raised_max_tokens"], int), where
+            # A tight text fit on Apple silicon: the highest safe limit, for more
+            # context -- when it is above the current one (not on an 8 GB Mac).
+            if e["gpu_limit_command"] is not None:
+                assert e["gpu_limit_command"].startswith("sudo sysctl iogpu.wired_limit_mb="), where
+            assert e["context"]["small"] in (True, False) and set(e["context"]) == {"small", "measured"}, where
         else:
             assert e["gpu_limit_command"] is None, where
 
@@ -224,9 +226,12 @@ def test_the_24_gb_text_tier_says_small_context_and_the_command_for_more(matrix)
     of the box with a small context, ~30k tokens at 20480 MB."""
     text = _apple_class_for(matrix, 24)["entries"]["text"]
     assert text["artifact"] == "mlx-community/Qwen3.8-27B-4bit" and text["fit"] == "tight"
-    assert text["context"]["small"] is True and text["context"]["max_tokens"] < 8192
+    # No estimated token count; the one measured figure, labelled as such.
+    assert text["context"] == {
+        "small": True,
+        "measured": "about 30k tokens after `sudo sysctl iogpu.wired_limit_mb=20480` (measured on a 24 GB Mac mini)",
+    }
     assert text["gpu_limit_command"] == "sudo sysctl iogpu.wired_limit_mb=20480"
-    assert 25_000 <= text["context"]["raised_max_tokens"] <= 40_000
     assert "sudo sysctl iogpu.wired_limit_mb=20480" in text["warning"]
 
 
@@ -364,11 +369,14 @@ def test_the_validator_checks_smaller_canvases():
 
 
 def test_the_8_gb_text_cell_keeps_the_tier_with_its_warning(matrix):
-    """Operator ruling 2026-09-28: 8 GB gets the 9B tier (no smaller tier);
-    the estimate doubts it and the cell says so."""
+    """Operator ruling 2026-09-28: 8 GB gets the 9B tier, "tight: runs with a
+    small context; close other apps first" -- never "a smaller model is the
+    safe choice"."""
     text = _apple_class_for(matrix, 8)["entries"]["text"]
     assert text["artifact"] == "mlx-community/Qwen3.5-9B-MLX-4bit" and text["status"] == "recommended"
-    assert text["fit"] == "too_large" and "may not fit" in text["warning"]
+    assert text["fit"] == "tight" and text["context"] == {"small": True, "measured": None}
+    assert "Tight: it runs with a small context by default; close other apps first." in text["warning"]
+    assert "safe choice" not in text["warning"] and text["gpu_limit_command"] is None
     assert _apple_class_for(matrix, 8)["entries"]["vision"]["status"] == "covered"
 
 

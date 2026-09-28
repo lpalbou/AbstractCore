@@ -142,8 +142,9 @@ def test_fit_is_reported_never_a_silent_tier_change(host, kind, tier, mtp_switch
         assert pick["fits"] is False
         assert pick["fit"]["gpu_limit"]["command"] in pick["warning"]
     elif verdict == "tight" and pick["fit"].get("small_context"):
-        assert pick["fits"] is True and "fits with a small context" in pick["warning"]
-        assert pick["fit"]["raised_limit"]["command"] in pick["warning"]
+        assert pick["fits"] is True and "Tight: it runs with a small context by default" in pick["warning"]
+        if "raised_limit" in pick["fit"]:
+            assert pick["fit"]["raised_limit"]["command"] in pick["warning"]
     elif verdict == "tight":
         assert pick["fits"] is True and "tightly" in pick["warning"]
     else:
@@ -151,26 +152,26 @@ def test_fit_is_reported_never_a_silent_tier_change(host, kind, tier, mtp_switch
 
 
 def test_a_tier_that_does_not_fit_is_still_the_tier():
-    """8 GB Mac: the 9B tier (operator ruling 2026-09-28: no smaller tier),
-    whose estimate is too_large there -- said in the warning, never a silent
-    move to another model."""
-    pick = mc.recommended_text_model(synthetic_host("metal8"), mtp=False)
+    """A Mac whose limit reading is below even the 9B's weights: the tier is
+    the memory rule's, with the warning -- never a silent move to another
+    model, and never "a smaller model is the safe choice"."""
+    pick = mc.recommended_text_model(dict(synthetic_host("metal8"), ceiling_bytes=4 * GIB), mtp=False)
     assert pick["fit"]["verdict"] == "too_large"
     assert pick["artifact"] == PLAIN["9b"] and pick["fits"] is False and "may not fit" in pick["warning"]
+    assert "safe choice" not in pick["warning"]
 
 
 # Apple silicon unified memory sizes (GiB), as recommendations.APPLE_MEMORY_SIZES_GIB.
 APPLE_SIZES = (8, 16, 18, 24, 32, 36, 48, 64, 96, 128, 192, 256, 512)
-EXPECTED_VERDICT = {8: "too_large", 24: "tight", 128: "needs_gpu_limit"}
+EXPECTED_VERDICT = {8: "tight", 24: "tight", 128: "needs_gpu_limit"}
 
 
 @pytest.mark.parametrize("gib", APPLE_SIZES)
 def test_every_apple_memory_size_gets_its_verdict(gib):
-    """Under macOS's default GPU memory limit (75% of unified memory): the 8 GB
-    Mac's 9B may not fit (the tier stays, with the warning); the 24 GB Mac's 27B
-    fits with a small context and says the command for more (20480 MB, ~30k
-    tokens measured); the 128 GB Mac's Flash-Next fits once the limit is raised
-    (114688 MB); every other size fits."""
+    """At the 75% fallback limit: the 8 GB Mac's 9B and the 24 GB Mac's 27B
+    run with a small context (the 24 GB one says the command for more:
+    20480 MB, ~30k tokens measured); the 128 GB Mac's Flash-Next fits once the
+    limit is raised (114688 MB); every other size fits."""
 
     pick = mc.recommended_text_model(synthetic_host(f"metal{gib}"), mtp=False)
     fit = pick["fit"]
@@ -218,22 +219,16 @@ def test_flash_next_fit_uses_the_real_size_on_metal128(key):
 
 def test_the_operators_128_gib_mac_reads_the_real_numbers():
     """The host probe on the operator's M5 Max (2026-09-24): 128 GiB, Metal's
-    recommended working set 107.52 GiB. The plain 4-bit needs ~109 GiB: the
-    warning says so with those numbers; the tier stays Flash-Next."""
+    recommended working set 107.52 GiB. The Flash-Next weights (103.9 GiB)
+    fit under it: it runs with a small context, the tier stays Flash-Next,
+    and the one safe GPU limit (114688 MB) gives it more context."""
 
     host = dict(synthetic_host("metal128"), ceiling_bytes=int(107.52 * GIB), ceiling_source="metal_recommended")
     pick = mc.recommended_text_model(host, mtp=False)
     assert pick["artifact"] == PLAIN["flash"]
-    # Backlog 0947: it fits once macOS lets the GPU use more memory, and the
-    # warning says exactly how -- never a bare too_large next to the tier.
-    assert pick["fit"]["verdict"] == "needs_gpu_limit"
+    assert pick["fit"]["verdict"] == "tight" and pick["fit"]["small_context"] is True
     assert "sudo sysctl iogpu.wired_limit_mb=114688" in pick["warning"]
-    # The sentence states what the verdict compared: the TOTAL need against
-    # the USABLE memory (the 107.52 GiB GPU limit minus 2 GiB of working
-    # buffers), and says the limit itself.
-    assert "needs about 109.2 GiB in total" in pick["warning"]
-    assert "macOS's GPU memory limit on this Mac is 107.5 GiB" in pick["warning"]
-    assert "about 105.5 GiB is left for a model" in pick["warning"]
+    assert "Its weights (103.9 GiB) fit macOS's GPU memory limit on this Mac (107.5 GiB)" in pick["warning"]
 
 
 def test_a_tight_fit_is_said_as_tight():
