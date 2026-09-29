@@ -64,6 +64,7 @@ class _Status:
     installed: bool
     install_command: Optional[str]
     reason: Optional[str]
+    missing_modules: tuple = ()
 
 
 @pytest.fixture()
@@ -89,6 +90,7 @@ def voice_api(monkeypatch):
                 installed=ok,
                 install_command=cmd,
                 reason=None if ok else f"{engine} is not installed. Install it with: {cmd}",
+                missing_modules=() if ok else ({"supertonic": ("onnxruntime",), "faster-whisper": ("faster_whisper",)}.get(engine, (engine,))),
             )
 
         pkg = types.ModuleType("abstractvoice")
@@ -152,27 +154,51 @@ def test_transformers_needs_torch_too(packages):
     assert "torch missing" in flag["reason"] and "transformers" not in flag["reason"].split("(")[1].split(")")[0]
 
 
-def test_mlx_gen_needs_abstractvision_and_the_mlx_gen_runtime(packages):
+def _pin_setting(monkeypatch, setting):
+    from abstractcore.utils import install_settings
+
+    monkeypatch.setattr(install_settings, "local_engines_setting", lambda: setting)
+
+
+def test_mlx_gen_needs_abstractvision_and_the_mlx_gen_runtime(packages, monkeypatch):
+    _pin_setting(monkeypatch, "apple")
     flag = re_mod.route_engine_missing("mlx-gen", FLUX, "output.image")
     assert flag["engine"] == "mlx-gen"
-    assert flag["install"] == engines.pip_install_command("abstractvision[mlx-gen]")
+    # One of the three settings, never AbstractVision's own `abstractvision[mlx-gen]` extra.
+    assert flag["install"] == engines.pip_install_command("abstractcore[apple]")
     assert sys.executable in flag["install"], "installs into THIS interpreter, like the engine rows"
     assert "abstractvision, mlx-gen missing" in flag["reason"]
     packages(dists={"abstractvision"})
-    assert "(mlx-gen missing)" in re_mod.route_engine_missing("mlx-gen", FLUX, "output.video")["reason"]
+    video = re_mod.route_engine_missing("mlx-gen", FLUX, "output.video")
+    assert "(mlx-gen missing)" in video["reason"] and video["install"] == engines.pip_install_command("abstractcore[apple]")
+    # AbstractVision alone missing: it is part of light, so the install is broken.
+    packages(dists={"mlx-gen"})
+    assert re_mod.route_engine_missing("mlx-gen", FLUX, "output.image")["install"] == engines.pip_install_command(
+        "-U", "abstractcore"
+    )
+    # No setting on this host (Intel Mac, Windows): no command, a plain sentence.
+    _pin_setting(monkeypatch, None)
+    packages(dists={"abstractvision"})
+    flag = re_mod.route_engine_missing("mlx-gen", FLUX, "output.image")
+    assert flag["install"] is None and "not available on this machine" in flag["reason"]
+    assert "pip install" not in flag["reason"]
     packages(dists={"abstractvision", "mlx-gen"})
     assert re_mod.route_engine_missing("mlx-gen", FLUX, "output.image") is None
 
 
-def test_voice_asks_abstractvoices_public_probe(packages, voice_api):
+def test_voice_asks_abstractvoices_public_probe(packages, voice_api, monkeypatch):
+    _pin_setting(monkeypatch, "apple")
     packages(dists={"abstractvoice"})
     calls = voice_api(installed={"faster-whisper"})
     flag = re_mod.route_engine_missing("supertonic", "supertonic-3", "output.voice")
+    install = engines.pip_install_command("abstractcore[apple]")
+    # AbstractVoice answers WHETHER; the install is AbstractCore's setting, never
+    # AbstractVoice's standalone `abstractvoice[supertonic]` extra.
     assert flag == {
         "engine": "supertonic",
         "name": "Supertonic",
-        "reason": 'supertonic is not installed. Install it with: pip install "abstractvoice[supertonic]"',
-        "install": 'pip install "abstractvoice[supertonic]"',
+        "reason": f"Supertonic is not installed in this Python environment (onnxruntime missing). Install it with: {install}",
+        "install": install,
     }
     assert re_mod.route_engine_missing("faster-whisper", "base", "input.voice") is None
     assert calls == ["supertonic", "faster-whisper"], "every local voice answer is AbstractVoice's own"
@@ -203,7 +229,7 @@ def test_an_abstractvoice_without_the_probe_is_the_missing_engine(packages, monk
     _old_abstractvoice(monkeypatch)
     flag = re_mod.route_engine_missing("supertonic", "supertonic-3", "output.voice")
     floor = re_mod.ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR
-    install = engines.pip_install_command(f"abstractvoice>={floor}")
+    install = engines.pip_install_command("-U", "abstractcore")
     assert flag == {
         "engine": "supertonic",
         "name": "AbstractVoice",
@@ -284,8 +310,9 @@ def test_a_host_that_cannot_run_it_says_route_unavailable_never_both(tmp_path, p
     assert "route_unavailable" in row and "engine_missing" not in row
 
 
-def test_apply_recommended_says_the_written_route_still_needs_its_engine(tmp_path, pin_host, packages, voice_api):
+def test_apply_recommended_says_the_written_route_still_needs_its_engine(tmp_path, pin_host, packages, voice_api, monkeypatch):
     pin_host(MAC)
+    _pin_setting(monkeypatch, "apple")
     packages(dists={"abstractvoice"})
     voice_api()
     manager = ConfigurationManager(config_file=tmp_path / "fresh.json", apply_env=False)
@@ -294,7 +321,7 @@ def test_apply_recommended_says_the_written_route_still_needs_its_engine(tmp_pat
     report = manager.apply_recommended_capability_defaults(dry_run=True)
     by_key = {row["key"]: row for row in report["routes"]}
     assert by_key["output.voice"]["action"] == "apply"
-    assert by_key["output.voice"]["engine_missing"]["install"] == 'pip install "abstractvoice[supertonic]"'
+    assert by_key["output.voice"]["engine_missing"]["install"] == engines.pip_install_command("abstractcore[apple]")
     assert by_key["input.text"]["engine_missing"]["engine"] == "mlx"
     assert by_key["output.image"]["engine_missing"]["engine"] == "mlx-gen"
 

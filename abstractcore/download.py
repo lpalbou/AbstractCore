@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
-from .utils.install_settings import local_engines_install_command
+from .utils.install_settings import local_engines_hint
 
 
 class DownloadStatus(Enum):
@@ -228,7 +228,7 @@ async def _download_huggingface(
             status=DownloadStatus.ERROR,
             message=(
                 "huggingface_hub is not installed. "
-                f"Install with: {local_engines_install_command()}"
+                f"{local_engines_hint('Downloading Hugging Face models')}"
             ),
         )
         return

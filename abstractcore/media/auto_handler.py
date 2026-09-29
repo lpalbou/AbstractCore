@@ -395,7 +395,10 @@ class AutoMediaHandler(BaseMediaHandler):
             deps_str = ", ".join(missing_deps)
             self.logger.warning(f"Missing Glyph dependencies: {deps_str}")
             self.logger.warning("Install with: pip install -U abstractcore (Pillow renderer)")
-            self.logger.warning("Optional (PDF→image): pip install pdf2image (+ Poppler installed on your system)")
+            self.logger.warning(
+                "Optional (experimental PDF→image path): pdf2image is not part of any AbstractCore "
+                "install setting; the Pillow renderer is used"
+            )
 
         if not self.enable_compression:
             self.logger.warning("Glyph compression is disabled in AutoMediaHandler configuration")

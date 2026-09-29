@@ -71,7 +71,7 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider, PromptCacheCapabilities, PromptCacheRenderedFragment, ThinkingControlHandling
 from ..core.types import GenerateResponse
-from ..utils.install_settings import local_engines_install_command, local_engines_setting
+from ..utils.install_settings import local_engines_hint
 from ..core import degeneration as _degeneration
 from ..exceptions import (
     GenerationCancelledError,
@@ -86,19 +86,14 @@ from ..tools import UniversalToolHandler, execute_tools, merge_tools_into_system
 from ..events import EventType
 
 
-def _engine_install_hint(*packages: str) -> str:
-    """How to install a missing HuggingFace engine dependency on THIS machine.
+def _engine_install_hint(what: str) -> str:
+    """How to get a missing HuggingFace engine dependency on THIS machine, as one sentence.
 
     Apple silicon and Linux: the local-engine setting that ships it (apple / gpu).
-    An Intel Mac or Windows has no such setting: the package itself (default: the
-    transformers stack, the same list as the huggingface engine install plan).
+    An Intel Mac or Windows has no such setting: the capability is not available there
+    with AbstractCore's install settings (never a bare-package install; ruling 2026-09-29).
     """
-    setting = local_engines_setting()
-    if setting:
-        return local_engines_install_command()
-    from ..config.engines import HUGGINGFACE_DIRECT_PACKAGES, pip_install_command
-
-    return pip_install_command(*(packages or HUGGINGFACE_DIRECT_PACKAGES))
+    return local_engines_hint(what)
 
 
 if TYPE_CHECKING:
@@ -672,7 +667,7 @@ def _peft_adapter_support_problem() -> Optional[str]:
         f"adapter support needs {need} compatible with transformers {transformers_version}; "
         f"installed: peft {_installed('peft')}, transformers {transformers_version}"
     )
-    fix = f" Fix: pip install -U \"{need.replace(' ', '')}\"."
+    fix = f" {local_engines_hint('PEFT adapters', upgrade=True)}."
     try:
         import peft  # type: ignore  # noqa: F401
     except Exception as exc:  # noqa: BLE001 - reported, not swallowed
@@ -1048,13 +1043,13 @@ class HuggingFaceProvider(BaseProvider):
 
         if is_gguf:
             if not LLAMACPP_AVAILABLE:
-                raise ImportError("llama-cpp-python not installed. Install with: " + _engine_install_hint("llama-cpp-python"))
+                raise ImportError("llama-cpp-python not installed. " + _engine_install_hint("GGUF models (llama.cpp)"))
             self.model_type = "gguf"
             self._setup_device_gguf()
             self._load_gguf_model()
         else:
             if not TRANSFORMERS_AVAILABLE:
-                raise ImportError("Transformers not installed. Install with: " + _engine_install_hint())
+                raise ImportError("Transformers not installed. " + _engine_install_hint("Hugging Face Transformers models"))
             self.model_type = "transformers"
             self._setup_device_transformers()
             self._load_transformers_model()
@@ -3647,8 +3642,9 @@ class HuggingFaceProvider(BaseProvider):
                         f"{floor} floor required for a correct warm path. On affected "
                         f"versions a cached call returns fluent but WRONG answers with "
                         f"no error — measured warm recall 0/5 on planted facts. Answers "
-                        f"stay correct; prefill is not reused. Upgrade transformers to "
-                        f">= {floor} to re-enable caching for this model.",
+                        f"stay correct; prefill is not reused. transformers >= {floor} "
+                        f"re-enables caching for this model: "
+                        f"{local_engines_hint('Hugging Face Transformers models', upgrade=True)}.",
                         RuntimeWarning,
                         stacklevel=3,
                     )
@@ -6495,7 +6491,7 @@ class HuggingFaceProvider(BaseProvider):
                 current_version = transformers.__version__
                 raise RuntimeError(
                     f"GLM4V architecture requires transformers>=4.57.1, but you have {current_version}. "
-                    f"Please upgrade: pip install transformers>=4.57.1"
+                    f"{local_engines_hint('GLM4V (transformers)', upgrade=True)}"
                 )
             elif ('not found' in error_str or 'does not exist' in error_str or
                 'not a valid model identifier' in error_str):
@@ -7503,7 +7499,7 @@ class HuggingFaceProvider(BaseProvider):
             # Check if Outlines is required but unavailable
             if self.structured_output_method == "native_outlines" and not OUTLINES_AVAILABLE:
                 return GenerateResponse(
-                    content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: " + local_engines_install_command(),
+                    content="Error: structured_output_method='native_outlines' requires Outlines library. " + local_engines_hint("Native structured output (Outlines)"),
                     model=self.model,
                     finish_reason="error"
                 )

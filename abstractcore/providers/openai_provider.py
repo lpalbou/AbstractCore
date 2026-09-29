@@ -1312,7 +1312,7 @@ class OpenAIProvider(BaseProvider):
         can preserve JSON, text, SRT, or VTT responses.
         """
         if not HTTPX_AVAILABLE:
-            raise ImportError("httpx package not installed. Install with: pip install httpx")
+            raise ImportError("httpx package not installed; it is part of the light install. Repair with: pip install -U abstractcore")
 
         data: Dict[str, Any] = {"model": self.model}
         if language:
@@ -1352,7 +1352,7 @@ class OpenAIProvider(BaseProvider):
     ) -> Tuple[bytes, str]:
         """Generate speech audio through OpenAI's Audio API."""
         if not HTTPX_AVAILABLE:
-            raise ImportError("httpx package not installed. Install with: pip install httpx")
+            raise ImportError("httpx package not installed; it is part of the light install. Repair with: pip install -U abstractcore")
 
         payload: Dict[str, Any] = {
             "model": self.model,
@@ -1404,7 +1404,7 @@ class OpenAIProvider(BaseProvider):
         """
         _ = reference_text
         if not HTTPX_AVAILABLE:
-            raise ImportError("httpx package not installed. Install with: pip install httpx")
+            raise ImportError("httpx package not installed; it is part of the light install. Repair with: pip install -U abstractcore")
 
         fields: Dict[str, str] = {}
         if name:

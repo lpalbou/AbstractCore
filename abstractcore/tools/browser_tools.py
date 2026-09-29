@@ -10,8 +10,8 @@ operator-approved dm:core--laurent#21):
 
 - PLAYWRIGHT + HEADLESS CHROMIUM SHELL: the 2026 cross-OS default (one API
   on macOS/Windows/Linux; auto-waiting kills manual-wait flakiness). The
-  dependency is never part of the light install (`pip install playwright`;
-  `abstractcore[apple]` and `abstractcore[gpu]` include it)
+  dependency is never part of the light install (`abstractcore[apple]` and
+  `abstractcore[gpu]` include it; never a bare playwright install)
   plus a browser-binary step (`python -m playwright install --only-shell
   chromium`) — never a base-install cost; missing pieces produce actionable
   install hints, never tracebacks.
@@ -65,7 +65,14 @@ from .core import tool
 # unknown, then cached. Tests flip this directly to simulate absence.
 _PLAYWRIGHT_AVAILABLE: Optional[bool] = None
 
-_PIP_HINT = "pip install playwright"
+def _pip_hint() -> str:
+    """How to get Playwright on THIS machine: the local-engine setting that carries it,
+    or the plain not-available sentence (Intel Mac, Windows: no setting ships it)."""
+    from ..utils.install_settings import local_engines_hint
+
+    return local_engines_hint("Headless-browser rendering (Playwright)")
+
+
 _BROWSER_HINT = "python -m playwright install --only-shell chromium"
 _LINUX_HINT = "python -m playwright install --with-deps chromium"
 _OFFLINE_HINT = (
@@ -902,7 +909,7 @@ def render_url_html(
             "ok": False,
             "error_class": "render_unavailable",
             "message": "playwright is not installed",
-            "hint": "pip install playwright && python -m playwright install --only-shell chromium",
+            "hint": f"{_pip_hint()}; then download the headless browser: {_BROWSER_HINT}",
         }
 
     budget = max(1.0, min(float(timeout_s or RENDER_DEFAULT_TIMEOUT_S), 120.0))
@@ -1070,8 +1077,8 @@ def _install_message(kind: str, detail: str = "") -> str:
         return (
             "❌ Missing dependency: `playwright`\n"
             "browser_probe renders pages in a headless browser via Playwright.\n"
-            f"Install (2 steps): {_PIP_HINT}\n"
-            f"then download the headless browser: {_BROWSER_HINT}\n"
+            f"Step 1: {_pip_hint()}\n"
+            f"Step 2: download the headless browser: {_BROWSER_HINT}\n"
             f"(Linux also needs system libs: {_LINUX_HINT}; {_OFFLINE_HINT})"
         )
     return (

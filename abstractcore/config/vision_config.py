@@ -227,8 +227,10 @@ def handle_download_vision_model(handler: 'VisionFallbackHandler', model_name: s
     try:
         import transformers
     except ImportError:
+        from ..utils.install_settings import local_engines_hint
+
         print("❌ transformers library not installed")
-        print("💡 Install with: pip install transformers torch")
+        print(f"💡 {local_engines_hint('Local vision caption models')}")
         return True
 
     # Create models directory

@@ -112,8 +112,8 @@ def _has_browser() -> bool:
 
 needs_browser = pytest.mark.skipif(
     not _has_browser(),
-    reason='needs Playwright: pip install playwright '
-    "&& python -m playwright install --only-shell chromium",
+    reason='needs Playwright (abstractcore[apple] or abstractcore[gpu]) '
+    "and python -m playwright install --only-shell chromium",
 )
 
 
@@ -1013,7 +1013,8 @@ def test_a_missing_playwright_gives_an_install_hint_not_a_traceback(
     assert result.get("success") is False
     blob = json.dumps(result)
     assert "Traceback" not in blob
-    assert "pip install playwright" in blob or "playwright install" in blob, (
+    assert "pip install playwright" not in blob, "never a bare-package hint (ruling 2026-09-29)"
+    assert "playwright install" in blob or "not available on this machine" in blob, (
         "no actionable install hint reached the caller"
     )
 

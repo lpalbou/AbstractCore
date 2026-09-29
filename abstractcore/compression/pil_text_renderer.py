@@ -57,7 +57,7 @@ class PILTextRenderer:
             from PIL import Image, ImageDraw, ImageFont
         except ImportError as e:
             raise RenderingError(
-                f"PIL/Pillow not available: {e}. Install with: pip install pillow"
+                f"PIL/Pillow not available: {e}. Pillow is part of the light install; repair with: pip install -U abstractcore"
             )
 
     def _estimate_text_capacity(self, config: RenderingConfig, fonts: dict) -> int:

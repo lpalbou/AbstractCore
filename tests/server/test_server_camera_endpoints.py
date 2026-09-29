@@ -73,7 +73,7 @@ def test_camera_routes_answer_501_when_no_plugin(client, fresh_capability_core, 
     assert response.status_code == 501
     message = response.json()["error"]["message"]
     assert "camera" in message.lower()
-    assert 'pip install "abstractcamera"' in message
+    assert "abstractcamera" in message and "pip install" not in message
 
     response = client.post("/v1/camera/photo", json={})
     assert response.status_code == 501

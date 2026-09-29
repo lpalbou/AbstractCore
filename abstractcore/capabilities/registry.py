@@ -647,9 +647,12 @@ class CapabilityRegistry:
         if cap in {"voice", "audio", "vision", "music", "scene3d", "3d"}:
             return "pip install -U abstractcore"
         if cap == "camera":
-            # camera (seat: camera): no abstractcore extra exists yet — the
-            # plugin package is the install unit.
-            return 'pip install "abstractcamera"'
+            # camera (seat: camera): no install setting ships the camera plugin, and a
+            # bare-package install is never advised (operator ruling 2026-09-29).
+            return (
+                "Camera is not available with AbstractCore's install settings (light, apple, gpu): "
+                "the camera plugin (abstractcamera) is not part of them"
+            )
         return None
 
     def _select_backend_id(self, capability: str) -> str:

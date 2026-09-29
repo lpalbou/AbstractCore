@@ -20,8 +20,8 @@ from ...utils.token_utils import estimate_tokens
 
 PYPDF_INSTALL_HINT = 'Install with: pip install -U abstractcore'
 PYMUPDF_INSTALL_HINT = (
-    'Install the explicit opt-in backend only after license review: '
-    'pip install pymupdf4llm pymupdf-layout'
+    'It is an explicit licence opt-in (AGPL or commercial) outside AbstractCore\'s install settings '
+    '(docs/installation.md#optional-pdf-extraction-with-pymupdf); the default pypdf backend needs nothing extra.'
 )
 
 

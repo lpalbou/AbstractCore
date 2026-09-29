@@ -494,11 +494,6 @@ _UNAVAILABLE_NEXT_STEP = {
         "input.text to a cloud provider or to a text server on another machine (lmstudio, ollama or "
         "openai-compatible, with its base_url)"
     ),
-    "output.image": (
-        "set output.image to an image engine this host runs: diffusers (included with abstractcore[gpu]), "
-        "sdcpp (stable-diffusion.cpp, included with abstractcore[apple] and abstractcore[gpu]) or a cloud "
-        "image provider"
-    ),
     "output.video": _VIDEO_NO_LOCAL_ENGINE,
     # Engine ids are abstractvoice's (`transformers-asr`, `openai`).
     "input.voice": (
@@ -508,6 +503,25 @@ _UNAVAILABLE_NEXT_STEP = {
     # Backend ids are abstractmusic's (`acemusic`, `elevenlabs-music`).
     "output.music": "set output.music to a cloud music backend (acemusic or elevenlabs-music, with its API key)",
 }
+# output.image names only the three settings (operator ruling 2026-09-29). Apple
+# silicon never reaches this (MLX-Gen runs there). Linux: abstractcore[gpu] ships
+# both local image engines. An Intel Mac or Windows has no setting that installs
+# them (`uv pip compile` of abstractcore[gpu] for x86_64-apple-darwin fails on
+# torch; on Windows it needs a vLLM source build). One sentence covers every
+# non-Apple host so a machine-class row ("Linux or Windows ...") stays exact.
+_UNAVAILABLE_NEXT_STEP["output.image"] = (
+    "set output.image to a local image engine on Linux, diffusers or sdcpp (stable-diffusion.cpp), both "
+    "included with abstractcore[gpu] (on an Intel Mac or Windows they are not available with AbstractCore's "
+    "install settings), or to a cloud image provider"
+)
+
+
+def _unavailable_next_step(key: Optional[str], host: Mapping[str, Any]) -> Optional[str]:
+    """What an operator can do instead of an unavailable recommended row."""
+
+    return _UNAVAILABLE_NEXT_STEP.get(key or "")
+
+
 # Next step when the engine runs but the model does not fit (fit-gated rows).
 _TOO_LARGE_NEXT_STEP = {
     "output.image": "use a Mac with more unified memory, or a cloud image provider",
@@ -666,8 +680,9 @@ def _unavailable_reasons(
     for key, route in routes.items():
         reason = recommended_route_unavailable_reason(route.provider, host, key)
         if reason:
-            if key in _UNAVAILABLE_NEXT_STEP:
-                reason = f"{reason}; {_UNAVAILABLE_NEXT_STEP[key]}"
+            next_step = _unavailable_next_step(key, host)
+            if next_step:
+                reason = f"{reason}; {next_step}"
             out[key] = reason
             continue
         if key in _FIT_GATED_ROUTES:
@@ -837,8 +852,8 @@ def configured_routes_unavailable(
         pick = recommended.get(rec_key) if rec_key else None
         if pick is not None:
             reason = f"{reason}; this computer's recommended route is {pick.provider}/{pick.model}"
-        elif rec_key in _UNAVAILABLE_NEXT_STEP:
-            reason = f"{reason}; {_UNAVAILABLE_NEXT_STEP[rec_key]}"
+        elif _unavailable_next_step(rec_key, profile):
+            reason = f"{reason}; {_unavailable_next_step(rec_key, profile)}"
         out[key] = {"provider": provider, "model": model, "reason": reason}
     return out
 

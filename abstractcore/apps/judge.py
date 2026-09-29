@@ -352,7 +352,7 @@ Default model setup:
         '--format',
         choices=format_choices,
         default='json',
-        help='Output format: json (structured), plain (human-readable)' + (', yaml' if YAML_AVAILABLE else ' - install PyYAML for YAML support')
+        help='Output format: json (structured), plain (human-readable)' + (', yaml' if YAML_AVAILABLE else ' - yaml needs PyYAML (part of the light install; repair with: pip install -U abstractcore)')
     )
 
     parser.add_argument(
@@ -623,7 +623,7 @@ Default model setup:
                 formatted_output = format_assessment_plain(assessment)
         elif args.format == 'yaml':
             if not YAML_AVAILABLE:
-                print("Error: PyYAML is required for YAML output format. Install with: pip install PyYAML")
+                print("Error: PyYAML is required for YAML output format; it is part of the light install. Repair with: pip install -U abstractcore")
                 sys.exit(1)
             formatted_output = yaml.dump(assessment, default_flow_style=False, indent=2, sort_keys=False)
         else:

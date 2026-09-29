@@ -78,7 +78,10 @@ def _camera_facade() -> Any:
     if camera is None:
         raise HTTPException(
             status_code=501,
-            detail='No camera capability is available on this server. Install: pip install "abstractcamera"',
+            detail=(
+                "No camera capability is available on this server: "
+                "the camera plugin (abstractcamera) is not part of AbstractCore's install settings (light, apple, gpu)."
+            ),
         )
     return camera
 

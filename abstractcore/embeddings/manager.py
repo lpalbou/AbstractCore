@@ -37,7 +37,7 @@ except ImportError:
 
 from .models import EmbeddingBackend, get_model_config, get_default_model, list_available_models, list_available_providers
 from ..utils.structured_logging import get_logger
-from ..utils.install_settings import local_engines_install_command
+from ..utils.install_settings import local_engines_hint
 
 logger = get_logger(__name__)
 
@@ -637,7 +637,7 @@ class EmbeddingManager:
             if sentence_transformers is None:
                 raise ImportError(
                     "sentence-transformers is required but not installed. "
-                    f"Install with: {local_engines_install_command()}"
+                    f"{local_engines_hint('Local embeddings')}"
                 )
 
             # No process-wide environment writes (mission EE): this used to
@@ -705,8 +705,7 @@ class EmbeddingManager:
         except ImportError:
             raise ImportError(
                 "sentence-transformers is required for embedding functionality. "
-                f"Install with: {local_engines_install_command()} (recommended) "
-                "or: pip install sentence-transformers"
+                f"{local_engines_hint('Local embeddings')}"
             )
         except Exception as e:
             logger.error(f"Failed to load embedding model {self.model_id}: {e}")

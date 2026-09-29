@@ -68,7 +68,7 @@ ENGINES: Dict[str, Any] = {
             "supported_on_host": True, "unsupported_reason": None,
             "installed": True, "version": "0.29.1", "install_location": None,
             "running": None, "base_url": None, "reachable": None, "models_count": 3,
-            "install": {"available": True, "method": "pip", "argv": ["/usr/bin/python3", "-m", "pip", "install", "mlx-lm"],
+            "install": {"available": True, "method": "pip", "argv": ["/usr/bin/python3", "-m", "pip", "install", "abstractcore[apple]"],
                         "url": None, "requires_confirmation": True, "estimated_bytes": 120_000_000, "notes": None},
             "docs_url": None,
         },

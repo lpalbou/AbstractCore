@@ -3607,8 +3607,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if response_model is not None:
             if not PYDANTIC_AVAILABLE:
                 raise ImportError(
-                    "Pydantic is required for structured outputs. "
-                    "Install with: pip install pydantic>=2.0.0"
+                    "Pydantic is required for structured outputs; it is part of the light install. "
+                    "Repair with: pip install -U abstractcore"
                 )
 
             # Structured output returns a validated model, not a GenerateResponse,

@@ -20,6 +20,10 @@ installed here decides whether they work.
     huggingface   llamacpp      `llama_cpp` is importable           AbstractCore's GGUF lane
                   huggingface   `transformers` and `torch`          AbstractCore's Transformers lane
     mlx-gen       mlx-gen       `abstractvision` and `mlx-gen`      AbstractVision's MLX-Gen backend
+
+Every install command is one of the three settings (light repair, `abstractcore[apple]`,
+`abstractcore[gpu]`); a host with no local-engine setting gets no command and a plain
+not-available sentence.
     voice routes  <engine>      abstractvoice's own answer          `abstractvoice.engine_runtime`
 
 VOICE: AbstractVoice owns which packages each of its engines needs
@@ -102,6 +106,19 @@ def _python_engine(engine: str, name: str, modules: Tuple[str, ...], what: str) 
     absent = [m for m in modules if not _importable(m)]
     if not absent:
         return None
+    from .engines import engine_install_plan
+
+    plan = engine_install_plan(engine)
+    if not plan.get("available"):
+        # No local-engine setting on this host: the plan's notes say so plainly.
+        return _missing(
+            engine,
+            name,
+            f"{name} is not installed in this Python environment ({', '.join(absent)} missing); {what}. "
+            f"{plan.get('notes')}",
+            None,
+            engine_row=engine,
+        )
     install = _engine_plan_command(engine)
     return _missing(
         engine,
@@ -113,18 +130,36 @@ def _python_engine(engine: str, name: str, modules: Tuple[str, ...], what: str) 
     )
 
 
+def _setting_install(what: str) -> Tuple[Optional[str], str]:
+    """`(install, sentence)` for a local engine on THIS machine: its local-engine setting
+    (`abstractcore[apple]` / `abstractcore[gpu]`, into this interpreter), or no command and
+    the plain not-available sentence. Never a bare package or a plugin's own extra
+    (operator ruling 2026-09-29: users only ever install one of the three settings)."""
+
+    from ..utils.install_settings import local_engines_setting, not_available_here
+
+    setting = local_engines_setting()
+    if not setting:
+        return None, not_available_here(what)
+    install = _pip_command(f"abstractcore[{setting}]")
+    return install, f"Install it with: {install}"
+
+
 def _mlx_gen() -> Optional[Dict[str, Any]]:
     absent = [d for d in ("abstractvision", "mlx-gen") if not _distributed(d)]
     if not absent:
         return None
-    # AbstractVision's own documented install for its MLX-Gen backend (the
-    # command its OptionalDependencyMissingError prints).
-    install = _pip_command("abstractvision[mlx-gen]")
+    if absent == ["abstractvision"]:
+        # AbstractVision is part of the light install: missing means a broken install.
+        install = _pip_command("-U", "abstractcore")
+        sentence = f"Install it with: {install}"
+    else:
+        install, sentence = _setting_install("MLX-Gen image and video generation")
     return _missing(
         "mlx-gen",
         "MLX-Gen (AbstractVision)",
         f"MLX-Gen image and video generation is not installed in this Python environment "
-        f"({', '.join(absent)} missing). Install it with: {install}",
+        f"({', '.join(absent)} missing). {sentence}",
         install,
     )
 
@@ -145,7 +180,8 @@ def _voice(provider: str) -> Optional[Dict[str, Any]]:
     try:
         from abstractvoice.engine_runtime import engine_runtime_status
     except ImportError:
-        install = _pip_command(f"abstractvoice>={ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR}")
+        # The light install's floor IS this floor: upgrading AbstractCore upgrades AbstractVoice.
+        install = _pip_command("-U", "abstractcore")
         return _missing(
             provider,
             "AbstractVoice",
@@ -162,7 +198,17 @@ def _voice(provider: str) -> Optional[Dict[str, Any]]:
         return _missing(provider, provider, str(exc), None)
     if status.installed:
         return None
-    return _missing(status.engine, status.label, str(status.reason), status.install_command)
+    # AbstractVoice's own `install_command` / `reason` name its standalone extra
+    # (`abstractvoice[supertonic]`); inside AbstractCore every voice engine's runtime
+    # arrives with the local-engine setting (abstractvoice[all-apple] / [all-gpu]).
+    missing = ", ".join(status.missing_modules) or "its runtime"
+    install, sentence = _setting_install(f"The {status.label} voice engine")
+    return _missing(
+        status.engine,
+        status.label,
+        f"{status.label} is not installed in this Python environment ({missing} missing). {sentence}",
+        install,
+    )
 
 
 def _dist_version(dist: str) -> str:

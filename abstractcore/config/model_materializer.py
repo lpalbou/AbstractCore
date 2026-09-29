@@ -68,7 +68,25 @@ from .capability_defaults import (
 # (a CLI streaming lines, a Gateway background job posting updates), and it
 # speaks the same words so a surface that renders one renders the other.
 from ..download import DownloadProgress, DownloadStatus
-from ..utils.install_settings import local_engines_install_command
+from ..utils.install_settings import LIGHT_INSTALL, local_engines_hint, local_engines_install_command
+
+
+def _supertonic_instruction() -> str:
+    """What to install for Supertonic voice on THIS machine: AbstractVoice itself is part of
+    the light install (absent = broken install); its ONNX engine comes with the local-engine
+    setting (apple / gpu). Never a bare or plugin-extra install (ruling 2026-09-29)."""
+    from importlib import metadata as _metadata
+
+    try:
+        _metadata.distribution("abstractvoice")
+    except _metadata.PackageNotFoundError:
+        return LIGHT_INSTALL
+    return local_engines_install_command() or local_engines_hint("Supertonic voice")
+
+
+def _local_engines_instruction(what: str) -> str:
+    """This machine's local-engine setting command, or the not-available sentence."""
+    return local_engines_install_command() or local_engines_hint(what)
 
 _LOG = logging.getLogger("abstractcore.model_materializer")
 
@@ -989,7 +1007,7 @@ def _probe_supertonic(artifact: str) -> ModelPresence:
             PRESENCE_UNKNOWN,
             evidence="abstractvoice not importable",
             detail=str(exc),
-            instruction='pip install "abstractvoice[supertonic]"',
+            instruction=_supertonic_instruction(),
             downloadable=False,
         )
     try:
@@ -2147,7 +2165,7 @@ def _download_supertonic(artifact: str, emit: ProgressCallback, base_url: Option
             False,
             "failed",
             message=f"abstractvoice is not importable: {exc}",
-            instruction='pip install "abstractvoice[supertonic]"',
+            instruction=_supertonic_instruction(),
         )
     # SEAM with abstractvoice: these names are read, never re-derived; a
     # renamed one fails loudly here rather than downloading the wrong set.
@@ -2410,7 +2428,7 @@ def _download_huggingface(artifact: str, emit: ProgressCallback, base_url: Optio
             False,
             "failed",
             message=f"huggingface_hub is not installed: {exc}",
-            instruction=local_engines_install_command(),
+            instruction=_local_engines_instruction("Downloading Hugging Face models"),
         )
 
     # AN EXPLICIT DOWNLOAD REACHES THE HUB. `offline_first` means "never

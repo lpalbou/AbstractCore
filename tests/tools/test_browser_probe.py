@@ -49,13 +49,17 @@ needs_browser = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 def test_missing_playwright_message_is_actionable(monkeypatch, tmp_path):
-    """Absent optional dep → BOTH install steps named (pip extra + browser
-    binary), never a traceback or a bare ImportError."""
+    """Absent optional dep → BOTH steps named (this host's install setting, or
+    the plain not-available sentence, + browser binary), never a traceback, a
+    bare ImportError, or a bare `pip install playwright` (ruling 2026-09-29)."""
+    from abstractcore.utils.install_settings import local_engines_hint
+
     monkeypatch.setattr(browser_tools, "_PLAYWRIGHT_AVAILABLE", False)
     page = tmp_path / "index.html"
     page.write_text("<html><body>x</body></html>")
     out = browser_probe(str(page))
-    assert 'pip install playwright' in out
+    assert "pip install playwright" not in out
+    assert local_engines_hint("Headless-browser rendering (Playwright)") in out
     assert "playwright install --only-shell chromium" in out
     assert "--with-deps" in out  # the one per-OS branch (Linux system libs)
 

@@ -139,18 +139,12 @@ def download_vision_model(model_name: str = "blip-base-caption") -> bool:
             from transformers import VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer
             from transformers import GitProcessor, GitForCausalLM
         except ImportError:
-            print("❌ Required libraries not found. Installing transformers...")
-            import subprocess
-            import sys
+            # Local vision models run on the transformers stack, which only this machine's
+            # local-engine setting carries (never a bare transformers / torch install).
+            from ..utils.install_settings import local_engines_hint
 
-            # Install transformers and dependencies
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "transformers", "torch", "torchvision", "Pillow"])
-            print("✅ Installed transformers and dependencies")
-
-            # Re-import after installation
-            from transformers import BlipProcessor, BlipForConditionalGeneration
-            from transformers import VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer
-            from transformers import GitProcessor, GitForCausalLM
+            print(f"❌ transformers is not installed. {local_engines_hint('Local vision caption models')}")
+            return False
 
         # Create models directory: the configured `cache.local_models_cache_dir`
         # (default ~/.abstractcore/models). This used to be hard-coded to the
@@ -1238,13 +1232,15 @@ def install_check(auto_accept: bool = False) -> None:
                         _warn("Embeddings download", str(exc))
         else:
             _warn("Embeddings", f"sentence-transformers not installed ({emb_provider}/{emb_model} configured)")
-            from ..utils.install_settings import local_engines_setting
+            from ..utils.install_settings import local_engines_setting, not_available_here
 
             # Local embeddings come with this machine's local-engine setting (apple / gpu);
-            # hosts with neither install sentence-transformers alone.
+            # a host with neither has no setting that provides them (never a bare package).
             _emb_setting = local_engines_setting()
-            _emb_spec = f"abstractcore[{_emb_setting}]" if _emb_setting else "sentence-transformers"
-            if _ask_yes(f'     Install embeddings dependencies now? (pip install "{_emb_spec}")', auto_accept):
+            _emb_spec = f"abstractcore[{_emb_setting}]" if _emb_setting else None
+            if _emb_spec is None:
+                print(f"     💡 {not_available_here('Local embeddings')}")
+            elif _ask_yes(f'     Install embeddings dependencies now? (pip install "{_emb_spec}")', auto_accept):
                 try:
                     print(f'     ⏳ Running: pip install "{_emb_spec}"')
                     subprocess.run(

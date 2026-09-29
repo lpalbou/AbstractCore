@@ -4531,7 +4531,7 @@ def web_search(
         JSON string with search results or an error message.
 
     Note:
-        For best results, install `ddgs` (`pip install ddgs`). Without it, this tool falls back to
+        `ddgs` ships with the light install (repair: `pip install -U abstractcore`). Without it, this tool falls back to
         parsing DuckDuckGo's HTML results, which may be less stable and may ignore time_range.
     """
     # Arguments this call had to drop or rewrite. Threaded into EVERY payload
@@ -4701,7 +4701,7 @@ def web_search(
                         status_hint="error",
                         results=[],
                         error="requests is not installed",
-                        hint="Install with: pip install -U abstractcore (recommended) or `pip install ddgs`.",
+                        hint="requests and ddgs are part of the light install. Repair with: pip install -U abstractcore",
                         ddgs_error=ddgs_error,
                         limitations=["fallback_backend"],
                         backend_attempts=backend_attempts,
@@ -4775,7 +4775,7 @@ def web_search(
                         degraded=True,
                         results=[],
                         error="No results found from DuckDuckGo HTML endpoint.",
-                        hint="Install `ddgs` for more reliable results.",
+                        hint="ddgs (the more reliable backend) is part of the light install. Repair with: pip install -U abstractcore",
                         ddgs_error=ddgs_error,
                         warnings=warnings_list,
                         limitations=limitations,
@@ -4806,7 +4806,7 @@ def web_search(
                     status_hint="error",
                     results=[],
                     error=str(e),
-                    hint="Install `ddgs` for more reliable results: pip install ddgs",
+                    hint="ddgs (the more reliable backend) is part of the light install. Repair with: pip install -U abstractcore",
                     ddgs_error=ddgs_error,
                     limitations=["fallback_backend"],
                     backend_attempts=backend_attempts,

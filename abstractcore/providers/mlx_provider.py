@@ -4257,8 +4257,8 @@ class MLXProvider(BaseProvider):
                                 extra_hint = (
                                     "\n"
                                     "Note:\n"
-                                    "  - Gemma 4 MLX models require a newer mlx-lm build (>=0.31.2).\n"
-                                    "    If that version is not available on PyPI yet, install mlx-lm from source until it is released.\n"
+                                    "  - Gemma 4 MLX models require mlx-lm >= 0.31.2 (AbstractCore's apple setting requires 0.31.3):\n"
+                                    "    pip install -U \"abstractcore[apple]\"\n"
                                 )
 
                             raise ModelNotFoundError(
@@ -4267,7 +4267,8 @@ class MLXProvider(BaseProvider):
                                 "Try one of:\n"
                                 "  - Use provider='huggingface' (transformers) for this local model directory\n"
                                 "  - Use provider='lmstudio' if you are running LM Studio's local server\n"
-                                "  - Upgrade mlx-lm once a release with this model_type is published on PyPI\n"
+                                "  - Upgrade the apple setting once an mlx-lm release with this model_type is published: "
+                                "pip install -U \"abstractcore[apple]\"\n"
                                 f"{extra_hint}"
                             ) from e
                         raise

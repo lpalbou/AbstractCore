@@ -15,8 +15,7 @@ from dataclasses import dataclass, field
 from abc import ABC
 import logging
 from ..utils.structured_logging import get_logger
-from ..utils.install_settings import LIGHT_INSTALL, local_engines_setting
-from ..config.engines import HUGGINGFACE_DIRECT_PACKAGES
+from ..utils.install_settings import LIGHT_INSTALL, local_engines_setting, not_available_here, setting_install_command
 
 logger = get_logger("provider_registry")
 
@@ -113,21 +112,31 @@ class ProviderInfo:
     # The install setting this provider needs beyond the light install: "apple" or "gpu",
     # or None when `pip install abstractcore` covers it (every remote provider).
     installation_extras: Optional[str] = None
-    # Packages installed directly when no setting carries this provider on this
-    # machine (huggingface on an Intel Mac or Windows: the transformers stack,
-    # never the gpu setting's vLLM); empty when light or a setting covers it.
-    direct_install_packages: tuple = ()
+    # True when the provider runs on this machine's local-engine setting (huggingface:
+    # apple on Apple silicon, gpu on Linux). On a host with no setting (Intel Mac,
+    # Windows) `installation_extras` is None and the provider is not available there
+    # with the three install settings -- never a bare-package install (ruling 2026-09-29).
+    local_engines: bool = False
     import_path: str = ""
 
-    def install_command(self) -> str:
-        """The command that installs this provider's dependencies (docs/installation.md)."""
+    def install_command(self) -> Optional[str]:
+        """The command that installs this provider's dependencies (docs/installation.md),
+        or None when no install setting provides it on this machine."""
         if self.installation_extras:
-            return f'pip install "abstractcore[{self.installation_extras}]"'
-        if self.direct_install_packages:
-            from ..config.engines import pip_install_command
-
-            return pip_install_command(*self.direct_install_packages)
+            if self.local_provider and self.installation_extras != local_engines_setting():
+                # MLX (apple) on a non-Apple-silicon host: no setting runs it here.
+                return None
+            return setting_install_command(self.installation_extras)
+        if self.local_engines:
+            return None
         return LIGHT_INSTALL
+
+    def install_hint(self) -> str:
+        """`Install with: <command>`, or the plain not-available sentence for this machine."""
+        command = self.install_command()
+        if command:
+            return f"Install with: {command}"
+        return not_available_here(f"The {self.display_name} provider")
 
     def __post_init__(self):
         """Set default values after initialization."""
@@ -256,10 +265,10 @@ class ProviderRegistry:
             authentication_required=False,  # Optional for public models
             local_provider=True,
             # Apple silicon -> apple, Linux -> gpu; an Intel Mac or Windows has no
-            # local-engine setting and installs the transformers stack directly
-            # (config/engines.py huggingface plan), never gpu (which pulls vLLM).
+            # local-engine setting, so the provider is not available there with the
+            # three install settings (install_hint says so; never a bare package).
             installation_extras=local_engines_setting(),
-            direct_install_packages=() if local_engines_setting() else HUGGINGFACE_DIRECT_PACKAGES,
+            local_engines=True,
             import_path="..providers.huggingface_provider"
         ))
 
@@ -540,6 +549,7 @@ class ProviderRegistry:
                 authentication_required=family_info.authentication_required,
                 local_provider=family_info.local_provider,
                 installation_extras=family_info.installation_extras,
+                local_engines=family_info.local_engines,
                 import_path=family_info.import_path,
             )
         return self._providers.get(provider_key)
@@ -624,7 +634,7 @@ class ProviderRegistry:
             self._logger.warning(f"Failed to load provider {provider_info.name}: {e}")
             raise ImportError(
                 f"{provider_info.display_name} dependencies not installed. "
-                f"Install with: {provider_info.install_command()}"
+                f"{provider_info.install_hint()}"
             ) from e
 
     def get_available_models(self, provider_name: str, **kwargs) -> List[str]:
@@ -953,11 +963,11 @@ class ProviderRegistry:
             # caller to a remedy that does not fix their problem and hides the one that
             # would. `from e` preserves the chain for a traceback, but the message a
             # caller reads (and logs) is this one, so the real cause belongs in it.
-            if provider_info.installation_extras or provider_info.direct_install_packages:
+            if provider_info.installation_extras or provider_info.local_engines:
                 raise ImportError(
                     f"{provider_info.display_name} provider could not be constructed: {e}\n"
-                    f"If a core dependency is missing, install with: "
-                    f"{provider_info.install_command()} — "
+                    f"If a core dependency is missing: "
+                    f"{provider_info.install_hint()} — "
                     f"but read the underlying error above first; it names what actually failed."
                 ) from e
             else:

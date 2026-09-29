@@ -390,8 +390,9 @@ if __name__ == "__main__":
 )
 def test_huggingface_install_hint_matches_the_engine_plan(monkeypatch, plat, machine, expected):
     """Gate finding (2.19.0): the registry told an Intel Mac or Windows to
-    install abstractcore[gpu] (vLLM) for HuggingFace; the engine plan installs
-    the transformers stack directly there. Both must say the same thing."""
+    install abstractcore[gpu] (vLLM) for HuggingFace. Ruling 2026-09-29: only the
+    three settings are ever advised, so there the registry and the engine plan both
+    say the engine is not available (no bare transformers-stack install)."""
     import platform as _platform
     import shlex
     import sys as _sys
@@ -404,13 +405,15 @@ def test_huggingface_install_hint_matches_the_engine_plan(monkeypatch, plat, mac
     info = ProviderRegistry().get_provider_info("huggingface")
     assert info.installation_extras == expected
     command = info.install_command()
+    os_name = {"darwin": "darwin", "win32": "windows", "linux": "linux"}[plat]
     plan_argv = engines.engine_install_plan(
-        "huggingface", prefer_uv=False, tools={"brew": False, "winget": False}
+        "huggingface", os_name, machine, prefer_uv=False, tools={"brew": False, "winget": False}
     )["argv"]
     if expected is None:
-        assert "abstractcore[" not in command and "vllm" not in command.lower()
-        assert all(pkg in command for pkg in engines.HUGGINGFACE_DIRECT_PACKAGES)
-        assert all(pkg in plan_argv for pkg in engines.HUGGINGFACE_DIRECT_PACKAGES)
+        # No setting carries the engine here: no command at all, never a bare package.
+        assert command is None and plan_argv == []
+        hint = info.install_hint()
+        assert "not available on this machine" in hint and "pip install" not in hint
     else:
         assert command == f'pip install "abstractcore[{expected}]"'
         assert f"abstractcore[{expected}]" in shlex.join(plan_argv)

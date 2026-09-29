@@ -182,12 +182,6 @@ def _pip_argv(packages: List[str], extra: Optional[List[str]] = None, *, prefer_
     return "pip", [sys.executable, "-m", "pip", "install", *packages, *(extra or [])]
 
 
-# The transformers stack a host with no local-engine setting (Intel Mac,
-# Windows) installs for the huggingface engine: the engine install plan and the
-# provider registry's install hint both name exactly these.
-HUGGINGFACE_DIRECT_PACKAGES = ("transformers", "torch", "huggingface_hub", "sentencepiece")
-
-
 def pip_install_command(*packages: str) -> str:
     """The shell command installing `packages` into THIS interpreter's
     environment: the engine rows' own argv (`_pip_argv`), for every install
@@ -432,17 +426,28 @@ def engine_install_plan(
             alternatives=alternatives,
         )
 
+    # Python engines (mlx, llamacpp, vllm, huggingface) arrive ONLY with this host's
+    # local-engine setting: abstractcore[apple] on Apple silicon, abstractcore[gpu] on
+    # Linux. A host with neither (Intel Mac, Windows) gets no pip plan: the engine is
+    # not available there with the three install settings (operator ruling 2026-09-29:
+    # never a bare-package install such as llama-cpp-python on its own).
+    from ..utils.install_settings import host_setting, not_available_here
+
+    setting = host_setting(os_id, arch_id)
+
     if eid == "mlx":
-        method, argv = _pip_argv(["mlx-lm"], prefer_uv=prefer_uv)
+        method, argv = _pip_argv(["abstractcore[apple]"], prefer_uv=prefer_uv)
         return _plan(
             method,
             argv,
             url=url,
-            notes=f"Installs mlx and mlx-lm into this Python environment ({sys.executable}); no admin.",
+            notes=(
+                f"Installs AbstractCore's apple setting (every local engine for Apple silicon, including "
+                f"mlx and mlx-lm) into this Python environment ({sys.executable}); several GB, no admin."
+            ),
         )
 
     if eid == "llamacpp":
-        method, argv = _pip_argv(["llama-cpp-python"], prefer_uv=prefer_uv)
         alternatives = []
         if os_id == "darwin" and have["brew"]:
             alternatives.append(
@@ -463,49 +468,58 @@ def engine_install_plan(
                     "requires_admin": False,
                 }
             )
-        accel_note = {
-            "darwin": " Builds with Metal on Apple Silicon.",
-            "linux": " Builds for CPU unless CMAKE_ARGS=-DGGML_CUDA=on is set (then a CUDA toolkit is needed).",
-            "windows": " Needs a C/C++ compiler (Visual Studio Build Tools) when no prebuilt wheel matches.",
-        }.get(os_id, "")
+        if not setting:
+            return _plan(
+                None,
+                None,
+                url=url,
+                notes=not_available_here("The in-process llama.cpp engine (GGUF models)"),
+                available=False,
+                alternatives=alternatives,
+            )
+        method, argv = _pip_argv([f"abstractcore[{setting}]"], prefer_uv=prefer_uv)
         return _plan(
             method,
             argv,
             url=url,
             notes=(
-                "Installs llama-cpp-python (the in-process GGUF engine AbstractCore's huggingface "
-                f"provider uses) into this Python environment; may compile from source (minutes).{accel_note}"
+                f"Installs AbstractCore's {setting} setting (every local engine for this machine, including "
+                "llama-cpp-python, the in-process GGUF engine of the huggingface provider) into this Python "
+                "environment; several GB, may compile llama-cpp-python from source (minutes)."
             ),
             alternatives=alternatives,
         )
 
     if eid == "vllm":
         use_uv = prefer_uv if prefer_uv is not None else (importlib.util.find_spec("pip") is None and shutil.which("uv") is not None)
-        if use_uv:
-            argv = ["uv", "pip", "install", "--python", sys.executable, "vllm", "--torch-backend=auto"]
-        else:
-            argv = [sys.executable, "-m", "pip", "install", "vllm"]
+        # `_support` admits vLLM on Linux + CUDA only, where the gpu setting applies.
+        method, argv = _pip_argv(["abstractcore[gpu]"], ["--torch-backend=auto"] if use_uv else None, prefer_uv=use_uv)
         return _plan(
-            "pip",
+            method,
             argv,
             url=url,
-            notes="Installs vLLM (several GB: PyTorch + CUDA wheels) into this Python environment; NVIDIA GPU with compute capability >= 7.5 required.",
+            notes=(
+                "Installs AbstractCore's gpu setting (every local engine for GPU machines, including vLLM: "
+                "several GB of PyTorch + CUDA wheels) into this Python environment; NVIDIA GPU with compute "
+                "capability >= 7.5 required."
+            ),
         )
 
     # huggingface: the engine arrives with this machine's local-engine setting (apple / gpu);
-    # a host with neither (Intel Mac, Windows) installs the transformers stack alone.
-    from ..utils.install_settings import local_engines_setting
-
-    setting = local_engines_setting()
-    if setting:
-        method, argv = _pip_argv([f"abstractcore[{setting}]"], prefer_uv=prefer_uv)
-        notes = (
-            f"Installs AbstractCore's {setting} setting (every local engine for this machine, including "
-            "transformers, torch and huggingface_hub) into this Python environment; several GB."
+    # a host with neither (Intel Mac, Windows) has no plan.
+    if not setting:
+        return _plan(
+            None,
+            None,
+            url=url,
+            notes=not_available_here("The Hugging Face Transformers engine"),
+            available=False,
         )
-    else:
-        method, argv = _pip_argv(list(HUGGINGFACE_DIRECT_PACKAGES), prefer_uv=prefer_uv)
-        notes = "Installs transformers, torch and huggingface_hub into this Python environment; several GB."
+    method, argv = _pip_argv([f"abstractcore[{setting}]"], prefer_uv=prefer_uv)
+    notes = (
+        f"Installs AbstractCore's {setting} setting (every local engine for this machine, including "
+        "transformers, torch and huggingface_hub) into this Python environment; several GB."
+    )
     return _plan(method, argv, url=url, notes=notes)
 
 

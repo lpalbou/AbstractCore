@@ -231,15 +231,29 @@ def test_lmstudio_is_a_download_page_plus_optional_headless_bootstrap():
 
 
 def test_pip_engines_install_into_this_interpreter():
+    # Python engines install ONE of the three settings, never a bare package (ruling 2026-09-29).
     pip = engines.engine_install_plan("mlx", "darwin", "arm64", prefer_uv=False)
-    assert pip["argv"] == [sys.executable, "-m", "pip", "install", "mlx-lm"]
+    assert pip["argv"] == [sys.executable, "-m", "pip", "install", "abstractcore[apple]"]
     uv = engines.engine_install_plan("mlx", "darwin", "arm64", prefer_uv=True)
-    assert uv["argv"] == ["uv", "pip", "install", "--python", sys.executable, "mlx-lm"]
+    assert uv["argv"] == ["uv", "pip", "install", "--python", sys.executable, "abstractcore[apple]"]
     llama = engines.engine_install_plan("llamacpp", "darwin", "arm64", tools={"brew": True}, prefer_uv=False)
-    assert llama["argv"][-1] == "llama-cpp-python"
+    assert llama["argv"][-1] == "abstractcore[apple]"
     assert llama["alternatives"][0]["argv"] == ["brew", "install", "llama.cpp"]
+    linux = engines.engine_install_plan("llamacpp", "linux", "x86_64", tools={}, prefer_uv=False)
+    assert linux["argv"][-1] == "abstractcore[gpu]"
     win = engines.engine_install_plan("llamacpp", "windows", "x86_64", tools={"winget": True}, prefer_uv=False)
+    assert win["available"] is False and win["argv"] == []
+    assert "not available on this machine" in win["notes"]
     assert win["alternatives"][0]["argv"][:4] == ["winget", "install", "--id", "ggml.llamacpp"]
+
+
+@pytest.mark.parametrize("engine", ["llamacpp", "huggingface"])
+@pytest.mark.parametrize("os_name, arch", [("darwin", "x86_64"), ("windows", "x86_64"), ("windows", "arm64")])
+def test_no_setting_hosts_get_no_pip_plan(engine, os_name, arch):
+    """Intel Mac / Windows: no install setting carries the engine, so no bare-package plan."""
+    plan = engines.engine_install_plan(engine, os_name, arch, tools={"brew": False, "winget": False}, prefer_uv=False)
+    assert plan["available"] is False and plan["argv"] == []
+    assert "not available on this machine" in plan["notes"] and "pip install" not in plan["notes"]
 
 
 def test_mlx_and_vllm_are_refused_where_they_cannot_run():
@@ -248,6 +262,7 @@ def test_mlx_and_vllm_are_refused_where_they_cannot_run():
     assert engines.engine_install_plan("vllm", "linux", "x86_64", accelerator="none")["available"] is False
     cuda = engines.engine_install_plan("vllm", "linux", "x86_64", accelerator="cuda", prefer_uv=True)
     assert cuda["available"] is True and "--torch-backend=auto" in cuda["argv"]
+    assert "abstractcore[gpu]" in cuda["argv"] and "vllm" not in cuda["argv"]
 
 
 def test_unknown_engine_is_a_key_error():
