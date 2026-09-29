@@ -241,13 +241,53 @@ def test_the_video_fit_uses_the_measured_memory_not_the_file_size(tmp_path, monk
                for n in notes), notes
 
 
+def test_a_measured_need_is_the_need_with_no_estimated_overhead_on_top(tmp_path, monkeypatch):
+    """Gate finding (2.19.0): the measured TI2V-5B peak (16.57 GiB) went into
+    `estimate_fit` as a weight size, which added max(0.5 GiB, 5%) and printed
+    "needs about 17.4 GiB ... (measured ...)". A measured peak already holds
+    every buffer: `need_bytes` IS the measured figure, for every video entry,
+    its measured larger/smaller canvases, and on both fit paths (the
+    recommendation seed and the catalog)."""
+
+    from abstractcore.utils.model_fit import estimate_fit
+
+    GiB = 1024**3
+    got = estimate_fit(host=synthetic_host("metal128"), weight_bytes=16 * GiB, context=1, need_measured=True)
+    assert got["need_bytes"] == 16 * GiB and got["overhead_bytes"] == 0 and got["kv_bytes"] is None
+    estimated = estimate_fit(host=synthetic_host("metal128"), weight_bytes=16 * GiB, context=1)
+    assert estimated["need_bytes"] > 16 * GiB  # the estimated path keeps its overhead
+
+    seed_arts = [(r, a) for r in mc.load_seed()["rows"] for a in r["artifacts"] if a.get("resident")]
+    assert {a["artifact"] for _r, a in seed_arts} == {TI2V, T2V, I2V}
+    rows = _rows(tmp_path, monkeypatch, synthetic_host("metal128"), tags=["video"])
+    catalog_arts = {a["artifact"]: a for r in rows.values() for a in r["artifacts"]}
+    for name in ("metal16", "metal24", "metal64", "metal128"):
+        host = synthetic_host(name)
+        for row, art in seed_arts:
+            measured = art["resident"]["bytes"]
+            fit = mc.recommended_artifact_fit("mlx-gen", art["artifact"], host)["fit"]
+            assert fit["need_bytes"] == measured, (name, art["artifact"], fit["need_bytes"], measured)
+            assert fit["overhead_bytes"] == 0
+            for entry in art["resident"].get("larger_canvases", []) + art["resident"].get("smaller_canvases", []):
+                variant = dict(art, resident={"bytes": entry["bytes"], "source": entry["source"]})
+                assert mc.recommended_artifact_fit_for(row, variant, host)["need_bytes"] == entry["bytes"]
+    for _row, art in seed_arts:
+        assert catalog_arts[art["artifact"]]["fit"]["need_bytes"] == art["resident"]["bytes"]
+        assert catalog_arts[art["artifact"]]["fit"]["overhead_bytes"] == 0
+    # The sentence a 16 GiB Mac reads quotes the measured figure itself.
+    reason = cd.recommended_unavailable_routes(synthetic_host("metal16"))["output.video"]["reason"]
+    assert "needs about 16.6 GiB" in reason, reason
+
+
 @pytest.mark.parametrize("artifact", [T2V, I2V])
 def test_a14b_8bit_per_memory_band_at_the_default_canvas(artifact):
-    """Measured ~38 GiB at the default canvas (832x480, 81 frames): too large
-    for a 48 GiB Mac, tight on 64 GiB, fits 96 GiB and more."""
+    """Measured ~38 GiB at the default canvas (832x480, 81 frames): a 48 GiB
+    Mac runs it only once its GPU memory limit is raised (the measured peak is
+    the need, with no estimated overhead on top), tight on 64 GiB, fits 96 GiB
+    and more."""
 
     fit = lambda name: mc.recommended_artifact_fit("mlx-gen", artifact, synthetic_host(name))["fit"]  # noqa: E731
-    assert fit("metal48")["verdict"] == "too_large" and "gpu_limit" not in fit("metal48")
+    assert fit("metal48")["verdict"] == "needs_gpu_limit" and "gpu_limit" in fit("metal48")
     assert fit("metal64")["verdict"] == "tight"
     assert fit("metal96")["verdict"] == fit("metal128")["verdict"] == "fits"
     # The recommendation per band: TI2V-5B wherever video is recommended, no

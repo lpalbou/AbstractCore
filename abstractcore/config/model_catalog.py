@@ -238,6 +238,8 @@ def _fit_for_seed_artifact(row: Mapping[str, Any], art: Mapping[str, Any], host:
         context=512 if caps.get("embedding") else (None if text_like else 1),
         max_tokens=caps.get("max_tokens"),
         disk_free_bytes=_disk_free_for(str(art.get("provider")), host),
+        # A measured peak (`resident`) IS the need: no estimated overhead on top.
+        need_measured=resident is not None,
     )
     note = _resident_note(art)
     if note:
@@ -1363,6 +1365,8 @@ def _build_artifact(
         context=context,
         max_tokens=caps.get("max_tokens"),
         disk_free_bytes=_disk_free_for(provider, host),
+        # A measured peak (`resident`) IS the need: no estimated overhead on top.
+        need_measured=resident is not None,
     )
     if assumed_note:
         fit["notes"] = [assumed_note] + list(fit.get("notes") or [])

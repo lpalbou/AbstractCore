@@ -203,7 +203,8 @@ MAC48_RAISED = dict(synthetic_host("metal48"), ceiling_bytes=40 * 1024**3)
 
 def test_a_video_route_that_runs_at_a_measured_smaller_canvas_is_not_flagged(tmp_path, pin_host):
     key, model = "output.video.text_to_video", T2V_A14B
-    assert mc.recommended_artifact_fit("mlx-gen", model, MAC48_RAISED)["fit"]["verdict"] == "too_large"
+    # The default canvas does not run at this limit (it needs the limit raised further).
+    assert mc.recommended_artifact_fit("mlx-gen", model, MAC48_RAISED)["fit"]["verdict"] == "needs_gpu_limit"
     assert mc.smaller_canvas_fit("mlx-gen", model, MAC48_RAISED)["canvas"] == "640x352x81"
     assert cd.configured_routes_unavailable({key: {"provider": "mlx-gen", "model": model}}, MAC48_RAISED) == {}
     pin_host(MAC48_RAISED)

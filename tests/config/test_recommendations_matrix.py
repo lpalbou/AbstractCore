@@ -420,8 +420,9 @@ def test_a14b_text_to_video_carries_its_measured_canvases():
     assert [(s["canvas"], s["bytes"]) for s in art["resident"]["smaller_canvases"]] == [("640x352x81", 37724688038)]
     assert [(c["canvas"], c["bytes"]) for c in art["resident"]["larger_canvases"]] == [("1280x720x81", 57459824914)]
     assert mc.recommended_artifact_fit("mlx-gen", a14b, synthetic_host("metal64"))["fit"]["verdict"] == "tight"
-    # A stock 48 GB Mac runs neither size.
-    assert mc.recommended_artifact_fit("mlx-gen", a14b, synthetic_host("metal48"))["fit"]["verdict"] == "too_large"
+    # A stock 48 GB Mac runs neither size as is; the default canvas runs once
+    # the GPU memory limit is raised (the measured peak is the need).
+    assert mc.recommended_artifact_fit("mlx-gen", a14b, synthetic_host("metal48"))["fit"]["verdict"] == "needs_gpu_limit"
     assert mc.smaller_canvas_fit("mlx-gen", a14b, synthetic_host("metal48")) is None
 
 

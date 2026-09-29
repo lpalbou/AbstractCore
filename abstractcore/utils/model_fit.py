@@ -346,6 +346,7 @@ def estimate_fit(
     context: Optional[int] = None,
     max_tokens: Optional[int] = None,
     disk_free_bytes: Optional[int] = None,
+    need_measured: bool = False,
 ) -> Dict[str, Any]:
     """The contract-C `fit` block for one artifact on one host.
 
@@ -360,6 +361,10 @@ def estimate_fit(
       context         n tokens to budget KV for (default min(8192, max_tokens))
       max_tokens      the model's context window (clamps max_context)
       disk_free_bytes free space where the artifact will land
+      need_measured   `weight_bytes` is a MEASURED peak run-time need (e.g. a
+                      video engine's peak at its default canvas): it already
+                      holds every buffer, so no overhead and no KV cache are
+                      added -- `need_bytes` is exactly the measured figure
     """
 
     host = dict(host or {})
@@ -415,6 +420,12 @@ def estimate_fit(
         else:
             kv_conf = "unknown"
     KV = int(n * kv_per_token) if kv_per_token else None
+    measured = bool(need_measured and W is not None and weights_conf == "exact")
+    if measured:
+        # The measured peak is the need: nothing is estimated on top of it.
+        kv_per_token = None
+        KV = None
+        kv_conf = "exact"
 
     base = {
         "verdict": "unknown",
@@ -459,7 +470,7 @@ def estimate_fit(
         notes.append("host memory ceiling unknown")
         return base
 
-    O = int(max(0.5 * GIB, 0.05 * W))
+    O = 0 if measured else int(max(0.5 * GIB, 0.05 * W))
     need = W + (KV or 0) + O
     c_eff = _usable(ceiling, host)
     if host.get("ceiling_source") == "metal_wired_limit":
