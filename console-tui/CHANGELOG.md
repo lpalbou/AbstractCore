@@ -6,6 +6,21 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-09-29
+
+Released with AbstractCore 2.18.1. No API change.
+
+### Added
+
+- `←` / `→` switch to the previous and next screen in browse mode, wrapping at
+  both ends, like `Ctrl+P` / `Ctrl+N`. The arrows stay with the focused element
+  when it uses them: a text field moves its caret, the focused screen bar moves
+  itself, and a dialog keeps every key. In the wizard the arrows do not jump
+  screens and say that `Ctrl+N` walks it. The footer lists `1-9,0 ←/→ screens`.
+
+Gate: `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test --locked`,
+`cargo +1.87 build --locked`, `cargo package --locked` green.
+
 ## [0.4.0] — 2026-09-28
 
 Released with AbstractCore 2.18.0. A minor bump for `cargo semver-checks`, but

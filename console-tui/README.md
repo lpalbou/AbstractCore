@@ -50,8 +50,10 @@ needs the CLI says so and names `$ABSTRACTCORE_CLI` as the fix.
 
 ## What it does
 
-- **Browse** (digits 1-9, then 0 for the tenth screen): every section's honest state — set /
-  default / broken, secrets fingerprinted, unknown keys flagged.
+- **Browse** (digits 1-9, then 0 for the tenth screen; `←` / `→` or `Ctrl+P` / `Ctrl+N` for the
+  previous / next screen, wrapping — a text field keeps the arrows for its caret, and a dialog
+  keeps every key): every section's honest state — set / default / broken, secrets
+  fingerprinted, unknown keys flagged.
 - **Providers** (3): ONE list, the AbstractGateway console's columns —
   `provider | family | base URL | API key | models | enabled | origin`
   — with every stored endpoint profile inline as its `endpoint:<id>`

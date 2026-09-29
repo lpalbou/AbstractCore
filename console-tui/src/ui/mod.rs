@@ -300,6 +300,8 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
     let ctx_next = ctx.clone();
     let ctx_back = ctx.clone();
     let ctx_esc = ctx.clone();
+    let ctx_left = ctx.clone();
+    let ctx_right = ctx.clone();
     let ctx_finish = ctx.clone();
     let ctx_wiz = ctx.clone();
 
@@ -355,6 +357,14 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
         })
         .shortcut(KeyChord::new(Mods::CTRL, Key::Char('p')), move |_| {
             nav_back(&ctx_back);
+        })
+        // ←/→: previous/next screen, only when the focused element does
+        // not use the arrows (see `arrow_tab`).
+        .shortcut(KeyChord::plain(Key::Left), move |_| {
+            arrow_tab(&ctx_left, -1)
+        })
+        .shortcut(KeyChord::plain(Key::Right), move |_| {
+            arrow_tab(&ctx_right, 1)
         })
         .shortcut(KeyChord::plain(Key::Escape), move |_| {
             if ctx_esc.ui.wizard.get_untracked() {
@@ -550,6 +560,25 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
         .child(goal)
         .child(footer(cx, &ctx, theme))
         .build()
+}
+
+/// Left/Right (backlog 0984): the previous/next screen, wrapping at both
+/// ends — the Ctrl+P/Ctrl+N cycle on the arrows. These are ROOT
+/// shortcuts, so they fire only for an arrow nobody under the focus used:
+/// a focused text field moves its caret, the focused screen bar moves
+/// itself, and a modal keeps every key (routing law: handlers before
+/// shortcuts). The wizard gates its order: there the arrows refuse with
+/// the keys that walk it.
+fn arrow_tab(ctx: &Ctx, dir: isize) {
+    if ctx.ui.wizard.get_untracked() {
+        ctx.store.notice.set(Some(
+            "←/→ switch screens in browse mode — walk the wizard with Ctrl+N, finish with f".into(),
+        ));
+        return;
+    }
+    let n = SCREENS.len() as isize;
+    let cur = ctx.ui.screen.get_untracked().min(SCREENS.len() - 1) as isize;
+    ctx.ui.screen.set((cur + dir).rem_euclid(n) as usize);
 }
 
 fn nav_next(ctx: &Ctx) {
@@ -795,7 +824,7 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                 pairs.push(("f", "finish"));
                                 pairs.push(("Ctrl+C", "quit"));
                             } else {
-                                pairs.push(("1-9,0", "screens"));
+                                pairs.push(("1-9,0 ←/→", "screens"));
                                 pairs.push(("q", "quit"));
                                 // Models owns `w` (download) — the root's
                                 // wizard key never reaches it there.

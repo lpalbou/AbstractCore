@@ -32,6 +32,13 @@ CLI for everything derived or written. It finds the CLI through
 | 9 | **Models** | the model catalog fitted to this host (see the keys below) |
 | 0 | **Engines** | Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face (see the keys below) |
 
+To move between screens, press the screen's key, `Ctrl+N` / `Ctrl+P`, or
+`←` / `→` for the next and previous screen (wrapping from Engines to
+Overview and back). The arrows keep their own meaning while a text field
+has the caret (they move it), while the screen bar has the focus (it moves
+itself), and in any open dialog. In the wizard the arrows do not jump
+screens; `Ctrl+N` walks the wizard.
+
 ### Models keys
 
 | Key | Action |

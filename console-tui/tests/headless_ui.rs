@@ -4696,3 +4696,194 @@ fn catalog_detail_shows_the_gpu_limit_command() {
         "{s}"
     );
 }
+
+// =======================================================================
+// 0984: Left/Right switch the global tab (browse mode)
+// =======================================================================
+
+const RIGHT: &[u8] = b"\x1b[C";
+const LEFT: &[u8] = b"\x1b[D";
+
+/// Left = previous screen, Right = next, one step per press, wrapping at
+/// both ends — the same cycle as Ctrl+P / Ctrl+N.
+#[test]
+fn arrows_switch_the_global_tab_and_wrap() {
+    let mut h = harness();
+    h.load_fixtures();
+    assert_eq!(h.ui.screen.get_untracked(), 0);
+    h.key(RIGHT);
+    h.turns(3);
+    assert_eq!(h.ui.screen.get_untracked(), 1, "Right → the next screen");
+    h.key(RIGHT);
+    h.turns(3);
+    assert_eq!(h.ui.screen.get_untracked(), 2, "one step per press");
+    h.key(LEFT);
+    h.turns(3);
+    h.key(LEFT);
+    h.turns(3);
+    assert_eq!(h.ui.screen.get_untracked(), 0, "Left → the previous screen");
+    h.key(LEFT);
+    h.turns(3);
+    assert_eq!(
+        h.ui.screen.get_untracked(),
+        ui::SCREENS.len() - 1,
+        "Left on the first screen wraps to the last"
+    );
+    h.key(RIGHT);
+    h.turns(3);
+    assert_eq!(
+        h.ui.screen.get_untracked(),
+        0,
+        "Right on the last screen wraps to the first"
+    );
+    assert!(
+        h.drain_cmds().iter().all(|c| !matches!(c, Cmd::Write(_))),
+        "switching screens writes nothing"
+    );
+}
+
+/// Every screen, at the focus it lands with, passes Right on: ten
+/// presses walk the whole bar in page order and come back to the start.
+#[test]
+fn right_walks_every_screen_in_order() {
+    let mut h = harness();
+    h.load_fixtures();
+    for step in 1..=ui::SCREENS.len() {
+        h.key(RIGHT);
+        h.turns(3);
+        assert_eq!(
+            h.ui.screen.get_untracked(),
+            step % ui::SCREENS.len(),
+            "Right from {} must reach the next screen",
+            ui::SCREENS[step - 1]
+        );
+    }
+    for step in (0..ui::SCREENS.len()).rev() {
+        h.key(LEFT);
+        h.turns(3);
+        assert_eq!(
+            h.ui.screen.get_untracked(),
+            step,
+            "Left walks back through {}",
+            ui::SCREENS[step]
+        );
+    }
+}
+
+/// A focused text field keeps Left/Right for its caret (the Models
+/// filter, `/`); with the field closed, Right switches the tab.
+#[test]
+fn arrows_move_the_caret_in_a_focused_text_field() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    h.key(b"/");
+    let s = h.turns(2);
+    assert!(s.contains("Filter models"), "the filter input opens:\n{s}");
+    h.type_text("gemma");
+    h.turns(1);
+    h.key(LEFT);
+    h.key(LEFT);
+    h.key(RIGHT);
+    h.turns(1);
+    h.type_text("X");
+    h.turns(1);
+    assert_eq!(h.ui.screen.get_untracked(), ui::SCREEN_CATALOG);
+    h.key(b"\r");
+    h.settle_until("the filter applied", |s| s.contains("filter \"gemmXa\""));
+    assert!(
+        h.mock.called("catalog q=gemmXa engine=- fits=false"),
+        "the caret moved inside the field: {:?}",
+        h.mock.calls()
+    );
+    assert_eq!(h.ui.screen.get_untracked(), ui::SCREEN_CATALOG);
+    // Positive control: the field is closed, Right is global.
+    h.key(RIGHT);
+    h.turns(3);
+    assert_eq!(h.ui.screen.get_untracked(), ui::SCREEN_ENGINES);
+}
+
+/// A widget that uses Left/Right keeps them: the focused screen bar moves
+/// ONE screen per press (its own key — the root does not fire as well).
+/// Off the bar, the root's arrow is what switches.
+#[test]
+fn arrows_stay_with_the_focused_screen_bar() {
+    let mut h = harness();
+    h.load_fixtures();
+    // Positive control first: from the Overview list, Right is global.
+    h.key(RIGHT);
+    h.turns(3);
+    assert_eq!(h.ui.screen.get_untracked(), 1);
+    // The Model screen's list holds the focus: Down moves its selection.
+    let sel = h.ui.model_sel.get_untracked();
+    h.key(b"\x1b[B");
+    h.turns(2);
+    assert_ne!(h.ui.model_sel.get_untracked(), sel, "the list has focus");
+    h.key(b"\x1b[A");
+    h.turns(2);
+    let sel = h.ui.model_sel.get_untracked();
+    // Focus the bar: click the active tab (a same-page switch).
+    let s = h.turns(1);
+    let (col, row) = s
+        .lines()
+        .enumerate()
+        .find_map(|(r, l)| {
+            l.find("2 Model")
+                .map(|c| (l[..c].chars().count() as i32, r as i32))
+        })
+        .expect("the screen bar renders");
+    h.key(format!("\x1b[<0;{};{}M", col + 2, row + 1).as_bytes());
+    h.key(format!("\x1b[<0;{};{}m", col + 2, row + 1).as_bytes());
+    h.turns(2);
+    assert_eq!(
+        h.ui.screen.get_untracked(),
+        1,
+        "clicking the active tab stays"
+    );
+    h.key(b"\x1b[B");
+    h.turns(2);
+    assert_eq!(
+        h.ui.model_sel.get_untracked(),
+        sel,
+        "the bar has the focus now (Down no longer reaches the list)"
+    );
+    h.key(RIGHT);
+    h.turns(3);
+    assert_eq!(
+        h.ui.screen.get_untracked(),
+        2,
+        "the bar takes Right exactly once (not the bar AND the root)"
+    );
+    h.key(LEFT);
+    h.turns(3);
+    assert_eq!(h.ui.screen.get_untracked(), 1);
+}
+
+/// The wizard gates its order: the arrows do not jump screens there, and
+/// the refusal says what walks the wizard.
+#[test]
+fn arrows_refuse_with_a_reason_in_the_wizard() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.key(b"w");
+    h.turns(3);
+    let before = h.ui.screen.get_untracked();
+    h.store.notice.set(None);
+    h.key(RIGHT);
+    h.turns(2);
+    assert_eq!(h.ui.screen.get_untracked(), before);
+    let notice = h.store.notice.get_untracked().unwrap_or_default();
+    assert!(
+        notice.contains("←/→") && notice.contains("Ctrl+N"),
+        "the refusal names the walk: {notice:?}"
+    );
+}
+
+/// The footer teaches the arrows in browse mode.
+#[test]
+fn footer_lists_the_arrow_keys_for_screens() {
+    let mut h = harness_sized(Size::new(200, 34));
+    h.load_fixtures();
+    let s = h.turns(2);
+    assert!(s.contains("←/→ screens"), "footer:\n{s}");
+}
