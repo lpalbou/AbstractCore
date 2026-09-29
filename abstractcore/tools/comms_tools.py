@@ -423,7 +423,7 @@ def read_email(
 
 @tool(
     description="Save one attachment of an email into a local folder (by UID and attachment index). Read-only on the mailbox.",
-    tags=["comms", "email", "write"],
+    tags=["comms", "email", "mutating"],
     when_to_use="Use after read_email when an attachment's content is needed; the file is saved under the given folder.",
     examples=[{"description": "Save the first attachment", "arguments": {"uid": "12345", "index": 0, "output_dir": "downloads"}}],
 )

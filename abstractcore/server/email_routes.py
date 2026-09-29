@@ -108,28 +108,42 @@ class ConnectBody(BaseModel):
 
 
 class PolicyBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"mode": "allowlist", "entries": ["me@example.com", "example.org"]}]})
+
     mode: str = "allowlist"
     entries: List[str] = Field(default_factory=list)
 
 
 class CheckBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"addresses": ["colleague@example.org"]}]})
+
     addresses: List[str] = Field(default_factory=list)
 
 
 class LimitsBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"per_hour": 20, "per_day": 100}]})
+
     per_hour: Optional[int] = None
     per_day: Optional[int] = None
 
 
 class EnabledBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"enabled": True}]})
+
     enabled: bool
 
 
 class AddressBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"address": "me@example.com"}]})
+
     address: str = ""
 
 
 class OAuthStartBody(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"address": "me@outlook.com", "provider": "microsoft", "client_id": "00000000-0000-0000-0000-000000000000", "flow": "device"}]}
+    )
+
     address: str
     provider: str = Field(..., description="google | microsoft | custom")
     client_id: str
@@ -147,6 +161,8 @@ class OAuthStartBody(BaseModel):
 
 
 class OAuthFinishBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"flow_id": "flow-id-from-start", "wait_s": 20}]})
+
     flow_id: str
     wait_s: float = 20.0
 
