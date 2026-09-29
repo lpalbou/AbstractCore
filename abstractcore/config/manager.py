@@ -11,7 +11,7 @@ import uuid
 import importlib.util
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, Union
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, field, fields
 from datetime import datetime, timezone
 
 from .capability_defaults import (
@@ -242,13 +242,35 @@ class MaintenanceConfig:
 
 @dataclass
 class EmailConfig:
-    """Email defaults (SMTP outbound + IMAP inbound).
+    """The email account of this AbstractCore install (`abstractcore email ...`).
 
-    These defaults are used by framework-native comms tools and gateway bridges when
-    explicit parameters are omitted (env vars still take precedence).
+    Non-secret settings only; the password / OAuth tokens are sealed separately
+    (`abstractcore.comms.email.vault`, `<config dir>/email/secret.enc`). Shapes are
+    `abstractcore.comms.email.models` `to_dict()` documents:
+
+    - `enabled`: the email switch (off = no reading, no sending; settings kept);
+    - `account`: address, display name, user name, IMAP / SMTP host, port, security, CA file,
+      sign-in method (password | oauth2) and OAuth client settings; `{}` = not connected;
+    - `policy`: recipient policy `{mode: allowlist|denylist, entries: [address | domain]}`;
+      `{}` = the default (allowlist holding the registered address);
+    - `limits`: `{per_hour, per_day}` send limits; `{}` = 20 / 100;
+    - `registered_address`: the user's own address (the default allowlist entry); empty =
+      the account's address;
+    - `legacy_import`: record of the one-time import of the pre-2.20 settings below.
+
+    The flat `smtp_*` / `imap_*` / `from_email` / `reply_to` fields are the pre-2.20 layout
+    (passwords read from environment variables). They are read once by the legacy import,
+    then cleared; nothing else reads them.
     """
 
-    # SMTP (outbound)
+    enabled: bool = True
+    account: Dict[str, Any] = field(default_factory=dict)
+    policy: Dict[str, Any] = field(default_factory=dict)
+    limits: Dict[str, Any] = field(default_factory=dict)
+    registered_address: str = ""
+    legacy_import: Dict[str, Any] = field(default_factory=dict)
+
+    # LEGACY (pre-2.20), read once by the import.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
@@ -256,8 +278,6 @@ class EmailConfig:
     smtp_use_starttls: bool = True
     from_email: Optional[str] = None
     reply_to: Optional[str] = None
-
-    # IMAP (inbound)
     imap_host: str = ""
     imap_port: int = 993
     imap_username: str = ""
@@ -2708,6 +2728,54 @@ class ConfigurationManager:
             self._provider_config.clear()
         else:
             self._provider_config.pop(provider.lower(), None)
+
+    # ------------------------------------------------------------------ email
+    _EMAIL_FIELDS = (
+        "enabled",
+        "account",
+        "policy",
+        "limits",
+        "registered_address",
+        "legacy_import",
+        "smtp_host",
+        "smtp_port",
+        "smtp_username",
+        "smtp_password_env_var",
+        "smtp_use_starttls",
+        "from_email",
+        "reply_to",
+        "imap_host",
+        "imap_port",
+        "imap_username",
+        "imap_password_env_var",
+        "imap_folder",
+    )
+
+    def update_email_settings(self, **values: Any) -> Dict[str, Any]:
+        """Set fields of the `email` section and save (three-way merged like every save).
+
+        Only `abstractcore.comms.email.store.EmailAccountStore` should call this: it validates
+        the typed shapes. Unknown field names are refused.
+        """
+
+        unknown = sorted(k for k in values if k not in self._EMAIL_FIELDS)
+        if unknown:
+            raise ValueError(f"unknown email setting(s): {', '.join(unknown)}")
+        for key, value in values.items():
+            setattr(self.config.email, key, copy.deepcopy(value))
+        self._save_config()
+        return asdict(self.config.email)
+
+    def clear_legacy_email_fields(self) -> None:
+        """Reset the pre-2.20 flat email fields to their defaults (after the one-time import)."""
+
+        defaults = EmailConfig()
+        for key in (
+            "smtp_host", "smtp_port", "smtp_username", "smtp_password_env_var", "smtp_use_starttls",
+            "from_email", "reply_to", "imap_host", "imap_port", "imap_username",
+            "imap_password_env_var", "imap_folder",
+        ):
+            setattr(self.config.email, key, getattr(defaults, key))
 
 
 # Global instance
