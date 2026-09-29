@@ -307,6 +307,29 @@ def test_uidvalidity_resync_keeps_a_message_near_midnight_in_any_time_zone(imap,
         time_mod.tzset()
 
 
+def test_uidvalidity_resync_keeps_a_message_whose_server_date_is_the_day_before(ca, tokens) -> None:
+    """A server west of UTC dates a 01:00 UTC message on the previous day: SINCE <cursor's UTC
+    date> would miss it; the resync starts one day earlier."""
+
+    import datetime as dt
+
+    from abstractcore.testing.mailserver import FakeImapServer
+
+    server = FakeImapServer(ca, users={ME: PASSWORD}, tokens=tokens, search_tz=dt.timezone(dt.timedelta(hours=-5)))
+    try:
+        c = client(server, None, ca)
+        base = c.fetch_new(None)
+        early = dt.datetime(2026, 1, 11, 1, 0, tzinfo=dt.timezone.utc)  # 2026-01-10 20:00 on the server
+        server.add_message("INBOX", build_message(from_="d@example.test", to=ME, subject="early one"), internaldate=early)
+        step = c.fetch_new(base.cursor)
+        assert [m.subject for m in step.messages] == ["early one"]
+        server.reset_uidvalidity("INBOX")
+        reset = c.fetch_new(step.cursor)
+        assert reset.reset and "early one" in [m.subject for m in reset.messages]
+    finally:
+        server.close()
+
+
 # ------------------------------------------------------------------ sending
 
 

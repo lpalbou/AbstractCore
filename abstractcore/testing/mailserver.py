@@ -282,8 +282,12 @@ class FakeImapServer:
         folders: Iterable[str] = ("INBOX", "Sent"),
         advertise_starttls: bool = True,
         overquota: bool = False,
+        search_tz: _dt.tzinfo = _dt.timezone.utc,
     ) -> None:
         assert security in {"ssl", "starttls"}
+        # SEARCH SINCE/BEFORE compare dates in the server's own time zone (RFC 3501 leaves the
+        # zone to the server); a test can put the server west or east of UTC.
+        self.search_tz = search_tz
         self.ca = ca
         self.security = security
         self.users = dict(users or {})
@@ -611,7 +615,7 @@ class _ImapSession:
             return needle in hdr(key.capitalize() if key != "CC" else "Cc").casefold(), i + 2
         if key in {"SINCE", "BEFORE"}:
             day = _parse_search_date(_unq(toks[i + 1]))
-            mday = msg.internaldate.astimezone(_dt.timezone.utc).date()
+            mday = msg.internaldate.astimezone(self.s.search_tz).date()
             return (mday >= day) if key == "SINCE" else (mday < day), i + 2
         if key == "UID":
             spec = _unq(toks[i + 1])

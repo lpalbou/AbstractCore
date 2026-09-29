@@ -348,3 +348,21 @@ def test_http_sign_in_without_any_client_is_a_400_before_the_network(http, monke
     r = http.post("/acore/email/oauth/start", json={"address": ME, "provider": "microsoft"})
     assert r.status_code == 400 and r.json()["error"]["code"] == "email_invalid_settings"
     assert "--client-id" in r.json()["error"]["fix"]
+
+
+def test_an_expired_access_token_is_refreshed_before_signing_in(imap, ca, oauth_server) -> None:
+    refresh = oauth_server.issue_refresh_token(ME)
+    stale = EmailSecret(access_token="at-expired", expires_at=time.time() - 10, refresh_token=refresh, client_secret=oauth_server.client_secret)
+    provider = OAuthTokenProvider(oauth_settings(oauth_server), stale, verify=ca.client_context())
+    c = EmailClient(oauth_account(imap, None, ca, oauth_server), stale, token_provider=provider)
+    assert c.test()["imap"]["ok"] is True
+    assert [r["grant_type"] for r in oauth_server.requests] == ["refresh_token"]
+    assert imap.logins[0][1] != "at-expired"
+
+
+def test_the_token_client_never_posts_to_a_plain_http_endpoint(oauth_server) -> None:
+    # OAuthSettings.build refuses http; this is the second belt, for settings built another way.
+    raw = OAuthSettings(provider="custom", client_id="cid", token_endpoint="http://localhost:1/token", scopes=("mail",))
+    with pytest.raises(EmailInvalidSettings) as info:
+        OAuthTokenClient(raw, client_secret="s").refresh("rt-x")
+    assert "https" in info.value.cause
