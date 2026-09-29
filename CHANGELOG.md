@@ -14,8 +14,8 @@ driver 595, CUDA 13) and lets `abstractcore[gpu]` install on Windows x86_64 with
 
 ### Dependencies
 - `openai>=1.0.0,<3.0.0` (was `<2.0.0`). The old cap held vLLM at 0.11.0 in `abstractcore[gpu]`,
-  which does not start with Transformers 5; the gpu setting now resolves a current vLLM
-  (0.29, torch 2.13, CUDA 13). The OpenAI API calls AbstractCore makes are unchanged in openai 2.x.
+  which does not start with Transformers 5; on Linux the gpu setting now resolves a current vLLM
+  (0.22 with torch 2.11 on CUDA 13 at release time). The OpenAI API calls AbstractCore makes are unchanged in openai 2.x.
 - Floors: `abstractvision>=0.3.32` (its `gpu` settings no longer install MLX-Gen, about 2.1 GB less
   on Linux, and leave stable-diffusion.cpp out on Windows) and `abstractvoice>=0.13.1`
   (faster-whisper on CUDA with CUDA 12 cuBLAS; speech-to-text without TTS credentials), in the
