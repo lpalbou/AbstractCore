@@ -282,7 +282,7 @@ def main():
 
     except ImportError as e:
         print(f"❌ Missing dependency: {e}")
-        print("Install with: pip install sentence-transformers numpy")
+        print("Install with: pip install \"abstractcore[apple]\" (Apple silicon) or \"abstractcore[gpu]\" (Linux GPU machines)")
     except Exception as e:
         print(f"❌ Error: {e}")
         if "offline" in str(e).lower():

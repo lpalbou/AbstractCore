@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Install hints name only the three settings. Every error, CLI message, engine install plan and
+  doc now says `pip install -U abstractcore` for a light dependency (httpx, pydantic, Pillow,
+  PyYAML, ddgs, python-multipart, AbstractVoice/AbstractVision), `abstractcore[apple]` or
+  `abstractcore[gpu]` for a local engine (transformers, llama.cpp, sentence-transformers,
+  Outlines, Playwright, voice engines, MLX-Gen, peft), and on a host with no local-engine setting
+  (Intel Mac, Windows) that the capability is not available there with the install settings.
+  No message advises a bare package or a plugin's own extra any more.
+- The Engines screen installs `abstractcore[apple]` / `abstractcore[gpu]` for MLX, llama.cpp,
+  vLLM and Hugging Face; on an Intel Mac or Windows the llama.cpp and Hugging Face rows are
+  `available: false` instead of installing the transformers stack or llama-cpp-python directly.
+  `abstractcore --download-vision-model` no longer pip-installs transformers/torch on its own.
+- The camera endpoints and capability hint say the camera plugin (`abstractcamera`) is outside
+  the install settings instead of printing a pip command.
+
 ## [2.19.0] - 2026-09-29
 
 AbstractCore has three install settings: `pip install abstractcore` (light) runs every remote

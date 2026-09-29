@@ -23,13 +23,13 @@ includes these plugins with their remote backends:
 - `abstractmusic` → `llm.music` for text→music (Python 3.10+)
 - `abstract3d` → `llm.scene3d` for text→3D and image→3D (Python 3.10+)
 
-Their local engines come with `abstractcore[apple]` or `abstractcore[gpu]`. One plugin is a
-separate package: install `abstractcamera` for `llm.camera` (real-camera piloting of webcams and
-tethered bodies).
+Their local engines come with `abstractcore[apple]` or `abstractcore[gpu]`. One plugin,
+`abstractcamera` (`llm.camera`: real-camera piloting of webcams and tethered bodies), is a separate
+package that is not part of the three install settings; when it is present in the environment it
+registers like the others.
 
 ```bash
 pip install abstractcore      # voice, vision, music and 3D plugins
-pip install abstractcamera    # camera plugin
 ```
 
 `abstract3d` and `abstractcamera` register through the same
@@ -44,7 +44,7 @@ recommended. Local voice engines and clone backends come with
 `abstractcore[apple]` or `abstractcore[gpu]`; AEC requires Python 3.11+.
 
 `abstractvoice` 0.11.0 adds the local Qwen3-TTS engine
-(`pip install "abstractvoice[qwen3-tts]"`, Python 3.10+): preset speakers
+(included with `abstractcore[apple]` and `abstractcore[gpu]`, Python 3.10+): preset speakers
 through the standard voice selectors, voice cloning from a few seconds of
 reference audio, and voice *design* from a natural-language description via the
 existing `instructions` selector — all of which flow through AbstractCore's

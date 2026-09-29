@@ -147,7 +147,7 @@ Rendering needs Playwright, which is never part of the light install (`abstractc
 `abstractcore[gpu]` include it):
 
 ```bash
-pip install playwright                           # light install only
+pip install "abstractcore[apple]"                # or "abstractcore[gpu]"; carries Playwright
 python -m playwright install chromium            # full Chromium: what the fetch_url escalation prefers
 python -m playwright install --only-shell chromium  # smaller; used as a fallback if the full build is absent
 ```

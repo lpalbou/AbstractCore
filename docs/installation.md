@@ -22,8 +22,9 @@ works on macOS, Linux and Windows with Python 3.9 or newer.
   or `base_url` and call `create_llm(...)`.
 - **Tools**: the built-in web and system tools (`web_search`, `skim_websearch`, `skim_url`,
   `fetch_url`, ...). The headless-browser probe (`browser_probe`, JavaScript rendering in
-  `fetch_url`) needs a browser, which is never part of the light install: add it with
-  `pip install playwright`, then `python -m playwright install --only-shell chromium`.
+  `fetch_url`) needs a browser, which is never part of the light install: `abstractcore[apple]`
+  and `abstractcore[gpu]` carry Playwright; then download the browser once with
+  `python -m playwright install --only-shell chromium`.
 - **Media inputs**: images (Pillow), PDFs (pypdf), Office documents and spreadsheets
   (unstructured, pandas), Glyph visual-text compression, and precise token counting (tiktoken).
 - **HTTP server**: the OpenAI-compatible server and console (`abstractcore serve`) and the

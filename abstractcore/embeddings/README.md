@@ -346,8 +346,12 @@ Local sentence-transformers models with advanced features.
 
 **Installation:**
 ```bash
-pip install sentence-transformers onnxruntime
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # Linux with an NVIDIA or AMD GPU
 ```
+
+Both settings carry sentence-transformers and onnxruntime. An Intel Mac or Windows has no setting
+that provides local embeddings; use a remote embeddings provider (for example Ollama or LM Studio).
 
 **Usage:**
 ```python
@@ -1024,10 +1028,11 @@ similarity = embedder.compute_similarity_direct(emb1, emb2)
 embedder = EmbeddingManager(model="all-minilm-l6-v2", backend="onnx")
 ```
 
-**Solution:** Install optional dependencies and check backend.
+**Solution:** Install this machine's local-engine setting (it carries onnxruntime) and check backend.
 
 ```bash
-pip install onnxruntime
+pip install -U "abstractcore[apple]"   # Apple silicon
+pip install -U "abstractcore[gpu]"     # Linux with an NVIDIA or AMD GPU
 ```
 
 ```python

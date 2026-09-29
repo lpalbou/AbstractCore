@@ -138,8 +138,8 @@ pip install "abstractcore[gpu]"      # NVIDIA / AMD: light + local engines
 
 Notes:
 - `apple` and `gpu` each include everything in light; nothing else composes.
-- The headless browser (`browser_probe`) is never part of light: `pip install playwright`, then
-  `python -m playwright install --only-shell chromium`.
+- The headless browser (`browser_probe`) is never part of light: `apple` and `gpu` carry
+  Playwright; then download the browser once with `python -m playwright install --only-shell chromium`.
 - PyMuPDF-family PDF extraction is a licence opt-in installed directly:
   `pip install pymupdf4llm pymupdf-layout`.
 - In zsh, quote the bracketed settings: `pip install "abstractcore[apple]"`.
@@ -617,7 +617,7 @@ abstractcore --set-video-max-frame-side 1024
 Speech-to-text fallback uses the configured `input.voice` capability route:
 
 ```bash
-pip install abstractvoice
+pip install "abstractcore[apple]"   # or "abstractcore[gpu]": carries AbstractVoice's local speech-to-text
 abstractcore config set-default input.voice --provider faster-whisper --model large-v3
 abstractcore --set-audio-strategy auto
 abstractcore --set-stt-language en
@@ -632,14 +632,14 @@ carries the first four with their remote backends; their local engines come with
 - `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
 - `abstractmusic` (Python 3.10+) -> enables `llm.music` and music output routing for text-to-music
 - `abstract3d` (Python 3.10+) -> enables `llm.scene3d` (text->3D and image->3D; backends triposr/step1x/hunyuan3d21/trellis2, returns model bytes such as GLB)
-- `abstractcamera` (install it separately) -> enables `llm.camera` (real-camera piloting: non-invasive discovery, open/close, photo, bounded video, detection, event log; capture bytes ride as base64 or artifact refs, never raw frames in the JSON body)
+- `abstractcamera` (a separate package outside the three install settings) -> enables `llm.camera` (real-camera piloting: non-invasive discovery, open/close, photo, bounded video, detection, event log; capture bytes ride as base64 or artifact refs, never raw frames in the JSON body)
 - current plugin floors in this source: `abstractvoice>=0.11.2`, `abstractvision>=0.3.29`, `abstractmusic>=0.1.15`; `llm.vision` exposes `t2i`, `i2i`, `upscale_image`, `t2v`, and `i2v`, supports `llm.vision.list_provider_adapters(...)`, first-class batch `count` / `seeds` delegation, SeedVR2 image upscaling, typed Wan A14B `guidance_2`, typed Wan TI2V `flow_shift`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
 - SeedVR2 upscaling can be called directly with `llm.vision.upscale_image("input.png", provider="mlx-gen", model="AbstractFramework/seedvr2-3b-8bit", resolution="2x", softness=0.25, on_progress=on_progress)` or through the unified output route with `llm.generate(media={"type": "image", "path": "input.png", "role": "source"}, output={"task": "image_upscale", "provider": "mlx-gen", "model": "AbstractFramework/seedvr2-3b-8bit", "resolution": "2x", "softness": 0.25})`; canonical q8/q4 SeedVR2 package ids do not need runtime `quantize`, official/source weights can use SeedVR2 runtime `quantize`, and prepared local folders can be passed as the model value when available.
 
 Server note:
 - the server can optionally expose `/v1/images/*`, `/v1/videos/*`, and `/v1/vision/*` model/control surfaces (requires `abstractvision` for local backends; remote OpenAI-compatible proxy paths can run through the server)
 - the server can optionally expose `/v1/audio/*` (requires an audio/voice/music plugin; commonly `abstractvoice` or `abstractmusic`)
-- the server can optionally expose the extension endpoints `/v1/scene3d/generations` (requires `abstract3d`) and `/v1/camera/*` (requires `abstractcamera`); both return `501` with an install hint when the plugin is absent, and long-running generation runs in the server threadpool so it never stalls other requests
+- the server can optionally expose the extension endpoints `/v1/scene3d/generations` (requires `abstract3d`) and `/v1/camera/*` (requires `abstractcamera`); both return `501` with a plain explanation when the plugin is absent, and long-running generation runs in the server threadpool so it never stalls other requests
 
 ### Glyph visual-text compression (optional, experimental)
 
@@ -922,7 +922,7 @@ ruff check .
 
 1. Don't import optional deps in default import paths (especially `abstractcore/__init__.py`).
 2. Use lazy imports inside functions/methods where optional deps are used.
-3. When a dep is missing, raise a clear error naming one of the three install settings (`abstractcore.utils.install_settings`): `pip install -U abstractcore` for a light dependency, `abstractcore[apple]` / `abstractcore[gpu]` for a local engine.
+3. When a dep is missing, raise a clear error naming one of the three install settings (`abstractcore.utils.install_settings`): `pip install -U abstractcore` for a light dependency, `abstractcore[apple]` / `abstractcore[gpu]` for a local engine (`local_engines_hint`), and on a host with no setting (Intel Mac, Windows) the plain `not_available_here` sentence. Never a bare package (`tests/test_install_hints_no_bare_packages.py`).
 4. Never add a fourth setting: a light dependency goes in core `dependencies`, a local engine in `apple` and/or `gpu` (`tests/test_install_settings.py`).
 
 ### Adding a provider (checklist)
@@ -1606,8 +1606,9 @@ works on macOS, Linux and Windows with Python 3.9 or newer.
   or `base_url` and call `create_llm(...)`.
 - **Tools**: the built-in web and system tools (`web_search`, `skim_websearch`, `skim_url`,
   `fetch_url`, ...). The headless-browser probe (`browser_probe`, JavaScript rendering in
-  `fetch_url`) needs a browser, which is never part of the light install: add it with
-  `pip install playwright`, then `python -m playwright install --only-shell chromium`.
+  `fetch_url`) needs a browser, which is never part of the light install: `abstractcore[apple]`
+  and `abstractcore[gpu]` carry Playwright; then download the browser once with
+  `python -m playwright install --only-shell chromium`.
 - **Media inputs**: images (Pillow), PDFs (pypdf), Office documents and spreadsheets
   (unstructured, pandas), Glyph visual-text compression, and precise token counting (tiktoken).
 - **HTTP server**: the OpenAI-compatible server and console (`abstractcore serve`) and the
@@ -6889,7 +6890,7 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 - `web_search` - Search the web using DuckDuckGo. See [Web and Document Tools](docs/web-tools.md).
 - `skim_websearch` - Smaller, optionally keyword-filtered search result list. See [Web and Document Tools](docs/web-tools.md).
 - `execute_command` - Execute shell commands safely with security controls
-- `browser_probe` - Render a URL or local HTML file in a **headless browser** (Playwright) and verify it actually DISPLAYS — the blank-page class that passes `read_file` review (an agent writes an HTML/JS app, the source looks right, the page renders empty). Returns a `PASS`/`FAIL` verdict with navigation outcome, HTTP status, `readyState`, title, visible-text stats, per-check results (`require_nonblank`, `expect_selector`, `expect_text`), captured console errors + uncaught exceptions (a page can render and still be broken), and an optional screenshot path to feed `analyze_media` for a visual pass. Runs in a worker subprocess with a hard wall-clock kill (never hangs on an infinite-JS-loop page, never leaks a browser); readiness is a content signal, never `networkidle` (refused with teaching) or `sleep`. Local `file://` targets **block outbound network by default** (a generated page must not phone home; blocked requests are reported) and — a browser limitation the report detects and flags — **cannot load ES modules (`<script type="module">`) or `fetch()`** (CORS on the `null` origin), so a modern module/fetch app renders empty as a file: serve it (e.g. `python -m http.server`) and probe the `http://` URL. Requires Playwright, which the light install does not include (`abstractcore[apple]` and `abstractcore[gpu]` do): `pip install playwright` then `python -m playwright install --only-shell chromium` (Linux also needs `python -m playwright install --with-deps chromium`); an absent dependency returns an actionable two-step install hint, never a traceback.
+- `browser_probe` - Render a URL or local HTML file in a **headless browser** (Playwright) and verify it actually DISPLAYS — the blank-page class that passes `read_file` review (an agent writes an HTML/JS app, the source looks right, the page renders empty). Returns a `PASS`/`FAIL` verdict with navigation outcome, HTTP status, `readyState`, title, visible-text stats, per-check results (`require_nonblank`, `expect_selector`, `expect_text`), captured console errors + uncaught exceptions (a page can render and still be broken), and an optional screenshot path to feed `analyze_media` for a visual pass. Runs in a worker subprocess with a hard wall-clock kill (never hangs on an infinite-JS-loop page, never leaks a browser); readiness is a content signal, never `networkidle` (refused with teaching) or `sleep`. Local `file://` targets **block outbound network by default** (a generated page must not phone home; blocked requests are reported) and — a browser limitation the report detects and flags — **cannot load ES modules (`<script type="module">`) or `fetch()`** (CORS on the `null` origin), so a modern module/fetch app renders empty as a file: serve it (e.g. `python -m http.server`) and probe the `http://` URL. Requires Playwright, which the light install does not include (`abstractcore[apple]` and `abstractcore[gpu]` do): install one of those, then `python -m playwright install --only-shell chromium` (Linux also needs `python -m playwright install --with-deps chromium`); an absent dependency returns an actionable two-step install hint, never a traceback.
 - `analyze_media` - Answer a question about an image. Delegated sight: the session model's own vision when available, else the configured vision fallback. Returns bounded text — never raw image data into your context
 
 **`analyze_code` language coverage:**
@@ -8038,7 +8039,7 @@ Rendering needs Playwright, which is never part of the light install (`abstractc
 `abstractcore[gpu]` include it):
 
 ```bash
-pip install playwright                           # light install only
+pip install "abstractcore[apple]"                # or "abstractcore[gpu]"; carries Playwright
 python -m playwright install chromium            # full Chromium: what the fetch_url escalation prefers
 python -m playwright install --only-shell chromium  # smaller; used as a fallback if the full build is absent
 ```
@@ -10784,7 +10785,7 @@ Use `examples/performance/mlx_concurrency_benchmark.py` to run *many distinct pr
 ### Install deps
 
 ```bash
-python -m pip install -e ".[mlx,mlx-bench]"
+python -m pip install -e ".[apple,mlx-bench]"
 ```
 
 ### Run a sweep (custom concurrency levels)
@@ -14135,14 +14136,16 @@ What a snapshot can be loaded as depends on its files:
 | no config at all (for example a README-only diffusion LoRA) | `ModelNotFoundError`: not a transformers model |
 | nothing | `ModelNotFoundError`: `download it first: abstractcore models download huggingface <repo>` |
 
-**Adapters need a `peft` that matches your transformers.** AbstractCore does not pin `peft` in
-any extra. The minimum is set by transformers itself (`transformers.integrations.peft.MIN_PEFT_VERSION`):
+**Adapters need a `peft` that matches your transformers.** AbstractCore does not pin `peft` itself;
+it arrives with `abstractcore[apple]` and `abstractcore[gpu]` (through AbstractVision). The minimum is set by transformers itself (`transformers.integrations.peft.MIN_PEFT_VERSION`):
 `peft>=0.18.2` for transformers 5.8, and `peft>=0.19.1` for transformers 5.17. With transformers
 5.17, peft 0.18.x fails inside `load_adapter` with
 `cannot import name '_maybe_shard_state_dict_for_tp'`. The provider checks the installed pair
 before it loads the base model. If `peft` is missing, too old, or cannot be imported, the load
 raises `ProviderError`, and no raw `ImportError` gets through. For example:
-`adapter support needs peft >= 0.19.1 compatible with transformers 5.17.0; installed: peft 0.18.1, transformers 5.17.0. Fix: pip install -U "peft>=0.19.1".`
+`adapter support needs peft >= 0.19.1 compatible with transformers 5.17.0; installed: peft 0.18.1, transformers 5.17.0. Upgrade with: pip install -U "abstractcore[apple]".` (on Linux the message names
+`abstractcore[gpu]`; on an Intel Mac or Windows, where no setting provides the Transformers engine,
+it says so).
 
 With `offline_first` and `force_local_files_only` both off, a model that is not fully
 cached is passed to transformers by repo id, which may download it. The provider logs
@@ -15820,9 +15823,9 @@ Route `output.image` (text to image).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 128 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to an image engine this host runs: diffusers (included with abstractcore[gpu]), sdcpp (stable-diffusion.cpp, included with abstractcore[apple] and abstractcore[gpu]) or a cloud image provider | | | | |
-| Linux or Windows, processor only | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to an image engine this host runs: diffusers (included with abstractcore[gpu]), sdcpp (stable-diffusion.cpp, included with abstractcore[apple] and abstractcore[gpu]) or a cloud image provider | | | | |
-| Intel Mac | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to an image engine this host runs: diffusers (included with abstractcore[gpu]), sdcpp (stable-diffusion.cpp, included with abstractcore[apple] and abstractcore[gpu]) or a cloud image provider | | | | |
+| Linux or Windows with an NVIDIA GPU | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine on Linux, diffusers or sdcpp (stable-diffusion.cpp), both included with abstractcore[gpu] (on an Intel Mac or Windows they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
+| Linux or Windows, processor only | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine on Linux, diffusers or sdcpp (stable-diffusion.cpp), both included with abstractcore[gpu] (on an Intel Mac or Windows they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
+| Intel Mac | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine on Linux, diffusers or sdcpp (stable-diffusion.cpp), both included with abstractcore[gpu] (on an Intel Mac or Windows they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
 
 ### Video generation
 
@@ -16002,10 +16005,16 @@ running anything. Commands come from a fixed table; nothing in them comes from a
 |---|---|---|---|
 | Ollama | `brew install ollama` when Homebrew is present, else the official script `curl -fsSL https://ollama.com/install.sh \| sh` (may ask for your password to link `/usr/local/bin/ollama`) | official script; **needs sudo** (installs to `/usr/local`, creates a systemd `ollama.service`) | `winget install --id Ollama.Ollama` (per-user), else `irm https://ollama.com/install.ps1 \| iex` |
 | LM Studio | desktop app from https://lmstudio.ai/download (or `brew install --cask lm-studio`); the command installs the headless daemon and `lms` CLI: `curl -fsSL https://lmstudio.ai/install.sh \| bash`. Apple silicon only | same headless install (may need `libatomic1`) | desktop app (or `winget install --id ElementLabs.LMStudio`); headless: `irm https://lmstudio.ai/install.ps1 \| iex` |
-| MLX | `python -m pip install mlx-lm` into this Python environment | not supported | not supported |
-| llama.cpp | `python -m pip install llama-cpp-python` (Metal build); alternative `brew install llama.cpp` | same pip install (CPU unless `CMAKE_ARGS=-DGGML_CUDA=on`) | same pip install (needs a C/C++ compiler without a matching wheel); alternative `winget install --id ggml.llamacpp` |
-| vLLM | not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind `remote_only`) | NVIDIA GPU only: `python -m pip install vllm` | not supported (same reason) |
-| Hugging Face | Apple silicon: `python -m pip install "abstractcore[apple]"`; Intel Macs: `python -m pip install transformers torch huggingface_hub sentencepiece` | `python -m pip install "abstractcore[gpu]"` | `python -m pip install transformers torch huggingface_hub sentencepiece` |
+| MLX | Apple silicon: `python -m pip install "abstractcore[apple]"` into this Python environment | not supported | not supported |
+| llama.cpp | Apple silicon: `python -m pip install "abstractcore[apple]"` (Metal build); Intel Macs: not available with the install settings. Alternative everywhere: `brew install llama.cpp` (the llama.cpp server binaries) | `python -m pip install "abstractcore[gpu]"` | not available with the install settings; alternative `winget install --id ggml.llamacpp` (the llama.cpp server binaries) |
+| vLLM | not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind `remote_only`) | NVIDIA GPU only: `python -m pip install "abstractcore[gpu]"` | not supported (same reason) |
+| Hugging Face | Apple silicon: `python -m pip install "abstractcore[apple]"`; Intel Macs: not available with the install settings | `python -m pip install "abstractcore[gpu]"` | not available with the install settings |
+
+Every Python engine arrives with one of AbstractCore's install settings, never as a bare package.
+An Intel Mac or Windows has no local-engine setting (`abstractcore[apple]` does not resolve on
+Intel macOS, and `abstractcore[gpu]` needs vLLM, which ships Linux wheels only), so those rows are
+`available: false` and their `notes` say the engine is not available on this machine with the
+install settings; use Ollama, LM Studio or a remote provider there.
 
 Python-package installs target the interpreter running AbstractCore. When that environment has
 no `pip` (a `uv` virtual environment), the plan uses
@@ -17904,13 +17913,13 @@ includes these plugins with their remote backends:
 - `abstractmusic` → `llm.music` for text→music (Python 3.10+)
 - `abstract3d` → `llm.scene3d` for text→3D and image→3D (Python 3.10+)
 
-Their local engines come with `abstractcore[apple]` or `abstractcore[gpu]`. One plugin is a
-separate package: install `abstractcamera` for `llm.camera` (real-camera piloting of webcams and
-tethered bodies).
+Their local engines come with `abstractcore[apple]` or `abstractcore[gpu]`. One plugin,
+`abstractcamera` (`llm.camera`: real-camera piloting of webcams and tethered bodies), is a separate
+package that is not part of the three install settings; when it is present in the environment it
+registers like the others.
 
 ```bash
 pip install abstractcore      # voice, vision, music and 3D plugins
-pip install abstractcamera    # camera plugin
 ```
 
 `abstract3d` and `abstractcamera` register through the same
@@ -17925,7 +17934,7 @@ recommended. Local voice engines and clone backends come with
 `abstractcore[apple]` or `abstractcore[gpu]`; AEC requires Python 3.11+.
 
 `abstractvoice` 0.11.0 adds the local Qwen3-TTS engine
-(`pip install "abstractvoice[qwen3-tts]"`, Python 3.10+): preset speakers
+(included with `abstractcore[apple]` and `abstractcore[gpu]`, Python 3.10+): preset speakers
 through the standard voice selectors, voice cloning from a few seconds of
 reference audio, and voice *design* from a natural-language description via the
 existing `instructions` selector — all of which flow through AbstractCore's
@@ -21121,8 +21130,8 @@ Some newer vision models may not be immediately available due to rapid developme
 
 **HuggingFace Limitations:**
 - `Qwen3-VL` models - Require newer transformers architecture
-- Install latest transformers: `pip install --upgrade transformers`
-- Or use bleeding edge: `pip install git+https://github.com/huggingface/transformers.git`
+- Upgrade the local-engine setting: `pip install -U "abstractcore[apple]"` (Apple silicon) or
+  `pip install -U "abstractcore[gpu]"` (Linux GPU machines)
 
 **Recommended Stable Models (2025-10-17):**
 - **LMStudio**: `qwen/qwen2.5-vl-7b`, `google/gemma-3n-e4b`, `mistralai/magistral-small-2509`
@@ -21799,7 +21808,7 @@ abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-
 
 Creating/editing images and videos is a **deterministic capability** that can be integrated in two ways:
 
-1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`, `upscale_image`, `t2v`, `i2v`) or the unified `llm.generate(..., output=...)` surface. Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled, and MLX-Gen local models are selected by exact repo id. Install `abstractvision[mlx-gen]` when you need the local MLX-Gen runtime.
+1) **Capability plugin (library mode)**: `abstractvision` ships with the light install; use `llm.vision.*` (e.g. `t2i`, `i2i`, `upscale_image`, `t2v`, `i2v`) or the unified `llm.generate(..., output=...)` surface. Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled, and MLX-Gen local models are selected by exact repo id. The local MLX-Gen runtime comes with `abstractcore[apple]`.
    See: `abstractvision/docs/reference/abstractcore-integration.md`
 
 2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` and `/v1/videos/*` as OpenAI-compatible media routes. The light install carries the AbstractVision plugin API surface; local Diffusers/sdcpp/MLX-Gen execution comes with `abstractcore[apple]` (Apple silicon, including MLX-Gen) or `abstractcore[gpu]` (NVIDIA / AMD) in the server environment. Omit `model` only when the server has a configured default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="mlx-gen/AbstractFramework/qwen-image-2512-4bit"`, `model="mlx-gen/AbstractFramework/seedvr2-3b-8bit"`, `model="mlx-gen/AbstractFramework/seedvr2-7b-4bit"`, `model="mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream media endpoint.
@@ -22597,7 +22606,7 @@ For PDF documents, you can use the (experimental) DirectPDFProcessor:
 ```python
 from abstractcore.media.processors.direct_pdf_processor import DirectPDFProcessor
 
-# Requires: `pip install pdf2image` (+ Poppler installed on your system)
+# Requires pdf2image (+ Poppler), which no AbstractCore install setting provides (experimental path)
 processor = DirectPDFProcessor(pages_per_image=2, dpi=150)
 result = processor.process_file("document.pdf")
 if not result.success:
@@ -30292,7 +30301,7 @@ for trend in trends:
 - Check internet connectivity
 - Try broader search terms
 - Reduce `max_sources` if hitting rate limits
-- Install `ddgs` for better web search: `pip install ddgs`
+- `ddgs` (better web search) ships with the light install; repair with `pip install -U abstractcore`
 
 **"Report generation failed"**
 - Increase `max_output_tokens`

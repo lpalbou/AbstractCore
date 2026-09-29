@@ -19,9 +19,10 @@ To get a model onto your machine, download it once (then `create_llm(...)` will 
 
 ### Option A: Hugging Face CLI (recommended)
 
-Install the CLI if you don't already have it:
+The CLI (`huggingface_hub`) comes with the local-engine setting:
 ```bash
-pip install -U huggingface_hub
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # Linux with an NVIDIA or AMD GPU
 ```
 
 Then download a model into your Hugging Face cache:

@@ -355,7 +355,7 @@ for trend in trends:
 - Check internet connectivity
 - Try broader search terms
 - Reduce `max_sources` if hitting rate limits
-- Install `ddgs` for better web search: `pip install ddgs`
+- `ddgs` (better web search) ships with the light install; repair with `pip install -U abstractcore`
 
 **"Report generation failed"**
 - Increase `max_output_tokens`

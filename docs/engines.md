@@ -45,10 +45,16 @@ running anything. Commands come from a fixed table; nothing in them comes from a
 |---|---|---|---|
 | Ollama | `brew install ollama` when Homebrew is present, else the official script `curl -fsSL https://ollama.com/install.sh \| sh` (may ask for your password to link `/usr/local/bin/ollama`) | official script; **needs sudo** (installs to `/usr/local`, creates a systemd `ollama.service`) | `winget install --id Ollama.Ollama` (per-user), else `irm https://ollama.com/install.ps1 \| iex` |
 | LM Studio | desktop app from https://lmstudio.ai/download (or `brew install --cask lm-studio`); the command installs the headless daemon and `lms` CLI: `curl -fsSL https://lmstudio.ai/install.sh \| bash`. Apple silicon only | same headless install (may need `libatomic1`) | desktop app (or `winget install --id ElementLabs.LMStudio`); headless: `irm https://lmstudio.ai/install.ps1 \| iex` |
-| MLX | `python -m pip install mlx-lm` into this Python environment | not supported | not supported |
-| llama.cpp | `python -m pip install llama-cpp-python` (Metal build); alternative `brew install llama.cpp` | same pip install (CPU unless `CMAKE_ARGS=-DGGML_CUDA=on`) | same pip install (needs a C/C++ compiler without a matching wheel); alternative `winget install --id ggml.llamacpp` |
-| vLLM | not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind `remote_only`) | NVIDIA GPU only: `python -m pip install vllm` | not supported (same reason) |
-| Hugging Face | Apple silicon: `python -m pip install "abstractcore[apple]"`; Intel Macs: `python -m pip install transformers torch huggingface_hub sentencepiece` | `python -m pip install "abstractcore[gpu]"` | `python -m pip install transformers torch huggingface_hub sentencepiece` |
+| MLX | Apple silicon: `python -m pip install "abstractcore[apple]"` into this Python environment | not supported | not supported |
+| llama.cpp | Apple silicon: `python -m pip install "abstractcore[apple]"` (Metal build); Intel Macs: not available with the install settings. Alternative everywhere: `brew install llama.cpp` (the llama.cpp server binaries) | `python -m pip install "abstractcore[gpu]"` | not available with the install settings; alternative `winget install --id ggml.llamacpp` (the llama.cpp server binaries) |
+| vLLM | not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind `remote_only`) | NVIDIA GPU only: `python -m pip install "abstractcore[gpu]"` | not supported (same reason) |
+| Hugging Face | Apple silicon: `python -m pip install "abstractcore[apple]"`; Intel Macs: not available with the install settings | `python -m pip install "abstractcore[gpu]"` | not available with the install settings |
+
+Every Python engine arrives with one of AbstractCore's install settings, never as a bare package.
+An Intel Mac or Windows has no local-engine setting (`abstractcore[apple]` does not resolve on
+Intel macOS, and `abstractcore[gpu]` needs vLLM, which ships Linux wheels only), so those rows are
+`available: false` and their `notes` say the engine is not available on this machine with the
+install settings; use Ollama, LM Studio or a remote provider there.
 
 Python-package installs target the interpreter running AbstractCore. When that environment has
 no `pip` (a `uv` virtual environment), the plan uses

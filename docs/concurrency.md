@@ -33,7 +33,7 @@ Use `examples/performance/mlx_concurrency_benchmark.py` to run *many distinct pr
 ### Install deps
 
 ```bash
-python -m pip install -e ".[mlx,mlx-bench]"
+python -m pip install -e ".[apple,mlx-bench]"
 ```
 
 ### Run a sweep (custom concurrency levels)

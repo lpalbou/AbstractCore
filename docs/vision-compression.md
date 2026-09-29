@@ -73,7 +73,7 @@ For PDF documents, you can use the (experimental) DirectPDFProcessor:
 ```python
 from abstractcore.media.processors.direct_pdf_processor import DirectPDFProcessor
 
-# Requires: `pip install pdf2image` (+ Poppler installed on your system)
+# Requires pdf2image (+ Poppler), which no AbstractCore install setting provides (experimental path)
 processor = DirectPDFProcessor(pages_per_image=2, dpi=150)
 result = processor.process_file("document.pdf")
 if not result.success:

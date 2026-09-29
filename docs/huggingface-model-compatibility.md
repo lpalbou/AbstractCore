@@ -157,14 +157,16 @@ What a snapshot can be loaded as depends on its files:
 | no config at all (for example a README-only diffusion LoRA) | `ModelNotFoundError`: not a transformers model |
 | nothing | `ModelNotFoundError`: `download it first: abstractcore models download huggingface <repo>` |
 
-**Adapters need a `peft` that matches your transformers.** AbstractCore does not pin `peft` in
-any extra. The minimum is set by transformers itself (`transformers.integrations.peft.MIN_PEFT_VERSION`):
+**Adapters need a `peft` that matches your transformers.** AbstractCore does not pin `peft` itself;
+it arrives with `abstractcore[apple]` and `abstractcore[gpu]` (through AbstractVision). The minimum is set by transformers itself (`transformers.integrations.peft.MIN_PEFT_VERSION`):
 `peft>=0.18.2` for transformers 5.8, and `peft>=0.19.1` for transformers 5.17. With transformers
 5.17, peft 0.18.x fails inside `load_adapter` with
 `cannot import name '_maybe_shard_state_dict_for_tp'`. The provider checks the installed pair
 before it loads the base model. If `peft` is missing, too old, or cannot be imported, the load
 raises `ProviderError`, and no raw `ImportError` gets through. For example:
-`adapter support needs peft >= 0.19.1 compatible with transformers 5.17.0; installed: peft 0.18.1, transformers 5.17.0. Fix: pip install -U "peft>=0.19.1".`
+`adapter support needs peft >= 0.19.1 compatible with transformers 5.17.0; installed: peft 0.18.1, transformers 5.17.0. Upgrade with: pip install -U "abstractcore[apple]".` (on Linux the message names
+`abstractcore[gpu]`; on an Intel Mac or Windows, where no setting provides the Transformers engine,
+it says so).
 
 With `offline_first` and `force_local_files_only` both off, a model that is not fully
 cached is passed to transformers by repo id, which may download it. The provider logs

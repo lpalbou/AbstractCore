@@ -313,8 +313,8 @@ Some newer vision models may not be immediately available due to rapid developme
 
 **HuggingFace Limitations:**
 - `Qwen3-VL` models - Require newer transformers architecture
-- Install latest transformers: `pip install --upgrade transformers`
-- Or use bleeding edge: `pip install git+https://github.com/huggingface/transformers.git`
+- Upgrade the local-engine setting: `pip install -U "abstractcore[apple]"` (Apple silicon) or
+  `pip install -U "abstractcore[gpu]"` (Linux GPU machines)
 
 **Recommended Stable Models (2025-10-17):**
 - **LMStudio**: `qwen/qwen2.5-vl-7b`, `google/gemma-3n-e4b`, `mistralai/magistral-small-2509`

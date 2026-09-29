@@ -274,7 +274,7 @@ Provider-key overrides use `X-AbstractCore-Provider-API-Key`.
         "structured_output"
       ],
       "models": ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", ...],
-      "installation": "pip install openai"
+      "installation": "pip install abstractcore"
     },
     {
       "name": "ollama",
@@ -1603,8 +1603,8 @@ curl http://localhost:8000/health
 
 **Solution**:
 ```bash
-# Check dependencies
-pip install -r requirements.txt
+# Repair the install (the light install carries the server)
+pip install -U abstractcore
 
 # Check port availability
 lsof -i :8000
