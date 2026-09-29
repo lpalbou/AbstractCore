@@ -89,7 +89,8 @@ terminal console `abstractcore-console` 0.4.1 switches screens with the Left/Rig
   music: an 8 GB Mac gets no image route, with the reason.
 - Wan2.2 video memory needs are AbstractVision/mlx-gen's peaks measured at each model's default
   canvas in AbstractVision 0.3.31 (832x480; tiled VAE decode): TI2V-5B about 16.6 GiB (832x480,
-  121 frames), so the recommended video route is written on Macs with 32 GiB of unified memory or
+  121 frames; image-to-video, the larger of its two tasks -- text-to-video peaks at 16.3 GiB, same
+  MLX allocator measurement; the one checkpoint serves both, so the route uses 16.6), so the recommended video route is written on Macs with 32 GiB of unified memory or
   more, and a 24 GiB Mac is told the GPU memory limit that makes it fit; T2V-A14B and I2V-A14B
   about 38.3 and 38.4 GiB (832x480, 81 frames). Every sentence labels the figure as that engine's
   (it keeps the text encoder and VAE in memory), not the model's own requirement: catalog

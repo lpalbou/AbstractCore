@@ -359,8 +359,9 @@ RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
     # image-to-video, so the modality cell answers both tasks. It is the only
     # video model AbstractVision serves that is not a 40 GB A14B package; its
     # engine (MLX-Gen) is Apple silicon only and it needs ~16.6 GiB of MLX
-    # memory at AbstractVision's default canvas (832x480x121, measured), so it
-    # is fit-gated (`_FIT_GATED_ROUTES`).
+    # memory at AbstractVision's default canvas (832x480x121, measured MLX
+    # allocator peak for image-to-video, the larger of its two tasks;
+    # text-to-video peaks at 16.3 GiB), so it is fit-gated (`_FIT_GATED_ROUTES`).
     "output.video": RecommendedModel(
         route=CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
         download={"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},

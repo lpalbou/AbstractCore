@@ -4171,7 +4171,7 @@
      "resident": {
       "bytes": 17790464710,
       "source": "MLX allocator peak 16.57 GiB (mx.get_peak_memory) of a real AbstractVision generation at its default TI2V-5B canvas (832x480, 121 frames; text-to-video 16.29 GiB, image-to-video 16.57 GiB; 2 denoising steps: the peak does not depend on the step count; the denoiser sets it, the tiled VAE decode stays below): Apple M5 Max 128 GiB, mlx 0.32.2, mlx-gen 0.38.0, abstractvision 0.3.31 source, 2026-09-29",
-      "measured_with": "AbstractVision/mlx-gen at 832x480x121, which keeps the text encoder and VAE in memory",
+      "measured_with": "AbstractVision/mlx-gen at 832x480x121 for image-to-video, its larger task, text-to-video needing 16.3 GiB; the engine keeps the text encoder and VAE in memory",
       "larger_canvases": [
        {
         "canvas": "1280x704x121",
@@ -4180,7 +4180,7 @@
        }
       ]
      },
-     "note": "Mixed q8/BF16 MLX-Gen package (16.9 GiB); q8 saves download only, it runs at BF16 memory. Measured with AbstractVision/mlx-gen, which keeps the text encoder and VAE in memory: about 16.6 GiB at its default canvas (832x480, 121 frames), and about 25.4 GiB at 1280x704 (Wan's reference size) when a caller asks for it. These are this engine's figures, not the model's own minimum. AbstractVision refuses TI2V-5B below 832x480."
+     "note": "Mixed q8/BF16 MLX-Gen package (16.9 GiB); q8 saves download only, it runs at BF16 memory. Measured with AbstractVision/mlx-gen, which keeps the text encoder and VAE in memory: about 16.6 GiB at its default canvas (832x480, 121 frames) for image-to-video and 16.3 GiB for text-to-video (MLX allocator peaks), and about 25.4 GiB at 1280x704 (Wan's reference size) when a caller asks for it. These are this engine's figures, not the model's own minimum. AbstractVision refuses TI2V-5B below 832x480."
     }
    ],
    "capabilities_override": {

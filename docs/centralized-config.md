@@ -131,12 +131,14 @@ the grid (`recommendation_unavailable`) and `apply-recommended` (action
 `unavailable`) both give the reason. The unset `input.image` row gives one too
 where the recommended text model does not read images, or where no text
 engine runs. Set it to an image engine the host can
-run: `diffusers` (install profile `gpu`), `sdcpp`, or a cloud image provider.
+run: `diffusers` (included with `abstractcore[gpu]`), `sdcpp` (included with `abstractcore[apple]`
+and `abstractcore[gpu]`), or a cloud image provider.
 The video route (Wan2.2 TI2V-5B, one model for text-to-video and
 image-to-video) also runs on MLX-Gen, and it is written only where the model
 catalog's fit estimate says it fits: measured with AbstractVision/mlx-gen at
 its default canvas (832x480, 121 frames), which keeps the text encoder and VAE
-in memory, it peaks at about 16.6 GiB, so from 32 GiB of unified memory; a
+in memory, it peaks at about 16.6 GiB for image-to-video (16.3 GiB for
+text-to-video; the one checkpoint serves both, so the route uses the larger), so from 32 GiB of unified memory; a
 24 GiB Mac runs it once the GPU memory limit is raised, and the reason gives
 the command. That is this engine's figure, not the model's own requirement.
 A caller can ask for a larger size: at 1280x704 (Wan's reference size) the
