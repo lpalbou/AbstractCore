@@ -2792,7 +2792,11 @@ def convert_to_openai_responses_response(
 
         usage_out = {
             "input_tokens": prompt_tokens,
-            "input_tokens_details": {"cached_tokens": int(prompt_details.get("cached_tokens", 0) or 0)},
+            "input_tokens_details": {
+                "cached_tokens": int(prompt_details.get("cached_tokens", 0) or 0),
+                # Required by the Responses usage schema in openai 2.x.
+                "cache_write_tokens": int(prompt_details.get("cache_write_tokens", 0) or 0),
+            },
             "output_tokens": completion_tokens,
             "output_tokens_details": {"reasoning_tokens": int(completion_details.get("reasoning_tokens", 0) or 0)},
             "total_tokens": total_tokens,

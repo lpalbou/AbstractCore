@@ -7,83 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed (speech-to-text route, framework backlog 0989)
-- A transcription (`output={"modality": "text", "task": "transcription"}`) now runs on the configured
-  `input.voice` capability default. `text/transcription` has no output route (its default lives on the
-  `input.voice` input route); `resolve_generate_route` resolved that route and then dropped it, so a bare
-  transcription reached the voice backend with no provider and ran AbstractVoice's own default STT engine
-  (OpenAI) instead of, e.g., local faster-whisper. The route now fills the spec's missing provider/model/base_url
-  under the same rules as every other route (a provider named on the spec redirects it; a call-level
-  `stt_provider`/`stt_model` override counts as explicit), and `input.voice` is resolved for a transcription even
-  when its audio is an artifact reference without a content type.
+## [2.19.1] - 2026-09-29
 
-### Fixed (Linux + NVIDIA, framework backlog 0989; measured on a Quadro RTX 5000, driver 595)
-- `openai` may be 2.x (`openai>=1.0.0,<3.0.0`). The `<2.0.0` cap held vLLM at 0.11.0 in `abstractcore[gpu]`
-  (newer vLLM needs `openai>=2`), which fails with Transformers 5 at startup and pinned torch 2.8.0. With the
-  cap raised the gpu profile resolves vLLM 0.29 / torch 2.13 (CUDA 13). The chat-completions, models,
-  embeddings, files and responses calls AbstractCore makes are unchanged in openai 2.x (provider, server and
-  media suites pass on openai 2.54.0).
-- llama.cpp's Linux CUDA wheels load without torch imported first: `prepare_llama_cpp_import()` now also runs on
-  Linux and, when the installed llama-cpp-python is a CUDA build (`lib/libggml-cuda.so`), preloads the NVIDIA
-  wheels' `libcudart`/`libcublasLt`/`libcublas` (CUDA 12 `nvidia/<lib>/lib`, CUDA 13 `nvidia/cu13/lib`) with
-  `RTLD_GLOBAL`. Before, `import llama_cpp` failed with "libcudart.so.12: cannot open shared object file" and
-  GGUF models ran on the CPU.
-- The recommended LM Studio text download is `qwen/qwen3.5-9b@q4_k_m` (was `@4bit`). LM Studio is recommended
-  only off Apple silicon, where its catalog has no `4bit` (MLX) variant: `lms get qwen/qwen3.5-9b@4bit` failed
-  with "Cannot find variant 4bit", so "download the recommended models" failed on Linux/Windows.
-- An NVIDIA GPU gets an image-generation recommendation: `output.image` = `diffusers` /
-  `black-forest-labs/FLUX.2-klein-4B` (AbstractVision's Diffusers backend; device `auto` resolves to CUDA,
-  float16), download `diffusers black-forest-labs/FLUX.2-klein-4B`. Before, `models recommendations` and
-  `apply-recommended` said "Image generation: not available (MLX-Gen ... needs MLX)" on CUDA hosts, although
-  Diffusers runs there: with AbstractVision 0.3.32's automatic model CPU offload it generated 768x768 in ~17 s
-  with a measured 8.3 GiB GPU peak on the 16 GB card (moved whole, its 14.9 GiB of float16 weights run out of
-  CUDA memory; about 15 GiB of system RAM holds the idle weights). The pick lives in the image row of
-  `RECOMMENDED_MODELS` (`by_accelerator`), is fit-gated with that measured peak (catalog `resident`: fits on
-  16 GB and on the 24 GB reference class; an 8 GB card is reported unavailable with a GPU-memory next step),
-  and is a second artifact of the catalog's FLUX.2 klein 4B row (display name now "FLUX.2 [klein] 4B").
-  Apple silicon keeps MLX-Gen; processor-only hosts stay "not available".
-- `apply-recommended`, the defaults grid and `models download --recommended` read the full host probe off
-  Apple silicon (the light reading sees no CUDA). The import-time fresh-install seed stays on the light
-  reading, so a fresh NVIDIA install gets its image route from `apply-recommended`.
-- GGUF on CUDA: when llama.cpp cannot allocate a large context on the GPU, the load now takes the next smaller
-  context on the GPU and falls back to the CPU only after the smallest one failed there too. It used to retry
-  the same context on the CPU: Qwen3-4B-Instruct-2507 at its advertised 262144 tokens (~38 GB of KV cache) got
-  the process OOM-killed on a 16 GB card / 26 GB RAM host instead of loading on the GPU. Apple silicon keeps its
-  immediate CPU retry.
+This release makes the `gpu` setting work on Linux + NVIDIA (validated on a Quadro RTX 5000,
+driver 595, CUDA 13) and lets `abstractcore[gpu]` install on Windows x86_64 with wheels only.
+
+### Dependencies
+- `openai>=1.0.0,<3.0.0` (was `<2.0.0`). The old cap held vLLM at 0.11.0 in `abstractcore[gpu]`,
+  which does not start with Transformers 5; the gpu setting now resolves a current vLLM
+  (0.29, torch 2.13, CUDA 13). The OpenAI API calls AbstractCore makes are unchanged in openai 2.x.
+- Floors: `abstractvision>=0.3.32` (its `gpu` settings no longer install MLX-Gen, about 2.1 GB less
+  on Linux, and leave stable-diffusion.cpp out on Windows) and `abstractvoice>=0.13.1`
+  (faster-whisper on CUDA with CUDA 12 cuBLAS; speech-to-text without TTS credentials), in the
+  light install and in the `apple` and `gpu` settings.
+- `abstractcore[gpu]` installs on Windows x86_64 with wheels only:
+  `vllm; sys_platform == 'linux'` (vLLM is Linux only upstream) and
+  `llama-cpp-python; sys_platform != 'win32'` (a source build on PyPI; the AbstractFramework
+  installer adds llama.cpp's prebuilt CUDA / Vulkan / CPU build on Windows). The deprecated
+  `all-gpu` and `vllm` aliases still map to `gpu`.
 
 ### Changed
 - Install hints name only the three settings. Every error, CLI message, engine install plan and
-  doc now says `pip install -U abstractcore` for a light dependency (httpx, pydantic, Pillow,
-  PyYAML, ddgs, python-multipart, AbstractVoice/AbstractVision), `abstractcore[apple]` or
-  `abstractcore[gpu]` for a local engine (transformers, llama.cpp, sentence-transformers,
-  Outlines, Playwright, voice engines, MLX-Gen, peft), and on a host with no local-engine setting
-  (Intel Mac, Windows) that the capability is not available there with the install settings.
-  No message advises a bare package or a plugin's own extra any more.
-- The Engines screen installs `abstractcore[apple]` / `abstractcore[gpu]` for MLX, llama.cpp,
-  vLLM and Hugging Face; on an Intel Mac or Windows the llama.cpp and Hugging Face rows are
-  `available: false` instead of installing the transformers stack or llama-cpp-python directly.
-  `abstractcore --download-vision-model` no longer pip-installs transformers/torch on its own.
-- The camera endpoints and capability hint say the camera plugin (`abstractcamera`) is outside
-  the install settings instead of printing a pip command.
-- `abstractcore[gpu]` installs on Windows x86_64 with wheels only (backlog 0988):
-  `vllm; sys_platform == 'linux'` (upstream is Linux only) and
-  `llama-cpp-python; sys_platform != 'win32'` (a source build on PyPI; the AbstractFramework
-  installer adds llama.cpp's prebuilt CUDA / Vulkan / CPU wheel on Windows). The
-  `abstractvision[all-gpu]` floor is now 0.3.32, whose all-gpu leaves stable-diffusion.cpp out on
-  Windows. The deprecated `all-gpu` and `vllm` aliases still map to `gpu`.
-- Windows x86_64 now has the `gpu` setting in install hints and the Engines screen (it was
-  "not available on this machine"). The llama.cpp hint and engine row there say the installer
-  adds llama.cpp's prebuilt GPU build and that, with plain pip, llama.cpp is not part of
-  `abstractcore[gpu]` on Windows. Windows on ARM and Intel Macs still have no local-engine setting.
+  doc says `pip install -U abstractcore` for a light dependency, `abstractcore[apple]` or
+  `abstractcore[gpu]` for a local engine, and, on a host with no local-engine setting (Intel Mac,
+  Windows on ARM), that the capability is not available there. No message advises a bare package
+  or a plugin's own extra.
+- The Engines screen installs `abstractcore[apple]` / `abstractcore[gpu]` for MLX, llama.cpp, vLLM
+  and Hugging Face. `abstractcore --download-vision-model` no longer pip-installs
+  transformers/torch on its own.
+- Windows x86_64 has the `gpu` setting in install hints and the Engines screen. The llama.cpp hint
+  and engine row there say that the AbstractFramework installer adds llama.cpp's prebuilt GPU
+  build and that, with plain pip, llama.cpp is not part of `abstractcore[gpu]` on Windows.
+- The camera endpoints and capability hint say the camera plugin (`abstractcamera`) is outside the
+  install settings instead of printing a pip command.
+- Recommendations on NVIDIA GPUs: `output.image` is `diffusers` /
+  `black-forest-labs/FLUX.2-klein-4B` (AbstractVision's Diffusers backend on CUDA, float16).
+  With AbstractVision 0.3.32's automatic model CPU offload it generates 768x768 in about 17 s with
+  an 8.3 GiB GPU peak on a 16 GB card (about 15 GiB of system RAM holds the idle weights). It is
+  fit-gated with that measured peak: an 8 GB card is reported unavailable with a GPU-memory next
+  step. Apple silicon keeps MLX-Gen; hosts without a GPU stay "not available". The catalog row is
+  now named "FLUX.2 [klein] 4B".
+- The recommended LM Studio text download is `qwen/qwen3.5-9b@q4_k_m` (was `@4bit`, an MLX variant
+  that LM Studio does not offer off Apple silicon, where LM Studio is the recommendation).
+- `apply-recommended`, the defaults grid and `models download --recommended` read the full host
+  probe off Apple silicon, so an NVIDIA host gets its image route from `apply-recommended`.
 
 ### Fixed
+- Speech-to-text runs on the configured `input.voice` route. A transcription
+  (`output={"modality": "text", "task": "transcription"}`) with no provider used AbstractVoice's
+  default OpenAI engine instead of the configured one (for example local faster-whisper). The
+  route now fills a missing provider/model/base_url under the same rules as every other route (a
+  provider named on the request, or a call-level `stt_provider`/`stt_model`, still wins), also for
+  audio given as an artifact reference without a content type.
+- Linux + NVIDIA: llama.cpp's CUDA wheels load without importing torch first.
+  `prepare_llama_cpp_import()` also runs on Linux and, for a CUDA build of llama-cpp-python,
+  preloads the NVIDIA wheels' `libcudart` / `libcublasLt` / `libcublas` (CUDA 12 and CUDA 13
+  layouts), so GGUF models run on the GPU instead of the CPU.
+- GGUF on CUDA: when llama.cpp cannot allocate a large context on the GPU, the load takes the next
+  smaller context on the GPU and falls back to the CPU only after the smallest one fails there too
+  (a CPU retry at a 262144-token context could exhaust system memory). Apple silicon keeps its
+  immediate CPU retry.
 - Windows: before AbstractCore first imports `llama_cpp`, it adds PyTorch's `torch\lib` folder
   (cuBLAS, cudart) to the DLL search (`os.add_dll_directory` and `PATH`), so llama.cpp's prebuilt
-  CUDA wheel, which does not bundle them, loads without the CUDA toolkit
-  (`abstractcore.utils.windows_dll.prepare_llama_cpp_import`; no-op elsewhere; torch is not imported).
+  CUDA wheel loads without the CUDA toolkit
+  (`abstractcore.utils.windows_dll.prepare_llama_cpp_import`; torch is not imported).
 - Windows: the GGUF lane runs `llama_backend_init()` before asking llama.cpp whether it can offload
-  to the GPU. The Windows CUDA / Vulkan wheels register their GPU backend at init, so the probe
-  could say "no GPU" and load every layer on the CPU. Other platforms are unchanged.
+  to the GPU (the Windows CUDA / Vulkan wheels register their GPU backend at init).
+- The server's `/v1/responses` usage reports `input_tokens_details.cache_write_tokens` (0 when the
+  provider reports none), which the Responses usage schema of openai 2.x requires.
 
 ## [2.19.0] - 2026-09-29
 

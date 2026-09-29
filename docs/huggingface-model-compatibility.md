@@ -22,7 +22,7 @@ install every optional Transformers quantization runtime, because those runtimes
 platform-specific and can carry dependency pins that conflict with the rest of the local stack.
 Fresh installs resolve the newest compatible Transformers release allowed by AbstractCore's
 dependency range. Very new architectures such as Gemma4 require a recent Transformers build.
-The light install carries `abstractvoice>=0.13.0` without OmniVoice, torch, or torchaudio. Local
+The light install carries `abstractvoice>=0.13.1` without OmniVoice, torch, or torchaudio. Local
 OmniVoice engines come with `abstractcore[apple]` and `abstractcore[gpu]`.
 
 ## Quantized Transformers Checkpoints
