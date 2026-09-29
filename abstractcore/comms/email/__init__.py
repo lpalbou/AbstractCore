@@ -35,6 +35,7 @@ from .errors import (
     EmailMessageNotFound,
     EmailNotConfigured,
     EmailOAuthFailed,
+    EmailOAuthPending,
     EmailOAuthReauthorize,
     EmailPolicyRefused,
     EmailProtocolError,
@@ -66,12 +67,15 @@ from .models import (
     SmtpSettings,
 )
 from .oauth import (
+    BUILTIN_CLIENTS,
     DeviceAuthorization,
     LoopbackAuthorization,
     OAuthTokenClient,
     OAuthTokenProvider,
     TokenSet,
+    builtin_client,
     provider_preset,
+    resolve_oauth_client,
     xoauth2_string,
 )
 from .policy import PolicyDecision, RecipientPolicy, evaluate, normalize_address, normalize_domain, parse_recipients
@@ -80,6 +84,7 @@ from .store import EmailAccountStore, EmailSettings
 from .vault import SecretVault
 
 __all__ = [
+    "BUILTIN_CLIENTS",
     "Attachment",
     "AttachmentInfo",
     "DeviceAuthorization",
@@ -97,6 +102,7 @@ __all__ = [
     "EmailMessageNotFound",
     "EmailNotConfigured",
     "EmailOAuthFailed",
+    "EmailOAuthPending",
     "EmailOAuthReauthorize",
     "EmailPolicyRefused",
     "EmailProtocolError",
@@ -130,12 +136,14 @@ __all__ = [
     "SendResult",
     "SmtpSettings",
     "TokenSet",
+    "builtin_client",
     "evaluate",
     "guarded_send",
     "normalize_address",
     "normalize_domain",
     "parse_recipients",
     "provider_preset",
+    "resolve_oauth_client",
     "tls_context",
     "xoauth2_string",
 ]

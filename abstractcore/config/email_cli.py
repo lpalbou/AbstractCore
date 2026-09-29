@@ -2,7 +2,8 @@
 
     abstractcore email connect --address me@example.com --imap-host imap.example.com \\
         --smtp-host smtp.example.com --password <value>
-    abstractcore email connect --address me@outlook.com --oauth microsoft --client-id <value>
+    abstractcore email connect --address me@outlook.com --oauth microsoft --client-id <value> --client-secret <value>
+    abstractcore email connect --address me@gmail.com --oauth google --client-id <value> --client-secret <value>
     abstractcore email test | status | folders
     abstractcore email disconnect --yes
     abstractcore email policy show | set --mode allowlist --add me@example.com --add example.org | check <address>...
@@ -15,6 +16,13 @@ stored encrypted; they are never printed. Every verb takes `--json` (the `email_
 document of `EmailAccountStore.public()`, or `{ok: false, error: {code, cause, fix}}`).
 Exit codes: 0 ok, 1 error, 2 refused (a failed connection test, or `disconnect` without
 `--yes`).
+
+OAuth2 (`--oauth google|microsoft|custom`): without `--client-id`, the built-in
+AbstractFramework client of the provider signs in when this version has one registered
+(`abstractcore.comms.email.BUILTIN_CLIENTS`); otherwise bring your own client. While the
+command waits for the approval, `--json` prints the sign-in prompt to stderr as one JSON line
+`{"oauth_prompt": {"flow": "device", "user_code", "verification_uri", ...}}` or
+`{"oauth_prompt": {"flow": "loopback", "authorization_url", ...}}`.
 """
 
 from __future__ import annotations
@@ -22,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import webbrowser
 from typing import Any, Dict, List, Optional
 
@@ -122,20 +131,41 @@ def _print_status(doc: Dict[str, Any], notices: List[str]) -> None:
 # ---------------------------------------------------------------------------------------
 
 
-def _obtain_oauth_tokens(args: argparse.Namespace, oauth: Any, verify: Any, as_json: bool):
+def _oauth_prompt(prompt: Dict[str, Any], text: List[str], as_json: bool) -> None:
+    """Show what the person must do to sign in.
+
+    With `--json`, stdout is reserved for the one result document, so the prompt goes to
+    stderr as ONE JSON line `{"oauth_prompt": {...}}` (the terminal console reads it while the
+    command waits for the approval); otherwise as text on stdout.
+    """
+
+    if as_json:
+        print(json.dumps({"oauth_prompt": prompt}, sort_keys=True), file=sys.stderr, flush=True)
+    else:
+        for line in text:
+            print(line, flush=True)
+
+
+def _obtain_oauth_tokens(args: argparse.Namespace, oauth: Any, client_secret: str, verify: Any, as_json: bool):
     from abstractcore.comms.email import LoopbackAuthorization, OAuthTokenClient
 
-    client = OAuthTokenClient(oauth, client_secret=args.client_secret or "", verify=verify)
+    client = OAuthTokenClient(oauth, client_secret=client_secret, verify=verify)
     flow = args.oauth_flow or ("device" if oauth.provider == "microsoft" else "loopback")
-    out = sys.stderr if as_json else sys.stdout
     if flow == "device":
         device = client.start_device_authorization()
-        print(f"To sign in, open {device.verification_uri} and enter the code {device.user_code}", file=out, flush=True)
+        _oauth_prompt(
+            {"flow": "device", **device.public()},
+            [f"To sign in, open {device.verification_uri} and enter the code {device.user_code}"],
+            as_json,
+        )
         return client.poll_device_authorization(device)
     loop = LoopbackAuthorization(client, login_hint=args.address or "")
     url = loop.start()
-    print("To sign in, open this address in a browser on this machine:", file=out)
-    print(url, file=out, flush=True)
+    _oauth_prompt(
+        {"flow": "loopback", "authorization_url": url, "expires_at": time.time() + float(args.oauth_timeout)},
+        ["To sign in, open this address in a browser on this machine:", url],
+        as_json,
+    )
     if not args.no_browser:
         try:
             webbrowser.open(url)
@@ -154,6 +184,7 @@ def cmd_connect(args: argparse.Namespace) -> int:
         OAuthSettings,
         SmtpSettings,
         provider_preset,
+        resolve_oauth_client,
         tls_context,
     )
 
@@ -182,9 +213,13 @@ def cmd_connect(args: argparse.Namespace) -> int:
             smtp = SmtpSettings.build(smtp_host, port=port, security=sec, ca_file=args.smtp_ca_file or args.ca_file or "")
         ctx = tls_context(args.ca_file) if args.ca_file else None
         if args.oauth:
+            if args.password:
+                raise EmailInvalidSettings("--password is not used with --oauth.", "Remove --password; OAuth2 signs in through the browser.")
+            client = resolve_oauth_client(args.oauth, args.client_id or "", args.client_secret or "")
             oauth = OAuthSettings.build(
                 args.oauth,
-                args.client_id or "",
+                client["client_id"],
+                client_source=client["source"],
                 token_endpoint=args.token_endpoint or "",
                 authorization_endpoint=args.authorization_endpoint or "",
                 device_authorization_endpoint=args.device_endpoint or "",
@@ -195,14 +230,12 @@ def cmd_connect(args: argparse.Namespace) -> int:
                 address=address, username=args.username or address, imap=imap, smtp=smtp,
                 display_name=args.display_name or "", auth_kind="oauth2", oauth=oauth,
             )
-            if args.password:
-                raise EmailInvalidSettings("--password is not used with --oauth.", "Remove --password; OAuth2 signs in through the browser.")
-            tokens = _obtain_oauth_tokens(args, oauth, ctx, as_json)
+            tokens = _obtain_oauth_tokens(args, oauth, client["client_secret"], ctx, as_json)
             secret = EmailSecret(
                 refresh_token=tokens.refresh_token,
                 access_token=tokens.access_token,
                 expires_at=tokens.expires_at,
-                client_secret=args.client_secret or "",
+                client_secret=client["client_secret"],
             )
         else:
             if not args.password:
@@ -424,8 +457,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--registered-address", help="Your own address (the default allowlist entry); default: --address")
     c.add_argument("--no-test", action="store_true", help="Store without testing the connection")
     c.add_argument("--oauth", choices=("google", "microsoft", "custom"), help="Sign in with OAuth2 instead of a password")
-    c.add_argument("--client-id", help="OAuth client id (registered with the provider)")
-    c.add_argument("--client-secret", help="OAuth client secret (stored encrypted)")
+    c.add_argument("--client-id", help="Your own OAuth client id (default: the built-in AbstractFramework client, when one is registered for the provider)")
+    c.add_argument("--client-secret", help="Your own OAuth client secret (stored encrypted)")
     c.add_argument("--tenant", help="Microsoft tenant (default common)")
     c.add_argument("--oauth-flow", choices=("device", "loopback"), help="device code (Microsoft default) or browser on this machine (Google default)")
     c.add_argument("--token-endpoint")

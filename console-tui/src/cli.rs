@@ -5,9 +5,10 @@
 //! from `config … --json` subcommands and exit codes; human output
 //! (`--status`, wizard prose) is never scraped (risk-map fact #9).
 
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -29,6 +30,8 @@ pub enum CliErrorKind {
     Exit(i32),
     /// Exit 0 but stdout was not the JSON we asked for.
     BadJson,
+    /// The person cancelled the command (it was killed).
+    Cancelled,
 }
 
 #[derive(Clone, Debug)]
@@ -66,6 +69,7 @@ impl CliError {
             CliErrorKind::Timeout => format!("{p} timed out"),
             CliErrorKind::Exit(code) => format!("{p} exited with {code}"),
             CliErrorKind::BadJson => format!("{p} answered, but not with JSON"),
+            CliErrorKind::Cancelled => format!("{p} command cancelled"),
         }
     }
 
@@ -79,6 +83,7 @@ impl CliError {
             CliErrorKind::Timeout => "the Python side hung — retry with r",
             CliErrorKind::Exit(_) => "the message above is the CLI's own error",
             CliErrorKind::BadJson => "an abstractcore too old for --json? check its version",
+            CliErrorKind::Cancelled => "cancelled on request — nothing was stored",
         }
     }
 }
@@ -379,28 +384,30 @@ impl CoreCli {
         timeout: Duration,
     ) -> Result<CliOutput, CliError> {
         let (status, stdout, stderr) = self.run_raw(args, redacted_label, timeout)?;
-        let doc = last_json_object(&stdout);
-        if !status.success() {
-            let code = status.code().unwrap_or(-1);
-            let msg = doc
-                .as_ref()
-                .and_then(email_error_text)
-                .unwrap_or_else(|| error_line(&stdout, &stderr));
-            return Err(CliError::core(CliErrorKind::Exit(code), msg));
-        }
-        let value = doc.ok_or_else(|| {
-            CliError::core(
-                CliErrorKind::BadJson,
-                format!(
-                    "no JSON object on stdout — first bytes: {}",
-                    head(&stdout, 120)
-                ),
-            )
-        })?;
-        Ok(CliOutput {
-            value,
-            fallback_warnings: fallback_lines(&stderr),
-        })
+        email_outcome(status, &stdout, &stderr)
+    }
+
+    /// `run_email` for a verb that waits on a person (`email connect
+    /// --oauth …`): every stderr line that is `{"oauth_prompt": {…}}`
+    /// reaches `on_prompt` WHILE the command runs (the sign-in code or
+    /// address the person needs), and the command is killed as soon as
+    /// `cancel` turns true.
+    pub fn run_email_streaming(
+        &self,
+        args: &[&str],
+        redacted_label: &str,
+        timeout: Duration,
+        on_prompt: Box<dyn Fn(Value) + Send>,
+        cancel: &AtomicBool,
+    ) -> Result<CliOutput, CliError> {
+        let on_line: Box<dyn FnMut(&str) + Send> = Box::new(move |line: &str| {
+            if let Some(p) = oauth_prompt_of(line) {
+                on_prompt(p);
+            }
+        });
+        let (status, stdout, stderr) =
+            run_raw_streaming_at(&self.bin, args, redacted_label, timeout, on_line, cancel)?;
+        email_outcome(status, &stdout, &stderr)
     }
 
     /// Shared subprocess mechanics: spawn, drain both pipes on reader
@@ -414,6 +421,118 @@ impl CoreCli {
     ) -> Result<(std::process::ExitStatus, String, String), CliError> {
         run_raw_at(&self.bin, args, redacted_label, timeout)
     }
+}
+
+/// The outcome of one email verb: its JSON document, or the CLI's own
+/// typed words when it refused.
+fn email_outcome(
+    status: std::process::ExitStatus,
+    stdout: &str,
+    stderr: &str,
+) -> Result<CliOutput, CliError> {
+    let doc = last_json_object(stdout);
+    if !status.success() {
+        let code = status.code().unwrap_or(-1);
+        let msg = doc
+            .as_ref()
+            .and_then(email_error_text)
+            .unwrap_or_else(|| error_line(stdout, stderr));
+        return Err(CliError::core(CliErrorKind::Exit(code), msg));
+    }
+    let value = doc.ok_or_else(|| {
+        CliError::core(
+            CliErrorKind::BadJson,
+            format!(
+                "no JSON object on stdout — first bytes: {}",
+                head(stdout, 120)
+            ),
+        )
+    })?;
+    Ok(CliOutput {
+        value,
+        fallback_warnings: fallback_lines(stderr),
+    })
+}
+
+/// The `oauth_prompt` object of one stderr line of `abstractcore email
+/// connect --oauth … --json` (`{"oauth_prompt": {"flow": "device",
+/// "user_code", "verification_uri", …}}` or `{"flow": "loopback",
+/// "authorization_url", …}`); None for any other line.
+pub fn oauth_prompt_of(line: &str) -> Option<Value> {
+    let v: Value = serde_json::from_str(line.trim()).ok()?;
+    v.get("oauth_prompt").filter(|p| p.is_object()).cloned()
+}
+
+/// `run_raw_at` that hands each stderr line to `on_line` as it arrives
+/// and kills the process when `cancel` turns true.
+pub(crate) fn run_raw_streaming_at(
+    bin: &Path,
+    args: &[&str],
+    redacted_label: &str,
+    timeout: Duration,
+    mut on_line: Box<dyn FnMut(&str) + Send>,
+    cancel: &AtomicBool,
+) -> Result<(std::process::ExitStatus, String, String), CliError> {
+    let mut child = Command::new(bin)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| CliError::core(CliErrorKind::Spawn, format!("{}: {e}", bin.display())))?;
+
+    let stdout = child.stdout.take().expect("piped");
+    let stderr = child.stderr.take().expect("piped");
+    let out_h = std::thread::spawn(move || read_all(stdout));
+    let err_h = std::thread::spawn(move || {
+        let mut all = String::new();
+        let mut reader = BufReader::new(stderr);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    let line = String::from_utf8_lossy(&buf).into_owned();
+                    on_line(&line);
+                    all.push_str(&line);
+                }
+            }
+        }
+        all
+    });
+
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                let cancelled = cancel.load(Ordering::SeqCst);
+                if cancelled || Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = out_h.join();
+                    let _ = err_h.join();
+                    return Err(if cancelled {
+                        CliError::core(
+                            CliErrorKind::Cancelled,
+                            format!("cancelled: {redacted_label}"),
+                        )
+                    } else {
+                        CliError::core(
+                            CliErrorKind::Timeout,
+                            format!("no answer within {}s: {redacted_label}", timeout.as_secs()),
+                        )
+                    });
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(e) => return Err(CliError::core(CliErrorKind::Spawn, e.to_string())),
+        }
+    };
+    let stdout = out_h.join().unwrap_or_default();
+    let stderr = err_h.join().unwrap_or_default();
+    Ok((status, stdout, stderr))
 }
 
 pub(crate) fn run_raw_at(
@@ -754,5 +873,68 @@ exit 1"#,
         assert_eq!(out.value.get("ok").and_then(Value::as_bool), Some(true));
         assert_eq!(out.fallback_warnings.len(), 1);
         assert!(out.fallback_warnings[0].contains("falling back to DEFAULTS"));
+    }
+
+    /// An OAuth2 connect waits on a person: its `oauth_prompt` stderr
+    /// line reaches the callback WHILE the command still runs (the
+    /// script only exits after the prompt was delivered), other stderr
+    /// lines do not, and the final document is the answer.
+    #[test]
+    fn email_streaming_delivers_the_prompt_before_the_answer() {
+        use std::sync::mpsc;
+        let sh = CoreCli::new(PathBuf::from("/bin/sh"));
+        let (tx, rx) = mpsc::channel::<Value>();
+        let never = AtomicBool::new(false);
+        let out = sh
+            .run_email_streaming(
+                &[
+                    "-c",
+                    r#"echo 'plain noise' >&2
+echo '{"oauth_prompt": {"flow": "device", "user_code": "WDJB-MJHT", "verification_uri": "https://example.test/device"}}' >&2
+sleep 0.3
+echo '{"ok": true, "schema": "email_settings_v1", "auth_kind": "oauth2"}'"#,
+                ],
+                "email connect --oauth",
+                Duration::from_secs(10),
+                Box::new(move |p| {
+                    let _ = tx.send(p);
+                }),
+                &never,
+            )
+            .unwrap();
+        assert_eq!(out.value["auth_kind"], "oauth2");
+        let prompts: Vec<Value> = rx.try_iter().collect();
+        assert_eq!(prompts.len(), 1, "{prompts:?}");
+        assert_eq!(prompts[0]["user_code"], "WDJB-MJHT");
+        assert_eq!(oauth_prompt_of("plain noise"), None);
+        assert_eq!(
+            oauth_prompt_of("{\"oauth_prompt\": \"not an object\"}"),
+            None
+        );
+    }
+
+    /// Cancel kills the waiting command: a typed `Cancelled`, not a
+    /// timeout, and long before the deadline.
+    #[test]
+    fn email_streaming_cancel_kills_the_command() {
+        let sh = CoreCli::new(PathBuf::from("/bin/sh"));
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let c2 = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(150));
+            c2.store(true, Ordering::SeqCst);
+        });
+        let started = Instant::now();
+        let err = sh
+            .run_email_streaming(
+                &["-c", "sleep 30"],
+                "email connect --oauth",
+                Duration::from_secs(60),
+                Box::new(|_| {}),
+                &cancel,
+            )
+            .unwrap_err();
+        assert_eq!(err.kind, CliErrorKind::Cancelled);
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 }

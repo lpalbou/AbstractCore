@@ -281,6 +281,23 @@ _EMAIL_HTML = """<div class="acc-root" data-acc-kind="email" id="acc-email">
       </div>
       <p class="acc-hint">Passwords are stored encrypted and never shown again. Many providers need an app password when two-step verification is on. The mailbox is only read (never marked read, moved or deleted).</p>
     </section>
+    <section class="acc-card" data-acc="email-oauth-card">
+      <h3>Sign in with OAuth2</h3>
+      <div class="acc-form">
+        <label>Provider <select data-acc="email-oauth-provider"><option value="microsoft">Microsoft (Outlook, Microsoft 365)</option><option value="google">Google (Gmail)</option></select></label>
+        <label>Address <input type="text" data-acc="email-oauth-address" autocomplete="off" placeholder="me@outlook.com"></label>
+        <label>Client id <input type="text" data-acc="email-oauth-client-id" autocomplete="off" placeholder="(built-in client)"></label>
+        <label>Client secret <input type="password" data-acc="email-oauth-client-secret" autocomplete="new-password" placeholder="(none)"></label>
+        <label>Tenant <input type="text" data-acc="email-oauth-tenant" autocomplete="off" placeholder="common (Microsoft only)"></label>
+        <label>Sign-in flow <select data-acc="email-oauth-flow"><option value="">provider default</option><option value="device">device code</option><option value="loopback">browser on this machine</option></select></label>
+      </div>
+      <div class="acc-toolbar" style="margin-top:10px">
+        <button type="button" class="acc-btn acc-primary" data-acc-action="oauth-start">Start sign-in</button>
+        <button type="button" class="acc-btn" data-acc-action="oauth-cancel" data-acc="email-oauth-cancel" hidden>Cancel sign-in</button>
+      </div>
+      <div class="acc-message" data-acc="email-oauth-prompt" role="status" aria-live="polite"></div>
+      <p class="acc-hint">Without a client id, the built-in AbstractFramework client signs in when this version has one for the provider; otherwise give the client id (and secret) of your own OAuth client registered for the mail scopes. Microsoft defaults to a device code (any browser, any machine); Google to a browser on the machine running AbstractCore. Tokens are stored encrypted, like passwords.</p>
+    </section>
     <section class="acc-card" data-acc="email-status-card"><h3>Status</h3><div data-acc="email-status" class="acc-muted">Loading...</div></section>
     <section class="acc-card" data-acc="email-policy-card">
       <h3>Recipient policy</h3>
@@ -309,7 +326,7 @@ _EMAIL_HTML = """<div class="acc-root" data-acc-kind="email" id="acc-email">
       <div class="acc-toolbar"><button type="button" class="acc-btn acc-primary" data-acc-action="limits-save">Save limits</button><span class="acc-muted" data-acc="email-usage"></span></div>
     </section>
   </div>
-  <div class="acc-cli-line" style="margin-top:12px">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email connect ... --password &lt;value&gt;</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 20 --per-day 100</code></div>
+  <div class="acc-cli-line" style="margin-top:12px">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email connect ... --password &lt;value&gt;</code>, <code>abstractcore email connect --address &lt;a&gt; --oauth microsoft --client-id &lt;value&gt; --client-secret &lt;value&gt;</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 20 --per-day 100</code></div>
 </div>"""
 
 _TEMPLATES: Dict[str, str] = {
@@ -1226,6 +1243,7 @@ _JS_TEMPLATE = r"""
     let doc = null;
     let entries = [];
     let confirming = false;
+    let oauthFlow = null; // {id, cancelled}: the sign-in being awaited
     const el = (name) => role(ctx.host, name);
     const val = (name) => { const e = el(name); return e ? e.value.trim() : ""; };
     function errMsg(err) {
@@ -1332,6 +1350,62 @@ _JS_TEMPLATE = r"""
         if (out) setMessage(ctx, on ? "Email turned off (no reading, no sending; settings kept)." : "Email turned on.", "ok");
         return;
       }
+      if (name === "oauth-start") {
+        if (oauthFlow) return;
+        const provider = val("email-oauth-provider");
+        const body = {
+          address: val("email-oauth-address"), provider,
+          client_id: val("email-oauth-client-id"), client_secret: el("email-oauth-client-secret").value,
+          tenant: provider === "microsoft" ? val("email-oauth-tenant") : "", flow: val("email-oauth-flow"),
+        };
+        const prompt = el("email-oauth-prompt");
+        prompt.textContent = "";
+        setMessage(ctx, "Starting the sign-in...");
+        let start;
+        try { start = await ctx.request("POST", `${base}/oauth/start`, body); }
+        catch (err) { setMessage(ctx, `Sign-in: ${errMsg(err)}`, "error"); return; }
+        const flow = { id: start.flow_id, cancelled: false };
+        oauthFlow = flow;
+        el("email-oauth-cancel").hidden = false;
+        // Only https links are rendered as links (the endpoints are validated https server-side too).
+        const link = (url, label) => String(url || "").toLowerCase().startsWith("https://")
+          ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : `<code>${esc(url)}</code>`;
+        if (start.flow === "device") {
+          prompt.innerHTML = `Open ${link(start.verification_uri, start.verification_uri)} and enter the code <code>${esc(start.user_code)}</code>. Waiting for the approval...`;
+        } else {
+          prompt.innerHTML = `Open ${link(start.authorization_url, "the provider's sign-in page")} in a browser on the machine running AbstractCore. Waiting for the approval...`;
+        }
+        setMessage(ctx, "Waiting for the sign-in to be approved...");
+        try {
+          while (!flow.cancelled) {
+            const out = await ctx.request("POST", `${base}/oauth/finish`, { flow_id: flow.id, wait_s: 20 });
+            if (flow.cancelled) break;
+            if (out && out.pending) continue;
+            if (out && out.schema === "email_settings_v1") { doc = { ...out, notices: (doc && doc.notices) || [] }; fill(doc); render(); }
+            prompt.textContent = "";
+            setVal("email-oauth-client-secret", "");
+            setMessage(ctx, `Connected ${out.address} with OAuth2 (connection test passed).`, "ok");
+            break;
+          }
+        } catch (err) {
+          if (!flow.cancelled) { prompt.textContent = ""; setMessage(ctx, `Sign-in: ${errMsg(err)}`, "error"); }
+        } finally {
+          if (oauthFlow === flow) oauthFlow = null;
+          el("email-oauth-cancel").hidden = true;
+        }
+        return;
+      }
+      if (name === "oauth-cancel") {
+        const flow = oauthFlow;
+        if (!flow) return;
+        flow.cancelled = true;
+        oauthFlow = null;
+        el("email-oauth-cancel").hidden = true;
+        el("email-oauth-prompt").textContent = "";
+        try { await ctx.request("POST", `${base}/oauth/cancel`, { flow_id: flow.id }); } catch (_err) { /* the flow expires on its own */ }
+        setMessage(ctx, "Sign-in cancelled.", "ok");
+        return;
+      }
       if (name === "email-disconnect") { confirming = true; render(); return; }
       if (name === "email-disconnect-cancel") { confirming = false; render(); return; }
       if (name === "email-disconnect-confirm") {
@@ -1377,7 +1451,7 @@ _JS_TEMPLATE = r"""
       refresh: load, render, jobFinished() {},
       action(name, target) { action(name, target); },
       key(k) { if (k === "r") { load(); return true; } return false; },
-      destroy() { if (modeEl) modeEl.removeEventListener("change", onModeChange); },
+      destroy() { if (oauthFlow) oauthFlow.cancelled = true; if (modeEl) modeEl.removeEventListener("change", onModeChange); },
     };
   }
 

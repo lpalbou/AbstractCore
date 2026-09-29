@@ -435,7 +435,13 @@ class EmailAccountStore:
             "imap": acct.imap.to_dict() if acct and acct.imap else None,
             "smtp": acct.smtp.to_dict() if acct and acct.smtp else None,
             "oauth": (
-                {"provider": acct.oauth.provider, "client_id": acct.oauth.client_id, "tenant": acct.oauth.tenant, "scopes": list(acct.oauth.scopes)}
+                {
+                    "provider": acct.oauth.provider,
+                    "client_id": acct.oauth.client_id,
+                    "client_source": acct.oauth.client_source,
+                    "tenant": acct.oauth.tenant,
+                    "scopes": list(acct.oauth.scopes),
+                }
                 if acct and acct.oauth
                 else None
             ),

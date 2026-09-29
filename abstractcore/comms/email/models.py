@@ -161,11 +161,13 @@ class OAuthSettings:
     authorization_endpoint: str = ""
     device_authorization_endpoint: str = ""
     tenant: str = ""
+    client_source: str = "own"  # "own" (bring your own client) | "builtin" (AbstractFramework's)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "provider": self.provider,
             "client_id": self.client_id,
+            "client_source": self.client_source,
             "token_endpoint": self.token_endpoint,
             "authorization_endpoint": self.authorization_endpoint,
             "device_authorization_endpoint": self.device_authorization_endpoint,
@@ -184,6 +186,7 @@ class OAuthSettings:
         device_authorization_endpoint: str = "",
         scopes: Optional[List[str]] = None,
         tenant: str = "",
+        client_source: str = "own",
     ) -> "OAuthSettings":
         from .oauth import provider_preset
 
@@ -214,6 +217,9 @@ class OAuthSettings:
             raise _invalid("The OAuth token endpoint is missing.", "Give --token-endpoint <https URL> for a custom provider.")
         if not sc:
             raise _invalid("The OAuth scopes are missing.", "Give --scope <scope> for a custom provider (repeatable).")
+        source = str(client_source or "own").strip().lower()
+        if source not in ("own", "builtin"):
+            raise _invalid(f"The OAuth client source {client_source!r} is not one of: own, builtin.", "Use own or builtin.")
         return cls(
             provider=prov,
             client_id=cid,
@@ -222,6 +228,7 @@ class OAuthSettings:
             authorization_endpoint=auth,
             device_authorization_endpoint=dev,
             tenant=str(tenant or preset.get("tenant") or "").strip(),
+            client_source=source,
         )
 
     @classmethod
@@ -237,6 +244,7 @@ class OAuthSettings:
             device_authorization_endpoint=str(raw.get("device_authorization_endpoint") or ""),
             scopes=[str(s) for s in scopes] if isinstance(scopes, (list, tuple)) else None,
             tenant=str(raw.get("tenant") or ""),
+            client_source=str(raw.get("client_source") or "own"),
         )
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
 
 
 def test_render_email_digest_text_is_deterministic() -> None:
@@ -16,25 +15,5 @@ def test_render_email_digest_text_is_deterministic() -> None:
     assert body == "Daily Digest\n\nHi\n\n## Decisions\n- Approve A\n- Defer B\n\nBye\n"
 
 
-def test_send_email_digest_uses_send_email_defaults(monkeypatch) -> None:
-    from abstractcore.tools.email_digests import send_email_digest
-
-    monkeypatch.setenv("DEFAULT_EMAIL_PASSWORD", "pw")
-    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_HOST", "smtp.example.com")
-    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PORT", "587")
-    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_STARTTLS", "1")
-    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_USERNAME", "me@example.com")
-    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR", "DEFAULT_EMAIL_PASSWORD")
-
-    smtp = MagicMock()
-    with patch("smtplib.SMTP", return_value=smtp) as smtp_ctor:
-        out = send_email_digest(
-            to="you@example.com",
-            subject="Digest",
-            title="Daily Digest",
-            sections=[{"title": "Inbox", "items": ["Item 1"]}],
-        )
-
-    assert out["success"] is True
-    smtp_ctor.assert_called_once()
-    smtp.send_message.assert_called_once()
+# send_email_digest end to end (connected account, recipient policy, send limits):
+# tests/email/test_email_store_cli_tools.py::test_send_email_digest_sends_from_the_account_through_the_policy

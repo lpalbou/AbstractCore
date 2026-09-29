@@ -15,6 +15,7 @@ through `abstractcore email ... --json`. Every route calls `EmailAccountStore` a
     PUT    /acore/email/registered-address   {address}
     POST   /acore/email/oauth/start          begin an OAuth2 sign-in (device code or loopback browser flow)
     POST   /acore/email/oauth/finish         {flow_id, wait_s}  complete it (pending until approved)
+    POST   /acore/email/oauth/cancel         {flow_id}          drop a pending sign-in (closes its listener)
 
 Every route needs the server principal (the same rule as the host routes): the email account
 is the install owner's.
@@ -29,6 +30,7 @@ from __future__ import annotations
 import secrets
 import threading
 import time
+from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Request
@@ -146,8 +148,8 @@ class OAuthStartBody(BaseModel):
 
     address: str
     provider: str = Field(..., description="google | microsoft | custom")
-    client_id: str
-    client_secret: str = Field("", description="Stored encrypted, never returned")
+    client_id: str = Field("", description="Your own OAuth client id; empty = the built-in AbstractFramework client when one is registered")
+    client_secret: str = Field("", description="Your own OAuth client secret; stored encrypted, never returned")
     tenant: str = ""
     flow: str = Field("", description="device | loopback (default: device for Microsoft, loopback for Google)")
     display_name: str = ""
@@ -158,6 +160,7 @@ class OAuthStartBody(BaseModel):
     device_authorization_endpoint: str = ""
     scopes: List[str] = Field(default_factory=list)
     registered_address: Optional[str] = None
+    ca_file: str = Field("", description="PEM file of a private CA, for the sign-in endpoints and for mail servers without their own ca_file")
 
 
 class OAuthFinishBody(BaseModel):
@@ -283,28 +286,48 @@ def _prune_flows() -> None:
 @router.post("/acore/email/oauth/start", summary="Begin an OAuth2 sign-in")
 async def email_oauth_start(body: OAuthStartBody, request: Request) -> Any:
     _principal(request)
-    from ..comms.email import EmailAccount, LoopbackAuthorization, OAuthSettings, OAuthTokenClient, provider_preset
+    from ..comms.email import (
+        EmailAccount,
+        EmailInvalidSettings,
+        LoopbackAuthorization,
+        OAuthSettings,
+        OAuthTokenClient,
+        provider_preset,
+        resolve_oauth_client,
+        tls_context,
+    )
 
     def run() -> Dict[str, Any]:
         _prune_flows()
         preset = provider_preset(body.provider, tenant=body.tenant) if body.provider != "custom" else {}
+        chosen = resolve_oauth_client(body.provider, body.client_id, body.client_secret)
         oauth = OAuthSettings.build(
-            body.provider, body.client_id, token_endpoint=body.token_endpoint,
+            body.provider, chosen["client_id"], client_source=chosen["source"], token_endpoint=body.token_endpoint,
             authorization_endpoint=body.authorization_endpoint,
             device_authorization_endpoint=body.device_authorization_endpoint,
             scopes=body.scopes or None, tenant=body.tenant,
         )
         imap, smtp = _servers(body.imap, body.smtp, preset)
+        if body.ca_file:
+            imap = replace(imap, ca_file=imap.ca_file or body.ca_file) if imap else None
+            smtp = replace(smtp, ca_file=smtp.ca_file or body.ca_file) if smtp else None
         account = EmailAccount.build(
             address=body.address, username=body.address, imap=imap, smtp=smtp,
             display_name=body.display_name, auth_kind="oauth2", oauth=oauth,
         )
-        client = OAuthTokenClient(oauth, client_secret=body.client_secret)
+        try:
+            verify = tls_context(body.ca_file) if body.ca_file else None
+        except (OSError, ValueError):
+            raise EmailInvalidSettings(
+                f"The CA file {body.ca_file!r} could not be loaded.",
+                "Give the path of a readable PEM file, or leave it empty to use the system trust store.",
+            ) from None
+        client = OAuthTokenClient(oauth, client_secret=chosen["client_secret"], verify=verify)
         flow_kind = body.flow or ("device" if oauth.provider == "microsoft" else "loopback")
         fid = secrets.token_urlsafe(16)
         entry: Dict[str, Any] = {
             "created": time.time(), "account": account, "client": client, "kind": flow_kind,
-            "client_secret": body.client_secret, "registered_address": body.registered_address,
+            "client_secret": chosen["client_secret"], "registered_address": body.registered_address,
         }
         if flow_kind == "device":
             device = client.start_device_authorization()
@@ -364,5 +387,25 @@ async def email_oauth_finish(body: OAuthFinishBody, request: Request) -> Any:
             expires_at=tokens.expires_at, client_secret=entry["client_secret"],
         )
         return {"ok": True, **_store().connect(entry["account"], secret, test=True, registered_address=entry["registered_address"])}
+
+    return await _call(run)
+
+
+class OAuthCancelBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"flow_id": "flow-id-from-start"}]})
+
+    flow_id: str
+
+
+@router.post("/acore/email/oauth/cancel", summary="Cancel a pending OAuth2 sign-in")
+async def email_oauth_cancel(body: OAuthCancelBody, request: Request) -> Any:
+    _principal(request)
+
+    def run() -> Dict[str, Any]:
+        with _FLOWS_LOCK:
+            entry = _FLOWS.pop(body.flow_id, None)
+        if entry is not None and entry.get("loopback") is not None:
+            entry["loopback"].close()
+        return {"ok": True, "cancelled": entry is not None}
 
     return await _call(run)

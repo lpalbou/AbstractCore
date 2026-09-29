@@ -8,9 +8,11 @@
 //! the recipient policy and send limits. This screen only renders the
 //! `email_settings_v1` document and builds argv.
 //!
-//! Verbs: `c` connect (Account form; Save and test), `t` Test, `o` Turn
-//! off / Turn on, `x` Disconnect (confirm), `p` Recipient policy, `l`
-//! Send limits. Every value is passed as `--flag=value`, so a password
+//! Verbs: `c` connect (Account form; Save and test), `g` Sign in with
+//! OAuth2 (Microsoft / Google; the device code or sign-in address shows
+//! while the command waits for the approval), `t` Test, `o` Turn off /
+//! Turn on, `x` Disconnect (confirm), `p` Recipient policy, `l` Send
+//! limits. Every value is passed as `--flag=value`, so a password
 //! or entry starting with `-` cannot be read as a flag.
 
 use abstracttui::prelude::*;
@@ -18,7 +20,7 @@ use abstracttui::widgets::{Block, Button};
 use serde_json::Value;
 
 use crate::store::Loadable;
-use crate::worker::{next_form_id, Cmd, EmailAction};
+use crate::worker::{cancel_email_oauth, next_form_id, Cmd, EmailAction};
 use crate::writes::Arg;
 
 use super::forms::{
@@ -30,6 +32,7 @@ use super::Ctx;
 /// The footer's verbs for this screen (same words as the web console).
 pub const HINTS: &[(&str, &str)] = &[
     ("c", "connect"),
+    ("g", "OAuth2 sign-in"),
     ("t", "test"),
     ("o", "turn on/off"),
     ("x", "disconnect"),
@@ -110,7 +113,24 @@ fn send_action(ctx: &Ctx, label: &str, args: Vec<Arg>, form_id: Option<u64>) {
         label: label.to_string(),
         args,
         form_id,
+        oauth: false,
     })));
+}
+
+/// The words of an `oauth_prompt` (what the person must do to sign in).
+pub fn oauth_prompt_text(p: &Value) -> String {
+    if s(p, "flow") == "device" {
+        format!(
+            "Open {} and enter the code {}",
+            s(p, "verification_uri"),
+            s(p, "user_code")
+        )
+    } else {
+        format!(
+            "Open this address in a browser on this machine (opened automatically): {}",
+            s(p, "authorization_url")
+        )
+    }
 }
 
 fn kv(t: &TokenSet, label: &str, value: String) -> View {
@@ -129,7 +149,8 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
             ensure_loaded(&ctx_load);
         });
     }
-    let (c_connect, c_test, c_toggle, c_disc, c_pol, c_lim) = (
+    let (c_connect, c_test, c_toggle, c_disc, c_pol, c_lim, c_oauth) = (
+        ctx.clone(),
         ctx.clone(),
         ctx.clone(),
         ctx.clone(),
@@ -146,7 +167,21 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                 t.info,
             )]),
             Loadable::Failed(e) => error_panel(&t, &e),
-            Loadable::Ready(doc) => render(&t, &doc),
+            Loadable::Ready(doc) => {
+                let prompt = store.email_oauth_prompt.get();
+                let page = render(&t, &doc);
+                match prompt {
+                    Some(p) => Element::new()
+                        .style(LayoutStyle::column())
+                        .child(line(vec![span_bold(
+                            format!(" Sign-in waiting: {}", oauth_prompt_text(&p)),
+                            t.info,
+                        )]))
+                        .child(page)
+                        .build(),
+                    None => page,
+                }
+            }
         }
     });
 
@@ -156,6 +191,9 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
         .autofocus()
         .shortcut(KeyChord::plain(Key::Char('c')), move |_| {
             open_connect_form(cx, &c_connect)
+        })
+        .shortcut(KeyChord::plain(Key::Char('g')), move |_| {
+            open_oauth_form(cx, &c_oauth)
         })
         .shortcut(KeyChord::plain(Key::Char('t')), move |_| {
             if configured(&c_test) {
@@ -578,6 +616,173 @@ fn open_connect_form(cx: Scope, ctx: &Ctx) {
                             .child(Button::new("Cancel").on_click({
                                 let close = close.clone();
                                 move || close()
+                            }).view(mcx))
+                            .build(),
+                    )
+                    .build(),
+            )
+            .element(&t)
+            .build()
+    });
+}
+
+const OAUTH_PROVIDERS: [&str; 2] = ["microsoft", "google"];
+const OAUTH_FLOWS: [&str; 3] = ["", "device", "loopback"];
+
+/// The OAuth2 sign-in form (`g`): the web console's "Sign in with
+/// OAuth2" card, field for field. Submitting runs `abstractcore email
+/// connect --oauth … --json`, which waits for the approval; the form
+/// stays open showing the device code or sign-in address (streamed from
+/// the command's `oauth_prompt` line) until it connects or fails.
+/// "Cancel sign-in" kills the command (nothing is stored).
+fn open_oauth_form(cx: Scope, ctx: &Ctx) {
+    let theme = use_theme(cx);
+    let ctx2 = ctx.clone();
+    let doc = ctx
+        .store
+        .email
+        .with_untracked(|e| e.ready().cloned())
+        .unwrap_or(Value::Null);
+    open_form_guarded(ctx, cx, Size::new(90, 16), move |mcx, close, guard| {
+        let t = theme.get().tokens;
+        let oauth = doc.get("oauth").cloned().unwrap_or(Value::Null);
+        let provider = mcx.signal(if s(&oauth, "provider") == "google" {
+            1usize
+        } else {
+            0
+        });
+        let address = mcx.signal(s(&doc, "address").to_string());
+        let own_client = s(&oauth, "client_source") != "builtin";
+        let client_id = mcx.signal(if own_client {
+            s(&oauth, "client_id").to_string()
+        } else {
+            String::new()
+        });
+        let client_secret = mcx.signal(String::new());
+        let tenant = mcx.signal(match s(&oauth, "tenant") {
+            "common" => String::new(),
+            other => other.to_string(),
+        });
+        let flow = mcx.signal(0usize);
+        let form_error: Signal<Option<String>> = mcx.signal(None);
+        let in_flight = mcx.signal(false);
+        let esc_armed = mcx.signal(false);
+        install_dirty_guard(
+            mcx,
+            &guard,
+            vec![
+                (address, address.get_untracked()),
+                (client_id, client_id.get_untracked()),
+                (client_secret, String::new()),
+                (tenant, tenant.get_untracked()),
+            ],
+            esc_armed,
+            form_error,
+        );
+        let form_id = next_form_id();
+        install_write_done(mcx, &ctx2, form_id, in_flight, form_error, close.clone());
+
+        let ctx3 = ctx2.clone();
+        let submit = move || {
+            if in_flight.get_untracked() {
+                return;
+            }
+            form_error.set(None);
+            let v = |sig: Signal<String>| sig.get_untracked().trim().to_string();
+            let addr = v(address);
+            if addr.is_empty() {
+                form_error.set(Some("Address is required".into()));
+                return;
+            }
+            let prov = OAUTH_PROVIDERS[provider.get_untracked().min(1)];
+            let mut args = vec![
+                Arg::p("connect"),
+                Arg::p(format!("--address={addr}")),
+                Arg::p(format!("--oauth={prov}")),
+            ];
+            if !v(client_id).is_empty() {
+                args.push(Arg::p(format!("--client-id={}", v(client_id))));
+            }
+            let secret = client_secret.get_untracked();
+            if !secret.is_empty() {
+                args.push(Arg::Secret(format!("--client-secret={secret}")));
+            }
+            if prov == "microsoft" && !v(tenant).is_empty() {
+                args.push(Arg::p(format!("--tenant={}", v(tenant))));
+            }
+            let f = OAUTH_FLOWS[flow.get_untracked().min(2)];
+            if !f.is_empty() {
+                args.push(Arg::p(format!("--oauth-flow={f}")));
+            }
+            in_flight.set(true);
+            ctx3.send(Cmd::Email(Box::new(EmailAction {
+                label: "email OAuth2 sign-in".to_string(),
+                args,
+                form_id: Some(form_id),
+                oauth: true,
+            })));
+        };
+        let store = ctx2.store;
+        let prompt_line = dyn_view(LayoutStyle::line(1).shrink(0.0), move || {
+            let t = theme.get().tokens;
+            match store.email_oauth_prompt.get() {
+                Some(p) if in_flight.get() => line(vec![span_bold(
+                    format!("  {}", oauth_prompt_text(&p)),
+                    t.info,
+                )]),
+                _ if in_flight.get() => line(vec![span("  starting the sign-in…", t.info)]),
+                _ => line(vec![span(String::new(), t.text)]),
+            }
+        });
+        Block::new()
+            .title("Sign in with OAuth2")
+            .layout(LayoutStyle::column().grow(1.0))
+            .child(
+                Element::new()
+                    .style(LayoutStyle::column().gap(0))
+                    .child(field(
+                        &t,
+                        "Provider",
+                        Select::new(vec![
+                            SelectOption::new("Microsoft (Outlook, Microsoft 365)"),
+                            SelectOption::new("Google (Gmail)"),
+                        ])
+                        .value(provider)
+                        .view(mcx),
+                    ))
+                    .child(text_row(mcx, &t, "Address", address, "me@outlook.com", false))
+                    .child(text_row(mcx, &t, "Client id", client_id, "(built-in client)", false))
+                    .child(text_row(mcx, &t, "Client secret", client_secret, "(none)", true))
+                    .child(text_row(mcx, &t, "Tenant", tenant, "common (Microsoft only)", false))
+                    .child(field(
+                        &t,
+                        "Sign-in flow",
+                        Select::new(vec![
+                            SelectOption::new("provider default"),
+                            SelectOption::new("device code"),
+                            SelectOption::new("browser on this machine"),
+                        ])
+                        .value(flow)
+                        .view(mcx),
+                    ))
+                    .child(line(vec![span(
+                        "  No client id = the built-in AbstractFramework client, when registered; else your own client. Tokens are stored encrypted.",
+                        t.text_faint,
+                    )]))
+                    .child(prompt_line)
+                    .child(message_slot(theme, form_error, in_flight))
+                    .child(
+                        Element::new()
+                            .style(LayoutStyle::row().gap(2).shrink(0.0))
+                            .child(Button::new("Start sign-in").on_click(submit).view(mcx))
+                            .child(Button::new("Cancel sign-in").on_click({
+                                let close = close.clone();
+                                move || {
+                                    if in_flight.get_untracked() {
+                                        cancel_email_oauth();
+                                    }
+                                    close()
+                                }
                             }).view(mcx))
                             .build(),
                     )

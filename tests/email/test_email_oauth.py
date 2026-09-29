@@ -199,3 +199,152 @@ def test_stored_oauth_account_refreshes_and_persists_rotation_through_the_store(
     assert ctx.client().test_imap()["ok"] is True
     sealed = EmailSecret.from_sealed_payload(store.vault.load())
     assert sealed.refresh_token != first and sealed.refresh_token in oauth_server.refresh_tokens
+
+
+# ------------------------------------------------------------------ OAuth clients: built-in / own
+
+
+def test_oauth_client_is_own_when_given_else_builtin_else_a_typed_error(monkeypatch) -> None:
+    from abstractcore.comms.email import oauth as oauth_mod
+    from abstractcore.comms.email import resolve_oauth_client
+
+    monkeypatch.setattr(oauth_mod, "BUILTIN_CLIENTS", {})
+    assert resolve_oauth_client("google", "mine", "s3") == {"client_id": "mine", "client_secret": "s3", "source": "own"}
+    with pytest.raises(EmailInvalidSettings) as info:
+        resolve_oauth_client("google")
+    assert "No built-in AbstractFramework OAuth client is registered for Google" in info.value.cause
+    assert "--client-id <value> --client-secret <value>" in info.value.fix
+    with pytest.raises(EmailInvalidSettings):
+        resolve_oauth_client("microsoft", "", "a-secret-without-an-id")
+    with pytest.raises(EmailInvalidSettings):
+        resolve_oauth_client("custom")  # a custom provider never has a built-in client
+    monkeypatch.setattr(oauth_mod, "BUILTIN_CLIENTS", {"microsoft": {"client_id": "af-builtin", "client_secret": ""}})
+    assert resolve_oauth_client("microsoft") == {"client_id": "af-builtin", "client_secret": "", "source": "builtin"}
+    assert resolve_oauth_client("microsoft", "mine")["source"] == "own"  # bring your own wins
+    with pytest.raises(EmailInvalidSettings):
+        resolve_oauth_client("google")  # only the registered provider has one
+
+
+def test_cli_oauth_without_any_client_stops_before_the_network(config_file, capsys, monkeypatch) -> None:
+    from abstractcore.comms.email import oauth as oauth_mod
+    from abstractcore.config.email_cli import handle_email
+
+    monkeypatch.setattr(oauth_mod, "BUILTIN_CLIENTS", {})
+    code = handle_email(["connect", "--address", ME, "--oauth", "google", "--json"])
+    out = capsys.readouterr()
+    assert code == 1
+    err = json.loads(out.out)["error"]
+    assert err["code"] == "email_invalid_settings" and "--client-id" in err["fix"]
+    assert not config_file.exists()
+
+
+def test_cli_builtin_client_device_flow_prints_one_json_prompt_line(imap, smtp, ca, oauth_server, config_file, capsys, monkeypatch) -> None:
+    from abstractcore.comms.email import oauth as oauth_mod
+    from abstractcore.config.email_cli import handle_email
+
+    monkeypatch.setattr(
+        oauth_mod, "BUILTIN_CLIENTS", {"microsoft": {"client_id": oauth_server.client_id, "client_secret": oauth_server.client_secret}}
+    )
+
+    def approve_soon() -> None:
+        for _ in range(100):
+            if oauth_server.devices:
+                oauth_server.approve_all_devices()
+                return
+            time.sleep(0.05)
+
+    threading.Thread(target=approve_soon, daemon=True).start()
+    code = handle_email([
+        "connect", "--address", ME, "--oauth", "microsoft",  # no --client-id: the built-in client
+        "--token-endpoint", f"{oauth_server.base_url}/token", "--device-endpoint", f"{oauth_server.base_url}/device",
+        "--imap-host", "localhost", "--imap-port", str(imap.port), "--imap-security", "ssl",
+        "--smtp-host", "localhost", "--smtp-port", str(smtp.port), "--smtp-security", "starttls",
+        "--ca-file", str(ca.ca_pem), "--json",
+    ])
+    out = capsys.readouterr()
+    assert code == 0, out
+    prompts = [json.loads(line)["oauth_prompt"] for line in out.err.splitlines() if line.startswith("{")]
+    assert len(prompts) == 1 and prompts[0]["flow"] == "device" and prompts[0]["user_code"] == "WDJB-MJHT"
+    assert "device_code" not in prompts[0]  # the device code itself stays private
+    doc = json.loads(out.out)
+    assert doc["oauth"]["client_source"] == "builtin" and doc["oauth"]["provider"] == "microsoft"
+    assert {r["client_id"] for r in oauth_server.requests} == {oauth_server.client_id}
+    blob = config_file.read_text() + "".join(p.read_text(errors="replace") for p in (config_file.parent / "email").iterdir())
+    assert oauth_server.client_secret not in blob
+
+
+# ------------------------------------------------------------------ HTTP (/acore/email/oauth/*)
+
+
+@pytest.fixture
+def http(config_file, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from abstractcore.server import app as server_app
+    from abstractcore.server.email_routes import router
+
+    monkeypatch.setattr(server_app, "_server_auth_enabled", lambda: False)
+    monkeypatch.setattr(server_app, "_server_allows_unauthenticated", lambda: True)
+    app = FastAPI()
+    app.include_router(router)
+    return TestClient(app)
+
+
+def _oauth_body(imap, smtp, ca, oauth_server, **kw):
+    body = {
+        "address": ME, "provider": "custom", "client_id": oauth_server.client_id,
+        "client_secret": oauth_server.client_secret, "flow": "device",
+        "token_endpoint": f"{oauth_server.base_url}/token", "device_authorization_endpoint": f"{oauth_server.base_url}/device",
+        "authorization_endpoint": f"{oauth_server.base_url}/authorize", "scopes": ["mail"],
+        "imap": {"host": "localhost", "port": imap.port, "security": "ssl"},
+        "smtp": {"host": "localhost", "port": smtp.port, "security": "starttls"},
+        "ca_file": str(ca.ca_pem),
+    }
+    body.update(kw)
+    return body
+
+
+def test_http_device_sign_in_is_pending_until_approved_then_connects(http, imap, smtp, ca, oauth_server, config_file) -> None:
+    start = http.post("/acore/email/oauth/start", json=_oauth_body(imap, smtp, ca, oauth_server))
+    assert start.status_code == 200, start.text
+    doc = start.json()
+    assert doc["flow"] == "device" and doc["user_code"] == "WDJB-MJHT" and "device_code" not in doc
+    pending = http.post("/acore/email/oauth/finish", json={"flow_id": doc["flow_id"], "wait_s": 0})
+    assert pending.json() == {"ok": False, "pending": True, "flow_id": doc["flow_id"]}
+    oauth_server.approve_all_devices()
+    done = http.post("/acore/email/oauth/finish", json={"flow_id": doc["flow_id"], "wait_s": 10})
+    assert done.status_code == 200, done.text
+    out = done.json()
+    assert out["ok"] and out["auth_kind"] == "oauth2" and out["status"]["legs"]["imap"]["ok"] is True
+    assert out["oauth"]["client_source"] == "own"
+    for text in (start.text, pending.text, done.text):
+        assert oauth_server.client_secret not in text and "rt-" not in text and "at-" not in text
+    again = http.post("/acore/email/oauth/finish", json={"flow_id": doc["flow_id"], "wait_s": 0})
+    assert again.status_code == 422 and again.json()["error"]["code"] == "email_oauth_failed"  # one use
+
+
+def test_http_cancel_drops_the_flow_and_closes_the_loopback_listener(http, imap, smtp, ca, oauth_server) -> None:
+    import urllib.error
+
+    start = http.post("/acore/email/oauth/start", json=_oauth_body(imap, smtp, ca, oauth_server, flow="loopback"))
+    assert start.status_code == 200, start.text
+    doc = start.json()
+    assert "code_challenge_method=S256" in doc["authorization_url"]
+    redirect = oauth_server.authorize(doc["authorization_url"], ME)
+    cancel = http.post("/acore/email/oauth/cancel", json={"flow_id": doc["flow_id"]})
+    assert cancel.json() == {"ok": True, "cancelled": True}
+    with pytest.raises((urllib.error.URLError, ConnectionError, OSError)):
+        urllib.request.urlopen(redirect, timeout=2).read()  # nothing listens any more
+    gone = http.post("/acore/email/oauth/finish", json={"flow_id": doc["flow_id"], "wait_s": 0})
+    assert gone.status_code == 422
+    assert [r["grant_type"] for r in oauth_server.requests if r.get("grant_type")] == []  # no code was exchanged
+
+
+def test_http_sign_in_without_any_client_is_a_400_before_the_network(http, monkeypatch) -> None:
+    from abstractcore.comms.email import oauth as oauth_mod
+
+    monkeypatch.setattr(oauth_mod, "BUILTIN_CLIENTS", {})
+    r = http.post("/acore/email/oauth/start", json={"address": ME, "provider": "microsoft"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "email_invalid_settings"
+    assert "--client-id" in r.json()["error"]["fix"]

@@ -10,7 +10,7 @@
 //! so a screen cannot forget the verification (the CLI's own success
 //! signals lie; docs/backlog/proposed/0001_write_lane_design.md).
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
@@ -81,6 +81,19 @@ pub struct EmailAction {
     pub args: Vec<Arg>,
     /// The form to close on success (None for key verbs).
     pub form_id: Option<u64>,
+    /// An OAuth2 sign-in (`connect --oauth …`): the command waits for a
+    /// person, streams its `oauth_prompt` into `store.email_oauth_prompt`
+    /// and can be cancelled (`cancel_email_oauth`).
+    pub oauth: bool,
+}
+
+/// Set by `cancel_email_oauth`; the running OAuth sign-in is killed.
+static EMAIL_OAUTH_CANCEL: AtomicBool = AtomicBool::new(false);
+
+/// Cancel the OAuth2 sign-in in flight (the UI thread calls this; the
+/// worker kills the command within 25 ms and nothing is stored).
+pub fn cancel_email_oauth() {
+    EMAIL_OAUTH_CANCEL.store(true, Ordering::SeqCst);
 }
 
 /// Reads are Python-startup-bound (~1.5s observed); 30s is a hung
@@ -102,6 +115,9 @@ const REACH_TIMEOUT: Duration = Duration::from_millis(1500);
 /// An email verb may sign in to IMAP and SMTP (30 s connect timeout
 /// each) before it answers.
 const EMAIL_TIMEOUT: Duration = Duration::from_secs(150);
+/// An OAuth2 sign-in waits for a person to approve it (a device code
+/// lives 15 minutes), then tests both legs.
+const EMAIL_OAUTH_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 /// Form-completion sink (constructed in lib.rs over the UI signal).
 pub type DoneSink = Box<dyn Fn(u64, Result<String, String>) + Send>;
@@ -300,7 +316,25 @@ fn handle_email(
             .collect::<Vec<_>>()
             .join(" ")
     );
-    let outcome = cli.run_email(&argv, &redacted, EMAIL_TIMEOUT);
+    let outcome = if action.oauth {
+        EMAIL_OAUTH_CANCEL.store(false, Ordering::SeqCst);
+        let (store_p, wake_p) = (*store, wake.clone());
+        let on_prompt: Box<dyn Fn(Value) + Send> = Box::new(move |p: Value| {
+            wake_p.post(move || store_p.email_oauth_prompt.set(Some(p)));
+        });
+        let out = cli.run_email_streaming(
+            &argv,
+            &redacted,
+            EMAIL_OAUTH_TIMEOUT,
+            on_prompt,
+            &EMAIL_OAUTH_CANCEL,
+        );
+        let store_c = *store;
+        wake.post(move || store_c.email_oauth_prompt.set(None));
+        out
+    } else {
+        cli.run_email(&argv, &redacted, EMAIL_TIMEOUT)
+    };
     let (notice, journal) = match &outcome {
         Ok(_) => (format!("{}: done", action.label), Ok("ok".to_string())),
         Err(e) => (

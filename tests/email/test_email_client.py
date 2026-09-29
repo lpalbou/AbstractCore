@@ -280,6 +280,33 @@ def test_incremental_fetch_baseline_new_mail_and_uidvalidity_reset(imap, ca) -> 
     assert "new one" in [m.subject for m in reset.messages]
 
 
+def test_uidvalidity_resync_keeps_a_message_near_midnight_in_any_time_zone(imap, ca, monkeypatch) -> None:
+    """The resync searches SINCE by date; IMAP compares dates in the server's zone, so a
+    message stored at 23:30 UTC must come back for a client whose local date is already the
+    next day (the bug: a local-time cursor date one day after the server's)."""
+
+    import datetime as dt
+    import time as time_mod
+
+    monkeypatch.setenv("TZ", "Asia/Tokyo")  # UTC+9: 23:30 UTC is 08:30 the next day here
+    time_mod.tzset()
+    try:
+        seed_inbox(imap)
+        c = client(imap, None, ca)
+        base = c.fetch_new(None)
+        late = dt.datetime(2026, 1, 10, 23, 30, tzinfo=dt.timezone.utc)
+        imap.add_message("INBOX", build_message(from_="d@example.test", to=ME, subject="late one"), internaldate=late)
+        step = c.fetch_new(base.cursor)
+        assert [m.subject for m in step.messages] == ["late one"]
+        assert dt.datetime.fromisoformat(step.cursor.last_internaldate) == late  # the instant, with its offset
+        imap.reset_uidvalidity("INBOX")
+        reset = c.fetch_new(step.cursor)
+        assert reset.reset and "late one" in [m.subject for m in reset.messages]
+    finally:
+        monkeypatch.delenv("TZ")
+        time_mod.tzset()
+
+
 # ------------------------------------------------------------------ sending
 
 

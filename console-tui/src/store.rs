@@ -1029,6 +1029,10 @@ pub struct Store {
     /// schema `email_settings_v1`): account, policy, limits, status.
     /// Never carries a secret (the CLI never prints one).
     pub email: Signal<Loadable<Value>>,
+    /// The sign-in prompt of the OAuth2 connect in flight (`{"flow":
+    /// "device", "user_code", "verification_uri", …}` or `{"flow":
+    /// "loopback", "authorization_url", …}`); None when none waits.
+    pub email_oauth_prompt: Signal<Option<Value>>,
 }
 
 impl Store {
@@ -1048,6 +1052,7 @@ impl Store {
             tests: cx.signal(Vec::new()),
             probe_busy: cx.signal(false),
             email: cx.signal(Loadable::default()),
+            email_oauth_prompt: cx.signal(None),
         }
     }
 
@@ -1057,13 +1062,14 @@ impl Store {
     /// sibling console's stale-domain P1 class, made structural).
     pub fn reset_domains(&self) {
         let Store {
-            cli: _,        // resolution survives: same process, same env
-            journal: _,    // session audit
-            busy: _,       // transient op bookkeeping
-            tick: _,       // clock
-            notice: _,     // transient toast
-            tests: _,      // dated live-provider evidence, not file state
-            probe_busy: _, // owned by the worker's probe lifecycle
+            cli: _,                // resolution survives: same process, same env
+            journal: _,            // session audit
+            busy: _,               // transient op bookkeeping
+            tick: _,               // clock
+            notice: _,             // transient toast
+            tests: _,              // dated live-provider evidence, not file state
+            probe_busy: _,         // owned by the worker's probe lifecycle
+            email_oauth_prompt: _, // owned by the worker's sign-in in flight
             cfg,
             routes,
             profiles,

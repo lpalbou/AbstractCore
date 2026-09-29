@@ -86,6 +86,26 @@ def no_legacy_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_external_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """OAuth HTTP may only reach the local fake: a request to any other host fails the test
+    (the Google / Microsoft presets carry real endpoints; they are never contacted)."""
+
+    import urllib.parse
+
+    import httpx
+
+    real_send = httpx.Client.send
+
+    def guarded_send(self, request, *args, **kwargs):
+        host = urllib.parse.urlsplit(str(request.url)).hostname or ""
+        if host not in {"localhost", "127.0.0.1", "testserver"}:  # testserver: FastAPI TestClient, in process
+            raise AssertionError(f"a test tried to reach {host!r}; email tests stay on localhost")
+        return real_send(self, request, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "send", guarded_send)
+
+
+@pytest.fixture(autouse=True)
 def reset_tool_resolver() -> Iterator[None]:
     from abstractcore.tools import comms_tools
 

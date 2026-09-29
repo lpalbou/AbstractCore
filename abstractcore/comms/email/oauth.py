@@ -74,6 +74,57 @@ _PRESETS: Dict[str, Dict[str, Any]] = {
 }
 
 
+# The AbstractFramework OAuth clients registered with each provider (operator decision
+# 2026-09-29: a built-in client AND bring-your-own). A built-in client is an "installed
+# application" client (RFC 8252): its id is public and its secret, where the provider issues
+# one, is not a confidential credential. The table stays empty until the registrations exist
+# (Google: an OAuth client for the restricted Gmail scope; Microsoft: a multi-tenant Entra app
+# with publisher verification); until then every OAuth sign-in brings its own client
+# (`--client-id <value> --client-secret <value>`, or the gateway's admin setting).
+BUILTIN_CLIENTS: Dict[str, Dict[str, str]] = {}
+
+
+def builtin_client(provider: str) -> Optional[Dict[str, str]]:
+    """The built-in client `{client_id, client_secret}` of a provider, or None."""
+
+    entry = BUILTIN_CLIENTS.get(str(provider or "").strip().lower())
+    if not entry or not str(entry.get("client_id") or "").strip():
+        return None
+    return {"client_id": str(entry["client_id"]).strip(), "client_secret": str(entry.get("client_secret") or "")}
+
+
+def resolve_oauth_client(provider: str, client_id: str = "", client_secret: str = "") -> Dict[str, str]:
+    """Which OAuth client signs in: `{client_id, client_secret, source}`.
+
+    A given client id is used as is (`source: "own"`, bring your own client). Without one,
+    the built-in AbstractFramework client of a known provider (`source: "builtin"`). Without
+    either, a typed error that names both ways forward.
+    """
+
+    prov = str(provider or "").strip().lower()
+    cid = str(client_id or "").strip()
+    if cid:
+        return {"client_id": cid, "client_secret": str(client_secret or ""), "source": "own"}
+    if str(client_secret or "").strip():
+        raise EmailInvalidSettings(
+            "An OAuth client secret was given without its client id.",
+            "Give both --client-id <value> and --client-secret <value> of your OAuth client.",
+        )
+    builtin = builtin_client(prov) if prov in _PRESETS else None
+    if builtin is not None:
+        return {**builtin, "source": "builtin"}
+    label = {"google": "Google", "microsoft": "Microsoft"}.get(prov, prov or "this provider")
+    if prov in _PRESETS:
+        cause = f"No built-in AbstractFramework OAuth client is registered for {label} in this version."
+    else:
+        cause = f"A custom OAuth provider needs the client id of an OAuth client registered with {label}."
+    raise EmailInvalidSettings(
+        cause,
+        f"Bring your own OAuth client registered with {label} for the mail scopes: --client-id <value> "
+        "--client-secret <value> (or sign in with an app password instead).",
+    )
+
+
 def provider_preset(name: str, *, tenant: str = "") -> Dict[str, Any]:
     """Endpoints, scopes and mail hosts of a known provider (a copy; `{}` for unknown)."""
 

@@ -197,6 +197,18 @@ def test_send_email_enforces_policy_on_to_cc_bcc_and_sends_nothing(imap, smtp, c
     assert "smtp" not in ok and PASSWORD not in json.dumps(ok)
 
 
+def test_send_email_digest_sends_from_the_account_through_the_policy(imap, smtp, ca, config_file) -> None:
+    from abstractcore.tools.email_digests import send_email_digest
+
+    EmailAccountStore(config_file).connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
+    kwargs = dict(subject="Digest", title="Daily Digest", sections=[{"title": "Inbox", "items": ["Item 1"]}])
+    refused = send_email_digest(to="someone@elsewhere.test", **kwargs)
+    assert refused["success"] is False and refused["error_code"] == "email_policy_refused"
+    assert smtp.messages == []
+    out = send_email_digest(to=ME, **kwargs)
+    assert out["success"] is True and out["from"] == ME and len(smtp.messages) == 1
+
+
 def test_send_limits_are_enforced_and_failed_sends_do_not_count(imap, smtp, ca, config_file) -> None:
     store = EmailAccountStore(config_file)
     store.connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))

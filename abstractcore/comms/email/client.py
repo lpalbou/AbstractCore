@@ -28,7 +28,8 @@ import os
 import smtplib
 import ssl
 from contextlib import contextmanager
-from datetime import datetime
+import time
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage, Message
 from email.utils import format_datetime, formataddr, getaddresses, make_msgid, parsedate_to_datetime
 from pathlib import Path
@@ -218,7 +219,9 @@ def _internaldate_iso(value: Any) -> str:
     if not tt:
         return ""
     try:
-        return datetime(*tt[:6]).isoformat()
+        # Internaldate2tuple answers in local time; store UTC with its offset so the value
+        # means the same instant on every host.
+        return datetime.fromtimestamp(time.mktime(tt), tz=timezone.utc).isoformat()
     except Exception:
         return ""
 
@@ -830,8 +833,8 @@ class EmailClient:
         - No cursor: a baseline — no messages, the cursor at the newest message (a watcher
           only sees mail that arrives after it starts).
         - UIDVALIDITY changed (the server rebuilt the folder): `reset=True`, the messages whose
-          INTERNALDATE day is on/after the cursor's `last_internaldate` (callers dedupe by
-          Message-ID), and a cursor in the new epoch.
+          INTERNALDATE day is on/after the day before the cursor's `last_internaldate`
+          (callers dedupe by Message-ID), and a cursor in the new epoch.
         - Otherwise: UID > last_uid. The cursor advances to the last message RETURNED, so a
           caller that stops early re-reads the rest next time.
         """
@@ -852,7 +855,9 @@ class EmailClient:
             if reset:
                 if cursor.last_internaldate:
                     try:
-                        day = datetime.fromisoformat(cursor.last_internaldate).date()
+                        # IMAP SINCE compares dates in the server's own time zone: start one
+                        # day earlier so no message of that day is missed (callers dedupe).
+                        day = datetime.fromisoformat(cursor.last_internaldate).date() - timedelta(days=1)
                         uids = self._uid_search(conn, ["SINCE", imap_date(day)])
                     except ValueError:
                         uids = []

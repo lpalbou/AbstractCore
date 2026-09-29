@@ -5195,3 +5195,93 @@ fn email_policy_and_limits_forms_write_through_the_cli() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn email_oauth_form_streams_the_prompt_and_redacts_the_client_secret() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.store.email.set(Loadable::Ready(email_doc(false)));
+    h.goto_screen(ui::SCREEN_EMAIL);
+    h.drain_cmds();
+    h.key(b"g");
+    let s = h.turns(2);
+    for label in [
+        "Sign in with OAuth2",
+        "Provider",
+        "Address",
+        "Client id",
+        "Client secret",
+        "Tenant",
+        "Sign-in flow",
+        "Start sign-in",
+        "Cancel sign-in",
+    ] {
+        assert!(
+            s.contains(label),
+            "the form carries the web console's field {label:?}:\n{s}"
+        );
+    }
+    h.key(b"\t"); // provider (Microsoft) -> address
+    h.turn();
+    h.type_text("me@example.test");
+    h.turns(1);
+    h.key(b"\t");
+    h.turn();
+    h.type_text("my-client-id");
+    h.turns(1);
+    h.key(b"\t");
+    h.turn();
+    h.type_text("-client-Secret-77");
+    h.turns(1);
+    for _ in 0..3 {
+        h.key(b"\t"); // tenant -> flow -> Start sign-in
+        h.turn();
+    }
+    h.type_text("\r");
+    let s = h.turns(2);
+    assert!(
+        !s.contains("client-Secret-77"),
+        "the client secret is masked on screen:\n{s}"
+    );
+    let cmds = h.drain_cmds();
+    let oauth_flags: Vec<bool> = cmds
+        .iter()
+        .filter_map(|c| match c {
+            Cmd::Email(a) => Some(a.oauth),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(oauth_flags, vec![true], "one streaming OAuth action");
+    let acts = email_actions(cmds);
+    let [(label, args, debug)] = acts.as_slice() else {
+        panic!("expected one email action, got {acts:?}")
+    };
+    assert_eq!(label, "email OAuth2 sign-in");
+    assert_eq!(
+        args,
+        &[
+            "connect",
+            "--address=me@example.test",
+            "--oauth=microsoft",
+            "--client-id=my-client-id",
+            "--client-secret=-client-Secret-77",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+    );
+    assert!(
+        !debug.contains("Secret-77"),
+        "Debug of the command redacts the client secret: {debug}"
+    );
+    // The worker streams the command's oauth_prompt: the form shows it.
+    h.store.email_oauth_prompt.set(Some(json!({
+        "flow": "device", "user_code": "WDJB-MJHT",
+        "verification_uri": "https://example.test/device", "expires_at": 0,
+    })));
+    let s = h.turns(2);
+    assert!(
+        s.contains("Open https://example.test/device and enter the code WDJB-MJHT"),
+        "the device code shows while the sign-in waits:\n{s}"
+    );
+}
