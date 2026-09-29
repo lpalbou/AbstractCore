@@ -21,7 +21,12 @@ Email becomes a configured, encrypted, policy-bound account (target 2.20.0).
 - Credentials encrypted at rest (AES-256-GCM, key in the OS keychain; a 0600 key file on hosts
   without one, reported by `status`).
 - OAuth2 sign-in for Google and Microsoft (XOAUTH2 on IMAP and SMTP, token refresh and rotation,
-  device-code and browser flows, custom providers).
+  device-code and browser flows, custom providers) with your own OAuth client or the built-in
+  AbstractFramework client when one is registered for the provider (`BUILTIN_CLIENTS`,
+  `resolve_oauth_client`; settings record `client_source`). Available from the CLI (`--oauth
+  google|microsoft --client-id <value> --client-secret <value>`; with `--json` the sign-in prompt
+  is one stderr line `{"oauth_prompt": ...}`), `/acore/email/oauth/start|finish|cancel`, the web
+  console (**Sign in with OAuth2**) and the terminal console (`g`).
 - Recipient policy (`allowlist` / `denylist` of exact addresses and domains over To, Cc and Bcc;
   any refused recipient refuses the whole message with the addresses and rule named). A new account
   starts with an allowlist holding the registered address.

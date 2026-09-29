@@ -8012,13 +8012,20 @@ or `disconnect` without `--yes`).
 
 ### OAuth2 (Google, Microsoft)
 
-Instead of a password you can sign in with OAuth2. You need an OAuth client registered with the
-provider (a Google Cloud OAuth client with the Gmail scope, a Microsoft Entra app with the IMAP and
-SMTP scopes):
+Instead of a password you can sign in with OAuth2. The sign-in uses an OAuth client registered
+with the provider:
+
+- **Your own client** (bring your own): a Google Cloud OAuth client with the Gmail scope, or a
+  Microsoft Entra app with the IMAP and SMTP scopes. Pass `--client-id <value>` (and
+  `--client-secret <value>` when the provider issued one).
+- **The built-in AbstractFramework client**: used when you omit `--client-id` and this version
+  ships a registered client for the provider (`abstractcore.comms.email.BUILTIN_CLIENTS`). When
+  none is registered, the command stops before contacting the provider and asks for your own
+  client. `status` shows which client signed in (`client_source`: `own` or `builtin`).
 
 ```bash
-# Microsoft: device code (prints a URL and a code to enter)
-abstractcore email connect --address me@outlook.com --oauth microsoft --client-id <value>
+# Microsoft: device code (prints a URL and a code to enter, from any browser on any machine)
+abstractcore email connect --address me@outlook.com --oauth microsoft --client-id <value> --client-secret <value>
 
 # Google: a browser on this machine (a one-shot listener on 127.0.0.1 receives the sign-in)
 abstractcore email connect --address me@gmail.com --oauth google --client-id <value> --client-secret <value>
@@ -8030,6 +8037,20 @@ and scopes; `--tenant` selects a Microsoft tenant; `--oauth custom` takes explic
 `--token-endpoint`, `--authorization-endpoint`, `--device-endpoint` and `--scope`. The refresh
 token and client secret are sealed like a password; access tokens are refreshed before they expire.
 When the provider revokes the grant, the error says to sign in again.
+
+With `--json`, stdout carries only the result document; while the command waits for your approval
+it prints the sign-in prompt to stderr as one JSON line, which the terminal console displays:
+
+```json
+{"oauth_prompt": {"flow": "device", "user_code": "WDJB-MJHT", "verification_uri": "https://...", "verification_uri_complete": "", "expires_at": 1790000000.0}}
+{"oauth_prompt": {"flow": "loopback", "authorization_url": "https://...", "expires_at": 1790000000.0}}
+```
+
+The web console (**Sign in with OAuth2** on the Email tab) and the terminal console (`g` on the
+Email screen) offer the same sign-in with the same fields: provider, address, client id, client
+secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
+AbstractCore, so open its sign-in page in a browser on that machine; the device-code flow works
+from any browser.
 
 ## Recipient policy
 
@@ -24587,7 +24608,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Email | PUT | `/acore/email/limits` | Set the send limits | JSON `per_hour`, `per_day` |
 | Email | PUT | `/acore/email/enabled` | Turn email on or off | JSON `enabled` |
 | Email | PUT | `/acore/email/registered-address` | Set your own address (the default allowlist entry) | JSON `address` |
-| Email | POST | `/acore/email/oauth/start`, `/acore/email/oauth/finish` | OAuth2 sign-in (device code or browser on this machine), then connect | JSON `address`, `provider`, `client_id`, optional `client_secret`, `flow`, `tenant`; then `flow_id` |
+| Email | POST | `/acore/email/oauth/start`, `/acore/email/oauth/finish` | OAuth2 sign-in (device code or browser on the server's machine), then connect; `finish` answers `{pending: true}` until the sign-in is approved and a flow is used once | JSON `address`, `provider`, optional `client_id` (empty = the built-in client when registered), `client_secret`, `flow`, `tenant`, `ca_file`; then `flow_id`, `wait_s` (at most 60) |
+| Email | POST | `/acore/email/oauth/cancel` | Drop a pending OAuth2 sign-in (closes its loopback listener) | JSON `flow_id` |
 | Models & engines | GET | `/acore/host/profile` | Host profile: accelerator, memory ceiling, free memory, disk per model store (see [Local Models](docs/models.md)) | optional `refresh` |
 | Models & engines | GET | `/acore/models/catalog` | Downloadable model catalog with presence and fit verdicts | `q`, `engine`, `fits`, `hub`, `tag` |
 | Models & engines | GET | `/acore/models/installed` | Installed models per engine, with sizes and delete blockers | optional `provider` |
@@ -26817,7 +26839,7 @@ fresh one. The server landing page (`/`) links to the console as well.
 | **Overview** | This machine: OS, architecture, accelerator, RAM or unified memory, the usable model-memory ceiling and its source, free memory now, free disk for each model cache, Python version. An engines summary and server health (version, whether a bearer token is required). | Jump to Models or Engines. | `abstractcore host profile --json`, `abstractcore engines status --probe` |
 | **Models** | The model catalog, one row per downloadable artifact (provider, artifact id, quantization, download size, weights status, fit badge), the models already installed with their sizes, and any running jobs with progress bars. | Search, filter, Download, Delete, Cancel a job. | `abstractcore models search <q> --engine <id> --fits`, `abstractcore models download`, `abstractcore models delete`, `abstractcore models list` |
 | **Engines** | Each engine (Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face): supported on this host, installed and version, running and reachable, base URL, model count. | Install (with confirmation), Open download page, Refresh (live probe). | `abstractcore engines status --probe`, `abstractcore engines install <id>`, `abstractcore engines open <id>` |
-| **Email** | The connected account (address, IMAP/SMTP servers, credentials storage), the last connection test with its cause and fix, the recipient policy and the send limits with their usage. | Save and test an account, Test, Turn off / Turn on, Disconnect (inline confirmation), edit the recipient policy (mode, entries, Check a recipient), set the send limits. See [Email](docs/email.md). | `abstractcore email status`, `abstractcore email connect`, `abstractcore email policy set`, `abstractcore email limits set` |
+| **Email** | The connected account (address, IMAP/SMTP servers, credentials storage), the last connection test with its cause and fix, the recipient policy and the send limits with their usage. | Save and test an account, Sign in with OAuth2 (Microsoft or Google; device code or sign-in link, Cancel sign-in), Test, Turn off / Turn on, Disconnect (inline confirmation), edit the recipient policy (mode, entries, Check a recipient), set the send limits. See [Email](docs/email.md). | `abstractcore email status`, `abstractcore email connect`, `abstractcore email policy set`, `abstractcore email limits set` |
 | **Providers** | Read-only list of providers (`GET /providers`) and the configured capability defaults (`GET /v1/config/capability-defaults`). | Nothing to edit here. | `abstractcore config providers --probe`, `abstractcore config defaults` |
 
 API keys and default models are configured on the host with `abstractcore --config`; the console
@@ -27018,7 +27040,7 @@ CLI for everything derived or written. It finds the CLI through
 | 8 | Review | the file identity and test evidence |
 | 9 | **Models** | the model catalog fitted to this host (see the keys below) |
 | 0 | **Engines** | Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face (see the keys below) |
-| @ | **Email** | the email account, its last test, recipient policy and send limits: `c` connect (Save and test), `t` test, `o` turn off/on, `x` disconnect, `p` recipient policy, `l` send limits — the web console's Email tab, same fields and words (see [Email](docs/email.md)) |
+| @ | **Email** | the email account, its last test, recipient policy and send limits: `c` connect (Save and test), `g` OAuth2 sign-in (the device code or sign-in address shows while it waits; Cancel sign-in stops it), `t` test, `o` turn off/on, `x` disconnect, `p` recipient policy, `l` send limits — the web console's Email tab, same fields and words (see [Email](docs/email.md)) |
 
 To move between screens, press the screen's key, `Ctrl+N` / `Ctrl+P`, or
 `←` / `→` for the next and previous screen (wrapping from Engines to

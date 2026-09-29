@@ -68,13 +68,20 @@ or `disconnect` without `--yes`).
 
 ### OAuth2 (Google, Microsoft)
 
-Instead of a password you can sign in with OAuth2. You need an OAuth client registered with the
-provider (a Google Cloud OAuth client with the Gmail scope, a Microsoft Entra app with the IMAP and
-SMTP scopes):
+Instead of a password you can sign in with OAuth2. The sign-in uses an OAuth client registered
+with the provider:
+
+- **Your own client** (bring your own): a Google Cloud OAuth client with the Gmail scope, or a
+  Microsoft Entra app with the IMAP and SMTP scopes. Pass `--client-id <value>` (and
+  `--client-secret <value>` when the provider issued one).
+- **The built-in AbstractFramework client**: used when you omit `--client-id` and this version
+  ships a registered client for the provider (`abstractcore.comms.email.BUILTIN_CLIENTS`). When
+  none is registered, the command stops before contacting the provider and asks for your own
+  client. `status` shows which client signed in (`client_source`: `own` or `builtin`).
 
 ```bash
-# Microsoft: device code (prints a URL and a code to enter)
-abstractcore email connect --address me@outlook.com --oauth microsoft --client-id <value>
+# Microsoft: device code (prints a URL and a code to enter, from any browser on any machine)
+abstractcore email connect --address me@outlook.com --oauth microsoft --client-id <value> --client-secret <value>
 
 # Google: a browser on this machine (a one-shot listener on 127.0.0.1 receives the sign-in)
 abstractcore email connect --address me@gmail.com --oauth google --client-id <value> --client-secret <value>
@@ -86,6 +93,20 @@ and scopes; `--tenant` selects a Microsoft tenant; `--oauth custom` takes explic
 `--token-endpoint`, `--authorization-endpoint`, `--device-endpoint` and `--scope`. The refresh
 token and client secret are sealed like a password; access tokens are refreshed before they expire.
 When the provider revokes the grant, the error says to sign in again.
+
+With `--json`, stdout carries only the result document; while the command waits for your approval
+it prints the sign-in prompt to stderr as one JSON line, which the terminal console displays:
+
+```json
+{"oauth_prompt": {"flow": "device", "user_code": "WDJB-MJHT", "verification_uri": "https://...", "verification_uri_complete": "", "expires_at": 1790000000.0}}
+{"oauth_prompt": {"flow": "loopback", "authorization_url": "https://...", "expires_at": 1790000000.0}}
+```
+
+The web console (**Sign in with OAuth2** on the Email tab) and the terminal console (`g` on the
+Email screen) offer the same sign-in with the same fields: provider, address, client id, client
+secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
+AbstractCore, so open its sign-in page in a browser on that machine; the device-code flow works
+from any browser.
 
 ## Recipient policy
 

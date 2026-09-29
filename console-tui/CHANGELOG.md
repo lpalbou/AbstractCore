@@ -15,6 +15,12 @@ All notable changes, one entry per build wave, each with its gate line
   recipient policy, `l` send limits. Every change runs `abstractcore email …
   --json`; the password rides a redacted argument and is never shown or
   journaled. The footer lists `1-9,0,@ ←/→ screens`.
+- `g` on the Email screen: **Sign in with OAuth2** (provider, address, client id,
+  client secret, tenant, flow — the web console's card). The form stays open
+  while `abstractcore email connect --oauth … --json` waits for the approval and
+  shows the device code or sign-in address streamed from its `oauth_prompt`
+  stderr line; **Cancel sign-in** kills the command (nothing is stored). The
+  client secret rides a redacted argument.
 
 ### Changed
 
