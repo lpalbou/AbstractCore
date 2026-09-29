@@ -27,7 +27,7 @@ terminal console `abstractcore-console` 0.4.1 switches screens with the Left/Rig
   inputs (images, PDFs, Office documents), token counting, Glyph compression, the HTTP server and
   console, and the AbstractVoice, AbstractVision, AbstractMusic and Abstract3D capability plugins
   with their remote backends (music and 3D on Python 3.10+). It includes no local engine. The
-  install is larger than before (about 550 MB in a fresh Python 3.12 environment, mostly the
+  install is larger than before (about 600 MB in a fresh Python 3.12 environment, mostly the
   Office-document parsers).
 - `abstractcore[apple]` is light plus MLX (text and image input), HuggingFace/GGUF, local
   embeddings, local voice, image, video and music engines, and Playwright for `browser_probe`.
@@ -82,7 +82,7 @@ terminal console `abstractcore-console` 0.4.1 switches screens with the Left/Rig
   entries gain `context: {small, measured}`, and their `gpu_limit_command` also carries the
   command for a tight text fit.
 - The Apple silicon text tiers are unchanged from 2.18.0 (operator ruling): below 24 GiB Qwen3.5
-  9B (an 8 GB Mac keeps it, with the warning that it may not fit), 24 to below 128 GiB Qwen3.8 27B,
+  9B (an 8 GB Mac keeps it, read as tight with a small context), 24 to below 128 GiB Qwen3.8 27B,
   128 GiB and above Qwen3.8 Flash-Next. A text tier whose model has no MTP build would carry no
   MTP `speculation` policy.
 - The recommended image route (FLUX.2 klein 4B, about 8.5 GiB) is memory-gated like video and
@@ -124,6 +124,21 @@ terminal console `abstractcore-console` 0.4.1 switches screens with the Left/Rig
 - `input.image` says why it has no recommendation where the recommended text model does not read
   images or no text engine runs (`recommended_unavailable_routes`, the grid's
   `recommendation_unavailable`), instead of a bare "not configured".
+- A measured memory need (the Wan2.2 video `resident` peaks) is the need itself: the fit no longer
+  adds the estimate's overhead (max(0.5 GiB, 5%)) on top, which made TI2V-5B read "needs about
+  17.4 GiB ... (measured ...)" for its measured 16.6 GiB (`estimate_fit(need_measured=True)`).
+  T2V-A14B and I2V-A14B (about 38.3 and 38.4 GiB) now fit a 48 GiB Mac once its GPU memory limit
+  is raised (`needs_gpu_limit`, with the command) instead of reading `too_large`.
+- The light install no longer imports `unstructured` to learn whether Office documents are
+  supported (`importlib.util.find_spec`): building a media handler, for a text file say, sent
+  unstructured's telemetry request to packages.unstructured.io and ran `nvidia-smi`. Processing an
+  Office document imports it with its telemetry opted out (`SCARF_NO_ANALYTICS` and
+  `DO_NOT_TRACK` default to `true`; an explicit value is kept).
+- Install hints name the three settings: the HuggingFace provider on an Intel Mac or Windows
+  installs the transformers stack directly (as the Engines screen does), never `abstractcore[gpu]`
+  (vLLM); missing MLX points to `abstractcore[apple]`; missing llama.cpp / Transformers to this
+  machine's setting; a missing OpenAI or Anthropic SDK (shipped with every install) to
+  `pip install -U abstractcore`.
 
 ## [2.18.0] - 2026-09-28
 
