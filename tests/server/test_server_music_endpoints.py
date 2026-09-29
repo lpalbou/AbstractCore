@@ -375,6 +375,16 @@ def test_music_server_keys_match_what_abstractmusic_reads():
     from abstractcore.server.credentials import MUSIC_SERVER_KEYS
 
     am = pytest.importorskip("abstractmusic")
+    # The keys compared are those of the AbstractMusic this release requires
+    # (pyproject: abstractmusic>=0.1.15); an older install declares fewer and
+    # the set mismatch would read as a code bug. Name the real cause instead.
+    from packaging.version import Version
+
+    installed = importlib.metadata.version("abstractmusic")
+    assert Version(installed) >= Version("0.1.15"), (
+        f"abstractmusic {installed} is installed; this AbstractCore requires >=0.1.15 "
+        "(upgrade the test environment: pip install -U 'abstractmusic>=0.1.15')"
+    )
     root = pathlib.Path(am.__file__).parent
     found = set()
     for path in root.rglob("*.py"):
