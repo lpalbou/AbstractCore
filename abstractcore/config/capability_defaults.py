@@ -494,8 +494,9 @@ _UNAVAILABLE_NEXT_STEP = {
         "openai-compatible, with its base_url)"
     ),
     "output.image": (
-        "set output.image to an image engine this host runs: diffusers (install profile gpu), "
-        "sdcpp (stable-diffusion.cpp, optional extra) or a cloud image provider"
+        "set output.image to an image engine this host runs: diffusers (included with abstractcore[gpu]), "
+        "sdcpp (stable-diffusion.cpp, included with abstractcore[apple] and abstractcore[gpu]) or a cloud "
+        "image provider"
     ),
     "output.video": _VIDEO_NO_LOCAL_ENGINE,
     # Engine ids are abstractvoice's (`transformers-asr`, `openai`).

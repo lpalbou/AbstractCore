@@ -71,7 +71,7 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider, PromptCacheCapabilities, PromptCacheRenderedFragment, ThinkingControlHandling
 from ..core.types import GenerateResponse
-from ..utils.install_settings import local_engines_install_command
+from ..utils.install_settings import local_engines_install_command, local_engines_setting
 from ..core import degeneration as _degeneration
 from ..exceptions import (
     GenerationCancelledError,
@@ -84,6 +84,22 @@ from ..exceptions import (
 from .generation_cancel import CANCEL_KWARG, as_cancel_event, cancelled_error, raise_if_cancelled
 from ..tools import UniversalToolHandler, execute_tools, merge_tools_into_system
 from ..events import EventType
+
+
+def _engine_install_hint(*packages: str) -> str:
+    """How to install a missing HuggingFace engine dependency on THIS machine.
+
+    Apple silicon and Linux: the local-engine setting that ships it (apple / gpu).
+    An Intel Mac or Windows has no such setting: the package itself (default: the
+    transformers stack, the same list as the huggingface engine install plan).
+    """
+    setting = local_engines_setting()
+    if setting:
+        return local_engines_install_command()
+    from ..config.engines import HUGGINGFACE_DIRECT_PACKAGES, pip_install_command
+
+    return pip_install_command(*(packages or HUGGINGFACE_DIRECT_PACKAGES))
+
 
 if TYPE_CHECKING:
     import torch
@@ -1032,13 +1048,13 @@ class HuggingFaceProvider(BaseProvider):
 
         if is_gguf:
             if not LLAMACPP_AVAILABLE:
-                raise ImportError("llama-cpp-python not installed. Install with: pip install llama-cpp-python")
+                raise ImportError("llama-cpp-python not installed. Install with: " + _engine_install_hint("llama-cpp-python"))
             self.model_type = "gguf"
             self._setup_device_gguf()
             self._load_gguf_model()
         else:
             if not TRANSFORMERS_AVAILABLE:
-                raise ImportError("Transformers not installed. Install with: pip install transformers torch")
+                raise ImportError("Transformers not installed. Install with: " + _engine_install_hint())
             self.model_type = "transformers"
             self._setup_device_transformers()
             self._load_transformers_model()

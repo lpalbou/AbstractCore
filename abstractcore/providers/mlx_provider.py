@@ -3917,7 +3917,7 @@ class MLXProvider(BaseProvider):
             import mlx.core as mx
         except ImportError as e:
             raise ImportError(
-                "MLX dependencies not installed. Install with: pip install mlx-lm"
+                'MLX dependencies not installed. Install with: pip install "abstractcore[apple]"'
             ) from e
 
         try:

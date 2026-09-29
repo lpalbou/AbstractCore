@@ -377,3 +377,40 @@ class TestProviderRegistryIntegration:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+@pytest.mark.parametrize(
+    "plat, machine, expected",
+    [
+        ("darwin", "x86_64", None),  # Intel Mac: no local-engine setting
+        ("win32", "AMD64", None),  # Windows: no local-engine setting
+        ("darwin", "arm64", "apple"),
+        ("linux", "x86_64", "gpu"),
+    ],
+)
+def test_huggingface_install_hint_matches_the_engine_plan(monkeypatch, plat, machine, expected):
+    """Gate finding (2.19.0): the registry told an Intel Mac or Windows to
+    install abstractcore[gpu] (vLLM) for HuggingFace; the engine plan installs
+    the transformers stack directly there. Both must say the same thing."""
+    import platform as _platform
+    import shlex
+    import sys as _sys
+
+    from abstractcore.config import engines
+    from abstractcore.providers.registry import ProviderRegistry
+
+    monkeypatch.setattr(_sys, "platform", plat)
+    monkeypatch.setattr(_platform, "machine", lambda: machine)
+    info = ProviderRegistry().get_provider_info("huggingface")
+    assert info.installation_extras == expected
+    command = info.install_command()
+    plan_argv = engines.engine_install_plan(
+        "huggingface", prefer_uv=False, tools={"brew": False, "winget": False}
+    )["argv"]
+    if expected is None:
+        assert "abstractcore[" not in command and "vllm" not in command.lower()
+        assert all(pkg in command for pkg in engines.HUGGINGFACE_DIRECT_PACKAGES)
+        assert all(pkg in plan_argv for pkg in engines.HUGGINGFACE_DIRECT_PACKAGES)
+    else:
+        assert command == f'pip install "abstractcore[{expected}]"'
+        assert f"abstractcore[{expected}]" in shlex.join(plan_argv)

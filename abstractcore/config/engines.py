@@ -182,6 +182,12 @@ def _pip_argv(packages: List[str], extra: Optional[List[str]] = None, *, prefer_
     return "pip", [sys.executable, "-m", "pip", "install", *packages, *(extra or [])]
 
 
+# The transformers stack a host with no local-engine setting (Intel Mac,
+# Windows) installs for the huggingface engine: the engine install plan and the
+# provider registry's install hint both name exactly these.
+HUGGINGFACE_DIRECT_PACKAGES = ("transformers", "torch", "huggingface_hub", "sentencepiece")
+
+
 def pip_install_command(*packages: str) -> str:
     """The shell command installing `packages` into THIS interpreter's
     environment: the engine rows' own argv (`_pip_argv`), for every install
@@ -498,7 +504,7 @@ def engine_install_plan(
             "transformers, torch and huggingface_hub) into this Python environment; several GB."
         )
     else:
-        method, argv = _pip_argv(["transformers", "torch", "huggingface_hub", "sentencepiece"], prefer_uv=prefer_uv)
+        method, argv = _pip_argv(list(HUGGINGFACE_DIRECT_PACKAGES), prefer_uv=prefer_uv)
         notes = "Installs transformers, torch and huggingface_hub into this Python environment; several GB."
     return _plan(method, argv, url=url, notes=notes)
 

@@ -39,7 +39,10 @@ class AnthropicProvider(BaseProvider):
         self.provider = "anthropic"
 
         if not ANTHROPIC_AVAILABLE:
-            raise ImportError("Anthropic package not installed. Install with: pip install anthropic")
+            raise ImportError(
+                "The anthropic SDK ships with every AbstractCore install but is missing here: "
+                "the install is old or broken. Repair with: pip install -U abstractcore"
+            )
 
         # Get API key from param or environment
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")

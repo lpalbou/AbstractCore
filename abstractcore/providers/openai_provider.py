@@ -61,7 +61,10 @@ class OpenAIProvider(BaseProvider):
         )
 
         if not OPENAI_AVAILABLE:
-            raise ImportError("OpenAI package not installed. Install with: pip install openai")
+            raise ImportError(
+                "The openai SDK ships with every AbstractCore install but is missing here: "
+                "the install is old or broken. Repair with: pip install -U abstractcore"
+            )
 
         # Get API key from param or environment
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")

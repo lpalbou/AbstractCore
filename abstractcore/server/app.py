@@ -8170,7 +8170,7 @@ def list_music_models(
     summary="List Music Provider Details",
     description=(
         "List every known music provider with whether it is usable now and, when it is not, "
-        "the reason — a missing API key, an uninstalled extra, or weights that have not been "
+        "the reason — a missing API key, a local engine the install setting (apple or gpu) did not bring, or weights that have not been "
         "downloaded. `/v1/audio/music/providers` lists only runnable providers; this route "
         "explains the rest. Requires abstractmusic >= 0.1.14."
     ),
