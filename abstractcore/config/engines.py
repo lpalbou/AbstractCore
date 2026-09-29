@@ -428,10 +428,12 @@ def engine_install_plan(
 
     # Python engines (mlx, llamacpp, vllm, huggingface) arrive ONLY with this host's
     # local-engine setting: abstractcore[apple] on Apple silicon, abstractcore[gpu] on
-    # Linux. A host with neither (Intel Mac, Windows) gets no pip plan: the engine is
-    # not available there with the three install settings (operator ruling 2026-09-29:
-    # never a bare-package install such as llama-cpp-python on its own).
-    from ..utils.install_settings import host_setting, not_available_here
+    # Linux and Windows x86_64. A host with neither (Intel Mac, Windows on ARM) gets no pip
+    # plan: the engine is not available there with the three install settings (operator
+    # ruling 2026-09-29: never a bare-package install such as llama-cpp-python on its own).
+    # On Windows, abstractcore[gpu] leaves llama-cpp-python out (PyPI has only its source
+    # build); the AbstractFramework installer adds the prebuilt wheel (backlog 0988).
+    from ..utils.install_settings import LLAMA_CPP_WINDOWS_NOTE, host_setting, not_available_here
 
     setting = host_setting(os_id, arch_id)
 
@@ -477,6 +479,15 @@ def engine_install_plan(
                 available=False,
                 alternatives=alternatives,
             )
+        if os_id == "windows":
+            return _plan(
+                None,
+                None,
+                url=url,
+                notes=f"The in-process llama.cpp engine (GGUF models): {LLAMA_CPP_WINDOWS_NOTE}.",
+                available=False,
+                alternatives=alternatives,
+            )
         method, argv = _pip_argv([f"abstractcore[{setting}]"], prefer_uv=prefer_uv)
         return _plan(
             method,
@@ -506,7 +517,7 @@ def engine_install_plan(
         )
 
     # huggingface: the engine arrives with this machine's local-engine setting (apple / gpu);
-    # a host with neither (Intel Mac, Windows) has no plan.
+    # a host with neither (Intel Mac, Windows on ARM) has no plan.
     if not setting:
         return _plan(
             None,

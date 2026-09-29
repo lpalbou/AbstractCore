@@ -171,9 +171,13 @@ apple = [
     "playwright>=1.49.0,<2.0.0",
 ]
 
+# `gpu` also resolves on Windows x86_64 with wheels only (backlog 0988): vLLM ships Linux
+# wheels only, and llama-cpp-python is a source build on PyPI, so both are marked out there.
+# On Windows the AbstractFramework installer (install.ps1) adds PyTorch's CUDA build and
+# llama.cpp's prebuilt CUDA / Vulkan / CPU wheel; markers cannot choose a CUDA build.
 gpu = [
-    # vLLM provider (CUDA / ROCm).
-    "vllm>=0.6.0,<1.0.0",
+    # vLLM provider (CUDA / ROCm), Linux only upstream.
+    "vllm>=0.6.0,<1.0.0; sys_platform == 'linux'",
     "outlines>=0.1.0",
     # HuggingFace provider (transformers / GGUF via llama.cpp) and local embeddings.
     "transformers>=4.57.1,<6.0.0",
@@ -181,14 +185,15 @@ gpu = [
     "torchvision>=0.17.0",
     "torchaudio>=2.1.0",
     "sentencepiece>=0.1.99,<1.0.0",
-    "llama-cpp-python>=0.3.23,<1.0.0",
+    # Windows: not from PyPI (source build only); install.ps1 installs the prebuilt wheel.
+    "llama-cpp-python>=0.3.23,<1.0.0; sys_platform != 'win32'",
     "sentence-transformers>=5.1.0,<6.0.0",
     "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     # Local voice (TTS/STT), image/video and music engines.
     "abstractvoice[all-gpu]>=0.13.0",
     "omnivoice>=0.1.5",
-    "abstractvision[all-gpu]>=0.3.31",
+    "abstractvision[all-gpu]>=0.3.32",  # 0.3.32: no MLX-Gen; stable-diffusion.cpp marked out on Windows
     "abstractmusic[all-gpu]>=0.1.15",
     # Headless-browser rendering (`browser_probe`, JS rendering in fetch_url). Kept out of light
     # (a browser is never a base-install cost); the browser binary is a one-time step:

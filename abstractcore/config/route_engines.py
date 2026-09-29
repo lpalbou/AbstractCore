@@ -110,7 +110,8 @@ def _python_engine(engine: str, name: str, modules: Tuple[str, ...], what: str) 
 
     plan = engine_install_plan(engine)
     if not plan.get("available"):
-        # No local-engine setting on this host: the plan's notes say so plainly.
+        # No local-engine setting on this host (or llama.cpp on Windows, which the installer
+        # adds): the plan's notes say so plainly.
         return _missing(
             engine,
             name,

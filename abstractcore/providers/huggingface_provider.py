@@ -71,7 +71,8 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider, PromptCacheCapabilities, PromptCacheRenderedFragment, ThinkingControlHandling
 from ..core.types import GenerateResponse
-from ..utils.install_settings import local_engines_hint
+from ..utils.install_settings import llama_cpp_hint, local_engines_hint
+from ..utils.windows_dll import prepare_llama_cpp_import
 from ..core import degeneration as _degeneration
 from ..exceptions import (
     GenerationCancelledError,
@@ -89,8 +90,8 @@ from ..events import EventType
 def _engine_install_hint(what: str) -> str:
     """How to get a missing HuggingFace engine dependency on THIS machine, as one sentence.
 
-    Apple silicon and Linux: the local-engine setting that ships it (apple / gpu).
-    An Intel Mac or Windows has no such setting: the capability is not available there
+    Apple silicon, Linux and Windows x86_64: the local-engine setting that ships it (apple / gpu).
+    An Intel Mac or Windows on ARM has no such setting: the capability is not available there
     with AbstractCore's install settings (never a bare-package install; ruling 2026-09-29).
     """
     return local_engines_hint(what)
@@ -1043,8 +1044,10 @@ class HuggingFaceProvider(BaseProvider):
 
         if is_gguf:
             if not LLAMACPP_AVAILABLE:
-                raise ImportError("llama-cpp-python not installed. " + _engine_install_hint("GGUF models (llama.cpp)"))
+                raise ImportError("llama-cpp-python not installed. " + llama_cpp_hint("GGUF models (llama.cpp)"))
             self.model_type = "gguf"
+            # Windows: point llama.cpp's CUDA build at torch's cuBLAS/cudart before its first import.
+            prepare_llama_cpp_import()
             self._setup_device_gguf()
             self._load_gguf_model()
         else:
@@ -1572,6 +1575,7 @@ class HuggingFaceProvider(BaseProvider):
         model_type = getattr(self, "model_type", None)
         if model_type == "gguf":
             try:
+                prepare_llama_cpp_import()
                 import llama_cpp
 
                 version = str(getattr(llama_cpp, "__version__", "") or "").strip()
@@ -2417,6 +2421,7 @@ class HuggingFaceProvider(BaseProvider):
         if not template:
             raise ValueError("GGUF chat-template renderer requires tokenizer.chat_template metadata.")
         try:
+            prepare_llama_cpp_import()
             from llama_cpp.llama_chat_format import Jinja2ChatFormatter
         except Exception as e:
             raise ValueError("GGUF chat-template renderer requires llama-cpp-python Jinja2ChatFormatter.") from e
@@ -5965,6 +5970,12 @@ class HuggingFaceProvider(BaseProvider):
         try:
             import llama_cpp  # type: ignore
 
+            if sys.platform == "win32":
+                # Windows wheels load their GPU backend (ggml-cuda / ggml-vulkan) at backend init;
+                # `Llama()` runs it anyway, so run it before the probe (backlog 0988).
+                init = getattr(llama_cpp, "llama_backend_init", None)
+                if callable(init):
+                    init()
             probe = getattr(llama_cpp, "llama_supports_gpu_offload", None)
             supports_gpu_offload = bool(probe() if callable(probe) else probe)
         except Exception:

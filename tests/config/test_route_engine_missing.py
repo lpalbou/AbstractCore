@@ -176,7 +176,7 @@ def test_mlx_gen_needs_abstractvision_and_the_mlx_gen_runtime(packages, monkeypa
     assert re_mod.route_engine_missing("mlx-gen", FLUX, "output.image")["install"] == engines.pip_install_command(
         "-U", "abstractcore"
     )
-    # No setting on this host (Intel Mac, Windows): no command, a plain sentence.
+    # No setting on this host (Intel Mac, Windows on ARM): no command, a plain sentence.
     _pin_setting(monkeypatch, None)
     packages(dists={"abstractvision"})
     flag = re_mod.route_engine_missing("mlx-gen", FLUX, "output.image")

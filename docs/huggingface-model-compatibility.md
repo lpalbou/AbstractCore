@@ -165,7 +165,7 @@ it arrives with `abstractcore[apple]` and `abstractcore[gpu]` (through AbstractV
 before it loads the base model. If `peft` is missing, too old, or cannot be imported, the load
 raises `ProviderError`, and no raw `ImportError` gets through. For example:
 `adapter support needs peft >= 0.19.1 compatible with transformers 5.17.0; installed: peft 0.18.1, transformers 5.17.0. Upgrade with: pip install -U "abstractcore[apple]".` (on Linux the message names
-`abstractcore[gpu]`; on an Intel Mac or Windows, where no setting provides the Transformers engine,
+`abstractcore[gpu]`, and so does Windows x86_64; on an Intel Mac or Windows on ARM, where no setting provides the Transformers engine,
 it says so).
 
 With `offline_first` and `force_local_files_only` both off, a model that is not fully

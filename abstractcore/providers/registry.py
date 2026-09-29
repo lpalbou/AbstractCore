@@ -113,8 +113,8 @@ class ProviderInfo:
     # or None when `pip install abstractcore` covers it (every remote provider).
     installation_extras: Optional[str] = None
     # True when the provider runs on this machine's local-engine setting (huggingface:
-    # apple on Apple silicon, gpu on Linux). On a host with no setting (Intel Mac,
-    # Windows) `installation_extras` is None and the provider is not available there
+    # apple on Apple silicon, gpu on Linux and Windows x86_64). On a host with no setting (Intel Mac,
+    # Windows on ARM) `installation_extras` is None and the provider is not available there
     # with the three install settings -- never a bare-package install (ruling 2026-09-29).
     local_engines: bool = False
     import_path: str = ""
@@ -264,7 +264,7 @@ class ProviderRegistry:
             supported_features=["chat", "completion", "embeddings", "prompted_tools", "local_models", "structured_output"],
             authentication_required=False,  # Optional for public models
             local_provider=True,
-            # Apple silicon -> apple, Linux -> gpu; an Intel Mac or Windows has no
+            # Apple silicon -> apple, Linux and Windows x86_64 -> gpu; an Intel Mac or Windows on ARM has no
             # local-engine setting, so the provider is not available there with the
             # three install settings (install_hint says so; never a bare package).
             installation_extras=local_engines_setting(),

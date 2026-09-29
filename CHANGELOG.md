@@ -21,6 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `abstractcore --download-vision-model` no longer pip-installs transformers/torch on its own.
 - The camera endpoints and capability hint say the camera plugin (`abstractcamera`) is outside
   the install settings instead of printing a pip command.
+- `abstractcore[gpu]` installs on Windows x86_64 with wheels only (backlog 0988):
+  `vllm; sys_platform == 'linux'` (upstream is Linux only) and
+  `llama-cpp-python; sys_platform != 'win32'` (a source build on PyPI; the AbstractFramework
+  installer adds llama.cpp's prebuilt CUDA / Vulkan / CPU wheel on Windows). The
+  `abstractvision[all-gpu]` floor is now 0.3.32, whose all-gpu leaves stable-diffusion.cpp out on
+  Windows. The deprecated `all-gpu` and `vllm` aliases still map to `gpu`.
+- Windows x86_64 now has the `gpu` setting in install hints and the Engines screen (it was
+  "not available on this machine"). The llama.cpp hint and engine row there say the installer
+  adds llama.cpp's prebuilt GPU build and that, with plain pip, llama.cpp is not part of
+  `abstractcore[gpu]` on Windows. Windows on ARM and Intel Macs still have no local-engine setting.
+
+### Fixed
+- Windows: before AbstractCore first imports `llama_cpp`, it adds PyTorch's `torch\lib` folder
+  (cuBLAS, cudart) to the DLL search (`os.add_dll_directory` and `PATH`), so llama.cpp's prebuilt
+  CUDA wheel, which does not bundle them, loads without the CUDA toolkit
+  (`abstractcore.utils.windows_dll.prepare_llama_cpp_import`; no-op elsewhere; torch is not imported).
+- Windows: the GGUF lane runs `llama_backend_init()` before asking llama.cpp whether it can offload
+  to the GPU. The Windows CUDA / Vulkan wheels register their GPU backend at init, so the probe
+  could say "no GPU" and load every layer on the CPU. Other platforms are unchanged.
 
 ## [2.19.0] - 2026-09-29
 

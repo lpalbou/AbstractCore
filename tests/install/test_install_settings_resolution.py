@@ -9,6 +9,9 @@ network access to PyPI; it builds this checkout's wheel once and:
 - resolves light for macOS arm64, manylinux x86_64 and Windows (Python 3.9 and 3.12);
 - resolves ``apple`` for macOS 14 arm64 and ``gpu`` for manylinux_2_35 x86_64 with
   ``uv pip compile --python-platform`` (no install);
+- resolves ``gpu`` for Windows x86_64 with wheels only (pure-Python sdists allowed) on each
+  PyTorch build install.ps1 picks (cu130, cu126, cpu), without vLLM, llama-cpp-python or
+  stable-diffusion-cpp-python (backlog 0988);
 - resolves the deprecated aliases that released packages pin (runtime 0.7.x light,
   ``all-apple``, ``all-gpu``) to exactly the packages their setting resolves to.
 
@@ -71,11 +74,12 @@ def _version(wheel: Path) -> str:
     return wheel.name.split("-")[1]
 
 
-def _compile(wheel: Path, requirements: list[str], *, platform: str, python: str) -> dict[str, str]:
+def _compile(wheel: Path, requirements: list[str], *, platform: str, python: str,
+             extra: tuple[str, ...] = ()) -> dict[str, str]:
     proc = subprocess.run(
         [_uv(), "pip", "compile", "--quiet", "--no-header", "--find-links", str(wheel.parent),
          *[arg for d in _find_links() for arg in ("--find-links", d)],
-         "--python-platform", platform, "--python-version", python, "-"],
+         "--python-platform", platform, "--python-version", python, *extra, "-"],
         input="\n".join(requirements), text=True, capture_output=True, env=_env(),
     )
     assert proc.returncode == 0, f"{requirements} does not resolve for {platform} py{python}:\n{proc.stderr[-3000:]}"
@@ -121,6 +125,24 @@ def test_gpu_resolves_on_manylinux(wheel) -> None:
     pins = _compile(wheel, [f"abstractcore[gpu]=={_version(wheel)}"], platform=LINUX_GPU, python="3.12")
     assert {"vllm", "torch", "transformers", "sentence-transformers", "playwright", "openai", "anthropic"} <= set(pins)
     assert "mlx-lm" not in pins
+
+
+# Pure-Python packages that publish only an sdist (they build anywhere without a compiler).
+PURE_PYTHON_SDISTS = ("antlr4-python3-runtime", "encodec", "langdetect", "transformers-stream-generator")
+
+
+@pytest.mark.parametrize("python, torch_backend", [("3.12", "cu130"), ("3.12", "cu126"), ("3.13", "cu130"),
+                                                   ("3.11", "cpu")])
+def test_gpu_resolves_on_windows_with_wheels_only(wheel, python, torch_backend) -> None:
+    # Backlog 0988: vLLM (Linux only) and llama-cpp-python / stable-diffusion-cpp-python (source
+    # builds on PyPI) are marked out on Windows; install.ps1 adds llama.cpp's prebuilt wheel.
+    only_wheels = ("--only-binary", ":all:", *[a for p in PURE_PYTHON_SDISTS for a in ("--no-binary", p)],
+                   "--torch-backend", torch_backend)
+    pins = _compile(wheel, [f"abstractcore[gpu]=={_version(wheel)}"], platform=WINDOWS, python=python,
+                    extra=only_wheels)
+    assert {"torch", "transformers", "sentence-transformers", "diffusers", "faster-whisper", "playwright"} <= set(pins)
+    assert not {"vllm", "llama-cpp-python", "stable-diffusion-cpp-python", "mlx", "mlx-gen"} & set(pins)
+    assert pins["torch"].endswith(f"+{torch_backend}"), pins["torch"]
 
 
 @pytest.mark.parametrize(

@@ -18,6 +18,7 @@ install target must be one of the settings. Delete the fix of any hint (for exam
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -159,7 +160,8 @@ def test_no_install_hint_names_a_bare_package_or_another_extra() -> None:
 @pytest.mark.parametrize(
     "os_id, arch, setting",
     [("darwin", "arm64", "apple"), ("linux", "x86_64", "gpu"), ("linux", "arm64", "gpu"),
-     ("darwin", "x86_64", None), ("windows", "x86_64", None), ("windows", "arm64", None)],
+     ("darwin", "x86_64", None), ("windows", "x86_64", "gpu"), ("windows", "amd64", "gpu"),
+     ("windows", "arm64", None)],
 )
 def test_host_setting_and_hint(os_id, arch, setting) -> None:
     from abstractcore.utils import install_settings as s
@@ -171,3 +173,28 @@ def test_host_setting_and_hint(os_id, arch, setting) -> None:
         assert s.setting_hint("X", setting, upgrade=True) == f'Upgrade with: pip install -U "abstractcore[{setting}]"'
     else:
         assert "not available on this machine" in hint and "pip install" not in hint
+
+
+@pytest.mark.parametrize(
+    "plat, machine, expected",
+    [("win32", "AMD64", "windows"), ("win32", "ARM64", "none"), ("linux", "x86_64", "gpu"),
+     ("darwin", "arm64", "apple")],
+)
+def test_llama_cpp_hint_on_windows_names_the_installer_not_plain_pip(monkeypatch, plat, machine, expected) -> None:
+    # Backlog 0988: abstractcore[gpu] leaves llama-cpp-python out on Windows (PyPI has only its
+    # source build); the installer adds the prebuilt wheel. The hint stays within the three settings.
+    import platform as _platform
+
+    from abstractcore.utils import install_settings as s
+
+    monkeypatch.setattr(sys, "platform", plat)
+    monkeypatch.setattr(_platform, "machine", lambda: machine)
+    hint = s.llama_cpp_hint()
+    if expected == "windows":
+        assert hint.startswith("GGUF models (llama.cpp): on Windows the AbstractFramework installer adds")
+        assert "with plain pip, llama.cpp is not part of abstractcore[gpu] on Windows" in hint
+        assert "pip install" not in hint
+    elif expected == "none":
+        assert "not available on this machine" in hint and "pip install" not in hint
+    else:
+        assert hint == f'Install with: pip install "abstractcore[{expected}]"'

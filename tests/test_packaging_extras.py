@@ -35,7 +35,7 @@ def test_mlx_vlm_ships_with_mlx_lm_in_apple() -> None:
     apple = EXTRAS["apple"]
     for dep in ("mlx>=0.32.2,<1.0.0", "mlx-lm>=0.31.3,<1.0.0", "mlx-vlm>=0.7.1,<0.8.0", "outlines>=0.1.0"):
         assert dep in apple
-    assert "vllm>=0.6.0,<1.0.0" in EXTRAS["gpu"]
+    assert "vllm>=0.6.0,<1.0.0; sys_platform == 'linux'" in EXTRAS["gpu"]  # Linux only upstream (backlog 0988)
 
 
 def test_apple_keeps_the_pins_that_avoid_backtracking_with_the_plugin_apple_stacks() -> None:

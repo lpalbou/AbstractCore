@@ -33,8 +33,8 @@ works on macOS, Linux and Windows with Python 3.9 or newer.
   AbstractMusic (`llm.music`) and Abstract3D (`llm.scene3d`), with their remote backends. Music
   and 3D need Python 3.10 or newer.
 
-For a local model on a machine without a local engine setting (an Intel Mac, Windows), run it in
-Ollama or LM Studio and use the light install.
+For a local model on a machine without a local engine setting (an Intel Mac, Windows on ARM), run
+it in Ollama or LM Studio and use the light install.
 
 ## Apple: `pip install "abstractcore[apple]"`
 
@@ -55,10 +55,10 @@ local voice engine). Adds, on top of light:
 
 ## GPU: `pip install "abstractcore[gpu]"`
 
-For Linux machines with an NVIDIA (CUDA) or AMD (ROCm) GPU, Python 3.10 or newer. Adds, on top
-of light:
+For Linux machines with an NVIDIA (CUDA) or AMD (ROCm) GPU, and Windows x86_64 machines with an
+NVIDIA GPU, Python 3.10 or newer. Adds, on top of light:
 
-- **vLLM engine**: run `vllm serve` on the machine and reach it with the `vllm` provider.
+- **vLLM engine** (Linux): run `vllm serve` on the machine and reach it with the `vllm` provider.
 - **HuggingFace provider**: transformers and GGUF models through llama.cpp, and local embedding
   models (sentence-transformers) for `EmbeddingManager`.
 - **Local voice, image, video and music engines**: AbstractVoice, OmniVoice, AbstractVision and
@@ -68,6 +68,25 @@ of light:
 
 The resolver targets x86_64 Linux with glibc 2.35 or newer (for example Ubuntu 22.04 or newer).
 For AMD GPUs, install the ROCm builds of PyTorch and vLLM first, following their install guides.
+
+### GPU on Windows
+
+`abstractcore[gpu]` installs on Windows x86_64 with prebuilt wheels only. Three engines differ
+from Linux:
+
+- **vLLM** is not part of it: upstream supports Linux only (use WSL for vLLM).
+- **llama.cpp** (GGUF models): on Windows the AbstractFramework installer adds llama.cpp's
+  prebuilt GPU build (CUDA, else Vulkan, else CPU); with plain pip, llama.cpp is not part of
+  abstractcore[gpu] on Windows, because PyPI ships it as a source build only. AbstractCore puts
+  PyTorch's `torch\lib` folder (which carries cuBLAS and the CUDA runtime) on the DLL search
+  before it loads llama.cpp, so the CUDA build runs without the CUDA toolkit.
+- **stable-diffusion.cpp** is not part of it (source build only, which needs MSVC); Diffusers on
+  PyTorch covers image and video generation.
+
+Plain pip installs PyTorch's CPU build on Windows. The AbstractFramework installer
+(`install.ps1`, gpu setting) picks PyTorch's CUDA build for the NVIDIA driver it finds
+(CUDA 13 for driver 580 or newer, CUDA 12 for driver 525 or newer) and reports what runs on the
+GPU at the end.
 
 ## Upgrading
 

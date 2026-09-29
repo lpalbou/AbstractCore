@@ -241,16 +241,21 @@ def test_pip_engines_install_into_this_interpreter():
     assert llama["alternatives"][0]["argv"] == ["brew", "install", "llama.cpp"]
     linux = engines.engine_install_plan("llamacpp", "linux", "x86_64", tools={}, prefer_uv=False)
     assert linux["argv"][-1] == "abstractcore[gpu]"
+    # Windows x86_64 has the gpu setting, but abstractcore[gpu] leaves llama-cpp-python out there
+    # (source build only on PyPI): the installer adds the prebuilt wheel (backlog 0988).
     win = engines.engine_install_plan("llamacpp", "windows", "x86_64", tools={"winget": True}, prefer_uv=False)
     assert win["available"] is False and win["argv"] == []
-    assert "not available on this machine" in win["notes"]
+    assert "installer adds llama.cpp's prebuilt GPU build" in win["notes"]
+    assert "not part of abstractcore[gpu] on Windows" in win["notes"]
     assert win["alternatives"][0]["argv"][:4] == ["winget", "install", "--id", "ggml.llamacpp"]
+    hf = engines.engine_install_plan("huggingface", "windows", "x86_64", tools={}, prefer_uv=False)
+    assert hf["argv"][-1] == "abstractcore[gpu]"
 
 
 @pytest.mark.parametrize("engine", ["llamacpp", "huggingface"])
-@pytest.mark.parametrize("os_name, arch", [("darwin", "x86_64"), ("windows", "x86_64"), ("windows", "arm64")])
+@pytest.mark.parametrize("os_name, arch", [("darwin", "x86_64"), ("windows", "arm64")])
 def test_no_setting_hosts_get_no_pip_plan(engine, os_name, arch):
-    """Intel Mac / Windows: no install setting carries the engine, so no bare-package plan."""
+    """Intel Mac / Windows on ARM: no install setting carries the engine, so no bare-package plan."""
     plan = engines.engine_install_plan(engine, os_name, arch, tools={"brew": False, "winget": False}, prefer_uv=False)
     assert plan["available"] is False and plan["argv"] == []
     assert "not available on this machine" in plan["notes"] and "pip install" not in plan["notes"]

@@ -505,14 +505,15 @@ _UNAVAILABLE_NEXT_STEP = {
 }
 # output.image names only the three settings (operator ruling 2026-09-29). Apple
 # silicon never reaches this (MLX-Gen runs there). Linux: abstractcore[gpu] ships
-# both local image engines. An Intel Mac or Windows has no setting that installs
-# them (`uv pip compile` of abstractcore[gpu] for x86_64-apple-darwin fails on
-# torch; on Windows it needs a vLLM source build). One sentence covers every
+# both local image engines; Windows x86_64: abstractcore[gpu] ships diffusers
+# (stable-diffusion.cpp is a source build there, marked out; backlog 0988). An Intel
+# Mac or Windows on ARM has no setting that installs them (`uv pip compile` of
+# abstractcore[gpu] for x86_64-apple-darwin fails on torch). One sentence covers every
 # non-Apple host so a machine-class row ("Linux or Windows ...") stays exact.
 _UNAVAILABLE_NEXT_STEP["output.image"] = (
-    "set output.image to a local image engine on Linux, diffusers or sdcpp (stable-diffusion.cpp), both "
-    "included with abstractcore[gpu] (on an Intel Mac or Windows they are not available with AbstractCore's "
-    "install settings), or to a cloud image provider"
+    "set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and "
+    "Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or "
+    "Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider"
 )
 
 

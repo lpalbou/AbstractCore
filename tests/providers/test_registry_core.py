@@ -383,7 +383,8 @@ if __name__ == "__main__":
     "plat, machine, expected",
     [
         ("darwin", "x86_64", None),  # Intel Mac: no local-engine setting
-        ("win32", "AMD64", None),  # Windows: no local-engine setting
+        ("win32", "AMD64", "gpu"),  # Windows x86_64: the gpu setting (backlog 0988)
+        ("win32", "ARM64", None),  # Windows on ARM: no local-engine setting
         ("darwin", "arm64", "apple"),
         ("linux", "x86_64", "gpu"),
     ],

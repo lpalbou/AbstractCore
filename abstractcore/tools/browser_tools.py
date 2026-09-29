@@ -67,7 +67,7 @@ _PLAYWRIGHT_AVAILABLE: Optional[bool] = None
 
 def _pip_hint() -> str:
     """How to get Playwright on THIS machine: the local-engine setting that carries it,
-    or the plain not-available sentence (Intel Mac, Windows: no setting ships it)."""
+    or the plain not-available sentence (Intel Mac, Windows on ARM: no setting ships it)."""
     from ..utils.install_settings import local_engines_hint
 
     return local_engines_hint("Headless-browser rendering (Playwright)")

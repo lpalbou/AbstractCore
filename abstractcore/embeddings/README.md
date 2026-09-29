@@ -350,8 +350,8 @@ pip install "abstractcore[apple]"   # Apple silicon
 pip install "abstractcore[gpu]"     # Linux with an NVIDIA or AMD GPU
 ```
 
-Both settings carry sentence-transformers and onnxruntime. An Intel Mac or Windows has no setting
-that provides local embeddings; use a remote embeddings provider (for example Ollama or LM Studio).
+Both settings carry sentence-transformers and onnxruntime; `gpu` also installs on Windows x86_64.
+An Intel Mac or Windows on ARM has no setting that provides local embeddings; use a remote embeddings provider (for example Ollama or LM Studio).
 
 **Usage:**
 ```python

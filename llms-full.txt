@@ -1617,8 +1617,8 @@ works on macOS, Linux and Windows with Python 3.9 or newer.
   AbstractMusic (`llm.music`) and Abstract3D (`llm.scene3d`), with their remote backends. Music
   and 3D need Python 3.10 or newer.
 
-For a local model on a machine without a local engine setting (an Intel Mac, Windows), run it in
-Ollama or LM Studio and use the light install.
+For a local model on a machine without a local engine setting (an Intel Mac, Windows on ARM), run
+it in Ollama or LM Studio and use the light install.
 
 ## Apple: `pip install "abstractcore[apple]"`
 
@@ -1639,10 +1639,10 @@ local voice engine). Adds, on top of light:
 
 ## GPU: `pip install "abstractcore[gpu]"`
 
-For Linux machines with an NVIDIA (CUDA) or AMD (ROCm) GPU, Python 3.10 or newer. Adds, on top
-of light:
+For Linux machines with an NVIDIA (CUDA) or AMD (ROCm) GPU, and Windows x86_64 machines with an
+NVIDIA GPU, Python 3.10 or newer. Adds, on top of light:
 
-- **vLLM engine**: run `vllm serve` on the machine and reach it with the `vllm` provider.
+- **vLLM engine** (Linux): run `vllm serve` on the machine and reach it with the `vllm` provider.
 - **HuggingFace provider**: transformers and GGUF models through llama.cpp, and local embedding
   models (sentence-transformers) for `EmbeddingManager`.
 - **Local voice, image, video and music engines**: AbstractVoice, OmniVoice, AbstractVision and
@@ -1652,6 +1652,25 @@ of light:
 
 The resolver targets x86_64 Linux with glibc 2.35 or newer (for example Ubuntu 22.04 or newer).
 For AMD GPUs, install the ROCm builds of PyTorch and vLLM first, following their install guides.
+
+### GPU on Windows
+
+`abstractcore[gpu]` installs on Windows x86_64 with prebuilt wheels only. Three engines differ
+from Linux:
+
+- **vLLM** is not part of it: upstream supports Linux only (use WSL for vLLM).
+- **llama.cpp** (GGUF models): on Windows the AbstractFramework installer adds llama.cpp's
+  prebuilt GPU build (CUDA, else Vulkan, else CPU); with plain pip, llama.cpp is not part of
+  abstractcore[gpu] on Windows, because PyPI ships it as a source build only. AbstractCore puts
+  PyTorch's `torch\lib` folder (which carries cuBLAS and the CUDA runtime) on the DLL search
+  before it loads llama.cpp, so the CUDA build runs without the CUDA toolkit.
+- **stable-diffusion.cpp** is not part of it (source build only, which needs MSVC); Diffusers on
+  PyTorch covers image and video generation.
+
+Plain pip installs PyTorch's CPU build on Windows. The AbstractFramework installer
+(`install.ps1`, gpu setting) picks PyTorch's CUDA build for the NVIDIA driver it finds
+(CUDA 13 for driver 580 or newer, CUDA 12 for driver 525 or newer) and reports what runs on the
+GPU at the end.
 
 ## Upgrading
 
@@ -14144,7 +14163,7 @@ it arrives with `abstractcore[apple]` and `abstractcore[gpu]` (through AbstractV
 before it loads the base model. If `peft` is missing, too old, or cannot be imported, the load
 raises `ProviderError`, and no raw `ImportError` gets through. For example:
 `adapter support needs peft >= 0.19.1 compatible with transformers 5.17.0; installed: peft 0.18.1, transformers 5.17.0. Upgrade with: pip install -U "abstractcore[apple]".` (on Linux the message names
-`abstractcore[gpu]`; on an Intel Mac or Windows, where no setting provides the Transformers engine,
+`abstractcore[gpu]`, and so does Windows x86_64; on an Intel Mac or Windows on ARM, where no setting provides the Transformers engine,
 it says so).
 
 With `offline_first` and `force_local_files_only` both off, a model that is not fully
@@ -15823,9 +15842,9 @@ Route `output.image` (text to image).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 128 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine on Linux, diffusers or sdcpp (stable-diffusion.cpp), both included with abstractcore[gpu] (on an Intel Mac or Windows they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
-| Linux or Windows, processor only | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine on Linux, diffusers or sdcpp (stable-diffusion.cpp), both included with abstractcore[gpu] (on an Intel Mac or Windows they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
-| Intel Mac | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine on Linux, diffusers or sdcpp (stable-diffusion.cpp), both included with abstractcore[gpu] (on an Intel Mac or Windows they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
+| Linux or Windows with an NVIDIA GPU | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
+| Linux or Windows, processor only | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
+| Intel Mac | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
 
 ### Video generation
 
@@ -16006,15 +16025,17 @@ running anything. Commands come from a fixed table; nothing in them comes from a
 | Ollama | `brew install ollama` when Homebrew is present, else the official script `curl -fsSL https://ollama.com/install.sh \| sh` (may ask for your password to link `/usr/local/bin/ollama`) | official script; **needs sudo** (installs to `/usr/local`, creates a systemd `ollama.service`) | `winget install --id Ollama.Ollama` (per-user), else `irm https://ollama.com/install.ps1 \| iex` |
 | LM Studio | desktop app from https://lmstudio.ai/download (or `brew install --cask lm-studio`); the command installs the headless daemon and `lms` CLI: `curl -fsSL https://lmstudio.ai/install.sh \| bash`. Apple silicon only | same headless install (may need `libatomic1`) | desktop app (or `winget install --id ElementLabs.LMStudio`); headless: `irm https://lmstudio.ai/install.ps1 \| iex` |
 | MLX | Apple silicon: `python -m pip install "abstractcore[apple]"` into this Python environment | not supported | not supported |
-| llama.cpp | Apple silicon: `python -m pip install "abstractcore[apple]"` (Metal build); Intel Macs: not available with the install settings. Alternative everywhere: `brew install llama.cpp` (the llama.cpp server binaries) | `python -m pip install "abstractcore[gpu]"` | not available with the install settings; alternative `winget install --id ggml.llamacpp` (the llama.cpp server binaries) |
+| llama.cpp | Apple silicon: `python -m pip install "abstractcore[apple]"` (Metal build); Intel Macs: not available with the install settings. Alternative everywhere: `brew install llama.cpp` (the llama.cpp server binaries) | `python -m pip install "abstractcore[gpu]"` | x86_64: the AbstractFramework installer adds llama.cpp's prebuilt GPU build; with plain pip, llama.cpp is not part of abstractcore[gpu] on Windows (the row is `available: false`); alternative `winget install --id ggml.llamacpp` (the llama.cpp server binaries) |
 | vLLM | not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind `remote_only`) | NVIDIA GPU only: `python -m pip install "abstractcore[gpu]"` | not supported (same reason) |
-| Hugging Face | Apple silicon: `python -m pip install "abstractcore[apple]"`; Intel Macs: not available with the install settings | `python -m pip install "abstractcore[gpu]"` | not available with the install settings |
+| Hugging Face | Apple silicon: `python -m pip install "abstractcore[apple]"`; Intel Macs: not available with the install settings | `python -m pip install "abstractcore[gpu]"` | x86_64: `python -m pip install "abstractcore[gpu]"`; ARM: not available with the install settings |
 
 Every Python engine arrives with one of AbstractCore's install settings, never as a bare package.
-An Intel Mac or Windows has no local-engine setting (`abstractcore[apple]` does not resolve on
-Intel macOS, and `abstractcore[gpu]` needs vLLM, which ships Linux wheels only), so those rows are
-`available: false` and their `notes` say the engine is not available on this machine with the
-install settings; use Ollama, LM Studio or a remote provider there.
+An Intel Mac or Windows on ARM has no local-engine setting (`abstractcore[apple]` does not resolve
+on Intel macOS, and `abstractcore[gpu]` has no wheels for its engines on Windows ARM), so those rows
+are `available: false` and their `notes` say the engine is not available on this machine with the
+install settings; use Ollama, LM Studio or a remote provider there. Windows x86_64 has the `gpu`
+setting (vLLM and llama.cpp are marked out of it there; see
+[Installation](docs/installation.md#gpu-on-windows)).
 
 Python-package installs target the interpreter running AbstractCore. When that environment has
 no `pip` (a `uv` virtual environment), the plan uses

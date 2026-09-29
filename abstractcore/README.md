@@ -24,7 +24,7 @@ pip install abstractcore
 
 # Light + every local engine for your machine (pick one)
 pip install "abstractcore[apple]"    # Apple silicon (MLX, HF/GGUF, local media engines)
-pip install "abstractcore[gpu]"      # NVIDIA / AMD Linux (vLLM, HF/GGUF, local media engines)
+pip install "abstractcore[gpu]"      # NVIDIA / AMD Linux, NVIDIA Windows (vLLM on Linux, HF/GGUF, local media engines)
 ```
 
 ### Hello World

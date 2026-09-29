@@ -191,3 +191,20 @@ def test_deprecated_aliases_are_named_only_in_the_installation_doc() -> None:
             if re.search(rf"`{re.escape(alias)}`", text):
                 offenders.append(f"{path.relative_to(ROOT)}: `{alias}`")
     assert not offenders, "\n".join(offenders)
+
+
+def test_gpu_resolves_with_wheels_only_on_windows() -> None:
+    """Backlog 0988: vLLM ships Linux wheels only and llama-cpp-python is a source build on PyPI,
+    so `gpu` marks both out on Windows (the installer adds llama.cpp's prebuilt wheel). Every other
+    engine keeps no platform marker; the aliases keep mapping to `gpu`."""
+    gpu = {_name(r): r for r in EXTRAS["gpu"]}
+    assert gpu["vllm"].endswith("; sys_platform == 'linux'"), gpu["vllm"]
+    assert gpu["llama-cpp-python"].endswith("; sys_platform != 'win32'"), gpu["llama-cpp-python"]
+    # 0.3.32 is the first abstractvision whose all-gpu marks stable-diffusion.cpp out on Windows.
+    assert gpu["abstractvision"].startswith("abstractvision[all-gpu]>=0.3.32"), gpu["abstractvision"]
+    for name, requirement in gpu.items():
+        if name not in {"vllm", "llama-cpp-python", "numpy"}:
+            assert "sys_platform" not in requirement, requirement
+    # apple keeps llama-cpp-python unmarked (macOS wheels / Metal build).
+    assert not [r for r in EXTRAS["apple"] if _name(r) == "llama-cpp-python" and ";" in r]
+    assert EXTRAS["all-gpu"] == ["abstractcore[gpu]"] and EXTRAS["vllm"] == ["abstractcore[gpu]"]
