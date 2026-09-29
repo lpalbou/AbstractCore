@@ -9,6 +9,7 @@ document processing in 2025.
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union, Tuple
 import json
+import os
 
 from ..base import BaseMediaHandler, MediaProcessingError
 from ..types import MediaContent, MediaType, ContentFormat, MediaProcessingResult
@@ -66,6 +67,13 @@ class OfficeProcessor(BaseMediaHandler):
 
     def _check_dependencies(self):
         """Check if required dependencies are available."""
+        # unstructured's import runs its Scarf telemetry (unstructured/utils.py
+        # `scarf_analytics`, called from unstructured/logger.py): an HTTP GET to
+        # packages.unstructured.io unless SCARF_NO_ANALYTICS or DO_NOT_TRACK is
+        # exactly "true". AbstractCore sends no telemetry on a user's behalf:
+        # opt out before the first import, never overriding an explicit choice.
+        os.environ.setdefault("SCARF_NO_ANALYTICS", "true")
+        os.environ.setdefault("DO_NOT_TRACK", "true")
         try:
             import unstructured
             from unstructured.partition.auto import partition

@@ -6,6 +6,7 @@ processor (ImageProcessor, TextProcessor, PDFProcessor, or OfficeProcessor)
 based on the file type and content.
 """
 
+import importlib.util
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -93,12 +94,12 @@ class AutoMediaHandler(BaseMediaHandler):
         except ImportError:
             availability['pdf'] = False
 
-        # OfficeProcessor (requires unstructured)
-        try:
-            import unstructured
-            availability['office'] = True
-        except ImportError:
-            availability['office'] = False
+        # OfficeProcessor (requires unstructured). Checked with find_spec, never
+        # imported here: importing unstructured runs its telemetry (an HTTP call
+        # to packages.unstructured.io and an `nvidia-smi` probe), and a handler
+        # built for a .txt file must not pay that. The real import happens only
+        # when an Office document is processed (OfficeProcessor), telemetry off.
+        availability['office'] = importlib.util.find_spec("unstructured") is not None
 
         # AudioProcessor (dependency-free)
         availability['audio'] = True
