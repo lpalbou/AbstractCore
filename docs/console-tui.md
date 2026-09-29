@@ -31,6 +31,7 @@ CLI for everything derived or written. It finds the CLI through
 | 8 | Review | the file identity and test evidence |
 | 9 | **Models** | the model catalog fitted to this host (see the keys below) |
 | 0 | **Engines** | Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face (see the keys below) |
+| @ | **Email** | the email account, its last test, recipient policy and send limits: `c` connect (Save and test), `t` test, `o` turn off/on, `x` disconnect, `p` recipient policy, `l` send limits — the web console's Email tab, same fields and words (see [Email](email.md)) |
 
 To move between screens, press the screen's key, `Ctrl+N` / `Ctrl+P`, or
 `←` / `→` for the next and previous screen (wrapping from Engines to

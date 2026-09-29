@@ -6,6 +6,23 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
+### Added
+
+- **Email** screen (`@`, after Engines): the account, the last connection test
+  with its cause and fix, the recipient policy and the send limits — the web
+  console's Email tab, same fields and words. `c` connect (Save and test), `t`
+  test, `o` turn off/on, `x` disconnect (confirmed, defaults to Cancel), `p`
+  recipient policy, `l` send limits. Every change runs `abstractcore email …
+  --json`; the password rides a redacted argument and is never shown or
+  journaled. The footer lists `1-9,0,@ ←/→ screens`.
+
+### Changed
+
+- The `email` config section is its own kind (the Email screen owns it); the
+  Server screen no longer lists the legacy flat email fields (73 scalar fields).
+
+Gate: `cargo fmt --check`, `cargo clippy --all-targets`, `cargo test --locked` green.
+
 ## [0.4.1] — 2026-09-29
 
 Released with AbstractCore 2.19.0. No API change.

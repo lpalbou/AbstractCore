@@ -316,6 +316,16 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Runtime | POST | `/acore/models/lock` | Lock a resident text runtime against unloading, adopting a sweep-resident model when no runtime is managed for it (`409 model_not_resident` otherwise) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | POST | `/acore/models/unlock` | Clear a text runtime's lock (works even after eviction) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | GET | `/acore/models/context_estimate` | Analytical context-fit estimate for a provider/model on this host | `provider`, `model`, optional `context_length` |
+| Email | GET | `/acore/email` | The email account, policy, limits and last test (`email_settings_v1`; never a secret) — see [Email](email.md) | — |
+| Email | PUT | `/acore/email` | Connect: test IMAP/SMTP, then store (the password is sealed, never returned) | JSON `address`, `password`, `imap{host,port,security,folder,ca_file}`, `smtp{...}`, optional `display_name`, `username`, `registered_address`, `test` |
+| Email | POST | `/acore/email/test` | Sign in to IMAP and SMTP with the stored account | — |
+| Email | DELETE | `/acore/email` | Disconnect: delete the credentials and account (policy and limits kept) | — |
+| Email | PUT | `/acore/email/policy` | Replace the recipient policy | JSON `mode` (`allowlist`/`denylist`), `entries` |
+| Email | POST | `/acore/email/policy/check` | Evaluate recipients against the policy | JSON `addresses` |
+| Email | PUT | `/acore/email/limits` | Set the send limits | JSON `per_hour`, `per_day` |
+| Email | PUT | `/acore/email/enabled` | Turn email on or off | JSON `enabled` |
+| Email | PUT | `/acore/email/registered-address` | Set your own address (the default allowlist entry) | JSON `address` |
+| Email | POST | `/acore/email/oauth/start`, `/acore/email/oauth/finish` | OAuth2 sign-in (device code or browser on this machine), then connect | JSON `address`, `provider`, `client_id`, optional `client_secret`, `flow`, `tenant`; then `flow_id` |
 | Models & engines | GET | `/acore/host/profile` | Host profile: accelerator, memory ceiling, free memory, disk per model store (see [Local Models](models.md)) | optional `refresh` |
 | Models & engines | GET | `/acore/models/catalog` | Downloadable model catalog with presence and fit verdicts | `q`, `engine`, `fits`, `hub`, `tag` |
 | Models & engines | GET | `/acore/models/installed` | Installed models per engine, with sizes and delete blockers | optional `provider` |

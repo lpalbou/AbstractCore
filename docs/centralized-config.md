@@ -363,6 +363,13 @@ and embedded hosts can target a specific Core config with
 abstractcore config --config-file /srv/runtime/config/abstractcore.json defaults
 ```
 
+### Email
+
+The `email` section holds the email account (address, IMAP/SMTP servers, sign-in method), the
+recipient policy, the send limits and the on/off switch. It never holds a password: credentials are
+sealed in `<config dir>/email/secret.enc`. Configure it with `abstractcore email connect ...` or the
+consoles' Email pages; see [Email](email.md).
+
 ### Cache Directories
 
 Configure cache locations for different components:

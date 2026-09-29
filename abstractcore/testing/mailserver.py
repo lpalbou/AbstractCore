@@ -750,7 +750,7 @@ class FakeSmtpServer:
             from aiosmtpd.controller import Controller
             from aiosmtpd.smtp import AuthResult
         except ImportError as exc:  # pragma: no cover - test dependency
-            raise RuntimeError("FakeSmtpServer needs aiosmtpd (pip install aiosmtpd)") from exc
+            raise RuntimeError("FakeSmtpServer needs aiosmtpd, a test dependency of AbstractCore (its `test` extra)") from exc
         assert security in {"ssl", "starttls"}
         self.ca = ca
         self.security = security

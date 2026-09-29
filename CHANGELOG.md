@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Email becomes a configured, encrypted, policy-bound account (target 2.20.0).
+
+### Added
+- `abstractcore.comms.email`: one typed mail library used by the CLI, the consoles, the tools and
+  hosts. IMAP is read-only (EXAMINE, BODY.PEEK, and a connection that refuses any mutating
+  command); SMTP sends with attachments and reply threading; TLS is always verified (SSL or
+  STARTTLS, optional private CA); search takes typed fields (sender address or domain, recipient,
+  subject text, dates, read state); `fetch_new` reads incrementally with UIDVALIDITY cursors;
+  bodies are returned whole. Errors are typed from protocol codes with a cause and a fix
+  (`email_auth_failed`, `email_tls_failed`, `email_unreachable`, `email_mailbox_missing`,
+  `email_quota_exceeded`, `email_recipient_refused`, ...).
+- Credentials encrypted at rest (AES-256-GCM, key in the OS keychain; a 0600 key file on hosts
+  without one, reported by `status`).
+- OAuth2 sign-in for Google and Microsoft (XOAUTH2 on IMAP and SMTP, token refresh and rotation,
+  device-code and browser flows, custom providers).
+- Recipient policy (`allowlist` / `denylist` of exact addresses and domains over To, Cc and Bcc;
+  any refused recipient refuses the whole message with the addresses and rule named). A new account
+  starts with an allowlist holding the registered address.
+- Send limits per rolling hour and day (default 20 / 100), durable across processes.
+- `abstractcore email connect|test|status|folders|disconnect|enable|disable|registered-address`,
+  `abstractcore email policy show|set|check`, `abstractcore email limits show|set` (all with
+  `--json`); credentials as direct parameters.
+- `/acore/email` server routes and an **Email** tab in the web console; an **Email** screen (`@`)
+  in the terminal console.
+- Tools `search_emails`, `get_email_attachment` and `reply_email`; email tool results carry
+  `content_trust: "untrusted"` and a fixed notice. Hosts inject a per-user account with
+  `set_email_account_resolver` / `use_email_context`.
+- Refiner id `send_email_recipient@v2` (self set plus pre-authorised recipients), declared on
+  `send_email` and `reply_email`.
+- `abstractcore.testing.mailserver`: hermetic IMAP, SMTP (aiosmtpd) and OAuth2 servers with a
+  throwaway CA for tests. `aiosmtpd` joins the `test` extra.
+- Base dependencies `cryptography` and `keyring`.
+
+### Changed
+- `send_email` no longer accepts a `headers` argument (From and Reply-To are always the account's;
+  threading headers come from `reply_email`). `read_email`'s `max_body_chars` is accepted and
+  ignored: bodies are never truncated.
+- `send_email` results no longer include the SMTP host and user name.
+- The terminal console's Server screen no longer lists the legacy flat email fields.
+
+### Migration
+- The `ABSTRACT_EMAIL_*` environment variables, the `ABSTRACT_EMAIL_ACCOUNTS_CONFIG` accounts file
+  and the flat `email.smtp_*` / `email.imap_*` config fields are no longer read at use time. The
+  first time email is used without a configured account, that configuration is imported once
+  (password included, then sealed); afterwards the variables are ignored and `abstractcore email
+  status` names each one still set and its replacement. Only the default account of a
+  multi-account file is imported. `configs/emails.yaml` is removed.
+- Hosts that grant tools by risk refiner: `send_email` now declares `send_email_recipient@v2`; an
+  enforcement lane that only knows `@v1` holds the approval ceiling (asks) until it implements v2.
+
 ## [2.19.2] - 2026-09-29
 
 A fresh install now transcribes speech locally, and "Use recommended defaults" writes what it

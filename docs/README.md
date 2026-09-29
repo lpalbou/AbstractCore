@@ -29,6 +29,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 
 - **[Tool Calling](tool-calling.md)** — native + prompted tools; passthrough vs execution
 - **[Tool Syntax Rewriting](tool-syntax-rewriting.md)** — normalize tool-call markup for different runtimes/clients
+- **[Email](email.md)** — connect one IMAP/SMTP account (password or OAuth2), encrypted credentials, recipient policy (allowlist / denylist), send limits, read-only mailbox, email tools, `abstractcore email ...`, the consoles' Email pages and the `abstractcore.comms.email` library
 - **[Web and Document Tools](web-tools.md)** — `fetch_url`, `skim_url`, `web_search`, `skim_websearch`: extraction, result contract, optional JavaScript rendering, and safety
 - **[Structured Output](structured-output.md)** — `response_model=...` strategies and limitations
 - **[Request and Output](request-output.md)** — canonical `request=` + `output=` shape, structural task inference, and route-inspection basics
