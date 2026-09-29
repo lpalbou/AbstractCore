@@ -200,8 +200,10 @@ def _flags(value: Any) -> Tuple[str, ...]:
 
 
 def _int_or_none(value: Any) -> Optional[int]:
+    if isinstance(value, (bytes, bytearray)):
+        value = bytes(value).decode("ascii", errors="replace")
     try:
-        return int(str(value))
+        return int(str(value).strip())
     except (TypeError, ValueError):
         return None
 

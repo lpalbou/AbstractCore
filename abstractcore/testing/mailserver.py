@@ -812,6 +812,9 @@ class FakeSmtpServer:
         }
         if security == "ssl":
             kwargs["ssl_context"] = ca.server_context()
+            # aiosmtpd only tracks TLS started by STARTTLS; the implicit-TLS channel is already
+            # encrypted end to end, so AUTH is offered on it.
+            kwargs["auth_require_tls"] = False
         elif offer_starttls:
             kwargs["tls_context"] = ca.server_context()
             kwargs["require_starttls"] = True

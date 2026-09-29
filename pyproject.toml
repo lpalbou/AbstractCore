@@ -92,6 +92,10 @@ dependencies = [
     "sse-starlette>=1.6.0,<2.0.0",
     # Capability plugins (llm.voice / llm.audio, llm.vision, llm.music, llm.scene3d). Their
     # base installs carry no local engine; `apple` / `gpu` add the engines.
+    # Email (abstractcore.comms.email): credentials encrypted at rest (AES-GCM) with the key in
+    # the OS keychain. cryptography already arrives with unstructured; keyring is ~0.4 MB.
+    "cryptography>=41.0.0",
+    "keyring>=24.0.0",
     "abstractvoice>=0.13.2",
     "abstractvision>=0.3.33",
     "abstractmusic>=0.1.15; python_version >= '3.10'",
@@ -304,6 +308,8 @@ test = [
     "tomli>=2.0.0; python_version < '3.11'",
     # Chat-template rendering tests render real GGUF templates with Jinja2.
     "jinja2>=3.0.0,<4.0.0",
+    # Hermetic SMTP server for the email tests (abstractcore.testing.mailserver).
+    "aiosmtpd>=1.4.4,<2.0.0",
 ]
 
 docs = [
@@ -339,7 +345,10 @@ packages = [
     "abstractcore.media.utils",
     "abstractcore.compression",
     "abstractcore.config",
-    "abstractcore.console"
+    "abstractcore.console",
+    "abstractcore.comms",
+    "abstractcore.comms.email",
+    "abstractcore.testing"
 ]
 
 [tool.setuptools.dynamic]

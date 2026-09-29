@@ -204,13 +204,19 @@ def _from_flat(values: Dict[str, Any], source: str) -> Optional[LegacyAccount]:
         }
     if smtp_host:
         port = _i(values.get("smtp_port"), 587)
-        starttls = _b(values.get("smtp_use_starttls"))
+        # The pre-2.20 rule: an explicit ABSTRACT_EMAIL_SMTP_STARTTLS wins; otherwise port 465
+        # meant implicit TLS whatever the stored flag said.
+        starttls = _b(values.get("smtp_starttls_env"))
         if starttls is None:
-            starttls = port != 465
+            starttls = False if port == 465 else (_b(values.get("smtp_use_starttls")) is not False)
         acc.smtp = {"host": smtp_host, "port": port, "security": "starttls" if starttls else "ssl"}
     acc.username = _s(values.get("smtp_username")) or _s(values.get("imap_username"))
     acc.address = _s(values.get("from_email")) or acc.username
-    acc.password_env_var = _s(values.get("smtp_password_env_var")) or _s(values.get("imap_password_env_var")) or "EMAIL_PASSWORD"
+    acc.password_env_var = (
+        (_s(values.get("smtp_password_env_var")) if smtp_host else "")
+        or (_s(values.get("imap_password_env_var")) if imap_host else "")
+        or "EMAIL_PASSWORD"
+    )
     if _s(values.get("smtp_username")) and _s(values.get("imap_username")) and _s(values.get("smtp_username")) != _s(values.get("imap_username")):
         acc.notes.append("IMAP and SMTP used different user names; the SMTP user name was imported for both.")
     return acc
@@ -230,7 +236,7 @@ def detect(config_section: Dict[str, Any], environ: Optional[Dict[str, str]] = N
         "smtp_port": env.get("ABSTRACT_EMAIL_SMTP_PORT"),
         "smtp_username": env.get("ABSTRACT_EMAIL_SMTP_USERNAME"),
         "smtp_password_env_var": env.get("ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR"),
-        "smtp_use_starttls": env.get("ABSTRACT_EMAIL_SMTP_STARTTLS"),
+        "smtp_starttls_env": env.get("ABSTRACT_EMAIL_SMTP_STARTTLS"),
         "from_email": env.get("ABSTRACT_EMAIL_FROM"),
         "imap_host": env.get("ABSTRACT_EMAIL_IMAP_HOST"),
         "imap_port": env.get("ABSTRACT_EMAIL_IMAP_PORT"),
@@ -240,6 +246,7 @@ def detect(config_section: Dict[str, Any], environ: Optional[Dict[str, str]] = N
     }
     # Environment values override the flat config fields key by key (the old precedence).
     merged = {k: (v if _s(v) else config_section.get(k)) for k, v in flat_env.items()}
+    merged["smtp_use_starttls"] = config_section.get("smtp_use_starttls")
     env_used = any(_s(v) for v in flat_env.values())
     acc = _from_flat(merged, "environment" if env_used else "config")
     return acc

@@ -59,12 +59,16 @@ EXPECTED_COMMON = [
 
 EXPECTED_SHELL = ["shell_close", "shell_exec", "shell_write_stdin"]
 
+# backlog 0992 WP1 (core 2.20): + get_email_attachment, reply_email, search_emails.
 EXPECTED_COMMS = [
+    "get_email_attachment",
     "list_email_accounts",
     "list_emails",
     "list_whatsapp_messages",
     "read_email",
     "read_whatsapp_message",
+    "reply_email",
+    "search_emails",
     "send_email",
     "send_whatsapp_message",
 ]
@@ -83,6 +87,8 @@ EXPECTED_MUTATING = {
     "shell_exec",
     "shell_write_stdin",
     "shell_close",
+    # Saves an attachment into a model-chosen local folder (the mailbox stays read-only).
+    "get_email_attachment",
 }
 
 # fetch_url can send POST/PUT/DELETE with a body through its model-controlled
@@ -91,6 +97,7 @@ EXPECTED_MUTATING = {
 EXPECTED_REMOTE_WRITE_CAPABLE = {
     "fetch_url",
     "send_email",
+    "reply_email",
     "send_whatsapp_message",
     "send_telegram_message",
     "send_telegram_artifact",
@@ -99,11 +106,11 @@ EXPECTED_REMOTE_WRITE_CAPABLE = {
 
 
 def test_member_sets_are_byte_stable():
-    """The exact ruled enumeration: 14 common + 3 shell + 7 comms + 2
+    """The exact ruled enumeration: 14 common + 3 shell + 10 comms + 2
     telegram + 1 browser, deterministic (module order, then name order)."""
     names = list_builtin_tool_names()
     assert names == EXPECTED_COMMON + EXPECTED_SHELL + EXPECTED_COMMS + EXPECTED_TELEGRAM + EXPECTED_BROWSER
-    assert len(names) == 27
+    assert len(names) == 30
 
 
 def test_inventory_is_derived_not_copied():
@@ -282,13 +289,15 @@ def test_send_email_carries_the_recipient_refiner():
     # stays outreach (the ceiling + deny-safe default). Only send_email has it.
     inventory = {d.name: d for d in list_builtin_tool_inventory()}
     se = inventory["send_email"]
-    assert se.risk_refiner == "send_email_recipient@v1"
+    # v2 (backlog 0992): self set ∪ the automation's pre-authorised recipients.
+    assert se.risk_refiner == "send_email_recipient@v2"
+    assert inventory["reply_email"].risk_refiner == "send_email_recipient@v2"
     assert se.risk_tier == "outreach" and se.risk_rank == 3, "the band is the ceiling, refiner is band-neutral"
     # whatsapp/telegram have no registered operator-recipient concept.
     assert inventory["send_whatsapp_message"].risk_refiner is None
     # It rides to_dict on the wire.
     row = {r["name"]: r for r in builtin_tool_inventory_as_dicts()}["send_email"]
-    assert row["risk_refiner"] == "send_email_recipient@v1"
+    assert row["risk_refiner"] == "send_email_recipient@v2"
 
 
 def test_execute_command_carries_the_git_read_only_refiner():
@@ -306,7 +315,7 @@ def test_execute_command_carries_the_git_read_only_refiner():
     # Exactly the two declared refiner carriers today (fail-closed: a stale
     # entry naming no scanned tool refuses the whole inventory at build).
     refined = {n for n, d in inventory.items() if d.risk_refiner}
-    assert refined == {"send_email", "execute_command"}
+    assert refined == {"send_email", "reply_email", "execute_command"}
 
 
 def test_comms_send_fact_classification():
@@ -314,6 +323,7 @@ def test_comms_send_fact_classification():
     senders = {n for n, d in inventory.items() if d.comms_send}
     assert senders == {
         "send_email",
+        "reply_email",
         "send_whatsapp_message",
         "send_telegram_message",
         "send_telegram_artifact",
@@ -460,8 +470,8 @@ def test_package_level_exports():
 
     assert ExportedDescriptor is BuiltinToolDescriptor
     assert exported_names() == list_builtin_tool_names()
-    assert len(exported_inventory()) == 27
-    assert len(exported_dicts()) == 27
+    assert len(exported_inventory()) == 30
+    assert len(exported_dicts()) == 30
 
 
 def test_comms_lanes_now_in_scope():
