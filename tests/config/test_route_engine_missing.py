@@ -125,9 +125,14 @@ def _rows(manager) -> dict:
 def test_mlx_without_mlx_lm_names_the_engines_screen_command(packages):
     flag = re_mod.route_engine_missing("mlx", MLX_TEXT, "input.text")
     assert flag["engine"] == "mlx" and flag["engine_row"] == "mlx"
-    # The ONE install allowlist: the Engines screen's own plan, verbatim.
-    assert flag["install"] == shlex.join(engines.engine_install_plan("mlx")["argv"])
-    assert "mlx_lm missing" in flag["reason"] and flag["install"] in flag["reason"]
+    # The ONE install allowlist: the Engines screen's own plan, verbatim. Off Apple silicon the
+    # plan has no command (MLX is in no setting there), so the flag carries none either.
+    argv = engines.engine_install_plan("mlx")["argv"]
+    expected = shlex.join(argv) if argv else None
+    assert flag["install"] == expected
+    assert "mlx_lm missing" in flag["reason"]
+    if expected:
+        assert expected in flag["reason"]
     packages({"mlx_lm"})
     assert re_mod.route_engine_missing("mlx", MLX_TEXT, "input.text") is None
 
