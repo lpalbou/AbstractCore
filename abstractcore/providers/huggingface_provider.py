@@ -7008,7 +7008,15 @@ class HuggingFaceProvider(BaseProvider):
                     self.llm = llama_cls(**llama_kwargs)
                 except Exception as e:
                     # Common on macOS: Metal backend unavailable for the current process. Retry on CPU.
-                    if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers != 0:
+                    # Elsewhere (CUDA) a GPU failure at a large n_ctx is the KV cache not fitting the
+                    # card: take the next, smaller rung ON THE GPU and fall back to the CPU only after
+                    # the smallest rung failed there too. Retrying the same huge n_ctx on the CPU put
+                    # the whole KV cache in RAM: measured on Linux + a 16 GB NVIDIA card (backlog
+                    # 0989), Qwen3-4B-Instruct-2507 at its advertised 262144 tokens (~38 GB of KV) got
+                    # the process OOM-killed instead of loading at 65536 on the GPU.
+                    is_metal_host = platform.system().lower() == "darwin" and platform.machine().lower() == "arm64"
+                    cpu_retry_now = is_metal_host or n_ctx_i == candidate_ctxs[-1]
+                    if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers != 0 and cpu_retry_now:
                         try:
                             self.logger.warning(
                                 f"GGUF load failed with n_gpu_layers={self.n_gpu_layers}; retrying with CPU (n_gpu_layers=0). Error: {e}"

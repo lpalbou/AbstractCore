@@ -258,3 +258,70 @@ def test_huggingface_gguf_user_max_tokens_skips_calibration(
     assert _calibration_spy == []
     assert not getattr(llm, "_gguf_context_calibrated", False)
     assert "context_calibrated" not in llm.get_model_residency()
+
+
+# ---------------------------------------------------------------------------
+# GPU failure at a large n_ctx: smaller context on the GPU before the CPU (backlog 0989)
+# ---------------------------------------------------------------------------
+
+
+def _gpu_kv_limited_llama():
+    class _Llama(_ProbeGatedDummyLlama):
+        probe_pass_threshold = 10**9
+        constructed_n_ctx: list[int] = []
+        eval_probed_n_ctx: list[int] = []
+        attempts: list[tuple[int, int]] = []
+
+        def __init__(self, **kwargs: Any):
+            n_ctx = int(kwargs.get("n_ctx") or 0)
+            n_gpu = int(kwargs.get("n_gpu_layers") or 0)
+            type(self).attempts.append((n_ctx, n_gpu))
+            if n_gpu != 0 and n_ctx > 8192:
+                raise ValueError(f"Failed to create llama_context (KV cache for n_ctx={n_ctx} does not fit)")
+            super().__init__(**kwargs)
+
+    return _Llama
+
+
+def _load(tmp_path, monkeypatch, system: str, machine: str, llama_cls):
+    gguf_path = tmp_path / "dummy.gguf"
+    gguf_path.write_bytes(b"GGUF")
+    monkeypatch.setattr(huggingface_provider, "LLAMACPP_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(huggingface_provider, "Llama", llama_cls, raising=False)
+    monkeypatch.setattr(huggingface_provider.platform, "system", lambda: system)
+    monkeypatch.setattr(huggingface_provider.platform, "machine", lambda: machine)
+    return HuggingFaceProvider(model=str(gguf_path), device="cuda")
+
+
+def test_cuda_gpu_failure_takes_a_smaller_context_on_the_gpu_not_the_same_one_on_the_cpu(tmp_path, monkeypatch) -> None:
+    # Measured on Linux + a 16 GB NVIDIA card: retrying the advertised 262144 tokens on the CPU put
+    # ~38 GB of KV cache in RAM and the process was OOM-killed.
+    llama = _gpu_kv_limited_llama()
+    llm = _load(tmp_path, monkeypatch, "Linux", "x86_64", llama)
+
+    assert llm.llm.n_ctx() == 8192
+    assert llm.n_gpu_layers == -1
+    assert all(n_gpu != 0 for _, n_gpu in llama.attempts), llama.attempts
+
+
+def test_cuda_cpu_fallback_only_after_the_smallest_rung_failed_on_the_gpu(tmp_path, monkeypatch) -> None:
+    class _NoGpu(_gpu_kv_limited_llama()):
+        def __init__(self, **kwargs: Any):
+            if int(kwargs.get("n_gpu_layers") or 0) != 0:
+                type(self).attempts.append((int(kwargs.get("n_ctx") or 0), 1))
+                raise ValueError("CUDA backend unavailable")
+            _ProbeGatedDummyLlama.__init__(self, **kwargs)
+
+    llm = _load(tmp_path, monkeypatch, "Linux", "x86_64", _NoGpu)
+
+    assert llm.n_gpu_layers == 0
+    assert llm.llm.n_ctx() == 4096  # the last rung, the only one tried on the CPU
+    assert [c for c, _ in _NoGpu.attempts] == [16384, 8192, 4096]
+
+
+def test_apple_silicon_keeps_the_immediate_cpu_retry(tmp_path, monkeypatch) -> None:
+    llama = _gpu_kv_limited_llama()
+    llm = _load(tmp_path, monkeypatch, "Darwin", "arm64", llama)
+
+    assert llm.n_gpu_layers == 0
+    assert llm.llm.n_ctx() == 16384
