@@ -27,12 +27,14 @@ from abstractcore.config.manager import ConfigurationManager
 def _portable_host(monkeypatch):
     """These tests pin the PORTABLE recommendation (a non-Apple host). On a
     Mac the text row follows the unified-memory tiers instead; that is
-    covered by tests/config/test_recommended_text_tiers.py."""
+    covered by tests/config/test_recommended_text_tiers.py. Processor-only
+    (`cpu16`): an NVIDIA GPU's image pick (Diffusers, framework backlog 0989)
+    is covered by tests/config/test_recommended_defaults_host_aware.py."""
 
     from abstractcore.utils import host_profile as hp
     from tests.models_engines_fakes import synthetic_host
 
-    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("cuda24"))
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("cpu16"))
 
 
 @pytest.fixture()
@@ -55,7 +57,7 @@ def test_fresh_install_seeds_the_routes_this_host_can_run(fresh_config: Path) ->
     assert routes["input.text"].model == "qwen/qwen3.5-9b"
     assert routes["output.voice"].provider == "supertonic"
     assert routes["output.voice"].model == "supertonic-3"
-    # Linux (`cuda24`): MLX-Gen is Apple silicon only -- no broken image route.
+    # Linux, processor only (`cpu16`): MLX-Gen is Apple silicon only -- no broken image route.
     assert "output.image" not in _configured_keys(manager)
     assert manager.config.capability_defaults.seeded == RECOMMENDED_SEED_VERSION
 

@@ -118,7 +118,8 @@ music (`output.music`), which are not written for you:
 | host | `input.text` | `output.voice` | `output.image` | `output.video` |
 | --- | --- | --- | --- | --- |
 | Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (32 GiB of unified memory or more), else unset |
-| Linux, Windows (x86_64, arm64) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
+| Linux, Windows with an NVIDIA GPU (CUDA) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | `diffusers/black-forest-labs/FLUX.2-klein-4B` where it fits (measured GPU peak about 8.3 GiB with model CPU offload); written by `apply-recommended`, not by the fresh-install seed | unset |
+| Linux, Windows (x86_64, arm64), no NVIDIA GPU | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
 | Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset | unset |
 | anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset |
 
@@ -126,7 +127,12 @@ Supertonic runs on ONNX Runtime on the CPU, which has builds for x86_64 and
 arm64 on Linux and Windows, and for macOS. Where neither LM Studio nor Ollama
 has a build, the text route stays unset too, and the reason says to use a
 cloud provider or a text server on another machine.
-MLX-Gen needs Apple silicon. On other hosts the image route stays unset, and
+MLX-Gen needs Apple silicon. On an NVIDIA GPU the image recommendation is
+Diffusers instead (AbstractVision's `diffusers` backend, CUDA, float16, model CPU
+offload when the weights do not fit the GPU's free memory). The fresh-install
+seed reads only the light host profile, which does not detect CUDA, so there
+`apply-recommended` (which runs the full host probe) writes it. On other hosts
+the image route stays unset, and
 the grid (`recommendation_unavailable`) and `apply-recommended` (action
 `unavailable`) both give the reason. The unset `input.image` row gives one too
 where the recommended text model does not read images, or where no text

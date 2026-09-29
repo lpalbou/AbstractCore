@@ -112,6 +112,14 @@ _ENGINE_LABEL = {
     "mlx-gen": "MLX-Gen (AbstractVision)",
     "faster-whisper": "faster-whisper on CTranslate2 (AbstractVoice)",
     "acestep": "ACE-Step on Diffusers and PyTorch (AbstractMusic)",
+    "diffusers": "Diffusers on PyTorch (AbstractVision)",
+}
+
+# Who measured a `resident` (measured) memory need, per recommended provider:
+# the figure is that engine's, never the model's own minimum.
+_MEASURED_WITH = {
+    "mlx-gen": "AbstractVision/mlx-gen",
+    "diffusers": "AbstractVision/diffusers with model CPU offload",
 }
 
 
@@ -132,6 +140,9 @@ def _device(provider: str, accelerator: str) -> str:
     if provider == "acestep":
         # abstractmusic acestep: CUDA, then MPS (bfloat16), then CPU (float32).
         return {"metal": "Apple GPU (MPS, bfloat16)", "cuda": "NVIDIA GPU (CUDA)"}.get(accelerator, "processor (float32)")
+    if provider == "diffusers":
+        # abstractvision diffusers, device "auto": CUDA, then MPS, then CPU.
+        return {"metal": "Apple GPU (MPS)", "cuda": "NVIDIA GPU (CUDA)"}.get(accelerator, "processor")
     raise ValueError(f"recommended provider {provider!r} has no device rule")
 
 
@@ -140,6 +151,13 @@ def _device_notes(provider: str, accelerator: str) -> List[str]:
 
     if provider == "acestep" and accelerator not in ("metal", "cuda"):
         return ["On the processor AbstractMusic runs it in float32: about twice the memory shown."]
+    if provider == "diffusers" and accelerator == "cuda":
+        # abstractvision `_cuda_offload_decision` (cpu_offload "auto", >= 0.3.32).
+        return [
+            "AbstractVision runs it in float16 and turns on model CPU offload by itself when its 14.9 GiB of "
+            "weights do not fit the GPU's free memory (a 16 GB card): the GPU then peaks at about 8.3 GiB "
+            "(measured) and about 15 GiB of system RAM holds the idle weights. A GPU with room loads it whole."
+        ]
     return []
 
 
@@ -539,7 +557,7 @@ def render_markdown(matrix: Mapping[str, Any]) -> str:
                 lines.append(
                     f"| {machine} | At the default canvas: not available, it needs more memory. At {w}x{h} "
                     f"({frames} frames): {_cell_model(e)}, set it yourself | {_md_escape(e['engine'])}, {e['device']} | "
-                    f"{_gb(e['download_bytes'])} | {_gb(sc['memory_need_bytes'])} at {w}x{h} (measured with AbstractVision/mlx-gen) | "
+                    f"{_gb(e['download_bytes'])} | {_gb(sc['memory_need_bytes'])} at {w}x{h} (measured with {_MEASURED_WITH[e['provider']]}) | "
                     f"{_FIT_WORDS.get(sc['fit'], sc['fit'])} at {w}x{h} |"
                 )
                 continue
@@ -557,7 +575,7 @@ def render_markdown(matrix: Mapping[str, Any]) -> str:
             need = _gb(e["memory_need_bytes"])
             if e["memory_need_source"] == "measured":
                 # The engine's measured figure, not the model's minimum.
-                need += " (measured with AbstractVision/mlx-gen)"
+                need += f" (measured with {_MEASURED_WITH[e['provider']]})"
             lines.append(
                 f"| {machine} | {_cell_model(e)} | {_md_escape(e['engine'])}, {e['device']} | "
                 f"{_gb(e['download_bytes'])} | {need} | {fit} |"

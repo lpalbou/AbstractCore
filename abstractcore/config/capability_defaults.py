@@ -322,6 +322,22 @@ RECOMMENDED_SEED_VERSION = "recommended-v1"
 # writer applies on its own: the operator sets them (`abstractcore config
 # set-default`). Text stores at input.text (the canonical storage key;
 # output.text derives).
+#
+# PER-ACCELERATOR PICKS (`by_accelerator`): a row whose best engine differs by
+# the host's accelerator carries the other pick IN THE ROW, keyed by the host
+# probe's `accelerator` (`cuda`, `metal`, ...). `route`/`download` stay the
+# portable pick every other host starts from; `_full_recommendation` swaps in
+# the accelerator's pick BEFORE the engine-support filter and the memory gate,
+# so the pick is judged by the same rules as every other row. The row stays
+# the one place its recommendation lives.
+@dataclass(frozen=True)
+class AcceleratorPick:
+    """The route and download that replace a row's portable pick on one accelerator."""
+
+    route: CapabilityRouteDefault
+    download: Mapping[str, str]
+
+
 @dataclass(frozen=True)
 class RecommendedModel:
     """One capability's recommendation: the route, its download, starter or not."""
@@ -329,6 +345,13 @@ class RecommendedModel:
     route: CapabilityRouteDefault
     download: Mapping[str, str]
     starter: bool
+    by_accelerator: Mapping[str, AcceleratorPick] = field(default_factory=dict)
+
+    def pick_for(self, host: Mapping[str, Any]) -> Tuple[CapabilityRouteDefault, Mapping[str, str]]:
+        """`(route, download)` for `host`: its accelerator's pick, else the portable one."""
+
+        pick = self.by_accelerator.get(str(host.get("accelerator") or ""))
+        return (pick.route, pick.download) if pick is not None else (self.route, self.download)
 
 
 RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
@@ -354,10 +377,26 @@ RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
         download={"provider": "supertonic", "artifact": "supertonic-3"},
         starter=True,
     ),
+    # Image: FLUX.2 [klein] 4B. Apple silicon (and the portable pick): the
+    # 8-bit MLX-Gen build. An NVIDIA GPU (`cuda`): the same model's Diffusers
+    # repo on AbstractVision's `diffusers` backend (the route provider the
+    # image lane maps to that backend; device `auto` resolves to CUDA, float16).
+    # Its 14.9 GiB of float16 weights do not fit a 16 GB card whole, so
+    # AbstractVision (>= 0.3.32, `cpu_offload="auto"`) loads it with model CPU
+    # offload there: measured 768x768 in ~17 s with an 8.3 GiB GPU peak on a
+    # Quadro RTX 5000 16 GB (framework backlog 0989; the catalog artifact's
+    # `resident` is that figure, so the memory gate judges it). Processor-only
+    # hosts keep the portable pick and report it unavailable.
     "output.image": RecommendedModel(
         route=CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/flux.2-klein-4b-8bit"),
         download={"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
         starter=True,
+        by_accelerator={
+            "cuda": AcceleratorPick(
+                route=CapabilityRouteDefault(provider="diffusers", model="black-forest-labs/FLUX.2-klein-4B"),
+                download={"provider": "diffusers", "artifact": "black-forest-labs/FLUX.2-klein-4B"},
+            ),
+        },
     ),
     # Video: Wan2.2 TI2V-5B, ONE checkpoint for text-to-video AND
     # image-to-video, so the modality cell answers both tasks. It is the only
@@ -397,7 +436,7 @@ RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
 # `apply-recommended` and `models download --recommended` act on. Derived,
 # never edited: `RECOMMENDED_MODELS` is the one place a recommendation lives.
 # Like the table, never read directly for a host answer: use the host-aware
-# functions below.
+# functions below. They hold the PORTABLE picks (no `by_accelerator` swap).
 RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
     key: rec.route for key, rec in RECOMMENDED_MODELS.items() if rec.starter
 }
@@ -412,6 +451,8 @@ RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
 #     ONE owner): the unified-memory tier on Apple silicon (operator ruling
 #     2026-09-24), the portable LM Studio build elsewhere, and the same model's
 #     Ollama build where LM Studio has no build (Intel Macs);
+#   - a row with a pick for the host's accelerator (`by_accelerator`) uses it:
+#     image generation on an NVIDIA GPU is Diffusers, not MLX-Gen;
 #   - every row whose engine cannot run on the host is DROPPED, never written
 #     as a route that fails at first use. It is reported instead, with the
 #     reason, by `recommended_unavailable_routes()` -- the grid then shows the
@@ -447,6 +488,10 @@ RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
 #   acestep     abstractmusic's ACE-Step backend is a Diffusers pipeline on
 #               PyTorch (abstractmusic/backends/acestep.py): Apple-silicon
 #               macOS, x86_64/arm64 Linux, x86_64 Windows.
+#   diffusers   abstractvision's Diffusers backend is PyTorch
+#               (abstractvision/backends/huggingface_diffusers.py), the same
+#               builds as acestep. Recommended on `cuda` hosts only
+#               (`RECOMMENDED_MODELS["output.image"].by_accelerator`).
 _RECOMMENDED_PROVIDER_ENGINE = {
     "mlx": "mlx",
     "mlx-gen": "mlx",
@@ -455,12 +500,14 @@ _RECOMMENDED_PROVIDER_ENGINE = {
     "supertonic": "onnxruntime",
     "faster-whisper": "ctranslate2",
     "acestep": "torch",
+    "diffusers": "torch",
 }
 # How a provider that runs ON another engine words the engine's refusal.
 _ENGINE_VIA = {
     "supertonic": "Supertonic voice runs on ONNX Runtime (CPU), and ",
     "faster-whisper": "faster-whisper speech input runs on CTranslate2, and ",
     "acestep": "ACE-Step music generation runs on PyTorch, and ",
+    "diffusers": "Diffusers image generation runs on PyTorch, and ",
 }
 
 # CONFIGURED routes whose engine runs INSIDE this process (AbstractCore's MLX
@@ -474,8 +521,9 @@ _ENGINE_VIA = {
 _IN_PROCESS_PROVIDERS = frozenset({"mlx", "mlx-gen", "supertonic"})
 
 # What an operator can do instead, per route, appended to the reason. Provider
-# ids are abstractvision's own (`diffusers`, `sdcpp`); the curated catalog has
-# no artifact for them yet, which is why nothing is recommended in their place.
+# ids are abstractvision's own (`diffusers`, `sdcpp`). An NVIDIA GPU gets the
+# Diffusers image pick itself (`by_accelerator`); a processor-only host does not
+# (no measured processor run vouches for it), so the sentence names the engines.
 # Video has NO local alternative off Apple silicon today: abstractvision's
 # Diffusers text-to-video is disabled for its only model (CogVideoX-2b,
 # `_TEMPORARILY_DISABLED_LOCAL_DIFFUSERS_TASKS`) and has no image-to-video,
@@ -508,7 +556,8 @@ _UNAVAILABLE_NEXT_STEP = {
     "output.music": "set output.music to a cloud music backend (acemusic or elevenlabs-music, with its API key)",
 }
 # output.image names only the three settings (operator ruling 2026-09-29). Apple
-# silicon never reaches this (MLX-Gen runs there). Linux: abstractcore[gpu] ships
+# silicon never reaches this (MLX-Gen runs there), nor does an NVIDIA GPU (its
+# pick is Diffusers, which runs there). Linux: abstractcore[gpu] ships
 # both local image engines; Windows x86_64: abstractcore[gpu] ships diffusers
 # (stable-diffusion.cpp is a source build there, marked out; backlog 0988). An Intel
 # Mac or Windows on ARM has no setting that installs them (`uv pip compile` of
@@ -538,6 +587,12 @@ _TOO_LARGE_NEXT_STEP = {
         "use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, "
         "with its API key)"
     ),
+}
+# The same, where the host's accelerator words it differently (the key is
+# `(accelerator, route)`): an NVIDIA GPU's image pick is judged against GPU
+# memory, not a Mac's unified memory.
+_TOO_LARGE_NEXT_STEP_BY_ACCELERATOR = {
+    ("cuda", "output.image"): "use an NVIDIA GPU with more memory, or a cloud image provider",
 }
 # Recommended rows written only where the catalog's fit estimate (the same one
 # the model browser's "fits this computer" filter uses: `fits` or `tight`)
@@ -625,7 +680,8 @@ def _fit_gate_sentence(
     if verdict in ("fits", "tight"):
         return None
     name = got["row"].get("display_name") or got["row"].get("id")
-    next_step = f"; {_TOO_LARGE_NEXT_STEP[key]}" if key in _TOO_LARGE_NEXT_STEP else ""
+    step = _TOO_LARGE_NEXT_STEP_BY_ACCELERATOR.get((str(host.get("accelerator") or ""), key)) or _TOO_LARGE_NEXT_STEP.get(key)
+    next_step = f"; {step}" if step else ""
     if verdict == "unknown" or not isinstance(fit.get("need_bytes"), int) or not isinstance(fit.get("usable_bytes"), int):
         return f"{name} needs a lot of memory and this computer's memory could not be measured{next_step}"
     # "measured" only where the seed carries a measured run-time peak
@@ -702,9 +758,19 @@ def _host_or_probe(host: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
         return dict(host)
     from ..utils.host_profile import host_profile
 
-    # The LIGHT reading: os / arch / Apple silicon / RAM, no GPU tool, no
-    # torch, no mlx (the import-time config seed runs this).
-    return host_profile(light=True)
+    # The LIGHT reading first: os / arch / Apple silicon / RAM, no GPU tool,
+    # no torch, no mlx. It answers Apple silicon whole. Off Apple silicon it
+    # reads every GPU as `none`, and there the accelerator decides a
+    # recommendation (an NVIDIA GPU's image pick, `by_accelerator`), so the
+    # FULL probe answers (cached for a few seconds; nvidia-smi). On the light
+    # reading alone apply-recommended, the grid and `models download
+    # --recommended` would treat a CUDA host as processor-only and never
+    # offer its image pick (framework backlog 0989). The import-time seed never comes here: it passes the light reading
+    # itself (`seed_recommended_capability_defaults`).
+    light = host_profile(light=True)
+    if light.get("accelerator") == "metal":
+        return light
+    return host_profile()
 
 
 def _full_recommendation(
@@ -718,15 +784,15 @@ def _full_recommendation(
 
     from .model_catalog import recommended_text_model
 
-    table = {key: rec for key, rec in RECOMMENDED_MODELS.items() if rec.starter or not starter_only}
+    table = {key: rec.pick_for(host) for key, rec in RECOMMENDED_MODELS.items() if rec.starter or not starter_only}
     routes = {
         key: CapabilityRouteDefault(
-            provider=rec.route.provider, model=rec.route.model, base_url=rec.route.base_url,
-            reasoning=rec.route.reasoning, options=dict(rec.route.options),
+            provider=route.provider, model=route.model, base_url=route.base_url,
+            reasoning=route.reasoning, options=dict(route.options),
         )
-        for key, rec in table.items()
+        for key, (route, _download) in table.items()
     }
-    downloads = {key: dict(rec.download) for key, rec in table.items()}
+    downloads = {key: dict(download) for key, (_route, download) in table.items()}
     pick = recommended_text_model(host, fit=False)
     routes["input.text"] = CapabilityRouteDefault(
         provider=pick["provider"], model=pick["model"], options=dict(pick.get("options") or {})
@@ -763,9 +829,11 @@ def image_input_unavailable_reason(
 def recommended_unavailable_routes(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Dict[str, str]]:
     """Recommended rows this host cannot run: `{key: {provider, model, reason}}`.
 
-    On every host that is not Apple silicon `output.image` and `output.video`
-    are here (their only recommended engine, MLX-Gen, is Apple silicon only;
-    the curated catalog has no other local image or video artifact). On Apple
+    On every host that is not Apple silicon `output.video` is here (its only
+    recommended engine, MLX-Gen, is Apple silicon only), and so is
+    `output.image` except on an NVIDIA GPU, whose image pick is Diffusers
+    (`by_accelerator`; there it is here only where the catalog says it does
+    not fit the GPU's memory). On Apple
     silicon the memory-gated rows (`_FIT_GATED_ROUTES`: image, video) are here
     where the catalog says their model does not fit: `output.image` on an 8 GB
     Mac (FLUX.2 klein 4B needs ~8.5 GiB), `output.video` below 32 GiB of
@@ -1093,7 +1161,16 @@ def seed_recommended_capability_defaults(
     provenance marker so surfaces can label the values as recommended. The
     recommendation is this host's (Apple silicon: the unified-memory tier); a
     route this host cannot run is left unset (`recommended_unavailable_routes`).
+
+    With no `host` it reads the LIGHT host profile only: it runs when the
+    config store is first created, on import, where no GPU tool or engine may
+    load. The light reading sees no CUDA, so a fresh NVIDIA install gets no
+    image route here; `apply-recommended` (full probe) writes it.
     """
+    if host is None:
+        from ..utils.host_profile import host_profile
+
+        host = host_profile(light=True)
     for key, route in recommended_capability_default_routes(host).items():
         existing = config.routes.get(key)
         if existing is None or not existing.configured():

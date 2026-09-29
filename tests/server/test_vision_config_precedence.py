@@ -627,3 +627,22 @@ def test_providerless_route_options_warned_not_applied(clean_env, monkeypatch, c
     assert any(
         "without a route provider" in r.getMessage() and "no backend lane" in r.getMessage() for r in caplog.records
     )
+
+
+def test_the_nvidia_gpu_recommended_image_route_runs_on_the_diffusers_lane(clean_env, monkeypatch):
+    """Framework backlog 0989: the route apply-recommended writes on a CUDA host
+    (`diffusers` / black-forest-labs/FLUX.2-klein-4B) must reach AbstractVision's
+    Diffusers backend with device "auto" (CUDA on that host, float16 by the
+    backend's own default) and no route option: AbstractVision's model CPU
+    offload is "auto" by default, so no config switch is needed on a 16 GB card."""
+
+    from abstractcore.config import capability_defaults as cd
+    from tests.models_engines_fakes import synthetic_host
+
+    route = cd.recommended_capability_default_routes(synthetic_host("cuda24"))["output.image"]
+    _patch_image_route(monkeypatch, route.to_dict())
+    assert ve._vision_backend_kind() == "diffusers"
+    assert ve._effective_backend_kind(None) == "diffusers"
+    assert ve._require_diffusers_model_id(None) == "black-forest-labs/FLUX.2-klein-4B"
+    settings = ve._diffusers_backend_settings()
+    assert settings["device"] == "auto" and settings["torch_dtype"] is None

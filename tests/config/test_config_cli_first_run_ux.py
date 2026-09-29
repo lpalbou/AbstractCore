@@ -31,12 +31,14 @@ from abstractcore.config.main import _handle_config_subcommand
 def _portable_host(monkeypatch):
     """These tests pin the PORTABLE recommendation (a non-Apple host). On a
     Mac the text row follows the unified-memory tiers instead; that is
-    covered by tests/config/test_recommended_text_tiers.py."""
+    covered by tests/config/test_recommended_text_tiers.py. Processor-only
+    (`cpu16`): an NVIDIA GPU's image pick (Diffusers, framework backlog 0989)
+    is covered by tests/config/test_recommended_defaults_host_aware.py."""
 
     from abstractcore.utils import host_profile as hp
     from tests.models_engines_fakes import synthetic_host
 
-    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("cuda24"))
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("cpu16"))
 
 
 def _run(capsys: pytest.CaptureFixture[str], *argv: str) -> str:
@@ -55,7 +57,7 @@ def test_a_fresh_install_shows_the_seeded_recommended_defaults(capsys) -> None:
     assert "lmstudio/qwen/qwen3.5-9b" in out
     assert "supertonic/supertonic-3" in out
     assert "No text-generation default" not in out
-    # This host is Linux (`cuda24`): MLX-Gen cannot run here, so the image row
+    # This host is Linux, processor only (`cpu16`): MLX-Gen cannot run here, so the image row
     # is NOT seeded with it; the grid shows the row unset and says why.
     assert "mlx-gen" not in out
     image_line = next(line for line in out.splitlines() if line.startswith("- output.image:"))

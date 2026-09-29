@@ -195,9 +195,31 @@ def test_class_labels_never_over_claim_their_variants():
 def test_apple_only_engines_are_unavailable_elsewhere_with_the_reason(matrix):
     for class_id in ("nvidia", "cpu", "intel_mac"):
         entries = _cls(matrix, class_id)["entries"]
-        for cid in ("image", "video"):
+        # An NVIDIA GPU's image row is Diffusers (see the test below), not MLX-Gen.
+        for cid in ("video",) if class_id == "nvidia" else ("image", "video"):
             assert entries[cid]["status"] == "unavailable", (class_id, cid)
             assert "MLX runs only on Apple Silicon" in entries[cid]["reason"]
+
+
+def test_an_nvidia_gpu_recommends_diffusers_image_generation(matrix):
+    """Framework backlog 0989: FLUX.2 klein 4B on AbstractVision's Diffusers
+    backend, measured 768x768 in ~17 s with an 8.3 GiB GPU peak on a 16 GB
+    card (model CPU offload). It fits the 24 GB reference and a 16 GB card."""
+
+    image = _cls(matrix, "nvidia")["entries"]["image"]
+    assert image["status"] == "recommended" and image["starter"] is True
+    assert (image["provider"], image["model"]) == ("diffusers", "black-forest-labs/FLUX.2-klein-4B")
+    assert (image["download_provider"], image["artifact"]) == ("diffusers", "black-forest-labs/FLUX.2-klein-4B")
+    assert image["engine"] == "Diffusers on PyTorch (AbstractVision)" and image["device"] == "NVIDIA GPU (CUDA)"
+    assert image["fit"] == "fits" and image["memory_need_source"] == "measured"
+    assert image["memory_need_bytes"] == 8912896000
+    assert any("model CPU offload" in n for n in image["notes"])
+    spec = next(s for s in rec.MACHINE_CLASSES if s["id"] == "nvidia")
+    card16 = dict(spec["host"], vram_bytes=16 * 1024**3, ceiling_bytes=16 * 1024**3)
+    assert rec.recommended_models(card16)["image"]["fit"] == "fits"
+    row = next(line for line in rec.render_markdown(matrix).splitlines()
+               if line.startswith("| Linux or Windows with an NVIDIA GPU | `black-forest-labs/FLUX.2-klein-4B`"))
+    assert "8.3 GiB (measured with AbstractVision/diffusers with model CPU offload)" in row and row.endswith("| fits |")
 
 
 def test_video_is_memory_gated_on_apple_silicon(matrix):

@@ -15175,6 +15175,7 @@ An **artifact** names the exact weights to fetch, quantization included:
 | `mlx` | `mlx-community/Qwen3-8B-4bit` | A Hugging Face repo; MLX repos hold one quantization. |
 | `huggingface` | `unsloth/Qwen3-8B-GGUF:Q4_K_M` | A GGUF repo plus `:QUANT`. Only the matching `*Q4_K_M*.gguf` files are fetched. Without `:QUANT` the whole repo is downloaded. |
 | `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit`, `supertonic-3` | Image starter (Apple silicon only), video starter (Apple silicon, only where its measured memory fits) and voice starter (every OS). |
+| `diffusers` | `black-forest-labs/FLUX.2-klein-4B` | A Diffusers repo, fetched whole. The image starter on an NVIDIA GPU. |
 
 ## The host profile
 
@@ -15703,7 +15704,13 @@ website.
 - **Speech output** is Supertonic 3 on ONNX Runtime, on the processor, on every desktop platform.
 - **Speech input** is Whisper base on AbstractVoice's faster-whisper engine (CTranslate2). It uses
   CUDA on an NVIDIA GPU and the processor elsewhere, including Apple silicon.
-- **Image generation** is FLUX.2 klein 4B (8-bit) on MLX-Gen, which runs on Apple silicon only.
+- **Image generation** is FLUX.2 klein 4B. On Apple silicon it is the 8-bit build on MLX-Gen
+  (Apple silicon only). On an NVIDIA GPU it is the Diffusers repo `black-forest-labs/FLUX.2-klein-4B`
+  on AbstractVision's `diffusers` backend (CUDA, float16). Its 14.9 GiB of float16 weights do not
+  fit a 16 GB card whole, so AbstractVision turns on model CPU offload by itself there: measured on
+  a 16 GB Quadro RTX 5000, 768x768 in about 17 s with a GPU peak of about 8.3 GiB, while about
+  15 GiB of system RAM holds the idle weights. Processor-only computers get no image
+  recommendation.
 - **Video generation** is Wan2.2 TI2V 5B (8-bit) on MLX-Gen: one checkpoint for text-to-video
   and image-to-video, on Apple silicon only. The memory figures are AbstractVision/mlx-gen's,
   measured at 1280x704x121 (about 60.5 GiB) and at 832x480x121 (32.7 GiB), with the text encoder
@@ -15774,8 +15781,8 @@ Route `input.text` (text generation).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 128 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=114688` |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 5.6 GiB | fits |
-| Linux or Windows, processor only | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, processor | unknown | 5.6 GiB | fits |
+| Linux or Windows with an NVIDIA GPU | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 6.0 GiB | fits |
+| Linux or Windows, processor only | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, processor | unknown | 6.0 GiB | fits |
 | Intel Mac | `qwen3.5:9b` | Ollama, processor | unknown | 6.0 GiB | fits |
 
 ### Image input (vision)
@@ -15791,8 +15798,8 @@ Route `input.image` (image understanding).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 128 GB | the text model (`mlx-community/Qwen3.8-Flash-Next-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=114688` |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | the text model (`mlx-community/Qwen3.8-Flash-Next-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | the text model (`qwen/qwen3.5-9b`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 5.6 GiB | fits |
-| Linux or Windows, processor only | the text model (`qwen/qwen3.5-9b`) | LM Studio, processor | unknown | 5.6 GiB | fits |
+| Linux or Windows with an NVIDIA GPU | the text model (`qwen/qwen3.5-9b`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 6.0 GiB | fits |
+| Linux or Windows, processor only | the text model (`qwen/qwen3.5-9b`) | LM Studio, processor | unknown | 6.0 GiB | fits |
 | Intel Mac | the text model (`qwen3.5:9b`) | Ollama, processor | unknown | 6.0 GiB | fits |
 
 ### Speech output (text to speech)
@@ -15835,16 +15842,18 @@ Route `output.image` (text to image).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | Not available: FLUX.2 [klein] 4B (8-bit) needs about 8.5 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use a Mac with more unified memory, or a cloud image provider | | | | |
+| Apple silicon Mac, 8 GB | Not available: FLUX.2 [klein] 4B needs about 8.5 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use a Mac with more unified memory, or a cloud image provider | | | | |
 | Apple silicon Mac, 16 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits, tightly |
 | Apple silicon Mac, 18 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 24 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 128 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
+| Linux or Windows with an NVIDIA GPU | `black-forest-labs/FLUX.2-klein-4B` | Diffusers on PyTorch (AbstractVision), NVIDIA GPU (CUDA) | 22.1 GiB | 8.3 GiB (measured with AbstractVision/diffusers with model CPU offload) | fits |
 | Linux or Windows, processor only | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
 | Intel Mac | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
+
+- Linux or Windows with an NVIDIA GPU: AbstractVision runs it in float16 and turns on model CPU offload by itself when its 14.9 GiB of weights do not fit the GPU's free memory (a 16 GB card): the GPU then peaks at about 8.3 GiB (measured) and about 15 GiB of system RAM holds the idle weights. A GPU with room loads it whole.
 
 ### Video generation
 
@@ -16213,7 +16222,8 @@ music (`output.music`), which are not written for you:
 | host | `input.text` | `output.voice` | `output.image` | `output.video` |
 | --- | --- | --- | --- | --- |
 | Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (32 GiB of unified memory or more), else unset |
-| Linux, Windows (x86_64, arm64) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
+| Linux, Windows with an NVIDIA GPU (CUDA) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | `diffusers/black-forest-labs/FLUX.2-klein-4B` where it fits (measured GPU peak about 8.3 GiB with model CPU offload); written by `apply-recommended`, not by the fresh-install seed | unset |
+| Linux, Windows (x86_64, arm64), no NVIDIA GPU | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
 | Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset | unset |
 | anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset |
 
@@ -16221,7 +16231,12 @@ Supertonic runs on ONNX Runtime on the CPU, which has builds for x86_64 and
 arm64 on Linux and Windows, and for macOS. Where neither LM Studio nor Ollama
 has a build, the text route stays unset too, and the reason says to use a
 cloud provider or a text server on another machine.
-MLX-Gen needs Apple silicon. On other hosts the image route stays unset, and
+MLX-Gen needs Apple silicon. On an NVIDIA GPU the image recommendation is
+Diffusers instead (AbstractVision's `diffusers` backend, CUDA, float16, model CPU
+offload when the weights do not fit the GPU's free memory). The fresh-install
+seed reads only the light host profile, which does not detect CUDA, so there
+`apply-recommended` (which runs the full host probe) writes it. On other hosts
+the image route stays unset, and
 the grid (`recommendation_unavailable`) and `apply-recommended` (action
 `unavailable`) both give the reason. The unset `input.image` row gives one too
 where the recommended text model does not read images, or where no text

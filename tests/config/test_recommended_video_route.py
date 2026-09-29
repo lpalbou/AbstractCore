@@ -257,7 +257,9 @@ def test_a_measured_need_is_the_need_with_no_estimated_overhead_on_top(tmp_path,
     estimated = estimate_fit(host=synthetic_host("metal128"), weight_bytes=16 * GiB, context=1)
     assert estimated["need_bytes"] > 16 * GiB  # the estimated path keeps its overhead
 
-    seed_arts = [(r, a) for r in mc.load_seed()["rows"] for a in r["artifacts"] if a.get("resident")]
+    seed_arts = [
+        (r, a) for r in mc.load_seed()["rows"] for a in r["artifacts"] if a.get("resident") and a["provider"] == "mlx-gen"
+    ]
     assert {a["artifact"] for _r, a in seed_arts} == {TI2V, T2V, I2V}
     rows = _rows(tmp_path, monkeypatch, synthetic_host("metal128"), tags=["video"])
     catalog_arts = {a["artifact"]: a for r in rows.values() for a in r["artifacts"]}

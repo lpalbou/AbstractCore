@@ -41,6 +41,7 @@ An **artifact** names the exact weights to fetch, quantization included:
 | `mlx` | `mlx-community/Qwen3-8B-4bit` | A Hugging Face repo; MLX repos hold one quantization. |
 | `huggingface` | `unsloth/Qwen3-8B-GGUF:Q4_K_M` | A GGUF repo plus `:QUANT`. Only the matching `*Q4_K_M*.gguf` files are fetched. Without `:QUANT` the whole repo is downloaded. |
 | `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit`, `supertonic-3` | Image starter (Apple silicon only), video starter (Apple silicon, only where its measured memory fits) and voice starter (every OS). |
+| `diffusers` | `black-forest-labs/FLUX.2-klein-4B` | A Diffusers repo, fetched whole. The image starter on an NVIDIA GPU. |
 
 ## The host profile
 

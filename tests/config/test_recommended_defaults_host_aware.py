@@ -56,6 +56,10 @@ NON_APPLE = [
     "windows_arm64",
     "intel_mac",
 ]
+# Hosts with no image engine the recommendation names: every non-Apple host
+# but an NVIDIA GPU, whose image pick is Diffusers (framework backlog 0989;
+# `test_an_nvidia_gpu_*` below).
+NO_IMAGE_ENGINE = [name for name in NON_APPLE if name != "linux_x86_64_cuda"]
 TEXT_BY_HOST = {name: ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m") for name in NON_APPLE}
 TEXT_BY_HOST["intel_mac"] = ("ollama", "qwen3.5:9b", "qwen3.5:9b")
 
@@ -75,7 +79,7 @@ def pin_host(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", NON_APPLE)
+@pytest.mark.parametrize("name", NO_IMAGE_ENGINE)
 def test_no_route_or_download_names_an_engine_the_host_cannot_run(name):
     host = _host(name)
     routes = cd.recommended_capability_default_routes(host)
@@ -93,7 +97,7 @@ def test_no_route_or_download_names_an_engine_the_host_cannot_run(name):
     assert downloads["output.voice"] == {"provider": "supertonic", "artifact": "supertonic-3"}
 
 
-@pytest.mark.parametrize("name", NON_APPLE)
+@pytest.mark.parametrize("name", NO_IMAGE_ENGINE)
 def test_the_image_route_is_reported_unavailable_with_its_reason(name):
     unavailable = cd.recommended_unavailable_routes(_host(name))
     assert set(unavailable) == {"output.image", "output.video"}
@@ -103,14 +107,14 @@ def test_the_image_route_is_reported_unavailable_with_its_reason(name):
     assert "diffusers" in row["reason"] and "sdcpp" in row["reason"], "the reason names what to do instead"
 
 
-@pytest.mark.parametrize("name", NON_APPLE)
+@pytest.mark.parametrize("name", NO_IMAGE_ENGINE)
 def test_the_seed_never_writes_the_image_route(name):
     seeded = cd.seed_recommended_capability_defaults(cd.CapabilityDefaultsConfig(), host=_host(name))
     assert set(seeded.routes) == {"input.text", "output.voice"}
     assert seeded.seeded == cd.RECOMMENDED_SEED_VERSION
 
 
-@pytest.mark.parametrize("name", NON_APPLE)
+@pytest.mark.parametrize("name", NO_IMAGE_ENGINE)
 def test_apply_reports_image_unavailable_and_writes_the_rest(name):
     plan = {p["key"]: p for p in cd.plan_recommended_capability_defaults({}, host=_host(name), force=True)}
     assert list(plan) == ["input.text", "output.voice", "output.image", "output.video"]
@@ -120,6 +124,142 @@ def test_apply_reports_image_unavailable_and_writes_the_rest(name):
         assert row["action"] == "unavailable" and row["changed"] is False
         assert row["after"] == row["before"] == {} and row["download"] == {}
         assert "Apple Silicon" in row["reason"]
+
+
+# ---------------------------------------------------------------------------
+# An NVIDIA GPU: image generation is Diffusers (framework backlog 0989)
+# ---------------------------------------------------------------------------
+#
+# Measured 2026-09-29 on Linux + NVIDIA (Quadro RTX 5000 16 GB): AbstractVision's
+# Diffusers backend generated FLUX.2 klein 4B at 768x768 in ~17 s with an 8.3 GiB
+# GPU peak (model CPU offload), while every surface reported image generation
+# "not available (MLX-Gen ... needs MLX)".
+
+CUDA_IMAGE = {"provider": "diffusers", "model": "black-forest-labs/FLUX.2-klein-4B"}
+CUDA_IMAGE_DOWNLOAD = {"provider": "diffusers", "artifact": "black-forest-labs/FLUX.2-klein-4B"}
+GiB = 1024**3
+
+
+def _cuda(vram_gib: int) -> dict:
+    return dict(synthetic_host("cuda24"), vram_bytes=vram_gib * GiB, ceiling_bytes=vram_gib * GiB)
+
+
+@pytest.mark.parametrize("host", [synthetic_host("cuda24"), _cuda(16), dict(_cuda(16), os="windows")],
+                         ids=["cuda24", "cuda16", "windows_cuda16"])
+def test_an_nvidia_gpu_gets_the_diffusers_image_route(host):
+    routes = cd.recommended_capability_default_routes(host)
+    downloads = cd.recommended_model_downloads(host)
+    assert {"provider": routes["output.image"].provider, "model": routes["output.image"].model} == CUDA_IMAGE
+    assert downloads["output.image"] == CUDA_IMAGE_DOWNLOAD
+    assert set(cd.recommended_unavailable_routes(host)) == {"output.video"}
+    # The memory gate judged it with the MEASURED GPU peak, not an estimate.
+    fit = mc.recommended_artifact_fit("diffusers", CUDA_IMAGE["model"], host)["fit"]
+    assert fit["verdict"] == "fits"
+    assert fit["need_bytes"] == 8912896000 and fit["overhead_bytes"] == 0
+
+
+def test_apple_silicon_and_processor_only_hosts_keep_their_image_answer():
+    mac = cd.recommended_capability_default_routes(synthetic_host("metal16"))["output.image"]
+    assert (mac.provider, mac.model) == ("mlx-gen", "AbstractFramework/flux.2-klein-4b-8bit")
+    for name in NO_IMAGE_ENGINE:
+        row = cd.recommended_unavailable_routes(_host(name))["output.image"]
+        assert row["provider"] == "mlx-gen", name
+
+
+def test_an_nvidia_gpu_too_small_for_it_reports_why_in_gpu_words():
+    row = cd.recommended_unavailable_routes(_cuda(8))["output.image"]
+    assert (row["provider"], row["model"]) == (CUDA_IMAGE["provider"], CUDA_IMAGE["model"])
+    assert "needs about 8.3 GiB" in row["reason"] and "model CPU offload" in row["reason"]
+    assert "not the model's minimum" in row["reason"]
+    assert row["reason"].endswith("use an NVIDIA GPU with more memory, or a cloud image provider")
+    assert "Mac" not in row["reason"]
+
+
+def test_apply_on_an_nvidia_gpu_writes_the_diffusers_image_route(tmp_path, pin_host):
+    pin_host(synthetic_host("cuda24"))
+    plan = {p["key"]: p for p in cd.plan_recommended_capability_defaults({}, host=synthetic_host("cuda24"))}
+    assert plan["output.image"]["action"] == "apply"
+    assert plan["output.image"]["after"] == CUDA_IMAGE
+    assert plan["output.image"]["download"] == CUDA_IMAGE_DOWNLOAD
+    assert plan["output.video"]["action"] == "unavailable"
+
+    manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
+    for key in list(manager.config.capability_defaults.routes):
+        manager.clear_capability_default(key)
+    report = manager.apply_recommended_capability_defaults()
+    image = next(r for r in report["routes"] if r["key"] == "output.image")
+    assert image["action"] == "apply"
+    stored = json.loads((tmp_path / "abstractcore.json").read_text(encoding="utf-8"))["capability_defaults"]["routes"]
+    assert {"provider": stored["output.image"]["provider"], "model": stored["output.image"]["model"]} == CUDA_IMAGE
+
+
+def _light_sees_no_cuda(monkeypatch) -> None:
+    """The real host probe's shape: the LIGHT reading never sees CUDA (no GPU
+    tool), the full one does (nvidia-smi)."""
+
+    from abstractcore.utils import host_profile as hp
+
+    full = synthetic_host("cuda24")
+    light_reading = dict(full, accelerator="none", vram_bytes=None, ceiling_bytes=None, ceiling_source=None, light=True)
+
+    def probe(*, light: bool = False, **_k) -> dict:
+        return dict(light_reading if light else full)
+
+    monkeypatch.setattr(hp, "host_profile", probe)
+
+
+def test_without_a_host_the_writers_take_the_full_probe_off_apple_silicon(tmp_path, monkeypatch):
+    """apply-recommended, the grid and `models download --recommended` pass no
+    host: off Apple silicon they must read the FULL probe, or a CUDA host reads
+    as processor-only and never gets its image pick."""
+
+    _light_sees_no_cuda(monkeypatch)
+    assert {"provider": cd.recommended_capability_default_routes()["output.image"].provider,
+            "model": cd.recommended_capability_default_routes()["output.image"].model} == CUDA_IMAGE
+    assert "output.image" not in cd.recommended_unavailable_routes()
+    plan = {p["key"]: p for p in cd.plan_recommended_capability_defaults({})}
+    assert plan["output.image"]["after"] == CUDA_IMAGE
+
+
+def test_the_fresh_install_seed_stays_on_the_light_reading(tmp_path, monkeypatch):
+    """The import-time seed never runs a GPU tool: a fresh NVIDIA install gets
+    no image route from it, and apply-recommended writes it."""
+
+    _light_sees_no_cuda(monkeypatch)
+    manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
+    routes = manager.config.capability_defaults.routes
+    assert "output.image" not in {k for k, r in routes.items() if r.configured()}
+    manager.apply_recommended_capability_defaults()
+    image = manager.config.capability_defaults.routes["output.image"]
+    assert {"provider": image.provider, "model": image.model} == CUDA_IMAGE
+
+
+def test_a_stale_mlx_gen_image_route_on_an_nvidia_gpu_names_the_diffusers_pick():
+    broken = cd.configured_routes_unavailable(
+        {"output.image": {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"}},
+        synthetic_host("cuda24"),
+    )
+    assert broken["output.image"]["reason"].endswith(
+        "this computer's recommended route is diffusers/black-forest-labs/FLUX.2-klein-4B"
+    )
+    plan = {
+        p["key"]: p
+        for p in cd.plan_recommended_capability_defaults(
+            {"output.image": cd.CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/flux.2-klein-4b-8bit")},
+            host=synthetic_host("cuda24"),
+            force=True,
+        )
+    }
+    assert plan["output.image"]["action"] == "overwrite" and plan["output.image"]["after"] == CUDA_IMAGE
+
+
+def test_the_cuda_pick_is_a_starter_artifact_of_the_same_catalog_row():
+    arts = {(a["provider"], a["artifact"]): r for r in mc.load_seed()["rows"] for a in r["artifacts"]}
+    for rec in cd.RECOMMENDED_MODELS.values():
+        for pick in rec.by_accelerator.values():
+            row = arts[(pick.download["provider"], pick.download["artifact"])]
+            assert row["starter"] is True
+            assert row["id"] == arts[(rec.download["provider"], rec.download["artifact"])]["id"]
 
 
 def test_an_intel_mac_text_pick_is_the_ollama_build_of_the_portable_model():

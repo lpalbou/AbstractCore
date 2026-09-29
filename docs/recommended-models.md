@@ -46,7 +46,13 @@ website.
 - **Speech output** is Supertonic 3 on ONNX Runtime, on the processor, on every desktop platform.
 - **Speech input** is Whisper base on AbstractVoice's faster-whisper engine (CTranslate2). It uses
   CUDA on an NVIDIA GPU and the processor elsewhere, including Apple silicon.
-- **Image generation** is FLUX.2 klein 4B (8-bit) on MLX-Gen, which runs on Apple silicon only.
+- **Image generation** is FLUX.2 klein 4B. On Apple silicon it is the 8-bit build on MLX-Gen
+  (Apple silicon only). On an NVIDIA GPU it is the Diffusers repo `black-forest-labs/FLUX.2-klein-4B`
+  on AbstractVision's `diffusers` backend (CUDA, float16). Its 14.9 GiB of float16 weights do not
+  fit a 16 GB card whole, so AbstractVision turns on model CPU offload by itself there: measured on
+  a 16 GB Quadro RTX 5000, 768x768 in about 17 s with a GPU peak of about 8.3 GiB, while about
+  15 GiB of system RAM holds the idle weights. Processor-only computers get no image
+  recommendation.
 - **Video generation** is Wan2.2 TI2V 5B (8-bit) on MLX-Gen: one checkpoint for text-to-video
   and image-to-video, on Apple silicon only. The memory figures are AbstractVision/mlx-gen's,
   measured at 1280x704x121 (about 60.5 GiB) and at 832x480x121 (32.7 GiB), with the text encoder
@@ -178,16 +184,18 @@ Route `output.image` (text to image).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | Not available: FLUX.2 [klein] 4B (8-bit) needs about 8.5 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use a Mac with more unified memory, or a cloud image provider | | | | |
+| Apple silicon Mac, 8 GB | Not available: FLUX.2 [klein] 4B needs about 8.5 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use a Mac with more unified memory, or a cloud image provider | | | | |
 | Apple silicon Mac, 16 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits, tightly |
 | Apple silicon Mac, 18 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 24 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 128 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
+| Linux or Windows with an NVIDIA GPU | `black-forest-labs/FLUX.2-klein-4B` | Diffusers on PyTorch (AbstractVision), NVIDIA GPU (CUDA) | 22.1 GiB | 8.3 GiB (measured with AbstractVision/diffusers with model CPU offload) | fits |
 | Linux or Windows, processor only | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
 | Intel Mac | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
+
+- Linux or Windows with an NVIDIA GPU: AbstractVision runs it in float16 and turns on model CPU offload by itself when its 14.9 GiB of weights do not fit the GPU's free memory (a 16 GB card): the GPU then peaks at about 8.3 GiB (measured) and about 15 GiB of system RAM holds the idle weights. A GPU with room loads it whole.
 
 ### Video generation
 

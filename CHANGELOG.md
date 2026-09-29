@@ -21,6 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The recommended LM Studio text download is `qwen/qwen3.5-9b@q4_k_m` (was `@4bit`). LM Studio is recommended
   only off Apple silicon, where its catalog has no `4bit` (MLX) variant: `lms get qwen/qwen3.5-9b@4bit` failed
   with "Cannot find variant 4bit", so "download the recommended models" failed on Linux/Windows.
+- An NVIDIA GPU gets an image-generation recommendation: `output.image` = `diffusers` /
+  `black-forest-labs/FLUX.2-klein-4B` (AbstractVision's Diffusers backend; device `auto` resolves to CUDA,
+  float16), download `diffusers black-forest-labs/FLUX.2-klein-4B`. Before, `models recommendations` and
+  `apply-recommended` said "Image generation: not available (MLX-Gen ... needs MLX)" on CUDA hosts, although
+  Diffusers runs there: with AbstractVision 0.3.32's automatic model CPU offload it generated 768x768 in ~17 s
+  with a measured 8.3 GiB GPU peak on the 16 GB card (moved whole, its 14.9 GiB of float16 weights run out of
+  CUDA memory; about 15 GiB of system RAM holds the idle weights). The pick lives in the image row of
+  `RECOMMENDED_MODELS` (`by_accelerator`), is fit-gated with that measured peak (catalog `resident`: fits on
+  16 GB and on the 24 GB reference class; an 8 GB card is reported unavailable with a GPU-memory next step),
+  and is a second artifact of the catalog's FLUX.2 klein 4B row (display name now "FLUX.2 [klein] 4B").
+  Apple silicon keeps MLX-Gen; processor-only hosts stay "not available".
+- `apply-recommended`, the defaults grid and `models download --recommended` read the full host probe off
+  Apple silicon (the light reading sees no CUDA). The import-time fresh-install seed stays on the light
+  reading, so a fresh NVIDIA install gets its image route from `apply-recommended`.
+- GGUF on CUDA: when llama.cpp cannot allocate a large context on the GPU, the load now takes the next smaller
+  context on the GPU and falls back to the CPU only after the smallest one failed there too. It used to retry
+  the same context on the CPU: Qwen3-4B-Instruct-2507 at its advertised 262144 tokens (~38 GB of KV cache) got
+  the process OOM-killed on a 16 GB card / 26 GB RAM host instead of loading on the GPU. Apple silicon keeps its
+  immediate CPU retry.
 
 ### Changed
 - Install hints name only the three settings. Every error, CLI message, engine install plan and

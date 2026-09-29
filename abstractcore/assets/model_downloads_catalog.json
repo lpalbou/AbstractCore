@@ -4078,7 +4078,7 @@
   {
    "id": "flux.2-klein-4b",
    "family": "flux.2",
-   "display_name": "FLUX.2 [klein] 4B (8-bit)",
+   "display_name": "FLUX.2 [klein] 4B",
    "vendor": "Black Forest Labs",
    "params_total": 4000000000,
    "params_active": null,
@@ -4098,6 +4098,26 @@
      "size_source": "catalog",
      "verified": true,
      "recommended": true
+    },
+    {
+     "provider": "diffusers",
+     "artifact": "black-forest-labs/FLUX.2-klein-4B",
+     "quant": "bf16",
+     "download_bytes": 23740007447,
+     "size_source": "catalog",
+     "verified": true,
+     "recommended": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-29",
+      "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294"
+     },
+     "note": "23,740,007,447 bytes: the whole repo (25 files) at revision e7b7dc27, read with the Hugging Face model API on 2026-09-29; `models download diffusers` fetches it whole, including the 7.75 GB single-file checkpoint (flux-2-klein-4b.safetensors) the Diffusers pipeline does not load. The pipeline's weights are 14.9 GiB in float16 (text encoder 7.49 GiB, transformer 7.22 GiB, VAE 0.16 GiB).",
+     "resident": {
+      "bytes": 8912896000,
+      "source": "nvidia-smi GPU memory peak 7.8-8.3 GiB (the largest, 8.3 GiB, is the figure) of real AbstractVision Diffusers text-to-image generations at 768x768, 4 steps, float16, about 17 s each, with the model CPU offload AbstractVision turns on by itself when the 14.9 GiB of float16 weights do not fit the GPU's free memory (moved whole, the pipeline runs out of CUDA memory on this card); system RAM holds the idle weights, about 15 GiB: Linux, NVIDIA Quadro RTX 5000 16 GB (Turing, sm_75), driver 595, abstractvision 0.3.32 source (commit 281756f), 2026-09-29 (framework backlog 0989)",
+      "measured_with": "AbstractVision/diffusers on CUDA in float16 at 768x768 with model CPU offload, about 15 GiB of idle weights waiting in system RAM"
+     }
     }
    ],
    "capabilities_override": {
@@ -4105,7 +4125,7 @@
     "vision": false,
     "image_generation": true
    },
-   "notes": "The AbstractFramework fresh-install image-generation default (output.image)."
+   "notes": "The AbstractFramework image-generation recommendation (output.image): the 8-bit MLX-Gen build on Apple silicon, the Diffusers repo on an NVIDIA GPU (CUDA)."
   },
   {
    "id": "supertonic-3",

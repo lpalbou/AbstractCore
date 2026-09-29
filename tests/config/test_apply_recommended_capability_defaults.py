@@ -42,12 +42,14 @@ from abstractcore.config.manager import ConfigurationManager
 def _portable_host(monkeypatch):
     """These tests pin the PORTABLE recommendation (a non-Apple host). On a
     Mac the text row follows the unified-memory tiers instead; that is
-    covered by tests/config/test_recommended_text_tiers.py."""
+    covered by tests/config/test_recommended_text_tiers.py. Processor-only
+    (`cpu16`): an NVIDIA GPU's image pick (Diffusers, framework backlog 0989)
+    is covered by tests/config/test_recommended_defaults_host_aware.py."""
 
     from abstractcore.utils import host_profile as hp
     from tests.models_engines_fakes import synthetic_host
 
-    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("cuda24"))
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("cpu16"))
 
 
 def _manager(tmp_path) -> ConfigurationManager:
@@ -81,8 +83,8 @@ def test_empty_routes_are_filled(tmp_path) -> None:
 
     report = manager.apply_recommended_capability_defaults()
 
-    # Linux (`cuda24`): text + voice are applied; the image and video
-    # recommendations (MLX-Gen) cannot run here and are reported, never written.
+    # Linux, processor only (`cpu16`): text + voice are applied; the image and
+    # video recommendations (MLX-Gen) cannot run here and are reported, never written.
     runnable = recommended_capability_default_routes()
     assert set(runnable) == {"input.text", "output.voice"}
     assert report["changed"] == 2

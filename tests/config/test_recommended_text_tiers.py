@@ -90,15 +90,19 @@ def test_other_hosts_keep_the_portable_default(kind, mtp_switch):
     assert pick["options"] == route.options
     assert pick["basis"] == "portable_default" and pick["mtp"] is False
     # Off Apple silicon the host-aware tables are the full ones MINUS the
-    # Apple-only image and video rows (MLX-Gen), reported as unavailable.
-    apple_only = {"output.image", "output.video"}
+    # Apple-only image and video rows (MLX-Gen), reported as unavailable --
+    # except on an NVIDIA GPU, whose image row is its Diffusers pick
+    # (`by_accelerator`, framework backlog 0989).
+    apple_only = {"output.image", "output.video"} if kind != "cuda24" else {"output.video"}
+    image = cd.RECOMMENDED_MODELS["output.image"].by_accelerator.get("cuda")
+    expected_routes = {k: v.to_dict() for k, v in cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items() if k not in apple_only}
+    expected_downloads = {k: v for k, v in cd.RECOMMENDED_MODEL_DOWNLOADS.items() if k not in apple_only}
+    if kind == "cuda24":
+        expected_routes["output.image"] = image.route.to_dict()
+        expected_downloads["output.image"] = dict(image.download)
     routes = cd.recommended_capability_default_routes(synthetic_host(kind))
-    assert {k: v.to_dict() for k, v in routes.items()} == {
-        k: v.to_dict() for k, v in cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items() if k not in apple_only
-    }
-    assert cd.recommended_model_downloads(synthetic_host(kind)) == {
-        k: v for k, v in cd.RECOMMENDED_MODEL_DOWNLOADS.items() if k not in apple_only
-    }
+    assert {k: v.to_dict() for k, v in routes.items()} == expected_routes
+    assert cd.recommended_model_downloads(synthetic_host(kind)) == expected_downloads
     assert set(cd.recommended_unavailable_routes(synthetic_host(kind))) == apple_only
 
 
@@ -556,6 +560,7 @@ def test_every_upstream_artifact_is_eight_bit_or_a_tier_or_a_reverified_id():
     tier_ids = set(PLAIN.values()) | set(MTP.values())
     reverified = {"mlx-community/Qwen3.5-9B-4bit", "mlx-community/Qwen3.8-27B-4bit"}
     reverified |= {r.download["artifact"] for r in RECOMMENDED_MODELS.values()}
+    reverified |= {p.download["artifact"] for r in RECOMMENDED_MODELS.values() for p in r.by_accelerator.values()}
     for r in mc.load_seed()["rows"]:
         for a in r["artifacts"]:
             if "upstream" not in a:
