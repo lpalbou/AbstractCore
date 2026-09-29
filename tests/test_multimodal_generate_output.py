@@ -1156,3 +1156,45 @@ def test_media_dict_public_shape_preserves_role():
     assert media.media_type is MediaType.IMAGE
     assert media.file_path == "source.png"
     assert media.metadata["role"] == "source"
+
+
+@pytest.mark.basic
+def test_transcription_uses_configured_input_voice_route(fake_plugins):
+    """Framework backlog 0989: `text/transcription` has no output route; its default
+    lives on `input.voice`. The route was resolved and then dropped, so a bare
+    transcription reached the voice backend with no provider and ran its own default
+    STT engine (openai) instead of the configured local faster-whisper."""
+
+    llm = _FakeProvider()
+    llm._abstractcore_capability_defaults = {  # type: ignore[attr-defined]
+        "input.voice": {"key": "input.voice", "provider": "faster-whisper", "model": "base"},
+    }
+
+    response = llm.generate(
+        media={"type": "audio", "path": "meeting.wav"},
+        output={"modality": "text", "task": "transcription"},
+    )
+
+    assert response.text.content == "transcribed audio"
+    kind, _audio, kwargs = llm.plugin_calls[0]
+    assert kind == "transcribe"
+    assert kwargs["provider"] == "faster-whisper"
+    assert kwargs["model"] == "base"
+
+
+@pytest.mark.basic
+def test_transcription_explicit_provider_wins_over_input_voice_route(fake_plugins):
+    llm = _FakeProvider()
+    llm._abstractcore_capability_defaults = {  # type: ignore[attr-defined]
+        "input.voice": {"key": "input.voice", "provider": "faster-whisper", "model": "base"},
+    }
+
+    llm.generate(
+        media={"type": "audio", "path": "meeting.wav"},
+        output={"modality": "text", "task": "transcription", "provider": "openai", "model": "whisper-1"},
+    )
+
+    _kind, _audio, kwargs = llm.plugin_calls[0]
+    assert kwargs["provider"] == "openai"
+    assert kwargs["model"] == "whisper-1"
+

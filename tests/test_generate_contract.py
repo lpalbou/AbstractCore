@@ -303,3 +303,33 @@ def test_text_to_audio_route_maps_to_output_sound() -> None:
     assert route.output_routes[0].route_key == "output.sound"
     assert route.output_specs[0]["provider"] == "stable-audio"
     assert route.output_specs[0]["model"] == "stable-sfx"
+
+
+def test_transcription_spec_takes_the_input_voice_route() -> None:
+    """Framework backlog 0989: the input.voice route is the transcription's route,
+    also for an artifact reference that carries no content type."""
+
+    for media in ([{"$artifact": "audio-1"}], [{"type": "audio", "path": "meeting.wav"}]):
+        route = resolve_generate_route(
+            request=normalize_generate_request(prompt="", media=media),
+            output={"modality": "text", "task": "transcription"},
+            scoped_routes={"input.voice": {"provider": "faster-whisper", "model": "base"}},
+        )
+
+        assert route.output_specs == [
+            {"modality": "text", "task": "transcription", "provider": "faster-whisper", "model": "base"}
+        ]
+        voice = [entry for entry in route.input_routes if entry.route_key == "input.voice"]
+        assert voice and voice[0].provider == "faster-whisper" and voice[0].model == "base"
+
+
+def test_transcription_spec_provider_redirects_the_input_voice_route() -> None:
+    route = resolve_generate_route(
+        request=normalize_generate_request(prompt="", media=[{"type": "audio", "path": "meeting.wav"}]),
+        output={"modality": "text", "task": "transcription", "provider": "openai"},
+        scoped_routes={"input.voice": {"provider": "faster-whisper", "model": "base"}},
+    )
+
+    assert route.output_specs == [{"modality": "text", "task": "transcription", "provider": "openai"}]
+    voice = [entry for entry in route.input_routes if entry.route_key == "input.voice"]
+    assert voice[0].provider == "openai" and voice[0].model is None

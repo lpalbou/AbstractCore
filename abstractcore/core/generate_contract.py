@@ -521,6 +521,29 @@ def _output_route_key(spec: Mapping[str, Any], request: GenerateRequest) -> Opti
     )
 
 
+def _is_transcription_spec(spec: Any) -> bool:
+    return (
+        isinstance(spec, Mapping)
+        and str(spec.get("modality") or "").strip().lower() == "text"
+        and str(spec.get("task") or "").strip().lower() == "transcription"
+    )
+
+
+def _transcription_explicit_voice_row(
+    spec: Mapping[str, Any],
+    explicit_row: Optional[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """The explicit input.voice row of a transcription: the spec's own
+    provider/model/base_url first, then a call-level STT override."""
+
+    row = dict(explicit_row or {})
+    for key in ("provider", "model", "base_url"):
+        value = _clean_optional_text(spec.get(key))
+        if value is not None:
+            row[key] = value
+    return row
+
+
 def _input_route_keys(request: GenerateRequest, output_specs: Iterable[Mapping[str, Any]]) -> list[str]:
     keys: list[str] = []
     if request.text or request.messages:
@@ -545,6 +568,10 @@ def _input_route_keys(request: GenerateRequest, output_specs: Iterable[Mapping[s
                 keys.append("input.music")
             else:
                 keys.append("input.sound")
+    if audio_for_transcription and "input.voice" not in keys:
+        # A transcription's input IS speech audio, even when the media item is
+        # an artifact reference that carries no content type to inspect.
+        keys.append("input.voice")
     seen: set[str] = set()
     out: list[str] = []
     for key in keys:
@@ -619,6 +646,8 @@ def resolve_generate_route(
 
     input_routes: list[ResolvedGenerateRouteEntry] = []
     explicit_inputs = explicit_input_routes if isinstance(explicit_input_routes, Mapping) else {}
+    transcription_spec = next((spec for spec in output_specs if _is_transcription_spec(spec)), None)
+    transcription_route: Optional[ResolvedGenerateRouteEntry] = None
     for route_key in _input_route_keys(request, output_specs):
         if text_route is not None and route_key == text_route.route_key:
             continue
@@ -628,13 +657,30 @@ def resolve_generate_route(
             resolver=resolver,
             config_file=config_file,
         )
-        input_routes.append(_route_entry(route_key, explicit=explicit_inputs.get(route_key), default_row=default_row))
+        explicit_row = explicit_inputs.get(route_key)
+        if route_key == "input.voice" and transcription_spec is not None:
+            # A transcription names its STT engine on the output spec; that is
+            # the explicit half of the input.voice route.
+            explicit_row = _transcription_explicit_voice_row(transcription_spec, explicit_row)
+        entry = _route_entry(route_key, explicit=explicit_row, default_row=default_row)
+        if route_key == "input.voice" and transcription_spec is not None:
+            transcription_route = entry
+        input_routes.append(entry)
 
     output_routes: list[ResolvedGenerateRouteEntry] = []
     patched_specs: list[dict[str, Any]] = []
     for spec in output_specs:
         route_key = _output_route_key(spec, request)
         if route_key is None:
+            if transcription_route is not None and _is_transcription_spec(spec):
+                # text/transcription has no OUTPUT route: its default lives on
+                # the input.voice route (the audio is what the route
+                # provisions). Resolving that route and then dropping it sent
+                # a bare transcription to the voice backend's own default STT
+                # engine (openai) instead of the configured one, e.g. local
+                # faster-whisper (framework backlog 0989).
+                patched_specs.append(transcription_route.apply_to_output_spec(spec))
+                continue
             patched_specs.append(dict(spec))
             continue
         default_row = resolve_capability_default_route(

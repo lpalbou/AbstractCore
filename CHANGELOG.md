@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (speech-to-text route, framework backlog 0989)
+- A transcription (`output={"modality": "text", "task": "transcription"}`) now runs on the configured
+  `input.voice` capability default. `text/transcription` has no output route (its default lives on the
+  `input.voice` input route); `resolve_generate_route` resolved that route and then dropped it, so a bare
+  transcription reached the voice backend with no provider and ran AbstractVoice's own default STT engine
+  (OpenAI) instead of, e.g., local faster-whisper. The route now fills the spec's missing provider/model/base_url
+  under the same rules as every other route (a provider named on the spec redirects it; a call-level
+  `stt_provider`/`stt_model` override counts as explicit), and `input.voice` is resolved for a transcription even
+  when its audio is an artifact reference without a content type.
+
 ### Fixed (Linux + NVIDIA, framework backlog 0989; measured on a Quadro RTX 5000, driver 595)
 - `openai` may be 2.x (`openai>=1.0.0,<3.0.0`). The `<2.0.0` cap held vLLM at 0.11.0 in `abstractcore[gpu]`
   (newer vLLM needs `openai>=2`), which fails with Transformers 5 at startup and pinned torch 2.8.0. With the
