@@ -89,7 +89,7 @@ def test_every_recommended_download_is_a_starter_row():
         row = arts.get((spec["provider"], spec["artifact"]))
         assert row is not None, spec
         assert row["starter"] is True
-    qwen = arts[("lmstudio", "qwen/qwen3.5-9b@4bit")]
+    qwen = arts[("lmstudio", "qwen/qwen3.5-9b@q4_k_m")]
     assert qwen["id"] == "qwen3.5-9b"
 
 
@@ -176,7 +176,7 @@ def test_the_starter_text_model_is_preselected_on_apple_silicon(host):
 
 def test_the_portable_starter_is_preselected_off_apple_silicon(host):
     row = next(r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"] if r["id"] == "qwen3.5-9b")
-    assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["qwen/qwen3.5-9b@4bit"]
+    assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["qwen/qwen3.5-9b@q4_k_m"]
     assert row["starter"] is True
 
 

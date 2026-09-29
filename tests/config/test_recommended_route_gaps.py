@@ -45,12 +45,12 @@ def _plan():
         "absent": 1,
         "unknown": 0,
         "recommended": [
-            {"route": "input.text", "provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit"},
+            {"route": "input.text", "provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@q4_k_m"},
             {"route": "output.voice", "provider": "supertonic", "artifact": "supertonic-3"},
             {"route": "output.image", "provider": "mlx-gen", "artifact": "flux.2-klein-4b-8bit"},
         ],
         "would_download": [
-            {"route": "input.text", "provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit"},
+            {"route": "input.text", "provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@q4_k_m"},
         ],
     }
 
@@ -93,7 +93,7 @@ def test_an_empty_route_whose_model_is_absent_is_a_gap():
         {
             "route": "input.text",
             "provider": "lmstudio",
-            "artifact": "qwen/qwen3.5-9b@4bit",
+            "artifact": "qwen/qwen3.5-9b@q4_k_m",
             "route_answered": False,
         }
     ]
@@ -147,7 +147,7 @@ def test_the_cli_still_names_a_gap_and_the_command_that_fills_it(capsys):
     )
     out = _status_text(capsys, plan)
 
-    assert "missing: lmstudio qwen/qwen3.5-9b@4bit  (input.text)" in out
+    assert "missing: lmstudio qwen/qwen3.5-9b@q4_k_m  (input.text)" in out
     assert "models download --recommended" in out
 
 
@@ -156,7 +156,7 @@ def test_a_plan_from_an_older_caller_still_prints_its_missing_list(capsys):
 
     out = _status_text(capsys, _plan())
 
-    assert "missing: lmstudio qwen/qwen3.5-9b@4bit" in out
+    assert "missing: lmstudio qwen/qwen3.5-9b@q4_k_m" in out
 
 
 def test_the_status_payload_marks_gaps_against_the_whole_grid(monkeypatch):

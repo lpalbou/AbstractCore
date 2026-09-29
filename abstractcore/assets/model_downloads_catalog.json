@@ -1089,8 +1089,8 @@
    "artifacts": [
     {
      "provider": "lmstudio",
-     "artifact": "qwen/qwen3.5-9b@4bit",
-     "quant": "4bit",
+     "artifact": "qwen/qwen3.5-9b@q4_k_m",
+     "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": true,

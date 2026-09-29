@@ -326,7 +326,7 @@ def test_hf_download_passes_allow_patterns_and_refuses_when_disk_is_short(host, 
 def test_expected_bytes_arms_the_disk_check_for_other_engines(host, monkeypatch):
     monkeypatch.setattr(mm, "probe", lambda p, a, **kw: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT))
     monkeypatch.setitem(mm._DOWNLOADERS, "lmstudio", lambda *a: pytest.fail("downloaded despite no disk"))
-    out = mm.download("lmstudio", "qwen/qwen3.5-9b@4bit", expected_bytes=10**18)
+    out = mm.download("lmstudio", "qwen/qwen3.5-9b@q4_k_m", expected_bytes=10**18)
     assert out.status == "failed" and "not enough disk" in out.message
-    planned = mm.download("lmstudio", "qwen/qwen3.5-9b@4bit", expected_bytes=10**18, dry_run=True)
+    planned = mm.download("lmstudio", "qwen/qwen3.5-9b@q4_k_m", expected_bytes=10**18, dry_run=True)
     assert planned.status == "planned" and "WARNING" in planned.message

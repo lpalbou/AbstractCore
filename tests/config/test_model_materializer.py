@@ -44,7 +44,7 @@ def linux_host(monkeypatch):
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        ("qwen/qwen3.5-9b@4bit", ("qwen/qwen3.5-9b", "4bit")),
+        ("qwen/qwen3.5-9b@q4_k_m", ("qwen/qwen3.5-9b", "q4_k_m")),
         ("qwen/qwen3.5-9b@8bit", ("qwen/qwen3.5-9b", "8bit")),
         ("llama-3.1-8b@q4_k_m", ("llama-3.1-8b", "q4_k_m")),
         ("model@bf16", ("model", "bf16")),
@@ -73,20 +73,22 @@ def test_recommended_text_download_is_the_four_bit_build():
     route = RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"]
     download = RECOMMENDED_MODEL_DOWNLOADS["input.text"]
     assert route.model == "qwen/qwen3.5-9b"
-    assert download["artifact"] == "qwen/qwen3.5-9b@4bit"
+    assert download["artifact"] == "qwen/qwen3.5-9b@q4_k_m"
     base, quant = mm.split_artifact(download["artifact"])
     assert base == route.model
-    assert quant == "4bit"
+    # LM Studio's GGUF Q4_K_M: its catalog has no `4bit` (MLX) variant off Apple silicon,
+    # where LM Studio is the recommended engine (framework backlog 0989).
+    assert quant == "q4_k_m"
 
 
 def test_bare_installed_id_satisfies_a_quantized_artifact():
     """Tolerant in ONE direction (see `_matches_installed_id`)."""
 
-    assert mm._matches_installed_id("qwen/qwen3.5-9b", "qwen/qwen3.5-9b@4bit")
-    assert mm._matches_installed_id("qwen/qwen3.5-9b@4bit", "qwen/qwen3.5-9b")
-    assert mm._matches_installed_id("QWEN/Qwen3.5-9B", "qwen/qwen3.5-9b@4bit")
+    assert mm._matches_installed_id("qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m")
+    assert mm._matches_installed_id("qwen/qwen3.5-9b@q4_k_m", "qwen/qwen3.5-9b")
+    assert mm._matches_installed_id("QWEN/Qwen3.5-9B", "qwen/qwen3.5-9b@q4_k_m")
     # A DIFFERENT model must never match, quant suffix or not.
-    assert not mm._matches_installed_id("qwen/qwen3.5-4b", "qwen/qwen3.5-9b@4bit")
+    assert not mm._matches_installed_id("qwen/qwen3.5-4b", "qwen/qwen3.5-9b@q4_k_m")
     assert not mm._matches_installed_id("", "qwen/qwen3.5-9b")
 
 
@@ -98,7 +100,7 @@ def test_bare_installed_id_satisfies_a_quantized_artifact():
 def test_lmstudio_unknown_when_no_cli_and_no_server(monkeypatch):
     monkeypatch.setattr(mm, "_lms_cli", lambda: None)
     monkeypatch.setattr(mm, "_http_json", lambda url, **kw: (None, "connection refused"))
-    presence = mm.probe("lmstudio", "qwen/qwen3.5-9b@4bit")
+    presence = mm.probe("lmstudio", "qwen/qwen3.5-9b@q4_k_m")
     assert presence.status == mm.PRESENCE_UNKNOWN
     assert "lms" in (presence.instruction or "").lower() or "lm studio" in (presence.instruction or "").lower()
     assert presence.downloadable is False
@@ -117,7 +119,7 @@ def test_lmstudio_http_miss_is_unknown_not_absent(monkeypatch):
         "_http_json",
         lambda url, **kw: ({"data": [{"id": "some-other-model"}]}, ""),
     )
-    presence = mm.probe("lmstudio", "qwen/qwen3.5-9b@4bit")
+    presence = mm.probe("lmstudio", "qwen/qwen3.5-9b@q4_k_m")
     assert presence.status == mm.PRESENCE_UNKNOWN
 
 
@@ -125,15 +127,15 @@ def test_lmstudio_cli_miss_is_absent(monkeypatch):
     """With `lms ls` available the downloaded set IS known, so a miss is absent."""
 
     monkeypatch.setattr(mm, "_lms_downloaded_ids", lambda: (["other/model"], ""))
-    presence = mm.probe("lmstudio", "qwen/qwen3.5-9b@4bit")
+    presence = mm.probe("lmstudio", "qwen/qwen3.5-9b@q4_k_m")
     assert presence.status == mm.PRESENCE_ABSENT
-    assert presence.instruction == "lms get qwen/qwen3.5-9b@4bit"
+    assert presence.instruction == "lms get qwen/qwen3.5-9b@q4_k_m"
     assert presence.downloadable is True
 
 
 def test_lmstudio_bare_downloaded_id_reads_as_installed(monkeypatch):
     monkeypatch.setattr(mm, "_lms_downloaded_ids", lambda: (["qwen/qwen3.5-9b"], ""))
-    presence = mm.probe("lmstudio", "qwen/qwen3.5-9b@4bit")
+    presence = mm.probe("lmstudio", "qwen/qwen3.5-9b@q4_k_m")
     assert presence.status == mm.PRESENCE_INSTALLED
     assert "qwen/qwen3.5-9b" in presence.detail
 
@@ -228,7 +230,7 @@ def test_probing_the_recommended_set_runs_no_download_tool(monkeypatch, linux_ho
 
 def test_recommended_plan_would_download_only_absent_artifacts(monkeypatch, linux_host):
     states = {
-        "qwen/qwen3.5-9b@4bit": mm.PRESENCE_ABSENT,
+        "qwen/qwen3.5-9b@q4_k_m": mm.PRESENCE_ABSENT,
         "supertonic-3": mm.PRESENCE_UNKNOWN,
     }
     monkeypatch.setattr(
@@ -240,7 +242,7 @@ def test_recommended_plan_would_download_only_absent_artifacts(monkeypatch, linu
     # Linux: the Apple-only image model is not part of the plan at all (a
     # KeyError above would mean it was probed).
     assert (plan["total"], plan["installed"], plan["absent"], plan["unknown"]) == (2, 0, 1, 1)
-    assert [item["artifact"] for item in plan["would_download"]] == ["qwen/qwen3.5-9b@4bit"]
+    assert [item["artifact"] for item in plan["would_download"]] == ["qwen/qwen3.5-9b@q4_k_m"]
     # An `unknown` row is NOT queued for download: we do not spend gigabytes on
     # a guess, we tell the operator we could not tell.
     assert all(item["artifact"] != "supertonic-3" for item in plan["would_download"])
@@ -307,10 +309,10 @@ def test_download_still_runs_when_presence_is_unknown(monkeypatch):
 def test_lmstudio_download_without_the_cli_returns_the_install_instruction(monkeypatch):
     monkeypatch.setattr(mm, "probe", lambda p, a, **kw: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT))
     monkeypatch.setattr(mm, "_lms_cli", lambda: None)
-    outcome = mm.download("lmstudio", "qwen/qwen3.5-9b@4bit")
+    outcome = mm.download("lmstudio", "qwen/qwen3.5-9b@q4_k_m")
     assert outcome.ok is False
-    assert "lms get qwen/qwen3.5-9b@4bit" in (outcome.instruction or "")
-    assert outcome.command == ["lms", "get", "qwen/qwen3.5-9b@4bit", "--yes"]
+    assert "lms get qwen/qwen3.5-9b@q4_k_m" in (outcome.instruction or "")
+    assert outcome.command == ["lms", "get", "qwen/qwen3.5-9b@q4_k_m", "--yes"]
 
 
 def test_ollama_download_failure_carries_the_tools_own_words(monkeypatch):
@@ -383,8 +385,8 @@ def test_annotate_maps_the_recommended_route_to_its_quantized_artifact(monkeypat
     text = next(r for r in rows if r["key"] == "input.text")
     # THE POINT: the row's model is the served id; the thing we would FETCH is
     # the 4-bit artifact, and it is the artifact that was probed.
-    assert text["download_artifact"] == "qwen/qwen3.5-9b@4bit"
-    assert ("lmstudio", "qwen/qwen3.5-9b@4bit") in probed
+    assert text["download_artifact"] == "qwen/qwen3.5-9b@q4_k_m"
+    assert ("lmstudio", "qwen/qwen3.5-9b@q4_k_m") in probed
     assert text["availability"]["status"] == mm.PRESENCE_ABSENT
 
     unconfigured = next(r for r in rows if r["key"] == "input.video")
@@ -398,7 +400,7 @@ def test_a_covered_row_fetches_what_its_covering_row_fetches(monkeypatch, linux_
 
     `input.image` served by the text model IS the text model's weights. Left to
     resolve on its own it produced `lms get qwen/qwen3.5-9b` right next to
-    `lms get qwen/qwen3.5-9b@4bit` for the same download -- two instructions,
+    `lms get qwen/qwen3.5-9b@q4_k_m` for the same download -- two instructions,
     one of them naming no quantization at all.
     """
 
@@ -415,8 +417,8 @@ def test_a_covered_row_fetches_what_its_covering_row_fetches(monkeypatch, linux_
             {"key": "output.text", "provider": "lmstudio", "model": "qwen/qwen3.5-9b", "derived_from": "input.text"},
         ]
     )
-    assert {row["download_artifact"] for row in rows} == {"qwen/qwen3.5-9b@4bit"}
-    assert set(probed) == {"qwen/qwen3.5-9b@4bit"}, f"one artifact, not two: {probed}"
+    assert {row["download_artifact"] for row in rows} == {"qwen/qwen3.5-9b@q4_k_m"}
+    assert set(probed) == {"qwen/qwen3.5-9b@q4_k_m"}, f"one artifact, not two: {probed}"
 
 
 def test_annotate_keeps_an_operator_override_as_written(monkeypatch):
@@ -489,8 +491,8 @@ def test_models_download_recommended_dry_run_names_the_four_bit_artifact(monkeyp
     assert code == 0
     payload = json.loads(out[out.index("{") :])
     artifacts = {r["artifact"]: r for r in payload["results"]}
-    assert artifacts["qwen/qwen3.5-9b@4bit"]["status"] == "planned"
-    assert artifacts["qwen/qwen3.5-9b@4bit"]["command"][:2] == ["/usr/local/bin/lms", "get"]
+    assert artifacts["qwen/qwen3.5-9b@q4_k_m"]["status"] == "planned"
+    assert artifacts["qwen/qwen3.5-9b@q4_k_m"]["command"][:2] == ["/usr/local/bin/lms", "get"]
     assert "AbstractFramework/flux.2-klein-4b-8bit" not in artifacts, "no Apple-only download on Linux"
     assert payload["dry_run"] is True
 
@@ -701,7 +703,7 @@ def test_lms_get_is_verified_because_it_searches_rather_than_fetches(monkeypatch
         "probe",
         lambda p, a, **kw: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT, evidence="lms ls --json"),
     )
-    out = mm._download_lmstudio("qwen/qwen3.5-9b@4bit", lambda _p: None, None)
+    out = mm._download_lmstudio("qwen/qwen3.5-9b@q4_k_m", lambda _p: None, None)
     assert out.ok is False
     assert "is not among the downloaded models" in out.message
     assert "lms ls" in (out.instruction or "")
@@ -712,7 +714,7 @@ def test_lms_get_is_verified_because_it_searches_rather_than_fetches(monkeypatch
         "probe",
         lambda p, a, **kw: mm.ModelPresence(p, a, mm.PRESENCE_UNKNOWN, evidence="no lms CLI"),
     )
-    assert mm._download_lmstudio("qwen/qwen3.5-9b@4bit", lambda _p: None, None).ok is True
+    assert mm._download_lmstudio("qwen/qwen3.5-9b@q4_k_m", lambda _p: None, None).ok is True
 
 
 def test_a_download_never_answers_from_a_sweep_taken_before_it(monkeypatch):

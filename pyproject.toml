@@ -68,7 +68,7 @@ dependencies = [
     "httpx>=0.24.0,<1.0.0",
     # Remote providers. OpenRouter, Portkey, Ollama, LM Studio, vLLM and generic
     # OpenAI-compatible endpoints speak HTTP through httpx; OpenAI and Anthropic use their SDKs.
-    "openai>=1.0.0,<2.0.0",
+    "openai>=1.0.0,<3.0.0",
     "anthropic>=0.25.0,<1.0.0",
     # Precise token counting for OpenAI-style models.
     "tiktoken>=0.5.0,<1.0.0",

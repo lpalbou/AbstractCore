@@ -86,7 +86,7 @@ def test_apple_silicon_tier_by_unified_memory(kind, tier, mtp_switch):
 def test_other_hosts_keep_the_portable_default(kind, mtp_switch):
     pick = mc.recommended_text_model(synthetic_host(kind))
     route = cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"]
-    assert (pick["provider"], pick["artifact"], pick["model"]) == ("lmstudio", "qwen/qwen3.5-9b@4bit", "qwen/qwen3.5-9b")
+    assert (pick["provider"], pick["artifact"], pick["model"]) == ("lmstudio", "qwen/qwen3.5-9b@q4_k_m", "qwen/qwen3.5-9b")
     assert pick["options"] == route.options
     assert pick["basis"] == "portable_default" and pick["mtp"] is False
     # Off Apple silicon the host-aware tables are the full ones MINUS the

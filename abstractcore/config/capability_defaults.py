@@ -335,14 +335,18 @@ RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
     # Text: the 4-BIT quantized build (operator ruling 2026-08-01). The ROUTE
     # stores the bare LM Studio id because that is what the server serves when
     # a single quant is installed; the 4-bit choice is pinned by the download
-    # artifact reference, which is what actually fetches the weights.
+    # artifact reference, which is what actually fetches the weights. The
+    # variant is LM Studio's GGUF Q4_K_M: LM Studio is recommended only off
+    # Apple silicon (Linux, Windows), where its catalog has no `4bit` (MLX)
+    # variant -- `lms get qwen/qwen3.5-9b@4bit` fails there with "Cannot find
+    # variant 4bit" (measured on Linux + NVIDIA, framework backlog 0989).
     "input.text": RecommendedModel(
         route=CapabilityRouteDefault(
             provider="lmstudio", model="qwen/qwen3.5-9b",
             options={"speculation": {"mode": "native_mtp", "num_draft_tokens": 2,
                                      "require_acceleration": False}},
         ),
-        download={"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit"},
+        download={"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@q4_k_m"},
         starter=True,
     ),
     "output.voice": RecommendedModel(

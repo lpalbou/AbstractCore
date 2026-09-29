@@ -107,11 +107,11 @@ def _refusal(status_code: int, status: str, message: str, **extra: Any) -> JSONR
 
 class ModelDownloadBody(BaseModel):
     model_config = ConfigDict(
-        json_schema_extra={"examples": [{"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit", "dry_run": False}]}
+        json_schema_extra={"examples": [{"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@q4_k_m", "dry_run": False}]}
     )
 
     provider: str = Field(..., description="ollama | lmstudio | mlx | huggingface | mlx-gen | supertonic ...")
-    artifact: str = Field(..., description="Exact artifact reference (quant included): qwen3:8b, qwen/qwen3.5-9b@4bit, org/Repo-GGUF:Q4_K_M")
+    artifact: str = Field(..., description="Exact artifact reference (quant included): qwen3:8b, qwen/qwen3.5-9b@q4_k_m, org/Repo-GGUF:Q4_K_M")
     dry_run: bool = False
     expected_bytes: Optional[int] = Field(None, description="Known download size (catalog) for the disk pre-check")
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Linux + NVIDIA, framework backlog 0989; measured on a Quadro RTX 5000, driver 595)
+- `openai` may be 2.x (`openai>=1.0.0,<3.0.0`). The `<2.0.0` cap held vLLM at 0.11.0 in `abstractcore[gpu]`
+  (newer vLLM needs `openai>=2`), which fails with Transformers 5 at startup and pinned torch 2.8.0. With the
+  cap raised the gpu profile resolves vLLM 0.29 / torch 2.13 (CUDA 13). The chat-completions, models,
+  embeddings, files and responses calls AbstractCore makes are unchanged in openai 2.x (provider, server and
+  media suites pass on openai 2.54.0).
+- llama.cpp's Linux CUDA wheels load without torch imported first: `prepare_llama_cpp_import()` now also runs on
+  Linux and, when the installed llama-cpp-python is a CUDA build (`lib/libggml-cuda.so`), preloads the NVIDIA
+  wheels' `libcudart`/`libcublasLt`/`libcublas` (CUDA 12 `nvidia/<lib>/lib`, CUDA 13 `nvidia/cu13/lib`) with
+  `RTLD_GLOBAL`. Before, `import llama_cpp` failed with "libcudart.so.12: cannot open shared object file" and
+  GGUF models ran on the CPU.
+- The recommended LM Studio text download is `qwen/qwen3.5-9b@q4_k_m` (was `@4bit`). LM Studio is recommended
+  only off Apple silicon, where its catalog has no `4bit` (MLX) variant: `lms get qwen/qwen3.5-9b@4bit` failed
+  with "Cannot find variant 4bit", so "download the recommended models" failed on Linux/Windows.
+
 ### Changed
 - Install hints name only the three settings. Every error, CLI message, engine install plan and
   doc now says `pip install -U abstractcore` for a light dependency (httpx, pydantic, Pillow,

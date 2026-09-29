@@ -144,7 +144,7 @@ _TIER_PROVIDER = "mlx"
 
 # The portable text model on an engine that runs where LM Studio does not
 # (Intel Macs). Same catalog row as the portable default; Ollama's bare tag
-# is its default Q4_K_M build, the 4-bit intent of `qwen/qwen3.5-9b@4bit`.
+# is its default Q4_K_M build, the same quant as `qwen/qwen3.5-9b@q4_k_m`.
 # Must be a seed artifact of the portable row (a missing one raises).
 _PORTABLE_TEXT_ENGINE_FALLBACK = {"provider": "ollama", "artifact": "qwen3.5:9b"}
 
@@ -1005,7 +1005,7 @@ def catalog_id_for(provider: Any, artifact: Any) -> Optional[str]:
     """The curated row id an installed artifact belongs to, or None.
 
     Tolerant the same way presence is: `qwen/qwen3.5-9b` (the id LM Studio
-    reports) matches the catalog's `qwen/qwen3.5-9b@4bit`, `gemma3:1b:latest`
+    reports) matches the catalog's `qwen/qwen3.5-9b@q4_k_m`, `gemma3:1b:latest`
     matches `gemma3:1b`, and an HF repo matches its `repo:QUANT` artifacts.
     """
 

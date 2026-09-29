@@ -37,7 +37,7 @@ website.
   (4-bit; on a 24 GB Mac it runs with a small context by default, and with about 30k tokens after
   `sudo sysctl iogpu.wired_limit_mb=20480`, measured), 128 GiB
   and above Qwen3.8 Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Other
-  computers use the LM Studio build `qwen/qwen3.5-9b@4bit`, or the same model's Ollama build where
+  computers use the LM Studio build `qwen/qwen3.5-9b@q4_k_m`, or the same model's Ollama build where
   LM Studio has no build (Intel Macs).
 - **Image input** is read by the recommended text model where it accepts images, so `input.image`
   is covered by `input.text` and needs no second model. Every recommended text model reads
@@ -117,8 +117,8 @@ Route `input.text` (text generation).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 128 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=114688` |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@4bit`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 5.6 GiB | fits |
-| Linux or Windows, processor only | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@4bit`) | LM Studio, processor | unknown | 5.6 GiB | fits |
+| Linux or Windows with an NVIDIA GPU | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 6.0 GiB | fits |
+| Linux or Windows, processor only | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, processor | unknown | 6.0 GiB | fits |
 | Intel Mac | `qwen3.5:9b` | Ollama, processor | unknown | 6.0 GiB | fits |
 
 ### Image input (vision)
@@ -134,8 +134,8 @@ Route `input.image` (image understanding).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 128 GB | the text model (`mlx-community/Qwen3.8-Flash-Next-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=114688` |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | the text model (`mlx-community/Qwen3.8-Flash-Next-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | the text model (`qwen/qwen3.5-9b`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 5.6 GiB | fits |
-| Linux or Windows, processor only | the text model (`qwen/qwen3.5-9b`) | LM Studio, processor | unknown | 5.6 GiB | fits |
+| Linux or Windows with an NVIDIA GPU | the text model (`qwen/qwen3.5-9b`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 6.0 GiB | fits |
+| Linux or Windows, processor only | the text model (`qwen/qwen3.5-9b`) | LM Studio, processor | unknown | 6.0 GiB | fits |
 | Intel Mac | the text model (`qwen3.5:9b`) | Ollama, processor | unknown | 6.0 GiB | fits |
 
 ### Speech output (text to speech)

@@ -15171,7 +15171,7 @@ An **artifact** names the exact weights to fetch, quantization included:
 | Provider | Example artifact | Notes |
 |---|---|---|
 | `ollama` | `qwen3:8b` | An Ollama tag. |
-| `lmstudio` | `qwen/qwen3.5-9b@4bit` | LM Studio model id with `@quant`. A bare id lets LM Studio pick its default build. |
+| `lmstudio` | `qwen/qwen3.5-9b@q4_k_m` | LM Studio model id with `@quant`. A bare id lets LM Studio pick its default build. |
 | `mlx` | `mlx-community/Qwen3-8B-4bit` | A Hugging Face repo; MLX repos hold one quantization. |
 | `huggingface` | `unsloth/Qwen3-8B-GGUF:Q4_K_M` | A GGUF repo plus `:QUANT`. Only the matching `*Q4_K_M*.gguf` files are fetched. Without `:QUANT` the whole repo is downloaded. |
 | `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit`, `supertonic-3` | Image starter (Apple silicon only), video starter (Apple silicon, only where its measured memory fits) and voice starter (every OS). |
@@ -15267,7 +15267,7 @@ Flash-Next fits once the GPU memory limit is raised. See [GPU memory on Apple
 silicon](docs/recommended-models.md#gpu-memory-on-apple-silicon).
 
 A Mac whose memory cannot be read gets the smallest tier, and the pick says so in `tier`. Every
-other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@4bit`.
+other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@q4_k_m`.
 
 The recommendations for the other capabilities (image input, speech, image, video, music) and
 the full table per kind of machine are on [Recommended Models](docs/recommended-models.md).
@@ -15456,9 +15456,9 @@ counts it once. A companion whose models are all deleted stays a row, with
 
 ```bash
 abstractcore models download ollama qwen3:8b
-abstractcore models download lmstudio qwen/qwen3.5-9b@4bit
+abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m
 abstractcore models download huggingface unsloth/Qwen3-8B-GGUF:Q4_K_M
-abstractcore models download lmstudio qwen/qwen3.5-9b@4bit --dry-run     # show the command only
+abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m --dry-run     # show the command only
 ```
 
 - Every source reports real progress (bytes, total, percent, speed, time left, per file) from
@@ -15694,7 +15694,7 @@ website.
   (4-bit; on a 24 GB Mac it runs with a small context by default, and with about 30k tokens after
   `sudo sysctl iogpu.wired_limit_mb=20480`, measured), 128 GiB
   and above Qwen3.8 Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Other
-  computers use the LM Studio build `qwen/qwen3.5-9b@4bit`, or the same model's Ollama build where
+  computers use the LM Studio build `qwen/qwen3.5-9b@q4_k_m`, or the same model's Ollama build where
   LM Studio has no build (Intel Macs).
 - **Image input** is read by the recommended text model where it accepts images, so `input.image`
   is covered by `input.text` and needs no second model. Every recommended text model reads
@@ -15774,8 +15774,8 @@ Route `input.text` (text generation).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 128 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=114688` |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@4bit`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 5.6 GiB | fits |
-| Linux or Windows, processor only | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@4bit`) | LM Studio, processor | unknown | 5.6 GiB | fits |
+| Linux or Windows with an NVIDIA GPU | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 5.6 GiB | fits |
+| Linux or Windows, processor only | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, processor | unknown | 5.6 GiB | fits |
 | Intel Mac | `qwen3.5:9b` | Ollama, processor | unknown | 6.0 GiB | fits |
 
 ### Image input (vision)
@@ -16762,7 +16762,7 @@ directory.
 
 ```bash
 abstractcore models download ollama gemma3:1b
-abstractcore models download lmstudio qwen/qwen3.5-9b@4bit
+abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m
 abstractcore models download --recommended            # every MISSING recommended default
 abstractcore models download --recommended --dry-run  # resolve the commands, fetch nothing
 ```
@@ -16773,7 +16773,7 @@ machine-readable document instead of progress.
 
 **The artifact is not the model id.** A capability route stores the id the
 provider *serves* (`qwen/qwen3.5-9b`); the thing you *fetch* names the exact
-weights, quantization included (`qwen/qwen3.5-9b@4bit`). `models status` prints
+weights, quantization included (`qwen/qwen3.5-9b@q4_k_m`). `models status` prints
 the artifact to download next to the route that needs it, so the two never have
 to be reconciled by hand.
 

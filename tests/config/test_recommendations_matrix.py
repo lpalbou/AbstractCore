@@ -110,8 +110,8 @@ TEXT_BY_APPLE_GIB = {
     **{g: "mlx-community/Qwen3.8-Flash-Next-4bit" for g in (128, 192, 256, 512)},
 }
 TEXT_BY_CLASS = {
-    "nvidia": ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@4bit"),
-    "cpu": ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@4bit"),
+    "nvidia": ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m"),
+    "cpu": ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m"),
     "intel_mac": ("ollama", "qwen3.5:9b", "qwen3.5:9b"),
 }
 
@@ -137,7 +137,7 @@ def test_the_starter_set_the_writers_use_is_unchanged():
         "output.video": ("mlx-gen", "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
     }
     assert cd.RECOMMENDED_MODEL_DOWNLOADS == {
-        "input.text": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit"},
+        "input.text": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@q4_k_m"},
         "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
         "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
         "output.video": {"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},

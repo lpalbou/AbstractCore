@@ -37,7 +37,7 @@ An **artifact** names the exact weights to fetch, quantization included:
 | Provider | Example artifact | Notes |
 |---|---|---|
 | `ollama` | `qwen3:8b` | An Ollama tag. |
-| `lmstudio` | `qwen/qwen3.5-9b@4bit` | LM Studio model id with `@quant`. A bare id lets LM Studio pick its default build. |
+| `lmstudio` | `qwen/qwen3.5-9b@q4_k_m` | LM Studio model id with `@quant`. A bare id lets LM Studio pick its default build. |
 | `mlx` | `mlx-community/Qwen3-8B-4bit` | A Hugging Face repo; MLX repos hold one quantization. |
 | `huggingface` | `unsloth/Qwen3-8B-GGUF:Q4_K_M` | A GGUF repo plus `:QUANT`. Only the matching `*Q4_K_M*.gguf` files are fetched. Without `:QUANT` the whole repo is downloaded. |
 | `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit`, `supertonic-3` | Image starter (Apple silicon only), video starter (Apple silicon, only where its measured memory fits) and voice starter (every OS). |
@@ -133,7 +133,7 @@ Flash-Next fits once the GPU memory limit is raised. See [GPU memory on Apple
 silicon](recommended-models.md#gpu-memory-on-apple-silicon).
 
 A Mac whose memory cannot be read gets the smallest tier, and the pick says so in `tier`. Every
-other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@4bit`.
+other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@q4_k_m`.
 
 The recommendations for the other capabilities (image input, speech, image, video, music) and
 the full table per kind of machine are on [Recommended Models](recommended-models.md).
@@ -322,9 +322,9 @@ counts it once. A companion whose models are all deleted stays a row, with
 
 ```bash
 abstractcore models download ollama qwen3:8b
-abstractcore models download lmstudio qwen/qwen3.5-9b@4bit
+abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m
 abstractcore models download huggingface unsloth/Qwen3-8B-GGUF:Q4_K_M
-abstractcore models download lmstudio qwen/qwen3.5-9b@4bit --dry-run     # show the command only
+abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m --dry-run     # show the command only
 ```
 
 - Every source reports real progress (bytes, total, percent, speed, time left, per file) from

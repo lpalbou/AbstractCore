@@ -667,7 +667,7 @@ directory.
 
 ```bash
 abstractcore models download ollama gemma3:1b
-abstractcore models download lmstudio qwen/qwen3.5-9b@4bit
+abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m
 abstractcore models download --recommended            # every MISSING recommended default
 abstractcore models download --recommended --dry-run  # resolve the commands, fetch nothing
 ```
@@ -678,7 +678,7 @@ machine-readable document instead of progress.
 
 **The artifact is not the model id.** A capability route stores the id the
 provider *serves* (`qwen/qwen3.5-9b`); the thing you *fetch* names the exact
-weights, quantization included (`qwen/qwen3.5-9b@4bit`). `models status` prints
+weights, quantization included (`qwen/qwen3.5-9b@q4_k_m`). `models status` prints
 the artifact to download next to the route that needs it, so the two never have
 to be reconciled by hand.
 

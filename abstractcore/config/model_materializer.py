@@ -28,7 +28,7 @@ FOUR RULES, and every one of them exists because breaking it produced a lie:
 
 3. SERVED IDS ARE NOT DOWNLOAD REFS. LM Studio serves `qwen/qwen3.5-9b` when a
    single quantization is installed, but the thing you FETCH is
-   `qwen/qwen3.5-9b@4bit`. The capability route stores the served id; the
+   `qwen/qwen3.5-9b@q4_k_m`. The capability route stores the served id; the
    artifact (`RECOMMENDED_MODEL_DOWNLOADS`, or whatever the operator types)
    names the exact weights. `split_artifact` is the one place that knows the
    `@quant` convention, and the presence matcher is deliberately TOLERANT in
@@ -278,7 +278,7 @@ class DownloadOutcome:
 
 
 def split_artifact(artifact: Any) -> Tuple[str, Optional[str]]:
-    """`"qwen/qwen3.5-9b@4bit"` -> `("qwen/qwen3.5-9b", "4bit")`.
+    """`"qwen/qwen3.5-9b@q4_k_m"` -> `("qwen/qwen3.5-9b", "q4_k_m")`.
 
     The suffix after the LAST `@` is the quantization when it looks like one.
     A model id that merely contains `@` in a path segment keeps it: only a
@@ -312,7 +312,7 @@ def _matches_installed_id(installed: Any, artifact: str) -> bool:
     """Does an installed/served model id satisfy this artifact reference?
 
     TOLERANT IN EXACTLY ONE DIRECTION (rule 3). `qwen/qwen3.5-9b` satisfies
-    `qwen/qwen3.5-9b@4bit`, because a single-quant install is what LM Studio
+    `qwen/qwen3.5-9b@q4_k_m`, because a single-quant install is what LM Studio
     reports under the bare id. The reverse is NOT true in general, but an
     installed `...@4bit` obviously satisfies a bare request for the same base,
     so both `@`-carrying forms are compared on their bases.
@@ -3696,7 +3696,7 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
     # by the text model is the same weights as `input.text`, so it must resolve
     # to the same artifact -- including the quantization. Resolving it on its
     # own produced `lms get qwen/qwen3.5-9b` next to `lms get
-    # qwen/qwen3.5-9b@4bit` for one set of files, i.e. two instructions for one
+    # qwen/qwen3.5-9b@q4_k_m` for one set of files, i.e. two instructions for one
     # download, one of them naming no quant at all.
     covering_artifact: Dict[str, str] = {}
     for row in rows_in:

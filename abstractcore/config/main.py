@@ -2302,7 +2302,7 @@ def _filter_models_status_rows(routes: List[dict], target: str) -> List[dict]:
     """`target` is a route key (`output.text`) or a `provider/model` pair.
 
     A `provider/model` that matches no configured route is still answered --
-    it is probed directly -- so `models status lmstudio/qwen/qwen3.5-9b@4bit`
+    it is probed directly -- so `models status lmstudio/qwen/qwen3.5-9b@q4_k_m`
     works before the route exists.
     """
 
@@ -2625,7 +2625,7 @@ def _handle_models_subcommand(argv: List[str]) -> int:
         description=(
             "Run the provider's own download tool once, streaming its progress. The "
             "ARTIFACT is the exact weights reference (quantization included, e.g. "
-            "qwen/qwen3.5-9b@4bit) -- not the served model id, which drops the "
+            "qwen/qwen3.5-9b@q4_k_m) -- not the served model id, which drops the "
             "quantization suffix. An MLX model with an MTP companion (a separate "
             "drafter repo) is fetched together with it, in the same job."
         ),

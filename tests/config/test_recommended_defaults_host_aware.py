@@ -56,7 +56,7 @@ NON_APPLE = [
     "windows_arm64",
     "intel_mac",
 ]
-TEXT_BY_HOST = {name: ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@4bit") for name in NON_APPLE}
+TEXT_BY_HOST = {name: ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m") for name in NON_APPLE}
 TEXT_BY_HOST["intel_mac"] = ("ollama", "qwen3.5:9b", "qwen3.5:9b")
 
 

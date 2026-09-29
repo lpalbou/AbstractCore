@@ -306,7 +306,7 @@ def on_int(*_):
         print("W Download canceled.", flush=True); sys.exit(1)
     print("I Download will continue in the background.", flush=True); sys.exit(1)
 signal.signal(signal.SIGINT, on_int)
-print("Searching for models with the term qwen/qwen3.5-9b@4bit", flush=True)
+print("Searching for models with the term qwen/qwen3.5-9b@q4_k_m", flush=True)
 total = 4.8
 for i in range(1, frames + 1):
     r = i / frames
@@ -329,7 +329,7 @@ def test_lms_get_job_reports_real_bytes(host, monkeypatch, tmp_path):
     answers = iter([mm.PRESENCE_ABSENT])
     monkeypatch.setattr(mm, "probe", lambda p, a, **kw: mm.ModelPresence(p, a, next(answers, mm.PRESENCE_INSTALLED)))
     reg = host_jobs.HostJobRegistry(tick_s=0.05)
-    done = host_jobs.start_download_job("lmstudio", "qwen/qwen3.5-9b@4bit", registry=reg, run_inline=True)
+    done = host_jobs.start_download_job("lmstudio", "qwen/qwen3.5-9b@q4_k_m", registry=reg, run_inline=True)
     assert done["state"] == "done", done
     events = reg.events(done["job_id"])
     moving = [e for e in events if e["state"] == "downloading" and e["bytes_total"] == 4_800_000_000]
@@ -344,7 +344,7 @@ def test_cancelling_lms_get_answers_its_prompt_so_lm_studio_stops_too(host, monk
     monkeypatch.setattr(mm, "_lms_cli", lambda: str(lms))
     monkeypatch.setattr(mm, "probe", lambda p, a, **kw: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT))
     reg = host_jobs.HostJobRegistry(tick_s=0.05)
-    job = host_jobs.start_download_job("lmstudio", "qwen/qwen3.5-9b@4bit", registry=reg)
+    job = host_jobs.start_download_job("lmstudio", "qwen/qwen3.5-9b@q4_k_m", registry=reg)
     assert _wait(lambda: (reg.get(job["job_id"])["bytes_done"] or 0) > 0)
     t0 = time.time()
     reg.cancel(job["job_id"])
