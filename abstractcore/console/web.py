@@ -130,6 +130,10 @@ _FRAGMENT_CSS = """
 .acc-root .acc-modal ul { margin: 0; padding-left: 18px; }
 .acc-root .acc-modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 4px; }
 .acc-root .acc-note { font-size: var(--font-size-sm, 12px); color: var(--warning, #f39c12); }
+.acc-root .acc-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; }
+.acc-root .acc-form label { display: grid; gap: 3px; font-size: var(--font-size-sm, 12px); color: var(--text-secondary, #aaa); }
+.acc-root ul.acc-entries { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.acc-root ul.acc-entries li { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: var(--font-size-sm, 12px); }
 """
 
 _PAGE_CSS = """
@@ -238,11 +242,82 @@ _PROVIDERS_HTML = """<div class="acc-root" data-acc-kind="providers" id="acc-pro
   <div class="acc-cli-line" style="margin-top:12px">CLI equivalent: <code>abstractcore config providers --probe</code>, <code>abstractcore config defaults</code></div>
 </div>"""
 
+_EMAIL_HTML = """<div class="acc-root" data-acc-kind="email" id="acc-email">
+  <div class="acc-toolbar">
+    <button type="button" class="acc-btn" data-acc-action="refresh" title="Refresh (r)">Refresh</button>
+    <span data-acc="email-state"></span>
+    <span class="acc-muted" data-acc="email-storage"></span>
+  </div>
+  <div class="acc-message" data-acc="message" role="status" aria-live="polite"></div>
+  <div class="acc-message acc-warn" data-acc="email-notices"></div>
+  <div class="acc-cards">
+    <section class="acc-card" data-acc="email-account-card">
+      <h3>Account</h3>
+      <div class="acc-form">
+        <label>Address <input type="text" data-acc="email-address" autocomplete="off" placeholder="me@example.com"></label>
+        <label>Display name <input type="text" data-acc="email-display-name" autocomplete="off"></label>
+        <label>User name <input type="text" data-acc="email-username" autocomplete="off" placeholder="(the address)"></label>
+        <label>Password <input type="password" data-acc="email-password" autocomplete="new-password" placeholder="app password"></label>
+        <label>IMAP host <input type="text" data-acc="email-imap-host" autocomplete="off" placeholder="imap.example.com"></label>
+        <label>IMAP port <input type="text" data-acc="email-imap-port" inputmode="numeric" placeholder="993"></label>
+        <label>IMAP security <select data-acc="email-imap-security"><option value="ssl">SSL</option><option value="starttls">STARTTLS</option></select></label>
+        <label>Folder <input type="text" data-acc="email-imap-folder" placeholder="INBOX"></label>
+        <label>SMTP host <input type="text" data-acc="email-smtp-host" autocomplete="off" placeholder="smtp.example.com"></label>
+        <label>SMTP port <input type="text" data-acc="email-smtp-port" inputmode="numeric" placeholder="465"></label>
+        <label>SMTP security <select data-acc="email-smtp-security"><option value="ssl">SSL</option><option value="starttls">STARTTLS</option></select></label>
+        <label>CA file <input type="text" data-acc="email-ca-file" placeholder="(system trust store)"></label>
+        <label>Registered address <input type="text" data-acc="email-registered" placeholder="(the address)"></label>
+      </div>
+      <div class="acc-toolbar" style="margin-top:10px">
+        <button type="button" class="acc-btn acc-primary" data-acc-action="email-save">Save and test</button>
+        <button type="button" class="acc-btn" data-acc-action="email-test">Test</button>
+        <button type="button" class="acc-btn" data-acc-action="email-toggle" data-acc="email-toggle">Turn off</button>
+        <button type="button" class="acc-btn acc-danger" data-acc-action="email-disconnect">Disconnect</button>
+      </div>
+      <div class="acc-toolbar" data-acc="email-disconnect-confirm" hidden>
+        <span class="acc-note">Disconnect deletes the stored password or tokens (policy and limits are kept).</span>
+        <button type="button" class="acc-btn acc-danger" data-acc-action="email-disconnect-confirm">Disconnect now</button>
+        <button type="button" class="acc-btn" data-acc-action="email-disconnect-cancel">Cancel</button>
+      </div>
+      <p class="acc-hint">Passwords are stored encrypted and never shown again. Many providers need an app password when two-step verification is on. The mailbox is only read (never marked read, moved or deleted).</p>
+    </section>
+    <section class="acc-card" data-acc="email-status-card"><h3>Status</h3><div data-acc="email-status" class="acc-muted">Loading...</div></section>
+    <section class="acc-card" data-acc="email-policy-card">
+      <h3>Recipient policy</h3>
+      <div class="acc-form">
+        <label>Mode <select data-acc="email-policy-mode"><option value="allowlist">allowlist: only these recipients</option><option value="denylist">denylist: everyone except these</option></select></label>
+      </div>
+      <ul class="acc-entries" data-acc="email-policy-entries"></ul>
+      <div class="acc-toolbar">
+        <input type="text" data-acc="email-policy-new" placeholder="address or domain" aria-label="Address or domain">
+        <button type="button" class="acc-btn" data-acc-action="policy-add">Add</button>
+        <button type="button" class="acc-btn acc-primary" data-acc-action="policy-save">Save policy</button>
+      </div>
+      <div class="acc-toolbar">
+        <input type="text" data-acc="email-policy-check" placeholder="recipient to check" aria-label="Recipient to check">
+        <button type="button" class="acc-btn" data-acc-action="policy-check">Check</button>
+        <span data-acc="email-policy-check-result"></span>
+      </div>
+      <p class="acc-hint">Entries are exact addresses (name@example.com) or domains (example.com; a subdomain only when written as its own entry). The policy applies to To, Cc and Bcc; a message with any refused recipient is not sent.</p>
+    </section>
+    <section class="acc-card" data-acc="email-limits-card">
+      <h3>Send limits</h3>
+      <div class="acc-form">
+        <label>Per hour <input type="text" data-acc="email-per-hour" inputmode="numeric"></label>
+        <label>Per day <input type="text" data-acc="email-per-day" inputmode="numeric"></label>
+      </div>
+      <div class="acc-toolbar"><button type="button" class="acc-btn acc-primary" data-acc-action="limits-save">Save limits</button><span class="acc-muted" data-acc="email-usage"></span></div>
+    </section>
+  </div>
+  <div class="acc-cli-line" style="margin-top:12px">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email connect ... --password &lt;value&gt;</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 20 --per-day 100</code></div>
+</div>"""
+
 _TEMPLATES: Dict[str, str] = {
     "models": _MODELS_HTML,
     "engines": _ENGINES_HTML,
     "overview": _OVERVIEW_HTML,
     "providers": _PROVIDERS_HTML,
+    "email": _EMAIL_HTML,
 }
 
 # ---------------------------------------------------------------------------
@@ -1142,8 +1217,172 @@ _JS_TEMPLATE = r"""
     return { refresh, render() {}, jobFinished() {}, action(name) { if (name === "refresh") refresh(); }, key(k) { if (k === "r") { refresh(); return true; } return false; }, destroy() {} };
   }
 
+
+  // ------------------------------------------------------------------ Email
+  // Same fields and words as the terminal console's Email screen
+  // (console-tui/src/ui/email.rs); data: email_settings_v1 from /acore/email.
+  function emailController(ctx) {
+    const base = `${ctx.apiBase}/email`;
+    let doc = null;
+    let entries = [];
+    let confirming = false;
+    const el = (name) => role(ctx.host, name);
+    const val = (name) => { const e = el(name); return e ? e.value.trim() : ""; };
+    function errMsg(err) {
+      const e = err && err.data && err.data.error;
+      if (e && typeof e === "object" && e.cause) return e.fix ? `${e.cause} Fix: ${e.fix}` : e.cause;
+      return errorText(err);
+    }
+    function setVal(name, v) { const e = el(name); if (e) e.value = v === null || v === undefined ? "" : String(v); }
+    function fill(d) {
+      setVal("email-address", d.address);
+      setVal("email-display-name", d.display_name);
+      setVal("email-username", d.username && d.username !== d.address ? d.username : "");
+      setVal("email-password", "");
+      const imap = d.imap || {}; const smtp = d.smtp || {};
+      setVal("email-imap-host", imap.host); setVal("email-imap-port", imap.port); setVal("email-imap-security", imap.security || "ssl"); setVal("email-imap-folder", imap.folder || "");
+      setVal("email-smtp-host", smtp.host); setVal("email-smtp-port", smtp.port); setVal("email-smtp-security", smtp.security || "ssl");
+      setVal("email-ca-file", imap.ca_file || smtp.ca_file || "");
+      setVal("email-registered", d.registered_address && d.registered_address !== d.address ? d.registered_address : "");
+      const pol = d.policy || { mode: "allowlist", entries: [] };
+      setVal("email-policy-mode", pol.mode);
+      entries = Array.isArray(pol.entries) ? pol.entries.slice() : [];
+      const lim = d.limits || {};
+      setVal("email-per-hour", lim.per_hour); setVal("email-per-day", lim.per_day);
+    }
+    function legText(leg) {
+      if (!leg || leg.ok === undefined) return "-";
+      if (leg.ok === null) return "not configured";
+      return leg.ok ? "ok" : `failed: ${leg.cause || leg.code}`;
+    }
+    function render() {
+      const d = doc || {};
+      const state = el("email-state");
+      if (!d.configured) state.innerHTML = badge({ label: "not connected", tone: "muted" });
+      else if (!d.enabled) state.innerHTML = badge({ label: "off", tone: "warn" });
+      else state.innerHTML = badge({ label: "connected", tone: "ok" }, d.address);
+      el("email-storage").textContent = d.secret_storage === "os-keychain" ? "Credentials encrypted, key in the OS keychain" : d.secret_storage === "key-file" ? "Credentials encrypted, key in a 0600 file" : "";
+      const notices = (Array.isArray(d.notices) ? d.notices : []).concat(d.secret_warning ? [d.secret_warning] : []);
+      el("email-notices").textContent = notices.join(" ");
+      el("email-toggle").textContent = d.enabled === false ? "Turn on" : "Turn off";
+      const st = d.status || {}; const legs = st.legs || {};
+      const rows = [
+        ["Address", esc(d.address || "not connected")],
+        ["Sign-in", esc(d.auth_kind || "-")],
+        ["IMAP (read)", esc(d.imap ? `${d.imap.host}:${d.imap.port} ${d.imap.security}` : "not configured")],
+        ["SMTP (send)", esc(d.smtp ? `${d.smtp.host}:${d.smtp.port} ${d.smtp.security}` : "not configured")],
+        ["Last test", esc(st.last_test || "never")],
+        ["IMAP test", esc(legText(legs.imap))],
+        ["SMTP test", esc(legText(legs.smtp))],
+      ];
+      if (st.last_error) rows.push(["Last error", `<span class="acc-error">${esc(st.last_error.cause || st.last_error.code)}</span><div class="acc-sub">Fix: ${esc(st.last_error.fix || "")}</div>`]);
+      const status = el("email-status");
+      status.className = "";
+      status.innerHTML = `<dl class="acc-kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
+      renderEntries();
+      const lim = d.limits || {};
+      el("email-usage").textContent = lim.per_hour !== undefined ? `${lim.used_last_hour} sent in the last hour, ${lim.used_last_day} in the last day` : "";
+      el("email-disconnect-confirm").hidden = !confirming;
+    }
+    function renderEntries() {
+      const ul = el("email-policy-entries");
+      const mode = val("email-policy-mode");
+      ul.innerHTML = entries.length
+        ? entries.map((e) => `<li><code>${esc(e)}</code><button type="button" class="acc-btn" data-acc-action="policy-remove" data-entry="${esc(e)}">Remove</button></li>`).join("")
+        : `<li class="acc-muted">${mode === "allowlist" ? "No entries: an empty allowlist refuses every recipient." : "No entries: every recipient is allowed."}</li>`;
+    }
+    async function load() {
+      try { doc = await ctx.request("GET", base); fill(doc); render(); }
+      catch (err) { setMessage(ctx, `Email: ${errMsg(err)}`, "error"); }
+    }
+    function num(name) { const v = val(name); return v === "" ? null : Number(v); }
+    async function run(label, fn) {
+      setMessage(ctx, `${label}...`);
+      try { const out = await fn(); if (out && out.schema === "email_settings_v1") { doc = { ...out, notices: (doc && doc.notices) || [] }; fill(doc); } render(); return out; }
+      catch (err) { setMessage(ctx, `${label}: ${errMsg(err)}`, "error"); return null; }
+    }
+    async function action(name, target) {
+      if (name === "refresh") { await load(); return; }
+      if (name === "email-save") {
+        const ca = val("email-ca-file");
+        const body = {
+          address: val("email-address"), display_name: val("email-display-name"), username: val("email-username"),
+          password: el("email-password").value,
+          imap: val("email-imap-host") ? { host: val("email-imap-host"), port: num("email-imap-port"), security: val("email-imap-security"), folder: val("email-imap-folder") || "INBOX", ca_file: ca } : null,
+          smtp: val("email-smtp-host") ? { host: val("email-smtp-host"), port: num("email-smtp-port"), security: val("email-smtp-security"), ca_file: ca } : null,
+          registered_address: val("email-registered") || null,
+          test: true,
+        };
+        const out = await run("Save and test", () => ctx.request("PUT", base, body));
+        if (out) setMessage(ctx, `Connected ${out.address} (connection test passed).`, "ok");
+        return;
+      }
+      if (name === "email-test") {
+        const out = await run("Test", () => ctx.request("POST", `${base}/test`));
+        if (out) {
+          const failed = ["imap", "smtp"].map((k) => out[k]).filter((l) => l && l.ok === false);
+          setMessage(ctx, failed.length ? `Test failed: ${failed[0].cause} Fix: ${failed[0].fix}` : "Test passed.", failed.length ? "error" : "ok");
+          await load();
+        }
+        return;
+      }
+      if (name === "email-toggle") {
+        const on = !(doc && doc.enabled === false);
+        const out = await run(on ? "Turn off" : "Turn on", () => ctx.request("PUT", `${base}/enabled`, { enabled: !on }));
+        if (out) setMessage(ctx, on ? "Email turned off (no reading, no sending; settings kept)." : "Email turned on.", "ok");
+        return;
+      }
+      if (name === "email-disconnect") { confirming = true; render(); return; }
+      if (name === "email-disconnect-cancel") { confirming = false; render(); return; }
+      if (name === "email-disconnect-confirm") {
+        confirming = false;
+        const out = await run("Disconnect", () => ctx.request("DELETE", base));
+        if (out) setMessage(ctx, "Email account disconnected; the stored credentials were deleted.", "ok");
+        return;
+      }
+      if (name === "policy-add") {
+        const v = val("email-policy-new");
+        if (v && !entries.includes(v)) entries.push(v);
+        setVal("email-policy-new", "");
+        renderEntries();
+        return;
+      }
+      if (name === "policy-remove") { entries = entries.filter((e) => e !== target.dataset.entry); renderEntries(); return; }
+      if (name === "policy-save") {
+        const out = await run("Save policy", () => ctx.request("PUT", `${base}/policy`, { mode: val("email-policy-mode"), entries }));
+        if (out) setMessage(ctx, "Recipient policy saved.", "ok");
+        return;
+      }
+      if (name === "policy-check") {
+        const v = val("email-policy-check");
+        if (!v) return;
+        const res = el("email-policy-check-result");
+        try {
+          const out = await ctx.request("POST", `${base}/policy/check`, { addresses: [v] });
+          const r = (out.recipients || [])[0] || {};
+          res.innerHTML = badge({ label: r.allowed ? "allowed" : "refused", tone: r.allowed ? "ok" : "err" }, r.reason || "");
+          res.title = r.reason || "";
+        } catch (err) { res.textContent = errMsg(err); }
+        return;
+      }
+      if (name === "limits-save") {
+        const out = await run("Save limits", () => ctx.request("PUT", `${base}/limits`, { per_hour: num("email-per-hour"), per_day: num("email-per-day") }));
+        if (out) setMessage(ctx, "Send limits saved.", "ok");
+      }
+    }
+    const onModeChange = () => renderEntries();
+    const modeEl = el("email-policy-mode");
+    if (modeEl) modeEl.addEventListener("change", onModeChange);
+    return {
+      refresh: load, render, jobFinished() {},
+      action(name, target) { action(name, target); },
+      key(k) { if (k === "r") { load(); return true; } return false; },
+      destroy() { if (modeEl) modeEl.removeEventListener("change", onModeChange); },
+    };
+  }
+
   // ----------------------------------------------------------------- mount
-  const CONTROLLERS = { models: modelsController, engines: enginesController, overview: overviewController, providers: providersController };
+  const CONTROLLERS = { models: modelsController, engines: enginesController, overview: overviewController, providers: providersController, email: emailController };
   const mounts = new Map();
   function normalizeKind(kind) {
     const k = String(kind || "").toLowerCase();
@@ -1293,7 +1532,7 @@ _JS_TEMPLATE = r"""
       syncForget();
     }
 
-    const TABS = ["overview", "catalog", "engines", "providers"];
+    const TABS = ["overview", "catalog", "engines", "providers", "email"];
     const mounted = {};
     function show(tab) {
       if (!TABS.includes(tab)) tab = "overview";
@@ -1394,7 +1633,7 @@ def fragment(kind: str) -> Dict[str, str]:
 
 
 def render_console_html(api_base: str = "/acore", title: str = "AbstractCore Console") -> str:
-    """The standalone console page (Overview, Models, Engines, Providers)."""
+    """The standalone console page (Overview, Models, Engines, Providers, Email)."""
     from html import escape
 
     from .themes import KIT_LIGHT_THEME_IDS, KIT_ROOT_CSS, KIT_THEME_CSS, KIT_THEME_SPECS
@@ -1435,12 +1674,14 @@ def render_console_html(api_base: str = "/acore", title: str = "AbstractCore Con
   <button type="button" role="tab" id="acc-tab-button-catalog" aria-controls="acc-tab-catalog" aria-selected="false">Models</button>
   <button type="button" role="tab" id="acc-tab-button-engines" aria-controls="acc-tab-engines" aria-selected="false">Engines</button>
   <button type="button" role="tab" id="acc-tab-button-providers" aria-controls="acc-tab-providers" aria-selected="false">Providers</button>
+  <button type="button" role="tab" id="acc-tab-button-email" aria-controls="acc-tab-email" aria-selected="false">Email</button>
 </nav>
 <main class="acc-main">
   <section class="acc-panel" role="tabpanel" id="acc-tab-overview" aria-labelledby="acc-tab-button-overview">{_OVERVIEW_HTML}</section>
   <section class="acc-panel" role="tabpanel" id="acc-tab-catalog" aria-labelledby="acc-tab-button-catalog" hidden>{_MODELS_HTML}</section>
   <section class="acc-panel" role="tabpanel" id="acc-tab-engines" aria-labelledby="acc-tab-button-engines" hidden>{_ENGINES_HTML}</section>
   <section class="acc-panel" role="tabpanel" id="acc-tab-providers" aria-labelledby="acc-tab-button-providers" hidden>{_PROVIDERS_HTML}</section>
+  <section class="acc-panel" role="tabpanel" id="acc-tab-email" aria-labelledby="acc-tab-button-email" hidden>{_EMAIL_HTML}</section>
 </main>
 <noscript><p style="padding:20px">The AbstractCore console needs JavaScript.</p></noscript>
 <script>

@@ -3139,6 +3139,10 @@ def main(argv: List[str] = None):
         from .models_engines_cli import handle_host
 
         return handle_host(argv[1:])
+    if argv and argv[0] == "email":
+        from .email_cli import handle_email
+
+        return handle_email(argv[1:])
     if Path(sys.argv[0]).name == "abstractcore-config" and (
         not argv or argv[0] in _CONFIG_SUBCOMMANDS or argv[0].startswith("--")
     ):
@@ -3155,6 +3159,7 @@ QUICK START:
   abstractcore serve                              # Start OpenAI-compatible HTTP server
   abstractcore --install                          # Check & install missing models/deps
   abstractcore --install --yes                   # Auto-download everything that's missing
+  abstractcore email status                       # Email account (connect, test, recipient policy, limits)
 
 COMMON TASKS:
   # Set default model for all apps

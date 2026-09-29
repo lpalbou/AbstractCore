@@ -1473,6 +1473,11 @@ from .host_routes import router as _host_router  # noqa: E402
 
 app.include_router(_host_router)
 
+# Email account of this install (the console's Email page): /acore/email.
+from .email_routes import router as _email_router  # noqa: E402
+
+app.include_router(_email_router)
+
 # Web console: /console and /console/fragment/{kind}.
 from .console_routes import router as _console_router  # noqa: E402
 

@@ -174,6 +174,10 @@ def permission_mode_auto_approves(
 #     runtime/gateway's enforcement lane — core only DECLARES the id + band.
 KNOWN_REFINER_IDS: Tuple[str, ...] = (
     "send_email_recipient@v1",  # recipient==registered operator → auto; else ceiling (dm#244)
+    # v2 (backlog 0992): every recipient ∈ the run's self set (registered address) ∪ the
+    # automation's pre-authorised recipients → auto; else ceiling. The recipient POLICY
+    # (allowlist / denylist) is not a refiner: it refuses at send time, for every caller.
+    "send_email_recipient@v2",
     # execute_command → auto when the command is a PROVEN read-only git
     # invocation (runtime's two-stage conservative proof, c5042), else the
     # destroy ceiling holds. Same architecture as send_email_recipient: core

@@ -115,9 +115,21 @@ _CLASSIFICATION_BY_NAME: Dict[str, Dict[str, bool]] = {
         "comms_send": True,
         "model_controlled_destination": True,
     },
+    # reply_email: recipients come from the ORIGINAL message (Reply-To / From),
+    # which its sender controls, so the destination is model-/sender-controlled.
+    "reply_email": {
+        "mutating": False,
+        "remote_write_capable": True,
+        "comms_send": True,
+        "model_controlled_destination": True,
+    },
     "read_email": {"mutating": False, "remote_write_capable": False},
     "list_emails": {"mutating": False, "remote_write_capable": False},
+    "search_emails": {"mutating": False, "remote_write_capable": False},
     "list_email_accounts": {"mutating": False, "remote_write_capable": False},
+    # get_email_attachment writes the attachment into a MODEL-CHOSEN local folder
+    # (never overwrites; the mailbox itself stays read-only).
+    "get_email_attachment": {"mutating": True, "remote_write_capable": False},
     "send_whatsapp_message": {
         "mutating": False,
         "remote_write_capable": True,
@@ -164,9 +176,13 @@ _CLASSIFICATION_BY_NAME: Dict[str, Dict[str, bool]] = {
 # enforcement lane (runtime/gateway) runs the logic. Validated against
 # risk_facts.KNOWN_REFINER_IDS at build time.
 _REFINER_BY_NAME: Dict[str, str] = {
-    # send_email → auto when the recipient is the registered operator email,
-    # else the outreach ceiling holds (self=auto / others=ask, dm#244).
-    "send_email": "send_email_recipient@v1",
+    # send_email / reply_email → auto when every recipient is in the run's
+    # self set or the automation's pre-authorised recipients, else the outreach
+    # ceiling holds (v2, backlog 0992; v1 was "registered operator only").
+    # reply_email's recipients are not arguments: until the enforcement lane
+    # computes them, the refiner cannot prove them and holds the ceiling (ask).
+    "send_email": "send_email_recipient@v2",
+    "reply_email": "send_email_recipient@v2",
     # execute_command → auto when the command PROVES read-only git (runtime's
     # two-stage conservative proof, built c5042; positional write verbs +
     # write/exec flags + wrappers + globals-before-verb + shell operators all

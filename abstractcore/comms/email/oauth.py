@@ -363,14 +363,19 @@ class OAuthTokenClient:
         while True:
             if clock() >= device.expires_at:
                 raise _classify_oauth_error("expired_token", stage="device_poll", status=400)
-            data = self._base()
-            data.update({"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": device.device_code})
             try:
-                return self._tokens(self._post(self.oauth.token_endpoint, data, stage="device_poll"))
+                return self.poll_device_once(device)
             except EmailOAuthPending as pending:
                 if pending.details.get("oauth_error") == "slow_down":
                     interval += 5.0
                 sleep(interval)
+
+    def poll_device_once(self, device: DeviceAuthorization) -> TokenSet:
+        """One poll: the tokens, or `EmailOAuthPending` while the person has not approved yet."""
+
+        data = self._base()
+        data.update({"grant_type": "urn:ietf:params:oauth:grant-type:device_code", "device_code": device.device_code})
+        return self._tokens(self._post(self.oauth.token_endpoint, data, stage="device_poll"))
 
     def refresh(self, refresh_token: str) -> TokenSet:
         if not refresh_token:
@@ -499,6 +504,11 @@ class LoopbackAuthorization:
             code_challenge=self._pkce["challenge"],
             login_hint=self._login_hint,
         )
+
+    def wait(self, timeout_s: float) -> bool:
+        """True once the redirect came back (then call `finish`)."""
+
+        return self._done.wait(timeout_s)
 
     def close(self) -> None:
         if self._server is not None:

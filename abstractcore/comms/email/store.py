@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 from . import legacy
-from .client import EmailClient
+from .client import EmailClient, tls_context
 from .context import EmailContext
 from .errors import EmailError, EmailInvalidSettings, EmailNotConfigured, EmailSecretUnavailable
 from .limits import SendRateLimiter
@@ -317,11 +317,15 @@ class EmailAccountStore:
             )
         provider = None
         if st.account.auth_kind == "oauth2":
+            verify = ssl_context
+            if verify is None:
+                ca = (st.account.imap.ca_file if st.account.imap else "") or (st.account.smtp.ca_file if st.account.smtp else "")
+                verify = tls_context(ca) if ca else None
             provider = OAuthTokenProvider(
                 st.account.oauth,
                 secret,
                 on_update=lambda new: self.vault.store(new.sealed_payload(), reuse_key=True),
-                verify=ssl_context,
+                verify=verify,
             )
         ctx = EmailContext(
             account=st.account,
