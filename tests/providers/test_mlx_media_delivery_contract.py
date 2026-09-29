@@ -25,7 +25,7 @@ from abstractcore.media.delivery import (
 
 _requires_mlx_stack = pytest.mark.skipif(
     not all(importlib.util.find_spec(m) for m in ("mlx", "mlx_lm", "mlx_vlm")),
-    reason="requires the optional MLX stack (pip install \"abstractcore[mlx]\")",
+    reason="requires the optional MLX stack (pip install \"abstractcore[apple]\")",
 )
 
 
@@ -633,6 +633,23 @@ def _names(deps):
     return {d.replace(" ", "").split(">")[0].split("<")[0].split("=")[0] for d in deps}
 
 
+def _resolved(extra, extras=None):
+    """An extra's requirements with `abstractcore[...]` self-references expanded.
+
+    Deprecated aliases such as `all-apple` and `mlx` are `abstractcore[apple]`;
+    what they install is what `apple` installs."""
+    extras = extras or _extras()
+    out = []
+    for dep in extras[extra]:
+        compact = dep.replace(" ", "")
+        if compact.startswith("abstractcore["):
+            for inner in compact[len("abstractcore["):].split("]")[0].split(","):
+                out.extend(_resolved(inner, extras))
+        else:
+            out.append(dep)
+    return out
+
+
 def test_mlx_vlm_ships_with_mlx_lm_in_every_profile():
     """Installing the MLX provider must install its image input. No exceptions.
 
@@ -648,19 +665,21 @@ def test_mlx_vlm_ships_with_mlx_lm_in_every_profile():
     new profile that adds mlx-lm cannot reintroduce the gap by being forgotten.
     """
     gaps = []
-    for name, deps in _extras().items():
-        names = _names(deps)
+    for name in _extras():
+        names = _names(_resolved(name))
         if "mlx-lm" in names and "mlx-vlm" not in names:
             gaps.append(name)
     assert not gaps, f"these extras install mlx-lm without mlx-vlm: {sorted(gaps)}"
 
 
 def test_the_apple_install_path_carries_vision():
-    """`all-apple` is the extra the whole Apple dependency chain resolves to.
-    Naming it explicitly, because the sweep above would still pass if this
-    profile stopped shipping MLX at all."""
-    names = _names(_extras()["all-apple"])
-    assert "mlx-lm" in names and "mlx-vlm" in names
+    """`apple` is the setting the whole Apple dependency chain resolves to
+    (released runtimes still ask for its deprecated alias `all-apple`).
+    Naming both explicitly, because the sweep above would still pass if this
+    setting stopped shipping MLX at all."""
+    for extra in ("apple", "all-apple"):
+        names = _names(_resolved(extra))
+        assert "mlx-lm" in names and "mlx-vlm" in names, extra
 
 
 def test_mlx_floors_are_high_enough_for_the_vision_stack():
@@ -672,7 +691,7 @@ def test_mlx_floors_are_high_enough_for_the_vision_stack():
     for extra in ("mlx", "apple", "all", "all-apple", "full-dev"):
         deps = {
             d.replace(" ", "").split(">=")[0]: d.replace(" ", "")
-            for d in _extras()[extra]
+            for d in _resolved(extra)
         }
         assert ">=0.32.2" in deps["mlx"], f"{extra}: {deps['mlx']}"
         assert ">=0.31.3" in deps["mlx-lm"], f"{extra}: {deps['mlx-lm']}"
@@ -681,7 +700,7 @@ def test_mlx_floors_are_high_enough_for_the_vision_stack():
 
 def test_mlx_vision_extra_still_resolves_for_existing_callers():
     """Kept as an alias: published docs and install commands reference it."""
-    assert "mlx-vlm" in _names(_extras()["mlx-vision"])
+    assert "mlx-vlm" in _names(_resolved("mlx-vision"))
 
 
 # --------------------------------------------------------------------------- #
@@ -754,7 +773,7 @@ def test_not_installed_reason_carries_the_install_command():
     from abstractcore.media.delivery import remedy_for
 
     fix = remedy_for(["mlx_vlm_not_installed", "image_base64"])
-    assert fix and "abstractcore[mlx]" in fix
+    assert fix and "abstractcore[apple]" in fix
     assert "incomplete" in fix
     assert "interpreter" in fix
     # A part-type literal is not a remedy; inventing advice for it would be worse

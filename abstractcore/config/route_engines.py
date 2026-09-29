@@ -133,7 +133,8 @@ def _voice(provider: str) -> Optional[Dict[str, Any]]:
     if provider in _REMOTE_VOICE_PROVIDERS:
         return None
     if not _distributed("abstractvoice"):
-        install = _pip_command("abstractcore[voice]")
+        # AbstractVoice is part of the light install: a missing one is an old or broken install.
+        install = _pip_command("-U", "abstractcore")
         return _missing(
             provider,
             "AbstractVoice",

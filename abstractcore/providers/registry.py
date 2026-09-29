@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from abc import ABC
 import logging
 from ..utils.structured_logging import get_logger
+from ..utils.install_settings import LIGHT_INSTALL, local_engines_setting
 
 logger = get_logger("provider_registry")
 
@@ -108,8 +109,16 @@ class ProviderInfo:
     supported_features: List[str] = field(default_factory=list)
     authentication_required: bool = True
     local_provider: bool = False
+    # The install setting this provider needs beyond the light install: "apple" or "gpu",
+    # or None when `pip install abstractcore` covers it (every remote provider).
     installation_extras: Optional[str] = None
     import_path: str = ""
+
+    def install_command(self) -> str:
+        """The command that installs this provider's dependencies (docs/installation.md)."""
+        if self.installation_extras:
+            return f'pip install "abstractcore[{self.installation_extras}]"'
+        return LIGHT_INSTALL
 
     def __post_init__(self):
         """Set default values after initialization."""
@@ -167,7 +176,7 @@ class ProviderRegistry:
             supported_features=["chat", "completion", "embeddings", "native_tools", "streaming", "structured_output"],
             authentication_required=True,
             local_provider=False,
-            installation_extras="openai",
+            installation_extras=None,
             import_path="..providers.openai_provider"
         ))
 
@@ -181,7 +190,7 @@ class ProviderRegistry:
             supported_features=["chat", "completion", "native_tools", "streaming", "structured_output"],
             authentication_required=True,
             local_provider=False,
-            installation_extras="anthropic",
+            installation_extras=None,
             import_path="..providers.anthropic_provider"
         ))
 
@@ -195,7 +204,7 @@ class ProviderRegistry:
             supported_features=["chat", "completion", "embeddings", "prompted_tools", "streaming", "structured_output"],
             authentication_required=False,
             local_provider=True,
-            installation_extras="ollama",
+            installation_extras=None,
             import_path="..providers.ollama_provider"
         ))
 
@@ -223,7 +232,7 @@ class ProviderRegistry:
             supported_features=["chat", "completion", "prompted_tools", "streaming", "structured_output", "apple_silicon"],
             authentication_required=False,
             local_provider=True,
-            installation_extras="mlx",
+            installation_extras="apple",
             import_path="..providers.mlx_provider"
         ))
 
@@ -237,7 +246,7 @@ class ProviderRegistry:
             supported_features=["chat", "completion", "embeddings", "prompted_tools", "local_models", "structured_output"],
             authentication_required=False,  # Optional for public models
             local_provider=True,
-            installation_extras="huggingface",
+            installation_extras=local_engines_setting() or "gpu",
             import_path="..providers.huggingface_provider"
         ))
 
@@ -252,7 +261,7 @@ class ProviderRegistry:
                                "structured_output", "guided_decoding", "multi_lora", "beam_search"],
             authentication_required=False,  # Optional API key
             local_provider=True,
-            installation_extras="vllm",
+            installation_extras=None,  # talks to a vLLM server over HTTP
             import_path="..providers.vllm_provider"
         ))
 
@@ -602,7 +611,7 @@ class ProviderRegistry:
             self._logger.warning(f"Failed to load provider {provider_info.name}: {e}")
             raise ImportError(
                 f"{provider_info.display_name} dependencies not installed. "
-                f"Install with: pip install \"abstractcore[{provider_info.installation_extras}]\""
+                f"Install with: {provider_info.install_command()}"
             ) from e
 
     def get_available_models(self, provider_name: str, **kwargs) -> List[str]:
@@ -927,7 +936,7 @@ class ProviderRegistry:
             # Re-raise import errors with a helpful message, WITHOUT discarding the
             # original. A provider constructor raises ImportError for causes the extras
             # hint does not cover — a 4-bit load needing `bitsandbytes`, say — and
-            # replacing that text with "install abstractcore[huggingface]" sends the
+            # replacing that text with "install abstractcore[apple]" sends the
             # caller to a remedy that does not fix their problem and hides the one that
             # would. `from e` preserves the chain for a traceback, but the message a
             # caller reads (and logs) is this one, so the real cause belongs in it.
@@ -935,7 +944,7 @@ class ProviderRegistry:
                 raise ImportError(
                     f"{provider_info.display_name} provider could not be constructed: {e}\n"
                     f"If a core dependency is missing, install with: "
-                    f"pip install \"abstractcore[{provider_info.installation_extras}]\" — "
+                    f"{provider_info.install_command()} — "
                     f"but read the underlying error above first; it names what actually failed."
                 ) from e
             else:

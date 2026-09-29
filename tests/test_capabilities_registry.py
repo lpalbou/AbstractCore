@@ -48,11 +48,11 @@ def test_capabilities_status_empty(monkeypatch):
     status = llm.capabilities.status()
     assert status["plugins_loaded"] is True
     assert status["capabilities"]["voice"]["available"] is False
-    assert status["capabilities"]["voice"]["install_hint"] == 'pip install "abstractcore[voice]"'
+    assert status["capabilities"]["voice"]["install_hint"] == 'pip install -U abstractcore'
     assert status["capabilities"]["vision"]["available"] is False
-    assert status["capabilities"]["vision"]["install_hint"] == 'pip install "abstractcore[vision]"'
+    assert status["capabilities"]["vision"]["install_hint"] == 'pip install -U abstractcore'
     assert status["capabilities"]["scene3d"]["available"] is False
-    assert status["capabilities"]["scene3d"]["install_hint"] == 'pip install "abstractcore[scene3d]"'
+    assert status["capabilities"]["scene3d"]["install_hint"] == 'pip install -U abstractcore'
 
 
 @pytest.mark.basic
@@ -63,7 +63,7 @@ def test_missing_capability_raises_actionable_error(monkeypatch):
     with pytest.raises(CapabilityUnavailableError) as e:
         llm.voice.tts("hello")
     assert "voice:" in str(e.value)
-    assert 'pip install "abstractcore[voice]"' in str(e.value)
+    assert 'pip install -U abstractcore' in str(e.value)
 
 
 @pytest.mark.basic
@@ -74,7 +74,7 @@ def test_missing_music_capability_raises_actionable_error(monkeypatch):
     with pytest.raises(CapabilityUnavailableError) as e:
         llm.music.t2m("hello")
     assert "music:" in str(e.value)
-    assert 'pip install "abstractcore[music]"' in str(e.value)
+    assert 'pip install -U abstractcore' in str(e.value)
 
 
 @pytest.mark.basic
@@ -85,7 +85,7 @@ def test_missing_scene3d_capability_raises_actionable_error(monkeypatch):
     with pytest.raises(CapabilityUnavailableError) as e:
         llm.scene3d.t23d("hello")
     assert "scene3d:" in str(e.value)
-    assert 'pip install "abstractcore[scene3d]"' in str(e.value)
+    assert 'pip install -U abstractcore' in str(e.value)
 
 
 @pytest.mark.basic

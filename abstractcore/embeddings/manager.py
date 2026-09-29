@@ -37,6 +37,7 @@ except ImportError:
 
 from .models import EmbeddingBackend, get_model_config, get_default_model, list_available_models, list_available_providers
 from ..utils.structured_logging import get_logger
+from ..utils.install_settings import local_engines_install_command
 
 logger = get_logger(__name__)
 
@@ -636,7 +637,7 @@ class EmbeddingManager:
             if sentence_transformers is None:
                 raise ImportError(
                     "sentence-transformers is required but not installed. "
-                    "Install with: pip install \"abstractcore[embeddings]\""
+                    f"Install with: {local_engines_install_command()}"
                 )
 
             # No process-wide environment writes (mission EE): this used to
@@ -704,7 +705,7 @@ class EmbeddingManager:
         except ImportError:
             raise ImportError(
                 "sentence-transformers is required for embedding functionality. "
-                "Install with: pip install \"abstractcore[embeddings]\" (recommended) "
+                f"Install with: {local_engines_install_command()} (recommended) "
                 "or: pip install sentence-transformers"
             )
         except Exception as e:

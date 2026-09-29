@@ -9,8 +9,8 @@ How to reason about latency/throughput tradeoffs in LLM apps:
 
 ## Prereqs
 
-- MLX-specific benchmarks: `pip install "abstractcore[mlx]"`
-- Some scripts also use embeddings: `pip install "abstractcore[embeddings]"`
+- MLX-specific benchmarks: `pip install "abstractcore[apple]"`
+- Some scripts also use local embeddings, which `abstractcore[apple]` includes
 
 ## Key AbstractCore Concepts
 

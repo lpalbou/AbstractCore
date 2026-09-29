@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
+from .utils.install_settings import local_engines_install_command
 
 
 class DownloadStatus(Enum):
@@ -227,7 +228,7 @@ async def _download_huggingface(
             status=DownloadStatus.ERROR,
             message=(
                 "huggingface_hub is not installed. "
-                "Install with: pip install \"abstractcore[huggingface]\""
+                f"Install with: {local_engines_install_command()}"
             ),
         )
         return

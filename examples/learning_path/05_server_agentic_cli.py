@@ -15,8 +15,8 @@ Technical Architecture Highlights:
 - CLI with interactive tool execution
 - Server-side provider management
 
-Required: pip install abstractcore[server]
-Optional: pip install abstractcore[ollama] for local model server
+Required: pip install abstractcore (the server is part of the light install)
+Optional: a local Ollama server
 """
 
 import json
@@ -121,7 +121,7 @@ def starting_the_server():
     print("\n4️⃣ Docker Deployment:")
     print("   ```dockerfile")
     print("   FROM python:3.10-slim")
-    print("   RUN pip install abstractcore[server]")
+    print("   RUN pip install abstractcore")
     print("   EXPOSE 8000")
     print("   CMD [\"python\", \"-m\", \"abstractcore.server\"]")
     print("   ```")

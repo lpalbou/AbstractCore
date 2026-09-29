@@ -453,8 +453,8 @@ configured `input.voice` capability route as the speech-to-text fallback. If
 text-only models instead of silently choosing an installed STT backend.
 
 ```bash
-# STT fallback requires abstractvoice
-pip install "abstractcore[voice]"
+# A local STT engine (faster-whisper) comes with the local engines
+pip install "abstractcore[apple]"   # or "abstractcore[gpu]" on NVIDIA / AMD
 
 # Select the STT route used by audio_policy=auto
 abstractcore config set-default input.voice \

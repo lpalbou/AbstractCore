@@ -288,7 +288,8 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 
 **Installation**:
 ```bash
-pip install "abstractcore[huggingface]"  # Includes Outlines automatically
+pip install "abstractcore[apple]"   # Apple silicon; includes Outlines
+pip install "abstractcore[gpu]"     # NVIDIA / AMD; includes Outlines
 ```
 
 **Characteristics**:
@@ -337,7 +338,7 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 
 **Installation**:
 ```bash
-pip install "abstractcore[mlx]"  # Includes Outlines automatically
+pip install "abstractcore[apple]"  # Includes Outlines automatically
 ```
 
 **Models**:
@@ -1034,13 +1035,13 @@ pytest tests/structured -q
 
 Some provider-specific tests require additional extras:
 
-- HuggingFace / Outlines: `pip install -e ".[huggingface]"`
-- MLX: `pip install -e ".[mlx]"` (macOS + Apple Silicon only)
+- MLX, HuggingFace / Outlines: `pip install -e ".[apple,test]"` (Apple silicon)
+- vLLM, HuggingFace / Outlines: `pip install -e ".[gpu,test]"` (NVIDIA / AMD)
 
-If you're installing from PyPI and just want the test dependencies:
+For the light install plus the test tooling:
 
 ```bash
-pip install "abstractcore[test]"
+pip install -e ".[test]"
 pytest -q
 ```
 

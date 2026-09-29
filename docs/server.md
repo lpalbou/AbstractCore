@@ -43,7 +43,7 @@ route away from the provider's default API host.
 On your own machine:
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore
 abstractcore serve
 # AbstractCore server
 #   Config dir: ~/.abstractcore/config
@@ -621,7 +621,7 @@ Endpoints:
 - `POST /v1/images/edits`
 - `POST /{provider}/v1/images/edits`
 
-Remote OpenAI-compatible image proxying is included in `abstractcore[server]`
+Remote OpenAI-compatible image proxying is part of the light install
 and is enabled by setting `OPENAI_BASE_URL`.
 The synchronous image routes use the same internal `generate(..., output="image")`
 dispatcher as the Python API, then serialize the result back to the
@@ -629,13 +629,14 @@ OpenAI-compatible `b64_json` response shape.
 
 Install for remote image proxying:
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore
 ```
 
-Install local image backends only when you want the server to load Diffusers,
+Install the local engines only when you want the server to load Diffusers,
 MLX-Gen, or stable-diffusion.cpp models itself:
 ```bash
-pip install "abstractcore[server,vision]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 Use provider/model-style image ids:
@@ -935,25 +936,17 @@ request gets the saved key, read on every request: a rotated key is used on
 the next call and a removed one is no longer sent. Local engines (Supertonic,
 Piper, faster-whisper, ...) never receive a key.
 
-Install for remote audio:
+Remote audio and plugin-backed routing both work with the light install, which
+includes the AbstractVoice plugin:
 ```bash
-pip install "abstractcore[server,remote]"
-```
-
-Install for plugin-backed routing:
-```bash
-pip install "abstractcore[server]"
-pip install "abstractcore[voice]"
-pip install "abstractcore[music]"
+pip install abstractcore
 ```
 
 Notes:
-- `abstractvoice` 0.11.0+ can install the base plugin path on Python 3.9
-  without OmniVoice, torch, or torchaudio. Python 3.10+ is recommended. Use
-  explicit local aggregate profiles such as `abstractcore[all-apple]` or
-  `abstractcore[all-gpu]` when you want local voice engines; AEC requires
-  Python 3.11+.
-- `/v1/audio/transcriptions` requires `python-multipart` for form parsing (included in the server extra).
+- The light install carries AbstractVoice without OmniVoice, torch, or
+  torchaudio (Python 3.9+; 3.10+ recommended). Local voice engines come with
+  `abstractcore[apple]` or `abstractcore[gpu]`; AEC requires Python 3.11+.
+- `/v1/audio/transcriptions` parses forms with `python-multipart` (part of the light install).
 - Uploaded audio is limited by `ABSTRACTCORE_SERVER_AUDIO_MAX_BYTES` (default: 25 MB).
 
 `POST /v1/audio/transcriptions` multipart parameters:
@@ -1042,7 +1035,7 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 With `abstractmusic>=0.1.15`, the base install includes the remote ACE Music
 backend. Configure `ACEMUSIC_API_KEY` in the server environment, optionally set
 `ACEMUSIC_BASE_URL`, and use `provider="acemusic"` or the `/acemusic/v1/audio/music`
-path. Local ACE-Step/Diffusers routes remain opt-in AbstractMusic extras.
+path. Local ACE-Step/Diffusers routes come with `abstractcore[apple]` or `abstractcore[gpu]`.
 
 While the server holds a music provider key (`ACEMUSIC_API_KEY` or `ELEVENLABS_API_KEY`, in its
 environment or as the `music_acemusic_api_key` / `music_elevenlabs_api_key` route option), a
@@ -2253,24 +2246,19 @@ PyPI release succeeds:
 ghcr.io/lpalbou/abstractcore-server:<version>
 ```
 
-The image is built from PyPI, not from the repository checkout, and installs:
+The image is built from PyPI, not from the repository checkout, and installs the
+light setting:
 
 ```bash
-abstractcore[server,remote,media,tokens,compression]==<version>
+abstractcore==<version>
 ```
 
 It includes remote chat/responses, remote embeddings, remote STT/TTS routing,
-remote OpenAI-compatible image proxying, server dependencies, media parsing,
-token counting, and compression helpers. It intentionally does not include
-AbstractCore local LLM runtimes (`vllm`, `mlx`, `huggingface`), local embedding
-dependencies (`sentence-transformers`), or optional capability plugin entry
-points. Remote image/audio OpenAI-compatible endpoint routes still work without
-those plugins. Build a custom image with
-`abstractcore[server,remote,media,tokens,compression,voice,vision]` when you
-want plugin-backed media catalogs or plugin default routes; these capability
-extras stay remote-light. Add explicit local aggregate profiles such as
-`abstractcore[all-apple]` or `abstractcore[all-gpu]` only when you want local
-native inference engines.
+remote OpenAI-compatible image proxying, the server, media parsing, token
+counting, compression helpers, and the voice/vision/music plugins with their
+remote backends. It does not include local engines (vLLM, MLX, transformers,
+`sentence-transformers`, local voice/image/music engines). Build a custom image
+on `abstractcore[gpu]` when you want local native inference engines.
 
 **Run:**
 ```bash

@@ -9,7 +9,7 @@ This module is the cornerstone of AbstractCore's **provider-agnostic architectur
 ## Installation
 
 - Tool parsing/rewriting is part of core `abstractcore`.
-- The built-in toolset in `abstractcore.tools.common_tools` (notably `web_search`, `skim_websearch`, `skim_url`, `fetch_url`) requires `pip install "abstractcore[tools]"` so runtime dependencies like BeautifulSoup/requests are available.
+- The built-in toolset in `abstractcore.tools.common_tools` (notably `web_search`, `skim_websearch`, `skim_url`, `fetch_url`) is part of the light install (`pip install abstractcore`), so runtime dependencies like BeautifulSoup/requests are available.
 
 ## Quick Reference
 

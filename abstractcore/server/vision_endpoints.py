@@ -5595,7 +5595,7 @@ else:
             status_code=501,
             detail=(
                 "The /v1/images/edits endpoint requires python-multipart for multipart/form-data parsing. "
-                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+                "Install it via: pip install -U abstractcore (or: pip install python-multipart)."
             ),
         )
 
@@ -5608,7 +5608,7 @@ else:
             status_code=501,
             detail=(
                 "The /{provider}/v1/images/edits endpoint requires python-multipart for multipart/form-data parsing. "
-                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+                "Install it via: pip install -U abstractcore (or: pip install python-multipart)."
             ),
         )
 
@@ -5618,7 +5618,7 @@ else:
             status_code=501,
             detail=(
                 "The /v1/images/upscale endpoint requires python-multipart for multipart/form-data parsing. "
-                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+                "Install it via: pip install -U abstractcore (or: pip install python-multipart)."
             ),
         )
 
@@ -5631,7 +5631,7 @@ else:
             status_code=501,
             detail=(
                 "The /{provider}/v1/images/upscale endpoint requires python-multipart for multipart/form-data parsing. "
-                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+                "Install it via: pip install -U abstractcore (or: pip install python-multipart)."
             ),
         )
 
@@ -5641,7 +5641,7 @@ else:
             status_code=501,
             detail=(
                 "The /v1/vision/jobs/images/upscale endpoint requires python-multipart for multipart/form-data parsing. "
-                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+                "Install it via: pip install -U abstractcore (or: pip install python-multipart)."
             ),
         )
 
@@ -5652,7 +5652,7 @@ else:
             status_code=501,
             detail=(
                 "The /v1/vision/jobs/videos/edits endpoint requires python-multipart for multipart/form-data parsing. "
-                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+                "Install it via: pip install -U abstractcore (or: pip install python-multipart)."
             ),
         )
 
@@ -5663,7 +5663,7 @@ else:
             status_code=501,
             detail=(
                 "The /v1/videos/edits endpoint requires python-multipart for multipart/form-data parsing. "
-                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+                "Install it via: pip install -U abstractcore (or: pip install python-multipart)."
             ),
         )
 
@@ -5677,6 +5677,6 @@ else:
             status_code=501,
             detail=(
                 "The /{provider}/v1/videos/edits endpoint requires python-multipart for multipart/form-data parsing. "
-                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+                "Install it via: pip install -U abstractcore (or: pip install python-multipart)."
             ),
         )

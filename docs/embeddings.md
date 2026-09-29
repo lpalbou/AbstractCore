@@ -11,8 +11,12 @@ AbstractCore includes built-in support for vector embeddings with **7 providers*
 ### Installation
 
 ```bash
-# Install with embeddings support
-pip install "abstractcore[embeddings]"
+# Remote embedding providers (Ollama, LM Studio, OpenAI, OpenRouter, Portkey, ...) work with the light install
+pip install abstractcore
+
+# Local embedding models (such as the default all-MiniLM-L6-v2) come with the local engines
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 ### First Embeddings
@@ -636,7 +640,7 @@ If you prefer HTTP endpoints over Python code, use the AbstractCore server:
 
 ```bash
 # Start the server
-pip install "abstractcore[server]"
+pip install abstractcore
 abstractcore serve
 ```
 

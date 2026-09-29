@@ -104,7 +104,7 @@ def read_file_content(file_path: str) -> str:
         except ImportError as e:
             raise ImportError(
                 f"Reading {file_path_obj.suffix.lower()} files requires media dependencies. "
-                f"Install with: pip install \"abstractcore[media]\". Error: {e}"
+                f"Install with: pip install -U abstractcore. Error: {e}"
             ) from e
         except Exception as e:
             raise Exception(f"Failed to extract content from {file_path}: {e}") from e

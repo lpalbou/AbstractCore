@@ -486,14 +486,21 @@ def engine_install_plan(
             notes="Installs vLLM (several GB: PyTorch + CUDA wheels) into this Python environment; NVIDIA GPU with compute capability >= 7.5 required.",
         )
 
-    # huggingface
-    method, argv = _pip_argv(["abstractcore[huggingface]"], prefer_uv=prefer_uv)
-    return _plan(
-        method,
-        argv,
-        url=url,
-        notes="Installs transformers, torch and huggingface_hub (AbstractCore's huggingface extra) into this Python environment; several GB.",
-    )
+    # huggingface: the engine arrives with this machine's local-engine setting (apple / gpu);
+    # a host with neither (Intel Mac, Windows) installs the transformers stack alone.
+    from ..utils.install_settings import local_engines_setting
+
+    setting = local_engines_setting()
+    if setting:
+        method, argv = _pip_argv([f"abstractcore[{setting}]"], prefer_uv=prefer_uv)
+        notes = (
+            f"Installs AbstractCore's {setting} setting (every local engine for this machine, including "
+            "transformers, torch and huggingface_hub) into this Python environment; several GB."
+        )
+    else:
+        method, argv = _pip_argv(["transformers", "torch", "huggingface_hub", "sentencepiece"], prefer_uv=prefer_uv)
+        notes = "Installs transformers, torch and huggingface_hub into this Python environment; several GB."
+    return _plan(method, argv, url=url, notes=notes)
 
 
 def engine_download_url(engine_id: str) -> str:

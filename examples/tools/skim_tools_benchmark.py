@@ -47,7 +47,7 @@ def _measure(label: str, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> d
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Lightweight footprint benchmarks for skim_* and fetch_* web tools.\n"
-        'Requires: pip install "abstractcore[tools]"',
+        'Works with the light install: pip install abstractcore',
         formatter_class=argparse.RawTextHelpFormatter,
     )
 

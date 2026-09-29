@@ -185,7 +185,7 @@ except PDFProcessingError:
 
 ### Documents
 - **Text Files**: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis
-- **PDF**: Text and metadata extraction with pypdf by default. Optional PyMuPDF4LLM layout extraction requires the explicit `abstractcore[pdf-pymupdf-commercial]` extra after license review.
+- **PDF**: Text and metadata extraction with pypdf by default. Optional PyMuPDF4LLM layout extraction is an explicit opt-in after license review: `pip install pymupdf4llm pymupdf-layout` (see [Installation](installation.md#optional-pdf-extraction-with-pymupdf)).
 - **Office**: DOCX, XLSX, PPTX via Unstructured (when installed), with best-effort extraction
   - **Word**: section/paragraph extraction
   - **Excel**: sheet-by-sheet extraction
@@ -203,7 +203,7 @@ Transparency:
 
 Requirements:
 - **Native audio** requires an audio-capable model.
-- **STT fallback** requires installing an STT capability plugin (typically `pip install "abstractcore[voice]"`) and using `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
+- **STT fallback** uses the AbstractVoice capability plugin (part of the light install) and `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
 
 ### Video (policy-driven; native or frames fallback)
 - **Formats**: common `video/*` types as attachments via `media=[...]`
@@ -212,7 +212,7 @@ Requirements:
 
 Requirements:
 - Frame sampling fallback requires **`ffmpeg`/`ffprobe`** available on `PATH`.
-- For the sampled-frame path, you also need **image/vision handling**: either a vision-capable main model or configured vision fallback, and (for local frame attachments) `pip install "abstractcore[media]"` so Pillow-based image processing is available.
+- For the sampled-frame path, you also need **image/vision handling**: either a vision-capable main model or configured vision fallback, and Pillow-based image processing (part of the light install) for local frame attachments.
 
 ### Processing Features
 - **Intelligent Detection**: Automatic file type recognition and processor selection
@@ -375,7 +375,7 @@ response = llm.generate(
 
 ### CLI Usage
 
-These examples work in AbstractCore CLI when `abstractcore[media]` is installed and your selected provider/model supports the requested media (or you configured fallbacks):
+These examples work in AbstractCore CLI with any install setting when your selected provider/model supports the requested media (or you configured fallbacks):
 
 ```bash
 # PDF Analysis - Working
@@ -424,7 +424,7 @@ anthropic_response = anthropic_llm.generate(prompt, media=media_files)
 
 ```python
 # Real-time streaming responses with media
-llm = create_llm("openai", model="gpt-4o")  # requires: pip install "abstractcore[openai]"
+llm = create_llm("openai", model="gpt-4o")  # light install
 
 for chunk in llm.generate(
     "Describe this image in detail",
@@ -705,27 +705,13 @@ response = llama_llm.generate(
 
 ## Installation
 
-### Basic Installation
+Media handling (images, text, PDF, Office documents) is part of the light install:
 
 ```bash
-# Core media handling (images, text, basic documents)
-pip install "abstractcore[media]"
+pip install abstractcore
 ```
 
-### Full Installation
-
-```bash
-# Media features (PDF + Office docs) are covered by `abstractcore[media]`.
-# Compose only what your app needs:
-pip install "abstractcore[remote,media,tools]"
-
-# Or choose a turnkey local-runtime install:
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
-```
-
-Advanced: If you prefer to install only the pieces you need (instead of `abstractcore[media]`),
-these are the main libraries AbstractCore uses:
+`abstractcore[apple]` and `abstractcore[gpu]` include it too. The main libraries AbstractCore uses:
 
 - `Pillow` (images)
 - `pypdf` (permissive PDF text/metadata extraction)
@@ -734,7 +720,7 @@ these are the main libraries AbstractCore uses:
 
 Optional commercial-license PDF backend:
 
-- `pymupdf4llm` + `pymupdf-layout` via `abstractcore[pdf-pymupdf-commercial]`
+- `pymupdf4llm` + `pymupdf-layout`, installed directly: `pip install pymupdf4llm pymupdf-layout`
 
 ## Troubleshooting
 
@@ -747,7 +733,7 @@ try:
     response = llm.generate("Test", media=["test.jpg"])
 except ImportError as e:
     print(f"Missing dependency: {e}")
-    print('Install with: pip install "abstractcore[media]"')
+    print('Repair the light install with: pip install -U abstractcore')
 ```
 
 **Vision model not detecting images:**

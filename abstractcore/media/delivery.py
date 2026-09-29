@@ -60,11 +60,11 @@ REASON_REMEDIES: Dict[str, str] = {
     # never checks WHICH interpreter is short a dependency.
     MLX_VLM_NOT_INSTALLED: (
         "this MLX install is incomplete — mlx-vlm ships with mlx-lm and is missing "
-        'from this interpreter; repair with: pip install "abstractcore[mlx]" '
+        'from this interpreter; repair with: pip install "abstractcore[apple]" '
         "(check you are installing into the interpreter that runs the model, not "
         "another one on the same machine)"
     ),
-    MEDIA_PROCESSING_UNAVAILABLE: 'install the media extra: pip install "abstractcore[media]"',
+    MEDIA_PROCESSING_UNAVAILABLE: 'media processing is part of the light install; repair it with: pip install -U abstractcore',
     VISION_MULTI_IMAGE_UNSUPPORTED: "send one image per request on this lane",
     VISION_NOT_DECLARED: (
         "the model capability registry does not declare this checkpoint sighted; "

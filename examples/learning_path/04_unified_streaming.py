@@ -16,7 +16,7 @@ Technical Architecture Highlights:
 - Zero-buffering design for minimal latency
 
 Required: pip install abstractcore
-Optional: pip install abstractcore[ollama] for streaming with local models
+Streaming with local models: run Ollama (the light install covers it)
 """
 
 import time

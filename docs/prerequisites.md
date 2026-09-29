@@ -20,53 +20,23 @@ This guide walks you through setting up AbstractCore with different LLM provider
 
 ## Core Installation
 
-Install AbstractCore, then add the extras you need. Extras compose, so a real
-application can use one command such as `pip install "abstractcore[remote,server,tools]"`.
+Install one of the three settings ([Installation](installation.md) has the full contents):
 
 ```bash
-# Core: local HTTP servers and gateways that need no SDK
-# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
-pip install abstractcore
-
-# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
-pip install "abstractcore[remote]"
-
-# Individual provider SDKs / local runtimes
-pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[apple]"        # Apple Silicon local LLM stack (alias of mlx; heavy)
-pip install "abstractcore[gpu]"          # GPU local LLM stack (alias of vllm; heavy)
-pip install "abstractcore[mlx]"          # Explicit MLX provider extra
-pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
-
-# Optional features
-pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
-pip install "abstractcore[media]"       # images, PDFs, Office docs
-pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
-pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
-pip install "abstractcore[compression]" # Glyph visual-text compression (Pillow renderer)
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
+pip install abstractcore             # light: every remote provider, tools, media, server, plugins
+pip install "abstractcore[apple]"    # Apple silicon: light + every local engine a Mac can run
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: light + every local engine a GPU machine can run
 ```
 
 **Hardware Notes:**
-- `[apple]` - Native Apple local LLM stack; currently aliases `[mlx]` and only works on Apple Silicon (M1/M2/M3/M4)
-- `[gpu]` - Local GPU LLM stack; currently aliases `[vllm]` and only works with supported CUDA/ROCm GPUs
-- `[mlx]` - Provider-specific MLX extra, kept for explicit installs
-- `[vllm]` - Provider-specific vLLM extra, kept for explicit installs
-- `[remote]` - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic `/v1` endpoints need no extra dependency.
-- `[all-apple]` - Best for Apple Silicon local development (includes MLX and local plugin engines where supported, excludes vLLM); Python 3.11+
-- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM and local plugin engines where supported, excludes MLX); Python 3.11+
-- For CPU-only or Intel machines, compose only what you need, for example `abstractcore[remote,huggingface,tools]`.
-
-Capability extras such as `[voice]`, `[audio]`, `[vision]`, and `[music]`
-install lightweight plugin routing surfaces for remote-capable backends. Local
-inference engines remain behind explicit local profiles such as `[all-apple]`,
-`[all-gpu]`, or plugin-specific local extras.
+- Light works everywhere (macOS, Linux, Windows; Python 3.9+). OpenAI, Anthropic, OpenRouter,
+  Portkey, Ollama, LM Studio, a vLLM server and any OpenAI-compatible `/v1` endpoint need nothing
+  else.
+- `apple` needs an Apple silicon Mac (M1 or newer), macOS 14+, Python 3.10+. It adds MLX,
+  HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
+- `gpu` needs a Linux machine with an NVIDIA (CUDA) or AMD (ROCm) GPU, Python 3.10+. It adds
+  vLLM, HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
+- On Intel Macs and Windows, run local models in Ollama or LM Studio and use the light install.
 
 ## Cloud Provider Setup
 
@@ -264,8 +234,7 @@ print(response.content)
 #### 1. Install MLX Dependencies
 
 ```bash
-# MLX is automatically installed with AbstractCore
-pip install "abstractcore[mlx]"
+pip install "abstractcore[apple]"
 ```
 
 #### 2. Download Models
@@ -363,7 +332,8 @@ print(resp.content)
 #### 1. Install Dependencies
 
 ```bash
-pip install "abstractcore[huggingface]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 #### 2. Optional: Get HuggingFace Token
@@ -397,7 +367,7 @@ print(response.content)
 #### Quantized Transformers Models
 
 Quantized Transformers checkpoints may need optional quantization runtimes beyond
-`abstractcore[huggingface]`. If a model reports missing weights, unexpected packed weights, or
+the `apple` and `gpu` settings. If a model reports missing weights, unexpected packed weights, or
 incorrect output for a trivial prompt, treat it as a model/runtime compatibility issue. See
 [HuggingFace Model Compatibility](huggingface-model-compatibility.md).
 
@@ -426,7 +396,7 @@ incorrect output for a trivial prompt, treat it as a model/runtime compatibility
 
 ```bash
 # Install AbstractCore with vLLM support
-pip install "abstractcore[vllm]"
+pip install "abstractcore[gpu]"
 
 # This installs vLLM which requires NVIDIA CUDA
 # If you get CUDA errors, ensure CUDA 12.1+ is installed:

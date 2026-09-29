@@ -1048,7 +1048,7 @@ class OpenAICompatibleProvider(BaseProvider):
                     else:
                         chat_messages.append(multimodal_message)
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
+                self.logger.warning("Media processing not available. Install with: pip install -U abstractcore")
                 if user_message_text:
                     chat_messages.append({
                         "role": "user",
@@ -1660,7 +1660,7 @@ class OpenAICompatibleProvider(BaseProvider):
                     else:
                         chat_messages.append(multimodal_message)
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
+                self.logger.warning("Media processing not available. Install with: pip install -U abstractcore")
                 if user_message_text:
                     chat_messages.append({"role": "user", "content": user_message_text})
             except Exception as e:

@@ -25,8 +25,8 @@ AbstractCore's Vision Compression system transforms long text documents into vis
 ### Installation
 
 ```bash
-# Glyph compression (Pillow renderer)
-pip install "abstractcore[compression]"
+# Glyph compression (Pillow renderer) is part of the light install
+pip install abstractcore
 ```
 
 Optional (experimental): Direct PDF→image conversion requires `pdf2image` and its system dependencies (Poppler).

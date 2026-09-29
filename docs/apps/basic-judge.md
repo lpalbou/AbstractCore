@@ -32,20 +32,19 @@ print(f"Criteria Details: {result_with_criteria['evaluation_criteria_details']}"
 ## Installation & Setup
 
 ```bash
-# Install AbstractCore. The default Ollama path works with the core install.
+# Light install: the default Ollama path and every cloud provider work with it.
 pip install abstractcore
 
-# Optional turnkey local-runtime installs:
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
+# Or, for in-process local engines:
+pip install "abstractcore[apple]"    # Apple silicon: MLX, HF/GGUF, local media engines
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: vLLM, HF/GGUF, local media engines
 
 # Default model requires Ollama (free, runs locally)
 # 1. Install Ollama: https://ollama.com/
 # 2. Download model: ollama pull qwen3:4b-instruct-2507-q4_K_M
 # 3. Start Ollama service
 
-# Alternative: Use cloud providers
-pip install "abstractcore[remote]"
+# Alternative: use a cloud provider (set its API key; no extra install)
 ```
 
 ### Model Performance Recommendations

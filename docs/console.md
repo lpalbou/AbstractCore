@@ -14,7 +14,7 @@ look and behave the same.
 ## Open the console
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore
 abstractcore serve
 # then open the printed link: http://127.0.0.1:8000/console#claim=...
 ```

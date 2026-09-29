@@ -33,9 +33,9 @@ Understanding common pitfalls helps prevent issues before they occur.
    - *Quick Fix*: Use `@tool` decorator and handle tool calls properly
    - See: [Tool Calls Not Working](#issue-tool-calls-not-working)
 
-3. **Missing provider extras**
+3. **Missing local engines or an outdated install**
    - *Symptom*: `ModuleNotFoundError` for providers
-   - *Quick Fix*: Install provider-specific packages with `pip install "abstractcore[provider]"`
+   - *Quick Fix*: `pip install -U abstractcore` for remote providers; `pip install "abstractcore[apple]"` or `pip install "abstractcore[gpu]"` for MLX, vLLM and HuggingFace
    - See: [ModuleNotFoundError](#issue-modulenotfounderror)
 
 4. **LM Studio server not enabled**
@@ -243,19 +243,13 @@ ModuleNotFoundError: No module named 'openai'
 
 **Solutions:**
 ```bash
-# Install AbstractCore
-pip install abstractcore
+# Light: OpenAI, Anthropic, OpenRouter, Portkey, Ollama, LM Studio, a vLLM server,
+# any OpenAI-compatible endpoint (upgrade an older install that lacks a provider SDK)
+pip install -U abstractcore
 
-# Install hosted SDKs or a specific provider
-pip install "abstractcore[remote]"
-pip install "abstractcore[openai]"
-pip install "abstractcore[anthropic]"
-# Local OpenAI-compatible servers and gateways (Ollama, LMStudio, OpenRouter,
-# Portkey, llama.cpp, ...) work with the core install.
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
+# Local engines (MLX, vLLM in-process, HuggingFace/GGUF)
+pip install "abstractcore[apple]"    # Apple silicon
+pip install "abstractcore[gpu]"      # NVIDIA / AMD
 
 # Verify installation
 pip list | grep abstract
@@ -278,12 +272,9 @@ source .venv/bin/activate  # Linux/Mac
 
 # Fresh install
 pip install --upgrade pip
-pip install "abstractcore[remote,tools,media]"  # API-first app
-# or: pip install "abstractcore[all-apple]"     # Apple Silicon local stack
-# or: pip install "abstractcore[all-gpu]"       # NVIDIA GPU local stack
-
-# If still failing, try one provider at a time
-pip install "abstractcore[openai]"
+pip install abstractcore                  # light (remote providers)
+# or: pip install "abstractcore[apple]"   # Apple silicon local engines
+# or: pip install "abstractcore[gpu]"     # NVIDIA / AMD local engines
 ```
 
 ---
@@ -1030,7 +1021,7 @@ cat debug_report.txt
 
 | Error | Meaning | Solution |
 |-------|---------|----------|
-| `ModuleNotFoundError` | Package not installed | `pip install abstractcore` (then add provider extras as needed) |
+| `ModuleNotFoundError` | Package not installed | `pip install -U abstractcore`, or `abstractcore[apple]` / `abstractcore[gpu]` for local engines |
 | `Authentication Error` | Invalid API key | Check API key environment variable |
 | `Connection refused` | Service not running | Start Ollama/LMStudio/server |
 | `LM Studio connection failed` | LM Studio server not enabled | Enable "Status: Running" toggle in LM Studio GUI |

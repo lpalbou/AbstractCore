@@ -3002,7 +3002,7 @@ class MLXProvider(BaseProvider):
             from mlx_lm.models.cache import save_prompt_cache
         except Exception as e:
             raise ImportError(
-                'MLX prompt cache saving requires mlx-lm (install: `pip install "abstractcore[mlx]"`).'
+                'MLX prompt cache saving requires mlx-lm (install: `pip install "abstractcore[apple]"`).'
             ) from e
 
         out_meta: Dict[str, Any] = dict(meta or {})
@@ -3122,7 +3122,7 @@ class MLXProvider(BaseProvider):
             from mlx_lm.models.cache import load_prompt_cache
         except Exception as e:
             raise ImportError(
-                'MLX prompt cache loading requires mlx-lm (install: `pip install "abstractcore[mlx]"`).'
+                'MLX prompt cache loading requires mlx-lm (install: `pip install "abstractcore[apple]"`).'
             ) from e
 
         loaded_cache, meta = load_prompt_cache(str(filename), return_metadata=True)
@@ -3361,7 +3361,7 @@ class MLXProvider(BaseProvider):
                 "native MTP on MLX runs through mlx-vlm (mlx-lm strips `mtp.` "
                 f"weights on load), but importing it failed under {_sys.executable}: "
                 f"{type(exc).__name__}: {exc}. Install it into THAT interpreter: "
-                f'"{_sys.executable}" -m pip install "abstractcore[mlx]"  '
+                f'"{_sys.executable}" -m pip install "abstractcore[apple]"  '
                 "(if mlx-vlm works in your shell, you are running a different "
                 "interpreter than you think -- check `which -a abstractcore-chat`)",
                 logger=self.logger,
@@ -4167,7 +4167,7 @@ class MLXProvider(BaseProvider):
                         f"mlx: {self.model} ships a vision tower but mlx-vlm is "
                         "missing from this interpreter, so images will be dropped. "
                         'This install is incomplete — repair with: pip install '
-                        '"abstractcore[mlx]"'
+                        '"abstractcore[apple]"'
                     )
             except Exception as exc:
                 # Keep a NAMED reason. `None` here makes the later drop record
@@ -4284,7 +4284,7 @@ class MLXProvider(BaseProvider):
                 f"{e}\n"
                 f"Installed MLX stack: {_installed_mlx_versions()} "
                 f"(AbstractCore requires mlx>=0.32.2, mlx-lm>=0.31.3, mlx-vlm>=0.7.1). "
-                f"Fix with: pip install -U \"abstractcore[mlx]\""
+                f"Fix with: pip install -U \"abstractcore[apple]\""
             ) from e
         except SpeculationUnavailableError:
             # `require_acceleration=True` is an explicit "fail rather than run
@@ -4876,7 +4876,7 @@ class MLXProvider(BaseProvider):
             # Check if Outlines is required but unavailable
             if self.structured_output_method == "native_outlines" and not OUTLINES_AVAILABLE:
                 return GenerateResponse(
-                    content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: pip install \"abstractcore[mlx]\"",
+                    content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: pip install \"abstractcore[apple]\"",
                     model=self.model,
                     finish_reason="error",
                 )
@@ -5094,7 +5094,7 @@ class MLXProvider(BaseProvider):
                             )
             except ImportError:
                 self.logger.warning(
-                    'Media processing not available. Install with: pip install "abstractcore[media]"'
+                    'Media processing not available. Install with: pip install -U abstractcore'
                 )
                 report.drop("media_processing_unavailable")
             except Exception as e:

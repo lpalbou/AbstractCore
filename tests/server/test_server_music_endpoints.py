@@ -115,7 +115,7 @@ def test_audio_music_returns_501_when_plugin_unavailable(client, monkeypatch):
     assert resp.status_code == 501
     data = resp.json()
     assert "error" in data
-    assert 'pip install "abstractcore[music]"' in data["error"]["message"]
+    assert 'pip install -U abstractcore' in data["error"]["message"]
 
 
 def test_audio_music_happy_path_with_stubbed_plugin(client, monkeypatch):
@@ -279,7 +279,7 @@ def test_music_provider_details_route_501_when_plugin_unavailable(client, monkey
     assert resp.status_code == 501
     body = resp.json()
     assert body["ok"] is False
-    assert 'pip install "abstractcore[music]"' in body["error"]
+    assert 'pip install -U abstractcore' in body["error"]
 
 
 # ------------------------------------------------ server-held music keys (interim)

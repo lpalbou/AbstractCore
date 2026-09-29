@@ -312,7 +312,7 @@ def test_web_search_html_fallback_does_not_fuse_words_at_tag_boundaries(
     import abstractcore.tools.common_tools as common_tools
 
     if not common_tools._ensure_requests():
-        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+        pytest.skip('requests not available; install with: pip install -U abstractcore')
 
     page = (
         "<html><body>"

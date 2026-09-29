@@ -11,7 +11,7 @@ How to connect an LLM to deterministic code via tools (“function calling”):
 ## Prereqs
 
 - Some scripts default to hosted models. For local-only usage, switch to Ollama or LM Studio models.
-- Web/skim benchmarks require: `pip install "abstractcore[tools]"`
+- Web/skim benchmarks require: `pip install abstractcore`
 
 ## Key AbstractCore Concepts
 

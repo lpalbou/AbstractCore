@@ -15,7 +15,7 @@ Technical Architecture Highlights:
 - Consistent response structure across providers
 
 Required: pip install abstractcore
-Optional: pip install abstractcore[ollama] for local models
+Local models: run Ollama (the light install `pip install abstractcore` covers it)
 """
 
 from typing import Optional

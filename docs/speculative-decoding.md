@@ -30,7 +30,7 @@ print(r.metadata["speculation"])
 
 ## Qwen3.8-Flash-Next on native MLX
 
-Install `abstractcore[mlx]` with MLX ≥0.32.2 and mlx-vlm ≥0.7.1. The `mlx`
+Install `abstractcore[apple]` with MLX ≥0.32.2 and mlx-vlm ≥0.7.1. The `mlx`
 provider executes locally in your Python process; no HTTP endpoint or oMLX
 installation is used.
 

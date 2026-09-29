@@ -8,7 +8,7 @@ from abstractcore.providers.huggingface_provider import HuggingFaceProvider
 
 _requires_transformers = pytest.mark.skipif(
     importlib.util.find_spec("transformers") is None,
-    reason="requires the optional transformers runtime (pip install \"abstractcore[huggingface]\")",
+    reason="requires the optional transformers runtime (pip install \"abstractcore[apple]\" or \"abstractcore[gpu]\")",
 )
 
 

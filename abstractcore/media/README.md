@@ -325,7 +325,7 @@ result = processor.process_file("photo.jpg", model_name="gpt-4o")
 
 #### 7. `pdf_processor.py` - PDF Extraction
 
-**Dependencies**: pypdf by default. Optional PyMuPDF4LLM / PyMuPDF support requires `abstractcore[pdf-pymupdf-commercial]` after license review.
+**Dependencies**: pypdf by default. Optional PyMuPDF4LLM / PyMuPDF support is an explicit opt-in after license review: `pip install pymupdf4llm pymupdf-layout`.
 
 **Features**:
 - LLM-optimized markdown output
@@ -392,7 +392,7 @@ result = processor.process_file("research.pdf")
 
 #### 9. `glyph_pdf_processor.py` - Glyph-Optimized PDF Extraction
 
-**Dependencies**: PyMuPDF from the explicit `abstractcore[pdf-pymupdf-commercial]` opt-in extra.
+**Dependencies**: PyMuPDF, installed directly after license review (`pip install pymupdf4llm pymupdf-layout`).
 
 **Purpose**: Extracts PDF content while preserving compact mathematical notation and table layouts for optimal Glyph visual compression.
 
@@ -1180,8 +1180,8 @@ handler = AutoMediaHandler()
 result = handler.process_file("report.docx")
 # Falls back to basic text extraction (loses structure)
 
-# ✓ Good: Install media extras
-# $ pip install "abstractcore[media]"
+# ✓ Good: use the light install (or apple / gpu)
+# $ pip install abstractcore
 # Includes PIL, pypdf, unstructured
 ```
 

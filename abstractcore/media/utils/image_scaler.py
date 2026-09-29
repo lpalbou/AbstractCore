@@ -143,7 +143,7 @@ class ModelOptimizedScaler:
         if not PIL_AVAILABLE:
             raise MediaProcessingError(
                 "PIL/Pillow is required for image scaling. "
-                "Install with: pip install \"abstractcore[media]\""
+                "Install with: pip install -U abstractcore"
             )
         target_width, target_height = target_size
 
@@ -294,7 +294,7 @@ def scale_image_for_model(image: Union[Image.Image, str, Path],
     if not PIL_AVAILABLE:
         raise MediaProcessingError(
             "PIL/Pillow is required for image scaling. "
-            "Install with: pip install \"abstractcore[media]\""
+            "Install with: pip install -U abstractcore"
         )
     if isinstance(image, (str, Path)):
         image = Image.open(image)

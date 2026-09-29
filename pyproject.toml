@@ -48,12 +48,54 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 
-# Core dependencies - minimal set for basic functionality
+# INSTALL SETTINGS -- there are exactly three, and no more may be added:
+#
+#   pip install abstractcore             light: every remote provider (OpenAI, Anthropic,
+#                                        OpenRouter, Portkey, any OpenAI-compatible endpoint,
+#                                        LM Studio, Ollama, a vLLM server), the built-in tools,
+#                                        media inputs, the HTTP server, and the voice / vision /
+#                                        music / 3D capability plugins with their remote backends
+#   pip install "abstractcore[apple]"    light + every local engine Apple silicon can run
+#   pip install "abstractcore[gpu]"      light + every local engine NVIDIA / AMD machines can run
+#
+# Everything a light install needs is a base dependency. A capability that cannot be in light
+# (heavy or platform-specific) belongs in `apple` and/or `gpu`, never in a new extra.
+# The other extras below are deprecated aliases kept so released pins keep installing
+# (docs/installation.md#deprecated-aliases), or contributor tooling (dev / test / docs).
+# tests/test_install_settings.py enforces all of this.
 dependencies = [
     "pydantic>=2.0.0,<3.0.0",
     "httpx>=0.24.0,<1.0.0",
-    # Keep the default install small and import-safe. Optional features (tools/media/embeddings)
-    # provide their own dependencies via extras.
+    # Remote providers. OpenRouter, Portkey, Ollama, LM Studio, vLLM and generic
+    # OpenAI-compatible endpoints speak HTTP through httpx; OpenAI and Anthropic use their SDKs.
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    # Precise token counting for OpenAI-style models.
+    "tiktoken>=0.5.0,<1.0.0",
+    # Built-in tools (fetch_url, web_search, skim_url, system probes).
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9,<8",
+    # Media inputs: images, PDF (pypdf, permissive licence), Office documents, spreadsheets;
+    # Pillow also renders Glyph visual-text compression.
+    "Pillow>=10.0.0,<13.0.0",
+    "pypdf>=6.0.0,<7.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    # OpenAI-compatible HTTP server and console (`abstractcore serve`, `abstractcore-endpoint`).
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    # Capability plugins (llm.voice / llm.audio, llm.vision, llm.music, llm.scene3d). Their
+    # base installs carry no local engine; `apple` / `gpu` add the engines.
+    "abstractvoice>=0.13.0",
+    "abstractvision>=0.3.31",
+    "abstractmusic>=0.1.15; python_version >= '3.10'",
+    "abstract3d>=0.1.0; python_version >= '3.10'",
 ]
 
 [project.urls]
@@ -87,243 +129,27 @@ deepsearch = "abstractcore.apps.deepsearch:main"
 abstractcore-deepsearch = "abstractcore.apps.deepsearch:main"
 
 [project.optional-dependencies]
-# Provider extras
-openai = [
-    "openai>=1.0.0,<2.0.0",
-]
-
-anthropic = [
-    "anthropic>=0.25.0,<1.0.0",
-]
-
-remote = [
-    # Lightweight hosted/API provider bundle. OpenRouter, Portkey, Ollama,
-    # LMStudio, and generic OpenAI-compatible endpoints use core httpx and do
-    # not need SDK dependencies.
-    "openai>=1.0.0,<2.0.0",
-    "anthropic>=0.25.0,<1.0.0",
-]
-
-openrouter = [
-    # No additional dependencies - uses core httpx via OpenAI-compatible API.
-]
-
-portkey = [
-    # No additional dependencies - uses core httpx via OpenAI-compatible API.
-]
-
-openai-compatible = [
-    # No additional dependencies - uses core httpx.
-]
-
-ollama = [
-    # No additional dependencies - uses core httpx
-]
-
-lmstudio = [
-    # No additional dependencies - uses core httpx
-]
-
-huggingface = [
-    # NOTE:
-    # - `mlx-lm` currently pins `transformers==5.0.0rc*` (and will likely move to 5.0.0+),
-    #   so the HuggingFace extra must not hard-block Transformers v5 if we want `abstractcore[all]`
-    #   (which includes both `huggingface` and `mlx`) to be installable on Apple Silicon.
-    "transformers>=4.57.1,<6.0.0",  # Required for GLM4V architecture support (Glyph, GLM-4.1V)
-    "torch>=2.6.0,<3.0.0",  # Required for EmbeddingGemma model support
-    "torchvision>=0.17.0",  # Compatible with torch>=2.6.0
-    "torchaudio>=2.1.0",  # Compatible with torch>=2.6.0
-    "sentencepiece>=0.1.99,<1.0.0",  # Required by Gemma/Gemma4 and other HF tokenizers
-    # Qwen3.6 MoE / recent GGUF families require the newer llama.cpp vendor carried by 0.3.23+.
-    "llama-cpp-python>=0.3.23,<1.0.0",
-    "outlines>=0.1.0",  # Optional native structured output support
-]
+# ---------------------------------------------------------------------------
+# The two local-engine settings. Each is a superset of the light install.
+# ---------------------------------------------------------------------------
 
 # MLX PROVIDER DEPENDENCY RULE
 # ----------------------------
-# `mlx-vlm` ships WITH `mlx-lm` in every profile that installs the MLX provider.
-# It is not optional and must never be split out again.
-#
-# It used to be a separate `mlx-vision` extra, on the reasoning that mlx-vlm
-# pulls a web framework, opencv and an audio stack that a text-only install does
-# not need. What that actually bought (measured 2026-08-21): the standard Apple
-# install path -- abstractframework[apple] -> abstractgateway[apple] ->
-# AbstractRuntime[apple] -> abstractcore[all-apple] -- produced a gateway that
-# loaded sighted Qwen3.x checkpoints, accepted images, and dropped every one of
-# them with `mlx_vlm_not_installed`. The models were vision-capable, the code was
-# correct, and the user got confident fabricated descriptions of screenshots the
-# model had never received. A saved dependency is not worth a provider that
-# silently cannot do what its checkpoints advertise.
-#
-# The floors are pinned to what mlx-vlm actually needs, not left to the resolver:
-# mlx-vlm 0.7.1 provides Qwen4-Exp, embedded MTP and native recurrent APC;
-# MLX 0.32.2 is the tested execution floor for that graph.
-mlx = [
-    # The benchmark script relies on `mlx_lm.generate.BatchGenerator` (continuous batching).
-    "mlx>=0.32.2,<1.0.0",
-    "mlx-lm>=0.31.3,<1.0.0",
-    "mlx-vlm>=0.7.1,<0.8.0",  # image input and native MTP
-    "outlines>=0.1.0",  # Optional native structured output support
-]
-
+# `mlx-vlm` ships WITH `mlx-lm` in every setting that installs the MLX provider.
+# It is not optional and must never be split out again: a gateway that loads
+# sighted Qwen3.x checkpoints without mlx-vlm accepts images and silently drops
+# them (`mlx_vlm_not_installed`), and the model describes screenshots it never
+# received. mlx-vlm 0.7.1 provides Qwen4-Exp, embedded MTP and native recurrent
+# APC; MLX 0.32.2 is the tested execution floor for that graph.
 apple = [
-    # Hardware-profile alias for the native Apple local LLM stack.
-    # Keep in sync with `mlx`.
+    # MLX text + vision provider.
     "mlx>=0.32.2,<1.0.0",
     "mlx-lm>=0.31.3,<1.0.0",
     "mlx-vlm>=0.7.1,<0.8.0",  # image input and native MTP
-    "outlines>=0.1.0",
-]
-
-# Retained as an alias so existing `abstractcore[mlx-vision]` install commands and
-# documentation keep working. It is now redundant: `mlx` and `apple` already
-# carry mlx-vlm, and nothing may depend on this extra to get sight.
-mlx-vision = [
-    "mlx-vlm>=0.7.1,<0.8.0",
-]
-
-mlx-bench = [
-    # Used by `examples/performance/mlx_concurrency_benchmark.py` to generate the PNG graph.
-    "matplotlib>=3.8.0,<4.0.0",
-]
-
-vllm = [
-    "vllm>=0.6.0,<1.0.0",  # GPU-only (CUDA/ROCm) - not compatible with Apple Silicon
-]
-
-gpu = [
-    # Hardware-profile alias for the local GPU LLM stack.
-    # Keep in sync with `vllm`.
-    "vllm>=0.6.0,<1.0.0",
-]
-
-embeddings = [
-    "sentence-transformers>=5.1.0,<6.0.0",  # Required for EmbeddingGemma model support
-    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
-    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
-]
-
-tokens = [
-    # Precise token counting for OpenAI-compatible models (optional; falls back to heuristics without it).
-    "tiktoken>=0.5.0,<1.0.0",
-]
-
-tools = [
-    "requests>=2.25.0,<3.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=4.9.0,<6.0.0",
-    # Web search backend for `web_search` (preferred). ddgs requires Python>=3.10.
-    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
-    # Legacy backend kept for Python 3.9 compatibility.
-    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
-    "psutil>=5.9,<8",
-]
-
-# Headless-browser render probe (`browser_probe` tool). The pip package is
-# small; the browser binary is a separate post-install step:
-#   python -m playwright install --only-shell chromium
-# (Linux system libs: `playwright install --with-deps chromium`.)
-browser = [
-    "playwright>=1.49.0,<2.0.0",
-]
-
-# Compatibility alias (common typo): `abstractcore[tool]` -> `abstractcore[tools]`
-tool = [
-    "requests>=2.25.0,<3.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=4.9.0,<6.0.0",
-    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
-    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
-    "psutil>=5.9,<8",
-]
-
-media = [
-    "Pillow>=10.0.0,<13.0.0",
-    "pypdf>=6.0.0,<7.0.0",
-    # NOTE: unstructured does not provide an "office" extra. Use the specific
-    # format extras so DOCX/XLSX/PPTX parsing works out-of-the-box when users
-    # install `abstractcore[media]`.
-    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
-    "pandas>=1.0.0,<3.0.0",
-]
-
-pdf-pymupdf-commercial = [
-    # Explicit opt-in for users who have reviewed PyMuPDF-family licensing.
-    "pypdf>=6.0.0,<7.0.0",
-    "pymupdf4llm>=0.0.20,<1.0.0",
-    "pymupdf-layout>=1.26.6,<2.0.0",
-]
-
-voice = [
-    "abstractvoice>=0.13.0",
-]
-
-audio = [
-    "abstractvoice>=0.13.0",
-]
-
-compression = [
-    # Glyph visual-text compression renders text into images (PIL renderer).
-    "Pillow>=10.0.0,<13.0.0",
-]
-
-# Turnkey installs.
-# Notes:
-# - Prefer `remote`, explicit composed extras, `apple`/`gpu`, or `all-apple`/`all-gpu` in docs.
-# - `ollama`, `lmstudio`, `openai-compatible`, `openrouter`, and `portkey` use only core deps.
-# - `all` includes both MLX (Apple Silicon) and vLLM (CUDA/ROCm) and may not install everywhere.
-all = [
-    # Providers
-    "openai>=1.0.0,<2.0.0",
-    "anthropic>=0.25.0,<1.0.0",
-    # HuggingFace provider deps
-    "transformers>=4.57.1,<6.0.0",
-    "torch>=2.6.0,<3.0.0",
-    "torchvision>=0.17.0",
-    "torchaudio>=2.1.0",
-    "sentencepiece>=0.1.99,<1.0.0",
-    "llama-cpp-python>=0.3.23,<1.0.0",
-    "outlines>=0.1.0",
-    # MLX provider deps (mlx-vlm is not optional -- see the MLX PROVIDER
-    # DEPENDENCY RULE above the `mlx` extra)
-    "mlx>=0.32.2,<1.0.0",
-    "mlx-lm>=0.31.3,<1.0.0",
-    "mlx-vlm>=0.7.1,<0.8.0",
-    # vLLM provider deps
-    "vllm>=0.6.0,<1.0.0",
-    # Features
-    "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
-    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
-    "tiktoken>=0.5.0,<1.0.0",
-    "requests>=2.25.0,<3.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=4.9.0,<6.0.0",
-    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
-    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
-    "psutil>=5.9,<8",
-    "Pillow>=10.0.0,<13.0.0",
-    "pypdf>=6.0.0,<7.0.0",
-    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
-    "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.13.0",
-    "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.15",
-    # Server
-    "fastapi>=0.100.0,<1.0.0",
-    "uvicorn[standard]>=0.23.0,<1.0.0",
-    "python-multipart>=0.0.6,<1.0.0",
-    "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.31",
-]
-
-all-apple = [
-    # Providers
-    "openai>=1.0.0,<2.0.0",
-    "anthropic>=0.25.0,<1.0.0",
-    # Keep the Apple turnkey profile aligned with abstractvoice[all-apple] and
-    # abstractvision[all-apple] (via mflux) so pip does not backtrack across
-    # incompatible numpy / Pillow / HF stack candidates.
+    "outlines>=0.1.0",  # native structured output
+    # HuggingFace provider (transformers / GGUF via llama.cpp) and local embeddings.
+    # Pins stay aligned with abstractvoice[all-apple] and abstractvision[all-apple]
+    # (via mflux) so pip does not backtrack across incompatible numpy / Pillow / HF stacks.
     "transformers>=5.3.0,<6.0.0",
     "torch>=2.7.1,<3.0.0",
     "torchvision>=0.17.0",
@@ -331,117 +157,128 @@ all-apple = [
     "sentencepiece>=0.1.99,<1.0.0",
     "llama-cpp-python>=0.3.23,<1.0.0",
     "accelerate>=1.0.0",
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=2.1.0,<3.0.0",
+    "Pillow>=12.1.1,<13.0.0",
+    # Local voice (TTS/STT), image/video and music engines.
+    "abstractvoice[all-apple]>=0.13.0",
+    "omnivoice>=0.1.5",
+    "abstractvision[all-apple]>=0.3.31",
+    "abstractmusic[all-apple]>=0.1.15",
+    # Headless-browser rendering (`browser_probe`, JS rendering in fetch_url). Kept out of light
+    # (a browser is never a base-install cost); the browser binary is a one-time step:
+    # python -m playwright install --only-shell chromium
+    "playwright>=1.49.0,<2.0.0",
+]
+
+gpu = [
+    # vLLM provider (CUDA / ROCm).
+    "vllm>=0.6.0,<1.0.0",
     "outlines>=0.1.0",
-    # This is the profile the standard Apple install resolves to
-    # (abstractframework[apple] -> abstractgateway[apple] -> AbstractRuntime[apple]
-    # -> abstractcore[all-apple]). mlx-vlm missing HERE is what shipped a gateway
-    # that could not see. See the MLX PROVIDER DEPENDENCY RULE above `mlx`.
+    # HuggingFace provider (transformers / GGUF via llama.cpp) and local embeddings.
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "sentencepiece>=0.1.99,<1.0.0",
+    "llama-cpp-python>=0.3.23,<1.0.0",
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
+    # Local voice (TTS/STT), image/video and music engines.
+    "abstractvoice[all-gpu]>=0.13.0",
+    "omnivoice>=0.1.5",
+    "abstractvision[all-gpu]>=0.3.31",
+    "abstractmusic[all-gpu]>=0.1.15",
+    # Headless-browser rendering (`browser_probe`, JS rendering in fetch_url). Kept out of light
+    # (a browser is never a base-install cost); the browser binary is a one-time step:
+    # python -m playwright install --only-shell chromium
+    "playwright>=1.49.0,<2.0.0",
+]
+
+# ---------------------------------------------------------------------------
+# Deprecated aliases, kept so released pins (`abstractcore[remote,...]`,
+# `abstractcore[all-apple]`, ...) keep installing with the same functionality.
+# Documented once, in docs/installation.md#deprecated-aliases; never shown anywhere else.
+# Use light (no extra), `apple` or `gpu`.
+# ---------------------------------------------------------------------------
+
+# Covered by the light install.
+remote = []
+openai = []
+anthropic = []
+openrouter = []
+portkey = []
+openai-compatible = []
+ollama = []
+lmstudio = []
+tools = []
+tool = []
+tokens = []
+media = []
+compression = []
+server = []
+voice = []
+audio = []
+vision = []
+music = []
+scene3d = []
+3d = []
+
+# Covered by `apple`.
+all-apple = ["abstractcore[apple]"]
+mlx = ["abstractcore[apple]"]
+mlx-vision = ["abstractcore[apple]"]
+
+# Covered by `gpu`.
+all-gpu = ["abstractcore[gpu]"]
+vllm = ["abstractcore[gpu]"]
+
+# Platform-neutral bundles with no single setting to map to (they install on Intel Macs and
+# Windows, where neither `apple` nor `gpu` applies). They keep their exact contents.
+huggingface = [
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "sentencepiece>=0.1.99,<1.0.0",
+    "llama-cpp-python>=0.3.23,<1.0.0",
+    "outlines>=0.1.0",
+]
+embeddings = [
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
+]
+vision-diffusers = ["abstractvision[huggingface]>=0.3.31"]
+vision-sdcpp = ["abstractvision[sdcpp]>=0.3.31"]
+vision-local = ["abstractvision[local]>=0.3.31"]
+browser = ["playwright>=1.49.0,<2.0.0"]
+# PyMuPDF-family PDF extraction is an explicit licence opt-in (AGPL / commercial).
+pdf-pymupdf-commercial = [
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+]
+all-non-mlx = [
+    "abstractcore[huggingface,embeddings]",
+    "omnivoice>=0.1.5",
+]
+all = [
+    "abstractcore[huggingface,embeddings]",
+    "omnivoice>=0.1.5",
     "mlx>=0.32.2,<1.0.0",
     "mlx-lm>=0.31.3,<1.0.0",
     "mlx-vlm>=0.7.1,<0.8.0",
-    # Features
-    "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=2.1.0,<3.0.0",
-    "tiktoken>=0.5.0,<1.0.0",
-    "requests>=2.25.0,<3.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=4.9.0,<6.0.0",
-    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
-    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
-    "psutil>=5.9,<8",
-    "Pillow>=12.1.1,<13.0.0",
-    "pypdf>=6.0.0,<7.0.0",
-    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
-    "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-apple]>=0.13.0",
-    "omnivoice>=0.1.5",
-    "abstractmusic[all-apple]>=0.1.15",
-    # Server
-    "fastapi>=0.100.0,<1.0.0",
-    "uvicorn[standard]>=0.23.0,<1.0.0",
-    "python-multipart>=0.0.6,<1.0.0",
-    "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-apple]>=0.3.31",
-]
-
-all-gpu = [
-    # Providers
-    "openai>=1.0.0,<2.0.0",
-    "anthropic>=0.25.0,<1.0.0",
-    "transformers>=4.57.1,<6.0.0",
-    "torch>=2.6.0,<3.0.0",
-    "torchvision>=0.17.0",
-    "torchaudio>=2.1.0",
-    "sentencepiece>=0.1.99,<1.0.0",
-    "llama-cpp-python>=0.3.23,<1.0.0",
-    "outlines>=0.1.0",
     "vllm>=0.6.0,<1.0.0",
-    # Features
-    "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
-    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
-    "tiktoken>=0.5.0,<1.0.0",
-    "requests>=2.25.0,<3.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=4.9.0,<6.0.0",
-    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
-    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
-    "psutil>=5.9,<8",
-    "Pillow>=10.0.0,<13.0.0",
-    "pypdf>=6.0.0,<7.0.0",
-    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
-    "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-gpu]>=0.13.0",
-    "omnivoice>=0.1.5",
-    "abstractmusic[all-gpu]>=0.1.15",
-    # Server
-    "fastapi>=0.100.0,<1.0.0",
-    "uvicorn[standard]>=0.23.0,<1.0.0",
-    "python-multipart>=0.0.6,<1.0.0",
-    "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-gpu]>=0.3.31",
+]
+mlx-bench = ["matplotlib>=3.8.0,<4.0.0"]
+full-dev = [
+    "abstractcore[all,dev,test,docs]",
 ]
 
-# Legacy broad bundle kept for existing users. New installs should usually
-# compose explicit extras or choose `all-apple` / `all-gpu`.
-all-non-mlx = [
-    # Providers
-    "openai>=1.0.0,<2.0.0",
-    "anthropic>=0.25.0,<1.0.0",
-    "transformers>=4.57.1,<6.0.0",
-    "torch>=2.6.0,<3.0.0",
-    "torchvision>=0.17.0",
-    "torchaudio>=2.1.0",
-    "sentencepiece>=0.1.99,<1.0.0",
-    "llama-cpp-python>=0.3.23,<1.0.0",
-    "outlines>=0.1.0",
-    # Features
-    "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
-    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
-    "tiktoken>=0.5.0,<1.0.0",
-    "requests>=2.25.0,<3.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=4.9.0,<6.0.0",
-    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
-    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
-    "psutil>=5.9,<8",
-    "Pillow>=10.0.0,<13.0.0",
-    "pypdf>=6.0.0,<7.0.0",
-    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
-    "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.13.0",
-    "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.15",
-    # Server
-    "fastapi>=0.100.0,<1.0.0",
-    "uvicorn[standard]>=0.23.0,<1.0.0",
-    "python-multipart>=0.0.6,<1.0.0",
-    "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.31",
-]
-
-# Development dependencies
+# ---------------------------------------------------------------------------
+# Contributor tooling (not install settings).
+# ---------------------------------------------------------------------------
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
@@ -453,135 +290,18 @@ dev = [
     "pre-commit>=3.0.0",
 ]
 
-# Server dependencies
-server = [
-    "fastapi>=0.100.0,<1.0.0",
-    "uvicorn[standard]>=0.23.0,<1.0.0",
-    "python-multipart>=0.0.6,<1.0.0",
-    "sse-starlette>=1.6.0,<2.0.0",
-    # Image proxy routes are dependency-light in the server itself. Local
-    # Diffusers/stable-diffusion.cpp model serving is opt-in via the `vision`
-    # extras below.
-]
-
-# Vision (optional) - delegates to AbstractVision.
-# Kept as a separate extra for installs that want vision without the HTTP server.
-vision = [
-    "abstractvision>=0.3.31",
-]
-
-vision-diffusers = [
-    "abstractvision[huggingface]>=0.3.31",
-]
-
-vision-sdcpp = [
-    "abstractvision[sdcpp]>=0.3.31",
-]
-
-vision-local = [
-    "abstractvision[local]>=0.3.31",
-]
-
-music = [
-    "abstractmusic>=0.1.15",
-]
-
-scene3d = [
-    "abstract3d>=0.1.0",
-]
-
-3d = [
-    "abstract3d>=0.1.0",
-]
-
-# Testing dependencies
 test = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-mock>=3.10.0",
     "pytest-cov>=4.0.0",
     "responses>=0.23.0",
-    "httpx>=0.24.0",
     "tomli>=2.0.0; python_version < '3.11'",
-    # These are imported unconditionally by parts of the test suite.
-    "openai>=1.0.0,<2.0.0",
-    "anthropic>=0.25.0,<1.0.0",
-    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
-    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
-    "Pillow>=10.0.0,<13.0.0",
-    "fastapi>=0.100.0,<1.0.0",
-    "python-multipart>=0.0.6,<1.0.0",
-    "uvicorn>=0.23.0,<1.0.0",
-    "pypdf>=6.0.0,<7.0.0",
-    # Tools HTML parsing tests expect these to be installed.
-    "requests>=2.25.0,<3.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=4.9.0,<6.0.0",
-    # Memory/residency snapshot tests measure the real host through psutil.
-    "psutil>=5.9,<8",
     # Chat-template rendering tests render real GGUF templates with Jinja2.
     "jinja2>=3.0.0,<4.0.0",
 ]
 
-# Documentation dependencies
 docs = [
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.0.0",
-    "mkdocstrings[python]>=0.22.0",
-    "mkdocs-autorefs>=0.4.0",
-]
-
-# Complete development environment
-full-dev = [
-    # A convenient superset for contributors (providers + optional features + tooling).
-    "openai>=1.0.0,<2.0.0",
-    "anthropic>=0.25.0,<1.0.0",
-    "transformers>=4.57.1,<6.0.0",
-    "torch>=2.6.0,<3.0.0",
-    "torchvision>=0.17.0",
-    "torchaudio>=2.1.0",
-    "sentencepiece>=0.1.99,<1.0.0",
-    "llama-cpp-python>=0.3.23,<1.0.0",
-    "outlines>=0.1.0",
-    # See the MLX PROVIDER DEPENDENCY RULE above the `mlx` extra.
-    "mlx>=0.32.2,<1.0.0",
-    "mlx-lm>=0.31.3,<1.0.0",
-    "mlx-vlm>=0.7.1,<0.8.0",
-    "vllm>=0.6.0,<1.0.0",
-    "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
-    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
-    "tiktoken>=0.5.0,<1.0.0",
-    "requests>=2.25.0,<3.0.0",
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=4.9.0,<6.0.0",
-    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
-    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
-    "psutil>=5.9,<8",
-    "Pillow>=10.0.0,<13.0.0",
-    "pypdf>=6.0.0,<7.0.0",
-    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
-    "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.13.0",
-    "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.15",
-    "fastapi>=0.100.0,<1.0.0",
-    "uvicorn[standard]>=0.23.0,<1.0.0",
-    "python-multipart>=0.0.6,<1.0.0",
-    "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.31",
-    # Tooling
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-mock>=3.10.0",
-    "pytest-cov>=4.0.0",
-    "responses>=0.23.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "mypy>=1.5.0",
-    "ruff>=0.1.0",
-    "pre-commit>=3.0.0",
-    # Docs
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.0.0",
     "mkdocstrings[python]>=0.22.0",

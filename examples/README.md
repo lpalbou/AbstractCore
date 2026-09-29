@@ -38,11 +38,10 @@ Typical local backends:
 - Ollama: `ollama serve` (default `http://localhost:11434`)
 - LM Studio: start the OpenAI-compatible server (default `http://localhost:1234/v1`)
 
-Optional extras:
-- Embeddings: `pip install "abstractcore[embeddings]"`
-- Media/PDF: `pip install "abstractcore[media]"`
-- MLX local models: `pip install "abstractcore[mlx]"`
-- HuggingFace transformers/GGUF: `pip install "abstractcore[huggingface]"`
+Install settings:
+- Remote providers, media/PDF, tools, server: `pip install abstractcore`
+- Local engines on Apple silicon (MLX, HuggingFace/GGUF, local embeddings): `pip install "abstractcore[apple]"`
+- Local engines on NVIDIA / AMD (vLLM, HuggingFace/GGUF, local embeddings): `pip install "abstractcore[gpu]"`
 
 ## Downloading Your First Local Model (HF / GGUF / MLX)
 

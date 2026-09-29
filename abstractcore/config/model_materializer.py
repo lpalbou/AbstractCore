@@ -68,6 +68,7 @@ from .capability_defaults import (
 # (a CLI streaming lines, a Gateway background job posting updates), and it
 # speaks the same words so a surface that renders one renders the other.
 from ..download import DownloadProgress, DownloadStatus
+from ..utils.install_settings import local_engines_install_command
 
 _LOG = logging.getLogger("abstractcore.model_materializer")
 
@@ -2409,7 +2410,7 @@ def _download_huggingface(artifact: str, emit: ProgressCallback, base_url: Optio
             False,
             "failed",
             message=f"huggingface_hub is not installed: {exc}",
-            instruction='pip install "abstractcore[huggingface]"',
+            instruction=local_engines_install_command(),
         )
 
     # AN EXPLICIT DOWNLOAD REACHES THE HUB. `offline_first` means "never

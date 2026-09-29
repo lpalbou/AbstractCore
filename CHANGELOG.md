@@ -7,13 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.18.1] - 2026-09-28
+## [2.19.0] - 2026-09-29
 
-`abstractcore models recommendations` shows the recommended model for every capability on every
-kind of machine. On Apple silicon the fit estimate matches the measured GPU memory limit, a text
-model that runs only with a small context says so with the `sysctl` command for more, the image
-route is memory-gated, and the Wan2.2 video figures are labelled as AbstractVision/mlx-gen's
-measurements.
+AbstractCore has three install settings: `pip install abstractcore` (light) runs every remote
+provider out of the box, `pip install "abstractcore[apple]"` adds every local engine an Apple
+silicon Mac can run, and `pip install "abstractcore[gpu]"` adds every local engine an NVIDIA or
+AMD machine can run. `abstractcore models recommendations` shows the recommended model for every
+capability on every kind of machine. On Apple silicon the fit estimate matches the measured GPU
+memory limit, a text model that runs only with a small context says so with the `sysctl` command
+for more, the image route is memory-gated, and the Wan2.2 video figures are
+AbstractVision/mlx-gen's measurements at AbstractVision 0.3.31's default 832x480 canvas. The
+terminal console `abstractcore-console` 0.4.1 switches screens with the Left/Right arrows.
+
+### Install settings
+
+- `pip install abstractcore` now installs everything a remote-inference application needs: the
+  OpenAI and Anthropic SDKs (OpenRouter, Portkey, Ollama, LM Studio, vLLM servers and any
+  OpenAI-compatible endpoint already used the built-in HTTP client), the built-in tools, media
+  inputs (images, PDFs, Office documents), token counting, Glyph compression, the HTTP server and
+  console, and the AbstractVoice, AbstractVision, AbstractMusic and Abstract3D capability plugins
+  with their remote backends (music and 3D on Python 3.10+). It includes no local engine. The
+  install is larger than before (about 550 MB in a fresh Python 3.12 environment, mostly the
+  Office-document parsers).
+- `abstractcore[apple]` is light plus MLX (text and image input), HuggingFace/GGUF, local
+  embeddings, local voice, image, video and music engines, and Playwright for `browser_probe`.
+  It installs everything the previous Apple aggregate installed, plus Playwright and Abstract3D.
+- `abstractcore[gpu]` is light plus vLLM, HuggingFace/GGUF, local embeddings, local voice, image,
+  video and music engines, and Playwright. It installs everything the previous GPU aggregate
+  installed, plus Playwright and Abstract3D.
+- Install hints in errors, the console and the CLI name only these three settings; the provider
+  registry's `installation_extras` is `None` for every provider that talks to a server (vLLM
+  included), `apple` for MLX, and the host's setting for HuggingFace. The Engines screen installs the HuggingFace
+  engine through the host's setting (Apple silicon: `apple`; Linux: `gpu`; Intel Macs and
+  Windows: the transformers stack directly).
+- The server image (`ghcr.io/lpalbou/abstractcore-server`) installs the light setting.
+- Migration: every previous extra name still installs, with at least the packages it installed
+  before, as a deprecated alias kept for compatibility. Replace it with light (no extra), `apple`
+  or `gpu`; the mapping is in [Installation](docs/installation.md#deprecated-aliases).
 
 ### Added
 
@@ -68,7 +98,7 @@ measurements.
   (T2V-A14B at 640x352: 35.1 GiB). Catalog artifacts carry `larger_canvas: {canvas, need_bytes, verdict}` (with
   a fit note) when a measured larger size also fits the machine, and `smaller_canvas` when only a
   measured smaller size does.
-- The optional AbstractVision floor is `abstractvision>=0.3.31` in every extra that installs it:
+- The AbstractVision floor is `abstractvision>=0.3.31` (light, `apple`, `gpu`):
   the memory figures above hold for its 832x480 defaults and tiled decode, and an older
   AbstractVision would generate TI2V-5B at 1280x704 by default (about 60 GiB).
 - `capability_defaults.RECOMMENDED_MODELS` is the one table of recommended models;
@@ -76,6 +106,10 @@ measurements.
   views and keep their values.
 - The reason a memory-gated recommendation is unavailable says whether the memory need is
   measured or estimated.
+
+- Terminal console (`abstractcore-console` 0.4.1): Left/Right switch to the previous and next
+  screen in browse mode, wrapping at both ends, like `Ctrl+P` / `Ctrl+N`; a focused text field,
+  screen bar or dialog keeps the arrows. See `console-tui/CHANGELOG.md`.
 
 ### Fixed
 

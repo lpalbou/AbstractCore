@@ -80,7 +80,7 @@ class _FakeSession:
 def _fetch_fixture(monkeypatch: pytest.MonkeyPatch, gold_key: str, **kwargs: object) -> dict:
     """Run the real `fetch_url` against a committed fixture, no network."""
     if not ct._ensure_requests():  # pragma: no cover - environment guard
-        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+        pytest.skip('requests not available; install with: pip install -U abstractcore')
 
     body = (FIXTURES / GOLD[gold_key]["fixture"]).read_bytes()
     url = GOLD[gold_key]["url"]

@@ -6,7 +6,8 @@ specific to prompt caching, memory blocs, tools, or structured output.
 
 ## Baseline Install
 
-`pip install "abstractcore[huggingface]"` installs the stable HuggingFace provider stack:
+`pip install "abstractcore[apple]"` (Apple silicon) and `pip install "abstractcore[gpu]"` (NVIDIA /
+AMD) install the stable HuggingFace provider stack:
 
 - `transformers`
 - `torch`
@@ -21,10 +22,8 @@ install every optional Transformers quantization runtime, because those runtimes
 platform-specific and can carry dependency pins that conflict with the rest of the local stack.
 Fresh installs resolve the newest compatible Transformers release allowed by AbstractCore's
 dependency range. Very new architectures such as Gemma4 require a recent Transformers build.
-Audio/voice capability extras use `abstractvoice>=0.13.0` without installing
-OmniVoice, torch, or torchaudio. Local OmniVoice engines are part of the
-explicit local aggregate profiles such as `abstractcore[all-apple]` and
-`abstractcore[all-gpu]`.
+The light install carries `abstractvoice>=0.13.0` without OmniVoice, torch, or torchaudio. Local
+OmniVoice engines come with `abstractcore[apple]` and `abstractcore[gpu]`.
 
 ## Quantized Transformers Checkpoints
 
@@ -180,8 +179,8 @@ AbstractCore should improve compatibility without making the default install fra
 - Add lightweight preflight checks from model config before loading large weights.
 - Fail with explicit model/runtime compatibility errors for known missing quantization runtimes.
 - Reject quantized loads that report missing base weights or unexpected packed weights.
-- Consider narrow optional extras later, such as `huggingface-awq`, `huggingface-gptq`, or
-  `huggingface-compressed-tensors`, only after dependency compatibility is verified.
+- Consider adding verified quantization runtimes (AWQ, GPTQ, compressed-tensors) to the `apple`
+  and `gpu` settings, only after dependency compatibility is verified.
 - Use official or trusted model owners for release proofs; treat unknown third-party quantized
   checkpoints as user-supplied compatibility targets, not AbstractCore proof targets.
 

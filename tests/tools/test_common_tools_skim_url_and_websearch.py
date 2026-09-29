@@ -95,7 +95,7 @@ def test_skim_url_extracts_title_description_headings_and_preview(
     import abstractcore.tools.common_tools as common_tools
 
     if not common_tools._ensure_requests():
-        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+        pytest.skip('requests not available; install with: pip install -U abstractcore')
 
     html = (
         "<html><head><title>R-Type</title>"
@@ -136,7 +136,7 @@ def test_skim_url_parses_rss_when_server_labels_it_octet_stream(
     import abstractcore.tools.common_tools as common_tools
 
     if not common_tools._ensure_requests():
-        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+        pytest.skip('requests not available; install with: pip install -U abstractcore')
 
     feed = (
         '<?xml version="1.0" encoding="utf-8"?>'
@@ -167,7 +167,7 @@ def test_skim_url_refetches_small_pdf_to_extract_preview(
     import abstractcore.tools.common_tools as common_tools
 
     if not common_tools._ensure_requests():
-        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+        pytest.skip('requests not available; install with: pip install -U abstractcore')
 
     pdf_prefix = b"%PDF-1.7\n1 0 obj\n<<>>\nstream\npartial"
     full_pdf = pdf_prefix + b"\nendstream\nendobj\nxref\ntrailer\n%%EOF"

@@ -9,7 +9,7 @@ How to use AbstractCore embeddings as a *local* building block for:
 
 ## Prereqs
 
-- Install embeddings support: `pip install "abstractcore[embeddings]"`
+- Local embedding models: `pip install "abstractcore[apple]"` (Apple silicon) or `pip install "abstractcore[gpu]"` (NVIDIA / AMD); remote embedding providers work with `pip install abstractcore`
 
 ## Key AbstractCore Concepts
 

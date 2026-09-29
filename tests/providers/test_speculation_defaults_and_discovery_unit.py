@@ -14,7 +14,7 @@ from abstractcore.providers.mlx_provider import MLXProvider
 
 _requires_mlx_stack = pytest.mark.skipif(
     not all(importlib.util.find_spec(m) for m in ("mlx", "mlx_lm", "mlx_vlm")),
-    reason="requires the optional MLX stack (pip install \"abstractcore[mlx]\")",
+    reason="requires the optional MLX stack (pip install \"abstractcore[apple]\")",
 )
 
 

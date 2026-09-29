@@ -21,7 +21,7 @@ Usage:
     abstractcore --disable-vision
 
     # Audio/video defaults (attachments)
-    abstractcore --set-audio-strategy auto          # requires: pip install "abstractcore[voice]"
+    abstractcore --set-audio-strategy auto          # requires: pip install -U abstractcore
     abstractcore --set-stt-language fr              # optional STT hint
     abstractcore --set-video-strategy auto          # frames fallback requires ffmpeg
     abstractcore --set-video-max-frames 6
@@ -942,7 +942,7 @@ def interactive_configure():
         config_manager.set_audio_strategy(audio_choice)
         print(f"✅ Set audio strategy to: {audio_choice}")
         if audio_choice in ("auto", "speech_to_text"):
-            print('   💡 Requires: pip install "abstractcore[voice]"')
+            print('   💡 Requires: pip install -U abstractcore')
     else:
         print("⚠️  Invalid choice; keeping existing audio strategy.")
 
@@ -1238,15 +1238,21 @@ def install_check(auto_accept: bool = False) -> None:
                         _warn("Embeddings download", str(exc))
         else:
             _warn("Embeddings", f"sentence-transformers not installed ({emb_provider}/{emb_model} configured)")
-            if _ask_yes('     Install embeddings dependencies now? (pip install "abstractcore[embeddings]")', auto_accept):
+            from ..utils.install_settings import local_engines_setting
+
+            # Local embeddings come with this machine's local-engine setting (apple / gpu);
+            # hosts with neither install sentence-transformers alone.
+            _emb_setting = local_engines_setting()
+            _emb_spec = f"abstractcore[{_emb_setting}]" if _emb_setting else "sentence-transformers"
+            if _ask_yes(f'     Install embeddings dependencies now? (pip install "{_emb_spec}")', auto_accept):
                 try:
-                    print('     ⏳ Running: pip install "abstractcore[embeddings]"')
+                    print(f'     ⏳ Running: pip install "{_emb_spec}"')
                     subprocess.run(
-                        [sys.executable, "-m", "pip", "install", "abstractcore[embeddings]"],
+                        [sys.executable, "-m", "pip", "install", _emb_spec],
                         check=True,
                     )
                     _pass("Embeddings deps", "installed ✅")
-                    actions.append("Installed abstractcore[embeddings]")
+                    actions.append(f"Installed {_emb_spec}")
                     # Now try to download the model too
                     if _ask_yes(f"     Download embeddings model ({emb_model}) now?", auto_accept):
                         try:
@@ -1360,7 +1366,7 @@ def install_check(auto_accept: bool = False) -> None:
                     _warn("TTS prefetch", f"download failed ({exc})")
     else:
         _warn("abstractvoice", "not installed (TTS/STT unavailable)")
-        print('     💡 Fix: pip install "abstractcore[voice]"')
+        print('     💡 Fix: pip install -U abstractcore')
         print('     💡 Then: abstractvoice-prefetch --stt small --piper en')
 
     # Audio strategy
@@ -1413,7 +1419,7 @@ def install_check(auto_accept: bool = False) -> None:
         _pass("abstractvision", "installed")
     else:
         _warn("abstractvision", "not installed (image generation unavailable)")
-        print('     💡 Fix: pip install "abstractcore[vision]"')
+        print('     💡 Fix: pip install -U abstractcore')
 
     # ------------------------------------------------------------------
     # 8. API keys summary

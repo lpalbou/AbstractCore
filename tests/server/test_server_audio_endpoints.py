@@ -109,7 +109,7 @@ def test_audio_speech_returns_501_when_plugin_unavailable(client, monkeypatch):
     assert resp.status_code == 501
     data = resp.json()
     assert "error" in data
-    assert 'pip install "abstractcore[voice]"' in data["error"]["message"]
+    assert 'pip install -U abstractcore' in data["error"]["message"]
 
 
 def test_audio_transcriptions_returns_501_when_plugin_unavailable(client, monkeypatch):
@@ -121,7 +121,7 @@ def test_audio_transcriptions_returns_501_when_plugin_unavailable(client, monkey
     assert resp.status_code == 501
     data = resp.json()
     assert "error" in data
-    assert 'pip install "abstractcore[voice]"' in data["error"]["message"]
+    assert 'pip install -U abstractcore' in data["error"]["message"]
 
 
 def test_audio_endpoints_happy_path_with_stubbed_plugin(client, monkeypatch):

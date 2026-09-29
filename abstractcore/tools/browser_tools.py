@@ -10,7 +10,8 @@ operator-approved dm:core--laurent#21):
 
 - PLAYWRIGHT + HEADLESS CHROMIUM SHELL: the 2026 cross-OS default (one API
   on macOS/Windows/Linux; auto-waiting kills manual-wait flakiness). The
-  dependency is an OPTIONAL extra (`pip install "abstractcore[browser]"`)
+  dependency is never part of the light install (`pip install playwright`;
+  `abstractcore[apple]` and `abstractcore[gpu]` include it)
   plus a browser-binary step (`python -m playwright install --only-shell
   chromium`) — never a base-install cost; missing pieces produce actionable
   install hints, never tracebacks.
@@ -64,7 +65,7 @@ from .core import tool
 # unknown, then cached. Tests flip this directly to simulate absence.
 _PLAYWRIGHT_AVAILABLE: Optional[bool] = None
 
-_PIP_HINT = 'pip install "abstractcore[browser]"'
+_PIP_HINT = "pip install playwright"
 _BROWSER_HINT = "python -m playwright install --only-shell chromium"
 _LINUX_HINT = "python -m playwright install --with-deps chromium"
 _OFFLINE_HINT = (
@@ -901,7 +902,7 @@ def render_url_html(
             "ok": False,
             "error_class": "render_unavailable",
             "message": "playwright is not installed",
-            "hint": 'pip install "abstractcore[browser]" && python -m playwright install --only-shell chromium',
+            "hint": "pip install playwright && python -m playwright install --only-shell chromium",
         }
 
     budget = max(1.0, min(float(timeout_s or RENDER_DEFAULT_TIMEOUT_S), 120.0))

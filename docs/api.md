@@ -20,7 +20,7 @@ Create a provider instance:
 ```python
 from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")  # requires: pip install "abstractcore[openai]"
+llm = create_llm("openai", model="gpt-4o-mini")  # light install; set OPENAI_API_KEY
 resp = llm.generate("Hello!")
 print(resp.content)
 ```
@@ -63,7 +63,7 @@ Keep conversation state:
 ```python
 from abstractcore import BasicSession, create_llm
 
-session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # requires: abstractcore[anthropic]
+session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # light install
 print(session.generate("Give me 3 name ideas.").content)
 print(session.generate("Pick the best one.").content)
 ```
@@ -75,7 +75,7 @@ For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files
 ```python
 from abstractcore import CachedSession, create_llm
 
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[mlx]
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[apple]
 session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
 session.attach_files(["/path/to/large_context.md"])
 print(session.generate("Summarize the attached file.").content)
@@ -173,7 +173,7 @@ matrix.
 
 Supported providers:
 - `ollama`: pulls via the Ollama HTTP API (`/api/pull`)
-- `huggingface` / `mlx`: downloads from HuggingFace Hub (requires `pip install "abstractcore[huggingface]"`; pass `token=` for gated models)
+- `huggingface` / `mlx`: downloads from HuggingFace Hub (requires `abstractcore[apple]` or `abstractcore[gpu]`; pass `token=` for gated models)
 
 Example:
 
@@ -230,13 +230,9 @@ print(resp.tool_calls)
 
 See **[Tool Calling](tool-calling.md)** and **[Tool Syntax Rewriting](tool-syntax-rewriting.md)**.
 
-### Built-in tools (optional)
+### Built-in tools
 
-If you want a ready-made toolset (web + filesystem helpers), install:
-
-```bash
-pip install "abstractcore[tools]"
-```
+The light install includes a ready-made toolset (web + filesystem helpers).
 
 Then import from `abstractcore.tools.common_tools` (for example `web_search`, `skim_websearch`, `skim_url`, `fetch_url`). See **[Tool Calling](tool-calling.md)** for usage patterns and when to use `skim_*` vs `fetch_*`.
 
@@ -261,13 +257,7 @@ See **[Structured Output](structured-output.md)**.
 
 ## Media input
 
-Media handling is opt-in:
-
-```bash
-pip install "abstractcore[media]"
-```
-
-Then pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeline). Media behavior is **policy-driven**:
+Media handling is part of the light install. Pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeline). Media behavior is **policy-driven**:
 
 - Images: use a vision-capable model, or configure vision fallback (caption → inject short observations).
 - Video: controlled by `video_policy` (native when supported; otherwise frame sampling via `ffmpeg` + vision handling).
@@ -277,15 +267,9 @@ See **[Media Handling](media-handling-system.md)**, **[Vision Capabilities](visi
 
 ## Generated media output
 
-Install the relevant optional plugin first:
-
-```bash
-pip install "abstractcore[vision]"  # image/video generation/edit
-pip install "abstractcore[voice]"   # TTS/STT/voice clone when backend supports it
-pip install "abstractcore[music]"   # text-to-music via abstractmusic
-```
-
-Then use `output=...` for simple media-generation tasks:
+The light install includes the vision, voice and music plugins with their remote backends; local
+image/video, voice and music engines come with `abstractcore[apple]` or `abstractcore[gpu]`.
+Use `output=...` for simple media-generation tasks:
 
 ```python
 # Text-only generate remains unchanged.
@@ -410,7 +394,7 @@ rows = gateway_version_rows({"abstractgateway": "0.4.2", "abstractframework": "0
 If you want an OpenAI-compatible `/v1` gateway, install and run the server:
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore
 abstractcore serve
 ```
 

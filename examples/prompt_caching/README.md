@@ -13,8 +13,8 @@ AbstractCore exposes this as:
 
 ## Prereqs
 
-- MLX local models: `pip install "abstractcore[mlx]"`
-- HF transformers/GGUF: `pip install "abstractcore[huggingface]"`
+- MLX local models: `pip install "abstractcore[apple]"`
+- HF transformers/GGUF: `pip install "abstractcore[apple]"` (Apple silicon) or `pip install "abstractcore[gpu]"` (NVIDIA / AMD)
 
 ## Key AbstractCore Concepts
 

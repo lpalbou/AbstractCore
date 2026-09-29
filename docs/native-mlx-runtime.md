@@ -13,7 +13,7 @@ results and the thinking opener match what the model was trained on; see
 [tool calling](tool-calling.md#3-local-mlx-models-the-models-own-chat-template).
 
 For a source checkout, install the Apple provider stack with
-`pip install -e ".[mlx]"`. Released packages use `pip install -U "abstractcore[mlx]"`;
+`pip install -e ".[apple]"`. Released packages use `pip install -U "abstractcore[apple]"`;
 see the [changelog](../CHANGELOG.md) for release availability.
 The native runtime requires MLX ≥0.32.2, mlx-lm ≥0.31.3 and mlx-vlm ≥0.7.1,<0.8.0.
 Download target and head weights explicitly before loading; AbstractCore's model

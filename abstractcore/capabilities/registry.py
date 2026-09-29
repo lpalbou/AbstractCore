@@ -642,14 +642,10 @@ class CapabilityRegistry:
 
     def _default_install_hint(self, capability: str) -> Optional[str]:
         cap = str(capability or "").strip().lower()
-        if cap == "voice" or cap == "audio":
-            return 'pip install "abstractcore[voice]"'
-        if cap == "vision":
-            return 'pip install "abstractcore[vision]"'
-        if cap == "music":
-            return 'pip install "abstractcore[music]"'
-        if cap in {"scene3d", "3d"}:
-            return 'pip install "abstractcore[scene3d]"'
+        # The voice / vision / music / 3D plugins are part of the light install: a missing
+        # plugin means an old or broken install (music and 3D need Python 3.10+).
+        if cap in {"voice", "audio", "vision", "music", "scene3d", "3d"}:
+            return "pip install -U abstractcore"
         if cap == "camera":
             # camera (seat: camera): no abstractcore extra exists yet — the
             # plugin package is the install unit.

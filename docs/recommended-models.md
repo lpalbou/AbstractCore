@@ -75,8 +75,8 @@ abstractcore models download diffusers ACE-Step/acestep-v15-xl-turbo-diffusers
 ```
 
 faster-whisper downloads Whisper base on first use. AbstractMusic loads ACE-Step from the local
-Hugging Face cache only, so download it first. The engines install with
-`pip install "abstractcore[voice]"` and `pip install "abstractcore[music]"`.
+Hugging Face cache only, so download it first. Both engines are local: they install with
+`pip install "abstractcore[apple]"` (Apple silicon) or `pip install "abstractcore[gpu]"` (NVIDIA / AMD).
 
 ### Fit verdicts on this page
 

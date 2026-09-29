@@ -14,14 +14,14 @@ Source: `abstractcore/endpoint/app.py` (entrypoint: `abstractcore-endpoint`).
 ## Install
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore            # the endpoint itself (light)
 ```
 
-Then install the provider extra you need:
+To host a local model in-process (MLX, HuggingFace/GGUF), install the local engines for your machine:
 
 ```bash
-pip install "abstractcore[mlx]"         # Apple Silicon local inference
-pip install "abstractcore[huggingface]" # Transformers / torch / llama-cpp-python (heavy)
+pip install "abstractcore[apple]"   # Apple silicon: MLX, HuggingFace/GGUF
+pip install "abstractcore[gpu]"     # NVIDIA / AMD: vLLM, HuggingFace/GGUF
 ```
 
 ## Run

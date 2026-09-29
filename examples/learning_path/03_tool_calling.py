@@ -16,7 +16,7 @@ Technical Architecture Highlights:
 - Tool registry pattern for management
 
 Required: pip install abstractcore
-Optional: pip install abstractcore[ollama] for local models with tools
+Local models with tools: run Ollama (the light install covers it)
 """
 
 import os

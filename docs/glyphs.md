@@ -2,7 +2,7 @@
 
 **Glyph** is a visual-text compression system integrated into AbstractCore. It renders long text into optimized images and processes them with Vision-Language Models (VLMs) to reduce effective token usage for long-document workflows.
 
-Requires `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` if you want PDF/Office text extraction).
+Works with the light install (`pip install abstractcore`), including PDF/Office text extraction.
 
 ## What is Glyph?
 

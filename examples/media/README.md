@@ -7,10 +7,10 @@
 
 ## Prereqs
 
-- Media/file processing: `pip install "abstractcore[media]"`
+- Media/file processing: `pip install abstractcore`
   - Includes: Pillow (images), pypdf (permissive PDF text/metadata extraction), and `unstructured[...]` (DOCX/XLSX/PPTX).
-  - Optional high-fidelity PyMuPDF PDF extraction is separate: `pip install "abstractcore[pdf-pymupdf-commercial]"` after license review.
-- Glyph compression demos: `pip install "abstractcore[compression]"`
+  - Optional high-fidelity PyMuPDF PDF extraction is separate: `pip install pymupdf4llm pymupdf-layout` after license review.
+- Glyph compression demos: `pip install abstractcore`
 
 ## Key AbstractCore Concepts
 

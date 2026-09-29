@@ -4701,7 +4701,7 @@ def web_search(
                         status_hint="error",
                         results=[],
                         error="requests is not installed",
-                        hint="Install with: pip install \"abstractcore[tools]\" (recommended) or `pip install ddgs`.",
+                        hint="Install with: pip install -U abstractcore (recommended) or `pip install ddgs`.",
                         ddgs_error=ddgs_error,
                         limitations=["fallback_backend"],
                         backend_attempts=backend_attempts,
@@ -5333,7 +5333,7 @@ def skim_url(
     if not _ensure_requests():
         return (
             "Error: skim_url requires `requests`, which is not installed.\n"
-            "Install with: pip install \"abstractcore[tools]\""
+            "Install with: pip install -U abstractcore"
         )
 
     try:
@@ -7192,7 +7192,7 @@ def fetch_url(
         rendered = (
             "❌ Missing dependency: `requests`\n"
             "This tool fetches URLs using `requests`.\n"
-            "Install with: pip install \"abstractcore[tools]\""
+            "Install with: pip install -U abstractcore"
         )
         return {
             "success": False,
@@ -11248,7 +11248,7 @@ def _parse_html_content(
             [
                 "🌐 HTML Document Analysis",
                 "⚠️  BeautifulSoup is not installed; returning text-only fallback.",
-                "Install with: pip install \"abstractcore[tools]\"",
+                "Install with: pip install -U abstractcore",
                 ("📄 Text Content:" if include_full_content else "📄 Text Content Preview:"),
                 preview,
             ]
@@ -14240,7 +14240,7 @@ def analyze_media(
     if not _analyze_media_decodes_as_image(path):
         return (
             f"Error: '{file_path}' did not decode as a valid image (corrupt, truncated, "
-            "not actually an image, or Pillow unavailable — `pip install \"abstractcore[media]\"`). "
+            "not actually an image, or Pillow unavailable — `pip install -U abstractcore`). "
             "Refusing rather than describing an image the model never saw."
         )
 

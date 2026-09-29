@@ -9,19 +9,19 @@ ghcr.io/lpalbou/abstractcore-server:2.13.8
 
 Release images are published for `linux/amd64` and `linux/arm64`.
 
-The image installs:
+The image installs the light setting:
 
 ```bash
-abstractcore[server,remote,media,tokens,compression]==<version>
+abstractcore==<version>
 ```
 
 It includes remote chat/responses, remote embeddings, remote STT/TTS routing,
-remote OpenAI-compatible image proxying, server dependencies, media parsing,
-token counting, and compression helpers. It intentionally does not include local
-model runtimes, local embedding dependencies, or the AbstractVoice/AbstractVision
-local plugin runtimes because those pull large native inference stacks. Install
-`abstractcore[voice]` or `abstractcore[vision]` in a custom image when local
-voice/vision plugin execution is required.
+remote OpenAI-compatible image proxying, the server, media parsing, token
+counting, compression helpers, and the voice/vision/music plugins with their
+remote backends. It does not include local engines (MLX, vLLM, transformers,
+local voice/image/music engines), which pull large native inference stacks;
+build a custom image on `abstractcore[gpu]` when you need them
+(see [Installation](../../docs/installation.md)).
 
 ## Run
 

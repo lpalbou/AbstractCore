@@ -55,7 +55,7 @@ def test_missing_playwright_message_is_actionable(monkeypatch, tmp_path):
     page = tmp_path / "index.html"
     page.write_text("<html><body>x</body></html>")
     out = browser_probe(str(page))
-    assert 'pip install "abstractcore[browser]"' in out
+    assert 'pip install playwright' in out
     assert "playwright install --only-shell chromium" in out
     assert "--with-deps" in out  # the one per-OS branch (Linux system libs)
 

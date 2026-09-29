@@ -187,7 +187,7 @@ def test_an_engine_abstractvoice_does_not_have_is_reported_in_its_words(packages
 
 def test_without_abstractvoice_every_local_voice_route_is_missing_it(packages):
     flag = re_mod.route_engine_missing("supertonic", "supertonic-3", "output.voice")
-    assert flag["name"] == "AbstractVoice" and flag["install"] == engines.pip_install_command("abstractcore[voice]")
+    assert flag["name"] == "AbstractVoice" and flag["install"] == engines.pip_install_command("-U", "abstractcore")
     assert sys.executable in flag["install"]
 
 

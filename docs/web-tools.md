@@ -143,10 +143,11 @@ fetch_url(url=..., render_js="always")  # always render; the static result is ke
 fetch_url(url=..., render_js="never")   # never launch a browser
 ```
 
-Rendering requires the optional browser extra:
+Rendering needs Playwright, which is never part of the light install (`abstractcore[apple]` and
+`abstractcore[gpu]` include it):
 
 ```bash
-pip install "abstractcore[browser]"
+pip install playwright                           # light install only
 python -m playwright install chromium            # full Chromium: what the fetch_url escalation prefers
 python -m playwright install --only-shell chromium  # smaller; used as a fallback if the full build is absent
 ```

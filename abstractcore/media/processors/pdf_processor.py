@@ -2,9 +2,9 @@
 PDF processor with a permissive default backend.
 
 The default path uses pypdf for text and metadata extraction so the standard
-media extras stay suitable for permissive/commercial redistribution. The older
+light install stays suitable for permissive/commercial redistribution. The older
 PyMuPDF4LLM path remains available only when explicitly requested through the
-commercial opt-in extra.
+PyMuPDF-family packages installed directly after license review.
 """
 
 from pathlib import Path
@@ -18,10 +18,10 @@ from ..types import MediaContent, MediaType, ContentFormat
 from ...utils.token_utils import estimate_tokens
 
 
-PYPDF_INSTALL_HINT = 'Install with: pip install "abstractcore[media]"'
+PYPDF_INSTALL_HINT = 'Install with: pip install -U abstractcore'
 PYMUPDF_INSTALL_HINT = (
     'Install the explicit opt-in backend only after license review: '
-    'pip install "abstractcore[pdf-pymupdf-commercial]"'
+    'pip install pymupdf4llm pymupdf-layout'
 )
 
 

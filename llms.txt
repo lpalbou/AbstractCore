@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
-Package version: 2.18.1. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
+Package version: 2.19.0. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
@@ -19,11 +19,10 @@ Ecosystem note:
 - In the ecosystem, **AbstractRuntime** is the recommended runtime for executing `response.tool_calls` durably (policy, retries, persistence): https://github.com/lpalbou/abstractruntime
 
 Quick start:
-- Install: `pip install abstractcore`
-- Hosted SDK bundle: `pip install "abstractcore[remote]"` (OpenAI + Anthropic SDKs; OpenRouter/Portkey/local `/v1` providers use core HTTP dependencies)
-- First steps: `docs/getting-started.md` -> `docs/prerequisites.md`
-- Run the gateway server: `pip install "abstractcore[server]"` then `abstractcore serve` (binds `127.0.0.1:8000`; on loopback with no `ABSTRACTCORE_AUTH_TOKEN` it creates its token in `<config dir>/server-token` and prints a one-time `/console#claim=<code>` link; `abstractcore serve --print-token` / `--claim-url` are the CLI twins)
-- Run the single-model endpoint: `pip install "abstractcore[server]"` then `abstractcore-endpoint --help` (see `docs/endpoint.md`)
+- Install (three settings, `docs/installation.md`): `pip install abstractcore` (light: every remote provider incl. OpenAI/Anthropic SDKs, OpenRouter, Portkey, Ollama, LM Studio, vLLM server, OpenAI-compatible `/v1`; tools; media; server; voice/vision/music/3D plugins), `pip install "abstractcore[apple]"` (light + every Apple silicon local engine), `pip install "abstractcore[gpu]"` (light + every NVIDIA/AMD local engine)
+- First steps: `docs/installation.md` -> `docs/getting-started.md` -> `docs/prerequisites.md`
+- Run the gateway server: `pip install abstractcore` then `abstractcore serve` (binds `127.0.0.1:8000`; on loopback with no `ABSTRACTCORE_AUTH_TOKEN` it creates its token in `<config dir>/server-token` and prints a one-time `/console#claim=<code>` link; `abstractcore serve --print-token` / `--claim-url` are the CLI twins)
+- Run the single-model endpoint: `pip install abstractcore` then `abstractcore-endpoint --help` (see `docs/endpoint.md`)
 - Repo/dev checks: `pip install -e ".[dev,test]"` ; `pytest -q` ; `black .` ; `ruff check .`
 
 ## Read First
@@ -66,10 +65,10 @@ Quick start:
 
 ## Providers (IDs + setup)
 
-- [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
+- [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, the install setting each provider needs (`installation_extras`: None = light, `apple`, `gpu`)
 - [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
-- Install profile vocabulary: `abstractcore[apple]` is the hardware alias for the MLX local LLM stack, `abstractcore[gpu]` is the hardware alias for the vLLM local LLM stack, capability extras such as `voice`/`audio`/`vision`/`music` stay remote-light, and `abstractcore[all-apple]` / `abstractcore[all-gpu]` are larger aggregate profiles with local plugin engines where supported.
-- Optional media plugin floors in this source: `abstractvoice>=0.13.0`, `abstractvision>=0.3.31`, and `abstractmusic>=0.1.15`. Two further optional plugins register through the same `abstractcore.capabilities_plugins` entry point group: `abstract3d` (`abstractcore[scene3d]`) exposes text→3D and image→3D via `llm.scene3d` and `/v1/scene3d/generations` (backends: triposr/step1x/hunyuan3d21/trellis2); `abstractcamera` exposes real-camera piloting via `llm.camera` and `/v1/camera/*` (discovery, open/close, photo, bounded video, detection, event log). The AbstractVision plugin supports direct `llm.vision.t2i/i2i/upscale_image/t2v/i2v` calls, exact MLX-Gen model ids, source/reference image edits, adapter discovery through `llm.vision.list_provider_adapters(...)`, SeedVR2 image upscaling with canonical `AbstractFramework/seedvr2-{3b,7b}-{8bit,4bit}` packages, typed Wan A14B `guidance_2` plus Wan TI2V `flow_shift` video controls, first-class batch `count` / `seeds` delegation, and image/video output routing through `generate(..., output=...)`; top-level progress callbacks are forwarded to generated image/video output specs.
+- [Installation](docs/installation.md): the three install settings (light / `abstractcore[apple]` / `abstractcore[gpu]`); `apple` and `gpu` each include everything in light plus the local engines (MLX or vLLM, HuggingFace/GGUF, local embeddings, local voice/image/video/music engines, Playwright).
+- Optional media plugin floors in this source: `abstractvoice>=0.13.0`, `abstractvision>=0.3.31`, and `abstractmusic>=0.1.15`. Two further optional plugins register through the same `abstractcore.capabilities_plugins` entry point group: `abstract3d` (in the light install on Python 3.10+) exposes text→3D and image→3D via `llm.scene3d` and `/v1/scene3d/generations` (backends: triposr/step1x/hunyuan3d21/trellis2); `abstractcamera` exposes real-camera piloting via `llm.camera` and `/v1/camera/*` (discovery, open/close, photo, bounded video, detection, event log). The AbstractVision plugin supports direct `llm.vision.t2i/i2i/upscale_image/t2v/i2v` calls, exact MLX-Gen model ids, source/reference image edits, adapter discovery through `llm.vision.list_provider_adapters(...)`, SeedVR2 image upscaling with canonical `AbstractFramework/seedvr2-{3b,7b}-{8bit,4bit}` packages, typed Wan A14B `guidance_2` plus Wan TI2V `flow_shift` video controls, first-class batch `count` / `seeds` delegation, and image/video output routing through `generate(..., output=...)`; top-level progress callbacks are forwarded to generated image/video output specs.
 
 ## Server (OpenAI-compatible `/v1`)
 
@@ -84,7 +83,7 @@ Quick start:
 
 - [Contributing](CONTRIBUTING.md): formatting/lint/test + release checklist
 - [Changelog](CHANGELOG.md): version history + upgrade notes
-- [pyproject.toml](pyproject.toml): extras + console scripts
+- [pyproject.toml](pyproject.toml): install settings + console scripts
 
 ## Optional
 

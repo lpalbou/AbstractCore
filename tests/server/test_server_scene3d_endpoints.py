@@ -113,7 +113,7 @@ def test_scene3d_generations_returns_501_when_plugin_unavailable(client, monkeyp
     assert resp.status_code == 501
     data = resp.json()
     assert "error" in data
-    assert 'pip install "abstractcore[scene3d]"' in data["error"]["message"]
+    assert 'pip install -U abstractcore' in data["error"]["message"]
 
 
 def test_scene3d_generations_t23d_happy_path(client, monkeypatch):

@@ -7,7 +7,7 @@ Security model:
 - For true E2EE, use TDLib + Secret Chats (see docs/guide/telegram-integration.md).
 
 Dependency policy:
-- Bot API transport uses `requests` (install with: pip install "abstractcore[tools]").
+- Bot API transport uses `requests` (install with: pip install -U abstractcore).
 - TDLib transport uses stdlib `ctypes` and an externally installed TDLib (tdjson).
 """
 
@@ -176,7 +176,7 @@ def send_telegram_message(
             return {
                 "success": False,
                 "transport": "bot_api",
-                "error": "requests is required for Telegram Bot API transport. Install with: pip install \"abstractcore[tools]\"",
+                "error": "requests is required for Telegram Bot API transport. Install with: pip install -U abstractcore",
             }
 
         token, err = _resolve_required_env(bot_token_env_var, label="Telegram bot token")
@@ -356,7 +356,7 @@ def send_telegram_artifact(
             return {
                 "success": False,
                 "transport": "bot_api",
-                "error": "requests is required for Telegram Bot API transport. Install with: pip install \"abstractcore[tools]\"",
+                "error": "requests is required for Telegram Bot API transport. Install with: pip install -U abstractcore",
             }
 
         token, err2 = _resolve_required_env(bot_token_env_var, label="Telegram bot token")

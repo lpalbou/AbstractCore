@@ -16,7 +16,7 @@ labels: bug
 - Python version:
 - OS:
 - Provider/model (if relevant):
-- Install extras (if relevant): e.g. `abstractcore[tools,media]`
+- Install setting: light (`abstractcore`), `abstractcore[apple]` or `abstractcore[gpu]`
 
 ## Logs / stack trace
 

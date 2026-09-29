@@ -11,7 +11,7 @@ How to build a small, end-to-end Retrieval-Augmented Generation (RAG) pipeline u
 
 ## Prereqs
 
-- Local embeddings: `pip install "abstractcore[embeddings]"`
+- Local embeddings: `pip install "abstractcore[apple]"` (Apple silicon) or `pip install "abstractcore[gpu]"` (NVIDIA / AMD)
 - An LLM backend (local or hosted) depending on how you configure the script.
 
 ## Key AbstractCore Concepts

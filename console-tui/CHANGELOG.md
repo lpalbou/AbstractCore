@@ -8,7 +8,7 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [0.4.1] — 2026-09-29
 
-Released with AbstractCore 2.18.1. No API change.
+Released with AbstractCore 2.19.0. No API change.
 
 ### Added
 

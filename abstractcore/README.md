@@ -19,13 +19,12 @@ AbstractCore is a Python framework that provides a unified, provider-agnostic in
 ### Installation
 
 ```bash
-# Core (small default)
+# Light: every remote provider, tools, media, server, capability plugins
 pip install abstractcore
 
-# Turnkey "everything" installs (pick one)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Light + every local engine for your machine (pick one)
+pip install "abstractcore[apple]"    # Apple silicon (MLX, HF/GGUF, local media engines)
+pip install "abstractcore[gpu]"      # NVIDIA / AMD Linux (vLLM, HF/GGUF, local media engines)
 ```
 
 ### Hello World
@@ -42,7 +41,7 @@ print(response.content)
 ### With Vision
 
 ```python
-# Requires `pip install "abstractcore[media]"`
+# Works with the light install
 llm = create_llm("openai", model="gpt-4o")
 response = llm.generate(
     "Describe this image",

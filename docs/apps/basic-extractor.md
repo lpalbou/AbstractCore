@@ -21,20 +21,19 @@ relationships = [item for item in result['@graph'] if item.get('@id', '').starts
 ## Installation & Setup
 
 ```bash
-# Install AbstractCore. The default Ollama path works with the core install.
+# Light install: the default Ollama path and every cloud provider work with it.
 pip install abstractcore
 
-# Optional turnkey local-runtime installs:
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
+# Or, for in-process local engines:
+pip install "abstractcore[apple]"    # Apple silicon: MLX, HF/GGUF, local media engines
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: vLLM, HF/GGUF, local media engines
 
 # Default model requires Ollama (free, runs locally)
 # 1. Install Ollama: https://ollama.com/
 # 2. Download model: ollama pull qwen3:4b-instruct-2507-q4_K_M
 # 3. Start Ollama service
 
-# Alternative: Use cloud providers
-pip install "abstractcore[remote]"
+# Alternative: use a cloud provider (set its API key; no extra install)
 ```
 
 ### Model Performance Recommendations
@@ -210,7 +209,7 @@ The `extractor` CLI provides direct terminal access for knowledge graph extracti
 ### Quick CLI Usage
 
 ```bash
-# Simple usage (after installing AbstractCore; add `pip install "abstractcore[media]"` for PDFs)
+# Simple usage (PDF and Office inputs work with the light install)
 extractor document.pdf
 
 # With specific format and focus

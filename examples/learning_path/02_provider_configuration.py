@@ -16,7 +16,7 @@ Technical Architecture Highlights:
 - Provider capability detection
 
 Required: pip install abstractcore
-Optional: pip install abstractcore[openai,anthropic,ollama] for all providers
+Every remote provider works with the light install: pip install abstractcore
 """
 
 import os

@@ -61,7 +61,7 @@ def test_fetch_url_sniffs_pdf_and_extracts_text(monkeypatch: pytest.MonkeyPatch)
     import abstractcore.tools.common_tools as common_tools
 
     if not common_tools._ensure_requests():
-        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+        pytest.skip('requests not available; install with: pip install -U abstractcore')
 
     pdf = b"""%PDF-1.4
 1 0 obj
@@ -132,7 +132,7 @@ def test_fetch_url_sniffs_xml_feed_and_normalizes_summary(monkeypatch: pytest.Mo
     import abstractcore.tools.common_tools as common_tools
 
     if not common_tools._ensure_requests():
-        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+        pytest.skip('requests not available; install with: pip install -U abstractcore')
 
     feed = (
         '<?xml version="1.0" encoding="utf-8"?>'
@@ -162,7 +162,7 @@ def test_fetch_url_normalizes_string_tool_arguments(monkeypatch: pytest.MonkeyPa
     import abstractcore.tools.common_tools as common_tools
 
     if not common_tools._ensure_requests():
-        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+        pytest.skip('requests not available; install with: pip install -U abstractcore')
 
     body = ("start " + ("middle " * 700) + "ENDMARKER").encode("utf-8")
     fake = _FakeResponse(
@@ -221,7 +221,7 @@ def test_fetch_url_pdf_never_leaves_the_machine_without_opt_in(monkeypatch: pyte
     from abstractcore.config import get_config_manager
 
     if not common_tools._ensure_requests():
-        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+        pytest.skip('requests not available; install with: pip install -U abstractcore')
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)

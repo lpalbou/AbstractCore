@@ -12,22 +12,24 @@ AbstractCore is **production-ready LLM infrastructure**. It provides a unified, 
 - **Simplicity over complexity**
 - **Provider agnostic**
 
-## Optional capability plugins (voice/audio/vision/music)
+## Capability plugins (voice/audio/vision/music/3D)
 
-AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in **optional packages** and are exposed through the capability plugin layer:
+Deterministic modality APIs (STT/TTS, generative vision, music, 3D) live in separate packages and
+are exposed through the capability plugin layer. The light install (`pip install abstractcore`)
+includes these plugins with their remote backends:
 
-- Install `abstractcore[voice]` → `llm.voice` / `llm.audio` via `abstractvoice` (TTS/STT)
-- Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, image upscaling, text→video, image→video, provider model discovery, and provider adapter discovery)
-- Install `abstractcore[music]` → `llm.music` for text→music through `abstractmusic`
-- Install `abstractcore[scene3d]` → `llm.scene3d` for text→3D and image→3D through `abstract3d`
-- Install `abstractcamera` → `llm.camera` for real-camera piloting (webcams and tethered bodies)
+- `abstractvoice` → `llm.voice` / `llm.audio` (TTS/STT)
+- `abstractvision` → `llm.vision` (text→image, image→image, image upscaling, text→video, image→video, provider model discovery, and provider adapter discovery)
+- `abstractmusic` → `llm.music` for text→music (Python 3.10+)
+- `abstract3d` → `llm.scene3d` for text→3D and image→3D (Python 3.10+)
+
+Their local engines come with `abstractcore[apple]` or `abstractcore[gpu]`. One plugin is a
+separate package: install `abstractcamera` for `llm.camera` (real-camera piloting of webcams and
+tethered bodies).
 
 ```bash
-pip install "abstractcore[voice]"
-pip install "abstractcore[vision]"
-pip install "abstractcore[music]"
-pip install "abstractcore[scene3d]"
-pip install "abstractcamera"
+pip install abstractcore      # voice, vision, music and 3D plugins
+pip install abstractcamera    # camera plugin
 ```
 
 `abstract3d` and `abstractcamera` register through the same
@@ -38,9 +40,8 @@ than a silent stub.
 
 `abstractvoice` 0.11.0+ can install its base AbstractCore plugin path on
 Python 3.9 without OmniVoice, torch, or torchaudio. Python 3.10+ is
-recommended. Local voice engines and clone backends are installed through
-explicit local aggregate profiles such as `abstractcore[all-apple]` and
-`abstractcore[all-gpu]`; AEC requires Python 3.11+.
+recommended. Local voice engines and clone backends come with
+`abstractcore[apple]` or `abstractcore[gpu]`; AEC requires Python 3.11+.
 
 `abstractvoice` 0.11.0 adds the local Qwen3-TTS engine
 (`pip install "abstractvoice[qwen3-tts]"`, Python 3.10+): preset speakers

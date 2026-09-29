@@ -16,13 +16,14 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 
 ## Start here (recommended reading order)
 
-1. **[Prerequisites](prerequisites.md)** — install/configure providers (Ollama, LMStudio, vLLM, HuggingFace, MLX, OpenAI, Anthropic, OpenRouter, Portkey, …)
-2. **[Getting Started](getting-started.md)** — first call (`create_llm`, `generate`), streaming, tools, structured output
-3. **[FAQ](faq.md)** — install extras, local servers, common gotchas
-4. **[Troubleshooting](troubleshooting.md)** — actionable fixes for common failures
-5. **[API (Python)](api.md)** — user-facing map of the public API
-6. **[API Reference](api-reference.md)** — complete function/class reference (including events)
-7. **[Architecture](architecture.md)** — component ownership, provider boundaries, request lifecycle, native MLX execution, server routes and local model management
+1. **[Installation](installation.md)** — the three install settings: light (`pip install abstractcore`), `abstractcore[apple]`, `abstractcore[gpu]`
+2. **[Prerequisites](prerequisites.md)** — install/configure providers (Ollama, LMStudio, vLLM, HuggingFace, MLX, OpenAI, Anthropic, OpenRouter, Portkey, …)
+3. **[Getting Started](getting-started.md)** — first call (`create_llm`, `generate`), streaming, tools, structured output
+4. **[FAQ](faq.md)** — install settings, local servers, common gotchas
+5. **[Troubleshooting](troubleshooting.md)** — actionable fixes for common failures
+6. **[API (Python)](api.md)** — user-facing map of the public API
+7. **[API Reference](api-reference.md)** — complete function/class reference (including events)
+8. **[Architecture](architecture.md)** — component ownership, provider boundaries, request lifecycle, native MLX execution, server routes and local model management
 
 ## Core guides
 
@@ -71,10 +72,10 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 
 ## Server (optional HTTP API)
 
-- **[Server](server.md)** — OpenAI-compatible `/v1` gateway (install `pip install "abstractcore[server]"`; run `abstractcore serve`)
+- **[Server](server.md)** — OpenAI-compatible `/v1` gateway (install `pip install abstractcore`; run `abstractcore serve`)
 - **[Web Console](console.md)** — browser console at `/console`: host profile, model catalog with fit badges, download/delete, engine install with confirmation, and the embedding contract for AbstractGateway
 - **[Terminal Console](console-tui.md)** — `abstractcore-console`: the same Models and Engines screens in a terminal, plus config screens
-- **[Endpoint](endpoint.md)** — single-model OpenAI-compatible `/v1` endpoint (install `pip install "abstractcore[server]"`; run `abstractcore-endpoint`)
+- **[Endpoint](endpoint.md)** — single-model OpenAI-compatible `/v1` endpoint (install `pip install abstractcore`; run `abstractcore-endpoint`)
 
 ## Built-in CLI apps
 

@@ -151,7 +151,7 @@ class VLMTokenCalculator:
             if not PIL_AVAILABLE:
                 raise ImportError(
                     "PIL/Pillow is required to read image files for token calculation. "
-                    "Install with: pip install \"abstractcore[media]\""
+                    "Install with: pip install -U abstractcore"
                 )
             try:
                 with Image.open(image_path) as img:

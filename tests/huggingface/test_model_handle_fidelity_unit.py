@@ -25,11 +25,11 @@ from abstractcore.providers.huggingface_provider import HuggingFaceProvider
 
 _requires_llama_cpp = pytest.mark.skipif(
     importlib.util.find_spec("llama_cpp") is None,
-    reason="requires the optional llama-cpp-python runtime (pip install \"abstractcore[huggingface]\")",
+    reason="requires the optional llama-cpp-python runtime (pip install \"abstractcore[apple]\" or \"abstractcore[gpu]\")",
 )
 _requires_transformers = pytest.mark.skipif(
     importlib.util.find_spec("transformers") is None,
-    reason="requires the optional transformers runtime (pip install \"abstractcore[huggingface]\")",
+    reason="requires the optional transformers runtime (pip install \"abstractcore[apple]\" or \"abstractcore[gpu]\")",
 )
 
 

@@ -8243,7 +8243,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         except ImportError as e:
             raise ImportError(
                 f"Media processing requires additional dependencies. "
-                f'Install with: pip install "abstractcore[media]". Error: {e}'
+                f'Install with: pip install -U abstractcore. Error: {e}'
             )
 
         processed_media = []

@@ -722,7 +722,7 @@ endpoints and the Python `generate(..., output="image")` path.
   - `ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID` / `ABSTRACTVISION_MODEL_ID` (optional)
   - `ABSTRACTCORE_VISION_UPSTREAM_VIDEOS_GENERATIONS_PATH` / `ABSTRACTCORE_VISION_TEXT_TO_VIDEO_PATH` (optional, default `/videos/generations`)
   - `ABSTRACTCORE_VISION_UPSTREAM_VIDEOS_EDITS_PATH` / `ABSTRACTCORE_VISION_IMAGE_TO_VIDEO_PATH` (optional, default `/videos/edits`)
-  - Install: `pip install "abstractcore[server]"`
+  - Install: `pip install abstractcore` (light)
 
 - **Local Diffusers**: set `ABSTRACTCORE_VISION_BACKEND=diffusers`
   - `ABSTRACTCORE_VISION_MODEL_ID` / `ABSTRACTVISION_DIFFUSERS_MODEL_ID` / `ABSTRACTVISION_MODEL_ID` (required for `diffusers/default`) — local model id/path (Diffusers)
@@ -730,10 +730,10 @@ endpoints and the Python `generate(..., output="image")` path.
   - `ABSTRACTCORE_VISION_TORCH_DTYPE` / `ABSTRACTVISION_DIFFUSERS_TORCH_DTYPE` (optional, e.g. `float16`; for very large models you typically need `float16` or you may run out of memory)
   - `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD` / `ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD` (optional, default false/cache-only)
   - Note: if you set `ABSTRACTCORE_VISION_DEVICE=mps` or `cuda`, your PyTorch must actually support it (`torch.backends.mps.is_available()` / `torch.cuda.is_available()`).
-  - Install: `pip install "abstractcore[server,vision]"`
+  - Install: `pip install "abstractcore[apple]"` (Apple silicon) or `pip install "abstractcore[gpu]"` (NVIDIA / AMD)
 
 - **Local stable-diffusion.cpp**: set `ABSTRACTCORE_VISION_BACKEND=sdcpp`
-  - Recommended (pip-only): `pip install "abstractcore[server,vision]"`
+  - Recommended (pip-only): `pip install "abstractcore[apple]"` or `pip install "abstractcore[gpu]"`
   - Alternative (external executable): install `sd-cli`: https://github.com/leejet/stable-diffusion.cpp/releases
   - `ABSTRACTCORE_VISION_SDCPP_BIN` (optional, default `sd-cli`)
   - Configure either:
@@ -798,7 +798,7 @@ curl http://localhost:8000/v1/videos/edits \\
 
 Notes:
 - The server returns `b64_json` outputs, matching the OpenAI media API shape.
-- OpenAI-compatible image proxying is built into `abstractcore[server]`.
+- OpenAI-compatible image proxying is built into the server (light install).
 - Wan A14B video models use `guidance_2` as a typed second-stage/low-noise
   guidance control. Keep backend-only values such as `max_sequence_length` in
   `extra` / `extra_json`.
@@ -806,7 +806,7 @@ Notes:
   fields by default. Put backend-specific knobs such as `seed`, `steps`,
   `guidance_scale`, or `negative_prompt` in `extra` / `extra_json` only when
   your custom upstream supports them.
-- Local Diffusers/sdcpp/MLX-Gen generation delegates to AbstractVision; install it in the same env as the server with `pip install "abstractcore[server,vision]"` and add the backend runtime extra you need, such as `pip install "abstractvision[mlx-gen]"` for MLX-Gen. Aggregate local profiles such as `abstractcore[all-apple]` include the MLX-Gen path. Prefer `python -m uvicorn ...`.
+- Local Diffusers/sdcpp/MLX-Gen generation delegates to AbstractVision; its local engines come with `pip install "abstractcore[apple]"` (Apple silicon, including MLX-Gen) or `pip install "abstractcore[gpu]"` (NVIDIA / AMD) in the same environment as the server. Prefer `python -m uvicorn ...`.
 - Local Diffusers is cache-only by default, matching AbstractVision. Pre-download model weights or opt in with `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1`.
 - MLX-Gen quantized prepared models are selected by their exact published repo id (for example `AbstractFramework/qwen-image-2512-4bit`, `AbstractFramework/seedvr2-3b-8bit`, `AbstractFramework/seedvr2-7b-4bit`, `AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, or `AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`). For SeedVR2 official/source-weight upscaling only, the `quantize` form field can request runtime quantization (`3`, `4`, `5`, `6`, or `8`). Prepared q4/q8 package ids do not need `quantize`. Use `ABSTRACTCORE_VISION_MODEL_DIR` or `ABSTRACTVISION_MODEL_DIR` when prepared folders live outside the Hugging Face cache.
 
@@ -1175,14 +1175,11 @@ docker run -p 8000:8000 \
   ghcr.io/lpalbou/abstractcore-server:2.13.11
 ```
 
-The release image is built from PyPI with
-`abstractcore[server,remote,media,tokens,compression]==<version>`. It is a
-remote/server gateway image and intentionally does not bundle local model
-runtimes, local Diffusers/sdcpp vision backends, `sentence-transformers`, or
-AbstractVoice/AbstractVision plugin entry points. Remote image/audio
-OpenAI-compatible endpoint routes still work. Use a custom image with
-`abstractcore[server,remote,media,tokens,compression,voice,vision]` when you
-want plugin-backed media catalogs or plugin default routes.
+The release image is built from PyPI with the light install,
+`abstractcore==<version>`. It is a remote/server gateway image: it includes the
+voice/vision/music plugins with their remote backends and does not bundle local
+model runtimes, local Diffusers/sdcpp vision backends, or `sentence-transformers`.
+Use a custom image on `abstractcore[gpu]` when you want local engines.
 
 ### Nginx Reverse Proxy
 

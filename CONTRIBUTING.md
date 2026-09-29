@@ -18,40 +18,34 @@ pip install -e ".[dev,test]"
 pytest -q
 ```
 
-### Optional extras (install only what you need)
+### Local engines (optional)
 
-AbstractCore’s default install is intentionally lightweight. Most features and provider SDKs are behind extras:
-
-```bash
-pip install -e ".[remote]"       # OpenAI + Anthropic SDKs (OpenRouter/Portkey use core httpx)
-pip install -e ".[openai]"       # OpenAI SDK
-pip install -e ".[anthropic]"    # Anthropic SDK
-pip install -e ".[tools]"        # requests/bs4/lxml/ddgs for built-in tools
-pip install -e ".[media]"        # Pillow + PDF/Office extraction
-pip install -e ".[embeddings]"   # sentence-transformers + numpy
-pip install -e ".[server]"       # FastAPI gateway
-```
-
-Extras compose, so a realistic app setup might be `pip install -e ".[remote,tools,media,server]"`.
-
-If you want a “kitchen sink” contributor environment, `full-dev` is a convenient superset, but it may not install everywhere (for example MLX vs CUDA-only stacks):
+The editable install above is the light setting: every remote provider, tools, media, the server
+and the capability plugins. To work on the local engines, add your platform's setting:
 
 ```bash
-pip install -e ".[full-dev]"
+pip install -e ".[apple,dev,test]"   # Apple silicon: MLX, HuggingFace/GGUF, local media engines
+pip install -e ".[gpu,dev,test]"     # NVIDIA / AMD: vLLM, HuggingFace/GGUF, local media engines
 ```
 
 ## Repository conventions
 
 ### Dependency and import-safety policy (important)
 
-AbstractCore is designed so:
-- `pip install abstractcore` stays small.
+AbstractCore has exactly three install settings (see [Installation](docs/installation.md)):
+- `pip install abstractcore` (light) runs every remote provider and carries tools, media inputs,
+  the server and the capability plugins, with no local engine.
+- `abstractcore[apple]` and `abstractcore[gpu]` add every local engine for their platform.
 - `import abstractcore` stays import-safe.
 
 When contributing:
-- Don’t add heavy libraries to core `dependencies` in `pyproject.toml`.
-- Keep optional subsystems behind explicit extras (`[tools]`, `[media]`, `[embeddings]`, `[server]`, provider SDKs).
-- Avoid importing optional dependencies on default import paths (for example `abstractcore/__init__.py`). Prefer lazy imports and clear install hints like `pip install "abstractcore[media]"`.
+- Never add a fourth setting or a feature extra. A dependency the light install needs goes in
+  core `dependencies`; a local engine (heavy or platform-specific) goes in `apple` and/or `gpu`.
+  `tests/test_install_settings.py` enforces this.
+- Keep local engines out of default import paths (for example `abstractcore/__init__.py`). Prefer
+  lazy imports and install hints that name one of the three settings (`abstractcore.utils.install_settings`).
+- Contributor tooling lives in the `dev`, `test` and `docs` extras (`pip install -e ".[dev,test]"`);
+  they are not install settings.
 
 ### Formatting, linting, and typing
 

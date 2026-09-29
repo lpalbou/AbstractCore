@@ -259,7 +259,7 @@ class OpenAIProvider(BaseProvider):
                     else:
                         api_messages.append(multimodal_message)
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
+                self.logger.warning("Media processing not available. Install with: pip install -U abstractcore")
                 if user_message_text and not replace_last_user:
                     api_messages.append({"role": "user", "content": user_message_text})
             except Exception as e:
@@ -503,7 +503,7 @@ class OpenAIProvider(BaseProvider):
                         api_messages.append(multimodal_message)
 
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
+                self.logger.warning("Media processing not available. Install with: pip install -U abstractcore")
                 if user_message_text and not replace_last_user:
                     api_messages.append({"role": "user", "content": user_message_text})
             except Exception as e:

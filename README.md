@@ -24,8 +24,9 @@ application code portable while the model underneath moves between OpenAI,
 Anthropic, Ollama, LM Studio, MLX, HuggingFace/GGUF, vLLM, OpenRouter, Portkey,
 or any OpenAI-compatible backend.
 
-The default install is intentionally lightweight; add providers and optional
-subsystems via explicit install extras. For local runtimes, AbstractCore is
+The default install (`pip install abstractcore`) runs every remote provider with
+no further setup; `abstractcore[apple]` and `abstractcore[gpu]` add the local
+engines for Apple silicon and NVIDIA / AMD machines. For local runtimes, AbstractCore is
 cache-first and offline-first: it will not silently download model weights; you
 download the models you want (`abstractcore models download ...`), then run
 without internet when your chosen provider and tools are local.
@@ -46,7 +47,7 @@ First-class support for:
 - optional OpenAI-compatible `/v1` gateway server (multi-provider) and single-model endpoint
 
 (*) Media input is policy-driven (no silent semantic changes). If a model doesn’t support images, AbstractCore can use a configured vision model to generate short visual observations and inject them into your text-only request (vision fallback). Audio/video attachments are also policy-driven (`audio_policy`, `video_policy`) and may require capability plugins for fallbacks. See [Media Handling](docs/media-handling-system.md) and [Centralized Config](docs/centralized-config.md).
-(**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (install `pip install "abstractcore[compression]"`; for PDFs also install `pip install "abstractcore[media]"`).
+(**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (included in the light install).
 
 Generative vision uses `abstractvision` when installed. In server mode, omit
 `model` only when the server has a configured default, or use explicit
@@ -111,60 +112,32 @@ graph LR
 
 ## Install
 
-Choose the smallest install that matches where your models run. Extras compose,
-so you can start with `abstractcore[remote]` and add `media`, `tools`, `server`,
-or local runtime extras as your app grows.
+AbstractCore has three install settings:
 
 ```bash
-# Core: local HTTP servers and gateways that need no SDK
-# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
+# Light: every remote provider (OpenAI, Anthropic, OpenRouter, Portkey, any OpenAI-compatible
+# endpoint, LM Studio, Ollama, a vLLM server), tools, media inputs, the HTTP server,
+# and the voice / vision / music / 3D capability plugins
 pip install abstractcore
 
-# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
-pip install "abstractcore[remote]"
+# Apple silicon: light + every local engine a Mac can run (MLX text and vision,
+# HuggingFace/GGUF, local embeddings, local voice, image, video and music engines)
+pip install "abstractcore[apple]"
 
-# Individual provider SDKs / local runtimes
-pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[apple]"        # Apple Silicon local LLM stack (alias of mlx; heavy)
-pip install "abstractcore[gpu]"          # GPU local LLM stack (alias of vllm; heavy)
-pip install "abstractcore[mlx]"          # Explicit MLX provider extra
-pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
-
-# Optional application features
-pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
-pip install "abstractcore[media]"       # images, PDFs, Office docs
-pip install "abstractcore[voice]"       # abstractvoice plugin (remote-light TTS/STT capability)
-pip install "abstractcore[vision]"      # abstractvision plugin (generative vision capability)
-pip install "abstractcore[music]"       # abstractmusic plugin (text-to-music capability)
-pip install "abstractcore[scene3d]"     # abstract3d plugin (text->3D / image->3D capability)
-pip install "abstractcamera"            # abstractcamera plugin (real-camera piloting capability)
-pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
-pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
-pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
-
-# Combine extras (zsh: keep quotes)
-pip install "abstractcore[remote,media,tools]"
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # GPU host: remote SDKs + HF/GGUF + vLLM + features + server
+# NVIDIA / AMD GPU: light + every local engine a GPU machine can run (vLLM,
+# HuggingFace/GGUF, local embeddings, local voice, image, video and music engines)
+pip install "abstractcore[gpu]"
 ```
 
-`apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
-`voice`, `audio`, `vision`, and `music` install the lightweight capability
-plugin paths used for remote-capable routing. `all-apple`/`all-gpu` are larger
-aggregate profiles for a full local-development environment, including local
-plugin engines such as OmniVoice where supported; they need Python 3.11 or newer.
+`apple` and `gpu` each include everything in light. See [Installation](docs/installation.md)
+for what each setting contains, platform requirements, and the optional headless browser.
 
 ## Quickstart
 
 Pick, download and run a local model from the browser:
 
 ```bash
-pip install "abstractcore[server]"
+pip install "abstractcore[apple]"    # Apple silicon; "abstractcore[gpu]" on NVIDIA / AMD
 abstractcore serve
 # open the printed link: http://127.0.0.1:8000/console#claim=...
 ```
@@ -187,7 +160,7 @@ response = llm.generate("Draft a privacy-preserving onboarding checklist.")
 print(response.content)
 ```
 
-Remote API example (requires `pip install "abstractcore[openai]"`):
+Remote API example (works with the light install; set `OPENAI_API_KEY`):
 
 ```python
 from abstractcore import create_llm
@@ -339,7 +312,7 @@ print(answer.bullets)
 
 ## Media input (images/audio/video)
 
-Requires `pip install "abstractcore[media]"`.
+Media handling is part of the light install.
 
 ```python
 from abstractcore import create_llm
@@ -352,7 +325,7 @@ print(resp.content)
 Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
-- **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
+- **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` for speech-to-text through AbstractVoice (part of the light install).
   `abstractvoice` 0.11.0+ can install its base plugin path on Python 3.9 without OmniVoice, torch, or torchaudio. Local voice engines and clone backends are part of explicit local aggregate profiles.
 
 Configure defaults (optional):
@@ -473,8 +446,8 @@ the direct `llm.vision.*`, `llm.voice.*`, `llm.audio.*`, and `llm.music.*` facad
 available. Configure `abstractvision` and `abstractvoice` backends first for
 real generation; configure `abstractmusic` for music generation. With
 `abstractmusic>=0.1.15`, the default music backend is the lightweight remote
-ACE Music path; set `ACEMUSIC_API_KEY` before use. Local music engines remain
-optional plugin extras.
+ACE Music path; set `ACEMUSIC_API_KEY` before use. Local music engines come
+with `abstractcore[apple]` or `abstractcore[gpu]`.
 
 Catalog helpers are available for UI/dropdown preflight:
 
@@ -508,7 +481,7 @@ routes, not in `/v1/models`.
 ## HTTP server (OpenAI-compatible gateway)
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore                  # the server is part of the light install
 abstractcore serve                        # 127.0.0.1:8000; prints a one-time console link
 export ABSTRACTCORE_AUTH_TOKEN="$(abstractcore serve --print-token)"
 ```
@@ -575,6 +548,7 @@ AbstractCore also ships with ready-to-use CLI apps:
 
 Start here:
 - [Docs Index](docs/README.md) — navigation for all docs
+- [Installation](docs/installation.md) — the three install settings: light, `apple`, `gpu`
 - [Prerequisites](docs/prerequisites.md) — provider setup (keys, local servers, hardware notes)
 - [Getting Started](docs/getting-started.md) — first call + core concepts
 - [FAQ](docs/faq.md) — common questions and setup gotchas

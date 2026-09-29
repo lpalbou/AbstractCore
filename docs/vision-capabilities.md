@@ -6,12 +6,11 @@ This document describes **vision as an input modality** in AbstractCore (images 
 
 ## Quick requirements
 
-- **Images**: install `pip install "abstractcore[media]"` and use either:
+- **Images**: the light install (`pip install abstractcore`) and either:
   - a **vision-capable model** (VLM/VL), or
   - a text-only model with **vision fallback** configured (`abstractcore --set-vision-provider PROVIDER MODEL`).
   - On Apple silicon, native image input on MLX checkpoints needs no extra step: `mlx-vlm`
-    ships with the MLX provider in `abstractcore[mlx]`, `[apple]`, `[all]`, `[all-apple]` and
-    `[full-dev]` (see [Native image input on the MLX provider](#1b-native-image-input-on-the-mlx-provider-apple-silicon)).
+    ships with the MLX provider in `abstractcore[apple]` (see [Native image input on the MLX provider](#1b-native-image-input-on-the-mlx-provider-apple-silicon)).
 - **Video**: native video input is model/provider dependent. For the portable frame-sampling path (`video_policy="frames_caption"` / `"auto"` fallback), you need:
   - `ffmpeg`/`ffprobe` available on `PATH`, and
   - image/vision handling (a vision-capable model or configured vision fallback).
@@ -78,7 +77,7 @@ If a sighted checkpoint still drops images with `mlx_vlm_not_installed`, the env
 missing half of a package set that is meant to arrive together — most often because the
 interpreter running the model is not the one that was installed into. Check with
 `<the-python-that-runs-the-model> -c "import mlx_vlm"` and repair with
-`pip install "abstractcore[mlx]"`.
+`pip install "abstractcore[apple]"`.
 
 ```python
 from abstractcore import create_llm
@@ -173,7 +172,7 @@ Creating/editing images and videos is a **deterministic capability** that can be
 1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`, `upscale_image`, `t2v`, `i2v`) or the unified `llm.generate(..., output=...)` surface. Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled, and MLX-Gen local models are selected by exact repo id. Install `abstractvision[mlx-gen]` when you need the local MLX-Gen runtime.
    See: `abstractvision/docs/reference/abstractcore-integration.md`
 
-2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` and `/v1/videos/*` as OpenAI-compatible media routes. Local Diffusers/sdcpp/MLX-Gen backends remain available when `abstractvision` and the needed backend runtime extra are installed in the server environment; `abstractcore[server,vision]` installs the plugin API surface, while `abstractvision[mlx-gen]` or aggregate profiles such as `abstractcore[all-apple]` provide local MLX-Gen execution. Omit `model` only when the server has a configured default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="mlx-gen/AbstractFramework/qwen-image-2512-4bit"`, `model="mlx-gen/AbstractFramework/seedvr2-3b-8bit"`, `model="mlx-gen/AbstractFramework/seedvr2-7b-4bit"`, `model="mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream media endpoint.
+2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` and `/v1/videos/*` as OpenAI-compatible media routes. The light install carries the AbstractVision plugin API surface; local Diffusers/sdcpp/MLX-Gen execution comes with `abstractcore[apple]` (Apple silicon, including MLX-Gen) or `abstractcore[gpu]` (NVIDIA / AMD) in the server environment. Omit `model` only when the server has a configured default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="mlx-gen/AbstractFramework/qwen-image-2512-4bit"`, `model="mlx-gen/AbstractFramework/seedvr2-3b-8bit"`, `model="mlx-gen/AbstractFramework/seedvr2-7b-4bit"`, `model="mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream media endpoint.
    See: `docs/server.md`
 
 AbstractVision remains the truth owner for route-specific model and adapter

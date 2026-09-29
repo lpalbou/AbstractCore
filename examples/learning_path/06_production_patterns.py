@@ -18,7 +18,7 @@ Technical Architecture Highlights:
 - Event system for observability
 - Production testing patterns
 
-Required: pip install abstractcore[all]
+Required: pip install abstractcore
 """
 
 import json

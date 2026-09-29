@@ -26,9 +26,7 @@ BasicDeepSearch implements a state-of-the-art four-stage research pipeline:
 BasicDeepSearch relies on the built-in web tools (`web_search`, `fetch_url`).
 
 ```bash
-pip install "abstractcore[tools]"
-# plus any provider extras you use, e.g.:
-# pip install "abstractcore[openai]"
+pip install abstractcore   # the web tools and every remote provider are part of the light install
 ```
 
 ## CLI Usage

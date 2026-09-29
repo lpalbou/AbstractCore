@@ -6,7 +6,7 @@ This example demonstrates how to use Glyph compression to achieve 3-4x token
 compression for long documents while maintaining quality.
 
 Requirements:
-    pip install abstractcore[all] reportlab pdf2image
+    pip install abstractcore reportlab pdf2image
 
 Usage:
     python examples/media/glyph_compression_demo.py

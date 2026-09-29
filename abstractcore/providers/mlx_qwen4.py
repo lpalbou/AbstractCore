@@ -238,7 +238,7 @@ def _create_qwen4_session(path: str, *, mtp: bool, ple_offload: bool) -> Qwen4Se
     except ImportError as exc:
         raise ImportError(
             "Qwen3.8-Flash-Next native MLX requires mlx-vlm>=0.7.1 and mlx>=0.32.2; "
-            "install the updated abstractcore[mlx] extra in this interpreter"
+            "install the latest abstractcore[apple] in this interpreter: pip install -U \"abstractcore[apple]\""
         ) from exc
     source = Path(path).resolve()
     config = checkpoint_config(str(source))

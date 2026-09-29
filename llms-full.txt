@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-25
-Package version: 2.18.1
+Package version: 2.19.0
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -40,14 +40,9 @@ Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 ### Install
 
 ```bash
-pip install abstractcore
-```
-
-If you're using a cloud provider SDK, install only what you need:
-
-```bash
-pip install "abstractcore[openai]"      # OpenAI Python SDK
-pip install "abstractcore[anthropic]"   # Anthropic Python SDK
+pip install abstractcore             # light: every remote provider (OpenAI and Anthropic SDKs included)
+pip install "abstractcore[apple]"    # Apple silicon: light + every local engine a Mac can run
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: light + every local engine a GPU machine can run
 ```
 
 ### Minimal first call
@@ -55,7 +50,7 @@ pip install "abstractcore[anthropic]"   # Anthropic Python SDK
 ```python
 from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")  # requires: abstractcore[openai]
+llm = create_llm("openai", model="gpt-4o-mini")  # light install; set OPENAI_API_KEY
 resp = llm.generate("Say hello in French.")
 print(resp.content)
 ```
@@ -105,84 +100,49 @@ AbstractCore is a unified Python interface over multiple LLM backends (cloud + l
 
 ### What it is not
 
-- It is not "one giant dependency": the default install is intentionally small.
+- It is not "one giant dependency": the default install carries no local engine.
 - It is not "magic multimodal": attaching audio/video/images has explicit policies and optional fallbacks.
 - It is not a hosted service: local providers and servers are your responsibility to run and secure.
 
-### Core design invariant: lightweight default install
+### Core design invariant: exactly three install settings
 
-`pip install abstractcore` should:
-- install quickly,
-- import cleanly,
-- not pull heavyweight deps (torch/transformers/PDF pipelines/server deps).
-
-Anything heavy must be behind install extras and imported lazily inside the code paths that need it.
+- `pip install abstractcore` (light) runs every remote provider and carries the tools, media
+  inputs, server and capability plugins, with no local engine (no torch/transformers/MLX/vLLM).
+- `abstractcore[apple]` / `abstractcore[gpu]` add every local engine for their platform.
+- `import abstractcore` stays clean: local engines are imported lazily inside the code paths
+  that need them, and install hints name only these three settings.
 
 ---
 
-## 3) Installation + extras (what to `pip install`)
+## 3) Installation (what to `pip install`)
 
-### Core
-
-```bash
-pip install abstractcore
-```
-
-Core includes local HTTP/gateway providers that need no SDK: `ollama`,
-`lmstudio`, `openrouter`, `portkey`, and generic `openai-compatible` `/v1`
-endpoints.
-
-### Hosted SDK / provider extras (install only what you use)
+There are exactly three install settings (full contents: `docs/installation.md`):
 
 ```bash
-pip install "abstractcore[remote]"      # OpenAI + Anthropic SDKs
-pip install "abstractcore[openai]"
-pip install "abstractcore[anthropic]"
-pip install "abstractcore[huggingface]"  # transformers/torch (heavy)
-pip install "abstractcore[apple]"        # Apple Silicon local LLM stack (alias of mlx; heavy)
-pip install "abstractcore[gpu]"          # GPU local LLM stack (alias of vllm; heavy)
-pip install "abstractcore[mlx]"          # Explicit MLX provider extra
-pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
+pip install abstractcore             # light
+pip install "abstractcore[apple]"    # Apple silicon: light + local engines
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: light + local engines
 ```
+
+- **Light** (macOS, Linux, Windows; Python 3.9+): OpenAI, Anthropic, OpenRouter, Portkey, any
+  OpenAI-compatible `/v1` endpoint, LM Studio, Ollama and a vLLM server need nothing else. It
+  also includes the built-in tools, media inputs (Pillow, pypdf, unstructured Office parsers,
+  pandas), token counting (tiktoken), Glyph compression, the HTTP server and console (FastAPI,
+  uvicorn), and the AbstractVoice / AbstractVision / AbstractMusic / Abstract3D capability plugins
+  with their remote backends (music and 3D need Python 3.10+).
+- **`apple`** (Apple silicon, macOS 14+, Python 3.10+): adds MLX (mlx, mlx-lm, mlx-vlm, outlines),
+  HuggingFace/GGUF (transformers, torch, llama-cpp-python), local embeddings
+  (sentence-transformers), local voice/image/video/music engines, and Playwright.
+- **`gpu`** (Linux with an NVIDIA or AMD GPU, Python 3.10+): adds vLLM, HuggingFace/GGUF, local
+  embeddings, local voice/image/video/music engines, and Playwright.
 
 Notes:
-- `ollama`, `lmstudio`, `openrouter`, `portkey`, and `openai-compatible` use only core deps (they speak HTTP).
-- `openrouter`, `portkey`, and `openai-compatible` also have explicit no-dependency extras for clarity/composability.
-
-### Optional feature extras
-
-```bash
-pip install "abstractcore[tools]"        # built-in web + filesystem helper tools
-pip install "abstractcore[media]"        # images + PDF/Office extraction
-pip install "abstractcore[compression]"  # glyph visual-text compression
-pip install "abstractcore[embeddings]"   # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"       # precise token counting (tiktoken)
-pip install "abstractcore[voice]"        # remote-light abstractvoice TTS/STT capability
-pip install "abstractcore[vision]"       # remote-light abstractvision capability
-pip install "abstractcore[music]"        # remote-light abstractmusic capability
-pip install "abstractcore[server]"       # OpenAI-compatible /v1 HTTP gateway (FastAPI)
-```
-
-Compatibility note:
-- `abstractcore[tool]` is accepted as an alias of `abstractcore[tools]`.
-
-### Turnkey installs (pick one)
-
-```bash
-pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
-```
-
-Install-profile note:
-`apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
-Capability extras such as `voice`, `audio`, `vision`, and `music` install the
-lightweight plugin paths used for remote-capable routing. `all-apple`/`all-gpu`
-are larger aggregate profiles for a full local-development environment,
-including local plugin engines where supported.
-
-Shell tip:
-- In zsh, always quote extras: `pip install "abstractcore[media]"`.
-- `all-non-mlx` remains as a legacy broad bundle, but new installs should usually compose explicit extras or choose `all-apple` / `all-gpu`.
+- `apple` and `gpu` each include everything in light; nothing else composes.
+- The headless browser (`browser_probe`) is never part of light: `pip install playwright`, then
+  `python -m playwright install --only-shell chromium`.
+- PyMuPDF-family PDF extraction is a licence opt-in installed directly:
+  `pip install pymupdf4llm pymupdf-layout`.
+- In zsh, quote the bracketed settings: `pip install "abstractcore[apple]"`.
 
 ---
 
@@ -200,7 +160,7 @@ llm = create_llm("openai", model="gpt-4o-mini")
 - Cloud: `openai`, `anthropic`
 - Gateways (OpenAI-compatible routing): `openrouter`, `portkey`
 - Local/self-hosted (OpenAI-compatible HTTP): `ollama`, `lmstudio`, `vllm`, `openai-compatible`
-- Local in-process: `mlx`, `huggingface` (require heavy extras)
+- Local in-process: `mlx`, `huggingface` (require `abstractcore[apple]` or `abstractcore[gpu]`)
 
 ### Environment variables (quick map)
 
@@ -227,7 +187,7 @@ HuggingFace caching (optional):
 Install:
 
 ```bash
-pip install "abstractcore[openai]"
+pip install abstractcore
 export OPENAI_API_KEY="sk-..."
 ```
 
@@ -244,7 +204,7 @@ print(llm.generate("Give me 3 bullet points about HTTP caching.").content)
 Install:
 
 ```bash
-pip install "abstractcore[anthropic]"
+pip install abstractcore
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
@@ -371,10 +331,10 @@ print(llm.generate("Write a Python function that reverses a list.").content)
 
 ### 4.9 MLX (`mlx`)
 
-MLX runs in-process on Apple Silicon and requires a heavy extra:
+MLX runs in-process on Apple Silicon and comes with the `apple` setting:
 
 ```bash
-pip install "abstractcore[mlx]"
+pip install "abstractcore[apple]"
 ```
 
 ```python
@@ -396,10 +356,11 @@ and [measured results and limits](docs/native-mlx-benchmarks.md).
 
 ### 4.10 HuggingFace (`huggingface`)
 
-HuggingFace runs in-process and requires transformers/torch:
+HuggingFace runs in-process and requires transformers/torch, which the local-engine settings carry:
 
 ```bash
-pip install "abstractcore[huggingface]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 Quantized Transformers checkpoints such as AWQ, GPTQ, bitsandbytes, and
@@ -488,7 +449,7 @@ print(session.generate("Pick the best one and explain why.").content)
 ```python
 from abstractcore import CachedSession, create_llm
 
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[mlx]
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[apple]
 session = CachedSession(llm, system_prompt="You are a helpful assistant.", prompt_cache_strategy="auto")
 
 # Attach local text/doc files as stable transcript "boxes" (1 file = 1 message).
@@ -541,11 +502,7 @@ Hybrid note (tools + structured output):
 
 ### Built-in tools (optional)
 
-Install:
-
-```bash
-pip install "abstractcore[tools]"
-```
+The built-in tools are part of the light install (`pip install abstractcore`).
 
 Then import from `abstractcore.tools.common_tools` (examples):
 - `skim_websearch` vs `web_search` (compact vs full search results)
@@ -602,8 +559,10 @@ Media is opt-in and policy-driven to avoid silent semantic changes.
 
 ### Installation
 
+Media handling is part of the light install:
+
 ```bash
-pip install "abstractcore[media]"
+pip install abstractcore
 ```
 
 ### Attach media
@@ -666,12 +625,14 @@ abstractcore --set-stt-language en
 
 ### Capability plugins (voice/audio/vision/music/scene3d/camera)
 
-AbstractCore supports optional capability plugins discovered via Python entry points:
-- install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
-- install `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
-- install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
-- install `abstractcore[scene3d]` -> enables `llm.scene3d` (text->3D and image->3D through `abstract3d`; backends triposr/step1x/hunyuan3d21/trellis2, returns model bytes such as GLB)
-- install `abstractcamera` -> enables `llm.camera` (real-camera piloting: non-invasive discovery, open/close, photo, bounded video, detection, event log; capture bytes ride as base64 or artifact refs, never raw frames in the JSON body)
+AbstractCore supports capability plugins discovered via Python entry points. The light install
+carries the first four with their remote backends; their local engines come with
+`abstractcore[apple]` / `abstractcore[gpu]`:
+- `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
+- `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
+- `abstractmusic` (Python 3.10+) -> enables `llm.music` and music output routing for text-to-music
+- `abstract3d` (Python 3.10+) -> enables `llm.scene3d` (text->3D and image->3D; backends triposr/step1x/hunyuan3d21/trellis2, returns model bytes such as GLB)
+- `abstractcamera` (install it separately) -> enables `llm.camera` (real-camera piloting: non-invasive discovery, open/close, photo, bounded video, detection, event log; capture bytes ride as base64 or artifact refs, never raw frames in the JSON body)
 - current plugin floors in this source: `abstractvoice>=0.11.2`, `abstractvision>=0.3.29`, `abstractmusic>=0.1.15`; `llm.vision` exposes `t2i`, `i2i`, `upscale_image`, `t2v`, and `i2v`, supports `llm.vision.list_provider_adapters(...)`, first-class batch `count` / `seeds` delegation, SeedVR2 image upscaling, typed Wan A14B `guidance_2`, typed Wan TI2V `flow_shift`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
 - SeedVR2 upscaling can be called directly with `llm.vision.upscale_image("input.png", provider="mlx-gen", model="AbstractFramework/seedvr2-3b-8bit", resolution="2x", softness=0.25, on_progress=on_progress)` or through the unified output route with `llm.generate(media={"type": "image", "path": "input.png", "role": "source"}, output={"task": "image_upscale", "provider": "mlx-gen", "model": "AbstractFramework/seedvr2-3b-8bit", "resolution": "2x", "softness": 0.25})`; canonical q8/q4 SeedVR2 package ids do not need runtime `quantize`, official/source weights can use SeedVR2 runtime `quantize`, and prepared local folders can be passed as the model value when available.
 
@@ -684,18 +645,17 @@ Server note:
 
 If you need to squeeze long text into smaller vision-friendly inputs, AbstractCore supports glyph compression.
 
-```bash
-pip install "abstractcore[compression]"
-```
+Glyph compression is part of the light install.
 
 ---
 
 ## 9) Embeddings
 
-Install local HuggingFace/sentence-transformer embeddings explicitly:
+Local HuggingFace/sentence-transformer embeddings come with the local-engine settings:
 
 ```bash
-pip install "abstractcore[embeddings]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 Remote/provider-backed embeddings are also supported. LM Studio, vLLM, and
@@ -805,7 +765,7 @@ It also serves a web console at `/console` (Overview, Models, Engines, Providers
 ### Install + run
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore   # the server is part of the light install
 abstractcore serve
 ```
 
@@ -901,7 +861,7 @@ Python equivalents: `abstractcore.utils.memory.get_memory_snapshot()`, `abstract
 If you want to host **one** provider+model as a dedicated OpenAI-compatible `/v1` endpoint (no `provider/model` routing), use `abstractcore-endpoint`:
 
 ```bash
-pip install "abstractcore[server]"
+pip install "abstractcore[apple]"   # MLX runs in-process
 abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B-4bit --host 0.0.0.0 --port 8001
 ```
 
@@ -930,10 +890,10 @@ Providers:
 
 Tools:
 - `abstractcore/tools/` (tool system: decorator, registry, parsing, handler)
-- `abstractcore/tools/common_tools.py` (built-in tools; requires `abstractcore[tools]`)
+- `abstractcore/tools/common_tools.py` (built-in tools; part of the light install)
 
 Media + capabilities:
-- `abstractcore/media/` (media pipeline; requires `abstractcore[media]`)
+- `abstractcore/media/` (media pipeline; part of the light install)
 - `abstractcore/capabilities/` (capability registry + proxies)
 
 Server:
@@ -962,8 +922,8 @@ ruff check .
 
 1. Don't import optional deps in default import paths (especially `abstractcore/__init__.py`).
 2. Use lazy imports inside functions/methods where optional deps are used.
-3. When a dep is missing, raise a clear error telling users which extra to install, e.g. `pip install "abstractcore[media]"`.
-4. Keep features modular (tools/media/embeddings/compression/server) so core stays small.
+3. When a dep is missing, raise a clear error naming one of the three install settings (`abstractcore.utils.install_settings`): `pip install -U abstractcore` for a light dependency, `abstractcore[apple]` / `abstractcore[gpu]` for a local engine.
+4. Never add a fourth setting: a light dependency goes in core `dependencies`, a local engine in `apple` and/or `gpu` (`tests/test_install_settings.py`).
 
 ### Adding a provider (checklist)
 
@@ -992,10 +952,8 @@ Common with gateways and strict model families:
 ### Missing dependency errors
 
 Typical fixes:
-- Tools: `pip install "abstractcore[tools]"`
-- Media/doc extraction: `pip install "abstractcore[media]"`
-- Embeddings: `pip install "abstractcore[embeddings]"`
-- Server: `pip install "abstractcore[server]"`
+- Tools, media/doc extraction, server, capability plugins, OpenAI/Anthropic SDKs: `pip install -U abstractcore` (all part of the light install)
+- Local embeddings, MLX, vLLM, HuggingFace/GGUF, local media engines: `pip install "abstractcore[apple]"` or `pip install "abstractcore[gpu]"`
 
 ### Tools aren't executed
 
@@ -1003,9 +961,9 @@ Expected default: pass-through. Execute tool calls in your host/runtime, or expl
 
 ### Media attachments fail
 
-- Images/docs: install `abstractcore[media]`.
-- Video frames fallback: install `abstractcore[media]` and have `ffmpeg`/`ffprobe` available.
-- Audio STT fallback: install `abstractvoice` and set `audio_policy="auto"` (or configure via `abstractcore --set-audio-strategy auto`).
+- Images/docs: part of the light install.
+- Video frames fallback: have `ffmpeg`/`ffprobe` available.
+- Audio STT fallback: uses AbstractVoice (part of the light install); set `audio_policy="auto"` (or configure via `abstractcore --set-audio-strategy auto`).
 
 ---
 
@@ -1047,8 +1005,9 @@ application code portable while the model underneath moves between OpenAI,
 Anthropic, Ollama, LM Studio, MLX, HuggingFace/GGUF, vLLM, OpenRouter, Portkey,
 or any OpenAI-compatible backend.
 
-The default install is intentionally lightweight; add providers and optional
-subsystems via explicit install extras. For local runtimes, AbstractCore is
+The default install (`pip install abstractcore`) runs every remote provider with
+no further setup; `abstractcore[apple]` and `abstractcore[gpu]` add the local
+engines for Apple silicon and NVIDIA / AMD machines. For local runtimes, AbstractCore is
 cache-first and offline-first: it will not silently download model weights; you
 download the models you want (`abstractcore models download ...`), then run
 without internet when your chosen provider and tools are local.
@@ -1069,7 +1028,7 @@ First-class support for:
 - optional OpenAI-compatible `/v1` gateway server (multi-provider) and single-model endpoint
 
 (*) Media input is policy-driven (no silent semantic changes). If a model doesn’t support images, AbstractCore can use a configured vision model to generate short visual observations and inject them into your text-only request (vision fallback). Audio/video attachments are also policy-driven (`audio_policy`, `video_policy`) and may require capability plugins for fallbacks. See [Media Handling](docs/media-handling-system.md) and [Centralized Config](docs/centralized-config.md).
-(**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (install `pip install "abstractcore[compression]"`; for PDFs also install `pip install "abstractcore[media]"`).
+(**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (included in the light install).
 
 Generative vision uses `abstractvision` when installed. In server mode, omit
 `model` only when the server has a configured default, or use explicit
@@ -1134,60 +1093,32 @@ graph LR
 
 ## Install
 
-Choose the smallest install that matches where your models run. Extras compose,
-so you can start with `abstractcore[remote]` and add `media`, `tools`, `server`,
-or local runtime extras as your app grows.
+AbstractCore has three install settings:
 
 ```bash
-# Core: local HTTP servers and gateways that need no SDK
-# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
+# Light: every remote provider (OpenAI, Anthropic, OpenRouter, Portkey, any OpenAI-compatible
+# endpoint, LM Studio, Ollama, a vLLM server), tools, media inputs, the HTTP server,
+# and the voice / vision / music / 3D capability plugins
 pip install abstractcore
 
-# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
-pip install "abstractcore[remote]"
+# Apple silicon: light + every local engine a Mac can run (MLX text and vision,
+# HuggingFace/GGUF, local embeddings, local voice, image, video and music engines)
+pip install "abstractcore[apple]"
 
-# Individual provider SDKs / local runtimes
-pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[apple]"        # Apple Silicon local LLM stack (alias of mlx; heavy)
-pip install "abstractcore[gpu]"          # GPU local LLM stack (alias of vllm; heavy)
-pip install "abstractcore[mlx]"          # Explicit MLX provider extra
-pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
-
-# Optional application features
-pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
-pip install "abstractcore[media]"       # images, PDFs, Office docs
-pip install "abstractcore[voice]"       # abstractvoice plugin (remote-light TTS/STT capability)
-pip install "abstractcore[vision]"      # abstractvision plugin (generative vision capability)
-pip install "abstractcore[music]"       # abstractmusic plugin (text-to-music capability)
-pip install "abstractcore[scene3d]"     # abstract3d plugin (text->3D / image->3D capability)
-pip install "abstractcamera"            # abstractcamera plugin (real-camera piloting capability)
-pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
-pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
-pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
-
-# Combine extras (zsh: keep quotes)
-pip install "abstractcore[remote,media,tools]"
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # GPU host: remote SDKs + HF/GGUF + vLLM + features + server
+# NVIDIA / AMD GPU: light + every local engine a GPU machine can run (vLLM,
+# HuggingFace/GGUF, local embeddings, local voice, image, video and music engines)
+pip install "abstractcore[gpu]"
 ```
 
-`apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
-`voice`, `audio`, `vision`, and `music` install the lightweight capability
-plugin paths used for remote-capable routing. `all-apple`/`all-gpu` are larger
-aggregate profiles for a full local-development environment, including local
-plugin engines such as OmniVoice where supported; they need Python 3.11 or newer.
+`apple` and `gpu` each include everything in light. See [Installation](docs/installation.md)
+for what each setting contains, platform requirements, and the optional headless browser.
 
 ## Quickstart
 
 Pick, download and run a local model from the browser:
 
 ```bash
-pip install "abstractcore[server]"
+pip install "abstractcore[apple]"    # Apple silicon; "abstractcore[gpu]" on NVIDIA / AMD
 abstractcore serve
 # open the printed link: http://127.0.0.1:8000/console#claim=...
 ```
@@ -1210,7 +1141,7 @@ response = llm.generate("Draft a privacy-preserving onboarding checklist.")
 print(response.content)
 ```
 
-Remote API example (requires `pip install "abstractcore[openai]"`):
+Remote API example (works with the light install; set `OPENAI_API_KEY`):
 
 ```python
 from abstractcore import create_llm
@@ -1362,7 +1293,7 @@ print(answer.bullets)
 
 ## Media input (images/audio/video)
 
-Requires `pip install "abstractcore[media]"`.
+Media handling is part of the light install.
 
 ```python
 from abstractcore import create_llm
@@ -1375,7 +1306,7 @@ print(resp.content)
 Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
-- **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
+- **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` for speech-to-text through AbstractVoice (part of the light install).
   `abstractvoice` 0.11.0+ can install its base plugin path on Python 3.9 without OmniVoice, torch, or torchaudio. Local voice engines and clone backends are part of explicit local aggregate profiles.
 
 Configure defaults (optional):
@@ -1496,8 +1427,8 @@ the direct `llm.vision.*`, `llm.voice.*`, `llm.audio.*`, and `llm.music.*` facad
 available. Configure `abstractvision` and `abstractvoice` backends first for
 real generation; configure `abstractmusic` for music generation. With
 `abstractmusic>=0.1.15`, the default music backend is the lightweight remote
-ACE Music path; set `ACEMUSIC_API_KEY` before use. Local music engines remain
-optional plugin extras.
+ACE Music path; set `ACEMUSIC_API_KEY` before use. Local music engines come
+with `abstractcore[apple]` or `abstractcore[gpu]`.
 
 Catalog helpers are available for UI/dropdown preflight:
 
@@ -1531,7 +1462,7 @@ routes, not in `/v1/models`.
 ## HTTP server (OpenAI-compatible gateway)
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore                  # the server is part of the light install
 abstractcore serve                        # 127.0.0.1:8000; prints a one-time console link
 export ABSTRACTCORE_AUTH_TOKEN="$(abstractcore serve --print-token)"
 ```
@@ -1598,6 +1529,7 @@ AbstractCore also ships with ready-to-use CLI apps:
 
 Start here:
 - [Docs Index](docs/README.md) — navigation for all docs
+- [Installation](docs/installation.md) — the three install settings: light, `apple`, `gpu`
 - [Prerequisites](docs/prerequisites.md) — provider setup (keys, local servers, hardware notes)
 - [Getting Started](docs/getting-started.md) — first call + core concepts
 - [FAQ](docs/faq.md) — common questions and setup gotchas
@@ -1648,6 +1580,121 @@ MIT
 
 ---
 
+### Inlined: `docs/installation.md`
+
+# Installation
+
+AbstractCore has three install settings. Pick the one that matches where your models run:
+
+| Setting | Command | What you get |
+|---|---|---|
+| **Light** (default) | `pip install abstractcore` | Every remote provider, the built-in tools, media inputs, the HTTP server and the capability plugins |
+| **Apple** | `pip install "abstractcore[apple]"` | Light + every local engine Apple silicon can run |
+| **GPU** | `pip install "abstractcore[gpu]"` | Light + every local engine NVIDIA and AMD machines can run |
+
+`apple` and `gpu` each include everything in light. There is nothing else to add or combine:
+install once, then configure providers and models (see [Getting Started](docs/getting-started.md) and
+[Prerequisites & Setup](docs/prerequisites.md)).
+
+## Light: `pip install abstractcore`
+
+The light install runs everything through remote inferencers and servers you already have. It
+works on macOS, Linux and Windows with Python 3.9 or newer.
+
+- **Providers**: OpenAI, Anthropic, OpenRouter, Portkey, any OpenAI-compatible `/v1` endpoint,
+  LM Studio, Ollama, and a vLLM server. No provider needs another install step; set the API key
+  or `base_url` and call `create_llm(...)`.
+- **Tools**: the built-in web and system tools (`web_search`, `skim_websearch`, `skim_url`,
+  `fetch_url`, ...). The headless-browser probe (`browser_probe`, JavaScript rendering in
+  `fetch_url`) needs a browser, which is never part of the light install: add it with
+  `pip install playwright`, then `python -m playwright install --only-shell chromium`.
+- **Media inputs**: images (Pillow), PDFs (pypdf), Office documents and spreadsheets
+  (unstructured, pandas), Glyph visual-text compression, and precise token counting (tiktoken).
+- **HTTP server**: the OpenAI-compatible server and console (`abstractcore serve`) and the
+  single-model endpoint (`abstractcore-endpoint`).
+- **Capability plugins**: AbstractVoice (`llm.voice`, `llm.audio`), AbstractVision (`llm.vision`),
+  AbstractMusic (`llm.music`) and Abstract3D (`llm.scene3d`), with their remote backends. Music
+  and 3D need Python 3.10 or newer.
+
+For a local model on a machine without a local engine setting (an Intel Mac, Windows), run it in
+Ollama or LM Studio and use the light install.
+
+## Apple: `pip install "abstractcore[apple]"`
+
+For Apple silicon Macs (macOS 14 or newer, Python 3.10 or newer; 3.11 or newer enables every
+local voice engine). Adds, on top of light:
+
+- **MLX provider**: text and image input for MLX checkpoints (mlx, mlx-lm, mlx-vlm), with
+  native structured output (outlines).
+- **HuggingFace provider**: transformers and GGUF models through llama.cpp, and local embedding
+  models (sentence-transformers) for `EmbeddingManager`.
+- **Local voice**: speech output and speech input engines (AbstractVoice's Apple engines,
+  OmniVoice).
+- **Local image and video**: AbstractVision's Apple engines (MLX-Gen, Diffusers,
+  stable-diffusion.cpp).
+- **Local music**: AbstractMusic's Apple engines.
+- **Headless browser**: Playwright for `browser_probe`; download the browser once with
+  `python -m playwright install --only-shell chromium`.
+
+## GPU: `pip install "abstractcore[gpu]"`
+
+For Linux machines with an NVIDIA (CUDA) or AMD (ROCm) GPU, Python 3.10 or newer. Adds, on top
+of light:
+
+- **vLLM engine**: run `vllm serve` on the machine and reach it with the `vllm` provider.
+- **HuggingFace provider**: transformers and GGUF models through llama.cpp, and local embedding
+  models (sentence-transformers) for `EmbeddingManager`.
+- **Local voice, image, video and music engines**: AbstractVoice, OmniVoice, AbstractVision and
+  AbstractMusic GPU engines.
+- **Headless browser**: Playwright for `browser_probe`; download the browser once with
+  `python -m playwright install --with-deps chromium`.
+
+The resolver targets x86_64 Linux with glibc 2.35 or newer (for example Ubuntu 22.04 or newer).
+For AMD GPUs, install the ROCm builds of PyTorch and vLLM first, following their install guides.
+
+## Upgrading
+
+```bash
+pip install -U abstractcore            # light
+pip install -U "abstractcore[apple]"   # Apple silicon
+pip install -U "abstractcore[gpu]"     # NVIDIA / AMD
+```
+
+In zsh, keep the quotes around `abstractcore[apple]` and `abstractcore[gpu]`.
+
+## Optional PDF extraction with PyMuPDF
+
+The light install extracts PDFs with pypdf (permissive licence). If you have reviewed
+PyMuPDF-family licensing (AGPL or a commercial licence) and prefer its layout-aware extraction,
+install it directly with `pip install pymupdf4llm pymupdf-layout` and select it with the
+`pdf_backend="pymupdf4llm"` option (see [Media Handling](docs/media-handling-system.md)).
+
+## Deprecated aliases
+
+Older AbstractCore releases had one extra per provider or feature. Those names still install, so
+existing requirements and dependent packages keep working, but they are deprecated aliases kept
+for compatibility: use light (no extra), `apple` or `gpu`.
+
+| Alias | Installs |
+|---|---|
+| `remote`, `openai`, `anthropic`, `openrouter`, `portkey`, `openai-compatible`, `ollama`, `lmstudio` | light |
+| `tools`, `tool`, `tokens`, `media`, `compression`, `server` | light |
+| `voice`, `audio`, `vision`, `music`, `scene3d`, `3d` | light |
+| `all-apple`, `mlx`, `mlx-vision` | apple |
+| `all-gpu`, `vllm` | gpu |
+| `huggingface`, `embeddings`, `browser`, `vision-diffusers`, `vision-sdcpp`, `vision-local`, `pdf-pymupdf-commercial`, `all`, `all-non-mlx`, `mlx-bench`, `full-dev` | unchanged: the same packages as before, on top of light |
+
+Contributor tooling (`dev`, `test`, `docs`) is described in [Contributing](CONTRIBUTING.md); it
+is not an install setting.
+
+## Related docs
+
+- [Getting Started](docs/getting-started.md): first calls after installing.
+- [Prerequisites & Setup](docs/prerequisites.md): API keys, local servers and provider configuration.
+- [Troubleshooting](docs/troubleshooting.md): install and import errors.
+
+---
+
 ### Inlined: `docs/prerequisites.md`
 
 # Prerequisites & Setup Guide
@@ -1672,53 +1719,23 @@ This guide walks you through setting up AbstractCore with different LLM provider
 
 ## Core Installation
 
-Install AbstractCore, then add the extras you need. Extras compose, so a real
-application can use one command such as `pip install "abstractcore[remote,server,tools]"`.
+Install one of the three settings ([Installation](docs/installation.md) has the full contents):
 
 ```bash
-# Core: local HTTP servers and gateways that need no SDK
-# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
-pip install abstractcore
-
-# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
-pip install "abstractcore[remote]"
-
-# Individual provider SDKs / local runtimes
-pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[apple]"        # Apple Silicon local LLM stack (alias of mlx; heavy)
-pip install "abstractcore[gpu]"          # GPU local LLM stack (alias of vllm; heavy)
-pip install "abstractcore[mlx]"          # Explicit MLX provider extra
-pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
-
-# Optional features
-pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
-pip install "abstractcore[media]"       # images, PDFs, Office docs
-pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
-pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
-pip install "abstractcore[compression]" # Glyph visual-text compression (Pillow renderer)
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
+pip install abstractcore             # light: every remote provider, tools, media, server, plugins
+pip install "abstractcore[apple]"    # Apple silicon: light + every local engine a Mac can run
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: light + every local engine a GPU machine can run
 ```
 
 **Hardware Notes:**
-- `[apple]` - Native Apple local LLM stack; currently aliases `[mlx]` and only works on Apple Silicon (M1/M2/M3/M4)
-- `[gpu]` - Local GPU LLM stack; currently aliases `[vllm]` and only works with supported CUDA/ROCm GPUs
-- `[mlx]` - Provider-specific MLX extra, kept for explicit installs
-- `[vllm]` - Provider-specific vLLM extra, kept for explicit installs
-- `[remote]` - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic `/v1` endpoints need no extra dependency.
-- `[all-apple]` - Best for Apple Silicon local development (includes MLX and local plugin engines where supported, excludes vLLM); Python 3.11+
-- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM and local plugin engines where supported, excludes MLX); Python 3.11+
-- For CPU-only or Intel machines, compose only what you need, for example `abstractcore[remote,huggingface,tools]`.
-
-Capability extras such as `[voice]`, `[audio]`, `[vision]`, and `[music]`
-install lightweight plugin routing surfaces for remote-capable backends. Local
-inference engines remain behind explicit local profiles such as `[all-apple]`,
-`[all-gpu]`, or plugin-specific local extras.
+- Light works everywhere (macOS, Linux, Windows; Python 3.9+). OpenAI, Anthropic, OpenRouter,
+  Portkey, Ollama, LM Studio, a vLLM server and any OpenAI-compatible `/v1` endpoint need nothing
+  else.
+- `apple` needs an Apple silicon Mac (M1 or newer), macOS 14+, Python 3.10+. It adds MLX,
+  HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
+- `gpu` needs a Linux machine with an NVIDIA (CUDA) or AMD (ROCm) GPU, Python 3.10+. It adds
+  vLLM, HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
+- On Intel Macs and Windows, run local models in Ollama or LM Studio and use the light install.
 
 ## Cloud Provider Setup
 
@@ -1916,8 +1933,7 @@ print(response.content)
 #### 1. Install MLX Dependencies
 
 ```bash
-# MLX is automatically installed with AbstractCore
-pip install "abstractcore[mlx]"
+pip install "abstractcore[apple]"
 ```
 
 #### 2. Download Models
@@ -2015,7 +2031,8 @@ print(resp.content)
 #### 1. Install Dependencies
 
 ```bash
-pip install "abstractcore[huggingface]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 #### 2. Optional: Get HuggingFace Token
@@ -2049,7 +2066,7 @@ print(response.content)
 #### Quantized Transformers Models
 
 Quantized Transformers checkpoints may need optional quantization runtimes beyond
-`abstractcore[huggingface]`. If a model reports missing weights, unexpected packed weights, or
+the `apple` and `gpu` settings. If a model reports missing weights, unexpected packed weights, or
 incorrect output for a trivial prompt, treat it as a model/runtime compatibility issue. See
 [HuggingFace Model Compatibility](docs/huggingface-model-compatibility.md).
 
@@ -2078,7 +2095,7 @@ incorrect output for a trivial prompt, treat it as a model/runtime compatibility
 
 ```bash
 # Install AbstractCore with vLLM support
-pip install "abstractcore[vllm]"
+pip install "abstractcore[gpu]"
 
 # This installs vLLM which requires NVIDIA CUDA
 # If you get CUDA errors, ensure CUDA 12.1+ is installed:
@@ -2471,7 +2488,7 @@ This setup guide should get you running with any AbstractCore provider. Choose w
 
 # Getting Started
 
-AbstractCore is a unified Python interface for cloud, gateway, and local LLM providers. The default install is lightweight; add only the extras your application needs.
+AbstractCore is a unified Python interface for cloud, gateway, and local LLM providers. The default install runs every remote provider; two install settings add local engines.
 
 ## Prerequisites
 
@@ -2480,62 +2497,24 @@ AbstractCore is a unified Python interface for cloud, gateway, and local LLM pro
 
 ## Installation
 
-Extras compose. For example, `abstractcore[remote,media,tools]` installs hosted
-API SDKs plus document/media handling and built-in tools in one command.
+Pick one of the three install settings:
 
 ```bash
-# Core: local HTTP servers and gateways that need no SDK
-# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
-pip install abstractcore
-
-# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
-pip install "abstractcore[remote]"
-
-# Individual provider SDKs / local runtimes
-pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[apple]"        # Apple Silicon local LLM stack (alias of mlx; heavy)
-pip install "abstractcore[gpu]"          # GPU local LLM stack (alias of vllm; heavy)
-pip install "abstractcore[mlx]"          # Explicit MLX provider extra
-pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
-
-# Optional features
-pip install "abstractcore[tools]"        # built-in tools (web/file/command helpers)
-pip install "abstractcore[media]"        # images, PDFs, Office docs
-pip install "abstractcore[compression]"  # glyph visual-text compression (Pillow renderer)
-pip install "abstractcore[embeddings]"   # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"       # precise token counting (tiktoken)
-pip install "abstractcore[server]"       # OpenAI-compatible HTTP gateway
-
-# Combine extras (zsh: keep quotes)
-pip install "abstractcore[remote,media,tools]"
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
+pip install abstractcore             # light: every remote provider, tools, media, server, plugins
+pip install "abstractcore[apple]"    # Apple silicon: light + every local engine a Mac can run
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: light + every local engine a GPU machine can run
 ```
 
-`apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
-Capability extras such as `voice`, `audio`, `vision`, and `music` install the
-lightweight plugin paths used for remote-capable routing. `all-apple`/`all-gpu`
-are larger aggregate profiles for a full local-development environment,
-including local plugin engines where supported.
+The light install covers OpenAI, Anthropic, OpenRouter, Portkey, and any OpenAI-compatible
+server (Ollama, LM Studio, vLLM, llama.cpp, LocalAI, ...): point AbstractCore at the server base
+URL. It also carries the built-in tools, media inputs (images, PDFs, Office documents), the
+HTTP server, and the capability plugins (`llm.voice` / `llm.audio` via AbstractVoice, `llm.vision`
+via AbstractVision, `llm.music` via AbstractMusic) with their remote backends.
 
-Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See [Prerequisites](docs/prerequisites.md) for provider setup.
-
-Optional capability plugins (deterministic multimodal outputs):
-
-```bash
-pip install "abstractcore[voice]"   # enables llm.voice / llm.audio via remote-light abstractvoice
-pip install "abstractcore[vision]"  # enables llm.vision via abstractvision (generative vision)
-```
-
-For `abstractvoice` 0.11.0+, the base AbstractCore plugin path can install on
-Python 3.9 and does not install OmniVoice, torch, or torchaudio. Python 3.10+ is
-recommended. Local voice engines and voice-clone backends are part of explicit
-local aggregate profiles such as `abstractcore[all-apple]` and
-`abstractcore[all-gpu]`.
+`apple` and `gpu` add the local engines: MLX (Apple) or vLLM (GPU), HuggingFace/GGUF, local
+embeddings, and local voice, image, video and music engines. See [Installation](docs/installation.md)
+for the full contents and platform requirements, and [Prerequisites](docs/prerequisites.md) for
+provider setup.
 
 See: [Capabilities](docs/capabilities.md) and [Server](docs/server.md).
 
@@ -2578,7 +2557,7 @@ Note: gateway providers only forward optional generation params (e.g. `temperatu
 
 ## Your first call
 
-OpenAI example (requires `pip install "abstractcore[openai]"`):
+OpenAI example (works with the light install; set `OPENAI_API_KEY`):
 
 ```python
 from abstractcore import create_llm
@@ -2731,15 +2710,10 @@ See [Tool Calling](docs/tool-calling.md) and [Tool Syntax Rewriting](docs/tool-s
 Note:
 - If you pass both `tools=[...]` and `response_model=...` to `generate()`, AbstractCore uses a 2-pass hybrid flow (tool-capable call, then structured-output call). Streaming is not supported in this hybrid mode.
 
-### Built-in tools (optional)
+### Built-in tools
 
-If you want a ready-made toolset for agentic scripts, install:
-
-```bash
-pip install "abstractcore[tools]"
-```
-
-Then import from `abstractcore.tools.common_tools`:
+The light install includes a ready-made toolset for agentic scripts. Import it from
+`abstractcore.tools.common_tools`:
 
 - `skim_websearch` vs `web_search`: compact/filtered links vs full results
 - `skim_url` vs `fetch_url`: fast URL triage (small output) vs full fetch + parsing for web documents and feeds (HTML/JSON/XML/RSS/Atom/PDF when supported)
@@ -2767,7 +2741,7 @@ See [Structured Output](docs/structured-output.md) for strategy details and limi
 
 ## Media input (images/audio/video + documents)
 
-Images and document extraction require `pip install "abstractcore[media]"` (Pillow + PDF/Office deps).
+Images and document extraction are part of the light install (Pillow, pypdf, Office parsers).
 
 ```python
 from abstractcore import create_llm
@@ -2784,7 +2758,7 @@ Audio and video attachments are also supported, but they are **policy-driven** (
 Speech-to-text fallback (`audio_policy="speech_to_text"`) typically requires installing `abstractvoice` (capability plugin).
 
 What you need (quick checklist):
-- **Images**: `abstractcore[media]` + either a vision-capable model (VLM/VL) **or** configured vision fallback (`abstractcore --set-vision-provider PROVIDER MODEL`).
+- **Images**: either a vision-capable model (VLM/VL) **or** configured vision fallback (`abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `ffmpeg`/`ffprobe` on `PATH` + either a vision-capable model **or** configured vision fallback (for frame sampling). Native video input is model/provider dependent.
 - **Audio**: either an audio-capable model **or** speech-to-text fallback via `abstractvoice` + `audio_policy="auto"`/`"speech_to_text"`.
 
@@ -2792,7 +2766,7 @@ Defaults can be configured via the config CLI (`abstractcore --config`, `abstrac
 
 If your main model is text-only, you can configure vision fallback (two-stage captioning) so images are automatically described and injected as short observations. See [Media Handling](docs/media-handling-system.md), [Vision Capabilities](docs/vision-capabilities.md), and [Centralized Config](docs/centralized-config.md).
 
-For long documents, AbstractCore can optionally apply Glyph visual-text compression. Install `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` for PDFs) and see [Glyph Visual-Text Compression](docs/glyphs.md).
+For long documents, AbstractCore can optionally apply Glyph visual-text compression. It is part of the light install; see [Glyph Visual-Text Compression](docs/glyphs.md).
 
 ## Async
 
@@ -2839,35 +2813,28 @@ abstractcore-chat --provider openai --model gpt-4o-mini
 
 ## What do I get with `pip install abstractcore`?
 
-The default install is intentionally lightweight. It includes the core API (`create_llm`, `BasicSession`, tool definitions, structured output plumbing) and uses only small dependencies (`pydantic`, `httpx`).
+The light install. It runs everything through remote inferencers and servers: OpenAI, Anthropic,
+OpenRouter, Portkey, any OpenAI-compatible `/v1` endpoint, LM Studio, Ollama and a vLLM server all
+work without another install step. It also includes the built-in tools, media inputs (images,
+PDFs, Office documents), token counting, Glyph compression, the HTTP server, and the voice,
+vision, music and 3D capability plugins with their remote backends. It includes no local engine
+(no torch, transformers, MLX or vLLM). See [Installation](docs/installation.md).
 
-Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings models, local voice/image/music engines, web scraping deps, the HTTP server) is behind install extras. See [Getting Started](docs/getting-started.md) and [Prerequisites](docs/prerequisites.md).
+## Which install do I need for my provider?
 
-## Which extra do I need for my provider?
+- OpenAI, Anthropic, OpenRouter, Portkey, Ollama, LM Studio, a vLLM server, any OpenAI-compatible
+  `/v1` endpoint: `pip install abstractcore`.
+- MLX, or HuggingFace/GGUF models on a Mac: `pip install "abstractcore[apple]"`.
+- A vLLM engine on this machine, or HuggingFace/GGUF models on an NVIDIA / AMD machine:
+  `pip install "abstractcore[gpu]"`.
 
-- Hosted SDK bundle: `pip install "abstractcore[remote]"` installs OpenAI + Anthropic.
-- OpenAI: `pip install "abstractcore[openai]"`
-- Anthropic: `pip install "abstractcore[anthropic]"`
-- OpenRouter, Portkey, Ollama, LM Studio, and generic OpenAI-compatible `/v1` endpoints: core install is enough (`pip install abstractcore`).
-- HuggingFace (transformers/torch; heavy): `pip install "abstractcore[huggingface]"`
-- Apple Silicon local LLM stack: `pip install "abstractcore[apple]"` (alias of `mlx`; heavy)
-- GPU local LLM stack: `pip install "abstractcore[gpu]"` (alias of `vllm`; heavy)
-- Explicit provider extras remain available: `abstractcore[mlx]`, `abstractcore[vllm]`
-
-These providers work with the core install (no provider extra): `ollama`, `lmstudio`, `openrouter`, `portkey`, `openai-compatible`.
-
-## How do I combine extras?
-
-```bash
-# zsh: keep quotes
-pip install "abstractcore[remote,media,tools]"
-```
-
-For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU). The `apple` and `gpu` extras install only the hardware-specific local LLM engine stack; the `all-*` extras are larger aggregate profiles that also include local capability plugin engines where supported.
+There are only these three settings, and `apple` and `gpu` each include everything in light.
 
 ## Why did my install pull `torch` / take a long time?
 
-You probably installed a heavy extra (most commonly `abstractcore[huggingface]`, `abstractcore[apple]`/`abstractcore[mlx]`, `abstractcore[gpu]`/`abstractcore[vllm]`, or `abstractcore[all-*]`). The core install (`pip install abstractcore`) does not include torch/transformers.
+You installed `abstractcore[apple]` or `abstractcore[gpu]`, which carry the local engines (torch,
+transformers, MLX or vLLM, local voice/image/music engines). The light install
+(`pip install abstractcore`) does not include torch or transformers.
 
 ## What’s the difference between “provider” and “model”?
 
@@ -2960,11 +2927,7 @@ Automatic execution (`execute_tools=True`) exists but is deprecated for most use
 
 ## What’s the difference between `web_search`, `skim_websearch`, `skim_url`, and `fetch_url`?
 
-These built-in web tools live in `abstractcore.tools.common_tools` and require:
-
-```bash
-pip install "abstractcore[tools]"
-```
+These built-in web tools live in `abstractcore.tools.common_tools` and are part of the light install.
 
 - `web_search`: fuller DuckDuckGo result set (good when you want breadth or more options). It normalizes JSON-style numeric `num_results` values such as `"5"` before calling `ddgs`, and invalid values fail explicitly instead of silently changing the request.
 - `skim_websearch`: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results, truncates long snippets, accepts string-like numeric `num_results`, and surfaces its compact cap when a caller asks for more than 15 results.
@@ -3010,15 +2973,9 @@ Structured output is validated against your schema. If validation fails, Abstrac
 
 See [Structured Output](docs/structured-output.md) and [Troubleshooting](docs/troubleshooting.md).
 
-## Why do PDFs / Office docs / images not work?
+## How do I attach PDFs / Office docs / images?
 
-Those require the media extra:
-
-```bash
-pip install "abstractcore[media]"
-```
-
-Then pass `media=[...]` to `generate()` or use the media pipeline. See [Media Handling](docs/media-handling-system.md).
+Media handling is part of the light install. Pass `media=[...]` to `generate()` or use the media pipeline. See [Media Handling](docs/media-handling-system.md).
 
 ## How do I attach audio or video?
 
@@ -3027,7 +2984,7 @@ Audio and video attachments are supported via `media=[...]`, but they are **poli
 - **Audio** defaults to `audio_policy="native_only"` (fails loudly unless the model supports native audio input).
 - **Video** defaults to `video_policy="auto"` (native video when supported; otherwise sample frames and route through image/vision handling). Frame sampling requires `ffmpeg`/`ffprobe`.
 
-Speech-to-text fallback for audio (`audio_policy="speech_to_text"` or `"auto"`) typically requires installing `abstractvoice` (capability plugin).
+Speech-to-text fallback for audio (`audio_policy="speech_to_text"` or `"auto"`) runs through the AbstractVoice capability plugin (part of the light install).
 
 You can set defaults via the config CLI:
 
@@ -3043,15 +3000,8 @@ See:
 
 ## How do I do speech-to-text (STT) or text-to-speech (TTS)?
 
-Install the optional capability plugin package:
-
-```bash
-pip install "abstractcore[voice]"
-```
-
-This installs the remote-light AbstractVoice capability path. Local voice
-engines require an explicit local profile such as `abstractcore[all-apple]` or
-`abstractcore[all-gpu]`.
+The light install includes the AbstractVoice capability plugin with its remote backends. Local
+voice engines come with `abstractcore[apple]` or `abstractcore[gpu]`.
 
 Then use the deterministic capability surfaces:
 
@@ -3073,12 +3023,13 @@ See: [Server](docs/server.md) and [Capabilities](docs/capabilities.md).
 
 ## How do I generate or edit images?
 
-Generative vision is dependency-light by default. AbstractCore Server can proxy
-OpenAI-compatible image endpoints without local vision runtimes. For local
-Diffusers/sdcpp image generation, install the vision extra:
+The light install includes the AbstractVision plugin, and AbstractCore Server can proxy
+OpenAI-compatible image endpoints without local vision runtimes. For local image and video
+generation (MLX-Gen, Diffusers, stable-diffusion.cpp), install the local engines:
 
 ```bash
-pip install "abstractcore[server,vision]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 You can use generative vision through AbstractCore’s `llm.vision.*` capability plugin surface, or through AbstractCore Server’s optional endpoints:
@@ -3098,19 +3049,19 @@ See: [Server](docs/server.md), [Capabilities](docs/capabilities.md), and `abstra
 
 ## What are “glyphs” and what do they require?
 
-Glyph visual-text compression is an optional feature for long documents. Install:
-
-- `pip install "abstractcore[compression]"` (renderer)
-- plus `pip install "abstractcore[media]"` if you want PDF extraction support
+Glyph visual-text compression is an optional feature for long documents. Its renderer and PDF
+extraction are part of the light install.
 
 See [Glyph Visual-Text Compression](docs/glyphs.md).
 
 ## How do I use embeddings?
 
-Embeddings are opt-in:
+Remote embeddings (OpenAI, OpenRouter, Portkey, Ollama, LM Studio, OpenAI-compatible endpoints) work with the light
+install. Local embedding models (sentence-transformers) come with the local engines:
 
 ```bash
-pip install "abstractcore[embeddings]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 Then import from the embeddings module:
@@ -3128,10 +3079,10 @@ No. The server is optional and is mainly for:
 - exposing one OpenAI-compatible `/v1` endpoint that can route to multiple providers/models
 - integrating with OpenAI-compatible clients and agentic CLIs
 
-Install and run:
+It is part of the light install. Run:
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore
 abstractcore serve        # open the printed link for the web console
 ```
 
@@ -3216,9 +3167,9 @@ Understanding common pitfalls helps prevent issues before they occur.
    - *Quick Fix*: Use `@tool` decorator and handle tool calls properly
    - See: [Tool Calls Not Working](docs/troubleshooting.md#issue-tool-calls-not-working)
 
-3. **Missing provider extras**
+3. **Missing local engines or an outdated install**
    - *Symptom*: `ModuleNotFoundError` for providers
-   - *Quick Fix*: Install provider-specific packages with `pip install "abstractcore[provider]"`
+   - *Quick Fix*: `pip install -U abstractcore` for remote providers; `pip install "abstractcore[apple]"` or `pip install "abstractcore[gpu]"` for MLX, vLLM and HuggingFace
    - See: [ModuleNotFoundError](docs/troubleshooting.md#issue-modulenotfounderror)
 
 4. **LM Studio server not enabled**
@@ -3426,19 +3377,13 @@ ModuleNotFoundError: No module named 'openai'
 
 **Solutions:**
 ```bash
-# Install AbstractCore
-pip install abstractcore
+# Light: OpenAI, Anthropic, OpenRouter, Portkey, Ollama, LM Studio, a vLLM server,
+# any OpenAI-compatible endpoint (upgrade an older install that lacks a provider SDK)
+pip install -U abstractcore
 
-# Install hosted SDKs or a specific provider
-pip install "abstractcore[remote]"
-pip install "abstractcore[openai]"
-pip install "abstractcore[anthropic]"
-# Local OpenAI-compatible servers and gateways (Ollama, LMStudio, OpenRouter,
-# Portkey, llama.cpp, ...) work with the core install.
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
+# Local engines (MLX, vLLM in-process, HuggingFace/GGUF)
+pip install "abstractcore[apple]"    # Apple silicon
+pip install "abstractcore[gpu]"      # NVIDIA / AMD
 
 # Verify installation
 pip list | grep abstract
@@ -3461,12 +3406,9 @@ source .venv/bin/activate  # Linux/Mac
 
 # Fresh install
 pip install --upgrade pip
-pip install "abstractcore[remote,tools,media]"  # API-first app
-# or: pip install "abstractcore[all-apple]"     # Apple Silicon local stack
-# or: pip install "abstractcore[all-gpu]"       # NVIDIA GPU local stack
-
-# If still failing, try one provider at a time
-pip install "abstractcore[openai]"
+pip install abstractcore                  # light (remote providers)
+# or: pip install "abstractcore[apple]"   # Apple silicon local engines
+# or: pip install "abstractcore[gpu]"     # NVIDIA / AMD local engines
 ```
 
 ---
@@ -4213,7 +4155,7 @@ cat debug_report.txt
 
 | Error | Meaning | Solution |
 |-------|---------|----------|
-| `ModuleNotFoundError` | Package not installed | `pip install abstractcore` (then add provider extras as needed) |
+| `ModuleNotFoundError` | Package not installed | `pip install -U abstractcore`, or `abstractcore[apple]` / `abstractcore[gpu]` for local engines |
 | `Authentication Error` | Invalid API key | Check API key environment variable |
 | `Connection refused` | Service not running | Start Ollama/LMStudio/server |
 | `LM Studio connection failed` | LM Studio server not enabled | Enable "Status: Running" toggle in LM Studio GUI |
@@ -4282,7 +4224,7 @@ Create a provider instance:
 ```python
 from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")  # requires: pip install "abstractcore[openai]"
+llm = create_llm("openai", model="gpt-4o-mini")  # light install; set OPENAI_API_KEY
 resp = llm.generate("Hello!")
 print(resp.content)
 ```
@@ -4325,7 +4267,7 @@ Keep conversation state:
 ```python
 from abstractcore import BasicSession, create_llm
 
-session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # requires: abstractcore[anthropic]
+session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # light install
 print(session.generate("Give me 3 name ideas.").content)
 print(session.generate("Pick the best one.").content)
 ```
@@ -4337,7 +4279,7 @@ For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files
 ```python
 from abstractcore import CachedSession, create_llm
 
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[mlx]
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[apple]
 session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
 session.attach_files(["/path/to/large_context.md"])
 print(session.generate("Summarize the attached file.").content)
@@ -4435,7 +4377,7 @@ matrix.
 
 Supported providers:
 - `ollama`: pulls via the Ollama HTTP API (`/api/pull`)
-- `huggingface` / `mlx`: downloads from HuggingFace Hub (requires `pip install "abstractcore[huggingface]"`; pass `token=` for gated models)
+- `huggingface` / `mlx`: downloads from HuggingFace Hub (requires `abstractcore[apple]` or `abstractcore[gpu]`; pass `token=` for gated models)
 
 Example:
 
@@ -4492,13 +4434,9 @@ print(resp.tool_calls)
 
 See **[Tool Calling](docs/tool-calling.md)** and **[Tool Syntax Rewriting](docs/tool-syntax-rewriting.md)**.
 
-### Built-in tools (optional)
+### Built-in tools
 
-If you want a ready-made toolset (web + filesystem helpers), install:
-
-```bash
-pip install "abstractcore[tools]"
-```
+The light install includes a ready-made toolset (web + filesystem helpers).
 
 Then import from `abstractcore.tools.common_tools` (for example `web_search`, `skim_websearch`, `skim_url`, `fetch_url`). See **[Tool Calling](docs/tool-calling.md)** for usage patterns and when to use `skim_*` vs `fetch_*`.
 
@@ -4523,13 +4461,7 @@ See **[Structured Output](docs/structured-output.md)**.
 
 ## Media input
 
-Media handling is opt-in:
-
-```bash
-pip install "abstractcore[media]"
-```
-
-Then pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeline). Media behavior is **policy-driven**:
+Media handling is part of the light install. Pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeline). Media behavior is **policy-driven**:
 
 - Images: use a vision-capable model, or configure vision fallback (caption → inject short observations).
 - Video: controlled by `video_policy` (native when supported; otherwise frame sampling via `ffmpeg` + vision handling).
@@ -4539,15 +4471,9 @@ See **[Media Handling](docs/media-handling-system.md)**, **[Vision Capabilities]
 
 ## Generated media output
 
-Install the relevant optional plugin first:
-
-```bash
-pip install "abstractcore[vision]"  # image/video generation/edit
-pip install "abstractcore[voice]"   # TTS/STT/voice clone when backend supports it
-pip install "abstractcore[music]"   # text-to-music via abstractmusic
-```
-
-Then use `output=...` for simple media-generation tasks:
+The light install includes the vision, voice and music plugins with their remote backends; local
+image/video, voice and music engines come with `abstractcore[apple]` or `abstractcore[gpu]`.
+Use `output=...` for simple media-generation tasks:
 
 ```python
 # Text-only generate remains unchanged.
@@ -4672,7 +4598,7 @@ rows = gateway_version_rows({"abstractgateway": "0.4.2", "abstractframework": "0
 If you want an OpenAI-compatible `/v1` gateway, install and run the server:
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore
 abstractcore serve
 ```
 
@@ -6929,7 +6855,7 @@ def search_database(query: str, table: str = "users") -> str:
 
 ### Built-in Tools
 
-AbstractCore includes a comprehensive set of ready-to-use tools in `abstractcore.tools.common_tools` (requires `pip install "abstractcore[tools]"`):
+AbstractCore includes a comprehensive set of ready-to-use tools in `abstractcore.tools.common_tools` (part of the light install):
 
 ```python
 from abstractcore.tools.common_tools import skim_url, fetch_url, search_files, read_file, list_files
@@ -6963,7 +6889,7 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 - `web_search` - Search the web using DuckDuckGo. See [Web and Document Tools](docs/web-tools.md).
 - `skim_websearch` - Smaller, optionally keyword-filtered search result list. See [Web and Document Tools](docs/web-tools.md).
 - `execute_command` - Execute shell commands safely with security controls
-- `browser_probe` - Render a URL or local HTML file in a **headless browser** (Playwright) and verify it actually DISPLAYS — the blank-page class that passes `read_file` review (an agent writes an HTML/JS app, the source looks right, the page renders empty). Returns a `PASS`/`FAIL` verdict with navigation outcome, HTTP status, `readyState`, title, visible-text stats, per-check results (`require_nonblank`, `expect_selector`, `expect_text`), captured console errors + uncaught exceptions (a page can render and still be broken), and an optional screenshot path to feed `analyze_media` for a visual pass. Runs in a worker subprocess with a hard wall-clock kill (never hangs on an infinite-JS-loop page, never leaks a browser); readiness is a content signal, never `networkidle` (refused with teaching) or `sleep`. Local `file://` targets **block outbound network by default** (a generated page must not phone home; blocked requests are reported) and — a browser limitation the report detects and flags — **cannot load ES modules (`<script type="module">`) or `fetch()`** (CORS on the `null` origin), so a modern module/fetch app renders empty as a file: serve it (e.g. `python -m http.server`) and probe the `http://` URL. Requires the separate **`browser`** extra, NOT `[tools]`: `pip install "abstractcore[browser]"` then `python -m playwright install --only-shell chromium` (Linux also needs `python -m playwright install --with-deps chromium`); an absent dependency returns an actionable two-step install hint, never a traceback.
+- `browser_probe` - Render a URL or local HTML file in a **headless browser** (Playwright) and verify it actually DISPLAYS — the blank-page class that passes `read_file` review (an agent writes an HTML/JS app, the source looks right, the page renders empty). Returns a `PASS`/`FAIL` verdict with navigation outcome, HTTP status, `readyState`, title, visible-text stats, per-check results (`require_nonblank`, `expect_selector`, `expect_text`), captured console errors + uncaught exceptions (a page can render and still be broken), and an optional screenshot path to feed `analyze_media` for a visual pass. Runs in a worker subprocess with a hard wall-clock kill (never hangs on an infinite-JS-loop page, never leaks a browser); readiness is a content signal, never `networkidle` (refused with teaching) or `sleep`. Local `file://` targets **block outbound network by default** (a generated page must not phone home; blocked requests are reported) and — a browser limitation the report detects and flags — **cannot load ES modules (`<script type="module">`) or `fetch()`** (CORS on the `null` origin), so a modern module/fetch app renders empty as a file: serve it (e.g. `python -m http.server`) and probe the `http://` URL. Requires Playwright, which the light install does not include (`abstractcore[apple]` and `abstractcore[gpu]` do): `pip install playwright` then `python -m playwright install --only-shell chromium` (Linux also needs `python -m playwright install --with-deps chromium`); an absent dependency returns an actionable two-step install hint, never a traceback.
 - `analyze_media` - Answer a question about an image. Delegated sight: the session model's own vision when available, else the configured vision fallback. Returns bounded text — never raw image data into your context
 
 **`analyze_code` language coverage:**
@@ -8108,10 +8034,11 @@ fetch_url(url=..., render_js="always")  # always render; the static result is ke
 fetch_url(url=..., render_js="never")   # never launch a browser
 ```
 
-Rendering requires the optional browser extra:
+Rendering needs Playwright, which is never part of the light install (`abstractcore[apple]` and
+`abstractcore[gpu]` include it):
 
 ```bash
-pip install "abstractcore[browser]"
+pip install playwright                           # light install only
 python -m playwright install chromium            # full Chromium: what the fetch_url escalation prefers
 python -m playwright install --only-shell chromium  # smaller; used as a fallback if the full build is absent
 ```
@@ -8553,7 +8480,8 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 
 **Installation**:
 ```bash
-pip install "abstractcore[huggingface]"  # Includes Outlines automatically
+pip install "abstractcore[apple]"   # Apple silicon; includes Outlines
+pip install "abstractcore[gpu]"     # NVIDIA / AMD; includes Outlines
 ```
 
 **Characteristics**:
@@ -8602,7 +8530,7 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 
 **Installation**:
 ```bash
-pip install "abstractcore[mlx]"  # Includes Outlines automatically
+pip install "abstractcore[apple]"  # Includes Outlines automatically
 ```
 
 **Models**:
@@ -9299,13 +9227,13 @@ pytest tests/structured -q
 
 Some provider-specific tests require additional extras:
 
-- HuggingFace / Outlines: `pip install -e ".[huggingface]"`
-- MLX: `pip install -e ".[mlx]"` (macOS + Apple Silicon only)
+- MLX, HuggingFace / Outlines: `pip install -e ".[apple,test]"` (Apple silicon)
+- vLLM, HuggingFace / Outlines: `pip install -e ".[gpu,test]"` (NVIDIA / AMD)
 
-If you're installing from PyPI and just want the test dependencies:
+For the light install plus the test tooling:
 
 ```bash
-pip install "abstractcore[test]"
+pip install -e ".[test]"
 pytest -q
 ```
 
@@ -12969,7 +12897,7 @@ print(r.metadata["speculation"])
 
 ## Qwen3.8-Flash-Next on native MLX
 
-Install `abstractcore[mlx]` with MLX ≥0.32.2 and mlx-vlm ≥0.7.1. The `mlx`
+Install `abstractcore[apple]` with MLX ≥0.32.2 and mlx-vlm ≥0.7.1. The `mlx`
 provider executes locally in your Python process; no HTTP endpoint or oMLX
 installation is used.
 
@@ -13388,7 +13316,7 @@ results and the thinking opener match what the model was trained on; see
 [tool calling](docs/tool-calling.md#3-local-mlx-models-the-models-own-chat-template).
 
 For a source checkout, install the Apple provider stack with
-`pip install -e ".[mlx]"`. Released packages use `pip install -U "abstractcore[mlx]"`;
+`pip install -e ".[apple]"`. Released packages use `pip install -U "abstractcore[apple]"`;
 see the [changelog](CHANGELOG.md) for release availability.
 The native runtime requires MLX ≥0.32.2, mlx-lm ≥0.31.3 and mlx-vlm ≥0.7.1,<0.8.0.
 Download target and head weights explicitly before loading; AbstractCore's model
@@ -14056,7 +13984,8 @@ specific to prompt caching, memory blocs, tools, or structured output.
 
 ## Baseline Install
 
-`pip install "abstractcore[huggingface]"` installs the stable HuggingFace provider stack:
+`pip install "abstractcore[apple]"` (Apple silicon) and `pip install "abstractcore[gpu]"` (NVIDIA /
+AMD) install the stable HuggingFace provider stack:
 
 - `transformers`
 - `torch`
@@ -14071,10 +14000,8 @@ install every optional Transformers quantization runtime, because those runtimes
 platform-specific and can carry dependency pins that conflict with the rest of the local stack.
 Fresh installs resolve the newest compatible Transformers release allowed by AbstractCore's
 dependency range. Very new architectures such as Gemma4 require a recent Transformers build.
-Audio/voice capability extras use `abstractvoice>=0.13.0` without installing
-OmniVoice, torch, or torchaudio. Local OmniVoice engines are part of the
-explicit local aggregate profiles such as `abstractcore[all-apple]` and
-`abstractcore[all-gpu]`.
+The light install carries `abstractvoice>=0.13.0` without OmniVoice, torch, or torchaudio. Local
+OmniVoice engines come with `abstractcore[apple]` and `abstractcore[gpu]`.
 
 ## Quantized Transformers Checkpoints
 
@@ -14230,8 +14157,8 @@ AbstractCore should improve compatibility without making the default install fra
 - Add lightweight preflight checks from model config before loading large weights.
 - Fail with explicit model/runtime compatibility errors for known missing quantization runtimes.
 - Reject quantized loads that report missing base weights or unexpected packed weights.
-- Consider narrow optional extras later, such as `huggingface-awq`, `huggingface-gptq`, or
-  `huggingface-compressed-tensors`, only after dependency compatibility is verified.
+- Consider adding verified quantization runtimes (AWQ, GPTQ, compressed-tensors) to the `apple`
+  and `gpu` settings, only after dependency compatibility is verified.
 - Use official or trusted model owners for release proofs; treat unknown third-party quantized
   checkpoints as user-supplied compatibility targets, not AbstractCore proof targets.
 
@@ -15783,8 +15710,8 @@ abstractcore models download diffusers ACE-Step/acestep-v15-xl-turbo-diffusers
 ```
 
 faster-whisper downloads Whisper base on first use. AbstractMusic loads ACE-Step from the local
-Hugging Face cache only, so download it first. The engines install with
-`pip install "abstractcore[voice]"` and `pip install "abstractcore[music]"`.
+Hugging Face cache only, so download it first. Both engines are local: they install with
+`pip install "abstractcore[apple]"` (Apple silicon) or `pip install "abstractcore[gpu]"` (NVIDIA / AMD).
 
 ### Fit verdicts on this page
 
@@ -16078,7 +16005,7 @@ running anything. Commands come from a fixed table; nothing in them comes from a
 | MLX | `python -m pip install mlx-lm` into this Python environment | not supported | not supported |
 | llama.cpp | `python -m pip install llama-cpp-python` (Metal build); alternative `brew install llama.cpp` | same pip install (CPU unless `CMAKE_ARGS=-DGGML_CUDA=on`) | same pip install (needs a C/C++ compiler without a matching wheel); alternative `winget install --id ggml.llamacpp` |
 | vLLM | not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind `remote_only`) | NVIDIA GPU only: `python -m pip install vllm` | not supported (same reason) |
-| Hugging Face | `python -m pip install "abstractcore[huggingface]"` | same | same |
+| Hugging Face | Apple silicon: `python -m pip install "abstractcore[apple]"`; Intel Macs: `python -m pip install transformers torch huggingface_hub sentencepiece` | `python -m pip install "abstractcore[gpu]"` | `python -m pip install transformers torch huggingface_hub sentencepiece` |
 
 Python-package installs target the interpreter running AbstractCore. When that environment has
 no `pip` (a `uv` virtual environment), the plan uses
@@ -16591,8 +16518,8 @@ configured `input.voice` capability route as the speech-to-text fallback. If
 text-only models instead of silently choosing an installed STT backend.
 
 ```bash
-# STT fallback requires abstractvoice
-pip install "abstractcore[voice]"
+# A local STT engine (faster-whisper) comes with the local engines
+pip install "abstractcore[apple]"   # or "abstractcore[gpu]" on NVIDIA / AMD
 
 # Select the STT route used by audio_policy=auto
 abstractcore config set-default input.voice \
@@ -17964,22 +17891,24 @@ AbstractCore is **production-ready LLM infrastructure**. It provides a unified, 
 - **Simplicity over complexity**
 - **Provider agnostic**
 
-## Optional capability plugins (voice/audio/vision/music)
+## Capability plugins (voice/audio/vision/music/3D)
 
-AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in **optional packages** and are exposed through the capability plugin layer:
+Deterministic modality APIs (STT/TTS, generative vision, music, 3D) live in separate packages and
+are exposed through the capability plugin layer. The light install (`pip install abstractcore`)
+includes these plugins with their remote backends:
 
-- Install `abstractcore[voice]` → `llm.voice` / `llm.audio` via `abstractvoice` (TTS/STT)
-- Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, image upscaling, text→video, image→video, provider model discovery, and provider adapter discovery)
-- Install `abstractcore[music]` → `llm.music` for text→music through `abstractmusic`
-- Install `abstractcore[scene3d]` → `llm.scene3d` for text→3D and image→3D through `abstract3d`
-- Install `abstractcamera` → `llm.camera` for real-camera piloting (webcams and tethered bodies)
+- `abstractvoice` → `llm.voice` / `llm.audio` (TTS/STT)
+- `abstractvision` → `llm.vision` (text→image, image→image, image upscaling, text→video, image→video, provider model discovery, and provider adapter discovery)
+- `abstractmusic` → `llm.music` for text→music (Python 3.10+)
+- `abstract3d` → `llm.scene3d` for text→3D and image→3D (Python 3.10+)
+
+Their local engines come with `abstractcore[apple]` or `abstractcore[gpu]`. One plugin is a
+separate package: install `abstractcamera` for `llm.camera` (real-camera piloting of webcams and
+tethered bodies).
 
 ```bash
-pip install "abstractcore[voice]"
-pip install "abstractcore[vision]"
-pip install "abstractcore[music]"
-pip install "abstractcore[scene3d]"
-pip install "abstractcamera"
+pip install abstractcore      # voice, vision, music and 3D plugins
+pip install abstractcamera    # camera plugin
 ```
 
 `abstract3d` and `abstractcamera` register through the same
@@ -17990,9 +17919,8 @@ than a silent stub.
 
 `abstractvoice` 0.11.0+ can install its base AbstractCore plugin path on
 Python 3.9 without OmniVoice, torch, or torchaudio. Python 3.10+ is
-recommended. Local voice engines and clone backends are installed through
-explicit local aggregate profiles such as `abstractcore[all-apple]` and
-`abstractcore[all-gpu]`; AEC requires Python 3.11+.
+recommended. Local voice engines and clone backends come with
+`abstractcore[apple]` or `abstractcore[gpu]`; AEC requires Python 3.11+.
 
 `abstractvoice` 0.11.0 adds the local Qwen3-TTS engine
 (`pip install "abstractvoice[qwen3-tts]"`, Python 3.10+): preset speakers
@@ -18917,7 +18845,7 @@ print(response.content)
 
 Glyph compression renders long text into images for vision-capable models to reduce effective token usage (often 3–4x on long text; depends on content/model).
 
-Requires `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` if you want PDF/Office text extraction).
+Works with the light install (`pip install abstractcore`), including PDF/Office text extraction.
 
 ### Automatic Compression with Ollama
 
@@ -20686,7 +20614,7 @@ AbstractCore is best understood as an **LLM I/O layer**:
 - 10 registered provider/backend adapters: OpenAI, Anthropic, Ollama, LM Studio, MLX, HuggingFace, vLLM, OpenAI-compatible, OpenRouter, Portkey
 - about 79k physical Python lines in the package source
 - 225 model capability entries and 51 architecture format entries
-- a default install with only `pydantic` and `httpx`; heavy features are optional extras
+- three install settings: a light default that runs every remote provider, and `apple` / `gpu` for local engines
 - offline-capable local operation through explicit model setup, local server backends, and cache/local-files-only behavior for in-process local runtimes
 - remote operation through hosted APIs, hosted gateways, and arbitrary OpenAI-compatible endpoints
 - tool-call normalization across native and prompted formats
@@ -21063,7 +20991,7 @@ except PDFProcessingError:
 
 ### Documents
 - **Text Files**: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis
-- **PDF**: Text and metadata extraction with pypdf by default. Optional PyMuPDF4LLM layout extraction requires the explicit `abstractcore[pdf-pymupdf-commercial]` extra after license review.
+- **PDF**: Text and metadata extraction with pypdf by default. Optional PyMuPDF4LLM layout extraction is an explicit opt-in after license review: `pip install pymupdf4llm pymupdf-layout` (see [Installation](docs/installation.md#optional-pdf-extraction-with-pymupdf)).
 - **Office**: DOCX, XLSX, PPTX via Unstructured (when installed), with best-effort extraction
   - **Word**: section/paragraph extraction
   - **Excel**: sheet-by-sheet extraction
@@ -21081,7 +21009,7 @@ Transparency:
 
 Requirements:
 - **Native audio** requires an audio-capable model.
-- **STT fallback** requires installing an STT capability plugin (typically `pip install "abstractcore[voice]"`) and using `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
+- **STT fallback** uses the AbstractVoice capability plugin (part of the light install) and `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
 
 ### Video (policy-driven; native or frames fallback)
 - **Formats**: common `video/*` types as attachments via `media=[...]`
@@ -21090,7 +21018,7 @@ Requirements:
 
 Requirements:
 - Frame sampling fallback requires **`ffmpeg`/`ffprobe`** available on `PATH`.
-- For the sampled-frame path, you also need **image/vision handling**: either a vision-capable main model or configured vision fallback, and (for local frame attachments) `pip install "abstractcore[media]"` so Pillow-based image processing is available.
+- For the sampled-frame path, you also need **image/vision handling**: either a vision-capable main model or configured vision fallback, and Pillow-based image processing (part of the light install) for local frame attachments.
 
 ### Processing Features
 - **Intelligent Detection**: Automatic file type recognition and processor selection
@@ -21253,7 +21181,7 @@ response = llm.generate(
 
 ### CLI Usage
 
-These examples work in AbstractCore CLI when `abstractcore[media]` is installed and your selected provider/model supports the requested media (or you configured fallbacks):
+These examples work in AbstractCore CLI with any install setting when your selected provider/model supports the requested media (or you configured fallbacks):
 
 ```bash
 # PDF Analysis - Working
@@ -21302,7 +21230,7 @@ anthropic_response = anthropic_llm.generate(prompt, media=media_files)
 
 ```python
 # Real-time streaming responses with media
-llm = create_llm("openai", model="gpt-4o")  # requires: pip install "abstractcore[openai]"
+llm = create_llm("openai", model="gpt-4o")  # light install
 
 for chunk in llm.generate(
     "Describe this image in detail",
@@ -21583,27 +21511,13 @@ response = llama_llm.generate(
 
 ## Installation
 
-### Basic Installation
+Media handling (images, text, PDF, Office documents) is part of the light install:
 
 ```bash
-# Core media handling (images, text, basic documents)
-pip install "abstractcore[media]"
+pip install abstractcore
 ```
 
-### Full Installation
-
-```bash
-# Media features (PDF + Office docs) are covered by `abstractcore[media]`.
-# Compose only what your app needs:
-pip install "abstractcore[remote,media,tools]"
-
-# Or choose a turnkey local-runtime install:
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
-```
-
-Advanced: If you prefer to install only the pieces you need (instead of `abstractcore[media]`),
-these are the main libraries AbstractCore uses:
+`abstractcore[apple]` and `abstractcore[gpu]` include it too. The main libraries AbstractCore uses:
 
 - `Pillow` (images)
 - `pypdf` (permissive PDF text/metadata extraction)
@@ -21612,7 +21526,7 @@ these are the main libraries AbstractCore uses:
 
 Optional commercial-license PDF backend:
 
-- `pymupdf4llm` + `pymupdf-layout` via `abstractcore[pdf-pymupdf-commercial]`
+- `pymupdf4llm` + `pymupdf-layout`, installed directly: `pip install pymupdf4llm pymupdf-layout`
 
 ## Troubleshooting
 
@@ -21625,7 +21539,7 @@ try:
     response = llm.generate("Test", media=["test.jpg"])
 except ImportError as e:
     print(f"Missing dependency: {e}")
-    print('Install with: pip install "abstractcore[media]"')
+    print('Repair the light install with: pip install -U abstractcore')
 ```
 
 **Vision model not detecting images:**
@@ -21720,12 +21634,11 @@ This document describes **vision as an input modality** in AbstractCore (images 
 
 ## Quick requirements
 
-- **Images**: install `pip install "abstractcore[media]"` and use either:
+- **Images**: the light install (`pip install abstractcore`) and either:
   - a **vision-capable model** (VLM/VL), or
   - a text-only model with **vision fallback** configured (`abstractcore --set-vision-provider PROVIDER MODEL`).
   - On Apple silicon, native image input on MLX checkpoints needs no extra step: `mlx-vlm`
-    ships with the MLX provider in `abstractcore[mlx]`, `[apple]`, `[all]`, `[all-apple]` and
-    `[full-dev]` (see [Native image input on the MLX provider](docs/vision-capabilities.md#1b-native-image-input-on-the-mlx-provider-apple-silicon)).
+    ships with the MLX provider in `abstractcore[apple]` (see [Native image input on the MLX provider](docs/vision-capabilities.md#1b-native-image-input-on-the-mlx-provider-apple-silicon)).
 - **Video**: native video input is model/provider dependent. For the portable frame-sampling path (`video_policy="frames_caption"` / `"auto"` fallback), you need:
   - `ffmpeg`/`ffprobe` available on `PATH`, and
   - image/vision handling (a vision-capable model or configured vision fallback).
@@ -21792,7 +21705,7 @@ If a sighted checkpoint still drops images with `mlx_vlm_not_installed`, the env
 missing half of a package set that is meant to arrive together — most often because the
 interpreter running the model is not the one that was installed into. Check with
 `<the-python-that-runs-the-model> -c "import mlx_vlm"` and repair with
-`pip install "abstractcore[mlx]"`.
+`pip install "abstractcore[apple]"`.
 
 ```python
 from abstractcore import create_llm
@@ -21887,7 +21800,7 @@ Creating/editing images and videos is a **deterministic capability** that can be
 1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`, `upscale_image`, `t2v`, `i2v`) or the unified `llm.generate(..., output=...)` surface. Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled, and MLX-Gen local models are selected by exact repo id. Install `abstractvision[mlx-gen]` when you need the local MLX-Gen runtime.
    See: `abstractvision/docs/reference/abstractcore-integration.md`
 
-2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` and `/v1/videos/*` as OpenAI-compatible media routes. Local Diffusers/sdcpp/MLX-Gen backends remain available when `abstractvision` and the needed backend runtime extra are installed in the server environment; `abstractcore[server,vision]` installs the plugin API surface, while `abstractvision[mlx-gen]` or aggregate profiles such as `abstractcore[all-apple]` provide local MLX-Gen execution. Omit `model` only when the server has a configured default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="mlx-gen/AbstractFramework/qwen-image-2512-4bit"`, `model="mlx-gen/AbstractFramework/seedvr2-3b-8bit"`, `model="mlx-gen/AbstractFramework/seedvr2-7b-4bit"`, `model="mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream media endpoint.
+2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` and `/v1/videos/*` as OpenAI-compatible media routes. The light install carries the AbstractVision plugin API surface; local Diffusers/sdcpp/MLX-Gen execution comes with `abstractcore[apple]` (Apple silicon, including MLX-Gen) or `abstractcore[gpu]` (NVIDIA / AMD) in the server environment. Omit `model` only when the server has a configured default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="mlx-gen/AbstractFramework/qwen-image-2512-4bit"`, `model="mlx-gen/AbstractFramework/seedvr2-3b-8bit"`, `model="mlx-gen/AbstractFramework/seedvr2-7b-4bit"`, `model="mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream media endpoint.
    See: `docs/server.md`
 
 AbstractVision remains the truth owner for route-specific model and adapter
@@ -22031,7 +21944,7 @@ This separation keeps the default `abstractcore` install dependency-light: remot
 
 **Glyph** is a visual-text compression system integrated into AbstractCore. It renders long text into optimized images and processes them with Vision-Language Models (VLMs) to reduce effective token usage for long-document workflows.
 
-Requires `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` if you want PDF/Office text extraction).
+Works with the light install (`pip install abstractcore`), including PDF/Office text extraction.
 
 ## What is Glyph?
 
@@ -22634,8 +22547,8 @@ AbstractCore's Vision Compression system transforms long text documents into vis
 ### Installation
 
 ```bash
-# Glyph compression (Pillow renderer)
-pip install "abstractcore[compression]"
+# Glyph compression (Pillow renderer) is part of the light install
+pip install abstractcore
 ```
 
 Optional (experimental): Direct PDF→image conversion requires `pdf2image` and its system dependencies (Poppler).
@@ -23258,8 +23171,12 @@ AbstractCore includes built-in support for vector embeddings with **7 providers*
 ### Installation
 
 ```bash
-# Install with embeddings support
-pip install "abstractcore[embeddings]"
+# Remote embedding providers (Ollama, LM Studio, OpenAI, OpenRouter, Portkey, ...) work with the light install
+pip install abstractcore
+
+# Local embedding models (such as the default all-MiniLM-L6-v2) come with the local engines
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 ### First Embeddings
@@ -23883,7 +23800,7 @@ If you prefer HTTP endpoints over Python code, use the AbstractCore server:
 
 ```bash
 # Start the server
-pip install "abstractcore[server]"
+pip install abstractcore
 abstractcore serve
 ```
 
@@ -24084,7 +24001,7 @@ route away from the provider's default API host.
 On your own machine:
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore
 abstractcore serve
 # AbstractCore server
 #   Config dir: ~/.abstractcore/config
@@ -24662,7 +24579,7 @@ Endpoints:
 - `POST /v1/images/edits`
 - `POST /{provider}/v1/images/edits`
 
-Remote OpenAI-compatible image proxying is included in `abstractcore[server]`
+Remote OpenAI-compatible image proxying is part of the light install
 and is enabled by setting `OPENAI_BASE_URL`.
 The synchronous image routes use the same internal `generate(..., output="image")`
 dispatcher as the Python API, then serialize the result back to the
@@ -24670,13 +24587,14 @@ OpenAI-compatible `b64_json` response shape.
 
 Install for remote image proxying:
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore
 ```
 
-Install local image backends only when you want the server to load Diffusers,
+Install the local engines only when you want the server to load Diffusers,
 MLX-Gen, or stable-diffusion.cpp models itself:
 ```bash
-pip install "abstractcore[server,vision]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 Use provider/model-style image ids:
@@ -24976,25 +24894,17 @@ request gets the saved key, read on every request: a rotated key is used on
 the next call and a removed one is no longer sent. Local engines (Supertonic,
 Piper, faster-whisper, ...) never receive a key.
 
-Install for remote audio:
+Remote audio and plugin-backed routing both work with the light install, which
+includes the AbstractVoice plugin:
 ```bash
-pip install "abstractcore[server,remote]"
-```
-
-Install for plugin-backed routing:
-```bash
-pip install "abstractcore[server]"
-pip install "abstractcore[voice]"
-pip install "abstractcore[music]"
+pip install abstractcore
 ```
 
 Notes:
-- `abstractvoice` 0.11.0+ can install the base plugin path on Python 3.9
-  without OmniVoice, torch, or torchaudio. Python 3.10+ is recommended. Use
-  explicit local aggregate profiles such as `abstractcore[all-apple]` or
-  `abstractcore[all-gpu]` when you want local voice engines; AEC requires
-  Python 3.11+.
-- `/v1/audio/transcriptions` requires `python-multipart` for form parsing (included in the server extra).
+- The light install carries AbstractVoice without OmniVoice, torch, or
+  torchaudio (Python 3.9+; 3.10+ recommended). Local voice engines come with
+  `abstractcore[apple]` or `abstractcore[gpu]`; AEC requires Python 3.11+.
+- `/v1/audio/transcriptions` parses forms with `python-multipart` (part of the light install).
 - Uploaded audio is limited by `ABSTRACTCORE_SERVER_AUDIO_MAX_BYTES` (default: 25 MB).
 
 `POST /v1/audio/transcriptions` multipart parameters:
@@ -25083,7 +24993,7 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 With `abstractmusic>=0.1.15`, the base install includes the remote ACE Music
 backend. Configure `ACEMUSIC_API_KEY` in the server environment, optionally set
 `ACEMUSIC_BASE_URL`, and use `provider="acemusic"` or the `/acemusic/v1/audio/music`
-path. Local ACE-Step/Diffusers routes remain opt-in AbstractMusic extras.
+path. Local ACE-Step/Diffusers routes come with `abstractcore[apple]` or `abstractcore[gpu]`.
 
 While the server holds a music provider key (`ACEMUSIC_API_KEY` or `ELEVENLABS_API_KEY`, in its
 environment or as the `music_acemusic_api_key` / `music_elevenlabs_api_key` route option), a
@@ -26294,24 +26204,19 @@ PyPI release succeeds:
 ghcr.io/lpalbou/abstractcore-server:<version>
 ```
 
-The image is built from PyPI, not from the repository checkout, and installs:
+The image is built from PyPI, not from the repository checkout, and installs the
+light setting:
 
 ```bash
-abstractcore[server,remote,media,tokens,compression]==<version>
+abstractcore==<version>
 ```
 
 It includes remote chat/responses, remote embeddings, remote STT/TTS routing,
-remote OpenAI-compatible image proxying, server dependencies, media parsing,
-token counting, and compression helpers. It intentionally does not include
-AbstractCore local LLM runtimes (`vllm`, `mlx`, `huggingface`), local embedding
-dependencies (`sentence-transformers`), or optional capability plugin entry
-points. Remote image/audio OpenAI-compatible endpoint routes still work without
-those plugins. Build a custom image with
-`abstractcore[server,remote,media,tokens,compression,voice,vision]` when you
-want plugin-backed media catalogs or plugin default routes; these capability
-extras stay remote-light. Add explicit local aggregate profiles such as
-`abstractcore[all-apple]` or `abstractcore[all-gpu]` only when you want local
-native inference engines.
+remote OpenAI-compatible image proxying, the server, media parsing, token
+counting, compression helpers, and the voice/vision/music plugins with their
+remote backends. It does not include local engines (vLLM, MLX, transformers,
+`sentence-transformers`, local voice/image/music engines). Build a custom image
+on `abstractcore[gpu]` when you want local native inference engines.
 
 **Run:**
 ```bash
@@ -26582,7 +26487,7 @@ look and behave the same.
 ## Open the console
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore
 abstractcore serve
 # then open the printed link: http://127.0.0.1:8000/console#claim=...
 ```
@@ -26899,14 +26804,14 @@ Source: `abstractcore/endpoint/app.py` (entrypoint: `abstractcore-endpoint`).
 ## Install
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore            # the endpoint itself (light)
 ```
 
-Then install the provider extra you need:
+To host a local model in-process (MLX, HuggingFace/GGUF), install the local engines for your machine:
 
 ```bash
-pip install "abstractcore[mlx]"         # Apple Silicon local inference
-pip install "abstractcore[huggingface]" # Transformers / torch / llama-cpp-python (heavy)
+pip install "abstractcore[apple]"   # Apple silicon: MLX, HuggingFace/GGUF
+pip install "abstractcore[gpu]"     # NVIDIA / AMD: vLLM, HuggingFace/GGUF
 ```
 
 ## Run
@@ -27715,7 +27620,7 @@ The `summarizer` CLI provides direct terminal access for document summarization 
 ### Quick CLI Usage
 
 ```bash
-# Simple usage (after installing AbstractCore; add `pip install "abstractcore[media]"` for PDFs)
+# Simple usage (PDF and Office inputs work with the light install)
 summarizer document.pdf
 
 # With specific style and length
@@ -28317,20 +28222,19 @@ relationships = [item for item in result['@graph'] if item.get('@id', '').starts
 ## Installation & Setup
 
 ```bash
-# Install AbstractCore. The default Ollama path works with the core install.
+# Light install: the default Ollama path and every cloud provider work with it.
 pip install abstractcore
 
-# Optional turnkey local-runtime installs:
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
+# Or, for in-process local engines:
+pip install "abstractcore[apple]"    # Apple silicon: MLX, HF/GGUF, local media engines
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: vLLM, HF/GGUF, local media engines
 
 # Default model requires Ollama (free, runs locally)
 # 1. Install Ollama: https://ollama.com/
 # 2. Download model: ollama pull qwen3:4b-instruct-2507-q4_K_M
 # 3. Start Ollama service
 
-# Alternative: Use cloud providers
-pip install "abstractcore[remote]"
+# Alternative: use a cloud provider (set its API key; no extra install)
 ```
 
 ### Model Performance Recommendations
@@ -28506,7 +28410,7 @@ The `extractor` CLI provides direct terminal access for knowledge graph extracti
 ### Quick CLI Usage
 
 ```bash
-# Simple usage (after installing AbstractCore; add `pip install "abstractcore[media]"` for PDFs)
+# Simple usage (PDF and Office inputs work with the light install)
 extractor document.pdf
 
 # With specific format and focus
@@ -29022,20 +28926,19 @@ print(f"Criteria Details: {result_with_criteria['evaluation_criteria_details']}"
 ## Installation & Setup
 
 ```bash
-# Install AbstractCore. The default Ollama path works with the core install.
+# Light install: the default Ollama path and every cloud provider work with it.
 pip install abstractcore
 
-# Optional turnkey local-runtime installs:
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
+# Or, for in-process local engines:
+pip install "abstractcore[apple]"    # Apple silicon: MLX, HF/GGUF, local media engines
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: vLLM, HF/GGUF, local media engines
 
 # Default model requires Ollama (free, runs locally)
 # 1. Install Ollama: https://ollama.com/
 # 2. Download model: ollama pull qwen3:4b-instruct-2507-q4_K_M
 # 3. Start Ollama service
 
-# Alternative: Use cloud providers
-pip install "abstractcore[remote]"
+# Alternative: use a cloud provider (set its API key; no extra install)
 ```
 
 ### Model Performance Recommendations
@@ -29936,16 +29839,12 @@ Deception indicators are always included in the structured output schema.
 ## Install
 
 ```bash
-# Core (lightweight)
+# Light: every remote provider, plus PDF / Office inputs in the CLI
 pip install abstractcore
 
-# Provider extras (install only what you use)
-pip install "abstractcore[openai]"
-pip install "abstractcore[anthropic]"
-pip install "abstractcore[huggingface]"  # heavy (torch/transformers)
-
-# Optional: read PDFs / Office docs in the CLI
-pip install "abstractcore[media]"
+# Or, for in-process local engines (MLX / vLLM, HuggingFace/GGUF):
+pip install "abstractcore[apple]"    # Apple silicon
+pip install "abstractcore[gpu]"      # NVIDIA / AMD
 ```
 
 ## Quick start (Python)
@@ -29954,7 +29853,7 @@ pip install "abstractcore[media]"
 from abstractcore import create_llm
 from abstractcore.processing import BasicIntentAnalyzer, IntentContext, IntentDepth
 
-llm = create_llm("openai", model="gpt-4o-mini")  # requires `abstractcore[openai]`
+llm = create_llm("openai", model="gpt-4o-mini")  # light install
 analyzer = BasicIntentAnalyzer(llm)
 
 result = analyzer.analyze_intent(
@@ -30062,9 +29961,7 @@ BasicDeepSearch implements a state-of-the-art four-stage research pipeline:
 BasicDeepSearch relies on the built-in web tools (`web_search`, `fetch_url`).
 
 ```bash
-pip install "abstractcore[tools]"
-# plus any provider extras you use, e.g.:
-# pip install "abstractcore[openai]"
+pip install abstractcore   # the web tools and every remote provider are part of the light install
 ```
 
 ## CLI Usage
