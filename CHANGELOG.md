@@ -31,6 +31,21 @@ reports.
   followed a cached full host probe. The report's `before` is now what is on disk, and the result
   is written even when every route already matched.
 
+### Security
+- Email connections verify TLS (framework backlog 0992 WP0). `list_emails`, `read_email` and
+  `send_email` passed no SSL context to `imaplib.IMAP4_SSL`, `smtplib.SMTP_SSL` and
+  `SMTP.starttls()`, and on CPython 3.12 that default checks neither the certificate nor the host
+  name: anyone on the network path could read the password. Every connection now uses
+  `ssl.create_default_context()`; a failed check is refused before login, with the host, the reason
+  and the fix. There is no switch that turns verification off. A server signed by a private CA is
+  trusted with the new optional `ca_file` field of an account's `imap`/`smtp` block in the accounts
+  file (it adds that CA; the host name is still checked).
+- `password_env_var` is always the name of an environment variable. A value that did not look like
+  a variable name used to be read as the password itself; it is now refused (in the accounts file
+  when it loads, and at connection time for the environment/config account) with an error naming the
+  fix that never echoes the value. `list_email_accounts` no longer reports such a value as a set
+  password.
+
 ### Dependencies
 - Floors: `abstractvoice>=0.13.2` (PyAV held below 19, which faster-whisper 1.2.1 needs to decode
   audio files) and `abstractvision>=0.3.33` (Diffusers on CUDA falls back to sequential CPU offload

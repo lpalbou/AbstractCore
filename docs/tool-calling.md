@@ -235,6 +235,30 @@ Two properties are stated in the tool schemas and matter operationally:
   announces itself with a "new shell session" notice in the output so callers never
   assume state carried over.
 
+**Email tools (opt-in):**
+
+`abstractcore.tools.comms_tools` provides `list_email_accounts`, `list_emails`, `read_email`
+(IMAP) and `send_email` (SMTP) for the accounts the host configures (an accounts file named by
+`ABSTRACT_EMAIL_ACCOUNTS_CONFIG`, else the `email` section of the AbstractCore config). The model
+never chooses the account's server, sender or credentials. Security properties:
+
+- **Verified TLS on every connection.** IMAP (implicit TLS), SMTP over implicit TLS (port 465) and
+  SMTP with STARTTLS all use `ssl.create_default_context()`: the certificate chain and the host
+  name are checked, and a failure is refused before the password is sent. The error names the
+  host, the reason and the fix. There is no setting that turns verification off. A server signed by
+  a private CA (a self-hosted server, a local mail bridge) is trusted by adding `ca_file: <path to
+  the CA's PEM file>` to that account's `imap` or `smtp` block in the accounts file; it adds that CA
+  to the system trust store and still checks the host name.
+- **`password_env_var` is always the NAME of an environment variable** (letters, digits and
+  underscores). A value that is not a variable name is refused with an error naming the fix, and the
+  value is never echoed. Earlier versions read such a value as the password itself.
+- **Sending needs approval.** `send_email` carries the `model_controlled_destination` fact: in
+  AbstractRuntime hosts a call asks for approval unless every recipient is the registered user's own
+  address (the `send_email_recipient@v1` refiner). Automations do not auto-approve it either.
+
+Per-user accounts stored in settings, typed error classes and the full move away from environment
+variables are planned in the framework backlog (0992).
+
 **Suggested web workflow (agent-friendly):**
 1. `skim_websearch(...)` → get a small set of candidate URLs
 2. `skim_url(...)` → quickly decide what’s worth fetching

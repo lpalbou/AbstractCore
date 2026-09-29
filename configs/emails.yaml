@@ -7,6 +7,9 @@
 # environment variables via `${ENV_VAR}` interpolation.
 #
 # Secrets MUST stay in env vars referenced by `password_env_var`.
+# `password_env_var` is the NAME of that variable, never the password itself.
+# TLS certificates and host names are always verified. For a server signed by a
+# private CA, add `ca_file: /path/to/ca.pem` to its `imap`/`smtp` block.
 
 default_account: default
 

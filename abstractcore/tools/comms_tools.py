@@ -4,6 +4,9 @@ Design goals:
 - Durable-tool friendly: JSON-safe inputs/outputs; no callables persisted in run state.
 - Secrets-safe by default: resolve credentials from env vars at execution time (avoid ledger leaks).
 - Minimal dependencies: email uses stdlib (imaplib/smtplib/email); WhatsApp uses `requests` (already used by common tools).
+- Verified TLS only: every IMAP/SMTP connection passes an explicit `ssl.create_default_context()`
+  (certificate chain + host name checked). There is no switch that turns verification off; a server
+  signed by a private CA is trusted by naming that CA in the account's typed `ca_file` field.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import os
 from pathlib import Path
 import re
 import smtplib
+import ssl
 from typing import Any, Dict, List, Optional, Tuple
 
 from abstractcore.tools.core import tool
@@ -80,33 +84,67 @@ def _decode_mime_header(value: Optional[str]) -> str:
     return "".join(out).strip()
 
 
+_ENV_VAR_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _password_env_var_error(label: str) -> str:
+    return (
+        f"{label}: password_env_var must be the NAME of an environment variable (letters, digits and "
+        "underscores, not starting with a digit) that holds the password; the configured value is not a "
+        "variable name, so it is not used (a password is never read from this field). "
+        "Fix: put the password in an environment variable, e.g. EMAIL_PASSWORD, and set "
+        "password_env_var: EMAIL_PASSWORD."
+    )
+
+
 def _resolve_required_env(env_var: str, *, label: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Resolve a secret reference.
+    """Resolve a password from the environment variable NAMED by `env_var`.
 
-    The input is usually an env var *name* (e.g. EMAIL_PASSWORD). For pragmatic operator ergonomics,
-    we also accept literal secrets (common when the "env var name" contains characters that shells
-    can't export, or when operators intentionally place the secret directly in the reference).
+    Typed and explicit (backlog 0992 WP0): the field is always a variable name, never the secret
+    itself. Earlier versions treated any value that did not look like a variable name as the
+    password, so one string could be read as either; that fallback is gone.
 
-    Resolution rules:
-    1) If an env var exists with that name, use its value.
-    2) If the reference looks like a conventional env var identifier, fail fast (clear config error).
-    3) Otherwise treat the reference itself as the secret.
+    - `env_var` is not a variable name → error naming the fix (the value is never echoed: it may be
+      a password pasted into the wrong field).
+    - the variable is unset or blank → error naming the variable.
     """
     ref = str(env_var or "").strip()
     if not ref:
         return None, f"Missing {label} env var name"
+    if not _ENV_VAR_NAME_RE.fullmatch(ref):
+        return None, _password_env_var_error(label)
 
     value = os.getenv(ref)
     if value is not None and str(value).strip():
         return str(value), None
+    return None, f"Missing env var {ref} for {label}"
 
-    # If it looks like a normal env var name, missing should be an error (don't silently use a name as a password).
-    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ref):
-        return None, f"Missing env var {ref} for {label}"
 
-    # Otherwise: treat the reference itself as the secret.
-    return ref, None
+def _email_tls_context(ca_file: str = "") -> ssl.SSLContext:
+    """The TLS context of every IMAP/SMTP connection: certificate chain and host name verified.
+
+    `ssl.create_default_context()` checks both. Without an explicit context, `imaplib.IMAP4_SSL`,
+    `smtplib.SMTP_SSL` and `SMTP.starttls()` fall back to `ssl._create_stdlib_context()`, which on
+    CPython 3.12 verifies nothing. `ca_file` (the account's typed `ca_file` field) ADDS a CA to the
+    system trust store for servers signed by a private CA; it never relaxes verification.
+    """
+    ctx = ssl.create_default_context()
+    if ca_file:
+        ctx.load_verify_locations(cafile=os.path.expanduser(ca_file))
+    return ctx
+
+
+def _connection_error(exc: BaseException, *, protocol: str, host: str, port: int) -> str:
+    """Name the cause and the fix for a failed mail connection (typed on the exception class)."""
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        reason = str(getattr(exc, "verify_message", "") or exc)
+        return (
+            f"{protocol} TLS certificate verification failed for {host}:{port} ({reason}). "
+            "The connection was refused because the server's certificate is not trusted for this host name. "
+            "Fix: use the host name printed on the provider's certificate (the one its setup guide gives); "
+            "for a server signed by a private CA, set the account's ca_file to that CA's PEM file."
+        )
+    return str(exc)
 
 
 def _env_str(name: str) -> Optional[str]:
@@ -256,6 +294,7 @@ class _EmailImapConfig:
     username: str
     password_env_var: str
     mailbox: str
+    ca_file: str = ""
 
 
 @dataclass(frozen=True)
@@ -267,6 +306,7 @@ class _EmailSmtpConfig:
     use_starttls: bool
     from_email: str
     reply_to: str
+    ca_file: str = ""
 
 
 @dataclass(frozen=True)
@@ -397,6 +437,7 @@ def _parse_email_imap_config(raw: Any) -> Tuple[Optional[_EmailImapConfig], Opti
     port = _as_int(raw.get("port") or raw.get("imap_port")) or 993
     password_env_var = _as_str(raw.get("password_env_var") or raw.get("passwordEnvVar")) or "EMAIL_PASSWORD"
     mailbox = _as_str(raw.get("mailbox") or raw.get("folder")) or "INBOX"
+    ca_file = _as_str(raw.get("ca_file"))
 
     if not host:
         return None, "imap.host is required"
@@ -406,6 +447,10 @@ def _parse_email_imap_config(raw: Any) -> Tuple[Optional[_EmailImapConfig], Opti
         return None, "imap.port must be a positive integer"
     if not password_env_var:
         return None, "imap.password_env_var is required"
+    if not _ENV_VAR_NAME_RE.fullmatch(password_env_var):
+        return None, _password_env_var_error("imap")
+    if ca_file and not Path(os.path.expanduser(ca_file)).is_file():
+        return None, f"imap.ca_file not found: {ca_file}"
 
     return (
         _EmailImapConfig(
@@ -414,6 +459,7 @@ def _parse_email_imap_config(raw: Any) -> Tuple[Optional[_EmailImapConfig], Opti
             username=username,
             password_env_var=password_env_var,
             mailbox=mailbox,
+            ca_file=ca_file,
         ),
         None,
     )
@@ -438,6 +484,7 @@ def _parse_email_smtp_config(raw: Any) -> Tuple[Optional[_EmailSmtpConfig], Opti
 
     from_email = _as_str(raw.get("from_email") or raw.get("from"))
     reply_to = _as_str(raw.get("reply_to") or raw.get("replyTo"))
+    ca_file = _as_str(raw.get("ca_file"))
 
     if not host:
         return None, "smtp.host is required"
@@ -447,6 +494,10 @@ def _parse_email_smtp_config(raw: Any) -> Tuple[Optional[_EmailSmtpConfig], Opti
         return None, "smtp.port must be a positive integer"
     if not password_env_var:
         return None, "smtp.password_env_var is required"
+    if not _ENV_VAR_NAME_RE.fullmatch(password_env_var):
+        return None, _password_env_var_error("smtp")
+    if ca_file and not Path(os.path.expanduser(ca_file)).is_file():
+        return None, f"smtp.ca_file not found: {ca_file}"
 
     return (
         _EmailSmtpConfig(
@@ -457,6 +508,7 @@ def _parse_email_smtp_config(raw: Any) -> Tuple[Optional[_EmailSmtpConfig], Opti
             use_starttls=bool(use_starttls),
             from_email=from_email,
             reply_to=reply_to,
+            ca_file=ca_file,
         ),
         None,
     )
@@ -791,10 +843,10 @@ def list_email_accounts() -> Dict[str, Any]:
         ref = str(secret_ref or "").strip()
         if not ref:
             return False
+        if not _ENV_VAR_NAME_RE.fullmatch(ref):
+            return False  # not a variable name: never read as a password (see _resolve_required_env)
         v = os.getenv(ref)
-        if v is not None and str(v).strip():
-            return True
-        return re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ref) is None
+        return v is not None and bool(str(v).strip())
 
     for name in sorted(cfg.accounts.keys()):
         acc = cfg.accounts.get(name)
@@ -928,7 +980,7 @@ def send_email(
             client: Any = smtplib.SMTP(smtp_cfg.host, int(smtp_cfg.port), timeout=timeout)
             try:
                 client.ehlo()
-                client.starttls()
+                client.starttls(context=_email_tls_context(smtp_cfg.ca_file))
                 client.ehlo()
                 client.login(smtp_cfg.username, password)
                 client.send_message(msg, from_addr=sender, to_addrs=to_list + cc_list + bcc_list)
@@ -938,7 +990,9 @@ def send_email(
                 except Exception:
                     pass
         else:
-            client2: Any = smtplib.SMTP_SSL(smtp_cfg.host, int(smtp_cfg.port), timeout=timeout)
+            client2: Any = smtplib.SMTP_SSL(
+                smtp_cfg.host, int(smtp_cfg.port), timeout=timeout, context=_email_tls_context(smtp_cfg.ca_file)
+            )
             try:
                 client2.login(smtp_cfg.username, password)
                 client2.send_message(msg, from_addr=sender, to_addrs=to_list + cc_list + bcc_list)
@@ -975,7 +1029,7 @@ def send_email(
         return {
             "success": False,
             "account": acc.name,
-            "error": str(e),
+            "error": _connection_error(e, protocol="SMTP", host=smtp_cfg.host, port=int(smtp_cfg.port)),
             "rendered": (
                 f"Failed to send email (account={acc.name}) from {sender} to {', '.join(to_list + cc_list + bcc_list)} "
                 f"subject={subject_s!r}"
@@ -1056,7 +1110,9 @@ def list_emails(
         # host used to pin the tool for the OS TCP default (~1-2 min) because the socket
         # timeout was set only AFTER the constructor had already connected. The SMTP lane
         # already passes timeout=; IMAP now matches (imaplib supports it on Python >= 3.9).
-        client = imaplib.IMAP4_SSL(imap_cfg.host, int(imap_cfg.port), timeout=timeout)
+        client = imaplib.IMAP4_SSL(
+            imap_cfg.host, int(imap_cfg.port), ssl_context=_email_tls_context(imap_cfg.ca_file), timeout=timeout
+        )
         try:
             if getattr(client, "sock", None) is not None:
                 client.sock.settimeout(timeout)  # type: ignore[attr-defined]
@@ -1156,7 +1212,12 @@ def list_emails(
             "messages": messages,
         }
     except Exception as e:
-        return {"success": False, "account": acc.name, "error": str(e), "mailbox": mailbox2}
+        return {
+            "success": False,
+            "account": acc.name,
+            "error": _connection_error(e, protocol="IMAP", host=imap_cfg.host, port=int(imap_cfg.port)),
+            "mailbox": mailbox2,
+        }
     finally:
         if client is not None:
             try:
@@ -1223,7 +1284,9 @@ def read_email(
         # host used to pin the tool for the OS TCP default (~1-2 min) because the socket
         # timeout was set only AFTER the constructor had already connected. The SMTP lane
         # already passes timeout=; IMAP now matches (imaplib supports it on Python >= 3.9).
-        client = imaplib.IMAP4_SSL(imap_cfg.host, int(imap_cfg.port), timeout=timeout)
+        client = imaplib.IMAP4_SSL(
+            imap_cfg.host, int(imap_cfg.port), ssl_context=_email_tls_context(imap_cfg.ca_file), timeout=timeout
+        )
         try:
             if getattr(client, "sock", None) is not None:
                 client.sock.settimeout(timeout)  # type: ignore[attr-defined]
@@ -1304,7 +1367,13 @@ def read_email(
             "attachments": attachments,
         }
     except Exception as e:
-        return {"success": False, "account": acc.name, "error": str(e), "mailbox": mailbox2, "uid": uid2}
+        return {
+            "success": False,
+            "account": acc.name,
+            "error": _connection_error(e, protocol="IMAP", host=imap_cfg.host, port=int(imap_cfg.port)),
+            "mailbox": mailbox2,
+            "uid": uid2,
+        }
     finally:
         if client is not None:
             try:

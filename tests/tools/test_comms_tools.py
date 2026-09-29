@@ -116,6 +116,7 @@ def test_send_email_uses_starttls_when_port_587(monkeypatch: pytest.MonkeyPatch)
     assert out["success"] is True
     smtp_ctor.assert_called_once()
     smtp.starttls.assert_called_once()
+    _assert_verifying_context(smtp.starttls.call_args.kwargs["context"])
     smtp.login.assert_called_once_with("me@example.com", "pw")
     smtp.send_message.assert_called_once()
 
@@ -138,27 +139,82 @@ def test_send_email_uses_smtp_ssl_when_port_465_and_starttls_unset(monkeypatch: 
     assert out["success"] is True
     smtp_ctor.assert_not_called()
     smtp_ssl_ctor.assert_called_once()
+    _assert_verifying_context(smtp_ssl_ctor.call_args.kwargs["context"])
     smtp_ssl.login.assert_called_once_with("me@example.com", "pw")
     smtp_ssl.send_message.assert_called_once()
 
 
-def test_send_email_accepts_literal_password_when_env_ref_is_not_identifier(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_email_refuses_a_password_env_var_that_is_not_a_variable_name(monkeypatch: pytest.MonkeyPatch) -> None:
     from abstractcore.tools.comms_tools import send_email
 
-    # A non-identifier "env var name" is treated as a literal secret when no env var exists with that name.
+    # Backlog 0992 WP0: password_env_var is always a variable NAME. A value that is not a name used to be
+    # read as the password itself (one string, two meanings); it is now refused with the fix, the value is
+    # never echoed (it may be a password pasted into the wrong field), and no connection is opened.
     monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PORT", "465")
     monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_USERNAME", "me@example.com")
     monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR", "literal-secret-with-dash")
     monkeypatch.delenv("literal-secret-with-dash", raising=False)
 
-    smtp_ssl = MagicMock()
-    with patch("smtplib.SMTP_SSL", return_value=smtp_ssl):
+    with patch("smtplib.SMTP_SSL") as smtp_ssl_ctor, patch("smtplib.SMTP") as smtp_ctor:
         out = send_email(to="you@example.com", subject="Hello", body_text="Hi")
 
-    assert out["success"] is True
-    smtp_ssl.login.assert_called_once_with("me@example.com", "literal-secret-with-dash")
-    smtp_ssl.send_message.assert_called_once()
+    assert out["success"] is False
+    err = str(out.get("error") or "")
+    assert "must be the NAME of an environment variable" in err
+    assert "Fix:" in err and "password_env_var: EMAIL_PASSWORD" in err
+    assert "literal-secret-with-dash" not in err
+    smtp_ssl_ctor.assert_not_called()
+    smtp_ctor.assert_not_called()
+
+
+def test_password_env_var_that_is_a_name_but_unset_names_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    from abstractcore.tools.comms_tools import _resolve_required_env
+
+    monkeypatch.delenv("WP0_UNSET_MAIL_PASSWORD", raising=False)
+    value, err = _resolve_required_env("WP0_UNSET_MAIL_PASSWORD", label="SMTP password")
+    assert value is None
+    assert err == "Missing env var WP0_UNSET_MAIL_PASSWORD for SMTP password"
+
+    monkeypatch.setenv("WP0_UNSET_MAIL_PASSWORD", "pw")
+    assert _resolve_required_env("WP0_UNSET_MAIL_PASSWORD", label="SMTP password") == ("pw", None)
+
+
+def test_accounts_file_rejects_a_password_env_var_that_is_not_a_variable_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from abstractcore.tools.comms_tools import list_email_accounts
+
+    cfg_path = tmp_path / "emails.yaml"
+    cfg_path.write_text(
+        textwrap.dedent(
+            """
+            accounts:
+              main:
+                smtp:
+                  host: smtp.example.com
+                  port: 465
+                  username: me@example.com
+                  password_env_var: "hunter2 is my password"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ABSTRACT_EMAIL_ACCOUNTS_CONFIG", str(cfg_path))
+
+    out = list_email_accounts()
+    assert out["success"] is False
+    err = str(out.get("error") or "")
+    assert "main: smtp: password_env_var must be the NAME of an environment variable" in err
+    assert "hunter2" not in err
+
+
+def _assert_verifying_context(ctx: object) -> None:
+    import ssl
+
+    assert isinstance(ctx, ssl.SSLContext)
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.check_hostname is True
 
 
 def test_list_emails_uses_imap_env_config_and_parses_headers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -199,7 +255,11 @@ def test_list_emails_uses_imap_env_config_and_parses_headers(monkeypatch: pytest
     assert out["success"] is True
     # Item 0835: the IMAP connect is now bounded — the timeout is passed to the
     # constructor (was set only post-connect, leaving the connect unbounded).
-    ctor.assert_called_once_with("imap.example.com", 993, timeout=30.0)
+    ctor.assert_called_once()
+    assert ctor.call_args.args == ("imap.example.com", 993)
+    assert ctor.call_args.kwargs["timeout"] == 30.0
+    # Backlog 0992 WP0: verified TLS (certificate + host name), never the stdlib's unverified default.
+    _assert_verifying_context(ctor.call_args.kwargs["ssl_context"])
     fake.login.assert_called_once_with("me@example.com", "pw")
     msgs = out.get("messages")
     assert isinstance(msgs, list) and len(msgs) == 1
@@ -242,7 +302,11 @@ def test_read_email_uses_imap_env_config_and_extracts_body(monkeypatch: pytest.M
 
     assert out["success"] is True
     # Item 0835: read_email also bounds the IMAP connect via the constructor timeout.
-    ctor.assert_called_once_with("imap.example.com", 993, timeout=30.0)
+    ctor.assert_called_once()
+    assert ctor.call_args.args == ("imap.example.com", 993)
+    assert ctor.call_args.kwargs["timeout"] == 30.0
+    # Backlog 0992 WP0: verified TLS (certificate + host name), never the stdlib's unverified default.
+    _assert_verifying_context(ctor.call_args.kwargs["ssl_context"])
     fake.login.assert_called_once_with("me@example.com", "pw")
     assert out["subject"] == "Hello"
     assert "Plain body" in out.get("body_text", "")
