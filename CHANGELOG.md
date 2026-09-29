@@ -9,8 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.19.1] - 2026-09-29
 
-This release makes the `gpu` setting work on Linux + NVIDIA (validated on a Quadro RTX 5000,
-driver 595, CUDA 13) and lets `abstractcore[gpu]` install on Windows x86_64 with wheels only.
+This release makes the `gpu` setting work on Linux + NVIDIA and lets `abstractcore[gpu]` install on
+Windows x86_64 with wheels only. Run on a Quadro RTX 5000 (driver 595, CUDA 13): LM Studio text,
+llama.cpp GGUF on CUDA, faster-whisper on CUDA, Supertonic speech and Diffusers FLUX.2 klein
+images. vLLM installs (0.22, PyTorch 2.11) but was not validated: its first start needs a C
+compiler (`build-essential`). The Windows changes are not yet validated on Windows hardware.
 
 ### Dependencies
 - `openai>=1.0.0,<3.0.0` (was `<2.0.0`). The old cap held vLLM at 0.11.0 in `abstractcore[gpu]`,
@@ -69,10 +72,12 @@ driver 595, CUDA 13) and lets `abstractcore[gpu]` install on Windows x86_64 with
   immediate CPU retry.
 - Windows: before AbstractCore first imports `llama_cpp`, it adds PyTorch's `torch\lib` folder
   (cuBLAS, cudart) to the DLL search (`os.add_dll_directory` and `PATH`), so llama.cpp's prebuilt
-  CUDA wheel loads without the CUDA toolkit
+  CUDA wheel can find those libraries without the CUDA toolkit (not yet validated on Windows
+  hardware)
   (`abstractcore.utils.windows_dll.prepare_llama_cpp_import`; torch is not imported).
 - Windows: the GGUF lane runs `llama_backend_init()` before asking llama.cpp whether it can offload
-  to the GPU (the Windows CUDA / Vulkan wheels register their GPU backend at init).
+  to the GPU (the Windows CUDA / Vulkan wheels ship the GPU backend as a separate library loaded at init; not
+  yet validated on Windows hardware).
 - The server's `/v1/responses` usage reports `input_tokens_details.cache_write_tokens` (0 when the
   provider reports none), which the Responses usage schema of openai 2.x requires.
 

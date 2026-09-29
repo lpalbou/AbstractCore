@@ -36,7 +36,10 @@ pip install "abstractcore[gpu]"      # NVIDIA / AMD: light + every local engine 
   HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
 - `gpu` needs a Linux machine with an NVIDIA (CUDA) or AMD (ROCm) GPU, Python 3.10+. It adds
   vLLM, HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
-- On Intel Macs and Windows, run local models in Ollama or LM Studio and use the light install.
+  On Windows x86_64 with an NVIDIA GPU, `gpu` installs without vLLM and stable-diffusion.cpp
+  (Linux-only or source-only there); the AbstractFramework installer adds llama.cpp's prebuilt GPU
+  build. The Windows path is not yet validated on Windows hardware.
+- On Intel Macs, run local models in Ollama or LM Studio and use the light install.
 
 ## Cloud Provider Setup
 

@@ -79,9 +79,10 @@ from Linux:
   prebuilt GPU build (CUDA, else Vulkan, else CPU); with plain pip, llama.cpp is not part of
   abstractcore[gpu] on Windows, because PyPI ships it as a source build only. AbstractCore puts
   PyTorch's `torch\lib` folder (which carries cuBLAS and the CUDA runtime) on the DLL search
-  before it loads llama.cpp, so the CUDA build runs without the CUDA toolkit.
+  before it loads llama.cpp, so the CUDA build can find those libraries without the CUDA toolkit
+  (not yet validated on Windows hardware).
 - **stable-diffusion.cpp** is not part of it (source build only, which needs MSVC); Diffusers on
-  PyTorch covers image and video generation.
+  PyTorch covers image generation.
 
 Plain pip installs PyTorch's CPU build on Windows. The AbstractFramework installer
 (`install.ps1`, gpu setting) picks PyTorch's CUDA build for the NVIDIA driver it finds
