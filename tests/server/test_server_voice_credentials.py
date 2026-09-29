@@ -150,8 +150,10 @@ def config(monkeypatch, tmp_path):
         monkeypatch.setenv(name, "")
         monkeypatch.delenv(name)
     mgr = ConfigurationManager(config_file=tmp_path / "abstractcore.json")
-    # Speech through OpenAI (the fresh-config default is a local engine).
+    # Speech and transcription through OpenAI (the fresh-config defaults are
+    # local engines: Supertonic, and faster-whisper since 2.19.2).
     mgr.set_capability_default("output", "voice", provider="openai", model="gpt-4o-mini-tts")
+    mgr.set_capability_default("input", "voice", provider="openai", model="whisper-1")
     monkeypatch.setattr(config_manager_module, "_config_manager", mgr)
     monkeypatch.setattr(config_manager_module, "get_config_manager", lambda: mgr)
     return mgr

@@ -112,16 +112,24 @@ target `output.text` are accepted for compatibility, but persist to
 A fresh install starts with recommended defaults so generation works out of
 the box. They depend on the host, and a route is only written when its engine
 runs there. [Recommended Models](recommended-models.md) lists every
-recommendation per kind of machine, including speech input (`input.voice`) and
-music (`output.music`), which are not written for you:
+recommendation per kind of machine, including music (`output.music`), which is
+not written for you:
 
-| host | `input.text` | `output.voice` | `output.image` | `output.video` |
-| --- | --- | --- | --- | --- |
-| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (32 GiB of unified memory or more), else unset |
-| Linux, Windows with an NVIDIA GPU (CUDA) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | `diffusers/black-forest-labs/FLUX.2-klein-4B` where it fits (measured GPU peak about 8.3 GiB with model CPU offload); written by `apply-recommended`, not by the fresh-install seed | unset |
-| Linux, Windows (x86_64, arm64), no NVIDIA GPU | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
-| Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset | unset |
-| anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset |
+| host | `input.text` | `output.voice` | `input.voice` | `output.image` | `output.video` |
+| --- | --- | --- | --- | --- | --- |
+| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `faster-whisper/base` (processor) | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (32 GiB of unified memory or more), else unset |
+| Linux, Windows with an NVIDIA GPU (CUDA) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | `faster-whisper/base` (CUDA) | `diffusers/black-forest-labs/FLUX.2-klein-4B` where it fits (measured GPU peak about 8.3 GiB with model CPU offload); written by `apply-recommended`, not by the fresh-install seed | unset |
+| Linux, Windows (x86_64, arm64), no NVIDIA GPU | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | `faster-whisper/base` (processor); unset on Windows arm64 | unset | unset |
+| Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | `faster-whisper/base` (processor) | unset | unset |
+| anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset | unset |
+
+Speech input (`input.voice`) runs AbstractVoice's faster-whisper engine
+(`abstractvoice[stt]`, included in `abstractcore[apple]` and `abstractcore[gpu]`),
+so transcription works without a cloud key. A store written by an earlier
+fresh install (`seeded: recommended-v1`) gains `input.voice` the next time it
+loads, unless you set that route yourself; the store is then stamped
+`recommended-v2`. `apply-recommended` always compares against the store file
+and writes its result, so what it reports is what the next reader sees.
 
 Supertonic runs on ONNX Runtime on the CPU, which has builds for x86_64 and
 arm64 on Linux and Windows, and for macOS. Where neither LM Studio nor Ollama

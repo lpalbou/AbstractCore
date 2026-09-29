@@ -290,7 +290,15 @@ def clean_capability_route_default(value: Any) -> CapabilityRouteDefault:
     )
 
 
-RECOMMENDED_SEED_VERSION = "recommended-v1"
+RECOMMENDED_SEED_VERSION = "recommended-v2"
+
+# What each seed version added to the one before it, applied once to a store
+# an earlier seed wrote (`upgrade_recommended_seed`). v2 (AbstractCore 2.19.2):
+# speech input, so a fresh install transcribes locally instead of falling
+# through to OpenAI without a key.
+RECOMMENDED_SEED_ADDITIONS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("recommended-v2", ("input.voice",)),
+)
 
 # THE RECOMMENDED MODEL PER CAPABILITY: one table, every surface.
 #
@@ -317,9 +325,9 @@ RECOMMENDED_SEED_VERSION = "recommended-v1"
 # them ONLY when the config file does not exist yet -- never merged into an
 # existing store (an operator who cleared a route meant it), and never on the
 # corrupt-file fallback. `apply-recommended` and `models download
-# --recommended` act on the same starter set. Rows with `starter=False`
-# (speech input, music) are recommendations every listing shows, which no
-# writer applies on its own: the operator sets them (`abstractcore config
+# --recommended` act on the same starter set: text, voice output, speech
+# input, image and video. Rows with `starter=False` (music) are
+# recommendations every listing shows, which no writer applies on its own: the operator sets them (`abstractcore config
 # set-default`). Text stores at input.text (the canonical storage key;
 # output.text derives).
 #
@@ -414,11 +422,14 @@ RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
     # an NVIDIA GPU, the processor elsewhere -- it has no Metal backend) with
     # AbstractVoice's own default model, `base`. faster-whisper resolves
     # `base` to the Hugging Face repo below in the standard Hugging Face cache,
-    # which is where `models download huggingface <repo>` puts it.
+    # which is where `models download huggingface <repo>` puts it. A STARTER
+    # row (2.19.2, framework rehearsal 0.6.3): without it a fresh install's
+    # speech-to-text fell through to OpenAI and failed for want of an API key,
+    # although the installer ships faster-whisper (`abstractvoice[stt]`).
     "input.voice": RecommendedModel(
         route=CapabilityRouteDefault(provider="faster-whisper", model="base"),
         download={"provider": "huggingface", "artifact": "Systran/faster-whisper-base"},
-        starter=False,
+        starter=True,
     ),
     # Music: AbstractMusic's `acestep` backend (Diffusers AceStepPipeline on
     # PyTorch: CUDA, Apple MPS in bfloat16, or the processor in float32) with
@@ -992,6 +1003,7 @@ def recommended_model_downloads(host: Optional[Mapping[str, Any]] = None) -> Dic
 RECOMMENDED_SELECTORS: Dict[str, str] = {
     "text": "input.text",
     "voice": "output.voice",
+    "stt": "input.voice",
     "image": "output.image",
     "video": "output.video",
 }
@@ -1181,6 +1193,56 @@ def seed_recommended_capability_defaults(
             )
     config.seeded = RECOMMENDED_SEED_VERSION
     return config
+
+
+def upgrade_recommended_seed(
+    config: CapabilityDefaultsConfig, *, host: Optional[Mapping[str, Any]] = None
+) -> bool:
+    """Add the rows later seed versions introduced to a store an earlier seed wrote.
+
+    Only a store stamped by an earlier seed (`seeded` is an older
+    `recommended-v*`) is touched, and only the rows the newer versions added
+    (`RECOMMENDED_SEED_ADDITIONS`) that are EMPTY in it: a route the operator
+    set is never replaced, and a store that was never seeded is never
+    changed. The recommendation is this host's (a row this host cannot run is
+    left unset), read from the light host profile like the seed itself. The
+    result lives in memory, stamped with the current version, exactly like a
+    fresh seed: the next save of the store persists it. Returns whether the
+    config changed.
+    """
+
+    seeded = str(config.seeded or "")
+    if not seeded.startswith("recommended-v") or seeded == RECOMMENDED_SEED_VERSION:
+        return False
+    try:
+        current = int(seeded[len("recommended-v"):])
+    except ValueError:
+        return False
+    keys = [
+        key
+        for version, added in RECOMMENDED_SEED_ADDITIONS
+        if int(version[len("recommended-v"):]) > current
+        for key in added
+    ]
+    if not keys:
+        return False
+    if host is None:
+        from ..utils.host_profile import host_profile
+
+        host = host_profile(light=True)
+    runnable = recommended_capability_default_routes(host)
+    for key in keys:
+        route = runnable.get(key)
+        existing = config.routes.get(key)
+        if route is None or (existing is not None and existing.configured()):
+            continue
+        config.routes[key] = CapabilityRouteDefault(
+            provider=route.provider, model=route.model,
+            base_url=route.base_url, reasoning=route.reasoning,
+            options=dict(route.options),
+        )
+    config.seeded = RECOMMENDED_SEED_VERSION
+    return True
 
 
 def capability_defaults_from_dict(value: Any) -> CapabilityDefaultsConfig:

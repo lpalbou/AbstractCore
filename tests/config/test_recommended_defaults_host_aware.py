@@ -60,6 +60,15 @@ NON_APPLE = [
 # but an NVIDIA GPU, whose image pick is Diffusers (framework backlog 0989;
 # `test_an_nvidia_gpu_*` below).
 NO_IMAGE_ENGINE = [name for name in NON_APPLE if name != "linux_x86_64_cuda"]
+# Speech input (faster-whisper on CTranslate2) runs on every host here but
+# Windows on arm64, where CTranslate2 publishes no build.
+NO_STT_ENGINE = {"windows_arm64"}
+FASTER_WHISPER = ("faster-whisper", "base")
+FASTER_WHISPER_DOWNLOAD = {"provider": "huggingface", "artifact": "Systran/faster-whisper-base"}
+
+
+def _starter_keys(name: str) -> set:
+    return {"input.text", "output.voice"} | (set() if name in NO_STT_ENGINE else {"input.voice"})
 TEXT_BY_HOST = {name: ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m") for name in NON_APPLE}
 TEXT_BY_HOST["intel_mac"] = ("ollama", "qwen3.5:9b", "qwen3.5:9b")
 
@@ -84,7 +93,10 @@ def test_no_route_or_download_names_an_engine_the_host_cannot_run(name):
     host = _host(name)
     routes = cd.recommended_capability_default_routes(host)
     downloads = cd.recommended_model_downloads(host)
-    assert set(routes) == set(downloads) == {"input.text", "output.voice"}
+    assert set(routes) == set(downloads) == _starter_keys(name)
+    if name not in NO_STT_ENGINE:
+        assert (routes["input.voice"].provider, routes["input.voice"].model) == FASTER_WHISPER
+        assert downloads["input.voice"] == FASTER_WHISPER_DOWNLOAD
     for key, route in routes.items():
         assert route.provider not in {"mlx", "mlx-gen"}, (name, key)
         assert cd.recommended_route_unavailable_reason(route.provider, host) is None
@@ -100,7 +112,7 @@ def test_no_route_or_download_names_an_engine_the_host_cannot_run(name):
 @pytest.mark.parametrize("name", NO_IMAGE_ENGINE)
 def test_the_image_route_is_reported_unavailable_with_its_reason(name):
     unavailable = cd.recommended_unavailable_routes(_host(name))
-    assert set(unavailable) == {"output.image", "output.video"}
+    assert set(unavailable) == {"output.image", "output.video"} | ({"input.voice"} if name in NO_STT_ENGINE else set())
     row = unavailable["output.image"]
     assert (row["provider"], row["model"]) == ("mlx-gen", "AbstractFramework/flux.2-klein-4b-8bit")
     assert "Apple Silicon" in row["reason"]
@@ -110,15 +122,16 @@ def test_the_image_route_is_reported_unavailable_with_its_reason(name):
 @pytest.mark.parametrize("name", NO_IMAGE_ENGINE)
 def test_the_seed_never_writes_the_image_route(name):
     seeded = cd.seed_recommended_capability_defaults(cd.CapabilityDefaultsConfig(), host=_host(name))
-    assert set(seeded.routes) == {"input.text", "output.voice"}
+    assert set(seeded.routes) == _starter_keys(name)
     assert seeded.seeded == cd.RECOMMENDED_SEED_VERSION
 
 
 @pytest.mark.parametrize("name", NO_IMAGE_ENGINE)
 def test_apply_reports_image_unavailable_and_writes_the_rest(name):
     plan = {p["key"]: p for p in cd.plan_recommended_capability_defaults({}, host=_host(name), force=True)}
-    assert list(plan) == ["input.text", "output.voice", "output.image", "output.video"]
+    assert list(plan) == ["input.text", "output.voice", "output.image", "output.video", "input.voice"]
     assert plan["input.text"]["action"] == plan["output.voice"]["action"] == "apply"
+    assert plan["input.voice"]["action"] == ("unavailable" if name in NO_STT_ENGINE else "apply")
     for key in ("output.image", "output.video"):
         row = plan[key]
         assert row["action"] == "unavailable" and row["changed"] is False
@@ -275,7 +288,7 @@ def test_a_host_with_no_supported_engine_gets_no_route_at_all():
     host = dict(synthetic_host("cpu16"), os="freebsd")
     assert cd.recommended_capability_default_routes(host) == {}
     unavailable = cd.recommended_unavailable_routes(host)
-    assert set(unavailable) == {"input.text", "input.image", "output.voice", "output.image", "output.video"}
+    assert set(unavailable) == {"input.text", "input.image", "output.voice", "input.voice", "output.image", "output.video"}
     # Image input is read by the text model: unavailable for the same reason.
     assert unavailable["input.image"]["reason"] == unavailable["input.text"]["reason"]
 
@@ -294,7 +307,7 @@ def test_a_fresh_linux_install_leaves_image_unset_and_the_grid_says_why(tmp_path
     pin_host(_host("linux_x86_64_cpu"))
     manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
     stored = {k for k, r in manager.config.capability_defaults.routes.items() if r.configured()}
-    assert stored == {"input.text", "output.voice"}
+    assert stored == {"input.text", "output.voice", "input.voice"}
     rows = {row["key"]: row for row in manager.list_capability_defaults()}
     image = rows["output.image"]
     assert image["configured"] is False and image["source"] == "not_configured"
@@ -303,7 +316,9 @@ def test_a_fresh_linux_install_leaves_image_unset_and_the_grid_says_why(tmp_path
     assert "recommendation_unavailable" not in rows["output.image.text_to_image"]
 
     report = manager.apply_recommended_capability_defaults(force=True)
-    assert report["unavailable"] == 2 and report["changed"] == 0
+    # The seed lives in memory until a save: apply writes it (planned against
+    # the store on disk, which does not exist yet).
+    assert report["unavailable"] == 2 and report["changed"] == 3
     assert "output.image" not in {k for k, r in manager.config.capability_defaults.routes.items() if r.configured()}
 
 
@@ -356,9 +371,12 @@ def _golden_apple_seed(text_model: str, video: bool = False) -> str:
         "output.image": {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"},
         "output.voice": {"provider": "supertonic", "model": "supertonic-3"},
     }
+    # 2.19.2: speech input joins the seed (faster-whisper on the processor:
+    # CTranslate2 has no Metal backend), stamped recommended-v2.
+    routes = dict(sorted({**routes, "input.voice": {"provider": "faster-whisper", "model": "base"}}.items()))
     if video:
         routes = dict(sorted({**routes, "output.video": dict(VIDEO)}.items()))
-    return json.dumps({"version": 1, "routes": routes, "seeded": "recommended-v1"}, sort_keys=False)
+    return json.dumps({"version": 1, "routes": routes, "seeded": "recommended-v2"}, sort_keys=False)
 
 
 @pytest.mark.parametrize("kind", sorted(APPLE_TEXT))
@@ -382,22 +400,26 @@ def test_apple_silicon_routes_downloads_and_plan_are_unchanged(kind, monkeypatch
     text = APPLE_TEXT[kind]
     video = VIDEO_FITS[kind]
     routes = cd.recommended_capability_default_routes(host)
-    assert list(routes) == ["input.text", "output.voice", "output.image"] + (["output.video"] if video else [])
+    assert list(routes) == (
+        ["input.text", "output.voice", "output.image"] + (["output.video"] if video else []) + ["input.voice"]
+    )
     assert {k: v.to_dict() for k, v in routes.items()} == {
         "input.text": {"provider": "mlx", "model": text, "options": MTP_OPTIONS},
         "output.voice": {"provider": "supertonic", "model": "supertonic-3"},
         "output.image": {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"},
         **({"output.video": dict(VIDEO)} if video else {}),
+        "input.voice": {"provider": "faster-whisper", "model": "base"},
     }
     assert cd.recommended_model_downloads(host) == {
         "input.text": {"provider": "mlx", "artifact": text},
         "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
         "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
         **({"output.video": {"provider": VIDEO["provider"], "artifact": VIDEO["model"]}} if video else {}),
+        "input.voice": dict(FASTER_WHISPER_DOWNLOAD),
     }
     plan = cd.plan_recommended_capability_defaults({}, host=host)
-    assert [p["key"] for p in plan] == ["input.text", "output.voice", "output.image", "output.video"]
-    for entry in list(plan[:3]) + (list(plan[3:]) if video else []):
+    assert [p["key"] for p in plan] == ["input.text", "output.voice", "output.image", "output.video", "input.voice"]
+    for entry in list(plan[:3]) + (list(plan[3:4]) if video else []) + [plan[4]]:
         # The pre-fix entry shape, exactly: no `reason`, no new keys.
         assert set(entry) == {"key", "selector", "action", "changed", "recommended", "before", "after", "download"}
         assert entry["action"] == "apply"

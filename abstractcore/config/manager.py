@@ -797,6 +797,16 @@ class ConfigurationManager:
         except Exception:
             return None
 
+    def _persisted_capability_routes(self) -> Dict[str, Any]:
+        """The capability routes in the store file right now (`{}` when absent).
+
+        Not `self.config`: that also carries the unsaved fresh-install seed.
+        """
+        document = self._read_store_document()
+        if not document:
+            return {}
+        return dict(capability_defaults_from_dict(document.get("capability_defaults") or {}).routes)
+
     def _adopt_baseline_for_delete(self, *path: str) -> None:
         """Make an EXPLICIT delete of `path` survive the save-time merge.
 
@@ -854,7 +864,24 @@ class ConfigurationManager:
                         nested = data.get("audio", {})
                         if isinstance(nested, dict) and "strategy_explicit" in nested:
                             self._audio_strategy_explicit = bool(nested.get("strategy_explicit"))
-                return self._dict_to_config(data)
+                config = self._dict_to_config(data)
+                # A store an earlier fresh-install seed wrote gains the rows
+                # later seeds added (2.19.2: speech input), never over a
+                # route the operator set; in memory until the next save,
+                # like the seed itself. Never allowed to fail the load: the
+                # parse succeeded, so the except branches below (quarantine,
+                # defaults) must not see an upgrade error.
+                try:
+                    from .capability_defaults import upgrade_recommended_seed
+
+                    upgrade_recommended_seed(config.capability_defaults)
+                except Exception as upgrade_error:  # pragma: no cover - defensive
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        "recommended-seed upgrade skipped for %s: %s", str(self.config_file), upgrade_error
+                    )
+                return config
             except OSError as e:
                 # THE FILE IS FINE; THE READ FAILED. A full disk, an EIO, a
                 # momentarily unreadable mount — none of these are evidence that
@@ -1649,8 +1676,18 @@ class ConfigurationManager:
 
         from .capability_defaults import plan_recommended_capability_defaults
 
+        # PLAN AGAINST THE STORE ON DISK, never against this manager's memory.
+        # A manager built before its store file exists holds the fresh-install
+        # seed IN MEMORY ONLY (`_load_config`), and that seed reads the light
+        # host profile, which returns the cached FULL profile when a full probe
+        # ran within the last few seconds (`utils.host_profile`). Planned
+        # against memory, an apply right after a grid read on an NVIDIA host
+        # saw the seeded image route, reported "already set", saved nothing,
+        # and the next read (no file, light reading, no CUDA) showed the route
+        # missing (framework rehearsal 0.6.3). Planned against disk, "already"
+        # means persisted, and the save below always publishes the result.
         plan = plan_recommended_capability_defaults(
-            self.config.capability_defaults.routes, only=only, force=force
+            self._persisted_capability_routes(), only=only, force=force
         )
         applied: list = []
         for row in plan:
@@ -1665,6 +1702,12 @@ class ConfigurationManager:
                     model=row["recommended"].get("model"),
                 )
             applied.append(dict(row))
+        if not dry_run:
+            # Publish even when no row changed: an in-memory seed that matched
+            # the recommendation is written now, so what apply reports is what
+            # the next reader sees. With the store already current, the
+            # three-way merge makes this a no-op rewrite.
+            self._save_config()
         return {
             "ok": True,
             "dry_run": bool(dry_run),

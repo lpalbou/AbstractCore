@@ -83,11 +83,12 @@ def test_empty_routes_are_filled(tmp_path) -> None:
 
     report = manager.apply_recommended_capability_defaults()
 
-    # Linux, processor only (`cpu16`): text + voice are applied; the image and
-    # video recommendations (MLX-Gen) cannot run here and are reported, never written.
+    # Linux, processor only (`cpu16`): text, voice output and speech input are
+    # applied; the image and video recommendations (MLX-Gen) cannot run here
+    # and are reported, never written.
     runnable = recommended_capability_default_routes()
-    assert set(runnable) == {"input.text", "output.voice"}
-    assert report["changed"] == 2
+    assert set(runnable) == {"input.text", "output.voice", "input.voice"}
+    assert report["changed"] == 3
     routes = _routes_on_disk(tmp_path)
     for key, recommended in runnable.items():
         assert routes[key]["provider"] == recommended.provider
@@ -100,6 +101,73 @@ def test_empty_routes_are_filled(tmp_path) -> None:
         row = _row(report, key)
         assert row["action"] == "unavailable" and row["changed"] is False
         assert "Apple Silicon" in row["reason"] and row["recommended"] == {}
+
+
+def test_speech_input_is_set_to_local_faster_whisper(tmp_path) -> None:
+    """A fresh install transcribes without an OpenAI key (framework rehearsal
+    0.6.3: the gateway's speech-to-text failed with "OpenAI audio requires
+    OPENAI_API_KEY" because no writer set input.voice)."""
+    manager = _manager(tmp_path)
+    manager.clear_capability_default("input.voice")
+
+    report = manager.apply_recommended_capability_defaults(only=["stt"])
+
+    row = _row(report, "input.voice")
+    assert (row["action"], row["selector"]) == ("apply", "stt")
+    assert row["download"] == {"provider": "huggingface", "artifact": "Systran/faster-whisper-base"}
+    stored = _routes_on_disk(tmp_path)["input.voice"]
+    assert (stored["provider"], stored["model"]) == ("faster-whisper", "base")
+
+
+def test_a_speech_input_route_the_operator_set_is_kept(tmp_path) -> None:
+    manager = _manager(tmp_path)
+    manager.set_capability_default("input", "voice", provider="openai", model="whisper-1")
+
+    report = manager.apply_recommended_capability_defaults()
+
+    assert _row(report, "input.voice")["action"] == "kept"
+    stored = _routes_on_disk(tmp_path)["input.voice"]
+    assert (stored["provider"], stored["model"]) == ("openai", "whisper-1")
+
+
+def test_a_fresh_install_seeds_speech_input(tmp_path) -> None:
+    routes = _manager(tmp_path).config.capability_defaults.routes
+    assert (routes["input.voice"].provider, routes["input.voice"].model) == ("faster-whisper", "base")
+
+
+def test_a_store_an_earlier_seed_wrote_gains_speech_input_once(tmp_path) -> None:
+    """recommended-v1 stores (seeded before 2.19.2) gain input.voice on load,
+    stamped recommended-v2; a store the operator never let the seed write, or
+    one whose speech input they set, is left alone."""
+    path = tmp_path / "abstractcore.json"
+    v1 = {"input.text": {"provider": "lmstudio", "model": "qwen/qwen3.5-9b"},
+          "output.voice": {"provider": "supertonic", "model": "supertonic-3"}}
+    path.write_text(json.dumps({"capability_defaults": {"version": 1, "routes": v1, "seeded": "recommended-v1"}}))
+
+    manager = _manager(tmp_path)
+    voice = manager.config.capability_defaults.routes["input.voice"]
+    assert (voice.provider, voice.model) == ("faster-whisper", "base")
+    assert manager.config.capability_defaults.seeded == "recommended-v2"
+    # Persisted by the next save, like the seed; apply writes it at once.
+    report = manager.apply_recommended_capability_defaults(only=["stt"])
+    assert _row(report, "input.voice")["action"] == "apply"
+    assert _routes_on_disk(tmp_path)["input.voice"]["provider"] == "faster-whisper"
+    stored = json.loads(path.read_text())["capability_defaults"]
+    assert stored["seeded"] == "recommended-v2"
+    # Cleared after the upgrade, it stays cleared (the marker is current now).
+    manager.clear_capability_default("input.voice")
+    assert "input.voice" not in {k for k, r in _manager(tmp_path).config.capability_defaults.routes.items() if r.configured()}
+
+    # The operator's own speech input on a v1 store: kept.
+    mine = dict(v1, **{"input.voice": {"provider": "openai", "model": "whisper-1"}})
+    path.write_text(json.dumps({"capability_defaults": {"version": 1, "routes": mine, "seeded": "recommended-v1"}}))
+    assert _manager(tmp_path).config.capability_defaults.routes["input.voice"].provider == "openai"
+
+    # Never seeded (no marker): untouched.
+    path.write_text(json.dumps({"capability_defaults": {"version": 1, "routes": v1}}))
+    unseeded = _manager(tmp_path).config.capability_defaults
+    assert "input.voice" not in {k for k, r in unseeded.routes.items() if r.configured()}
+    assert unseeded.seeded is None
 
 
 def test_a_route_configured_differently_is_kept_and_reported(tmp_path) -> None:

@@ -232,6 +232,7 @@ def test_recommended_plan_would_download_only_absent_artifacts(monkeypatch, linu
     states = {
         "qwen/qwen3.5-9b@q4_k_m": mm.PRESENCE_ABSENT,
         "supertonic-3": mm.PRESENCE_UNKNOWN,
+        "Systran/faster-whisper-base": mm.PRESENCE_INSTALLED,
     }
     monkeypatch.setattr(
         mm,
@@ -241,7 +242,7 @@ def test_recommended_plan_would_download_only_absent_artifacts(monkeypatch, linu
     plan = mm.recommended_plan()
     # Linux: the Apple-only image model is not part of the plan at all (a
     # KeyError above would mean it was probed).
-    assert (plan["total"], plan["installed"], plan["absent"], plan["unknown"]) == (2, 0, 1, 1)
+    assert (plan["total"], plan["installed"], plan["absent"], plan["unknown"]) == (3, 1, 1, 1)
     assert [item["artifact"] for item in plan["would_download"]] == ["qwen/qwen3.5-9b@q4_k_m"]
     # An `unknown` row is NOT queued for download: we do not spend gigabytes on
     # a guess, we tell the operator we could not tell.
@@ -255,8 +256,9 @@ def test_recommended_plan_on_apple_silicon_includes_the_image_model(monkeypatch)
     monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal64"))
     monkeypatch.setattr(mm, "probe", lambda p, a, **kw: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT))
     plan = mm.recommended_plan()
-    # text, voice, image and (TI2V-5B fits 64 GiB at its 832x480 default canvas) video
-    assert plan["total"] == 4
+    # text, voice, image, (TI2V-5B fits 64 GiB at its 832x480 default canvas)
+    # video, and speech input
+    assert plan["total"] == 5
     artifacts = [item["artifact"] for item in plan["would_download"]]
     assert "AbstractFramework/flux.2-klein-4b-8bit" in artifacts
     assert "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit" in artifacts

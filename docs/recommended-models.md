@@ -70,12 +70,15 @@ still the tier, with its warning.
 
 ### Starter set and opt-in recommendations
 
-Text, speech output, image and video form the **starter set**: a fresh install writes them as
-capability defaults where the machine can run them, and `apply-recommended` and `models download
---recommended` act on them. Speech input and music are recommendations you apply yourself:
+Text, speech output, speech input, image and video form the **starter set**: a fresh install
+writes them as capability defaults where the machine can run them, and `apply-recommended` and
+`models download --recommended` act on them. A store written by an earlier fresh install
+(`seeded: recommended-v1`) gains speech input the next time it loads, unless you set that route
+yourself. Select speech input alone with `abstractcore config apply-recommended --only stt`.
+
+Music is a recommendation you apply yourself:
 
 ```bash
-abstractcore config set-default input.voice --provider faster-whisper --model base
 abstractcore config set-default output.music --provider acestep --model ACE-Step/acestep-v15-xl-turbo-diffusers
 abstractcore models download diffusers ACE-Step/acestep-v15-xl-turbo-diffusers
 ```

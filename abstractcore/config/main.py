@@ -2165,7 +2165,7 @@ def _handle_config_subcommand(argv: List[str]) -> int:
         default=None,
         metavar="WHICH",
         choices=sorted(RECOMMENDED_SELECTORS),
-        help="Limit to one recommendation (text|voice|image|video); repeatable",
+        help="Limit to one recommendation (text|voice|stt|image|video; stt = speech input); repeatable",
     )
     apply_recommended.add_argument(
         "--force",

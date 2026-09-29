@@ -256,6 +256,9 @@ def test_sound_and_music_input_are_covered_by_audio_capable_text_default_without
 
     manager = ConfigurationManager()
     assert manager.set_capability_default("input.text", provider="lmstudio", model="qwen3-omni-30b-a3b-instruct")
+    # The fresh-install seed sets speech input (faster-whisper); cleared, it
+    # is NOT covered by the audio-capable text model.
+    manager.clear_capability_default("input.voice")
 
     rows = {row["key"]: row for row in ConfigurationManager().list_capability_defaults()}
 

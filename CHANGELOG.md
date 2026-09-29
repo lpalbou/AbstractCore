@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.19.2] - 2026-09-29
+
+A fresh install now transcribes speech locally, and "Use recommended defaults" writes what it
+reports.
+
+### Changed
+- Speech input joins the recommended starter set: `input.voice` is `faster-whisper/base`
+  (AbstractVoice's faster-whisper engine: CUDA on an NVIDIA GPU, the processor elsewhere, Apple
+  silicon included) on every host whose platform CTranslate2 supports. The fresh-install defaults,
+  `abstractcore config apply-recommended` (the consoles' "Use recommended defaults") and
+  `abstractcore models download --recommended` include it, so speech-to-text works without an
+  OpenAI key. A route you set yourself is kept. Select it alone with
+  `apply-recommended --only stt`.
+- The fresh-install marker is `seeded: recommended-v2`. A store an earlier fresh install wrote
+  (`recommended-v1`) gains `input.voice` the next time it loads when that route is empty, and is
+  stamped `recommended-v2` on its next save. Stores that were never seeded are unchanged.
+
+### Fixed
+- `apply-recommended` compares against the store file and always saves. Right after a grid read on
+  an NVIDIA host, a fresh store (no file yet) could report the image route "already set", save
+  nothing, and show it missing on the next read: the unsaved fresh-install defaults in memory
+  followed a cached full host probe. The report's `before` is now what is on disk, and the result
+  is written even when every route already matched.
+
+### Dependencies
+- Floors: `abstractvoice>=0.13.2` (PyAV held below 19, which faster-whisper 1.2.1 needs to decode
+  audio files) and `abstractvision>=0.3.33` (Diffusers on CUDA falls back to sequential CPU offload
+  when model CPU offload does not fit the free GPU memory), in the light install and in the
+  `apple` and `gpu` settings.
+
 ## [2.19.1] - 2026-09-29
 
 This release makes the `gpu` setting work on Linux + NVIDIA and lets `abstractcore[gpu]` install on

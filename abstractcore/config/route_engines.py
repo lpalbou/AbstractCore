@@ -54,7 +54,7 @@ __all__ = ["ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR", "route_engine_missing", "routes
 # The first AbstractVoice with `abstractvoice.engine_runtime` (the public
 # runtime probe). Mirrors the floor of the `voice` extra in pyproject.toml;
 # the release stager raises both together.
-ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR = "0.13.1"
+ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR = "0.13.2"
 
 # Voice providers that run remotely: AbstractVoice needs nothing beyond its
 # core install for them, and whether they are configured is not a runtime

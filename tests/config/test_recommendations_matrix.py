@@ -135,16 +135,18 @@ def test_the_starter_set_the_writers_use_is_unchanged():
         "output.voice": ("supertonic", "supertonic-3"),
         "output.image": ("mlx-gen", "AbstractFramework/flux.2-klein-4b-8bit"),
         "output.video": ("mlx-gen", "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
+        "input.voice": ("faster-whisper", "base"),
     }
     assert cd.RECOMMENDED_MODEL_DOWNLOADS == {
         "input.text": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@q4_k_m"},
         "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
         "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
         "output.video": {"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},
+        "input.voice": {"provider": "huggingface", "artifact": "Systran/faster-whisper-base"},
     }
     # ...and they are views of the one table, never a second copy.
     assert {k for k, r in cd.RECOMMENDED_MODELS.items() if r.starter} == set(cd.RECOMMENDED_MODEL_DOWNLOADS)
-    assert {k for k, r in cd.RECOMMENDED_MODELS.items() if not r.starter} == {"input.voice", "output.music"}
+    assert {k for k, r in cd.RECOMMENDED_MODELS.items() if not r.starter} == {"output.music"}
 
 
 def _hosts(matrix):
@@ -270,7 +272,7 @@ def test_speech_input_follows_the_ctranslate2_builds():
     assert "transformers-asr" in win_arm["reason"]
     for host in (cpu, synthetic_host("cuda24"), synthetic_host("metal16"), dict(cpu, os="darwin", arch="x86_64")):
         e = rec.recommended_models(host)["speech_input"]
-        assert (e["status"], e["provider"], e["model"], e["starter"]) == ("recommended", "faster-whisper", "base", False)
+        assert (e["status"], e["provider"], e["model"], e["starter"]) == ("recommended", "faster-whisper", "base", True)
     assert rec.recommended_models(synthetic_host("cuda24"))["speech_input"]["device"] == "NVIDIA GPU (CUDA)"
     assert rec.recommended_models(synthetic_host("metal16"))["speech_input"]["device"] == "processor"
 

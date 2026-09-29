@@ -22,6 +22,7 @@ from typing import Optional
 
 import pytest
 
+from abstractcore.config import capability_defaults as cd
 from abstractcore.config import engines
 from abstractcore.config import route_engines as re_mod
 from abstractcore.config.manager import ConfigurationManager
@@ -107,7 +108,9 @@ def voice_api(monkeypatch):
 def _store(tmp_path, routes: dict) -> ConfigurationManager:
     cfg = tmp_path / "abstractcore.json"
     cfg.write_text(
-        json.dumps({"capability_defaults": {"version": 1, "routes": routes, "seeded": "recommended-v1"}}),
+        # The CURRENT seed version: an older one would gain the rows later
+        # seeds added (`upgrade_recommended_seed`), which is not under test here.
+        json.dumps({"capability_defaults": {"version": 1, "routes": routes, "seeded": cd.RECOMMENDED_SEED_VERSION}}),
         encoding="utf-8",
     )
     return ConfigurationManager(config_file=cfg, apply_env=False)

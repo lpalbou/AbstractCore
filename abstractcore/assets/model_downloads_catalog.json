@@ -4336,7 +4336,7 @@
     "voice",
     "speech-to-text"
    ],
-   "starter": false,
+   "starter": true,
    "artifacts": [
     {
      "provider": "huggingface",

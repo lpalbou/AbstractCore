@@ -286,7 +286,7 @@ def test_no_text_engine_gives_one_consistent_answer(host, tmp_path, monkeypatch)
     assert "LM Studio" in pick["tier"] and "Ollama" in pick["tier"]
 
     unavailable = cd.recommended_unavailable_routes(host)
-    assert set(unavailable) == {"input.text", "input.image", "output.voice", "output.image", "output.video"}
+    assert set(unavailable) == {"input.text", "input.image", "output.voice", "input.voice", "output.image", "output.video"}
     assert unavailable["input.image"]["reason"] == unavailable["input.text"]["reason"]
     text = unavailable["input.text"]
     assert text["provider"] == "lmstudio" and text["reason"].startswith("LM Studio has no")
