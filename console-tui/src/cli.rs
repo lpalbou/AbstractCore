@@ -363,6 +363,46 @@ impl CoreCli {
         })
     }
 
+    /// Run `abstractcore email <args>` (the caller includes `--json`).
+    ///
+    /// The email verbs print ONE JSON document and exit 0 (ok), 1
+    /// (error) or 2 (refused: a failed connection test, a missing
+    /// `--yes`). argv may carry a secret (`--password <value>`), so
+    /// errors name `redacted_label`, never the args. A refusal's message
+    /// is the CLI's own typed words: `cause — Fix: fix` from
+    /// `{ok:false, error:{code, cause, fix}}`, or the first failed leg
+    /// of a connection test.
+    pub fn run_email(
+        &self,
+        args: &[&str],
+        redacted_label: &str,
+        timeout: Duration,
+    ) -> Result<CliOutput, CliError> {
+        let (status, stdout, stderr) = self.run_raw(args, redacted_label, timeout)?;
+        let doc = last_json_object(&stdout);
+        if !status.success() {
+            let code = status.code().unwrap_or(-1);
+            let msg = doc
+                .as_ref()
+                .and_then(email_error_text)
+                .unwrap_or_else(|| error_line(&stdout, &stderr));
+            return Err(CliError::core(CliErrorKind::Exit(code), msg));
+        }
+        let value = doc.ok_or_else(|| {
+            CliError::core(
+                CliErrorKind::BadJson,
+                format!(
+                    "no JSON object on stdout — first bytes: {}",
+                    head(&stdout, 120)
+                ),
+            )
+        })?;
+        Ok(CliOutput {
+            value,
+            fallback_warnings: fallback_lines(&stderr),
+        })
+    }
+
     /// Shared subprocess mechanics: spawn, drain both pipes on reader
     /// threads (a large payload can never deadlock), wait with a
     /// deadline, kill on overrun.
@@ -430,6 +470,34 @@ fn fallback_lines(stderr: &str) -> Vec<String> {
         .filter(|l| l.contains("#FALLBACK"))
         .map(|l| l.trim().to_string())
         .collect()
+}
+
+/// The typed words of a refused email verb: `{error:{cause, fix}}`, a
+/// refusal `message`, or the first failed leg of `email test`.
+pub fn email_error_text(doc: &Value) -> Option<String> {
+    let words = |v: &Value| -> Option<String> {
+        let cause = v.get("cause").and_then(Value::as_str)?;
+        Some(match v.get("fix").and_then(Value::as_str) {
+            Some(fix) if !fix.is_empty() => format!("{cause} — Fix: {fix}"),
+            _ => cause.to_string(),
+        })
+    };
+    if let Some(e) = doc.get("error") {
+        if let Some(w) = words(e) {
+            return Some(w);
+        }
+    }
+    for leg in ["imap", "smtp"] {
+        if let Some(l) = doc.get(leg) {
+            if l.get("ok").and_then(Value::as_bool) == Some(false) {
+                let name = if leg == "imap" { "IMAP" } else { "SMTP" };
+                return words(l).map(|w| format!("{name}: {w}"));
+            }
+        }
+    }
+    doc.get("message")
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 fn read_all(mut r: impl Read) -> String {
@@ -557,6 +625,29 @@ mod tests {
 
         // Nothing anywhere: honest None.
         assert!(resolve_bin(&|_| None, home, cwd, &|_| false).is_none());
+    }
+
+    #[test]
+    fn email_refusals_speak_in_the_clis_typed_words() {
+        use serde_json::json;
+        let refused = json!({"ok": false, "error": {"code": "email_auth_failed",
+            "cause": "The IMAP server rejected the user name or password.", "fix": "Check the password."}});
+        assert_eq!(
+            email_error_text(&refused).as_deref(),
+            Some("The IMAP server rejected the user name or password. — Fix: Check the password.")
+        );
+        let test = json!({"imap": {"ok": true}, "smtp": {"ok": false, "cause": "TLS failed.", "fix": "Check the port."}, "ok": false});
+        assert_eq!(
+            email_error_text(&test).as_deref(),
+            Some("SMTP: TLS failed. — Fix: Check the port.")
+        );
+        let msg =
+            json!({"ok": false, "status": "refused", "message": "Re-run with --yes to confirm."});
+        assert_eq!(
+            email_error_text(&msg).as_deref(),
+            Some("Re-run with --yes to confirm.")
+        );
+        assert_eq!(email_error_text(&json!({"ok": true})), None);
     }
 
     #[test]

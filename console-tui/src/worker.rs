@@ -64,6 +64,23 @@ pub enum Cmd {
     /// One test verb (M3): live model discovery, route membership, or
     /// a cheap generation. Evidence lands in `store.tests`.
     Probe(crate::probes::ProbeSpec),
+    /// `abstractcore email status --json` → the Email screen.
+    LoadEmail,
+    /// One `abstractcore email …` verb (connect / test / disconnect /
+    /// policy / limits / enable / disable), then a fresh status read.
+    Email(Box<EmailAction>),
+}
+
+/// One email verb. `args` follow `abstractcore email`; `--json` is
+/// appended by the worker. A password rides `Arg::Secret` (redacted in
+/// Debug, in the journal and in every error label).
+#[derive(Clone, Debug)]
+pub struct EmailAction {
+    /// What the journal and the busy strip say ("email test").
+    pub label: String,
+    pub args: Vec<Arg>,
+    /// The form to close on success (None for key verbs).
+    pub form_id: Option<u64>,
 }
 
 /// Reads are Python-startup-bound (~1.5s observed); 30s is a hung
@@ -82,6 +99,9 @@ const GENERATE_TIMEOUT: Duration = Duration::from_secs(120);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(7200);
 /// TCP reachability disambiguation — local endpoints answer instantly.
 const REACH_TIMEOUT: Duration = Duration::from_millis(1500);
+/// An email verb may sign in to IMAP and SMTP (30 s connect timeout
+/// each) before it answers.
+const EMAIL_TIMEOUT: Duration = Duration::from_secs(150);
 
 /// Form-completion sink (constructed in lib.rs over the UI signal).
 pub type DoneSink = Box<dyn Fn(u64, Result<String, String>) + Send>;
@@ -228,7 +248,84 @@ fn handle(
         }
         Cmd::Write(spec) => handle_write(store, wake, config_path, cli, spec, done),
         Cmd::Probe(spec) => handle_probe(store, wake, config_path, cli, spec),
+        Cmd::LoadEmail => {
+            load_derived(
+                store,
+                wake,
+                cli,
+                "loading email (email status --json)",
+                &["email", "status", "--json"],
+                |store, outcome| match outcome {
+                    Ok(v) => store.email.set(Loadable::Ready(v)),
+                    Err(e) => store.email.set(Loadable::Failed(e)),
+                },
+            );
+        }
+        Cmd::Email(action) => handle_email(store, wake, cli, action, done),
     }
+}
+
+/// One email verb: run it, journal it (redacted), route the outcome to
+/// its form, then re-read the status so the screen shows the truth.
+fn handle_email(
+    store: &Store,
+    wake: &WakeHandle,
+    cli: Option<&CoreCli>,
+    action: &EmailAction,
+    done: &DoneSink,
+) {
+    let Some(cli) = cli else {
+        let err = no_cli_error().to_string();
+        if let Some(fid) = action.form_id {
+            done(fid, Err(err.clone()));
+        }
+        let store = *store;
+        wake.post(move || store.notice.set(Some(err)));
+        return;
+    };
+    let op = next_op();
+    begin(store, wake, op, &action.label);
+    let mut argv: Vec<&str> = vec!["email"];
+    argv.extend(action.args.iter().map(Arg::value));
+    argv.push("--json");
+    let redacted = format!(
+        "abstractcore email {}",
+        action
+            .args
+            .iter()
+            .map(|a| match a {
+                Arg::Plain(s) => s.clone(),
+                Arg::Secret(_) => "«redacted»".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let outcome = cli.run_email(&argv, &redacted, EMAIL_TIMEOUT);
+    let (notice, journal) = match &outcome {
+        Ok(_) => (format!("{}: done", action.label), Ok("ok".to_string())),
+        Err(e) => (
+            format!("{}: {}", action.label, e.message),
+            Err(e.message.clone()),
+        ),
+    };
+    if let Some(fid) = action.form_id {
+        done(fid, journal.clone());
+    }
+    let status = cli.run_json(&["email", "status", "--json"], READ_TIMEOUT);
+    let store = *store;
+    wake.post(move || {
+        store.end_busy(op);
+        store.push_journal(JournalEntry {
+            when: crate::store::now_hms(),
+            action: redacted,
+            outcome: journal,
+        });
+        match status {
+            Ok(out) => store.email.set(Loadable::Ready(out.value)),
+            Err(e) => store.email.set(Loadable::Failed(e)),
+        }
+        store.notice.set(Some(notice));
+    });
 }
 
 /// THE ONLY COMMAND HERE THAT SPENDS NETWORK BYTES. It runs the shipped

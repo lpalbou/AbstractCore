@@ -1,4 +1,4 @@
-//! The DISPLAY schema: the 17 config sections and their 85 scalar
+//! The DISPLAY schema: the 17 config sections and their 73 scalar
 //! fields, with dataclass defaults and the validation Python actually
 //! enforces. Source: docs/config-surface-inventory.md §2 (every entry
 //! cites abstractcore/config/manager.py at the probe date).
@@ -139,6 +139,11 @@ pub enum SectionKind {
     /// provider_profiles: `{profiles: {id -> profile}}` — displayed
     /// from the pre-redacted `config providers --json`.
     Profiles,
+    /// email: `{enabled, account{...}, policy{...}, limits{...}, ...}` —
+    /// the Email screen displays and edits it through
+    /// `abstractcore email ... --json` (secrets live in the sealed store,
+    /// never in this file).
+    Email,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -490,39 +495,6 @@ const MAINTENANCE_FIELDS: &[FieldSpec] = &[
     f("triage_llm_timeout_s", FieldKind::FloatFree, Dv::F(30.0)),
 ];
 
-const EMAIL_FIELDS: &[FieldSpec] = &[
-    f("smtp_host", FieldKind::Str, Dv::S("")),
-    f(
-        "smtp_port",
-        FieldKind::Int { min: 1, max: 65535 },
-        Dv::I(587),
-    ),
-    f("smtp_username", FieldKind::Str, Dv::S("")),
-    fn_(
-        "smtp_password_env_var",
-        FieldKind::EnvVarName,
-        Dv::S("EMAIL_PASSWORD"),
-        "an env var NAME, not a secret",
-    ),
-    f("smtp_use_starttls", FieldKind::Bool, Dv::B(true)),
-    f("from_email", FieldKind::OptStr, Dv::Null),
-    f("reply_to", FieldKind::OptStr, Dv::Null),
-    f("imap_host", FieldKind::Str, Dv::S("")),
-    f(
-        "imap_port",
-        FieldKind::Int { min: 1, max: 65535 },
-        Dv::I(993),
-    ),
-    f("imap_username", FieldKind::Str, Dv::S("")),
-    fn_(
-        "imap_password_env_var",
-        FieldKind::EnvVarName,
-        Dv::S("EMAIL_PASSWORD"),
-        "an env var NAME, not a secret",
-    ),
-    f("imap_folder", FieldKind::Str, Dv::S("INBOX")),
-];
-
 /// The 17 sections, in the display order of the overview. The two
 /// non-scalar sections (Routes/Profiles) carry no field table — their
 /// authoritative display is the CLI-derived view.
@@ -626,8 +598,8 @@ pub const SECTIONS: &[SectionSpec] = &[
     SectionSpec {
         name: "email",
         title: "Email",
-        kind: SectionKind::Fields,
-        fields: EMAIL_FIELDS,
+        kind: SectionKind::Email,
+        fields: &[],
     },
 ];
 
@@ -751,7 +723,9 @@ mod tests {
     #[test]
     fn field_count_matches_the_inventory() {
         let scalar: usize = SECTIONS.iter().map(|s| s.fields.len()).sum();
-        assert_eq!(scalar, 85, "inventory §2 counts 85 scalar fields");
+        // 85 until core 2.20; the 12 legacy flat email fields left the
+        // scalar table when email became its own screen (SectionKind::Email).
+        assert_eq!(scalar, 73, "inventory §2 counts 73 scalar fields");
         assert_eq!(SECTIONS.len(), 17, "17 sections (+ 1 top-level meta flag)");
     }
 

@@ -4887,3 +4887,311 @@ fn footer_lists_the_arrow_keys_for_screens() {
     let s = h.turns(2);
     assert!(s.contains("←/→ screens"), "footer:\n{s}");
 }
+
+// ---------------------------------------------------------------------
+// Email screen (@) — backlog 0992 WP1: the web console's Email tab,
+// same fields and words, every write through `abstractcore email`.
+// ---------------------------------------------------------------------
+
+fn email_doc(configured: bool) -> Value {
+    if !configured {
+        return json!({
+            "schema": "email_settings_v1", "configured": false, "enabled": true,
+            "policy": {"mode": "allowlist", "entries": [], "default": true},
+            "limits": {"per_hour": 20, "per_day": 100, "used_last_hour": 0, "used_last_day": 0},
+            "status": {"last_test": "", "legs": {}}, "secret_set": false, "secret_storage": "",
+        });
+    }
+    json!({
+        "schema": "email_settings_v1", "configured": true, "enabled": true,
+        "address": "me@example.test", "display_name": "Me", "username": "me@example.test",
+        "auth_kind": "password",
+        "imap": {"host": "imap.example.test", "port": 993, "security": "ssl", "folder": "INBOX", "ca_file": ""},
+        "smtp": {"host": "smtp.example.test", "port": 587, "security": "starttls", "ca_file": ""},
+        "secret_set": true, "secret_storage": "os-keychain", "secret_warning": "",
+        "policy": {"mode": "allowlist", "entries": ["me@example.test", "example.org"], "default": false},
+        "limits": {"per_hour": 20, "per_day": 100, "used_last_hour": 2, "used_last_day": 5},
+        "registered_address": "me@example.test",
+        "status": {"last_test": "2026-09-29T20:00:00+00:00",
+                   "last_error": {"code": "email_auth_failed", "cause": "The SMTP server rejected the user name or password.", "fix": "Check the password."},
+                   "legs": {"imap": {"ok": true}, "smtp": {"ok": false, "cause": "The SMTP server rejected the user name or password."}}},
+        "notices": [],
+    })
+}
+
+fn email_actions(cmds: Vec<Cmd>) -> Vec<(String, Vec<String>, String)> {
+    cmds.into_iter()
+        .filter_map(|c| match &c {
+            Cmd::Email(a) => Some((
+                a.label.clone(),
+                a.args.iter().map(|x| x.value().to_string()).collect(),
+                format!("{c:?}"),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn email_screen_renders_account_status_policy_and_limits() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.store.email.set(Loadable::Ready(email_doc(true)));
+    let s = h.goto_screen(ui::SCREEN_EMAIL);
+    for want in [
+        "● connected",
+        "Credentials encrypted, key in the OS keychain",
+        "Account",
+        "me@example.test",
+        "imap.example.test:993 ssl, folder INBOX",
+        "smtp.example.test:587 starttls",
+        "Recipient policy",
+        "allowlist: only these recipients",
+        "· example.org",
+        "Send limits",
+        "20 (2 sent in the last hour)",
+        "The SMTP server rejected the user name or password.",
+        "Fix: Check the password.",
+    ] {
+        assert!(s.contains(want), "missing {want:?}:\n{s}");
+    }
+    assert!(
+        s.contains("c connect") && s.contains("t test"),
+        "footer names the verbs:\n{s}"
+    );
+}
+
+#[test]
+fn email_screen_is_reached_with_at_and_loads_when_not_asked() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.drain_cmds();
+    h.key(b"@");
+    let s = h.turns(3);
+    assert_eq!(
+        h.ui.screen.get_untracked(),
+        ui::SCREEN_EMAIL,
+        "@ jumps to Email:\n{s}"
+    );
+    let cmds = h.drain_cmds();
+    assert!(
+        cmds.iter().any(|c| matches!(c, Cmd::LoadEmail)),
+        "the screen asks for its view: {cmds:?}"
+    );
+    h.store.email.set(Loadable::Ready(email_doc(false)));
+    let s = h.turns(2);
+    assert!(s.contains("○ not connected"), "{s}");
+    assert!(
+        s.contains("No entries: an empty allowlist refuses every recipient."),
+        "{s}"
+    );
+    h.drain_cmds();
+    h.key(b"t");
+    let s = h.turns(2);
+    assert!(
+        email_actions(h.drain_cmds()).is_empty(),
+        "no test without an account"
+    );
+    assert!(
+        s.contains("press c to connect one"),
+        "the refusal says what to do:\n{s}"
+    );
+}
+
+#[test]
+fn email_verbs_test_toggle_and_confirmed_disconnect() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.store.email.set(Loadable::Ready(email_doc(true)));
+    h.goto_screen(ui::SCREEN_EMAIL);
+    h.drain_cmds();
+    h.key(b"t");
+    h.turns(2);
+    h.key(b"o");
+    h.turns(2);
+    let acts = email_actions(h.drain_cmds());
+    assert_eq!(
+        acts.iter().map(|a| a.1.clone()).collect::<Vec<_>>(),
+        vec![vec!["test".to_string()], vec!["disable".to_string()]]
+    );
+    assert_eq!(acts[1].0, "email Turn off");
+
+    h.key(b"x");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Disconnect deletes the stored password or tokens"),
+        "{s}"
+    );
+    h.key(b"\r"); // the danger confirm defaults to Cancel
+    h.turns(2);
+    assert!(
+        email_actions(h.drain_cmds()).is_empty(),
+        "Enter keeps the account"
+    );
+    h.key(b"x");
+    h.turns(2);
+    h.key(b"\x1b[A"); // up to "Disconnect now"
+    h.turn();
+    h.key(b"\r");
+    h.turns(2);
+    let acts = email_actions(h.drain_cmds());
+    assert_eq!(acts.len(), 1, "{acts:?}");
+    assert_eq!(
+        acts[0].1,
+        vec!["disconnect".to_string(), "--yes".to_string()]
+    );
+}
+
+#[test]
+fn email_connect_form_builds_argv_and_redacts_the_password() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.store.email.set(Loadable::Ready(email_doc(false)));
+    h.goto_screen(ui::SCREEN_EMAIL);
+    h.drain_cmds();
+    h.key(b"c");
+    let s = h.turns(2);
+    for label in [
+        "Address",
+        "Display name",
+        "User name",
+        "Password",
+        "IMAP host",
+        "IMAP port",
+        "IMAP security",
+        "Folder",
+        "SMTP host",
+        "SMTP port",
+        "SMTP security",
+        "CA file",
+        "Registered address",
+        "Save and test",
+    ] {
+        assert!(
+            s.contains(label),
+            "the form carries the web console's field {label:?}:\n{s}"
+        );
+    }
+    h.type_text("me@example.test");
+    h.turns(1);
+    for _ in 0..3 {
+        h.key(b"\t");
+        h.turn();
+    }
+    h.type_text("-dash-Secret-42");
+    h.turns(1);
+    h.key(b"\t");
+    h.turn();
+    h.type_text("imap.example.test");
+    h.turns(1);
+    for _ in 0..9 {
+        h.key(b"\t");
+        h.turn();
+    }
+    h.type_text("\r"); // Save and test
+    h.turns(2);
+    let s = h.term.screen().to_text();
+    assert!(
+        !s.contains("-dash-Secret-42"),
+        "the password is masked on screen:\n{s}"
+    );
+    let acts = email_actions(h.drain_cmds());
+    let [(label, args, debug)] = acts.as_slice() else {
+        panic!("expected one email action, got {acts:?}")
+    };
+    assert_eq!(label, "email Save and test");
+    assert_eq!(
+        args,
+        &vec![
+            "connect".to_string(),
+            "--address=me@example.test".to_string(),
+            "--password=-dash-Secret-42".to_string(),
+            "--imap-host=imap.example.test".to_string(),
+            "--imap-security=ssl".to_string(),
+            "--imap-folder=INBOX".to_string(),
+        ]
+        .into_iter()
+        .filter(|a| a != "--imap-folder=INBOX")
+        .collect::<Vec<_>>(),
+    );
+    assert!(
+        !debug.contains("Secret-42"),
+        "Debug of the command redacts the password: {debug}"
+    );
+}
+
+#[test]
+fn email_policy_and_limits_forms_write_through_the_cli() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.store.email.set(Loadable::Ready(email_doc(true)));
+    h.goto_screen(ui::SCREEN_EMAIL);
+    h.drain_cmds();
+    h.key(b"p");
+    let s = h.turns(2);
+    assert!(
+        s.contains("me@example.test, example.org"),
+        "entries prefilled:\n{s}"
+    );
+    h.key(b"\t"); // mode → entries
+    h.turn();
+    h.key(b"\x1b[F"); // End: append after the prefilled entries
+    h.turn();
+    h.type_text(", corp.test");
+    h.turns(1);
+    h.key(b"\t");
+    h.turn();
+    h.type_text("\r"); // Save policy
+    h.turns(2);
+    let cmds = h.drain_cmds();
+    let form_id = cmds
+        .iter()
+        .find_map(|c| match c {
+            Cmd::Email(a) => a.form_id,
+            _ => None,
+        })
+        .expect("the policy write carries its form id");
+    let acts = email_actions(cmds);
+    assert_eq!(
+        acts[0].1,
+        [
+            "policy",
+            "set",
+            "--clear",
+            "--mode=allowlist",
+            "--add=me@example.test",
+            "--add=example.org",
+            "--add=corp.test"
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+    );
+    // The worker's completion closes the form (success).
+    h.ui.write_done.set(Some((form_id, Ok("ok".into()))));
+    h.store.email.set(Loadable::Ready(email_doc(true)));
+    h.turns(3);
+    h.key(b"l");
+    h.turns(2);
+    // Per hour is focused, prefilled "20": clear it and type 5.
+    h.key(b"\x1b[F");
+    h.turn();
+    h.key(b"\x7f\x7f");
+    h.turn();
+    h.type_text("5");
+    h.turns(1);
+    h.key(b"\t");
+    h.turn();
+    h.key(b"\t");
+    h.turn();
+    h.type_text("\r"); // Save limits
+    h.turns(2);
+    let acts = email_actions(h.drain_cmds());
+    assert_eq!(
+        acts.last().expect("a limits action").1,
+        ["limits", "set", "--per-hour=5", "--per-day=100"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+    );
+}

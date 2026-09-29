@@ -268,6 +268,22 @@ fn sections_table(cx: Scope, jump: Jump, t: &TokenSet, snap: &Snapshot) -> View 
                 };
                 (state, details)
             }
+            SectionKind::Email => {
+                let details = match jump.store.email.get() {
+                    Loadable::Ready(doc) => super::email::summary_line(&doc),
+                    Loadable::Loading => "⟳ loading the email view…".to_string(),
+                    _ => match &snap.email_account_in_file {
+                        Some(a) => format!("{a} (Email screen for status)"),
+                        None => "not connected".to_string(),
+                    },
+                };
+                let state = if snap.email_account_in_file.is_some() {
+                    "● connected".to_string()
+                } else {
+                    "· none".to_string()
+                };
+                (state, details)
+            }
             SectionKind::Profiles => {
                 let n = snap.profiles_in_file;
                 let details = match jump.store.profiles.get() {

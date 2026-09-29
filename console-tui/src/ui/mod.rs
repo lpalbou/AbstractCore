@@ -6,6 +6,7 @@
 //! page scopes on switch by design).
 
 pub mod editors;
+pub mod email;
 pub mod forms;
 pub mod model_field;
 pub mod overview;
@@ -35,8 +36,8 @@ use util::{fit_width, hints, line, span, span_bold};
 /// APPEND ONLY: indices are the wizard's step targets, the footer's
 /// hint arms and the tests' `goto_screen` arguments. Screens 9 and 10
 /// are the shared library screens (`crate::screens`); the tenth is
-/// reached with `0`.
-pub const SCREENS: [&str; 10] = [
+/// reached with `0`, the eleventh (Email) with `@`.
+pub const SCREENS: [&str; 11] = [
     "Overview",
     "Model",
     "Providers",
@@ -47,26 +48,30 @@ pub const SCREENS: [&str; 10] = [
     "Review",
     crate::screens::CATALOG_TITLE,
     crate::screens::ENGINES_TITLE,
+    "Email",
 ];
 
 /// Index of the shared Models screen (`9`).
 pub const SCREEN_CATALOG: usize = 8;
 /// Index of the shared Engines screen (`0`).
 pub const SCREEN_ENGINES: usize = 9;
+/// Index of the Email screen (`@`).
+pub const SCREEN_EMAIL: usize = 10;
 
-/// The digit that jumps to screen `i` (1-9, then 0 for the tenth).
+/// The key that jumps to screen `i` (1-9, then 0 for the tenth, @ for
+/// the eleventh).
 pub fn screen_key(i: usize) -> char {
-    if i == 9 {
-        '0'
-    } else {
-        char::from_digit(i as u32 + 1, 10).expect("screens 1-9")
+    match i {
+        9 => '0',
+        10 => '@',
+        _ => char::from_digit(i as u32 + 1, 10).expect("screens 1-9"),
     }
 }
 
 /// Stable PageHost page ids, parallel to `SCREENS`. `ui.screen: usize`
 /// stays the source of truth; a two-way equality-guarded bridge keeps
 /// PageHost's string `active` in lockstep.
-pub const SCREEN_IDS: [&str; 10] = [
+pub const SCREEN_IDS: [&str; 11] = [
     "overview",
     "model",
     "providers",
@@ -77,6 +82,7 @@ pub const SCREEN_IDS: [&str; 10] = [
     "review",
     crate::screens::CATALOG_ID,
     crate::screens::ENGINES_ID,
+    "email",
 ];
 
 /// Which screen edits a given config section — the overview's
@@ -88,7 +94,8 @@ pub fn screen_for_section(name: &str) -> usize {
         "capability_defaults" => 3,
         "vision" | "audio" | "video" => 4,
         "embeddings" => 5,
-        _ => 6, // server, logging, streaming, timeouts, offline, maintenance, email, cache
+        "email" => SCREEN_EMAIL,
+        _ => 6, // server, logging, streaming, timeouts, offline, maintenance, cache
     }
 }
 
@@ -459,8 +466,8 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
             )
         };
         let c: Vec<Ctx> = (0..SCREEN_IDS.len()).map(|_| host_ctx.clone()).collect();
-        let [c0, c1, c2, c3, c4, c5, c6, c7, c8, c9]: [Ctx; 10] =
-            c.try_into().ok().expect("10 screens");
+        let [c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10]: [Ctx; 11] =
+            c.try_into().ok().expect("11 screens");
         PageHost::new()
             .page(SCREEN_IDS[0], "1 Overview", move |gcx| {
                 overview::view(gcx, &c0, theme)
@@ -504,7 +511,6 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
                         "timeouts",
                         "offline",
                         "maintenance",
-                        "email",
                         "cache",
                     ],
                     c6.ui.server_sel,
@@ -518,6 +524,9 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
             })
             .page(SCREEN_IDS[9], "0 Engines", move |gcx| {
                 crate::screens::engines(gcx, &c9.screens)
+            })
+            .page(SCREEN_IDS[10], "@ Email", move |gcx| {
+                email::view(gcx, &c10, theme)
             })
             .active(active)
             .number_jump(!wizard_now)
@@ -824,7 +833,7 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                 pairs.push(("f", "finish"));
                                 pairs.push(("Ctrl+C", "quit"));
                             } else {
-                                pairs.push(("1-9,0 ←/→", "screens"));
+                                pairs.push(("1-9,0,@ ←/→", "screens"));
                                 pairs.push(("q", "quit"));
                                 // Models owns `w` (download) — the root's
                                 // wizard key never reaches it there.
@@ -869,6 +878,7 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                     screen_caps,
                                     &screen_access.get(),
                                 )),
+                                SCREEN_EMAIL => pairs.extend(email::HINTS.iter().copied()),
                                 _ => {}
                             }
                             pairs.push(("g", "test default route"));

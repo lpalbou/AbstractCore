@@ -162,6 +162,9 @@ pub struct Snapshot {
     /// exact truth when it is up).
     pub routes_in_file: Vec<String>,
     pub profiles_in_file: usize,
+    /// `email.account.address` when an account is stored (the Email
+    /// screen's CLI view is the full truth: status, policy, limits).
+    pub email_account_in_file: Option<String>,
     /// Shapes Python's own loader RAISES on (adversarial review P1-1):
     /// the whole file then loads as DEFAULTS after a fresh
     /// `.corrupt-*.bak` — on EVERY Python invocation. When non-empty,
@@ -375,6 +378,13 @@ pub fn fold(raw: &Value, bytes: u64, mtime: Option<SystemTime>, mode: Option<u32
     let profiles_in_file = profile_rows(obj.get("provider_profiles"))
         .map(|rows| rows.len())
         .unwrap_or(0);
+    let email_account_in_file = obj
+        .get("email")
+        .and_then(|e| e.get("account"))
+        .and_then(|a| a.get("address"))
+        .and_then(Value::as_str)
+        .filter(|a| !a.trim().is_empty())
+        .map(str::to_string);
 
     Snapshot {
         sections,
@@ -382,6 +392,7 @@ pub fn fold(raw: &Value, bytes: u64, mtime: Option<SystemTime>, mode: Option<u32
         audio_strategy_explicit: explicit,
         routes_in_file,
         profiles_in_file,
+        email_account_in_file,
         python_refusals: python_refusals(obj),
         bytes,
         mtime,

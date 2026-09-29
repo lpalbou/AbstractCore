@@ -1025,6 +1025,10 @@ pub struct Store {
     /// One probe at a time: tests run real generations/discoveries;
     /// a queued duplicate would silently double the cost.
     pub probe_busy: Signal<bool>,
+    /// The email account view (`abstractcore email status --json`,
+    /// schema `email_settings_v1`): account, policy, limits, status.
+    /// Never carries a secret (the CLI never prints one).
+    pub email: Signal<Loadable<Value>>,
 }
 
 impl Store {
@@ -1043,6 +1047,7 @@ impl Store {
             python_fallback: cx.signal(None),
             tests: cx.signal(Vec::new()),
             probe_busy: cx.signal(false),
+            email: cx.signal(Loadable::default()),
         }
     }
 
@@ -1065,6 +1070,7 @@ impl Store {
             availability,
             models,
             python_fallback,
+            email,
         } = *self;
         cfg.set(Loadable::NotAsked);
         routes.set(Loadable::NotAsked);
@@ -1075,6 +1081,7 @@ impl Store {
         availability.set(Loadable::NotAsked);
         models.update(|m| m.clear());
         python_fallback.set(None);
+        email.set(Loadable::NotAsked);
     }
 
     /// Latest-per-label test evidence (newest first).
