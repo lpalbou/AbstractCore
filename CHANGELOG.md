@@ -22,7 +22,8 @@ reports.
   `apply-recommended --only stt`.
 - The fresh-install marker is `seeded: recommended-v2`. A store an earlier fresh install wrote
   (`recommended-v1`) gains `input.voice` the next time it loads when that route is empty, and is
-  stamped `recommended-v2` on its next save. Stores that were never seeded are unchanged.
+  stamped `recommended-v2` on its next save; a speech-input route another process saved in the
+  meantime is kept. Stores that were never seeded are unchanged.
 
 ### Fixed
 - `apply-recommended` compares against the store file and always saves. Right after a grid read on

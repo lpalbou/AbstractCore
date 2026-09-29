@@ -301,3 +301,63 @@ def test_the_cli_prints_before_and_after_and_names_what_it_kept(tmp_path, capsys
     assert "Nothing was written" in out
     image_line = next(line for line in out.splitlines() if "output.image" in line)
     assert "nothing recommended runs on this host" in image_line and "left unset" in image_line
+
+
+def test_the_seed_upgrade_never_overwrites_a_route_another_process_saved(tmp_path) -> None:
+    """A long-lived manager (a console session) loads a recommended-v1 store and gains
+    input.voice IN MEMORY; another process (the CLI) then sets input.voice; the long-lived
+    manager saves an unrelated field. The operator's route must survive: the in-memory upgrade
+    is not this process's edit, so the save-time merge must not publish it over the disk."""
+    path = tmp_path / "abstractcore.json"
+    v1 = {"input.text": {"provider": "lmstudio", "model": "qwen/qwen3.5-9b"},
+          "output.voice": {"provider": "supertonic", "model": "supertonic-3"}}
+    path.write_text(json.dumps({"capability_defaults": {"version": 1, "routes": v1, "seeded": "recommended-v1"}}))
+
+    long_lived = _manager(tmp_path)
+    assert long_lived.config.capability_defaults.routes["input.voice"].provider == "faster-whisper"
+
+    other = _manager(tmp_path)
+    other.set_capability_default("input", "voice", provider="openai", model="whisper-1")
+    assert _routes_on_disk(tmp_path)["input.voice"] == {"provider": "openai", "model": "whisper-1"}
+
+    long_lived.config.timeouts.default_timeout = 123.0
+    long_lived._save_config()
+
+    assert _routes_on_disk(tmp_path)["input.voice"] == {"provider": "openai", "model": "whisper-1"}
+    stored = json.loads(path.read_text())
+    assert stored["timeouts"]["default_timeout"] == 123.0, "the unrelated field is still saved"
+    assert stored["capability_defaults"]["seeded"] == "recommended-v2"
+    # The long-lived manager now reads what it published.
+    voice = long_lived.config.capability_defaults.routes["input.voice"]
+    assert (voice.provider, voice.model) == ("openai", "whisper-1")
+
+    # With nobody else writing, the same save persists the upgrade.
+    path.write_text(json.dumps({"capability_defaults": {"version": 1, "routes": v1, "seeded": "recommended-v1"}}))
+    alone = _manager(tmp_path)
+    alone.config.timeouts.default_timeout = 45.0
+    alone._save_config()
+    assert _routes_on_disk(tmp_path)["input.voice"] == {"provider": "faster-whisper", "model": "base"}
+
+    # A change this process made to the upgraded row is an ordinary edit and wins.
+    path.write_text(json.dumps({"capability_defaults": {"version": 1, "routes": v1, "seeded": "recommended-v1"}}))
+    editor = _manager(tmp_path)
+    _manager(tmp_path).set_capability_default("input", "voice", provider="openai", model="whisper-1")
+    editor.set_capability_default("input", "voice", provider="faster-whisper", model="small")
+    assert _routes_on_disk(tmp_path)["input.voice"] == {"provider": "faster-whisper", "model": "small"}
+
+
+def test_apply_always_saves_even_when_no_route_changes(tmp_path) -> None:
+    """apply-recommended publishes the store even when its plan changes nothing: on a fresh
+    install where the selected recommendation cannot run here (video on a processor-only
+    host), the in-memory fresh-install seed it reports is written, so the next reader sees it."""
+    path = tmp_path / "abstractcore.json"
+    manager = _manager(tmp_path)
+    assert not path.exists()
+
+    report = manager.apply_recommended_capability_defaults(only=["video"])
+
+    assert report["changed"] == 0
+    assert path.exists(), "apply must save even when no row changed"
+    stored = json.loads(path.read_text())["capability_defaults"]
+    assert stored["seeded"] == "recommended-v2"
+    assert stored["routes"]["input.voice"] == {"provider": "faster-whisper", "model": "base"}

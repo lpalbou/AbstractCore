@@ -626,6 +626,11 @@ class ConfigurationManager:
         # another writer's rows. `{}` means "no trustworthy baseline" (fresh
         # install or unreadable file) and the merge degrades to a whole publish.
         self._store_baseline: Dict[str, Any] = self._read_store_document() or {}
+        # Routes the recommended-seed upgrade added IN MEMORY at load (key ->
+        # the added route's dict), not yet on disk. They are not this
+        # process's edits: `_save_config` yields each to a value another
+        # writer put on disk meanwhile (see `_yield_seed_upgrade_to_disk`).
+        self._seed_upgrade_added: Dict[str, Dict[str, Any]] = {}
         self.config = self._load_config()
         self._apply_smart_defaults()
         if self._apply_env:
@@ -874,7 +879,17 @@ class ConfigurationManager:
                 try:
                     from .capability_defaults import upgrade_recommended_seed
 
-                    upgrade_recommended_seed(config.capability_defaults)
+                    routes_before = {
+                        key: route.to_dict()
+                        for key, route in config.capability_defaults.routes.items()
+                        if route.configured()
+                    }
+                    if upgrade_recommended_seed(config.capability_defaults):
+                        self._seed_upgrade_added = {
+                            key: route.to_dict()
+                            for key, route in config.capability_defaults.routes.items()
+                            if route.configured() and key not in routes_before
+                        }
                 except Exception as upgrade_error:  # pragma: no cover - defensive
                     import logging
 
@@ -1074,6 +1089,8 @@ class ConfigurationManager:
         # loaded; `_read_store_document()` returning None (absent/unreadable/
         # not an object) means there is nothing to merge against.
         disk = self._read_store_document()
+        if disk is not None:
+            self._yield_seed_upgrade_to_disk(config_dict, disk)
         published = (
             config_dict
             if disk is None
@@ -1109,10 +1126,42 @@ class ConfigurationManager:
         # mine", or the next save would read their absence from `mine` as a
         # delete and revert them after all.
         self._store_baseline = copy.deepcopy(config_dict)
+        self._seed_upgrade_added = {}
         try:
             os.chmod(self.config_file, 0o600)
         except Exception:
             pass
+
+    def _yield_seed_upgrade_to_disk(self, config_dict: Dict[str, Any], disk: Dict[str, Any]) -> None:
+        """Let a route another writer saved win over this manager's in-memory seed upgrade.
+
+        The recommended-seed upgrade (`upgrade_recommended_seed`, 2.19.2: speech
+        input) adds rows in memory at load, absent from the baseline. The
+        three-way merge would read such a row as THIS process's edit and publish
+        it over a value another process saved in between (the operator's
+        `set-default input voice ...` from a CLI while a console session is
+        open). So, for every row the upgrade added and this process has not
+        changed since: a configured value on disk wins, in the published
+        document and in memory; an empty disk row is filled by the upgrade.
+        """
+        added = getattr(self, "_seed_upgrade_added", None) or {}
+        if not added:
+            return
+        mine = (config_dict.get("capability_defaults") or {}).get("routes")
+        disk_routes = (disk.get("capability_defaults") or {}).get("routes") if isinstance(disk.get("capability_defaults"), dict) else None
+        if not isinstance(mine, dict) or not isinstance(disk_routes, dict):
+            return
+        for key, upgraded in added.items():
+            if mine.get(key) != upgraded:
+                continue  # changed by this process since the load: an ordinary edit
+            on_disk = disk_routes.get(key)
+            if not isinstance(on_disk, dict):
+                continue
+            parsed = capability_defaults_from_dict({"routes": {key: on_disk}}).routes.get(key)
+            if parsed is None or not parsed.configured():
+                continue
+            mine[key] = parsed.to_dict()
+            self.config.capability_defaults.routes[key] = parsed
 
     def set_vision_provider(self, provider: str, model: str) -> bool:
         """Set vision provider and model."""
