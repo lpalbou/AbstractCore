@@ -67,15 +67,27 @@ def test_a_fresh_apple_silicon_install_still_seeds_the_image_route(capsys, monke
     from abstractcore.utils import host_profile as hp
     from tests.models_engines_fakes import synthetic_host
 
-    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal64"))
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal16"))
     d = Path(tempfile.mkdtemp())
     out = _run(capsys, "--config-file", str(d / "abstractcore.json"), "defaults")
     assert "mlx-gen/AbstractFramework/flux.2-klein-4b-8bit" in out
-    # A 64 GiB Mac runs MLX-Gen but the recommended video model does not fit
+    # A 16 GiB Mac runs MLX-Gen but the recommended video model does not fit
     # its memory: the only row that says why is the video row.
     flagged = [line for line in out.splitlines() if "no recommendation for this host" in line]
     assert len(flagged) == 1 and flagged[0].startswith("- output.video:")
-    assert "needs about" in flagged[0] and "macOS's GPU memory limit on this Mac is about 48.0 GiB" in flagged[0]
+    assert "needs about" in flagged[0] and "macOS's GPU memory limit on this Mac is about 12.0 GiB" in flagged[0]
+
+
+def test_a_fresh_64_gib_mac_install_seeds_the_video_route_at_its_default_canvas(capsys, monkeypatch) -> None:
+    from abstractcore.utils import host_profile as hp
+    from tests.models_engines_fakes import synthetic_host
+
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("metal64"))
+    d = Path(tempfile.mkdtemp())
+    out = _run(capsys, "--config-file", str(d / "abstractcore.json"), "defaults")
+    # TI2V-5B at AbstractVision's 832x480 default fits 64 GiB: written, nothing flagged.
+    assert "mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit" in out
+    assert not [line for line in out.splitlines() if "no recommendation for this host" in line]
 
 
 def test_an_unconfigured_grid_names_the_command_that_fixes_it(capsys) -> None:

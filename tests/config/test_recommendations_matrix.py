@@ -203,11 +203,16 @@ def test_apple_only_engines_are_unavailable_elsewhere_with_the_reason(matrix):
 def test_video_is_memory_gated_on_apple_silicon(matrix):
     for gib in rec.APPLE_MEMORY_SIZES_GIB:
         video = _apple_class_for(matrix, gib)["entries"]["video"]
-        if gib < 96:
+        if gib < 32:
             assert video["status"] == "unavailable", gib
-            # The engine's measured figure, never worded as the model's need.
-            assert "measured with AbstractVision/mlx-gen at 1280x704x121" in video["reason"]
-            assert "not the model's minimum" in video["reason"] and "more unified memory" in video["reason"]
+            # The engine's measured figure at its default canvas, never worded as the model's need.
+            assert "measured with AbstractVision/mlx-gen at 832x480x121" in video["reason"]
+            assert "not the model's minimum" in video["reason"]
+            if gib == 24:
+                # It fits once the GPU memory limit is raised: the reason says how.
+                assert "sudo sysctl iogpu.wired_limit_mb=" in video["reason"], gib
+            else:
+                assert "more unified memory" in video["reason"], gib
         else:
             assert video["status"] == "recommended" and video["fit"] in ("fits", "tight"), gib
             assert video["memory_need_source"] == "measured"
@@ -334,29 +339,27 @@ def _ti2v_resident():
 
 
 def test_the_ti2v_memory_need_is_measured_at_abstractvisions_default_canvas():
-    """AbstractVision's TI2V-5B default is 1280x704, 121 frames (backends/mflux.py
-    WAN_DEFAULT_WIDTH/HEIGHT/FRAMES); the fit gate must use the peak measured
-    there, not at a 17-frame validation profile."""
+    """AbstractVision 0.3.31's TI2V-5B default is 832x480, 121 frames
+    (backends/mflux.py WAN_VIDEO_DEFAULT_CANVASES); the fit gate uses the peak
+    measured there (image-to-video, the higher of the two tasks), and Wan's
+    1280x704 reference size is kept as a measured larger canvas."""
     resident = _ti2v_resident()
-    assert "1280x704, 121 frames" in resident["source"] and "mlx-gen 0.38.0" in resident["source"]
-    assert resident["bytes"] == 64941342932  # 60.48 GiB MLX peak
-    assert [(s["canvas"], s["bytes"]) for s in resident["smaller_canvases"]] == [("832x480x121", 35121771780)]
+    assert "832x480, 121 frames" in resident["source"] and "mlx-gen 0.38.0" in resident["source"]
+    assert "abstractvision 0.3.31" in resident["source"]
+    assert resident["measured_with"].startswith("AbstractVision/mlx-gen at 832x480x121")
+    assert resident["bytes"] == 17790464710  # 16.57 GiB MLX peak
+    assert "smaller_canvases" not in resident  # 832x480 is the smallest canvas AbstractVision accepts
+    assert [(s["canvas"], s["bytes"]) for s in resident["larger_canvases"]] == [("1280x704x121", 27244719138)]
 
 
-def test_a_64_gb_mac_is_told_the_measured_canvas_video_still_runs_at(matrix):
+def test_a_64_gb_mac_gets_video_at_the_default_canvas(matrix):
     sixty_four = _apple_class_for(matrix, 64)["entries"]["video"]
-    assert sixty_four["status"] == "unavailable"  # the default canvas does not fit: never written
-    assert sixty_four["smaller_canvas"] == {
-        "canvas": "832x480x121", "memory_need_bytes": sixty_four["smaller_canvas"]["memory_need_bytes"],
-        "memory_need_source": "measured", "fit": "fits",
-    }
-    assert "at 832x480 (121 frames) it needs about" in sixty_four["reason"]
-    assert "set output.video to mlx-gen/" + TI2V in sixty_four["reason"]
-    for gib in (8, 16, 24, 32, 48):
-        entry = _apple_class_for(matrix, gib)["entries"]["video"]
-        assert entry["smaller_canvas"] is None and "832x480" not in entry["reason"], gib
-    for gib in (96, 128, 192):
+    assert sixty_four["status"] == "recommended" and sixty_four["artifact"] == TI2V
+    assert sixty_four["smaller_canvas"] is None and sixty_four["reason"] is None
+    for gib in (32, 48, 96, 128, 192):
         assert _apple_class_for(matrix, gib)["entries"]["video"]["status"] == "recommended", gib
+    for gib in (8, 16, 24):
+        assert _apple_class_for(matrix, gib)["entries"]["video"]["status"] == "unavailable", gib
 
 
 def test_the_validator_checks_smaller_canvases():
@@ -366,6 +369,16 @@ def test_the_validator_checks_smaller_canvases():
     assert mc._validate_resident("a", dict(base, smaller_canvases=[{"canvas": "832x480", "bytes": 50, "source": "m"}]))
     assert mc._validate_resident("a", dict(base, smaller_canvases=[{"canvas": "832x480x121", "bytes": 50}]))
     assert mc._validate_resident("a", dict(base, smaller_canvases=[]))
+
+
+def test_the_validator_checks_larger_canvases():
+    base = {"bytes": 100, "source": "measured here"}
+    entry = {"canvas": "1280x704x121", "bytes": 150, "source": "m"}
+    assert mc._validate_resident("a", dict(base, larger_canvases=[entry])) == []
+    assert mc._validate_resident("a", dict(base, larger_canvases=[dict(entry, bytes=90)]))  # not above the default
+    assert mc._validate_resident("a", dict(base, larger_canvases=[entry, dict(entry, bytes=140)]))  # not ascending
+    assert mc._validate_resident("a", dict(base, larger_canvases=[dict(entry, canvas="1280x704")]))
+    assert mc._validate_resident("a", dict(base, larger_canvases=[]))
 
 
 def test_the_8_gb_text_cell_keeps_the_tier_with_its_warning(matrix):
@@ -380,7 +393,7 @@ def test_the_8_gb_text_cell_keeps_the_tier_with_its_warning(matrix):
     assert _apple_class_for(matrix, 8)["entries"]["vision"]["status"] == "covered"
 
 
-def test_the_catalog_shows_the_smaller_canvas_where_only_it_fits(tmp_path, monkeypatch):
+def test_the_catalog_shows_the_larger_canvas_where_it_fits_too(tmp_path, monkeypatch):
     from tests.models_engines_fakes import isolate_host
 
     isolate_host(tmp_path, monkeypatch)
@@ -389,24 +402,26 @@ def test_the_catalog_shows_the_smaller_canvas_where_only_it_fits(tmp_path, monke
         rows = {r["id"]: r for r in mc.catalog(host=synthetic_host(f"metal{gib}"))["rows"]}
         return next(a for a in rows["wan2.2-ti2v-5b"]["artifacts"] if a["artifact"] == TI2V)
 
-    at64 = ti2v(64)
-    assert at64["fit"]["verdict"] == "too_large"
-    assert at64["smaller_canvas"]["canvas"] == "832x480x121" and at64["smaller_canvas"]["verdict"] == "fits"
-    assert any("at 832x480x121" in n for n in at64["fit"]["notes"])
-    assert ti2v(96)["smaller_canvas"] is None  # the default canvas fits
-    assert ti2v(32)["smaller_canvas"] is None  # nothing measured fits
+    at128 = ti2v(128)
+    assert at128["fit"]["verdict"] == "fits" and at128["smaller_canvas"] is None
+    assert at128["larger_canvas"]["canvas"] == "1280x704x121" and at128["larger_canvas"]["verdict"] == "fits"
+    assert any(n.startswith("at 1280x704x121") and n.endswith("fits too") for n in at128["fit"]["notes"])
+    at32 = ti2v(32)
+    assert at32["fit"]["verdict"] == "fits" and at32["larger_canvas"] is None  # 1280x704 needs more
+    assert ti2v(16)["larger_canvas"] is None  # the default does not fit: no larger size offered
 
 
-def test_a14b_text_to_video_runs_at_640x352_on_a_64_gb_mac(tmp_path, monkeypatch):
-    """Measured 2026-09-28 (mlx-gen 0.38.0): 47.36 GiB at 832x480x81, 41.77 GiB
-    at 640x352x81; the default canvas (1280x720x81, 71.59 GiB) stays the fit."""
+def test_a14b_text_to_video_carries_its_measured_canvases():
+    """Measured 2026-09-29 (abstractvision 0.3.31, tiled VAE decode): 38.32 GiB at
+    the 832x480x81 default, 35.13 GiB at 640x352x81, 53.51 GiB at 1280x720x81."""
     a14b = "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"
     _row, art = mc._seed_row_and_artifact("wan2.2-t2v-a14b", "mlx-gen", a14b)
-    assert [(s["canvas"], s["bytes"]) for s in art["resident"]["smaller_canvases"]] == [
-        ("832x480x81", 50851376762), ("640x352x81", 44855309454)]
-    got = mc.smaller_canvas_fit("mlx-gen", a14b, synthetic_host("metal64"))
-    assert got["canvas"] == "640x352x81" and got["fit"]["verdict"] in ("fits", "tight")
-    assert mc.recommended_artifact_fit("mlx-gen", a14b, synthetic_host("metal64"))["fit"]["verdict"] == "too_large"
+    assert art["resident"]["bytes"] == 41140836626
+    assert [(s["canvas"], s["bytes"]) for s in art["resident"]["smaller_canvases"]] == [("640x352x81", 37724688038)]
+    assert [(c["canvas"], c["bytes"]) for c in art["resident"]["larger_canvases"]] == [("1280x720x81", 57459824914)]
+    assert mc.recommended_artifact_fit("mlx-gen", a14b, synthetic_host("metal64"))["fit"]["verdict"] == "tight"
+    # A stock 48 GB Mac runs neither size.
+    assert mc.recommended_artifact_fit("mlx-gen", a14b, synthetic_host("metal48"))["fit"]["verdict"] == "too_large"
     assert mc.smaller_canvas_fit("mlx-gen", a14b, synthetic_host("metal48")) is None
 
 

@@ -57,18 +57,20 @@ measurements.
   MTP `speculation` policy.
 - The recommended image route (FLUX.2 klein 4B, about 8.5 GiB) is memory-gated like video and
   music: an 8 GB Mac gets no image route, with the reason.
-- Wan2.2 TI2V-5B's memory need is AbstractVision/mlx-gen's peak measured at its default canvas
-  (1280x704, 121 frames: 60.5 GiB) instead of a 17-frame validation profile (58.5 GiB); the
-  recommended video route still needs 96 GiB of unified memory. Every sentence labels it as that
-  engine's figure (it keeps the text encoder and VAE in memory), not the model's own requirement:
-  catalog `resident.measured_with`. Its peak at 832x480, the smallest
-  canvas AbstractVision accepts for it, is measured too (32.7 GiB, catalog
-  `resident.smaller_canvases`): on a Mac where only that size fits (64 GiB) the route is still not
-  written, and the reason, the grid and `models recommendations` (`smaller_canvas`) say so, with
-  the route to set yourself.
-- Wan2.2 T2V-A14B 8-bit carries measured needs at smaller canvases (47.4 GiB at 832x480, 41.8 GiB
-  at 640x352, 81 frames). Catalog artifacts gain `smaller_canvas: {canvas, need_bytes, verdict}`
-  when only a measured smaller canvas fits the machine (T2V-A14B at 640x352 on a 64 GiB Mac).
+- Wan2.2 video memory needs are AbstractVision/mlx-gen's peaks measured at each model's default
+  canvas in AbstractVision 0.3.31 (832x480; tiled VAE decode): TI2V-5B about 16.6 GiB (832x480,
+  121 frames), so the recommended video route is written on Macs with 32 GiB of unified memory or
+  more, and a 24 GiB Mac is told the GPU memory limit that makes it fit; T2V-A14B and I2V-A14B
+  about 38.3 and 38.4 GiB (832x480, 81 frames). Every sentence labels the figure as that engine's
+  (it keeps the text encoder and VAE in memory), not the model's own requirement: catalog
+  `resident.measured_with`. Other measured sizes stay in the catalog: `resident.larger_canvases`
+  (new; TI2V-5B at 1280x704: 25.4 GiB; T2V-A14B at 1280x720: 53.5 GiB; I2V-A14B at 1280x720: 71.7 GiB, measured with AbstractVision 0.3.30's untiled decode) and `resident.smaller_canvases`
+  (T2V-A14B at 640x352: 35.1 GiB). Catalog artifacts carry `larger_canvas: {canvas, need_bytes, verdict}` (with
+  a fit note) when a measured larger size also fits the machine, and `smaller_canvas` when only a
+  measured smaller size does.
+- The optional AbstractVision floor is `abstractvision>=0.3.31` in every extra that installs it:
+  the memory figures above hold for its 832x480 defaults and tiled decode, and an older
+  AbstractVision would generate TI2V-5B at 1280x704 by default (about 60 GiB).
 - `capability_defaults.RECOMMENDED_MODELS` is the one table of recommended models;
   `RECOMMENDED_CAPABILITY_DEFAULT_ROUTES` and `RECOMMENDED_MODEL_DOWNLOADS` are its starter-set
   views and keep their values.

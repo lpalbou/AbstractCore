@@ -117,7 +117,7 @@ music (`output.music`), which are not written for you:
 
 | host | `input.text` | `output.voice` | `output.image` | `output.video` |
 | --- | --- | --- | --- | --- |
-| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (about 96 GiB of unified memory or more), else unset |
+| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (32 GiB of unified memory or more), else unset |
 | Linux, Windows (x86_64, arm64) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | unset | unset |
 | Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | unset | unset |
 | anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset |
@@ -135,23 +135,24 @@ run: `diffusers` (install profile `gpu`), `sdcpp`, or a cloud image provider.
 The video route (Wan2.2 TI2V-5B, one model for text-to-video and
 image-to-video) also runs on MLX-Gen, and it is written only where the model
 catalog's fit estimate says it fits: measured with AbstractVision/mlx-gen at
-1280x704x121, which keeps the text encoder and VAE in memory, it peaks at about
-60.5 GiB (not its 16.9 GiB file size), so from 96 GiB of unified memory. That
-is this engine's figure, not the model's own requirement: runtimes that offload
-need far less. At 832x480, the smallest canvas AbstractVision accepts for it,
-the same engine needs about 32.7 GiB (measured); on a Mac where only that size fits (64 GiB) the route is not
-written, and the reason says so with the route to set yourself. AbstractFramework has no local video engine off Apple
+its default canvas (832x480, 121 frames), which keeps the text encoder and VAE
+in memory, it peaks at about 16.6 GiB, so from 32 GiB of unified memory; a
+24 GiB Mac runs it once the GPU memory limit is raised, and the reason gives
+the command. That is this engine's figure, not the model's own requirement.
+A caller can ask for a larger size: at 1280x704 (Wan's reference size) the
+same engine needs about 25.4 GiB (measured), and the catalog entry says so
+where that fits too. AbstractFramework has no local video engine off Apple
 silicon, so elsewhere the reason names the remaining option: an
 OpenAI-compatible video endpoint through AbstractVision.
 The larger Wan2.2 A14B 8-bit models (`AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`,
 `AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`) are in the catalog but not
-recommended: at AbstractVision's default A14B canvas (1280x720, 81 frames) each
-needs about 72 GiB while it generates (measured with AbstractVision/mlx-gen), so the catalog's fit reads
-`too_large` on 64 GiB Macs, `needs_gpu_limit` on 96 GiB Macs (with the
-command), `tight` on 128 GiB Macs and `fits` from 192 GiB. Text-to-video A14B
-also has measured needs at smaller canvases (about 47.4 GiB at 832x480 and
-41.8 GiB at 640x352, 81 frames): on a 64 GiB Mac the catalog entry's
-`smaller_canvas` says it runs at 640x352.
+recommended: at AbstractVision's default A14B canvas (832x480, 81 frames) each
+needs about 38.3 GiB while it generates (measured with AbstractVision/mlx-gen), so the catalog's fit reads
+`too_large` up to 48 GiB, `tight` on 64 GiB Macs and `fits` from 96 GiB.
+Text-to-video A14B also has measured needs at other canvases (about 35.1 GiB at
+640x352 and 53.5 GiB at 1280x720, 81 frames): the catalog entry's
+`smaller_canvas` names the smaller size where only it fits, and `larger_canvas`
+the larger size where that fits too.
 A route that is already configured but cannot run on this host — an
 `mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
 example `output.image: mlx-gen/...` kept from an install made before these

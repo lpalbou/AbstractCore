@@ -112,13 +112,15 @@ def test_a_64gb_mac_does_not_flag_the_image_route(tmp_path, pin_host):
 
 
 def test_needs_sysctl_is_not_unavailable():
-    """A 96 GB Mac runs Wan2.2 T2V-A14B once the GPU memory limit is raised:
-    that is advice (the sysctl), never "cannot run here"."""
+    """A 24 GB Mac runs Wan2.2 TI2V-5B at its 832x480 default once the GPU
+    memory limit is raised: that is advice (the sysctl), never "cannot run
+    here"."""
 
-    mac96 = synthetic_host("metal96")
-    assert mc.recommended_artifact_fit("mlx-gen", WAN_A14B, mac96)["fit"]["verdict"] == "needs_gpu_limit"
-    route = {"output.video.text_to_video": {"provider": "mlx-gen", "model": WAN_A14B}}
-    assert cd.configured_routes_unavailable(route, mac96) == {}
+    mac24 = synthetic_host("metal24")
+    ti2v = "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"
+    assert mc.recommended_artifact_fit("mlx-gen", ti2v, mac24)["fit"]["verdict"] == "needs_gpu_limit"
+    route = {"output.video": {"provider": "mlx-gen", "model": ti2v}}
+    assert cd.configured_routes_unavailable(route, mac24) == {}
 
 
 def test_tight_is_not_unavailable():
@@ -194,26 +196,24 @@ TI2V = "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"
 T2V_A14B = "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"
 
 
-@pytest.mark.parametrize("key,model,canvas", [
-    ("output.video", TI2V, "832x480"),
-    ("output.video.text_to_video", T2V_A14B, "640x352"),
-])
-def test_a_video_route_that_runs_at_a_measured_smaller_canvas_is_not_flagged(tmp_path, pin_host, key, model, canvas):
-    mac64 = synthetic_host("metal64")
-    assert mc.recommended_artifact_fit("mlx-gen", model, mac64)["fit"]["verdict"] == "too_large"
-    assert mc.smaller_canvas_fit("mlx-gen", model, mac64)["canvas"].startswith(canvas)
-    if key == "output.video":
-        # The recommendation's own reason tells this Mac to set exactly this route.
-        assert f"set output.video to mlx-gen/{model} yourself" in cd.recommended_unavailable_routes(mac64)[key]["reason"]
-    assert cd.configured_routes_unavailable({key: {"provider": "mlx-gen", "model": model}}, mac64) == {}
-    pin_host(mac64)
+# A 48 GB Mac whose GPU memory limit was raised to 40 GiB: T2V-A14B's 832x480
+# default does not fit, its measured 640x352 canvas does.
+MAC48_RAISED = dict(synthetic_host("metal48"), ceiling_bytes=40 * 1024**3)
+
+
+def test_a_video_route_that_runs_at_a_measured_smaller_canvas_is_not_flagged(tmp_path, pin_host):
+    key, model = "output.video.text_to_video", T2V_A14B
+    assert mc.recommended_artifact_fit("mlx-gen", model, MAC48_RAISED)["fit"]["verdict"] == "too_large"
+    assert mc.smaller_canvas_fit("mlx-gen", model, MAC48_RAISED)["canvas"] == "640x352x81"
+    assert cd.configured_routes_unavailable({key: {"provider": "mlx-gen", "model": model}}, MAC48_RAISED) == {}
+    pin_host(MAC48_RAISED)
     manager = _store(tmp_path, {key: {"provider": "mlx-gen", "model": model}})
     report = manager.apply_recommended_capability_defaults(force=True)
-    assert report["cleared"] == 0, "--force never clears the route the reason told the user to set"
+    assert report["cleared"] == 0, "--force never clears a route that runs at a measured canvas"
     assert _stored_route(manager, key) == {"provider": "mlx-gen", "model": model}
 
 
 def test_a_video_route_with_no_fitting_canvas_is_still_flagged():
-    mac32 = synthetic_host("metal32")
-    assert mc.smaller_canvas_fit("mlx-gen", TI2V, mac32) is None
-    assert "output.video" in cd.configured_routes_unavailable({"output.video": {"provider": "mlx-gen", "model": TI2V}}, mac32)
+    mac16 = synthetic_host("metal16")
+    assert mc.smaller_canvas_fit("mlx-gen", TI2V, mac16) is None
+    assert "output.video" in cd.configured_routes_unavailable({"output.video": {"provider": "mlx-gen", "model": TI2V}}, mac16)

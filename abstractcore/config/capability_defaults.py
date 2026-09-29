@@ -358,9 +358,9 @@ RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
     # Video: Wan2.2 TI2V-5B, ONE checkpoint for text-to-video AND
     # image-to-video, so the modality cell answers both tasks. It is the only
     # video model AbstractVision serves that is not a 40 GB A14B package; its
-    # engine (MLX-Gen) is Apple silicon only and it needs ~60.5 GiB of MLX
-    # memory at AbstractVision's default canvas (measured), so it is
-    # fit-gated (`_FIT_GATED_ROUTES`).
+    # engine (MLX-Gen) is Apple silicon only and it needs ~16.6 GiB of MLX
+    # memory at AbstractVision's default canvas (832x480x121, measured), so it
+    # is fit-gated (`_FIT_GATED_ROUTES`).
     "output.video": RecommendedModel(
         route=CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
         download={"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},
@@ -746,8 +746,8 @@ def recommended_unavailable_routes(host: Optional[Mapping[str, Any]] = None) -> 
     the curated catalog has no other local image or video artifact). On Apple
     silicon the memory-gated rows (`_FIT_GATED_ROUTES`: image, video) are here
     where the catalog says their model does not fit: `output.image` on an 8 GB
-    Mac (FLUX.2 klein 4B needs ~8.5 GiB), `output.video` below ~96 GiB of
-    unified memory. Such a route stays UNSET with this reason rather than
+    Mac (FLUX.2 klein 4B needs ~8.5 GiB), `output.video` below 32 GiB of
+    unified memory (a 24 GiB Mac only after raising the GPU memory limit). Such a route stays UNSET with this reason rather than
     seeded with a route that fails at first use.
 
     `input.image` is here when the host's recommended text model, which covers
@@ -864,9 +864,10 @@ def _configured_route_fit_reason(key: str, provider: str, model: str, host: Mapp
         return None  # not a catalog artifact: no memory need to judge
     if verdict in FITS_FILTER_VERDICTS or verdict == "unknown":
         return None
-    # A measured smaller canvas this Mac runs it at (TI2V-5B at 832x480 and
-    # T2V-A14B at 640x352 on a 64 GB Mac): the route is the one our own reason
-    # tells the operator to set -- never flagged, never cleared by `--force`.
+    # A measured smaller canvas this Mac runs it at (for example T2V-A14B at
+    # 640x352 where its 832x480 default does not fit): the route is the one our
+    # own reason tells the operator to set -- never flagged, never cleared by
+    # `--force`.
     from .model_catalog import smaller_canvas_fit
 
     if smaller_canvas_fit(provider, model, host) is not None:

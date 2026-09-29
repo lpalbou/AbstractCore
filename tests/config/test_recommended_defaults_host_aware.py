@@ -14,8 +14,9 @@ The rule now, per recommended route and host:
     Studio where it has no build (Intel Macs) for the same model on Ollama;
   - Apple silicon is BYTE-IDENTICAL to before (golden values below), plus
     the video row (2026-09-27, `output.video`, MLX-Gen Wan2.2 TI2V-5B), which
-    is written only where its measured memory fits (>= ~96 GiB of unified
-    memory) and reported unavailable everywhere else
+    is written only where its measured memory at AbstractVision's default
+    canvas (832x480) fits (>= 32 GiB of unified memory) and reported
+    unavailable everywhere else
     (tests/config/test_recommended_video_route.py owns that matrix).
 """
 
@@ -201,8 +202,9 @@ APPLE_TEXT = {
 }
 
 
-# Where the recommended video model fits (measured memory; >= ~96 GiB).
-VIDEO_FITS = {"metal16": False, "metal64": False, "metal128": True}
+# Where the recommended video model fits (measured memory at its 832x480
+# default canvas; >= 32 GiB).
+VIDEO_FITS = {"metal16": False, "metal64": True, "metal128": True}
 VIDEO = {"provider": "mlx-gen", "model": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"}
 
 

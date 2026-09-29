@@ -104,11 +104,26 @@
           "properties": {
             "bytes": {"type": "integer", "minimum": 1},
             "source": {"type": "string", "minLength": 1},
-            "measured_with": {"type": "string", "minLength": 1, "description": "The engine and output size the figure was measured with, quoted by every sentence that states it (for example `AbstractVision/mlx-gen at 1280x704x121, which keeps the text encoder and VAE in memory`): the engine's figure, not the model's own minimum."},
+            "measured_with": {"type": "string", "minLength": 1, "description": "The engine and output size the figure was measured with, quoted by every sentence that states it (for example `AbstractVision/mlx-gen at 832x480x121, which keeps the text encoder and VAE in memory`): the engine's figure, not the model's own minimum."},
             "smaller_canvases": {
               "type": "array",
               "minItems": 1,
               "description": "Measured memory needs at smaller output sizes, largest first: the size at which the model still runs on a computer its default canvas does not fit.",
+              "items": {
+                "type": "object",
+                "required": ["canvas", "bytes", "source"],
+                "properties": {
+                  "canvas": {"type": "string", "pattern": "^[0-9]+x[0-9]+x[0-9]+$"},
+                  "bytes": {"type": "integer", "minimum": 1},
+                  "source": {"type": "string", "minLength": 1}
+                },
+                "additionalProperties": false
+              }
+            },
+            "larger_canvases": {
+              "type": "array",
+              "minItems": 1,
+              "description": "Measured memory needs at larger output sizes, smallest first: the bigger sizes a computer with memory to spare can ask for.",
               "items": {
                 "type": "object",
                 "required": ["canvas", "bytes", "source"],

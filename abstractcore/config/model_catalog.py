@@ -781,19 +781,22 @@ def validate_catalog(data: Any) -> List[str]:
 
 
 def _validate_resident(aw: str, resident: Any) -> List[str]:
-    """`{bytes, source[, measured_with, smaller_canvases]}`: a MEASURED run-time
-    memory need at the engine's default profile, never a guess -- `source` must
-    say where and at which profile it was measured; `measured_with` is the
-    short label every sentence quotes (engine and output size), so the figure
-    reads as that engine's, not as the model's own minimum. `smaller_canvases` (optional) lists
-    measured needs at smaller output sizes, `[{canvas, bytes, source}]`,
-    largest first, each below the default's."""
+    """`{bytes, source[, measured_with, smaller_canvases, larger_canvases]}`: a
+    MEASURED run-time memory need at the engine's default canvas, never a guess
+    -- `source` must say where and at which profile it was measured;
+    `measured_with` is the short label every sentence quotes (engine and output
+    size), so the figure reads as that engine's, not as the model's own
+    minimum. The optional canvas lists hold measured needs at other output
+    sizes, `[{canvas, bytes, source}]`: `smaller_canvases` largest first, each
+    below the default's (the size a model still runs at where its default does
+    not fit); `larger_canvases` smallest first, each above the default's (the
+    bigger sizes a computer with room to spare can ask for)."""
 
     if not isinstance(resident, dict):
         return [f"{aw}.resident must be an object"]
     errors: List[str] = []
     for key in resident:
-        if key not in ("bytes", "source", "measured_with", "smaller_canvases"):
+        if key not in ("bytes", "source", "measured_with", "smaller_canvases", "larger_canvases"):
             errors.append(f"{aw}.resident has unknown field {key!r}")
     if "measured_with" in resident and (not isinstance(resident["measured_with"], str) or not resident["measured_with"]):
         errors.append(f"{aw}.resident.measured_with must name the engine and output size it was measured with")
@@ -803,13 +806,16 @@ def _validate_resident(aw: str, resident: Any) -> List[str]:
         value = None
     if not isinstance(resident.get("source"), str) or not resident.get("source"):
         errors.append(f"{aw}.resident.source must say where the memory was measured")
-    smaller = resident.get("smaller_canvases")
-    if smaller is not None:
-        if not isinstance(smaller, list) or not smaller:
-            return errors + [f"{aw}.resident.smaller_canvases must be a non-empty list"]
+    for field, direction in (("smaller_canvases", "below"), ("larger_canvases", "above")):
+        entries = resident.get(field)
+        if entries is None:
+            continue
+        if not isinstance(entries, list) or not entries:
+            errors.append(f"{aw}.resident.{field} must be a non-empty list")
+            continue
         previous = value
-        for i, entry in enumerate(smaller):
-            ew = f"{aw}.resident.smaller_canvases[{i}]"
+        for i, entry in enumerate(entries):
+            ew = f"{aw}.resident.{field}[{i}]"
             if not isinstance(entry, dict) or set(entry) != {"canvas", "bytes", "source"}:
                 errors.append(f"{ew} must be {{canvas, bytes, source}}")
                 continue
@@ -818,8 +824,8 @@ def _validate_resident(aw: str, resident: Any) -> List[str]:
             b = entry["bytes"]
             if not isinstance(b, int) or isinstance(b, bool) or b <= 0:
                 errors.append(f"{ew}.bytes must be a positive integer")
-            elif previous is not None and b >= previous:
-                errors.append(f"{ew}.bytes must be below the previous (larger) canvas's")
+            elif previous is not None and (b >= previous if direction == "below" else b <= previous):
+                errors.append(f"{ew}.bytes must be {direction} the previous canvas's (the default's first)")
             else:
                 previous = b
             if not isinstance(entry["source"], str) or not entry["source"]:
@@ -851,6 +857,25 @@ def smaller_canvas_fit(provider: str, artifact: str, host: Mapping[str, Any]) ->
     row, art = _seed_row_and_artifact(row_id, provider, artifact)
     resident = art.get("resident") or {}
     for entry in resident.get("smaller_canvases") or []:
+        variant = dict(art, resident={"bytes": entry["bytes"], "source": entry["source"]})
+        fit = recommended_artifact_fit_for(row, variant, host)
+        if fit.get("verdict") in ("fits", "tight"):
+            return {"canvas": entry["canvas"], "bytes": entry["bytes"], "fit": fit}
+    return None
+
+
+def larger_canvas_fit(provider: str, artifact: str, host: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """The largest measured larger canvas (`resident.larger_canvases`) at
+    which a seed artifact also fits `host` (`fits` or `tight`), as `{canvas,
+    bytes, fit}`, or None. For a video model whose default canvas fits: the
+    bigger size this computer can ask for, measured."""
+
+    row_id = catalog_id_for(provider, artifact)
+    if row_id is None:
+        raise LookupError(f"artifact {provider}:{artifact} is not in the catalog")
+    row, art = _seed_row_and_artifact(row_id, provider, artifact)
+    resident = art.get("resident") or {}
+    for entry in reversed(resident.get("larger_canvases") or []):
         variant = dict(art, resident={"bytes": entry["bytes"], "source": entry["source"]})
         fit = recommended_artifact_fit_for(row, variant, host)
         if fit.get("verdict") in ("fits", "tight"):
@@ -1371,6 +1396,18 @@ def _build_artifact(
                 f"{got['fit']['need_bytes'] / 1024**3:.1f} GiB (measured) and fits"
             ]
 
+    # The default canvas fits and a measured larger one does too (video): the
+    # bigger size this computer can ask for.
+    larger: Optional[Dict[str, Any]] = None
+    if supported and fit.get("verdict") in ("fits", "tight") and (art.get("resident") or {}).get("larger_canvases"):
+        got = larger_canvas_fit(provider, artifact, host)
+        if got is not None:
+            larger = {"canvas": got["canvas"], "need_bytes": got["fit"]["need_bytes"], "verdict": got["fit"]["verdict"]}
+            fit["notes"] = list(fit.get("notes") or []) + [
+                f"at {got['canvas']} (width x height x frames) it needs about "
+                f"{got['fit']['need_bytes'] / 1024**3:.1f} GiB (measured) and fits too"
+            ]
+
     return {
         "provider": provider,
         "artifact": artifact,
@@ -1390,6 +1427,9 @@ def _build_artifact(
         # `{canvas, need_bytes, verdict}` when only a measured smaller canvas
         # fits this host (`resident.smaller_canvases`), else None.
         "smaller_canvas": smaller,
+        # `{canvas, need_bytes, verdict}`: the largest measured larger canvas
+        # that also fits this host (`resident.larger_canvases`), else None.
+        "larger_canvas": larger,
         "presence": {
             "status": presence.status,
             "location": presence.location,

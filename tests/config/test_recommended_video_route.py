@@ -16,8 +16,10 @@ The rule, per host:
     with the next step (an OpenAI-compatible video endpoint);
   - on Apple silicon: recommended (route + download + starter) only where the
     catalog's fit estimate says Wan2.2 TI2V-5B fits (`fits`/`tight`, the model
-    browser's own filter): >= ~96 GiB of unified memory; below that
-    `unavailable` with the two numbers the verdict compared.
+    browser's own filter) at AbstractVision's default canvas (832x480, 121
+    frames): >= 32 GiB of unified memory; a 24 GiB Mac needs the GPU memory
+    limit raised first (the command is said); below that `unavailable` with
+    the two numbers the verdict compared.
 """
 
 from __future__ import annotations
@@ -67,8 +69,8 @@ NON_APPLE = [
     "windows_arm64",
     "intel_mac",
 ]
-MAC_TOO_SMALL = ["metal16", "metal24", "metal32", "metal48", "metal64"]
-MAC_FITS = ["metal96", "metal128", "metal192"]
+MAC_TOO_SMALL = ["metal16"]
+MAC_FITS = ["metal32", "metal48", "metal64", "metal96", "metal128", "metal192"]
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +105,16 @@ def test_a_mac_whose_memory_the_video_model_does_not_fit_gets_the_numbers(name):
     assert "MLX" not in reason.split(";")[0], "the engine runs here: memory is the reason"
     # The image row still runs on every Apple silicon Mac.
     assert "output.image" in cd.recommended_capability_default_routes(host)
+
+
+def test_a_24_gib_mac_is_told_the_gpu_limit_that_makes_video_fit():
+    host = _host("metal24")
+    assert "output.video" not in cd.recommended_capability_default_routes(host)
+    fit = mc.recommended_artifact_fit("mlx-gen", TI2V, host)["fit"]
+    assert fit["verdict"] == "needs_gpu_limit"
+    reason = cd.recommended_unavailable_routes(host)["output.video"]["reason"]
+    assert "measured with AbstractVision/mlx-gen at 832x480x121" in reason
+    assert fit["gpu_limit"]["command"] in reason
 
 
 @pytest.mark.parametrize("name", MAC_FITS)
@@ -166,8 +178,15 @@ def test_a_fresh_install_on_a_128_gib_mac_seeds_the_video_route(tmp_path, pin_ho
     assert (video.provider, video.model) == ("mlx-gen", TI2V)
 
 
-def test_a_fresh_install_on_a_64_gib_mac_leaves_video_unset_and_the_grid_says_why(tmp_path, pin_host):
+def test_a_fresh_install_on_a_64_gib_mac_seeds_the_video_route_at_its_default_canvas(tmp_path, pin_host):
     pin_host(_light(synthetic_host("metal64")))
+    manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
+    video = manager.config.capability_defaults.routes["output.video"]
+    assert (video.provider, video.model) == ("mlx-gen", TI2V)
+
+
+def test_a_fresh_install_on_a_16_gib_mac_leaves_video_unset_and_the_grid_says_why(tmp_path, pin_host):
+    pin_host(_light(synthetic_host("metal16")))
     manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
     assert not manager.config.capability_defaults.routes.get("output.video", cd.CapabilityRouteDefault()).configured()
     rows = {row["key"]: row for row in manager.list_capability_defaults()}
@@ -207,34 +226,32 @@ def test_the_video_fit_uses_the_measured_memory_not_the_file_size(tmp_path, monk
     assert art["fit"]["weight_bytes"] == seed[TI2V]["resident"]["bytes"]
     assert any(n.startswith("memory need is measured") for n in art["fit"]["notes"])
     # The A14B 8-bit packages are measured at AbstractVision's default canvas
-    # (1280x720, 81 frames): ~72 GiB each, not their 39.7 GiB files (backlog 0948).
+    # (832x480, 81 frames): ~38 GiB each while they generate, never their
+    # 39.7 GiB files (backlog 0948).
     for rid, artifact in (("wan2.2-t2v-a14b", T2V), ("wan2.2-i2v-a14b", I2V)):
         resident = seed[artifact]["resident"]
-        assert "1280x720" in resident["source"] and "81 frames" in resident["source"] and "mx.get_peak_memory" in resident["source"]
+        assert "832x480" in resident["source"] and "81 frames" in resident["source"] and "mx.get_peak_memory" in resident["source"]
         art = rows[rid]["artifacts"][0]
-        assert art["resident_bytes"] == resident["bytes"] > seed[artifact]["download_bytes"]
+        assert art["resident_bytes"] == resident["bytes"] != seed[artifact]["download_bytes"]
         assert art["fit"]["weight_bytes"] == resident["bytes"]
-    # TI2V-5B: the file is 16.9 GiB, the run needs ~58 GiB. A file-size fit
-    # would call it `fits` on a 64 GiB Mac; the measured one does not.
-    mac64 = _rows(tmp_path / "b", monkeypatch, synthetic_host("metal64"), tags=["video"])
-    assert mac64["wan2.2-ti2v-5b"]["artifacts"][0]["fit"]["verdict"] == "too_large"
+    # TI2V-5B at 1280x704 needs ~25 GiB against a 16.9 GiB file: a caller
+    # asking for that size on a 128 GiB Mac is told it fits, measured.
+    notes = rows["wan2.2-ti2v-5b"]["artifacts"][0]["fit"]["notes"]
+    assert any(n.startswith("at 1280x704x121 (width x height x frames) it needs about") and n.endswith("and fits too")
+               for n in notes), notes
 
 
 @pytest.mark.parametrize("artifact", [T2V, I2V])
 def test_a14b_8bit_per_memory_band_at_the_default_canvas(artifact):
-    """Measured ~72 GiB at the default canvas: too large for a 64 GiB Mac (so
-    it is NOT the 64-95 GiB video recommendation), fits a 96 GiB Mac once the
-    GPU limit is raised (the command is said), fits 128 GiB."""
+    """Measured ~38 GiB at the default canvas (832x480, 81 frames): too large
+    for a 48 GiB Mac, tight on 64 GiB, fits 96 GiB and more."""
 
     fit = lambda name: mc.recommended_artifact_fit("mlx-gen", artifact, synthetic_host(name))["fit"]  # noqa: E731
-    assert fit("metal64")["verdict"] == "too_large" and "gpu_limit" not in fit("metal64")
-    f96 = fit("metal96")
-    assert f96["verdict"] == "needs_gpu_limit"
-    # The one safe value: 96 GiB - max(4 GiB, 12.5%) = 84 GiB.
-    assert f96["gpu_limit"]["command"] == "sudo sysctl iogpu.wired_limit_mb=86016"
-    assert fit("metal128")["verdict"] in ("fits", "tight")
-    # The recommendation per band is unchanged: TI2V-5B from ~96 GiB, and no
-    # A14B route anywhere (it does not fit 64-95 GiB at the default canvas).
+    assert fit("metal48")["verdict"] == "too_large" and "gpu_limit" not in fit("metal48")
+    assert fit("metal64")["verdict"] == "tight"
+    assert fit("metal96")["verdict"] == fit("metal128")["verdict"] == "fits"
+    # The recommendation per band: TI2V-5B wherever video is recommended, no
+    # A14B route anywhere.
     for name in ("metal64", "metal96", "metal128"):
         routes = cd.recommended_capability_default_routes(synthetic_host(name))
         assert all(r.model not in (T2V, I2V) for r in routes.values())
@@ -253,7 +270,7 @@ def test_the_fits_filter_hides_video_where_it_cannot_run(tmp_path, monkeypatch):
     }
 
 
-@pytest.mark.parametrize("kind, starter", [("cuda24", False), ("metal64", False), ("metal128", True)])
+@pytest.mark.parametrize("kind, starter", [("cuda24", False), ("metal16", False), ("metal64", True), ("metal128", True)])
 def test_the_video_starter_follows_the_host(tmp_path, monkeypatch, kind, starter):
     rows = _rows(tmp_path, monkeypatch, synthetic_host(kind), tags=["video"])
     assert rows["wan2.2-ti2v-5b"]["starter"] is starter
