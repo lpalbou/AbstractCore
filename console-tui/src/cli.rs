@@ -1045,6 +1045,7 @@ mod stdin_secret_tests {
     /// EOF (so it only answers once stdin is closed), and prints the hex
     /// of the line, of the rest and of its own argv.
     const FAKE_CLI: &str = r#"#!/bin/sh
+[ -n "$FAKE_CLI_PROBE" ] && exit 0
 IFS= read -r line
 rest=$(cat)
 hex() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n'; }
@@ -1063,6 +1064,24 @@ printf '{"ok": true, "line": "%s", "rest": "%s", "argv": "%s"}\n' "$(hex "$line"
         let bin = dir.join("abstractcore");
         std::fs::write(&bin, FAKE_CLI).unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Linux refuses to exec a file some process still holds open for
+        // writing (ETXTBSY). Another test thread that forks while `write`
+        // above had the file open briefly inherits that descriptor until
+        // its own exec, so probe until the file runs once.
+        for _ in 0..100 {
+            match Command::new(&bin)
+                .env("FAKE_CLI_PROBE", "1")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+            {
+                Err(e) if e.raw_os_error() == Some(26) => {
+                    std::thread::sleep(Duration::from_millis(20))
+                }
+                _ => break,
+            }
+        }
         bin
     }
 
