@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Web console (`/console`) is responsive: framework breakpoints (480 / 768 / 1024 / 1440 px,
+  500 px tall), `viewport-fit=cover`, safe-area padding on the top bar, tabs and page. Dialogs are
+  bottom sheets below 768 px wide or 500 px tall. On touch screens, targets are 44 px, inputs use
+  16 px text and table text is 14 px. Card and form grids never get wider than their pane.
+- `abstractcore.console.theme_sync` also carries ui-kit's responsive token layer as
+  `KIT_RESPONSIVE_CSS` (`--tap-min`, `--vh-full`, `--safe-*`, `--gutter`, the coarse-pointer
+  floors, `text-size-adjust`). `themes.py` is regenerated from ui-kit 0.3.0, and the sync refuses
+  a kit without that layer.
+
+### Fixed
+- Long configuration paths in the Providers and Email tabs wrap inside their pane. On a phone
+  the page was up to 568 px wide.
+
 ## [2.20.2] - 2026-09-30
 
 Automatic mail is marked so automations never answer themselves, recommendations only name
