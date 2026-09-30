@@ -25,7 +25,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from abstractcore.console import theme_sync
-from abstractcore.console.themes import KIT_LIGHT_THEME_IDS, KIT_ROOT_CSS, KIT_THEME_CSS, KIT_THEME_SPECS
+from abstractcore.console.themes import KIT_LIGHT_THEME_IDS, KIT_RESPONSIVE_CSS, KIT_ROOT_CSS, KIT_THEME_CSS, KIT_THEME_SPECS
 from abstractcore.console.web import FRAGMENT_KINDS, fragment, render_console_html
 from abstractcore.server.console_routes import router as console_router
 
@@ -188,6 +188,24 @@ def test_every_kit_theme_is_offered_and_styled() -> None:
         assert json.dumps(spec["label"]) in html
     # light/dark follows the OS by default, with a toggle.
     assert "prefers-color-scheme: light" in html and 'id="acc-theme-toggle"' in html
+
+
+def test_the_responsive_token_layer_is_carried_and_served() -> None:
+    """ui-kit >= 0.3.0 responsive tokens (--tap-min, --vh-full, --safe-*, the
+    pointer:coarse floors) reach the standalone page by name; component rules
+    and theme blocks do not (the console styles its own markup)."""
+    for token in ("--tap-min", "--vh-full", "--safe-top", "--gutter", "--font-size-input", "text-size-adjust"):
+        assert token in KIT_RESPONSIVE_CSS, token
+    assert ".theme-" not in KIT_RESPONSIVE_CSS and ".af-" not in KIT_RESPONSIVE_CSS
+    html = render_console_html()
+    assert KIT_RESPONSIVE_CSS in html
+    assert "viewport-fit=cover" in html
+    assert "maximum-scale" not in html and "user-scalable" not in html
+
+
+def test_theme_sync_refuses_a_kit_without_the_responsive_layer() -> None:
+    with pytest.raises(ValueError):
+        theme_sync.parse_responsive_token_css(":root {\n  --x: 1;\n}\n\nhtml {\n  text-size-adjust: 100%;\n}\n")
 
 
 def test_theme_sync_refuses_a_reshaped_kit(tmp_path: Path) -> None:

@@ -72,6 +72,10 @@ _FRAGMENT_CSS = """
   background: var(--ui-surface-1, rgba(0,0,0,.16)); color: var(--text-primary, #eee); border: 1px solid var(--ui-border-2, rgba(255,255,255,.14));
   border-radius: var(--radius-sm, 4px); padding: 6px 8px; font: inherit; }
 .acc-root input[type=search] { min-width: min(320px, 100%); flex: 1 1 220px; }
+.acc-root .acc-toolbar > span { min-width: 0; overflow-wrap: anywhere; }
+/* Long unbroken paths (config files under a deep HOME) in prose lines must
+   wrap inside the pane, never widen the page (DESIGN §5.6). */
+.acc-root .acc-hint, .acc-root .acc-muted, .acc-root .acc-host-line, .acc-root .acc-message, .acc-root .acc-section-head > * { min-width: 0; overflow-wrap: anywhere; }
 .acc-root input:focus-visible, .acc-root select:focus-visible, .acc-root button:focus-visible, .acc-root tr:focus-visible { outline: 2px solid var(--info, #60a5fa); outline-offset: 1px; }
 .acc-root .acc-btn { background: var(--bg-tertiary, #0f3460); color: var(--text-primary, #eee); border: 1px solid var(--ui-border-2, rgba(255,255,255,.14)); border-radius: var(--radius-sm, 4px); padding: 5px 10px; font: inherit; font-size: var(--font-size-sm, 12px); cursor: pointer; white-space: nowrap; }
 .acc-root .acc-btn:hover:not(:disabled) { border-color: var(--info, #60a5fa); }
@@ -105,7 +109,7 @@ _FRAGMENT_CSS = """
 .acc-root .acc-warn { color: var(--warning, #f39c12); }
 .acc-root .acc-cli-line { font-size: var(--font-size-xs, 11px); color: var(--text-muted, #666); margin: 0 0 6px; }
 .acc-root .acc-host-line { font-size: var(--font-size-sm, 12px); color: var(--text-secondary, #aaa); margin: 0 0 10px; }
-.acc-root .acc-jobs { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.acc-root .acc-jobs { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
 .acc-root .acc-jobs:empty { display: none; }
 .acc-root .acc-job { border: 1px solid var(--ui-border-2, rgba(255,255,255,.14)); border-radius: var(--radius-md, 8px); background: var(--bg-card, var(--bg-secondary, #16213e)); padding: 10px 12px; display: grid; gap: 6px; }
 .acc-root .acc-job-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
@@ -118,29 +122,53 @@ _FRAGMENT_CSS = """
 .acc-root .acc-progress-inline .acc-progress { flex: 1; }
 .acc-root .acc-job pre { max-height: 160px; overflow: auto; margin: 4px 0 0; padding: 6px 8px; background: var(--ui-code-block-bg, rgba(0,0,0,.25)); border-radius: var(--radius-sm, 4px); white-space: pre-wrap; }
 .acc-root details summary { cursor: pointer; color: var(--text-secondary, #aaa); font-size: var(--font-size-xs, 11px); }
-.acc-root .acc-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
-.acc-root .acc-card { border: 1px solid var(--ui-border-1, rgba(255,255,255,.1)); border-radius: var(--radius-lg, 10px); background: var(--bg-card, var(--bg-secondary, #16213e)); padding: 14px 16px; }
+.acc-root .acc-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.acc-root .acc-card { border: 1px solid var(--ui-border-1, rgba(255,255,255,.1)); border-radius: var(--radius-lg, 10px); background: var(--bg-card, var(--bg-secondary, #16213e)); padding: 14px 16px; min-width: 0; }
 .acc-root .acc-card h3 { margin-bottom: 8px; }
 .acc-root dl.acc-kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 0; font-size: var(--font-size-sm, 12px); }
 .acc-root dl.acc-kv dt { color: var(--text-secondary, #aaa); }
 .acc-root dl.acc-kv dd { margin: 0; overflow-wrap: anywhere; }
-.acc-root .acc-modal-backdrop, .acc-root.acc-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: var(--z-connect-modal, 1000); padding: 16px; }
-.acc-root .acc-modal { width: min(640px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--bg-secondary, #16213e); color: var(--text-primary, #eee); border: 1px solid var(--ui-border-2, rgba(255,255,255,.14)); border-radius: var(--radius-lg, 10px); box-shadow: var(--ui-shadow-1, 0 10px 30px rgba(0,0,0,.35)); padding: 18px 20px; display: grid; gap: 10px; }
+.acc-root .acc-modal-backdrop, .acc-root.acc-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: var(--z-connect-modal, 1000); padding: max(16px, var(--safe-top, 0px)) max(16px, var(--safe-right, 0px)) max(16px, var(--safe-bottom, 0px)) max(16px, var(--safe-left, 0px)); overscroll-behavior: contain; }
+.acc-root .acc-modal { width: min(640px, 100%); max-height: calc(var(--vh-full, 100vh) - 32px); overflow: auto; overscroll-behavior: contain; background: var(--bg-secondary, #16213e); color: var(--text-primary, #eee); border: 1px solid var(--ui-border-2, rgba(255,255,255,.14)); border-radius: var(--radius-lg, 10px); box-shadow: var(--ui-shadow-1, 0 10px 30px rgba(0,0,0,.35)); padding: 18px 20px; display: grid; gap: 10px; }
 .acc-root .acc-modal p { margin: 0; }
 .acc-root .acc-modal ul { margin: 0; padding-left: 18px; }
 .acc-root .acc-modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 4px; }
 .acc-root .acc-note { font-size: var(--font-size-sm, 12px); color: var(--warning, #f39c12); }
-.acc-root .acc-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; }
+.acc-root .acc-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 8px 12px; }
 .acc-root .acc-form label { display: grid; gap: 3px; font-size: var(--font-size-sm, 12px); color: var(--text-secondary, #aaa); }
 .acc-root ul.acc-entries { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
 .acc-root ul.acc-entries li { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: var(--font-size-sm, 12px); }
+.acc-root ul.acc-entries li > :first-child { min-width: 0; overflow-wrap: anywhere; }
+/* Responsive (DESIGN.md breakpoints; ui-kit >= 0.3.0 tokens, with fallbacks
+   so the fragment also works on a host page without them). */
+@media (max-width: 767.98px), (max-height: 500px) {
+  .acc-root .acc-modal-backdrop, .acc-root.acc-modal-backdrop { place-items: end center; padding: var(--safe-top, 0px) 0 0; }
+  .acc-root .acc-modal { width: 100%; max-height: calc(var(--vh-full, 100vh) - var(--safe-top, 0px)); border-radius: var(--radius-lg, 10px) var(--radius-lg, 10px) 0 0; border-bottom: 0; padding-bottom: max(18px, var(--safe-bottom, 0px)); }
+}
+@media (max-width: 479.98px) {
+  .acc-root .acc-modal-actions { flex-direction: column; align-items: stretch; }
+  .acc-root .acc-modal-actions .acc-btn { width: 100%; }
+}
+@media (pointer: coarse) {
+  .acc-root .acc-btn, .acc-root .acc-toolbar label, .acc-root details summary { min-height: var(--tap-min, 44px); }
+  .acc-root .acc-btn { display: inline-flex; align-items: center; justify-content: center; }
+  .acc-root .acc-btn.acc-link { min-height: var(--tap-min, 44px); }
+  .acc-root input[type=search], .acc-root input[type=password], .acc-root input[type=text], .acc-root select { font-size: var(--font-size-input, 16px); min-height: var(--tap-min, 44px); }
+  .acc-root input[type=checkbox], .acc-root input[type=radio] { width: 20px; height: 20px; }
+  .acc-root, .acc-root table.acc-table, .acc-root .acc-host-line, .acc-root .acc-message, .acc-root .acc-toolbar label, .acc-root dl.acc-kv, .acc-root ul.acc-entries li, .acc-root .acc-form label { font-size: var(--font-size-body, 14px); }
+  .acc-root .acc-table th, .acc-root .acc-table td { padding: 8px 10px; }
+  .acc-root .acc-hint { font-size: var(--font-size-body, 14px); }
+  .acc-root .acc-sub, .acc-root .acc-cli-line { font-size: var(--font-size-md, 13px); }
+  .acc-root .acc-chip, .acc-root .acc-badge { font-size: var(--font-size-sm, 12px); }
+}
 """
 
 _PAGE_CSS = """
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
-body { background: var(--bg-primary, #1a1a2e); color: var(--text-primary, #eee); font: var(--font-size-base, 14px)/1.5 var(--font-sans, system-ui, sans-serif); -webkit-font-smoothing: antialiased; }
-.acc-topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 20px; background: var(--bg-secondary, #16213e); border-bottom: 1px solid var(--ui-border-1, rgba(255,255,255,.1)); }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { min-height: var(--vh-full, 100vh); background: var(--bg-primary, #1a1a2e); color: var(--text-primary, #eee); font: var(--font-size-base, 14px)/1.5 var(--font-sans, system-ui, sans-serif); -webkit-font-smoothing: antialiased; }
+.acc-topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: max(10px, var(--safe-top, 0px)) max(20px, var(--safe-right, 0px)) 10px max(20px, var(--safe-left, 0px)); background: var(--bg-secondary, #16213e); border-bottom: 1px solid var(--ui-border-1, rgba(255,255,255,.1)); }
 .acc-brand { font-weight: 700; font-size: var(--font-size-lg, 16px); margin-right: auto; }
 .acc-brand small { font-weight: 400; color: var(--text-secondary, #aaa); margin-left: 6px; }
 .acc-health { display: inline-flex; gap: 6px; align-items: center; font-size: var(--font-size-sm, 12px); color: var(--text-secondary, #aaa); }
@@ -148,11 +176,28 @@ body { background: var(--bg-primary, #1a1a2e); color: var(--text-primary, #eee);
 .acc-dot.acc-ok { background: var(--success, #27ae60); }
 .acc-dot.acc-err { background: var(--error, #e74c3c); }
 .acc-topbar select, .acc-topbar button { background: var(--ui-surface-1, rgba(0,0,0,.16)); color: var(--text-primary, #eee); border: 1px solid var(--ui-border-2, rgba(255,255,255,.14)); border-radius: var(--radius-sm, 4px); padding: 4px 8px; font: inherit; font-size: var(--font-size-sm, 12px); cursor: pointer; }
-.acc-tabs { display: flex; gap: 2px; padding: 0 20px; background: var(--bg-secondary, #16213e); border-bottom: 1px solid var(--ui-border-1, rgba(255,255,255,.1)); overflow-x: auto; }
+.acc-tabs { display: flex; gap: 2px; padding: 0 max(20px, var(--safe-right, 0px)) 0 max(20px, var(--safe-left, 0px)); background: var(--bg-secondary, #16213e); border-bottom: 1px solid var(--ui-border-1, rgba(255,255,255,.1)); overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 .acc-tabs button { background: transparent; color: var(--text-secondary, #aaa); border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: inherit; cursor: pointer; white-space: nowrap; }
 .acc-tabs button[aria-selected="true"] { color: var(--text-primary, #eee); border-bottom-color: var(--accent, #e94560); }
-.acc-main { padding: 18px 20px 40px; max-width: 1400px; margin: 0 auto; }
+.acc-main { padding: 18px max(20px, var(--safe-right, 0px)) max(40px, var(--safe-bottom, 0px)) max(20px, var(--safe-left, 0px)); max-width: 1400px; margin: 0 auto; min-width: 0; }
 .acc-panel[hidden] { display: none; }
+/* Phones: the top bar keeps brand + health on one row, theme controls on the
+   next; the tab strip scrolls sideways (never widens the page). */
+@media (max-width: 767.98px) {
+  .acc-topbar { padding-left: max(var(--gutter, 16px), var(--safe-left, 0px)); padding-right: max(var(--gutter, 16px), var(--safe-right, 0px)); gap: 8px 12px; }
+  .acc-brand small { display: none; }
+  .acc-tabs { padding-left: max(var(--gutter, 16px), var(--safe-left, 0px)); padding-right: max(var(--gutter, 16px), var(--safe-right, 0px)); }
+  .acc-tabs button { padding: 10px 12px; }
+  .acc-main { padding: var(--gutter, 16px) max(var(--gutter, 16px), var(--safe-right, 0px)) max(32px, var(--safe-bottom, 0px)) max(var(--gutter, 16px), var(--safe-left, 0px)); }
+}
+@media (max-height: 500px) {
+  .acc-topbar { padding-top: max(6px, var(--safe-top, 0px)); padding-bottom: 6px; }
+  .acc-tabs button { padding-top: 6px; padding-bottom: 6px; }
+}
+@media (pointer: coarse) {
+  .acc-topbar select, .acc-topbar button, .acc-tabs button { min-height: var(--tap-min, 44px); }
+  .acc-topbar select { font-size: var(--font-size-input, 16px); }
+}
 """
 
 # ---------------------------------------------------------------------------
@@ -1732,7 +1777,7 @@ def render_console_html(api_base: str = "/acore", title: str = "AbstractCore Con
     """The standalone console page (Overview, Models, Engines, Providers, Email)."""
     from html import escape
 
-    from .themes import KIT_LIGHT_THEME_IDS, KIT_ROOT_CSS, KIT_THEME_CSS, KIT_THEME_SPECS
+    from .themes import KIT_LIGHT_THEME_IDS, KIT_RESPONSIVE_CSS, KIT_ROOT_CSS, KIT_THEME_CSS, KIT_THEME_SPECS
 
     base = str(api_base or "").rstrip("/")
     config = {
@@ -1746,11 +1791,14 @@ def render_console_html(api_base: str = "/acore", title: str = "AbstractCore Con
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#1a1a2e">
 <title>{t}</title>
 <style>
 /* ui-kit base tokens + per-theme blocks: GENERATED copy (abstractcore/console/themes.py). */
 {KIT_ROOT_CSS}
+
+{KIT_RESPONSIVE_CSS}
 
 {KIT_THEME_CSS}
 {_PAGE_CSS}
