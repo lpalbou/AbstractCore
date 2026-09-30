@@ -17,7 +17,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use abstracttui::base::Point;
 use abstracttui::prelude::*;
 use abstracttui::render::Style;
 use abstracttui::ui::{MouseButton, MouseKind, Phase, UiEvent};
@@ -77,8 +76,9 @@ impl SwitchRow {
         let access_state = state.clone();
         let paint_state = state.clone();
         let paint_label = label.clone();
+        let full_w = || LayoutStyle::column().width(Dimension::Percent(1.0));
         Element::new()
-            .style(LayoutStyle::line(1).shrink(0.0))
+            .style(full_w().shrink(0.0))
             .role(abstracttui::ui::Role::Checkbox)
             .access_label(label.clone())
             .access_value(move || match untrack(|| access_state()) {
@@ -101,35 +101,43 @@ impl SwitchRow {
                 }
                 _ => {}
             })
-            .child(dyn_view(LayoutStyle::line(1), move || {
+            .child(dyn_view(full_w(), move || {
                 let t = theme.get().tokens;
                 let st = paint_state();
                 let focus = focused.get();
+                // One ink per switch (the marker and the words read as
+                // the state); a long reason wraps instead of losing its
+                // end on a narrow terminal.
                 let spans = switch_spans(&t, &paint_label, &st);
-                let (sel_fg, sel_bg) = (t.selection_fg, t.selection_bg);
+                let text: String = spans.iter().map(|(s, _, _)| s.as_str()).collect();
+                let (ink, bold) = spans
+                    .first()
+                    .map(|(_, ink, bold)| (*ink, *bold))
+                    .unwrap_or((t.text, false));
+                let mut style = if focus {
+                    Style::new().fg(t.selection_fg).bg(t.selection_bg)
+                } else {
+                    Style::new().fg(ink)
+                };
+                if bold {
+                    style = style.bold();
+                }
+                let measured = text.clone();
                 Element::new()
-                    .style(LayoutStyle::line(1))
+                    .style(LayoutStyle::default().width(Dimension::Percent(1.0)))
+                    .measure(move |avail| abstracttui::text::measure(&measured, avail))
                     .draw(move |canvas, rect| {
                         if rect.is_empty() {
                             return;
                         }
-                        let mut x = rect.x;
-                        let right = rect.x + rect.w;
-                        for (text, ink, bold) in &spans {
-                            if x >= right {
-                                break;
-                            }
-                            let mut style = if focus {
-                                Style::new().fg(sel_fg).bg(sel_bg)
-                            } else {
-                                Style::new().fg(*ink)
-                            };
-                            if *bold {
-                                style = style.bold();
-                            }
-                            let fitted = fit_width(text, (right - x).max(0) as usize);
-                            canvas.print_styled(Point::new(x, rect.y), &fitted, &style);
-                            x += abstracttui::text::width(&fitted);
+                        let rows = abstracttui::text::wrap(&text, rect.w);
+                        for (i, row) in rows.iter().take(rect.h.max(0) as usize).enumerate() {
+                            let fitted = fit_width(row, rect.w.max(0) as usize);
+                            canvas.print_styled(
+                                Point::new(rect.x, rect.y + i as i32),
+                                &fitted,
+                                &style,
+                            );
                         }
                     })
                     .build()
