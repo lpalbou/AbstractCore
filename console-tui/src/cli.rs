@@ -463,6 +463,36 @@ pub fn oauth_prompt_of(line: &str) -> Option<Value> {
     v.get("oauth_prompt").filter(|p| p.is_object()).cloned()
 }
 
+/// Run the command in its own process group (Unix), so a kill reaches
+/// everything it started: a shell's children keep the output pipes open
+/// otherwise, and the reader threads would wait for them.
+fn own_process_group(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = command;
+    }
+}
+
+/// Kill the command and every process in its group, then reap it.
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-KILL", &format!("-{}", child.id())])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// `run_raw_at` that hands each stderr line to `on_line` as it arrives
 /// and kills the process when `cancel` turns true.
 pub(crate) fn run_raw_streaming_at(
@@ -473,11 +503,14 @@ pub(crate) fn run_raw_streaming_at(
     mut on_line: Box<dyn FnMut(&str) + Send>,
     cancel: &AtomicBool,
 ) -> Result<(std::process::ExitStatus, String, String), CliError> {
-    let mut child = Command::new(bin)
+    let mut command = Command::new(bin);
+    command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    own_process_group(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|e| CliError::core(CliErrorKind::Spawn, format!("{}: {e}", bin.display())))?;
 
@@ -509,8 +542,7 @@ pub(crate) fn run_raw_streaming_at(
             Ok(None) => {
                 let cancelled = cancel.load(Ordering::SeqCst);
                 if cancelled || Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    kill_tree(&mut child);
                     let _ = out_h.join();
                     let _ = err_h.join();
                     return Err(if cancelled {
@@ -541,11 +573,14 @@ pub(crate) fn run_raw_at(
     redacted_label: &str,
     timeout: Duration,
 ) -> Result<(std::process::ExitStatus, String, String), CliError> {
-    let mut child = Command::new(bin)
+    let mut command = Command::new(bin);
+    command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    own_process_group(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|e| CliError::core(CliErrorKind::Spawn, format!("{}: {e}", bin.display())))?;
 
@@ -560,8 +595,7 @@ pub(crate) fn run_raw_at(
             Ok(Some(status)) => break status,
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    kill_tree(&mut child);
                     // Join the readers so the threads never leak.
                     let _ = out_h.join();
                     let _ = err_h.join();
@@ -927,7 +961,10 @@ echo '{"ok": true, "schema": "email_settings_v1", "auth_kind": "oauth2"}'"#,
         let started = Instant::now();
         let err = sh
             .run_email_streaming(
-                &["-c", "sleep 30"],
+                // `; true` keeps the shell alive as the parent of `sleep` on every
+                // platform (a shell may exec a lone last command), so the test
+                // proves the whole process group is killed.
+                &["-c", "sleep 30; true"],
                 "email connect --oauth",
                 Duration::from_secs(60),
                 Box::new(|_| {}),
