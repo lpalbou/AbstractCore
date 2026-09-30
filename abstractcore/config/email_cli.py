@@ -1,16 +1,24 @@
 """`abstractcore email ...` — connect, test, inspect and configure the email account.
 
+    abstractcore email connect --address me@fastmail.com --password <value>     (servers discovered)
     abstractcore email connect --address me@example.com --imap-host imap.example.com \\
         --smtp-host smtp.example.com --password <value>
+    abstractcore email discover me@example.com       the mailbox's IMAP/SMTP servers, from its address
     abstractcore email connect --address me@outlook.com --oauth microsoft --client-id <value> --client-secret <value>
     abstractcore email connect --address me@gmail.com --oauth google --client-id <value> --client-secret <value>
     abstractcore email test | status | folders
     abstractcore email disconnect --yes
     abstractcore email policy show | set --mode allowlist --add me@example.com --add example.org | check <address>...
     abstractcore email limits set --per-hour 20 --per-day 100
-    abstractcore email enable | disable
+    abstractcore email enable | disable            "Use this mailbox" (settings kept)
     abstractcore email agent-tools on | off      "Agent email tools" (default off)
-    abstractcore email registered-address me@example.com
+    abstractcore email registered-address me@example.com   the email address ("self"); "" clears it
+
+The **email address** (`registered-address`) is where notifications go and the default allowed
+recipient ("self"); the **mailbox** is the IMAP/SMTP or OAuth connection that `connect` stores.
+Without --imap-host and --smtp-host, `connect` discovers the servers from the address (known
+providers, the domain's autoconfig file, the Thunderbird ISPDB, DNS SRV, MX); when none are
+found it stops with `email_discovery_failed` and the steps it tried.
 
 Credentials are direct parameters (`--password <value>`, `--client-secret <value>`) and are
 stored encrypted; they are never printed. A script or program passes them on stdin instead, so
@@ -269,6 +277,26 @@ def cmd_connect(args: argparse.Namespace) -> int:
             raise EmailInvalidSettings("The account address is missing.", "Give --address name@example.com.")
         imap_host = args.imap_host or (preset.get("imap") or {}).get("host")
         smtp_host = args.smtp_host or (preset.get("smtp") or {}).get("host")
+        discovered = None
+        if not imap_host and not smtp_host and not args.oauth:
+            from abstractcore.comms.email import discovery
+
+            try:
+                discovered = discovery.require_servers(address)
+            except ValueError:
+                raise EmailInvalidSettings(f"{address!r} is not a valid email address.", "Give --address name@example.com.") from None
+            except discovery.EmailDiscoveryFailed as err:
+                raise discovery.EmailDiscoveryFailed(
+                    err.cause,
+                    "Give the servers with --imap-host <h> --smtp-host <h> (`abstractcore email discover <address>` lists the lookups tried).",
+                    details=err.details,
+                ) from None
+            preset = {"imap": discovered["imap"], "smtp": discovered["smtp"]}
+            imap_host, smtp_host = discovered["imap"]["host"], discovered["smtp"]["host"]
+            if not args.username:
+                args.username = discovered["username"]
+            if not as_json:
+                print(f"Found the servers ({discovered['source']}): {_server_summary(discovered)}.")
         imap = None
         if imap_host:
             sec = args.imap_security or (preset.get("imap") or {}).get("security") or "ssl"
@@ -333,6 +361,36 @@ def cmd_connect(args: argparse.Namespace) -> int:
         print(f"Connected {doc['address']}" + ("" if args.no_test else " (connection test passed)") + ".")
         _print_status(doc, [])
     return EXIT_OK
+
+
+def _server_summary(found: Dict[str, Any]) -> str:
+    parts = []
+    for leg in ("imap", "smtp"):
+        srv = found.get(leg)
+        if srv:
+            parts.append(f"{srv['host']}:{srv['port']} {'SSL' if srv['security'] == 'ssl' else 'STARTTLS'}")
+    return " · ".join(parts)
+
+
+def cmd_discover(args: argparse.Namespace) -> int:
+    from abstractcore.comms.email import EmailInvalidSettings, discovery
+
+    try:
+        found = discovery.discover_servers(args.address, timeout=args.timeout)
+    except ValueError:
+        return _fail(EmailInvalidSettings(f"{args.address!r} is not a valid email address.", "Give the address as name@example.com."), bool(args.json))
+    if args.json:
+        _print_json(found)
+    elif found["found"]:
+        print(f"{found['address']}: {_server_summary(found)} (found by: {found['source']}; user name {found['username']})")
+        if found.get("provider"):
+            print(f"  {found['provider'].capitalize()} mailbox: `abstractcore email connect --address {found['address']} --oauth {found['provider']}` signs in without a password.")
+    else:
+        print(f"Couldn't find the mail servers for {found['domain']}. Give them with --imap-host / --smtp-host.")
+        for row in found["tried"]:
+            where = row.get("url") or row.get("name") or ""
+            print(f"  {row['step']}: {row['result']}" + (f" ({where})" if where else ""))
+    return EXIT_OK if found["found"] else EXIT_ERROR
 
 
 def cmd_test(args: argparse.Namespace) -> int:
@@ -531,10 +589,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--json", action="store_true", help="Print JSON")
         return p
 
-    c = common(sub.add_parser("connect", help="Connect (test, then store) the email account"))
-    c.add_argument("--address", help="The account's email address (the sender)")
+    c = common(sub.add_parser("connect", help="Connect the mailbox (test, then store); servers discovered when no host is given"))
+    c.add_argument("--address", help="The mailbox's address (the sender)")
     c.add_argument("--display-name", help="Name shown to recipients")
-    c.add_argument("--username", help="Sign-in user name (default: the address)")
+    c.add_argument("--username", help="Sign-in user name (default: the discovered form, else the address)")
     c.add_argument("--password", help="Password or app password (stored encrypted)")
     c.add_argument(
         "--password-stdin", action="store_true",
@@ -568,6 +626,10 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--no-browser", action="store_true", help="Print the sign-in address without opening a browser")
     c.add_argument("--oauth-timeout", type=float, default=300.0, help=argparse.SUPPRESS)
 
+    dv = common(sub.add_parser("discover", help="Find the mailbox's IMAP and SMTP servers from its address"))
+    dv.add_argument("address")
+    dv.add_argument("--timeout", type=float, default=4.0, help="Seconds per lookup step (default 4)")
+
     t = common(sub.add_parser("test", help="Sign in to IMAP and SMTP with the stored account"))
     t.add_argument("--ca-file", help=argparse.SUPPRESS)
     common(sub.add_parser("status", help="Show the account, policy, limits and last test"))
@@ -593,14 +655,14 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--per-hour", type=int)
     ls.add_argument("--per-day", type=int)
 
-    common(sub.add_parser("enable", help="Turn email on"))
-    common(sub.add_parser("disable", help="Turn email off (settings kept)"))
+    common(sub.add_parser("enable", help='"Use this mailbox": on'))
+    common(sub.add_parser("disable", help='"Use this mailbox": off (settings kept)'))
     at = common(sub.add_parser(
         "agent-tools",
         help='"Agent email tools": let agents use the email tools with this account (default off)',
     ))
     at.add_argument("state", choices=("on", "off"))
-    r = common(sub.add_parser("registered-address", help="Set your own address (the default allowlist entry)"))
+    r = common(sub.add_parser("registered-address", help='Set your email address ("self": notifications, the default allowlist entry); "" clears it'))
     r.add_argument("address")
     return parser
 
@@ -610,6 +672,8 @@ def handle_email(argv: List[str]) -> int:
     args = parser.parse_args(argv)
     if args.cmd == "connect":
         return cmd_connect(args)
+    if args.cmd == "discover":
+        return cmd_discover(args)
     if args.cmd == "test":
         return cmd_test(args)
     if args.cmd == "status":

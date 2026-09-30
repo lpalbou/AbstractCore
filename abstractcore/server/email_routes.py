@@ -4,8 +4,10 @@ The Email page of the web console uses these; the terminal console uses the same
 through `abstractcore email ... --json`. Every route calls `EmailAccountStore` and returns its
 `email_settings_v1` document (`public()`), so both consoles render one shape.
 
-    GET    /acore/email                      settings + status (+ notices)
-    PUT    /acore/email                      connect: test, then store (password in the body; never echoed)
+    GET    /acore/email                      settings + status (+ notices, oauth_providers)
+    POST   /acore/email/discover             {address}  the mailbox's IMAP/SMTP servers (auto-discovery)
+    PUT    /acore/email                      connect the mailbox: test, then store (password in the body;
+                                             never echoed; imap/smtp omitted = discovered from the address)
     POST   /acore/email/test                 sign in to IMAP and SMTP with the stored account
     DELETE /acore/email                      disconnect: delete the credentials and account settings
     PUT    /acore/email/policy               {mode, entries}   recipient policy (replaces the entries)
@@ -13,7 +15,7 @@ through `abstractcore email ... --json`. Every route calls `EmailAccountStore` a
     PUT    /acore/email/limits               {per_hour, per_day}
     PUT    /acore/email/enabled              {enabled}
     PUT    /acore/email/agent-tools          {enabled}         "Agent email tools" (default off)
-    PUT    /acore/email/registered-address   {address}
+    PUT    /acore/email/registered-address   {address}         the email address ("self": notifications, default recipient); "" clears it
     POST   /acore/email/oauth/start          begin an OAuth2 sign-in (device code or loopback browser flow)
     POST   /acore/email/oauth/finish         {flow_id, wait_s}  complete it (pending until approved)
     POST   /acore/email/oauth/cancel         {flow_id}          drop a pending sign-in (closes its listener)
@@ -21,9 +23,14 @@ through `abstractcore email ... --json`. Every route calls `EmailAccountStore` a
 Every route needs the server principal (the same rule as the host routes): the email account
 is the install owner's.
 
+Two things are named differently everywhere: the **email address** (`registered_address`: where
+notifications go and the default allowed recipient, "self"; no password) and the **mailbox** (the
+IMAP/SMTP or OAuth connection agents and automations read and send mail with).
+
 Errors are `{ok: false, error: {code, cause, fix, retryable, details}}` with 400 (invalid
-input), 404 (no account), 409 (turned off / credentials missing) or 422 (the mail server
-refused the connection test).
+input; `email_discovery_failed` also carries `error.tried`, the discovery steps), 404 (no
+mailbox), 409 (turned off / credentials missing) or 422 (the mail server refused the connection
+test).
 """
 
 from __future__ import annotations
@@ -43,6 +50,7 @@ router = APIRouter(tags=["email"])
 
 _STATUS_BY_CODE = {
     "email_invalid_settings": 400,
+    "email_discovery_failed": 400,
     "email_invalid_message": 400,
     "email_policy_refused": 400,
     "email_not_configured": 404,
@@ -66,7 +74,10 @@ def _store():
 
 def _error(err: Any) -> JSONResponse:
     status = _STATUS_BY_CODE.get(err.code, 422)
-    return JSONResponse(status_code=status, content={"ok": False, "error": {**err.to_dict(include_details=True), "message": err.message}})
+    body = {**err.to_dict(include_details=True), "message": err.message}
+    if err.code == "email_discovery_failed":
+        body["tried"] = list((err.details or {}).get("tried") or [])
+    return JSONResponse(status_code=status, content={"ok": False, "error": body})
 
 
 async def _call(fn) -> Any:
@@ -90,24 +101,31 @@ class ConnectBody(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
+                {"address": "me@fastmail.com", "password": "app-password"},
                 {
                     "address": "me@example.com",
                     "password": "app-password",
                     "imap": {"host": "imap.example.com", "port": 993, "security": "ssl"},
                     "smtp": {"host": "smtp.example.com", "port": 587, "security": "starttls"},
-                }
+                },
             ]
         }
     )
 
-    address: str
+    address: str = Field(..., description="The mailbox's address (the sender)")
     display_name: str = ""
-    username: str = ""
+    username: str = Field("", description="Sign-in user name; empty = the discovered form, else the address")
     password: str = Field("", description="Password or app password; stored encrypted, never returned")
-    imap: Optional[ServerBody] = None
+    imap: Optional[ServerBody] = Field(None, description="Omit imap AND smtp to discover the servers from the address")
     smtp: Optional[ServerBody] = None
-    registered_address: Optional[str] = None
+    registered_address: Optional[str] = Field(None, description="The email address (\"self\"); default: unchanged")
     test: bool = True
+
+
+class DiscoverBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"address": "me@fastmail.com"}]})
+
+    address: str
 
 
 class PolicyBody(BaseModel):
@@ -187,40 +205,90 @@ def _servers(imap_body: Optional[ServerBody], smtp_body: Optional[ServerBody], p
     return imap, smtp
 
 
-@router.get("/acore/email", summary="Email account settings and status")
+def _discover(address: str) -> Dict[str, Any]:
+    """The discovery dict; an address that is not one is a typed 400."""
+
+    from ..comms.email import EmailInvalidSettings, discovery
+
+    try:
+        return discovery.discover_servers(address)
+    except ValueError:
+        raise EmailInvalidSettings(
+            f"{str(address or '').strip()!r} is not a valid email address.", "Give the mailbox's address as name@example.com."
+        ) from None
+
+
+@router.get("/acore/email", summary="Mailbox settings and status (and the email address)")
 async def email_get(request: Request) -> Any:
+    """`email_settings_v1` plus `notices` and `oauth_providers`
+    (`[{id: google|microsoft, available, reason}]`: whether "Sign in with Google/Microsoft" has a
+    built-in client in this version)."""
+
     _principal(request)
+    from ..comms.email import oauth_providers_public
 
     def run() -> Dict[str, Any]:
         store = _store()
         notices = store.ensure_legacy_imported()
-        return {**store.public(), "notices": notices}
+        return {**store.public(), "notices": notices, "oauth_providers": oauth_providers_public()}
 
     return await _call(run)
 
 
-@router.put("/acore/email", summary="Connect the email account (test, then store)")
+@router.post("/acore/email/discover", summary="Find the mailbox's IMAP and SMTP servers from its address")
+async def email_discover(body: DiscoverBody, request: Request) -> Any:
+    """Known providers, the domain's autoconfig file, the Thunderbird ISPDB, DNS SRV, then MX
+    (`abstractcore.comms.email.discovery`). Always 200 for a valid address: `found` says whether
+    both servers were found, `tried` lists every step."""
+
+    _principal(request)
+    return await _call(lambda: _discover(body.address))
+
+
+def connect_servers(address: str, imap_body: Optional[ServerBody], smtp_body: Optional[ServerBody], username: str = ""):
+    """(imap, smtp, username, discovery) for a password connect: the given servers, or, when
+    neither is given, the discovered ones (`email_discovery_failed` when none are found)."""
+
+    from ..comms.email import discovery
+
+    imap, smtp = _servers(imap_body, smtp_body, {})
+    if imap is not None or smtp is not None:
+        return imap, smtp, username, None
+    _discover(address)  # a non-address is a typed 400 before any lookup
+    found = discovery.require_servers(address)
+    imap, smtp = _servers(ServerBody(**found["imap"]), ServerBody(**found["smtp"]), {})
+    info = {"source": found["source"], "provider": found["provider"], "tried": found["tried"]}
+    return imap, smtp, (username or found["username"]), info
+
+
+@router.put("/acore/email", summary="Connect the mailbox (test, then store)")
 async def email_put(body: ConnectBody, request: Request) -> Any:
+    """Without `imap` and `smtp` the servers are discovered from the address (the response then
+    carries `discovery: {source, provider, tried}`); none found = 400 `email_discovery_failed`."""
+
     _principal(request)
     from ..comms.email import EmailAccount, EmailSecret
 
     def run() -> Dict[str, Any]:
-        imap, smtp = _servers(body.imap, body.smtp, {})
+        imap, smtp, username, info = connect_servers(body.address, body.imap, body.smtp, body.username)
         account = EmailAccount.build(
-            address=body.address, username=body.username, imap=imap, smtp=smtp, display_name=body.display_name
+            address=body.address, username=username, imap=imap, smtp=smtp, display_name=body.display_name
         )
-        return {"ok": True, **_store().connect(account, EmailSecret(body.password), test=body.test, registered_address=body.registered_address)}
+        out = {"ok": True, **_store().connect(account, EmailSecret(body.password), test=body.test, registered_address=body.registered_address)}
+        if info is not None:
+            out["discovery"] = info
+        return out
 
     return await _call(run)
 
 
-@router.post("/acore/email/test", summary="Test the stored email account")
+@router.post("/acore/email/test", summary="Test the connected mailbox")
 async def email_test(request: Request) -> Any:
     _principal(request)
     return await _call(lambda: _store().test())
 
 
-@router.delete("/acore/email", summary="Disconnect the email account")
+@router.delete("/acore/email", summary="Disconnect the mailbox")
 async def email_delete(request: Request) -> Any:
     _principal(request)
     return await _call(lambda: {"ok": True, **_store().disconnect()})
@@ -253,13 +321,13 @@ async def email_limits(body: LimitsBody, request: Request) -> Any:
     return await _call(lambda: {"ok": True, **_store().set_limits(per_hour=body.per_hour, per_day=body.per_day)})
 
 
-@router.put("/acore/email/enabled", summary="Turn email on or off")
+@router.put("/acore/email/enabled", summary="\"Use this mailbox\" on or off (settings kept)")
 async def email_enabled(body: EnabledBody, request: Request) -> Any:
     _principal(request)
     return await _call(lambda: {"ok": True, **_store().set_enabled(body.enabled)})
 
 
-@router.put("/acore/email/agent-tools", summary="Turn \"Agent email tools\" on or off")
+@router.put("/acore/email/agent-tools", summary="Set the \"Agent email tools\" switch (default off)")
 async def email_agent_tools(body: EnabledBody, request: Request) -> Any:
     """Whether agents may use the email tools with this account (default off). The response's
     `agent_tools` is `{enabled, active, reason}`: `active` also needs a connected, turned-on
@@ -269,7 +337,7 @@ async def email_agent_tools(body: EnabledBody, request: Request) -> Any:
     return await _call(lambda: {"ok": True, **_store().set_agent_tools(body.enabled)})
 
 
-@router.put("/acore/email/registered-address", summary="Set the registered (own) address")
+@router.put("/acore/email/registered-address", summary="Set or clear the email address (\"self\")")
 async def email_registered(body: AddressBody, request: Request) -> Any:
     _principal(request)
     return await _call(lambda: {"ok": True, **_store().set_registered_address(body.address)})

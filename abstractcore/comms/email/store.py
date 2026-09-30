@@ -512,6 +512,9 @@ class EmailAccountStore:
             ),
             "limits": None,
             "registered_address": st.self_address if st else "",
+            # The email address as stored ("" = none set; `registered_address` then falls back
+            # to the mailbox's own address).
+            "registered_address_stored": st.registered_address if st else "",
             "status": {
                 "last_test": status.get("last_test", ""),
                 "last_ok": status.get("last_ok", ""),
