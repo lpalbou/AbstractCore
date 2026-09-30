@@ -350,9 +350,26 @@ def _build_profile() -> Dict[str, Any]:
         "disk": _disk_block(os_id),
         "python": platform.python_version(),
         "cpu_count": os.cpu_count(),
+        "engines_installed": installed_engines(),
         "notes": notes,
         "generated_at": utc_now_iso(),
     }
+
+
+def installed_engines() -> Dict[str, bool]:
+    """`{provider: its in-process engine is installed in this Python}` for the providers a
+    recommendation can name (`config.route_engines.provider_engines_installed`: mlx, mlx-gen,
+    diffusers, acestep). Lookups only, nothing imported. Every host profile carries it as
+    `engines_installed`, so a recommendation never names an engine this install lacks (the
+    light profile has no MLX / PyTorch). Never raises: an unreadable answer is `{}` (not judged).
+    """
+
+    try:
+        from ..config.route_engines import provider_engines_installed
+
+        return provider_engines_installed()
+    except Exception:  # pragma: no cover - defensive: a profile never raises
+        return {}
 
 
 def _build_light_profile() -> Dict[str, Any]:
@@ -384,6 +401,7 @@ def _build_light_profile() -> Dict[str, Any]:
         "accelerator": "metal" if metal else "none",
         "unified_memory": metal,
         "ram_bytes": ram_total,
+        "engines_installed": installed_engines(),
         "light": True,
         "generated_at": utc_now_iso(),
     }

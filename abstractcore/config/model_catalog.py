@@ -141,6 +141,10 @@ APPLE_TEXT_TIERS: Tuple[Dict[str, Any], ...] = (
      "plain": "mlx-community/Qwen3.8-Flash-Next-4bit", "mtp": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"},
 )
 _TIER_PROVIDER = "mlx"
+# The tier's engine when this install has no MLX (the light profile): LM Studio serves the same
+# rows (`qwen/qwen3.5-9b@q4_k_m`, `qwen/qwen3.8-27b@q4_k_m`) from its own app, nothing to
+# install in this Python (`recommended_text_model`, basis `apple_silicon_engine_fallback`).
+_SERVER_TIER_PROVIDER = "lmstudio"
 
 # The portable text model on an engine that runs where LM Studio does not
 # (Intel Macs). Same catalog row as the portable default; Ollama's bare tag
@@ -292,7 +296,9 @@ def recommended_text_model(
       model      the id the route stores (the served id; for MLX the repo id)
       options    route options: the portable route's MTP policy
                  (`speculation`), overlaid with the artifact's own options
-      basis      `apple_silicon_tiers`, `portable_default`,
+      basis      `apple_silicon_tiers`, `apple_silicon_engine_fallback` (Apple
+                 silicon without MLX in this install: the tier's LM Studio build,
+                 else the nearest smaller tier's), `portable_default`,
                  `portable_engine_fallback` (the portable engine has no build
                  on this host, e.g. LM Studio on an Intel Mac), or
                  `no_supported_engine` (neither has one, e.g. FreeBSD: the
@@ -319,7 +325,51 @@ def recommended_text_model(
     accelerator = str(profile.get("accelerator") or "none")
     memory = _memory_gib(profile)
     use_mtp = MTP_RECOMMENDED if mtp is None else bool(mtp)
+    from .model_materializer import split_artifact as _split_artifact
+
+    mlx_missing = None
     if accelerator == "metal":
+        from .capability_defaults import recommended_engine_missing_reason
+
+        mlx_missing = recommended_engine_missing_reason(_TIER_PROVIDER, profile)
+    if accelerator == "metal" and mlx_missing:
+        # The tiers are MLX builds, and this install has no MLX (the light profile): the
+        # tier's model on LM Studio (a server route, nothing to install in this Python), else
+        # the nearest SMALLER tier that has an LM Studio build (Flash-Next has none) -- never
+        # an engine that fails at first use (0.7.0 end-to-end, light install on a 128 GB Mac).
+        tier, rule = _apple_tier(memory)
+        order = list(APPLE_TEXT_TIERS)
+        start = order.index(tier)
+        chosen = None
+        for candidate in reversed(order[: start + 1]):
+            for seed_row in _load_seed_cached().get("rows") or []:
+                if seed_row.get("id") != candidate["row"]:
+                    continue
+                art0 = next((a for a in seed_row.get("artifacts") or [] if a.get("provider") == _SERVER_TIER_PROVIDER), None)
+                if art0 is not None:
+                    chosen = (candidate, seed_row, art0)
+                    break
+            if chosen:
+                break
+        if chosen is None:
+            raise LookupError("no Apple silicon tier row has an LM Studio build")
+        cand, row, art = chosen
+        which = (
+            "the tier's LM Studio build" if cand is tier
+            else f"the LM Studio build of the nearest smaller tier ({cand['row']}; {tier['row']} has no LM Studio build)"
+        )
+        out = {
+            "provider": _SERVER_TIER_PROVIDER,
+            "artifact": str(art["artifact"]),
+            "model": _split_artifact(str(art["artifact"]))[0],  # LM Studio serves the id without `@quant`
+            # The host-wide MTP policy, as on the portable LM Studio route of every other host.
+            "options": dict(_portable_text_default()["options"], **json.loads(json.dumps(art.get("options") or {}))),
+            "catalog_id": row["id"],
+            "basis": "apple_silicon_engine_fallback",
+            "tier": f"{rule}: {which}, because the tier's MLX build cannot run in this install ({mlx_missing.rstrip('.')})",
+            "mtp": False,
+        }
+    elif accelerator == "metal":
         tier, rule = _apple_tier(memory)
         provider, artifact = _TIER_PROVIDER, _tier_artifact(tier, use_mtp)
         row, art = _seed_row_and_artifact(str(tier["row"]), provider, artifact)
@@ -1664,7 +1714,7 @@ def catalog(
             if arts:
                 tier = tier_by_row.get(seed_row["id"]) if accelerator == "metal" else None
                 forced = (_TIER_PROVIDER, _tier_artifact(tier)) if tier is not None else None
-                if text_pick["basis"] == "portable_engine_fallback" and seed_row["id"] == text_pick["catalog_id"]:
+                if text_pick["basis"] in ("portable_engine_fallback", "apple_silicon_engine_fallback") and seed_row["id"] == text_pick["catalog_id"]:
                     forced = (text_pick["provider"], text_pick["artifact"])
                 if forced is not None and not any((a["provider"], a["artifact"]) == forced for a in arts):
                     forced = None  # an engine filter (`engine=ollama`) removed the tier artifact

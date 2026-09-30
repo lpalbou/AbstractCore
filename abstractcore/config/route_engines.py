@@ -49,7 +49,13 @@ import shlex
 from importlib import metadata
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-__all__ = ["ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR", "route_engine_missing", "routes_engine_missing"]
+__all__ = [
+    "ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR",
+    "provider_engine_installed",
+    "provider_engines_installed",
+    "route_engine_missing",
+    "routes_engine_missing",
+]
 
 # The first AbstractVoice with `abstractvoice.engine_runtime` (the public
 # runtime probe). Mirrors the floor of the `voice` extra in pyproject.toml;
@@ -217,6 +223,36 @@ def _dist_version(dist: str) -> str:
         return metadata.version(dist)
     except metadata.PackageNotFoundError:
         return "(unknown version)"
+
+
+# In-process providers a RECOMMENDATION may name, and what makes each usable in this Python
+# environment (the host profile's `engines_installed`, read by the recommendation so the light
+# install profile is never handed an engine it does not have). Voice engines are AbstractVoice's
+# own answer (`route_engine_missing(..., key=)`), not judged here: they ship with the light
+# profile and asking needs AbstractVoice imported.
+def provider_engine_installed(provider: Any) -> Optional[bool]:
+    """True / False for an in-process provider a recommendation can name (mlx, mlx-gen,
+    diffusers, acestep), None for any other provider (not judged). Lookups only."""
+
+    pid = str(provider or "").strip().lower()
+    if pid == "mlx":
+        return _importable("mlx_lm")
+    if pid == "mlx-gen":
+        return _distributed("abstractvision") and _distributed("mlx-gen")
+    if pid in ("diffusers", "acestep"):
+        return _importable("torch")
+    return None
+
+
+def provider_engines_installed() -> Dict[str, bool]:
+    """`{provider: installed}` for every provider `provider_engine_installed` judges."""
+
+    out: Dict[str, bool] = {}
+    for pid in ("mlx", "mlx-gen", "diffusers", "acestep"):
+        value = provider_engine_installed(pid)
+        if value is not None:
+            out[pid] = bool(value)
+    return out
 
 
 def route_engine_missing(provider: Any, model: Any = None, key: Any = None) -> Optional[Dict[str, Any]]:

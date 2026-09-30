@@ -117,6 +117,20 @@ _PROVIDER_MODEL_PREFIXES = {
 }
 
 
+def route_provider_changed(stored: Any, requested: Any) -> bool:
+    """True when a route write names a provider other than the stored one (case-insensitive).
+
+    Such a write that names no options drops the stored options: they belong to the old
+    engine (`update_capability_default`; AbstractGateway's route save applies the same rule).
+    """
+
+    if requested is None:
+        return False
+    old = str(stored or "").strip().lower()
+    new = str(requested or "").strip().lower()
+    return bool(old) and old != new
+
+
 def _split_provider_model(value: str, *, default_provider: str) -> Tuple[str, str]:
     raw = str(value or "").strip()
     if not raw:
@@ -2032,6 +2046,12 @@ class ConfigurationManager:
                 task=task,
             )
         merged_options = options if isinstance(options, dict) else stored.get("options")
+        if not isinstance(options, dict) and route_provider_changed(stored.get("provider"), provider):
+            # Route options are the stored ENGINE's construction knobs (an MLX route's
+            # `speculation: native_mtp`, a drafter): a write that moves the route to another
+            # provider and names no options starts clean (0.7.0 end-to-end: an LM Studio text
+            # route kept the MLX tier's MTP options).
+            merged_options = {}
         return self.set_capability_default(
             kind,
             modality,

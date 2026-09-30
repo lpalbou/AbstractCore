@@ -625,6 +625,32 @@ def _host_platform(host: Mapping[str, Any]) -> Tuple[str, str, Optional[str]]:
     return os_id or "unknown", arch or "unknown", accelerator if isinstance(accelerator, str) else None
 
 
+def recommended_engine_missing_reason(provider: Any, host: Mapping[str, Any]) -> Optional[str]:
+    """Why a recommended provider's IN-PROCESS engine is not installed in this install, or None.
+
+    Read from the host profile's `engines_installed` (utils/host_profile.py, from
+    `route_engines.provider_engine_installed`): the light install profile has no MLX, MLX-Gen
+    or PyTorch, so a recommendation naming one would fail at first use (0.7.0 end-to-end: a
+    128 GB Mac on the light profile got mlx/Qwen3.8-Flash-Next-4bit as its text default and
+    every call, voice included, failed with "MLX dependencies not installed"). A host mapping
+    without that key (a synthetic host, an older profile) is not judged. The sentence is
+    `route_engines.route_engine_missing`'s own (it names the install setting to add).
+    Configured routes are judged by `route_engines.routes_engine_missing` (`engine_missing`),
+    never folded into `route_unavailable`.
+    """
+
+    installed = host.get("engines_installed")
+    pid = str(provider or "").strip().lower()
+    if not isinstance(installed, Mapping) or installed.get(pid) is not False:
+        return None
+    from .route_engines import route_engine_missing
+
+    flag = route_engine_missing(pid)
+    if flag is not None and flag.get("reason"):
+        return str(flag["reason"])
+    return f"the {pid} engine is not installed in this Python environment (the light install profile has no local engines)"
+
+
 def recommended_route_unavailable_reason(
     provider: Any, host: Mapping[str, Any], key: Optional[str] = None
 ) -> Optional[str]:
@@ -632,7 +658,8 @@ def recommended_route_unavailable_reason(
 
     `key` (the route) only words the sentence ("MLX-Gen video generation").
     Engine support only: the memory gate of fit-gated routes is
-    `recommended_unavailable_routes`.
+    `recommended_unavailable_routes`; whether THIS install has the engine is
+    `recommended_engine_missing_reason`.
     """
 
     from .engines import _support
@@ -746,7 +773,8 @@ def _unavailable_reasons(
     routes: Mapping[str, CapabilityRouteDefault], downloads: Mapping[str, Mapping[str, str]], host: Mapping[str, Any]
 ) -> Dict[str, str]:
     """`{key: reason}` for every recommended row this host cannot run: its
-    engine has no build here, or (fit-gated rows) its model does not fit."""
+    engine has no build here, this install does not have its in-process engine
+    (`recommended_engine_missing_reason`), or (fit-gated rows) its model does not fit."""
 
     out: Dict[str, str] = {}
     for key, route in routes.items():
@@ -755,6 +783,12 @@ def _unavailable_reasons(
             next_step = _unavailable_next_step(key, host)
             if next_step:
                 reason = f"{reason}; {next_step}"
+            out[key] = reason
+            continue
+        # The host runs the engine, but this install does not have it (the light profile):
+        # never recommend (seed, apply-recommended) a route that fails at first use.
+        reason = recommended_engine_missing_reason(route.provider, host)
+        if reason:
             out[key] = reason
             continue
         if key in _FIT_GATED_ROUTES:
