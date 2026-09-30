@@ -209,6 +209,19 @@ def test_the_responsive_token_layer_is_carried_and_served() -> None:
     assert "select:not([multiple])" not in fragment("models")["css"]
 
 
+def test_every_css_variable_the_page_uses_is_declared_or_has_a_fallback() -> None:
+    """An undefined `var(--x)` without a fallback is silently `unset` (a 44 px touch
+    rule would do nothing): every token the standalone page reads comes from
+    KIT_ROOT_CSS / KIT_RESPONSIVE_CSS / the theme blocks, or carries a fallback."""
+    html = render_console_html()
+    css = re.sub(r"/\*.*?\*/", "", "\n".join(re.findall(r"<style\b[^>]*>(.*?)</style>", html, flags=re.S)), flags=re.S)
+    declared = set(re.findall(r"(--[A-Za-z0-9_-]+)\s*:", css))
+    assert {"--tap-min", "--vh-full", "--safe-top", "--font-size-input"} <= declared
+    undefined = sorted({name for name, sep in re.findall(r"var\(\s*(--[A-Za-z0-9_-]+)\s*([,)])", css)
+                        if sep == ")" and name not in declared})
+    assert undefined == [], f"CSS variables used without a declaration or fallback: {undefined}"
+
+
 def test_theme_sync_refuses_a_kit_without_the_responsive_layer() -> None:
     with pytest.raises(ValueError):
         theme_sync.parse_responsive_token_css(":root {\n  --x: 1;\n}\n\nhtml {\n  text-size-adjust: 100%;\n}\n")
