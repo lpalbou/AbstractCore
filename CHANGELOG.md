@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.20.2] - 2026-09-30
+
+Automatic mail is marked so automations never answer themselves, recommendations only name
+engines your install has, and media requests can run without a text model.
+
+### Added
+- Automatic mail (RFC 3834): `OutgoingMessage(auto_submitted=..., automation_marker=...)` sends
+  `Auto-Submitted` (`auto-generated` or `auto-replied`) and `X-AbstractFramework-Automation:
+  <marker>`; `EmailContext.automation_marker` stamps both on every `guarded_send` through that
+  context (`auto-replied` when `in_reply_to` is set), and `on_sent` reports them with the
+  Message-ID. `mark_automatic`, `auto_submitted_value` and the header constants are exported from
+  `abstractcore.comms.email`. See [Email](docs/email.md#automatic-mail).
+- Message summaries and details carry `auto_submitted` (the `Auto-Submitted` keyword, `None` when
+  absent) and `framework_marker` (the `X-AbstractFramework-Automation` value, `""` when absent),
+  also in the email tools' results.
+- `abstractcore.providers.capability_host.CapabilityHostProvider`: a provider with no text model
+  that runs media-only outputs (image, video, voice, music, transcription) through the capability
+  plugins. Asking it for text raises `TextGenerationUnavailable` (an `InvalidRequestError`).
+- Every host profile carries `engines_installed` (`{mlx, mlx-gen, diffusers, acestep}` ->
+  installed in this Python environment; module lookups only).
+
+### Changed
+- Recommendations and the fresh-install seed never name an in-process engine your install does
+  not have. On Apple silicon without MLX (the light install profile) the text recommendation is
+  the tier's model on LM Studio (`qwen/qwen3.5-9b` below 24 GiB, `qwen/qwen3.8-27b` from 24 GiB;
+  Qwen3.8 Flash-Next has no LM Studio build, so 128 GiB Macs get the 27B), with
+  `basis: apple_silicon_engine_fallback` and the reason in `tier`. MLX-Gen image and video rows
+  stay unset with the reason and the install command. With MLX installed the unified-memory tiers
+  are unchanged.
+- A capability-route write that moves a route to another provider and names no options drops the
+  stored speculation request (for example an MLX route's `speculation: native_mtp`);
+  `speculation: false` and every other option are kept.
+
 ## [2.20.1] - 2026-09-30
 
 Email secrets never on a command line, and the terminal console `abstractcore-console` 0.5.0 (its

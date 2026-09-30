@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-30
-Package version: 2.20.1
+Package version: 2.20.2
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -7017,7 +7017,8 @@ you can rely on:
   (1 to 100; a larger value is refused with `email_invalid_settings`) plus `has_more` and
   `next_cursor`; call again with `cursor=next_cursor` (same filters) for the next page.
   `search_emails` also filters on `has_attachment`. Each message carries `has_attachments`,
-  `reply_to`, `in_reply_to`, `importance`, `x_priority`, `priority` and `list_unsubscribe`.
+  `reply_to`, `in_reply_to`, `importance`, `x_priority`, `priority`, `list_unsubscribe`,
+  `auto_submitted` and `framework_marker` (automatic mail, see [Email](docs/email.md#automatic-mail)).
 - **Bodies without attachments.** `read_email` downloads only the text and HTML parts; the
   attachments are listed and `get_email_attachment` downloads one. A message over the reading
   limit comes back with `body_text` / `body_html` set to `null`, a `body_skipped` record
@@ -8258,7 +8259,21 @@ Message summaries carry `uid`, `subject`, `from`, `to`, `cc`, `date`, `internald
 `seen`, `size`, `has_attachments`, `reply_to`, `in_reply_to`, `list_unsubscribe` (the header is
 present) and the priority headers as typed values: `importance` (`low` | `normal` | `high`),
 `x_priority` (1 highest to 5 lowest) and `priority` (`normal` | `urgent` | `non-urgent`); a value
-outside those sets is `None`.
+outside those sets is `None`. Two more fields mark automatic mail: `auto_submitted` (RFC 3834
+`Auto-Submitted`, the lower-cased keyword such as `auto-generated`, `auto-replied` or `no`;
+`None` when the header is absent) and `framework_marker` (the `X-AbstractFramework-Automation`
+header AbstractFramework puts on the mail it sends automatically; `""` when absent).
+
+### Automatic mail
+
+Mail that software sends on its own (notifications, automation results, auto-replies) should say
+so, so that other automations and auto-responders never answer it in a loop. Set it per message
+with `OutgoingMessage(auto_submitted="auto-generated", automation_marker="<id>")`
+(`auto-replied` for an automatic answer to one message), or for every send through a context
+with `EmailContext.automation_marker`: `guarded_send` then adds `Auto-Submitted`
+(`auto-replied` when `in_reply_to` is set, else `auto-generated`) and
+`X-AbstractFramework-Automation: <marker>`, and `on_sent` reports both next to the Message-ID.
+A marker is one line of printable ASCII, at most 200 characters.
 
 `client.get(uid)` fetches the message structure, then only its text/plain and text/html parts.
 Attachments are listed with `filename`, `content_type`, `size` (the size on the wire, encoded, as
@@ -16084,7 +16099,10 @@ website.
   tight: it runs with a small context; close other apps first), 24 to below 128 GiB Qwen3.8 27B
   (4-bit; on a 24 GB Mac it runs with a small context by default, and with about 30k tokens after
   `sudo sysctl iogpu.wired_limit_mb=20480`, measured), 128 GiB
-  and above Qwen3.8 Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Other
+  and above Qwen3.8 Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Where MLX is
+  not installed (the light install profile), the tier's model runs on LM Studio instead:
+  `qwen/qwen3.5-9b` below 24 GiB and `qwen/qwen3.8-27b` from 24 GiB (Flash-Next has no LM Studio
+  build). Other
   computers use the LM Studio build `qwen/qwen3.5-9b@q4_k_m`, or the same model's Ollama build where
   LM Studio has no build (Intel Macs).
 - **Image input** is read by the recommended text model where it accepts images, so `input.image`
@@ -16111,7 +16129,9 @@ website.
 - **Music** is ACE-Step 1.5 XL turbo on AbstractMusic's `acestep` backend (Diffusers on PyTorch:
   CUDA, Apple MPS in bfloat16, or the processor in float32).
 
-A capability is **not available** on a machine when its engine has no build for the platform, or,
+A capability is **not available** on a machine when its engine has no build for the platform, when
+the engine runs in-process and is not installed in your Python environment (MLX-Gen or PyTorch on
+the light install profile; the reason names the install command), or,
 for image, video and music, when the model does not fit the machine's memory; the entry then says
 why and what to use instead. Text always has an entry: a tier whose estimate doubts it (8 GB) is
 still the tier, with its warning.

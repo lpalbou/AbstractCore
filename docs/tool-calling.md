@@ -251,7 +251,8 @@ you can rely on:
   (1 to 100; a larger value is refused with `email_invalid_settings`) plus `has_more` and
   `next_cursor`; call again with `cursor=next_cursor` (same filters) for the next page.
   `search_emails` also filters on `has_attachment`. Each message carries `has_attachments`,
-  `reply_to`, `in_reply_to`, `importance`, `x_priority`, `priority` and `list_unsubscribe`.
+  `reply_to`, `in_reply_to`, `importance`, `x_priority`, `priority`, `list_unsubscribe`,
+  `auto_submitted` and `framework_marker` (automatic mail, see [Email](email.md#automatic-mail)).
 - **Bodies without attachments.** `read_email` downloads only the text and HTML parts; the
   attachments are listed and `get_email_attachment` downloads one. A message over the reading
   limit comes back with `body_text` / `body_html` set to `null`, a `body_skipped` record

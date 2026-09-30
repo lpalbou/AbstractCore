@@ -36,7 +36,10 @@ website.
   tight: it runs with a small context; close other apps first), 24 to below 128 GiB Qwen3.8 27B
   (4-bit; on a 24 GB Mac it runs with a small context by default, and with about 30k tokens after
   `sudo sysctl iogpu.wired_limit_mb=20480`, measured), 128 GiB
-  and above Qwen3.8 Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Other
+  and above Qwen3.8 Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Where MLX is
+  not installed (the light install profile), the tier's model runs on LM Studio instead:
+  `qwen/qwen3.5-9b` below 24 GiB and `qwen/qwen3.8-27b` from 24 GiB (Flash-Next has no LM Studio
+  build). Other
   computers use the LM Studio build `qwen/qwen3.5-9b@q4_k_m`, or the same model's Ollama build where
   LM Studio has no build (Intel Macs).
 - **Image input** is read by the recommended text model where it accepts images, so `input.image`
@@ -63,7 +66,9 @@ website.
 - **Music** is ACE-Step 1.5 XL turbo on AbstractMusic's `acestep` backend (Diffusers on PyTorch:
   CUDA, Apple MPS in bfloat16, or the processor in float32).
 
-A capability is **not available** on a machine when its engine has no build for the platform, or,
+A capability is **not available** on a machine when its engine has no build for the platform, when
+the engine runs in-process and is not installed in your Python environment (MLX-Gen or PyTorch on
+the light install profile; the reason names the install command), or,
 for image, video and music, when the model does not fit the machine's memory; the entry then says
 why and what to use instead. Text always has an entry: a tier whose estimate doubts it (8 GB) is
 still the tier, with its warning.

@@ -270,7 +270,21 @@ Message summaries carry `uid`, `subject`, `from`, `to`, `cc`, `date`, `internald
 `seen`, `size`, `has_attachments`, `reply_to`, `in_reply_to`, `list_unsubscribe` (the header is
 present) and the priority headers as typed values: `importance` (`low` | `normal` | `high`),
 `x_priority` (1 highest to 5 lowest) and `priority` (`normal` | `urgent` | `non-urgent`); a value
-outside those sets is `None`.
+outside those sets is `None`. Two more fields mark automatic mail: `auto_submitted` (RFC 3834
+`Auto-Submitted`, the lower-cased keyword such as `auto-generated`, `auto-replied` or `no`;
+`None` when the header is absent) and `framework_marker` (the `X-AbstractFramework-Automation`
+header AbstractFramework puts on the mail it sends automatically; `""` when absent).
+
+### Automatic mail
+
+Mail that software sends on its own (notifications, automation results, auto-replies) should say
+so, so that other automations and auto-responders never answer it in a loop. Set it per message
+with `OutgoingMessage(auto_submitted="auto-generated", automation_marker="<id>")`
+(`auto-replied` for an automatic answer to one message), or for every send through a context
+with `EmailContext.automation_marker`: `guarded_send` then adds `Auto-Submitted`
+(`auto-replied` when `in_reply_to` is set, else `auto-generated`) and
+`X-AbstractFramework-Automation: <marker>`, and `on_sent` reports both next to the Message-ID.
+A marker is one line of printable ASCII, at most 200 characters.
 
 `client.get(uid)` fetches the message structure, then only its text/plain and text/html parts.
 Attachments are listed with `filename`, `content_type`, `size` (the size on the wire, encoded, as

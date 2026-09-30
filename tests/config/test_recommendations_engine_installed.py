@@ -91,17 +91,24 @@ def test_every_host_profile_carries_the_installed_engines() -> None:
     assert provider_engine_installed("lmstudio") is None  # a server route is never judged
 
 
-def test_moving_a_route_to_another_provider_drops_the_old_engine_s_options(tmp_path: Path) -> None:
+def test_moving_a_route_to_another_provider_drops_the_old_engine_s_speculation_request(tmp_path: Path) -> None:
     m = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
     mtp = {"speculation": {"mode": "native_mtp", "num_draft_tokens": 2, "require_acceleration": False}}
-    m.set_capability_default("output.text", provider="mlx", model="mlx-community/Qwen3.8-Flash-Next-4bit", options=mtp)
+    m.set_capability_default("output.text", provider="mlx", model="mlx-community/Qwen3.8-Flash-Next-4bit",
+                             options={**mtp, "profile": "local"})
     # Same provider, no options named: kept.
     m.update_capability_default("output.text", model="mlx-community/Qwen3.8-27B-4bit")
-    assert m.stored_capability_default("output.text")["options"] == mtp
-    # Another provider, no options named: dropped (they were MLX's).
+    assert m.stored_capability_default("output.text")["options"] == {**mtp, "profile": "local"}
+    # Another provider, no options named: the speculation request is dropped (it was MLX's),
+    # the rest is kept.
     m.update_capability_default("output.text", provider="lmstudio", model="llama-3.2-1b-instruct")
     row = m.stored_capability_default("output.text")
-    assert (row["provider"], row["model"]) == ("lmstudio", "llama-3.2-1b-instruct") and not row.get("options")
+    assert (row["provider"], row["model"]) == ("lmstudio", "llama-3.2-1b-instruct")
+    assert row["options"] == {"profile": "local"}
+    # `speculation: false` (off) is valid everywhere and survives a move.
+    m.update_capability_default("output.text", options={"speculation": False})
+    m.update_capability_default("output.text", provider="mlx", model="mlx-community/Qwen3.8-27B-4bit")
+    assert m.stored_capability_default("output.text")["options"] == {"speculation": False}
     # Options named with the change: those win.
     m.update_capability_default("output.text", provider="ollama", model="qwen3.5:9b", options={"keep_alive": "5m"})
     assert m.stored_capability_default("output.text")["options"] == {"keep_alive": "5m"}

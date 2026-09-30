@@ -120,8 +120,8 @@ _PROVIDER_MODEL_PREFIXES = {
 def route_provider_changed(stored: Any, requested: Any) -> bool:
     """True when a route write names a provider other than the stored one (case-insensitive).
 
-    Such a write that names no options drops the stored options: they belong to the old
-    engine (`update_capability_default`; AbstractGateway's route save applies the same rule).
+    Such a write that names no options drops the old engine's speculation request
+    (`options_after_provider_change`; AbstractGateway's route save applies the same rule).
     """
 
     if requested is None:
@@ -129,6 +129,20 @@ def route_provider_changed(stored: Any, requested: Any) -> bool:
     old = str(stored or "").strip().lower()
     new = str(requested or "").strip().lower()
     return bool(old) and old != new
+
+
+def options_after_provider_change(options: Any) -> Dict[str, Any]:
+    """The stored route options a write that moves the route to ANOTHER provider keeps.
+
+    A speculation REQUEST (`speculation: {mode: native_mtp, ...}` or `true`) names how the old
+    engine loads the model (an MLX MTP head, a drafter), so it is dropped; `speculation: false`
+    (off) is valid for every engine and is kept, like every other option.
+    """
+
+    out = dict(options) if isinstance(options, dict) else {}
+    if "speculation" in out and out["speculation"] is not False:
+        out.pop("speculation")
+    return out
 
 
 def _split_provider_model(value: str, *, default_provider: str) -> Tuple[str, str]:
@@ -2047,11 +2061,10 @@ class ConfigurationManager:
             )
         merged_options = options if isinstance(options, dict) else stored.get("options")
         if not isinstance(options, dict) and route_provider_changed(stored.get("provider"), provider):
-            # Route options are the stored ENGINE's construction knobs (an MLX route's
-            # `speculation: native_mtp`, a drafter): a write that moves the route to another
-            # provider and names no options starts clean (0.7.0 end-to-end: an LM Studio text
-            # route kept the MLX tier's MTP options).
-            merged_options = {}
+            # A write that moves the route to another provider and names no options drops the
+            # old engine's speculation request (0.7.0 end-to-end: an LM Studio text route kept
+            # the MLX tier's `speculation: native_mtp`); every other option is kept.
+            merged_options = options_after_provider_change(merged_options)
         return self.set_capability_default(
             kind,
             modality,
