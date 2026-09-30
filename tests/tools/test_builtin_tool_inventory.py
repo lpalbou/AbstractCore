@@ -59,10 +59,12 @@ EXPECTED_COMMON = [
 
 EXPECTED_SHELL = ["shell_close", "shell_exec", "shell_write_stdin"]
 
-# backlog 0992 WP1 (core 2.20): + get_email_attachment, reply_email, search_emails.
+# backlog 0992 WP1 (core 2.20): + get_email_attachment, reply_email, search_emails,
+# list_email_folders.
 EXPECTED_COMMS = [
     "get_email_attachment",
     "list_email_accounts",
+    "list_email_folders",
     "list_emails",
     "list_whatsapp_messages",
     "read_email",
@@ -106,11 +108,11 @@ EXPECTED_REMOTE_WRITE_CAPABLE = {
 
 
 def test_member_sets_are_byte_stable():
-    """The exact ruled enumeration: 14 common + 3 shell + 10 comms + 2
+    """The exact ruled enumeration: 14 common + 3 shell + 11 comms + 2
     telegram + 1 browser, deterministic (module order, then name order)."""
     names = list_builtin_tool_names()
     assert names == EXPECTED_COMMON + EXPECTED_SHELL + EXPECTED_COMMS + EXPECTED_TELEGRAM + EXPECTED_BROWSER
-    assert len(names) == 30
+    assert len(names) == 31
 
 
 def test_inventory_is_derived_not_copied():
@@ -470,8 +472,8 @@ def test_package_level_exports():
 
     assert ExportedDescriptor is BuiltinToolDescriptor
     assert exported_names() == list_builtin_tool_names()
-    assert len(exported_inventory()) == 30
-    assert len(exported_dicts()) == 30
+    assert len(exported_inventory()) == 31
+    assert len(exported_dicts()) == 31
 
 
 def test_comms_lanes_now_in_scope():

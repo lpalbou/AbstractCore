@@ -21,7 +21,7 @@ import ssl
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional
 
-from .client import EmailClient
+from .client import DEFAULT_MAX_MESSAGE_BYTES, EmailClient
 from .errors import EmailDisabled, EmailInvalidMessage, EmailNotConfigured
 from .limits import SendRateLimiter
 from .models import EmailAccount, EmailSecret, OutgoingMessage, SendLimits, SendResult
@@ -42,6 +42,9 @@ class EmailContext:
     timeout: float = 30.0
     source: str = "settings"
     registered_address: str = ""
+    # The reading limit: text/html bodies of one message (or one attachment) larger than this
+    # are not fetched; the read returns a typed skip record instead (never a cut body).
+    max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES
     on_sent: Optional[Callable[[Dict[str, Any]], None]] = field(default=None, repr=False)
 
     def __repr__(self) -> str:
@@ -62,6 +65,7 @@ class EmailContext:
             token_provider=self.token_provider,
             timeout=self.timeout,
             ssl_context=self.ssl_context,
+            max_message_bytes=self.max_message_bytes,
         )
 
     def evaluate(self, message: OutgoingMessage) -> PolicyDecision:

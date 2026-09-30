@@ -240,7 +240,8 @@ def test_read_returns_whole_bodies_headers_and_attachment_metadata(imap, ca) -> 
     assert len(detail.text) > 100_000  # no truncation (ADR-0026)
     assert detail.text.rstrip().endswith("A long line of body text.")
     (att,) = detail.attachments
-    assert att.content_type == "application/pdf" and att.size == len(b"%PDF-1.4 fake")
+    assert att.content_type == "application/pdf" and att.encoding == "base64"
+    assert att.size == len(b"JVBERi0xLjQgZmFrZQ==\r\n")  # the size on the wire (encoded), from BODYSTRUCTURE
     html = c.get(uids["bob"]).html
     assert "<b>now</b>" in html
     with pytest.raises(EmailMessageNotFound):

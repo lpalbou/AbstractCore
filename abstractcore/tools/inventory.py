@@ -127,6 +127,7 @@ _CLASSIFICATION_BY_NAME: Dict[str, Dict[str, bool]] = {
     "list_emails": {"mutating": False, "remote_write_capable": False},
     "search_emails": {"mutating": False, "remote_write_capable": False},
     "list_email_accounts": {"mutating": False, "remote_write_capable": False},
+    "list_email_folders": {"mutating": False, "remote_write_capable": False},
     # get_email_attachment writes the attachment into a MODEL-CHOSEN local folder
     # (never overwrites; the mailbox itself stays read-only).
     "get_email_attachment": {"mutating": True, "remote_write_capable": False},

@@ -9,7 +9,11 @@ decoded headers, because IMAP's FROM and SUBJECT are server-defined substring ma
 - `to_address`: one of the To/Cc addresses equals it;
 - `subject_contains`: the decoded subject contains this literal text (case-insensitive);
 - `since` / `before`: INTERNALDATE day bounds (IMAP semantics: since inclusive, before exclusive);
-- `unseen`: True = unread only, False = read only, None = both.
+- `unseen`: True = unread only, False = read only, None = both;
+- `has_attachment`: True = only messages with at least one attachment, False = only messages
+  without, None = both. IMAP has no search key for this: it is checked on each message's
+  structure (BODYSTRUCTURE: a part with disposition `attachment` or a file name); a message
+  whose structure the server could not describe matches neither True nor False.
 
 Text that is not ASCII is not sent to the server (not every server supports SEARCH CHARSET
 UTF-8); the exact client-side check still applies.
@@ -75,6 +79,7 @@ class SearchCriteria:
     since: Optional[date] = None
     before: Optional[date] = None
     unseen: Optional[bool] = None
+    has_attachment: Optional[bool] = None
 
     @classmethod
     def build(
@@ -87,6 +92,7 @@ class SearchCriteria:
         since: Any = None,
         before: Any = None,
         unseen: Optional[bool] = None,
+        has_attachment: Optional[bool] = None,
     ) -> "SearchCriteria":
         fa = str(from_address or "").strip()
         fd = str(from_domain or "").strip()
@@ -120,6 +126,7 @@ class SearchCriteria:
             since=parse_day(since, label="since"),
             before=parse_day(before, label="before"),
             unseen=unseen if unseen in (True, False) else None,
+            has_attachment=has_attachment if has_attachment in (True, False) else None,
         )
 
     def imap_keys(self) -> List[str]:
@@ -143,7 +150,16 @@ class SearchCriteria:
             keys.append("SEEN")
         return keys or ["ALL"]
 
-    def matches(self, *, from_header: str, to_header: str, cc_header: str, subject: str, seen: bool) -> bool:
+    def matches(
+        self,
+        *,
+        from_header: str,
+        to_header: str,
+        cc_header: str,
+        subject: str,
+        seen: bool,
+        has_attachments: Optional[bool] = None,
+    ) -> bool:
         if self.from_address or self.from_domain:
             senders = [a for _n, a in getaddresses([from_header or ""]) if a]
             try:
@@ -176,6 +192,8 @@ class SearchCriteria:
             return False
         if self.unseen is False and not seen:
             return False
+        if self.has_attachment is not None and has_attachments is not self.has_attachment:
+            return False
         return True
 
     def to_dict(self) -> dict:
@@ -187,4 +205,5 @@ class SearchCriteria:
             "since": self.since.isoformat() if self.since else None,
             "before": self.before.isoformat() if self.before else None,
             "unseen": self.unseen,
+            "has_attachment": self.has_attachment,
         }

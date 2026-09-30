@@ -2,7 +2,8 @@
 
 Where things live (for a config file `<dir>/abstractcore.json`):
 
-    <dir>/abstractcore.json   section `email`: enabled, account, policy, limits, registered_address
+    <dir>/abstractcore.json   section `email`: enabled, agent_tools, account, policy, limits,
+                              registered_address
     <dir>/email/secret.enc    the password or OAuth tokens, AES-256-GCM (vault.py)
     <dir>/email/secret.key    only when no OS keychain is available (0600)
     <dir>/email/status.json   last test time, result, typed error
@@ -32,7 +33,13 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 from . import legacy
 from .client import EmailClient, tls_context
 from .context import EmailContext
-from .errors import EmailError, EmailInvalidSettings, EmailNotConfigured, EmailSecretUnavailable
+from .errors import (
+    EmailAgentToolsOff,
+    EmailError,
+    EmailInvalidSettings,
+    EmailNotConfigured,
+    EmailSecretUnavailable,
+)
 from .limits import SendRateLimiter
 from .models import EmailAccount, EmailSecret, ImapSettings, SendLimits, SmtpSettings
 from .oauth import OAuthTokenProvider
@@ -40,6 +47,16 @@ from .policy import RecipientPolicy, normalize_address
 from .vault import KEY_FILE_WARNING, SecretVault
 
 SCHEMA = "email_settings_v1"
+
+# "Agent email tools" (default OFF): agents get the email tools with this account only when the
+# account is connected, turned on, and this toggle is on. The same words as the gateway's
+# per-user toggle (Settings -> My email -> Agent email tools).
+AGENT_TOOLS_LABEL = "Agent email tools"
+AGENT_TOOLS_OFF_CAUSE = "Agent email tools are off for this AbstractCore install."
+AGENT_TOOLS_OFF_FIX = (
+    "Turn on \"Agent email tools\": `abstractcore email agent-tools on`, or the Email page of the "
+    "AbstractCore console (web or terminal). The account must also be connected and turned on."
+)
 
 
 def _now_iso() -> str:
@@ -49,6 +66,7 @@ def _now_iso() -> str:
 @dataclass(frozen=True)
 class EmailSettings:
     enabled: bool
+    agent_tools: bool
     account: Optional[EmailAccount]
     policy: RecipientPolicy
     policy_is_default: bool
@@ -113,6 +131,7 @@ class EmailAccountStore:
             policy = RecipientPolicy.default_for(registered or (account.address if account else ""))
         return EmailSettings(
             enabled=bool(sec.get("enabled", True)),
+            agent_tools=sec.get("agent_tools") is True,
             account=account,
             policy=policy,
             policy_is_default=is_default,
@@ -286,6 +305,41 @@ class EmailAccountStore:
         self._update(enabled=bool(enabled))
         return self.public()
 
+    def set_agent_tools(self, enabled: bool) -> Dict[str, Any]:
+        """The "Agent email tools" toggle (default off). Turning it on without a connected,
+        turned-on account is allowed and changes nothing until the account is usable."""
+
+        self._update(agent_tools=bool(enabled))
+        return self.public()
+
+    def agent_tools_status(self, st: Optional[EmailSettings] = None) -> Dict[str, Any]:
+        """`{enabled, active, reason}`: the toggle, whether agents have the tools, and why not."""
+
+        if st is None:
+            try:
+                st = self.settings()
+            except EmailInvalidSettings:
+                return {"enabled": False, "active": False, "reason": "the stored email settings are not valid"}
+        usable = bool(st.account is not None and st.enabled and self.vault.exists())
+        reason = ""
+        if not st.agent_tools:
+            reason = "off (your choice; default)"
+        elif not usable:
+            reason = "no connected, turned-on email account"
+        return {"enabled": bool(st.agent_tools), "active": bool(st.agent_tools and usable), "reason": reason}
+
+    def agent_context(self, *, ssl_context: Optional[ssl.SSLContext] = None) -> EmailContext:
+        """`context()` for an AGENT's tool call: also requires "Agent email tools" to be on.
+
+        Raises `EmailNotConfigured` / `EmailSecretUnavailable` / `EmailDisabled` first (the
+        account itself), then `EmailAgentToolsOff` when the toggle is off.
+        """
+
+        ctx = self.context(ssl_context=ssl_context)
+        if not self.settings().agent_tools:
+            raise EmailAgentToolsOff(AGENT_TOOLS_OFF_CAUSE, AGENT_TOOLS_OFF_FIX)
+        return ctx
+
     def set_registered_address(self, address: str) -> Dict[str, Any]:
         addr = str(address or "").strip()
         if addr:
@@ -428,6 +482,7 @@ class EmailAccountStore:
             "schema": SCHEMA,
             "configured": acct is not None,
             "enabled": st.enabled if st else False,
+            "agent_tools": self.agent_tools_status(st) if st else {"enabled": False, "active": False, "reason": "the stored email settings are not valid"},
             "address": acct.address if acct else "",
             "display_name": acct.display_name if acct else "",
             "username": acct.username if acct else "",

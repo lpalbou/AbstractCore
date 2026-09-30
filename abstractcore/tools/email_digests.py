@@ -1,6 +1,13 @@
+"""Deterministic plain-text digest bodies (`render_email_digest_text`).
+
+Rendering only: this module never sends mail. To send a digest, pass the rendered body to the
+`send_email` tool (inside a host's approval gate) or to `EmailContext.send` / `guarded_send`,
+which apply the recipient policy and the send limits.
+"""
+
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List
 
 
 def _as_str(value: Any) -> str:
@@ -102,34 +109,3 @@ def render_email_digest_text(
 
     body = "\n".join(lines).rstrip() + "\n"
     return body
-
-
-def send_email_digest(
-    *,
-    account: Optional[str] = None,
-    to: Any,
-    subject: str,
-    title: str,
-    sections: Any,
-    intro: str = "",
-    footer: str = "",
-    max_items_per_section: int = 50,
-) -> Dict[str, Any]:
-    """Send a digest email using the configured email tool account."""
-    from abstractcore.tools.comms_tools import send_email
-
-    body_text = render_email_digest_text(
-        title=title,
-        sections=sections,
-        intro=intro,
-        footer=footer,
-        max_items_per_section=max_items_per_section,
-    )
-
-    return send_email(
-        account=account,
-        to=to,
-        subject=subject,
-        body_text=body_text,
-    )
-

@@ -13,9 +13,12 @@ committed), and holds its state in memory. Nothing reaches a real mail service.
     imap.close(); smtp.close()
 
 - IMAP: a minimal IMAP4rev1 server (CAPABILITY, STARTTLS, LOGIN, AUTHENTICATE PLAIN/XOAUTH2,
-  LIST, EXAMINE, SELECT, STATUS, UID SEARCH / FETCH, FETCH, STORE, NOOP, LOGOUT). It records
-  every command name (`commands`) and flags a message \\Seen on a non-PEEK body fetch, so a
-  test can prove a client stayed read-only. `reset_uidvalidity(folder)` simulates a server
+  LIST, EXAMINE, SELECT, STATUS, UID SEARCH / FETCH, FETCH, STORE, NOOP, LOGOUT). FETCH
+  serves FLAGS, RFC822.SIZE, INTERNALDATE, BODYSTRUCTURE and BODY[.PEEK][section] (whole
+  message, HEADER, TEXT, HEADER.FIELDS and part numbers like 1.2). It records every command
+  name (`commands`) and every FETCH item list (`fetches`), and flags a message \\Seen on a
+  non-PEEK body fetch, so a test can prove a client stayed read-only and fetched only the
+  parts it needed. `reset_uidvalidity(folder)` simulates a server
   rebuilding a folder.
 - SMTP: aiosmtpd (a test dependency) with implicit TLS or STARTTLS, AUTH PLAIN/LOGIN/XOAUTH2,
   per-recipient refusal codes, and the received messages in `messages`.
@@ -32,6 +35,7 @@ import base64
 import datetime as _dt
 import email
 import email.policy
+import email.utils
 import http.server
 import json
 import secrets
@@ -271,6 +275,127 @@ def _unq(tok: str) -> str:
     return tok[2:] if tok.startswith("\x00Q") else tok
 
 
+# ---------------------------------------------------------------------------------------
+# MIME structure for the IMAP fake (BODYSTRUCTURE and BODY[section], RFC 3501 6.4.5 / 7.4.2)
+# ---------------------------------------------------------------------------------------
+
+_CRLF_POLICY = email.policy.compat32.clone(linesep="\r\n")
+
+
+def _split_head(data: bytes) -> Tuple[bytes, bytes]:
+    for sep in (b"\r\n\r\n", b"\n\n"):
+        i = data.find(sep)
+        if i != -1:
+            return data[: i + len(sep)], data[i + len(sep) :]
+    return data, b""
+
+
+def _node_body(node: Any, top: Any, raw: bytes) -> bytes:
+    """The wire bytes of a node's body (what BODY[section] returns for it)."""
+
+    if node is top:
+        return _split_head(raw)[1]
+    return _split_head(node.as_bytes(policy=_CRLF_POLICY))[1]
+
+
+def _resolve_section(top: Any, path: List[int]) -> Any:
+    node = top
+    in_message = True  # `node` is a message: the next number indexes its body
+    for n in path:
+        if node.get_content_type() == "message/rfc822" and not in_message:
+            node = node.get_payload()[0]
+            in_message = True
+        if node.is_multipart():
+            payload = node.get_payload()
+            if not 1 <= n <= len(payload):
+                raise KeyError(n)
+            node = payload[n - 1]
+            in_message = False
+        elif n == 1 and in_message:
+            in_message = False  # the body of a message that is not multipart
+        else:
+            raise KeyError(n)
+    return node
+
+
+def _section_content(raw: bytes, section: str) -> bytes:
+    spec = section.strip()
+    upper = spec.upper()
+    if spec == "":
+        return raw
+    if upper == "HEADER":
+        return _split_head(raw)[0]
+    if upper == "TEXT":
+        return _split_head(raw)[1]
+    if upper.startswith("HEADER.FIELDS"):
+        fields_part = spec[spec.index("(") + 1 : spec.index(")")]
+        names = [n.strip().lower() for n in fields_part.split() if n.strip()]
+        parsed = email.message_from_bytes(raw)
+        lines = []
+        for name in names:
+            for v in parsed.get_all(name) or []:
+                lines.append(f"{name.title()}: {v}")
+        return ("\r\n".join(lines) + "\r\n\r\n").encode("utf-8")
+    top = email.message_from_bytes(raw)
+    try:
+        node = _resolve_section(top, [int(x) for x in spec.split(".")])
+    except (KeyError, ValueError):
+        return b""
+    return _node_body(node, top, raw)
+
+
+def _q(value: Any) -> str:
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _param_list(part: Any, header: str) -> str:
+    params = part.get_params(header=header) or []
+    items: List[str] = []
+    for key, value in params[1:]:
+        text = email.utils.collapse_rfc2231_value(value)
+        if text.isascii():
+            items += [_q(key.upper()), _q(text)]
+        else:
+            items += [_q(key.upper() + "*"), _q(email.utils.encode_rfc2231(text, "utf-8"))]
+    return "(" + " ".join(items) + ")" if items else "NIL"
+
+
+def _disposition(part: Any) -> str:
+    disp = part.get_content_disposition()
+    if not disp:
+        return "NIL"
+    return f"({_q(disp.upper())} {_param_list(part, 'content-disposition')})"
+
+
+def _structure_of(node: Any, top: Any, raw: bytes) -> str:
+    ctype = node.get_content_type()
+    maintype, _, subtype = ctype.partition("/")
+    if ctype != "message/rfc822" and node.is_multipart():
+        children = "".join(_structure_of(p, top, raw) for p in node.get_payload())
+        return f"({children} {_q(subtype.upper())} {_param_list(node, 'content-type')} {_disposition(node)} NIL NIL)"
+    body = _node_body(node, top, raw)
+    enc = str(node.get("Content-Transfer-Encoding") or "7BIT").strip().upper()
+    cid = str(node.get("Content-ID") or "").strip()
+    head = (
+        f"({_q(maintype.upper())} {_q(subtype.upper())} {_param_list(node, 'content-type')} "
+        f"{_q(cid) if cid else 'NIL'} NIL {_q(enc)} {len(body)}"
+    )
+    lines = body.count(b"\n")
+    if ctype == "message/rfc822":
+        inner = node.get_payload()[0]
+        envelope = "(" + " ".join(["NIL"] * 10) + ")"
+        inner_structure = _structure_of(inner, inner, body)
+        head += f" {envelope} {inner_structure} {lines}"
+    elif maintype == "text":
+        head += f" {lines}"
+    return head + f" NIL {_disposition(node)} NIL NIL)"
+
+
+def _bodystructure(raw: bytes) -> str:
+    top = email.message_from_bytes(raw)
+    return _structure_of(top, top, raw)
+
+
 class FakeImapServer:
     def __init__(
         self,
@@ -283,6 +408,7 @@ class FakeImapServer:
         advertise_starttls: bool = True,
         overquota: bool = False,
         search_tz: _dt.tzinfo = _dt.timezone.utc,
+        broken_bodystructure: bool = False,
     ) -> None:
         assert security in {"ssl", "starttls"}
         # SEARCH SINCE/BEFORE compare dates in the server's own time zone (RFC 3501 leaves the
@@ -295,6 +421,10 @@ class FakeImapServer:
         self.advertise_starttls = advertise_starttls
         self.overquota = overquota
         self.commands: List[str] = []
+        # The item list of every FETCH (a test can prove which parts a client downloaded).
+        self.fetches: List[str] = []
+        # Answer BODYSTRUCTURE with something unparsable (a server whose structure is unusable).
+        self.broken_bodystructure = broken_bodystructure
         self.logins: List[Tuple[str, str]] = []  # (user, secret) of each SUCCESSFUL sign-in
         self.handshake_errors: List[str] = []
         self._lock = threading.Lock()
@@ -675,45 +805,43 @@ class _ImapSession:
         items = " ".join(toks[1:]).strip()
         if items.startswith("(") and items.endswith(")"):
             items = items[1:-1]
-        upper = items.upper()
+        self.s.fetches.append(items)
+        wanted_items = [t for t in _tokenize(items) if t]
         for seq, msg in enumerate(list(self.folder.messages), start=1):
             ident = msg.uid if uid else seq
             wanted = self._in_set(ident, spec) if uid else self._in_seq(seq, spec)
             if not wanted:
                 continue
             parts: List[bytes] = [f"* {seq} FETCH (UID {msg.uid}".encode()]
-            if "FLAGS" in upper:
-                parts.append(f" FLAGS ({' '.join(sorted(msg.flags))})".encode())
-            if "RFC822.SIZE" in upper:
-                parts.append(f" RFC822.SIZE {len(msg.raw)}".encode())
-            if "INTERNALDATE" in upper:
-                parts.append(f' INTERNALDATE "{_imap_internaldate(msg.internaldate)}"'.encode())
-            body: Optional[bytes] = None
-            label = ""
-            if "HEADER.FIELDS" in upper:
-                start = upper.index("HEADER.FIELDS")
-                fields_part = items[items.index("(", start) + 1 : items.index(")", start)]
-                names = [n.strip().lower() for n in fields_part.split() if n.strip()]
-                parsed = email.message_from_bytes(msg.raw)
-                lines = []
-                for name in names:
-                    for v in parsed.get_all(name) or []:
-                        lines.append(f"{name.title()}: {v}")
-                body = ("\r\n".join(lines) + "\r\n\r\n").encode("utf-8")
-                label = f"BODY[HEADER.FIELDS ({fields_part.upper()})]"
-                peek = "BODY.PEEK[" in upper
-            elif "BODY.PEEK[]" in upper or "BODY[]" in upper or "RFC822" in upper.replace("RFC822.SIZE", ""):
-                body = msg.raw
-                label = "BODY[]"
-                peek = "BODY.PEEK[]" in upper
-            else:
-                peek = True
-            if body is not None:
-                parts.append(f" {label} {{{len(body)}}}\r\n".encode())
-                parts.append(body)
-                # RFC 3501: a non-PEEK body fetch sets \Seen (unless the mailbox was EXAMINEd).
-                if not peek and not self.readonly:
-                    msg.flags.add("\\Seen")
+            for item in wanted_items:
+                upper = item.upper()
+                if upper == "UID":
+                    continue
+                if upper == "FLAGS":
+                    parts.append(f" FLAGS ({' '.join(sorted(msg.flags))})".encode())
+                elif upper == "RFC822.SIZE":
+                    parts.append(f" RFC822.SIZE {len(msg.raw)}".encode())
+                elif upper == "INTERNALDATE":
+                    parts.append(f' INTERNALDATE "{_imap_internaldate(msg.internaldate)}"'.encode())
+                elif upper == "BODYSTRUCTURE":
+                    bs = '("BROKEN")' if self.s.broken_bodystructure else _bodystructure(msg.raw)
+                    parts.append(f" BODYSTRUCTURE {bs}".encode("utf-8"))
+                elif upper.startswith("BODY[") or upper.startswith("BODY.PEEK[") or upper in ("RFC822", "RFC822.HEADER", "RFC822.TEXT"):
+                    peek = upper.startswith("BODY.PEEK[")
+                    if upper.startswith("BODY"):
+                        section = item[item.index("[") + 1 : item.rindex("]")]
+                    else:
+                        section = {"RFC822": "", "RFC822.HEADER": "HEADER", "RFC822.TEXT": "TEXT"}[upper]
+                        peek = upper == "RFC822.HEADER"
+                    body = _section_content(msg.raw, section)
+                    label = f"BODY[{section.upper() if not section[:1].isdigit() else section}]"
+                    if section.upper().startswith("HEADER.FIELDS"):
+                        label = f"BODY[{section.upper()}]"
+                    parts.append(f" {label} {{{len(body)}}}\r\n".encode())
+                    parts.append(body)
+                    # RFC 3501: a non-PEEK body fetch sets \Seen (unless the mailbox was EXAMINEd).
+                    if not peek and not self.readonly:
+                        msg.flags.add("\\Seen")
             parts.append(b")\r\n")
             self.send_bytes(b"".join(parts))
         self.send(f"{tag} OK FETCH completed")

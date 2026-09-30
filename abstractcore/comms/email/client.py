@@ -9,7 +9,12 @@ Guarantees, each enforced in code:
 - **Read-only mailbox.** Folders are opened with EXAMINE, bodies are fetched with BODY.PEEK,
   and the IMAP connection itself refuses any command outside a read-only allowlist (no
   SELECT, STORE, COPY, MOVE, EXPUNGE, APPEND, DELETE, ...) before it reaches the wire.
-- **No truncation.** Bodies are returned whole (ADR-0026).
+- **No truncation.** Bodies are returned whole (ADR-0026). Reading fetches the message's
+  structure (BODYSTRUCTURE) and then only its text/plain and text/html parts by section, never
+  the attachments; `max_message_bytes` is a resource limit on that fetch: a message whose
+  bodies are larger is returned with its headers, its attachment list and a typed skip record
+  (`skipped`, code `email_message_too_large`) instead of bodies, never cut. An attachment
+  download fetches only that part (and raises `EmailMessageTooLarge` above the limit).
 - **Typed errors** (`errors.py`), never a raw exception with a password in it.
 
 Sign-in: `auth_kind="password"` uses LOGIN (AUTHENTICATE PLAIN for non-ASCII passwords) on
@@ -29,6 +34,7 @@ import smtplib
 import ssl
 from contextlib import contextmanager
 import time
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage, Message
 from email.utils import format_datetime, formataddr, getaddresses, make_msgid, parsedate_to_datetime
@@ -36,12 +42,14 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from . import imap_codec
+from .bodystructure import MimePart, attachment_parts, body_parts, decode_text, decode_transfer, parse_bodystructure
 from .errors import (
     EmailAttachmentNotFound,
     EmailError,
     EmailInvalidMessage,
     EmailInvalidSettings,
     EmailMessageNotFound,
+    EmailMessageTooLarge,
     EmailNotConfigured,
     EmailProtocolError,
     EmailReadOnlyViolation,
@@ -71,8 +79,17 @@ from .search import SearchCriteria, imap_date
 
 DEFAULT_TIMEOUT_S = 30.0
 
-_SUMMARY_HEADERS = "FROM TO CC SUBJECT DATE MESSAGE-ID"
-_SUMMARY_ITEMS = f"(UID FLAGS RFC822.SIZE INTERNALDATE BODY.PEEK[HEADER.FIELDS ({_SUMMARY_HEADERS})])"
+# The reading limit (bytes of text/html bodies fetched for one message, or of one attachment).
+DEFAULT_MAX_MESSAGE_BYTES = 25 * 1024 * 1024
+
+# The most messages one list/search call returns; more are reached with the next cursor.
+MAX_LIST_LIMIT = 100
+
+_SUMMARY_HEADERS = (
+    "FROM TO CC SUBJECT DATE MESSAGE-ID REPLY-TO IN-REPLY-TO IMPORTANCE X-PRIORITY PRIORITY LIST-UNSUBSCRIBE"
+)
+_SUMMARY_ITEMS = f"(UID FLAGS RFC822.SIZE INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS ({_SUMMARY_HEADERS})])"
+_DETAIL_ITEMS = "(UID FLAGS RFC822.SIZE INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER])"
 _FULL_ITEMS = "(UID FLAGS RFC822.SIZE INTERNALDATE BODY.PEEK[])"
 
 
@@ -300,6 +317,60 @@ def _split_ids(value: str) -> Tuple[str, ...]:
     return tuple(out)
 
 
+_IMPORTANCE = frozenset({"low", "normal", "high"})  # RFC 2156 Importance
+_PRIORITY = frozenset({"normal", "urgent", "non-urgent"})  # RFC 2156 Priority
+
+
+def importance_value(header_value: str) -> Optional[str]:
+    """`Importance:` as one of low / normal / high; anything else is None (no guessing)."""
+
+    v = str(header_value or "").strip().lower()
+    return v if v in _IMPORTANCE else None
+
+
+def priority_value(header_value: str) -> Optional[str]:
+    """`Priority:` as one of normal / urgent / non-urgent; anything else is None."""
+
+    v = str(header_value or "").strip().lower()
+    return v if v in _PRIORITY else None
+
+
+def x_priority_value(header_value: str) -> Optional[int]:
+    """`X-Priority:` as its number 1 (highest) .. 5 (lowest).
+
+    The header's value is a number, optionally followed by a comment (`1 (Highest)`); the first
+    token must be exactly one of 1-5, anything else is None.
+    """
+
+    tokens = str(header_value or "").split()
+    if tokens and tokens[0] in ("1", "2", "3", "4", "5"):
+        return int(tokens[0])
+    return None
+
+
+def _structure(attrs: dict) -> Optional[MimePart]:
+    tok = attrs.get("BODYSTRUCTURE")
+    if not isinstance(tok, list):
+        return None
+    try:
+        return parse_bodystructure(tok)
+    except (ValueError, TypeError, IndexError):
+        return None
+
+
+def _section_bytes(attrs: dict, section: str) -> bytes:
+    value = attrs.get(f"BODY[{section.upper()}]")
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if isinstance(value, str):
+        return value.encode("utf-8", errors="replace")
+    return b""
+
+
+def _has_section(attrs: dict, section: str) -> bool:
+    return f"BODY[{section.upper()}]" in attrs
+
+
 # ---------------------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------------------
@@ -316,10 +387,21 @@ class EmailClient:
         token_provider: Optional[OAuthTokenProvider] = None,
         timeout: float = DEFAULT_TIMEOUT_S,
         ssl_context: Optional[ssl.SSLContext] = None,
+        max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES,
     ) -> None:
         self.account = account
         self._secret = secret
         self._timeout = float(timeout) if timeout and float(timeout) > 0 else DEFAULT_TIMEOUT_S
+        try:
+            cap = int(max_message_bytes)
+        except (TypeError, ValueError):
+            cap = 0
+        if cap <= 0:
+            raise EmailInvalidSettings(
+                f"The reading limit max_message_bytes={max_message_bytes!r} is not a positive number of bytes.",
+                f"Give a positive number of bytes (the default is {DEFAULT_MAX_MESSAGE_BYTES}).",
+            )
+        self.max_message_bytes = cap
         self._ssl_context = _require_verifying(ssl_context) if ssl_context is not None else None
         if account.auth_kind == "oauth2":
             if token_provider is None:
@@ -617,9 +699,19 @@ class EmailClient:
                 return value.encode("utf-8", errors="replace")
         return b""
 
-    def _summary(self, uid: int, attrs: dict, folder: str, uidvalidity: int) -> MessageSummary:
-        msg = email.message_from_bytes(self._body_of(attrs), policy=email.policy.default)
+    def _summary(
+        self,
+        uid: int,
+        attrs: dict,
+        folder: str,
+        uidvalidity: int,
+        *,
+        header: Optional[bytes] = None,
+        root: Optional[MimePart] = None,
+    ) -> MessageSummary:
+        msg = email.message_from_bytes(self._body_of(attrs) if header is None else header, policy=email.policy.default)
         from_h = _header(msg, "From")
+        structure = root if root is not None else _structure(attrs)
         return MessageSummary(
             uid=uid,
             folder=folder,
@@ -634,7 +726,28 @@ class EmailClient:
             internaldate=_internaldate_iso(attrs.get("INTERNALDATE")),
             flags=_flags(attrs.get("FLAGS")),
             size=_int_or_none(attrs.get("RFC822.SIZE")),
+            has_attachments=(bool(attachment_parts(structure)) if structure is not None else None),
+            reply_to=_header(msg, "Reply-To"),
+            in_reply_to=_header(msg, "In-Reply-To"),
+            importance=importance_value(_header(msg, "Importance")),
+            x_priority=x_priority_value(_header(msg, "X-Priority")),
+            priority=priority_value(_header(msg, "Priority")),
+            list_unsubscribe=bool(_header(msg, "List-Unsubscribe")),
         )
+
+    def _cap(self, max_message_bytes: Optional[int]) -> int:
+        if max_message_bytes is None:
+            return self.max_message_bytes
+        try:
+            cap = int(max_message_bytes)
+        except (TypeError, ValueError):
+            cap = 0
+        if cap <= 0:
+            raise EmailInvalidSettings(
+                f"The reading limit max_message_bytes={max_message_bytes!r} is not a positive number of bytes.",
+                "Give a positive number of bytes.",
+            )
+        return cap
 
     # -- public read API ------------------------------------------------------------------
 
@@ -695,21 +808,35 @@ class EmailClient:
         *,
         folder: Optional[str] = None,
         limit: Optional[int] = None,
+        before_uid: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Matching messages, newest first: `{folder, uidvalidity, total, messages}`."""
+        """Matching messages, newest first.
+
+        Returns `{folder, uidvalidity, candidates, messages, has_more, next_before_uid}`.
+        `before_uid` continues a previous call: only messages with a smaller UID are examined.
+        `has_more` is True when the call stopped at `limit` with candidates left unexamined;
+        pass `next_before_uid` as `before_uid` to continue (nothing is dropped silently).
+        """
 
         crit = criteria or SearchCriteria()
         with self._imap() as conn:
             state = self._examine(conn, folder)
             uids = self._uid_search(conn, crit.imap_keys())
+            if before_uid is not None:
+                uids = [u for u in uids if u < int(before_uid)]
             uids.sort(reverse=True)
             matched: List[MessageSummary] = []
+            examined = 0
+            last_examined: Optional[int] = None
             # Fetch in pages, newest first, until `limit` exact matches are found.
             page = 200
+            done = False
             for start in range(0, len(uids), page):
                 batch = uids[start : start + page]
                 fetched = self._fetch(conn, batch, _SUMMARY_ITEMS)
                 for uid in batch:
+                    examined += 1
+                    last_examined = uid
                     attrs = fetched.get(uid)
                     if attrs is None:
                         continue
@@ -720,51 +847,163 @@ class EmailClient:
                         cc_header=summary.cc,
                         subject=summary.subject,
                         seen=summary.seen,
+                        has_attachments=summary.has_attachments,
                     ):
                         matched.append(summary)
                         if limit and len(matched) >= limit:
+                            done = True
                             break
-                if limit and len(matched) >= limit:
+                if done:
                     break
+        has_more = examined < len(uids)
         return {
             "folder": state["folder"],
             "uidvalidity": state["uidvalidity"],
             "candidates": len(uids),
             "messages": matched,
+            "has_more": has_more,
+            "next_before_uid": last_examined if has_more else None,
         }
 
-    def get(self, uid: Any, *, folder: Optional[str] = None, include_raw: bool = False) -> MessageDetail:
+    def _too_large(self, uid: int, folder: str, size: int, cap: int, what: str) -> Dict[str, Any]:
+        return {
+            "code": EmailMessageTooLarge.code,
+            "cause": f"The {what} of message {uid} is {size} bytes, over the {cap}-byte reading limit.",
+            "fix": "Open the message in your mail client; its headers and attachment list are shown here, "
+            "and attachments can be saved one at a time.",
+            "uid": uid,
+            "folder": folder,
+            "size": size,
+            "limit": cap,
+        }
+
+    def get(
+        self,
+        uid: Any,
+        *,
+        folder: Optional[str] = None,
+        include_raw: bool = False,
+        max_message_bytes: Optional[int] = None,
+    ) -> MessageDetail:
+        """One message: headers, whole text/html bodies, attachment list (never their content).
+
+        Fetches the structure, then only the text/plain and text/html parts by section. When
+        those parts together are larger than the reading limit, the detail carries `skipped`
+        (a typed `email_message_too_large` record) and no bodies. `include_raw=True` also
+        fetches the whole message (raises `EmailMessageTooLarge` when it is over the limit).
+        """
+
         uid_i = _int_or_none(uid)
         if uid_i is None or uid_i <= 0:
             raise EmailInvalidMessage("The message UID must be a positive number.", "Use a uid from list/search results.")
+        cap = self._cap(max_message_bytes)
         with self._imap() as conn:
             state = self._examine(conn, folder)
-            fetched = self._fetch(conn, [uid_i], _FULL_ITEMS)
-        attrs = fetched.get(uid_i)
-        raw = self._body_of(attrs) if attrs else b""
-        if not attrs or not raw:
-            raise EmailMessageNotFound(
-                f"No message with uid {uid_i} in {state['folder']!r}.",
-                "List or search the folder again; UIDs change when the server resets the folder.",
-                details={"uid": uid_i, "folder": state["folder"]},
+            attrs = self._fetch(conn, [uid_i], _DETAIL_ITEMS).get(uid_i)
+            if not attrs or not _has_section(attrs, "HEADER"):
+                raise EmailMessageNotFound(
+                    f"No message with uid {uid_i} in {state['folder']!r}.",
+                    "List or search the folder again; UIDs change when the server resets the folder.",
+                    details={"uid": uid_i, "folder": state["folder"]},
+                )
+            size = _int_or_none(attrs.get("RFC822.SIZE"))
+            raw = b""
+            if include_raw:
+                if size is not None and size > cap:
+                    raise EmailMessageTooLarge(
+                        f"Message {uid_i} is {size} bytes, over the {cap}-byte reading limit.",
+                        "Open the message in your mail client.",
+                        details={"uid": uid_i, "folder": state["folder"], "size": size, "limit": cap},
+                    )
+                raw = self._fetch_raw(conn, uid_i)
+            root = _structure(attrs)
+            if root is None:
+                # The server's structure could not be used: read the whole message (same limit).
+                if not raw:
+                    if size is not None and size > cap:
+                        header = _section_bytes(attrs, "HEADER")
+                        summary = self._summary(uid_i, attrs, state["folder"], state["uidvalidity"], header=header)
+                        return self._skipped_detail(summary, header, self._too_large(uid_i, state["folder"], size, cap, "size"))
+                    raw = self._fetch_raw(conn, uid_i)
+                return self._detail(uid_i, attrs, raw, state, include_raw=include_raw)
+            header = _section_bytes(attrs, "HEADER")
+            parts = body_parts(root)
+            total = sum(p.size for p in parts)
+            texts: List[str] = []
+            htmls: List[str] = []
+            skipped: Optional[Dict[str, Any]] = None
+            if total > cap:
+                skipped = self._too_large(uid_i, state["folder"], total, cap, "text and HTML bodies")
+            elif parts:
+                items = "(UID " + " ".join(f"BODY.PEEK[{p.section}]" for p in parts) + ")"
+                got = self._fetch(conn, [uid_i], items).get(uid_i) or {}
+                for p in parts:
+                    text = decode_text(_section_bytes(got, p.section), p)
+                    if not text.strip():
+                        continue
+                    (texts if p.content_type == "text/plain" else htmls).append(text.strip("\r\n"))
+        summary = self._summary(uid_i, attrs, state["folder"], state["uidvalidity"], header=header, root=root)
+        msg = email.message_from_bytes(header, policy=email.policy.default)
+        infos = [
+            AttachmentInfo(
+                index=idx,
+                filename=part.filename,
+                content_type=part.content_type,
+                size=part.size,
+                disposition=part.disposition,
+                content_id=part.content_id,
+                encoding=part.encoding,
             )
-        return self._detail(uid_i, attrs, raw, state, include_raw=include_raw)
+            for idx, part in enumerate(attachment_parts(root))
+        ]
+        return MessageDetail(
+            summary=summary,
+            reply_to=_header(msg, "Reply-To"),
+            in_reply_to=_header(msg, "In-Reply-To"),
+            references=_split_ids(_header(msg, "References")),
+            text="\n\n".join(texts),
+            html="\n\n".join(htmls),
+            attachments=tuple(infos),
+            raw=raw if include_raw else b"",
+            skipped=skipped,
+        )
+
+    def _fetch_raw(self, conn: imaplib.IMAP4, uid: int) -> bytes:
+        got = self._fetch(conn, [uid], "(UID BODY.PEEK[])").get(uid) or {}
+        return _section_bytes(got, "")
+
+    def _skipped_detail(self, summary: MessageSummary, header: bytes, skipped: Dict[str, Any]) -> MessageDetail:
+        msg = email.message_from_bytes(header, policy=email.policy.default)
+        return MessageDetail(
+            summary=summary,
+            reply_to=_header(msg, "Reply-To"),
+            in_reply_to=_header(msg, "In-Reply-To"),
+            references=_split_ids(_header(msg, "References")),
+            text="",
+            html="",
+            attachments=(),
+            skipped=skipped,
+        )
 
     def _detail(self, uid: int, attrs: dict, raw: bytes, state: dict, *, include_raw: bool) -> MessageDetail:
+        """The detail read from the whole message (servers whose BODYSTRUCTURE is unusable)."""
+
         msg = email.message_from_bytes(raw, policy=email.policy.default)
-        summary = self._summary(uid, {**attrs, "BODY[]": raw}, state["folder"], state["uidvalidity"])
+        summary = self._summary(uid, attrs, state["folder"], state["uidvalidity"], header=raw)
+        summary = replace(summary, has_attachments=bool(_attachment_parts(msg)))
         text, html = extract_bodies(msg)
         infos: List[AttachmentInfo] = []
         for idx, part in enumerate(_attachment_parts(msg)):
-            payload = part.get_payload(decode=True) or b""
+            encoded = part.get_payload(decode=False)
             infos.append(
                 AttachmentInfo(
                     index=idx,
                     filename=str(part.get_filename() or ""),
                     content_type=part.get_content_type(),
-                    size=len(payload),
+                    size=len(encoded.encode("utf-8", errors="surrogateescape")) if isinstance(encoded, str) else 0,
                     disposition=str(part.get_content_disposition() or ""),
                     content_id=_header(part, "Content-ID"),
+                    encoding=str(part.get("Content-Transfer-Encoding") or "").strip().lower(),
                 )
             )
         return MessageDetail(
@@ -785,8 +1024,13 @@ class EmailClient:
         dest_dir: str,
         *,
         folder: Optional[str] = None,
+        max_message_bytes: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Write attachment `index` of message `uid` into `dest_dir` (never overwrites)."""
+        """Write attachment `index` of message `uid` into `dest_dir` (never overwrites).
+
+        Only that part is fetched (`BODY.PEEK[<section>]`); a part larger than the reading
+        limit raises `EmailMessageTooLarge`.
+        """
 
         target_dir = Path(os.path.expanduser(str(dest_dir or "")))
         if not str(dest_dir or "").strip() or not target_dir.is_dir():
@@ -794,21 +1038,54 @@ class EmailClient:
                 f"The destination folder {str(dest_dir)!r} does not exist.",
                 "Give an existing folder to save the attachment into.",
             )
-        detail = self.get(uid, folder=folder, include_raw=True)
-        msg = email.message_from_bytes(detail.raw, policy=email.policy.default)
-        parts = _attachment_parts(msg)
+        uid_i = _int_or_none(uid)
+        if uid_i is None or uid_i <= 0:
+            raise EmailInvalidMessage("The message UID must be a positive number.", "Use a uid from list/search results.")
         try:
             idx = int(index)
         except (TypeError, ValueError):
             idx = -1
-        if idx < 0 or idx >= len(parts):
-            raise EmailAttachmentNotFound(
-                f"Message {detail.summary.uid} has no attachment number {index}.",
-                f"Use an index from read_email's attachments list (0 to {len(parts) - 1})." if parts else "This message has no attachments.",
-            )
-        part = parts[idx]
-        payload = part.get_payload(decode=True) or b""
-        name = safe_filename(str(part.get_filename() or ""), fallback=f"attachment-{idx}")
+        cap = self._cap(max_message_bytes)
+        with self._imap() as conn:
+            state = self._examine(conn, folder)
+            attrs = self._fetch(conn, [uid_i], "(UID RFC822.SIZE BODYSTRUCTURE)").get(uid_i)
+            if not attrs:
+                raise EmailMessageNotFound(
+                    f"No message with uid {uid_i} in {state['folder']!r}.",
+                    "List or search the folder again; UIDs change when the server resets the folder.",
+                    details={"uid": uid_i, "folder": state["folder"]},
+                )
+            root = _structure(attrs)
+            if root is None:
+                size = _int_or_none(attrs.get("RFC822.SIZE"))
+                if size is not None and size > cap:
+                    raise EmailMessageTooLarge(
+                        f"Message {uid_i} is {size} bytes, over the {cap}-byte reading limit.",
+                        "Save the attachment from your mail client.",
+                        details={"uid": uid_i, "folder": state["folder"], "size": size, "limit": cap},
+                    )
+                msg = email.message_from_bytes(self._fetch_raw(conn, uid_i), policy=email.policy.default)
+                legacy = _attachment_parts(msg)
+                self._check_index(uid_i, idx, index, len(legacy))
+                part_l = legacy[idx]
+                payload = part_l.get_payload(decode=True) or b""
+                filename = str(part_l.get_filename() or "")
+                ctype = part_l.get_content_type()
+            else:
+                parts = attachment_parts(root)
+                self._check_index(uid_i, idx, index, len(parts))
+                part = parts[idx]
+                if part.size > cap:
+                    raise EmailMessageTooLarge(
+                        f"Attachment {idx} of message {uid_i} is {part.size} bytes, over the {cap}-byte reading limit.",
+                        "Save the attachment from your mail client.",
+                        details={"uid": uid_i, "folder": state["folder"], "size": part.size, "limit": cap, "index": idx},
+                    )
+                got = self._fetch(conn, [uid_i], f"(UID BODY.PEEK[{part.section}])").get(uid_i) or {}
+                payload = decode_transfer(_section_bytes(got, part.section), part.encoding)
+                filename = part.filename
+                ctype = part.content_type
+        name = safe_filename(filename, fallback=f"attachment-{idx}")
         path = target_dir / name
         stem, suffix = os.path.splitext(name)
         n = 1
@@ -820,21 +1097,32 @@ class EmailClient:
         return {
             "path": str(path),
             "filename": path.name,
-            "original_filename": str(part.get_filename() or ""),
-            "content_type": part.get_content_type(),
+            "original_filename": filename,
+            "content_type": ctype,
             "size": len(payload),
-            "uid": detail.summary.uid,
+            "uid": uid_i,
             "index": idx,
         }
+
+    @staticmethod
+    def _check_index(uid: int, idx: int, given: Any, count: int) -> None:
+        if idx < 0 or idx >= count:
+            raise EmailAttachmentNotFound(
+                f"Message {uid} has no attachment number {given}.",
+                f"Use an index from read_email's attachments list (0 to {count - 1})." if count else "This message has no attachments.",
+            )
 
     def fetch_new(self, cursor: Optional[MailCursor] = None, *, folder: Optional[str] = None, limit: Optional[int] = None) -> FetchResult:
         """Messages that arrived after `cursor`, oldest first, and the cursor to store next.
 
         - No cursor: a baseline — no messages, the cursor at the newest message (a watcher
-          only sees mail that arrives after it starts).
+          only sees mail that arrives after it starts). `baseline=True`.
         - UIDVALIDITY changed (the server rebuilt the folder): `reset=True`, the messages whose
           INTERNALDATE day is on/after the day before the cursor's `last_internaldate`
-          (callers dedupe by Message-ID), and a cursor in the new epoch.
+          (callers dedupe by Message-ID), and a cursor in the new epoch. When nothing is left
+          to resynchronise, the result is a new baseline (`reset=True, baseline=True`, the
+          cursor at the newest message of the new epoch): a caller can never replay the
+          rebuilt folder from UID 0.
         - Otherwise: UID > last_uid. The cursor advances to the last message RETURNED, so a
           caller that stops early re-reads the rest next time.
         """
@@ -844,15 +1132,11 @@ class EmailClient:
             state = self._examine(conn, name)
             uv = int(state["uidvalidity"])
             if cursor is None:
-                uidnext = state.get("uidnext")
-                if uidnext:
-                    last = int(uidnext) - 1
-                else:
-                    all_uids = self._uid_search(conn, ["ALL"])
-                    last = all_uids[-1] if all_uids else 0
-                return FetchResult(messages=(), cursor=MailCursor(uv, max(0, last), state["folder"]), baseline=True)
+                return FetchResult(messages=(), cursor=self._baseline_cursor(conn, state), baseline=True)
             reset = uv != cursor.uidvalidity
+            base: Optional[MailCursor] = None
             if reset:
+                base = replace(self._baseline_cursor(conn, state), last_internaldate=cursor.last_internaldate)
                 if cursor.last_internaldate:
                     try:
                         # IMAP SINCE compares dates in the server's own time zone: start one
@@ -870,12 +1154,26 @@ class EmailClient:
                 uids = uids[: int(limit)]
             fetched = self._fetch(conn, uids, _SUMMARY_ITEMS)
         messages = [self._summary(u, fetched[u], state["folder"], uv) for u in uids if u in fetched]
+        if reset and not messages:
+            # Nothing to resynchronise: a new baseline in the new epoch (never a UID-0 cursor).
+            return FetchResult(messages=(), cursor=base, reset=True, baseline=True)
         if messages:
             last = messages[-1]
             nxt = MailCursor(uv, last.uid, state["folder"], last.internaldate or cursor.last_internaldate)
         else:
-            nxt = MailCursor(uv, cursor.last_uid if not reset else 0, state["folder"], cursor.last_internaldate)
+            nxt = MailCursor(uv, cursor.last_uid, state["folder"], cursor.last_internaldate)
         return FetchResult(messages=tuple(messages), cursor=nxt, reset=reset)
+
+    def _baseline_cursor(self, conn: imaplib.IMAP4, state: Dict[str, Any]) -> MailCursor:
+        """The cursor at the newest message of the folder (UIDNEXT - 1, else the highest UID)."""
+
+        uidnext = state.get("uidnext")
+        if uidnext:
+            last = int(uidnext) - 1
+        else:
+            all_uids = self._uid_search(conn, ["ALL"])
+            last = all_uids[-1] if all_uids else 0
+        return MailCursor(int(state["uidvalidity"]), max(0, last), state["folder"])
 
     # -- sending --------------------------------------------------------------------------
 

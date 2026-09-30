@@ -250,6 +250,7 @@ _EMAIL_HTML = """<div class="acc-root" data-acc-kind="email" id="acc-email">
   </div>
   <div class="acc-message" data-acc="message" role="status" aria-live="polite"></div>
   <div class="acc-message acc-warn" data-acc="email-notices"></div>
+  <p class="acc-hint" data-acc="email-scope">The email account of this AbstractCore install (the core settings). A gateway keeps its own account per user: configure that one in the gateway console (Settings → My email).</p>
   <div class="acc-cards">
     <section class="acc-card" data-acc="email-account-card">
       <h3>Account</h3>
@@ -280,6 +281,14 @@ _EMAIL_HTML = """<div class="acc-root" data-acc-kind="email" id="acc-email">
         <button type="button" class="acc-btn" data-acc-action="email-disconnect-cancel">Cancel</button>
       </div>
       <p class="acc-hint">Passwords are stored encrypted and never shown again. Many providers need an app password when two-step verification is on. The mailbox is only read (never marked read, moved or deleted).</p>
+    </section>
+    <section class="acc-card" data-acc="email-agent-card">
+      <h3>Agent email tools</h3>
+      <div class="acc-toolbar">
+        <label><input type="checkbox" data-acc="email-agent-tools"> Let my agents and workflows use email tools (list, search, read, send, reply, attachments)</label>
+        <button type="button" class="acc-btn" data-acc-action="agent-tools-save">Save</button>
+      </div>
+      <p class="acc-hint" data-acc="email-agent-tools-state">Off by default. The tools work for your agents only when your account is connected, turned on and this is on; every send still passes your recipient policy, your limits and the approval gate.</p>
     </section>
     <section class="acc-card" data-acc="email-oauth-card">
       <h3>Sign in with OAuth2</h3>
@@ -326,7 +335,7 @@ _EMAIL_HTML = """<div class="acc-root" data-acc-kind="email" id="acc-email">
       <div class="acc-toolbar"><button type="button" class="acc-btn acc-primary" data-acc-action="limits-save">Save limits</button><span class="acc-muted" data-acc="email-usage"></span></div>
     </section>
   </div>
-  <div class="acc-cli-line" style="margin-top:12px">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email connect ... --password &lt;value&gt;</code>, <code>abstractcore email connect --address &lt;a&gt; --oauth microsoft --client-id &lt;value&gt; --client-secret &lt;value&gt;</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 20 --per-day 100</code></div>
+  <div class="acc-cli-line" style="margin-top:12px">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email connect ... --password &lt;value&gt;</code>, <code>abstractcore email connect --address &lt;a&gt; --oauth microsoft --client-id &lt;value&gt; --client-secret &lt;value&gt;</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 20 --per-day 100</code>, <code>abstractcore email agent-tools on|off</code></div>
 </div>"""
 
 _TEMPLATES: Dict[str, str] = {
@@ -1267,6 +1276,8 @@ _JS_TEMPLATE = r"""
       entries = Array.isArray(pol.entries) ? pol.entries.slice() : [];
       const lim = d.limits || {};
       setVal("email-per-hour", lim.per_hour); setVal("email-per-day", lim.per_day);
+      const at = d.agent_tools || { enabled: false, active: false, reason: "" };
+      const box = el("email-agent-tools"); if (box) box.checked = Boolean(at.enabled);
     }
     function legText(leg) {
       if (!leg || leg.ok === undefined) return "-";
@@ -1283,6 +1294,11 @@ _JS_TEMPLATE = r"""
       const notices = (Array.isArray(d.notices) ? d.notices : []).concat(d.secret_warning ? [d.secret_warning] : []);
       el("email-notices").textContent = notices.join(" ");
       el("email-toggle").textContent = d.enabled === false ? "Turn on" : "Turn off";
+      el("email-scope").textContent = `The email account of this AbstractCore install (the core settings${d.config_file ? `: ${d.config_file}` : ""}). A gateway keeps its own account per user: configure that one in the gateway console (Settings → My email).`;
+      const at = d.agent_tools || { enabled: false, active: false, reason: "" };
+      el("email-agent-tools-state").textContent = at.active
+        ? "On: your agents and workflows have the email tools (every send still passes your recipient policy, your limits and the approval gate)."
+        : `Off${at.reason ? ` — ${at.reason}` : ""}. The tools work for your agents only when your account is connected, turned on and this is on.`;
       const st = d.status || {}; const legs = st.legs || {};
       const rows = [
         ["Address", esc(d.address || "not connected")],
@@ -1348,6 +1364,12 @@ _JS_TEMPLATE = r"""
         const on = !(doc && doc.enabled === false);
         const out = await run(on ? "Turn off" : "Turn on", () => ctx.request("PUT", `${base}/enabled`, { enabled: !on }));
         if (out) setMessage(ctx, on ? "Email turned off (no reading, no sending; settings kept)." : "Email turned on.", "ok");
+        return;
+      }
+      if (name === "agent-tools-save") {
+        const enabled = Boolean(el("email-agent-tools").checked);
+        const out = await run("Agent email tools", () => ctx.request("PUT", `${base}/agent-tools`, { enabled }));
+        if (out) setMessage(ctx, enabled ? "Agent email tools saved (on)." : "Agent email tools saved (off).", "ok");
         return;
       }
       if (name === "oauth-start") {

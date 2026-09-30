@@ -9,6 +9,7 @@
     abstractcore email policy show | set --mode allowlist --add me@example.com --add example.org | check <address>...
     abstractcore email limits set --per-hour 20 --per-day 100
     abstractcore email enable | disable
+    abstractcore email agent-tools on | off      "Agent email tools" (default off)
     abstractcore email registered-address me@example.com
 
 Credentials are direct parameters (`--password <value>`, `--client-secret <value>`) and are
@@ -124,6 +125,18 @@ def _print_status(doc: Dict[str, Any], notices: List[str]) -> None:
         )
     if doc.get("registered_address"):
         print(f"  Registered address: {doc['registered_address']}")
+    print(f"  Agent email tools: {_agent_tools_text(doc.get('agent_tools') or {})}")
+    if doc.get("config_file"):
+        print(f"  Settings: this AbstractCore install ({doc['config_file']})")
+
+
+def _agent_tools_text(at: Dict[str, Any]) -> str:
+    """The consoles' words for the "Agent email tools" toggle."""
+
+    if at.get("active"):
+        return "on: agents have the email tools (policy, limits and approval still apply)"
+    reason = str(at.get("reason") or "")
+    return f"off — {reason}" if reason else "off"
 
 
 # ---------------------------------------------------------------------------------------
@@ -406,6 +419,24 @@ def cmd_enable(args: argparse.Namespace, enabled: bool) -> int:
     return EXIT_OK
 
 
+def cmd_agent_tools(args: argparse.Namespace) -> int:
+    from abstractcore.comms.email import EmailError
+
+    enabled = args.state == "on"
+    try:
+        doc = _store(args).set_agent_tools(enabled)
+    except EmailError as err:
+        return _fail(err, bool(args.json))
+    at = doc.get("agent_tools") or {}
+    if args.json:
+        _print_json({"ok": True, "agent_tools": at})
+    else:
+        print(f"Agent email tools: {_agent_tools_text(at)}")
+        if enabled and not at.get("active"):
+            print("  They take effect once the account is connected and turned on.")
+    return EXIT_OK
+
+
 def cmd_registered(args: argparse.Namespace) -> int:
     from abstractcore.comms.email import EmailError
 
@@ -495,6 +526,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     common(sub.add_parser("enable", help="Turn email on"))
     common(sub.add_parser("disable", help="Turn email off (settings kept)"))
+    at = common(sub.add_parser(
+        "agent-tools",
+        help='"Agent email tools": let agents use the email tools with this account (default off)',
+    ))
+    at.add_argument("state", choices=("on", "off"))
     r = common(sub.add_parser("registered-address", help="Set your own address (the default allowlist entry)"))
     r.add_argument("address")
     return parser
@@ -527,6 +563,8 @@ def handle_email(argv: List[str]) -> int:
         return cmd_enable(args, True)
     if args.cmd == "disable":
         return cmd_enable(args, False)
+    if args.cmd == "agent-tools":
+        return cmd_agent_tools(args)
     if args.cmd == "registered-address":
         return cmd_registered(args)
     parser.print_help()

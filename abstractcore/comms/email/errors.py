@@ -69,6 +69,23 @@ class EmailDisabled(EmailError):
     code = "email_disabled"
 
 
+class EmailAgentToolsOff(EmailDisabled):
+    """The account works, but "Agent email tools" is off: agents may not use it (default)."""
+
+    code = "email_agent_tools_off"
+
+
+class EmailMessageTooLarge(EmailError):
+    """A message (or attachment) is larger than the fetch limit (`max_message_bytes`).
+
+    A resource limit on FETCHING, never a truncation: reading a message returns its headers,
+    attachment list and a typed skip record instead of the bodies; downloading an attachment
+    raises this error. `details`: `{uid, folder, size, limit}`.
+    """
+
+    code = "email_message_too_large"
+
+
 class EmailInvalidSettings(EmailError):
     code = "email_invalid_settings"
 

@@ -15,5 +15,10 @@ def test_render_email_digest_text_is_deterministic() -> None:
     assert body == "Daily Digest\n\nHi\n\n## Decisions\n- Approve A\n- Defer B\n\nBye\n"
 
 
-# send_email_digest end to end (connected account, recipient policy, send limits):
-# tests/email/test_email_store_cli_tools.py::test_send_email_digest_sends_from_the_account_through_the_policy
+
+def test_the_digest_module_renders_only_and_never_sends() -> None:
+    # send_email_digest (a direct-send seam outside the tools and the host's approval gate)
+    # was removed in 2.20 (backlog 0992): sending goes through send_email / guarded_send.
+    import abstractcore.tools.email_digests as digests
+
+    assert not hasattr(digests, "send_email_digest")

@@ -249,6 +249,8 @@ class EmailConfig:
     `abstractcore.comms.email.models` `to_dict()` documents:
 
     - `enabled`: the email switch (off = no reading, no sending; settings kept);
+    - `agent_tools`: "Agent email tools" — whether agents may use the email tools with this
+      account (default off; the account must also be connected and turned on);
     - `account`: address, display name, user name, IMAP / SMTP host, port, security, CA file,
       sign-in method (password | oauth2) and OAuth client settings; `{}` = not connected;
     - `policy`: recipient policy `{mode: allowlist|denylist, entries: [address | domain]}`;
@@ -264,6 +266,7 @@ class EmailConfig:
     """
 
     enabled: bool = True
+    agent_tools: bool = False
     account: Dict[str, Any] = field(default_factory=dict)
     policy: Dict[str, Any] = field(default_factory=dict)
     limits: Dict[str, Any] = field(default_factory=dict)
@@ -2732,6 +2735,7 @@ class ConfigurationManager:
     # ------------------------------------------------------------------ email
     _EMAIL_FIELDS = (
         "enabled",
+        "agent_tools",
         "account",
         "policy",
         "limits",

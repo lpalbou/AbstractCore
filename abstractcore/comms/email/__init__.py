@@ -17,14 +17,16 @@
     ctx.send(OutgoingMessage(to=("me@example.test",), subject="Hello", text="Hi"))
 
 Modules: `models` (typed settings), `client` (IMAP read-only + SMTP, verified TLS),
+`bodystructure` (the MIME structure used to fetch only the parts needed),
 `policy` (recipient allowlist / denylist), `limits` (send rate limits), `vault` (encrypted
 credentials), `oauth` (OAuth2 / XOAUTH2), `store` (settings + secret + status), `context`
 (the guarded send), `errors` (typed errors), `legacy` (one-time import of pre-2.20 settings).
 """
 
-from .client import EmailClient, tls_context
+from .client import DEFAULT_MAX_MESSAGE_BYTES, MAX_LIST_LIMIT, EmailClient, tls_context
 from .context import EmailContext, guarded_send
 from .errors import (
+    EmailAgentToolsOff,
     EmailAttachmentNotFound,
     EmailAuthFailed,
     EmailDisabled,
@@ -33,6 +35,7 @@ from .errors import (
     EmailInvalidSettings,
     EmailMailboxMissing,
     EmailMessageNotFound,
+    EmailMessageTooLarge,
     EmailNotConfigured,
     EmailOAuthFailed,
     EmailOAuthPending,
@@ -84,12 +87,15 @@ from .store import EmailAccountStore, EmailSettings
 from .vault import SecretVault
 
 __all__ = [
+    "DEFAULT_MAX_MESSAGE_BYTES",
+    "MAX_LIST_LIMIT",
     "BUILTIN_CLIENTS",
     "Attachment",
     "AttachmentInfo",
     "DeviceAuthorization",
     "EmailAccount",
     "EmailAccountStore",
+    "EmailAgentToolsOff",
     "EmailAttachmentNotFound",
     "EmailAuthFailed",
     "EmailClient",
@@ -100,6 +106,7 @@ __all__ = [
     "EmailInvalidSettings",
     "EmailMailboxMissing",
     "EmailMessageNotFound",
+    "EmailMessageTooLarge",
     "EmailNotConfigured",
     "EmailOAuthFailed",
     "EmailOAuthPending",

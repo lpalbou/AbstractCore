@@ -12,6 +12,7 @@ through `abstractcore email ... --json`. Every route calls `EmailAccountStore` a
     POST   /acore/email/policy/check         {addresses}       would they be allowed?
     PUT    /acore/email/limits               {per_hour, per_day}
     PUT    /acore/email/enabled              {enabled}
+    PUT    /acore/email/agent-tools          {enabled}         "Agent email tools" (default off)
     PUT    /acore/email/registered-address   {address}
     POST   /acore/email/oauth/start          begin an OAuth2 sign-in (device code or loopback browser flow)
     POST   /acore/email/oauth/finish         {flow_id, wait_s}  complete it (pending until approved)
@@ -256,6 +257,16 @@ async def email_limits(body: LimitsBody, request: Request) -> Any:
 async def email_enabled(body: EnabledBody, request: Request) -> Any:
     _principal(request)
     return await _call(lambda: {"ok": True, **_store().set_enabled(body.enabled)})
+
+
+@router.put("/acore/email/agent-tools", summary="Turn \"Agent email tools\" on or off")
+async def email_agent_tools(body: EnabledBody, request: Request) -> Any:
+    """Whether agents may use the email tools with this account (default off). The response's
+    `agent_tools` is `{enabled, active, reason}`: `active` also needs a connected, turned-on
+    account."""
+
+    _principal(request)
+    return await _call(lambda: {"ok": True, **_store().set_agent_tools(body.enabled)})
 
 
 @router.put("/acore/email/registered-address", summary="Set the registered (own) address")

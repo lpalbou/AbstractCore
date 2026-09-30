@@ -513,12 +513,19 @@ class OutgoingMessage:
 
 @dataclass(frozen=True)
 class AttachmentInfo:
+    """An attachment as listed from the message structure (its content is not fetched).
+
+    `size` is the part's size on the wire as the server reports it (encoded: a base64 part is
+    about 4/3 of the file); the saved file's size is in the download result.
+    """
+
     index: int
     filename: str
     content_type: str
     size: int
     disposition: str = ""
     content_id: str = ""
+    encoding: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -526,6 +533,7 @@ class AttachmentInfo:
             "filename": self.filename,
             "content_type": self.content_type,
             "size": self.size,
+            "encoding": self.encoding,
             "disposition": self.disposition,
             "content_id": self.content_id,
         }
@@ -546,6 +554,16 @@ class MessageSummary:
     internaldate: str
     flags: Tuple[str, ...]
     size: Optional[int]
+    # From the message structure: None when the server's BODYSTRUCTURE could not be read.
+    has_attachments: Optional[bool] = None
+    reply_to: str = ""
+    in_reply_to: str = ""
+    # Typed header values, exactly as defined (anything else is None; no guessing):
+    # Importance low|normal|high, X-Priority 1 (highest)..5 (lowest), Priority normal|urgent|non-urgent.
+    importance: Optional[str] = None
+    x_priority: Optional[int] = None
+    priority: Optional[str] = None
+    list_unsubscribe: bool = False
 
     @property
     def seen(self) -> bool:
@@ -567,6 +585,13 @@ class MessageSummary:
             "flags": list(self.flags),
             "seen": self.seen,
             "size": self.size,
+            "has_attachments": self.has_attachments,
+            "reply_to": self.reply_to,
+            "in_reply_to": self.in_reply_to,
+            "importance": self.importance,
+            "x_priority": self.x_priority,
+            "priority": self.priority,
+            "list_unsubscribe": self.list_unsubscribe,
         }
 
 
@@ -580,6 +605,10 @@ class MessageDetail:
     html: str
     attachments: Tuple[AttachmentInfo, ...]
     raw: bytes = field(default=b"", repr=False)
+    # Set when the bodies were NOT fetched because they exceed the reading limit
+    # (`max_message_bytes`): `{code: "email_message_too_large", cause, fix, uid, folder, size,
+    # limit}`. The bodies are then absent (None in `to_dict()`), never cut.
+    skipped: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         out = self.summary.to_dict()
@@ -588,11 +617,13 @@ class MessageDetail:
                 "reply_to": self.reply_to,
                 "in_reply_to": self.in_reply_to,
                 "references": list(self.references),
-                "body_text": self.text,
-                "body_html": self.html,
+                "body_text": None if self.skipped else self.text,
+                "body_html": None if self.skipped else self.html,
                 "attachments": [a.to_dict() for a in self.attachments],
             }
         )
+        if self.skipped:
+            out["body_skipped"] = dict(self.skipped)
         return out
 
 
