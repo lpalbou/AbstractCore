@@ -4668,6 +4668,86 @@ fn routes_screen_flags_a_route_whose_engine_is_not_installed() {
     );
 }
 
+/// The transcription route (round 2, item 1). A route whose provider is
+/// no engine at all (the download source `huggingface`, Core's
+/// `engine_missing` with nothing to install) reads `unknown engine` with
+/// Core's true reason — never "engine not installed". The repaired route
+/// (`faster-whisper · base`) names the engine that runs the weights and
+/// where they are fetched from, and `w` fetches them with THAT provider.
+#[test]
+fn routes_transcription_route_shows_its_engine_and_a_true_reason() {
+    let mut h = harness_sized(Size::new(240, 40));
+    h.load_fixtures();
+    let why = "'huggingface' is not a transcription engine AbstractVoice has (it has: faster-whisper, transformers-asr). Pick a transcription engine on the Multimodal page.";
+    let mut doc = routes_fixture();
+    for r in doc["routes"].as_array_mut().unwrap() {
+        if r["key"] == "input.voice" {
+            r["provider"] = json!("huggingface");
+            r["model"] = json!("Systran/faster-whisper-base");
+            r["configured"] = json!(true);
+            r["engine_missing"] = json!({"engine": "huggingface", "name": "huggingface",
+                "reason": why, "install": null});
+        }
+    }
+    h.store
+        .routes
+        .set(Loadable::Ready(RoutesData::from_value(&doc)));
+    h.goto_screen(3);
+    let s = h.select_route("input.voice");
+    let row = s
+        .lines()
+        .find(|l| l.contains("input.voice") && l.contains("huggingface"))
+        .unwrap_or_else(|| panic!("the input.voice row:\n{s}"));
+    assert!(row.contains("unknown engine"), "state column: {row}");
+    assert!(
+        !s.contains("engine not installed"),
+        "not a missing install:\n{s}"
+    );
+    assert!(s.contains(why), "Core's reason on the detail line:\n{s}");
+
+    // Repaired: faster-whisper runs `base`, fetched from Hugging Face.
+    let mut doc = routes_fixture();
+    for r in doc["routes"].as_array_mut().unwrap() {
+        if r["key"] == "input.voice" {
+            r["provider"] = json!("faster-whisper");
+            r["model"] = json!("base");
+            r["configured"] = json!(true);
+        }
+    }
+    h.store
+        .routes
+        .set(Loadable::Ready(RoutesData::from_value(&doc)));
+    let mut avail = availability_fixture();
+    avail["routes"].as_array_mut().unwrap().push(json!({
+        "key": "input.voice", "provider": "faster-whisper", "model": "base",
+        "download_provider": "huggingface",
+        "download_artifact": "Systran/faster-whisper-base",
+        "availability": {"provider": "huggingface", "artifact": "Systran/faster-whisper-base",
+                         "status": "absent", "downloadable": true,
+                         "instruction": "abstractcore models download huggingface Systran/faster-whisper-base"}}));
+    h.store
+        .availability
+        .set(Loadable::Ready(AvailabilityData::from_value(&avail)));
+    let s = h.select_route("input.voice");
+    let row = s
+        .lines()
+        .find(|l| l.contains("input.voice") && l.contains("faster-whisper"))
+        .unwrap_or_else(|| panic!("the input.voice row:\n{s}"));
+    assert!(row.contains("base"), "{row}");
+    assert!(
+        s.contains("run by faster-whisper, fetched from huggingface Systran/faster-whisper-base"),
+        "detail line:\n{s}"
+    );
+    assert!(!s.contains("unknown engine"), "{s}");
+    h.drain_cmds();
+    h.key(b"w");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Download Systran/faster-whisper-base with") && s.contains("huggingface?"),
+        "the weights are fetched by the download provider:\n{s}"
+    );
+}
+
 /// Models: a model that fits once the Mac's GPU memory limit is raised
 /// (Core `needs_gpu_limit`, backlog 0947) shows the verdict and the exact
 /// command on its detail line — never a bare "too large".
@@ -5969,6 +6049,50 @@ fn write_after_shots() {
         other["registered_address_stored"] = json!("me@home.test");
         h.store.email.set(Loadable::Ready(other));
         shot(&mut h, "email-connected-different-account");
+
+        // Routes: the transcription route (unknown engine, then repaired).
+        let mut h = harness_sized(size);
+        h.load_fixtures();
+        let mut doc = routes_fixture();
+        for r in doc["routes"].as_array_mut().unwrap() {
+            if r["key"] == "input.voice" {
+                r["provider"] = json!("huggingface");
+                r["model"] = json!("Systran/faster-whisper-base");
+                r["configured"] = json!(true);
+                r["engine_missing"] = json!({"engine": "huggingface", "name": "huggingface",
+                    "reason": "'huggingface' is not a transcription engine AbstractVoice has (it has: faster-whisper, transformers-asr). Pick a transcription engine on the Multimodal page.",
+                    "install": null});
+            }
+        }
+        h.store
+            .routes
+            .set(Loadable::Ready(RoutesData::from_value(&doc)));
+        h.goto_screen(3);
+        h.select_route("input.voice");
+        shot(&mut h, "routes-transcription-unknown-engine");
+        let mut doc = routes_fixture();
+        for r in doc["routes"].as_array_mut().unwrap() {
+            if r["key"] == "input.voice" {
+                r["provider"] = json!("faster-whisper");
+                r["model"] = json!("base");
+                r["configured"] = json!(true);
+            }
+        }
+        h.store
+            .routes
+            .set(Loadable::Ready(RoutesData::from_value(&doc)));
+        let mut avail = availability_fixture();
+        avail["routes"].as_array_mut().unwrap().push(json!({
+            "key": "input.voice", "provider": "faster-whisper", "model": "base",
+            "download_provider": "huggingface",
+            "download_artifact": "Systran/faster-whisper-base",
+            "availability": {"provider": "huggingface", "artifact": "Systran/faster-whisper-base",
+                             "status": "absent", "downloadable": true}}));
+        h.store
+            .availability
+            .set(Loadable::Ready(AvailabilityData::from_value(&avail)));
+        h.select_route("input.voice");
+        shot(&mut h, "routes-transcription-repaired");
 
         let mut h = harness_sized(size);
         h.load_fixtures();
