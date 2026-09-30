@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Long configuration paths in the Providers and Email tabs wrap inside their pane. On a phone
   the page was up to 568 px wide.
+- The Overview Engines card no longer pushes the page sideways at 320 px or with the largest font
+  size: its status chips wrap and shrink within the card.
+- On phones the model tables scroll sideways inside their frame, and long artifact ids stay on one
+  line with an ellipsis (the full id is the tooltip). A 72-character id used to wrap over 16 lines.
 
 ## [2.20.2] - 2026-09-30
 

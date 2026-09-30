@@ -125,9 +125,12 @@ _FRAGMENT_CSS = """
 .acc-root .acc-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
 .acc-root .acc-card { border: 1px solid var(--ui-border-1, rgba(255,255,255,.1)); border-radius: var(--radius-lg, 10px); background: var(--bg-card, var(--bg-secondary, #16213e)); padding: 14px 16px; min-width: 0; }
 .acc-root .acc-card h3 { margin-bottom: 8px; }
-.acc-root dl.acc-kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 0; font-size: var(--font-size-sm, 12px); }
-.acc-root dl.acc-kv dt { color: var(--text-secondary, #aaa); }
-.acc-root dl.acc-kv dd { margin: 0; overflow-wrap: anywhere; }
+.acc-root dl.acc-kv { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: 3px 12px; margin: 0; font-size: var(--font-size-sm, 12px); }
+.acc-root dl.acc-kv dt { color: var(--text-secondary, #aaa); min-width: 0; overflow-wrap: anywhere; }
+.acc-root dl.acc-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* Status chips in a key/value card (Overview Engines) never widen the card:
+   they wrap onto the next line and, alone, shrink with an ellipsis. */
+.acc-root dl.acc-kv dd .acc-badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .acc-root .acc-modal-backdrop, .acc-root.acc-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: var(--z-connect-modal, 1000); padding: max(16px, var(--safe-top, 0px)) max(16px, var(--safe-right, 0px)) max(16px, var(--safe-bottom, 0px)) max(16px, var(--safe-left, 0px)); overscroll-behavior: contain; }
 .acc-root .acc-modal { width: min(640px, 100%); max-height: calc(var(--vh-full, 100vh) - 32px); overflow: auto; overscroll-behavior: contain; background: var(--bg-secondary, #16213e); color: var(--text-primary, #eee); border: 1px solid var(--ui-border-2, rgba(255,255,255,.14)); border-radius: var(--radius-lg, 10px); box-shadow: var(--ui-shadow-1, 0 10px 30px rgba(0,0,0,.35)); padding: 18px 20px; display: grid; gap: 10px; }
 .acc-root .acc-modal p { margin: 0; }
@@ -191,6 +194,13 @@ body { min-height: var(--vh-full, 100vh); background: var(--bg-primary, #1a1a2e)
   .acc-tabs { padding-left: max(var(--gutter, 16px), var(--safe-left, 0px)); padding-right: max(var(--gutter, 16px), var(--safe-right, 0px)); }
   .acc-tabs button { padding: 10px 12px; }
   .acc-main { padding: var(--gutter, 16px) max(var(--gutter, 16px), var(--safe-right, 0px)) max(32px, var(--safe-bottom, 0px)) max(var(--gutter, 16px), var(--safe-left, 0px)); }
+  /* Tables keep readable columns and scroll sideways inside their
+     .acc-table-scroll wrapper (a 72-character artifact id wrapped over 16
+     lines at 375 px). Long artifact ids stay on one line with an ellipsis;
+     the full id is the cell's title. Standalone page only: the gateway
+     stacks the embedded tables into cards itself. */
+  .acc-main .acc-table-scroll > table.acc-table { min-width: 640px; }
+  .acc-main code.acc-artifact-id { display: block; max-width: 34ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
 }
 @media (max-height: 500px) {
   .acc-topbar { padding-top: max(6px, var(--safe-top, 0px)); padding-bottom: 6px; }
@@ -936,7 +946,7 @@ _JS_TEMPLATE = r"""
           : `<button type="button" class="acc-btn" data-acc-action="delete" data-provider="${esc(r.provider)}" data-artifact="${esc(r.artifact)}"${admin ? ' title="Delete (d)"' : ' disabled title="Admin only"'}>Delete</button>`;
         return `<tr tabindex="0" data-acc-row="installed" data-provider="${esc(r.provider)}" data-artifact="${esc(r.artifact)}">
           <td>${esc(r.provider)}</td>
-          <td><code>${esc(r.artifact)}</code>${r.catalog_id ? `<div class="acc-sub">${esc(r.catalog_id)}</div>` : ""}${blockers.length ? `<div class="acc-sub acc-warn">${esc(blockers.join(", "))}</div>` : ""}</td>
+          <td><code class="acc-artifact-id" title="${esc(r.artifact)}">${esc(r.artifact)}</code>${r.catalog_id ? `<div class="acc-sub">${esc(r.catalog_id)}</div>` : ""}${blockers.length ? `<div class="acc-sub acc-warn">${esc(blockers.join(", "))}</div>` : ""}</td>
           <td>${esc(r.quant || "")}</td>
           <td class="acc-num">${esc(fmtBytes(r.size_bytes))}</td>
           <td><span class="acc-sub">${esc(r.location || "")}</span></td>

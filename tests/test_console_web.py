@@ -222,6 +222,58 @@ def test_every_css_variable_the_page_uses_is_declared_or_has_a_fallback() -> Non
     assert undefined == [], f"CSS variables used without a declaration or fallback: {undefined}"
 
 
+def _page_css() -> str:
+    html = render_console_html()
+    return re.sub(r"/\*.*?\*/", "", "\n".join(re.findall(r"<style\b[^>]*>(.*?)</style>", html, flags=re.S)), flags=re.S)
+
+
+def test_every_media_query_uses_a_named_breakpoint() -> None:
+    """DESIGN breakpoints only: 480 / 768 / 1024 / 1440 (+ 500 px tall)."""
+    queries = " ".join(re.findall(r"@media\s*([^{]+)\{", _page_css()))
+    widths = re.findall(r"\((max|min)-width:\s*([0-9.]+px)\)", queries)
+    assert widths, "no width queries found (the style extraction broke)"
+    allowed = {"max": {"479.98px", "767.98px", "1023.98px", "1439.98px"}, "min": {"480px", "768px", "1024px", "1440px"}}
+    stray = sorted({f"{k}-width: {v}" for k, v in widths if v not in allowed[k]})
+    assert stray == [], f"app-local breakpoints: {stray}"
+    assert set(re.findall(r"\(max-height:\s*([0-9.]+px)\)", queries)) <= {"500px"}
+
+
+def _coarse_blocks(css: str) -> str:
+    out, i = [], 0
+    while True:
+        i = css.find("@media (pointer: coarse) {", i)
+        if i < 0:
+            return "\n".join(out)
+        depth, j = 0, css.index("{", i)
+        while True:
+            depth += {"{": 1, "}": -1}.get(css[j], 0)
+            if depth == 0:
+                break
+            j += 1
+        out.append(css[i : j + 1])
+        i = j
+
+
+def test_touch_floors_are_present() -> None:
+    """44 px targets and 16 px inputs on coarse pointers (DESIGN §3.2/§2.1)."""
+    coarse = _coarse_blocks(_page_css())
+    assert ".acc-root .acc-btn, .acc-root .acc-toolbar label, .acc-root details summary { min-height: var(--tap-min, 44px); }" in coarse
+    assert re.search(r"\.acc-root select \{[^}]*font-size: var\(--font-size-input, 16px\)[^}]*min-height: var\(--tap-min, 44px\)", coarse)
+    assert re.search(r"\.acc-tabs button \{ min-height: var\(--tap-min, 44px\); \}", coarse)
+
+
+def test_cards_and_tables_never_widen_the_page() -> None:
+    """Overview key/value cards (Engines chips) shrink with their pane; on phones
+    the tables scroll inside their wrapper with one-line, ellipsized artifact ids."""
+    css = _page_css()
+    assert "dl.acc-kv { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr);" in css
+    assert re.search(r"dl\.acc-kv dd \.acc-badge \{[^}]*max-width: 100%", css)
+    phone = css[css.index("@media (max-width: 767.98px) {\n  .acc-topbar"):]
+    assert ".acc-main .acc-table-scroll > table.acc-table { min-width: 640px; }" in phone
+    assert re.search(r"\.acc-main code\.acc-artifact-id \{[^}]*white-space: nowrap;[^}]*text-overflow: ellipsis", phone)
+    assert 'class="acc-artifact-id" title="${esc(r.artifact)}"' in render_console_html()
+
+
 def test_theme_sync_refuses_a_kit_without_the_responsive_layer() -> None:
     with pytest.raises(ValueError):
         theme_sync.parse_responsive_token_css(":root {\n  --x: 1;\n}\n\nhtml {\n  text-size-adjust: 100%;\n}\n")
