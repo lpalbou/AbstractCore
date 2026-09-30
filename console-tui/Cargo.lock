@@ -7,6 +7,7 @@ name = "abstractcore-console"
 version = "0.5.0"
 dependencies = [
  "abstracttui",
+ "libc",
  "serde_json",
  "sha2",
 ]

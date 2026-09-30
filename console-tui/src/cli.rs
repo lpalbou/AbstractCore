@@ -523,12 +523,17 @@ fn feed_stdin(child: &mut std::process::Child, data: Option<&str>) {
 fn kill_tree(child: &mut std::process::Child) {
     #[cfg(unix)]
     {
-        let _ = Command::new("kill")
-            .args(["-KILL", &format!("-{}", child.id())])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        // The child is not reaped yet, so its pid (= its group id, from
+        // `process_group(0)`) cannot have been reused. Signal the whole
+        // group directly: no external `kill` binary, no PATH lookup.
+        if let Ok(pgid) = i32::try_from(child.id()) {
+            if pgid > 1 {
+                // SAFETY: plain syscall with an integer group id.
+                unsafe {
+                    libc::kill(-pgid, libc::SIGKILL);
+                }
+            }
+        }
     }
     let _ = child.kill();
     let _ = child.wait();
@@ -579,8 +584,10 @@ pub(crate) fn run_raw_streaming_at(
                 let cancelled = cancel.load(Ordering::SeqCst);
                 if cancelled || Instant::now() >= deadline {
                     kill_tree(&mut child);
-                    let _ = out_h.join();
-                    let _ = err_h.join();
+                    // The readers end on their own once every writer of the
+                    // pipes is gone; never block the caller on a straggler.
+                    drop(out_h);
+                    drop(err_h);
                     return Err(if cancelled {
                         CliError::core(
                             CliErrorKind::Cancelled,
@@ -641,9 +648,10 @@ pub(crate) fn run_raw_at_stdin(
             Ok(None) => {
                 if Instant::now() >= deadline {
                     kill_tree(&mut child);
-                    // Join the readers so the threads never leak.
-                    let _ = out_h.join();
-                    let _ = err_h.join();
+                    // The readers end on their own once every writer of the
+                    // pipes is gone; never block the caller on a straggler.
+                    drop(out_h);
+                    drop(err_h);
                     return Err(CliError::core(
                         CliErrorKind::Timeout,
                         format!("no answer within {}s: {redacted_label}", timeout.as_secs()),

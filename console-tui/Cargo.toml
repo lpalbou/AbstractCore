@@ -68,3 +68,7 @@ serde_json = "1"
 # (provider_profiles.py:120-124), so both surfaces show one fingerprint
 # for one key. Values never leave config.rs unredacted.
 sha2 = "0.10"
+
+[target.'cfg(unix)'.dependencies]
+# Signal the child's whole process group on cancel/timeout (cli.rs kill_tree).
+libc = "0.2"
