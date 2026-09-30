@@ -20,7 +20,9 @@ Modules: `models` (typed settings), `client` (IMAP read-only + SMTP, verified TL
 `bodystructure` (the MIME structure used to fetch only the parts needed),
 `policy` (recipient allowlist / denylist), `limits` (send rate limits), `vault` (encrypted
 credentials), `oauth` (OAuth2 / XOAUTH2), `store` (settings + secret + status), `context`
-(the guarded send), `errors` (typed errors), `legacy` (one-time import of pre-2.20 settings).
+(the guarded send), `errors` (typed errors), `legacy` (one-time import of pre-2.20 settings),
+`discovery` (a mailbox's IMAP/SMTP servers from its address: known providers, autoconfig, ISPDB,
+DNS SRV, MX).
 """
 
 from .client import DEFAULT_MAX_MESSAGE_BYTES, MAX_LIST_LIMIT, EmailClient, auto_submitted_value, tls_context
@@ -52,6 +54,7 @@ from .errors import (
     EmailTransient,
     EmailUnreachable,
 )
+from .discovery import EmailDiscoveryFailed, discover_servers, require_servers
 from .limits import SendRateLimiter
 from .models import (
     AUTO_SUBMITTED_GENERATED,
@@ -83,6 +86,7 @@ from .oauth import (
     OAuthTokenProvider,
     TokenSet,
     builtin_client,
+    oauth_providers_public,
     provider_preset,
     resolve_oauth_client,
     xoauth2_string,
@@ -115,6 +119,7 @@ __all__ = [
     "EmailClient",
     "EmailContext",
     "EmailDisabled",
+    "EmailDiscoveryFailed",
     "EmailError",
     "EmailInvalidMessage",
     "EmailInvalidSettings",
@@ -158,6 +163,9 @@ __all__ = [
     "SmtpSettings",
     "TokenSet",
     "builtin_client",
+    "discover_servers",
+    "oauth_providers_public",
+    "require_servers",
     "evaluate",
     "guarded_send",
     "normalize_address",

@@ -86,8 +86,12 @@ def test_cli_status_policy_limits_enable_disconnect(imap, smtp, ca, config_file,
     assert handle_email(["limits", "set", "--per-hour", "5", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["per_hour"] == 5
     assert handle_email(["disable"]) == 0
-    assert handle_email(["status", "--json"]) == 0
     capsys.readouterr()
+    assert handle_email(["status", "--json"]) == 0
+    status_doc = json.loads(capsys.readouterr().out)
+    # The terminal console reads this like the web route: which OAuth sign-ins have a built-in client.
+    assert [p["id"] for p in status_doc["oauth_providers"]] == ["google", "microsoft"]
+    assert all({"id", "available", "reason"} <= set(p) for p in status_doc["oauth_providers"])
     assert EmailAccountStore(config_file).public()["enabled"] is False
     assert handle_email(["enable"]) == 0
     assert handle_email(["test", "--json"]) == 0
@@ -396,3 +400,26 @@ def test_cli_stdin_secret_refusals_are_typed_and_store_nothing(
     assert needle in err["cause"] and fix_needle in err["fix"]
     assert PASSWORD not in out.out + out.err
     assert EmailAccountStore(config_file).public()["configured"] is False
+
+
+# ------------------------------------------------------------------ folder (DESIGN §6: Advanced → Folder)
+
+
+def test_folder_is_set_without_reconnecting_over_http_and_cli(http, imap, smtp, ca, config_file, capsys) -> None:
+    from abstractcore.config.email_cli import handle_email
+
+    assert http.put("/acore/email/folder", json={"folder": "Archive"}).json()["error"]["code"] == "email_not_configured"
+    store = _connect_for_agents(config_file, imap, smtp, ca)
+    sealed = store.vault.directory / "secret.enc"
+    secret_before = sealed.read_bytes()
+    r = http.put("/acore/email/folder", json={"folder": "  Archive  "})
+    assert r.status_code == 200 and r.json()["imap"]["folder"] == "Archive"
+    assert EmailAccountStore(config_file).public()["imap"]["folder"] == "Archive"
+    assert EmailAccountStore(config_file).public()["imap"]["host"] == "localhost"  # connection kept
+    assert sealed.read_bytes() == secret_before  # the password is not re-sealed
+    assert http.put("/acore/email/folder", json={"folder": ""}).json()["imap"]["folder"] == "INBOX"
+    bad = http.put("/acore/email/folder", json={"folder": "a\r\nb"})
+    assert bad.status_code == 400 and bad.json()["error"]["code"] == "email_invalid_settings"
+    assert handle_email(["folder", "Sent", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"ok": True, "folder": "Sent"}
+    assert EmailAccountStore(config_file).public()["imap"]["folder"] == "Sent"
