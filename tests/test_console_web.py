@@ -204,7 +204,8 @@ def test_the_responsive_token_layer_is_carried_and_served() -> None:
     # WebKit ignores min-height on native selects: on touch they drop the native
     # look (the kit 0.3.2 rule, mirrored because the kit component CSS is not loaded).
     coarse = html[html.index("@media (pointer: coarse)"):]
-    assert 'select:not([multiple]):where(:not([size]), [size="1"]) { appearance: none;' in coarse
+    assert 'select:not([multiple]):where(:not([size]), [size="1"]), .acc-root select:not([multiple]):where(:not([size]), [size="1"]) { appearance: none;' in coarse
+    assert "background-image: var(--af-select-chevron," in coarse
     # ...but never through the embeddable fragment, whose CSS must stay scoped to .acc-root.
     assert "select:not([multiple])" not in fragment("models")["css"]
 
