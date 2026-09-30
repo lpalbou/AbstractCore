@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `abstractcore.comms.email.discovery.discover_servers(address)` and `POST /acore/email/discover`:
+  a mailbox's IMAP and SMTP servers are found from its address (known providers, the domain's
+  autoconfig file, the Thunderbird ISPDB, DNS SRV, then MX). `PUT /acore/email` and
+  `abstractcore email connect` without servers discover them; nothing found is a 400
+  `email_discovery_failed`.
+- `PUT /acore/email/folder`, `EmailAccountStore.set_folder()` and `abstractcore email folder
+  <name>`: the folder the mailbox is read from changes without connecting again.
+- `abstractcore.console.themes.KIT_SWITCH_CSS` and `KIT_FORM_CSS`: the UI kit's switch and form,
+  card and tabs rules (ui-kit 0.3.3), copied verbatim by `abstractcore.console.theme_sync`
+  (`parse_kit_block`), which refuses a kit without them.
+
+### Changed
+- Web console, Email tab: in order, **Email address** (the only field with a Save button),
+  **Mailbox** (tabs Google / Microsoft / Other; Other asks for the address and password only, the
+  servers are discovered and shown on one line with Edit, Server settings open by themselves when
+  discovery fails; one **Connect** that tests then stores, with an inline error naming the failing
+  step; once connected, a status line with Test and Disconnect), the **Agent email tools** switch,
+  and **Advanced** (recipient rules, send limits and folder saved as you edit, the **Use this
+  mailbox** switch). "Save and test", "Turn on/off", "Save policy" and "Save limits" are gone; the
+  CLI hint uses `--password-stdin`. Forms are at most 720 px wide with labels above the fields.
+- Web console on phones: the content uses the full width (flat sections, one page scroll); the
+  list panels fold from their heading and the browser remembers it. The dark/light control is a
+  "Dark theme" switch.
+- `abstractcore email` texts say "Email address" and "Use this mailbox".
+
+### Fixed
+- Web console: Copy buttons work when the console is opened over plain http from another machine
+  (textarea fallback when the Clipboard API is unavailable) and say "Copy failed — select and
+  copy" when nothing was copied.
+
 ## [2.21.0] - 2026-09-30
 
 The web console works on phones, tablets and any window size, following the AbstractFramework
