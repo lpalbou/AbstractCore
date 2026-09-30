@@ -8119,8 +8119,8 @@ it prints the sign-in prompt to stderr as one JSON line, which the terminal cons
 {"oauth_prompt": {"flow": "loopback", "authorization_url": "https://...", "expires_at": 1790000000.0}}
 ```
 
-The web console (**Sign in with OAuth2** on the Email tab) and the terminal console (`g` on the
-Email screen) offer the same sign-in with the same fields: provider, address, client id, client
+The web console (**Sign in with OAuth2** on the Email tab) and the terminal console (the Google
+and Microsoft tabs of the Email screen's Mailbox card) offer the same sign-in with the same fields: provider, address, client id, client
 secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
 AbstractCore, so open its sign-in page in a browser on that machine; the device-code flow works
 from any browser.
@@ -8222,9 +8222,12 @@ Errors are classified from protocol reply codes and exception types, never from 
 
   Switches and Advanced fields apply at once; the Email address is the only field with a Save
   button. The tab uses the `/acore/email` routes ([Server](docs/server.md)).
-- **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) shows the same
-  sections with the same words: `c` connect, `t` test, `o` turn off/on, `x` disconnect, `p`
-  recipient policy, `l` send limits, `a` Agent email tools on/off.
+- **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) has the same cards
+  with the same words: the email address with its own Save, the Mailbox card (Google / Microsoft
+  / Other, servers found from the address, one Connect; connected: Test and Disconnect), the
+  **Agent email tools** switch, and Advanced (recipient rules, send limits, folder, **Use this
+  mailbox**). Switches read `[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space`
+  switches ([Terminal console](docs/console-tui.md#email-keys)).
 
 Both consoles name the account they configure: the account of this AbstractCore install, with the
 path of its settings file.
@@ -27224,7 +27227,7 @@ CLI for everything derived or written. It finds the CLI through
 | 8 | Review | the file identity and test evidence |
 | 9 | **Models** | the model catalog fitted to this host (see the keys below) |
 | 0 | **Engines** | Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face (see the keys below) |
-| @ | **Email** | the email account, its last test, recipient policy and send limits: `c` connect (Save and test), `g` OAuth2 sign-in (the device code or sign-in address shows while it waits; Cancel sign-in stops it), `t` test, `o` turn off/on, `x` disconnect, `p` recipient policy, `l` send limits, `a` Agent email tools on/off (default off) — the account of this install, with its settings file named on the screen; the web console's Email tab, same fields and words; the password and client secret go to `abstractcore email connect` on stdin, never on its command line (see [Email](docs/email.md)) |
+| @ | **Email** | the email address and the mailbox of this install, card by card (see [Email keys](docs/console-tui.md#email-keys)) — the web console's Email tab, same cards and words; the password and client secret go to `abstractcore email connect` on stdin, never on its command line (see [Email](docs/email.md)) |
 
 To move between screens, press the screen's key, `Ctrl+N` / `Ctrl+P`, or
 `←` / `→` for the next and previous screen (wrapping from Engines to
@@ -27232,6 +27235,30 @@ Overview and back). The arrows keep their own meaning while a text field
 has the caret (they move it), while the screen bar has the focus (it moves
 itself), and in any open dialog. In the wizard the arrows do not jump
 screens; `Ctrl+N` walks the wizard.
+
+### Switches
+
+A persistent on/off setting is a switch, labelled by what it controls:
+`[x] Agent email tools` is on (accent, bold), `[ ] Agent email tools` is off,
+`[-] Agent email tools — Connect a mailbox first.` is unavailable (dimmed, with
+what unlocks it). `Space` or `Enter` switches the selected one and the status line
+names the new state ("Agent email tools are on."). On the Model, Media, Embeddings
+and Server screens every on/off field reads `[x] on` / `[ ] off` and switches at
+once; only switching on a flag AbstractCore marks UNSAFE
+(`server.allow_unauthenticated`, `server.allow_local_files`) asks first.
+
+### Email keys
+
+`Tab` / `Shift+Tab` move between the controls, `Enter` presses a button or saves a
+field, `Space` switches a switch, `←` / `→` change the Mailbox tab while the tab
+bar has the focus. The screen has four cards:
+
+| Card | What it holds |
+|---|---|
+| Email address | one field with its own **Save** ("✓ Saved" for two seconds): where notifications go, and the first address your agents may write to |
+| Mailbox | not connected: tabs **Google** / **Microsoft** / **Other**. Other asks for the email address and the password only; the mail servers are found from the address (`abstractcore email discover`) and shown as one line, and **Server settings** stay folded unless nothing is found (they then open with the reason). One **Connect** stores and tests; its error says what failed. Google and Microsoft sign in through the provider (the device code or sign-in address shows while it waits; **Cancel sign-in** stops it); your own client goes under their Advanced. Connected: "Connected as … · method · checked … ago", **Test** and **Disconnect** (asks inline first) |
+| Agent email tools | the switch (off by default); unavailable until a mailbox is connected and in use |
+| Advanced (folded) | recipient rules (mode, entries added and removed at once), send limits per hour and per day (saved on `Enter` or when the field loses focus), the folder the mailbox is read from (saved the same way), and the **Use this mailbox** switch (off keeps the settings but stops watching, sending and notifications) |
 
 ### Models keys
 
