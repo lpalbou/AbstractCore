@@ -61,6 +61,9 @@ from .errors import (
     classify_smtp_code,
 )
 from .models import (
+    AUTO_SUBMITTED_HEADER,
+    AUTO_SUBMITTED_VALUES,
+    AUTOMATION_MARKER_HEADER,
     Attachment,
     AttachmentInfo,
     EmailAccount,
@@ -72,6 +75,7 @@ from .models import (
     OutgoingMessage,
     SendResult,
     ServerSettings,
+    automation_marker_value,
 )
 from .oauth import OAuthTokenProvider, xoauth2_string
 from .policy import normalize_address, parse_recipients
@@ -87,6 +91,7 @@ MAX_LIST_LIMIT = 100
 
 _SUMMARY_HEADERS = (
     "FROM TO CC SUBJECT DATE MESSAGE-ID REPLY-TO IN-REPLY-TO IMPORTANCE X-PRIORITY PRIORITY LIST-UNSUBSCRIBE"
+    " AUTO-SUBMITTED X-ABSTRACTFRAMEWORK-AUTOMATION"
 )
 _SUMMARY_ITEMS = f"(UID FLAGS RFC822.SIZE INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS ({_SUMMARY_HEADERS})])"
 _DETAIL_ITEMS = "(UID FLAGS RFC822.SIZE INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER])"
@@ -346,6 +351,22 @@ def x_priority_value(header_value: str) -> Optional[int]:
     if tokens and tokens[0] in ("1", "2", "3", "4", "5"):
         return int(tokens[0])
     return None
+
+
+def auto_submitted_value(header_value: str) -> Optional[str]:
+    """`Auto-Submitted:` (RFC 3834) as its lower-cased keyword without parameters.
+
+    `auto-replied; owner-email="a@b"` -> "auto-replied"; absent or empty -> None. The keyword
+    is returned as sent (an extension keyword stays itself); a value that is not a keyword
+    (spaces, punctuation) is returned as "unknown" (present and not "no").
+    """
+
+    v = str(header_value or "").split(";", 1)[0].strip().lower()
+    if not v:
+        return None
+    if all(c.isascii() and (c.isalnum() or c in "-_.") for c in v):
+        return v
+    return "unknown"
 
 
 def _structure(attrs: dict) -> Optional[MimePart]:
@@ -733,6 +754,8 @@ class EmailClient:
             x_priority=x_priority_value(_header(msg, "X-Priority")),
             priority=priority_value(_header(msg, "Priority")),
             list_unsubscribe=bool(_header(msg, "List-Unsubscribe")),
+            auto_submitted=auto_submitted_value(_header(msg, AUTO_SUBMITTED_HEADER)),
+            framework_marker=automation_marker_value(_header(msg, AUTOMATION_MARKER_HEADER)),
         )
 
     def _cap(self, max_message_bytes: Optional[int]) -> int:
@@ -1194,6 +1217,21 @@ class EmailClient:
                 mime["In-Reply-To"] = message.in_reply_to
             if message.references:
                 mime["References"] = " ".join(message.references)
+            if message.auto_submitted:
+                if message.auto_submitted not in AUTO_SUBMITTED_VALUES:
+                    raise EmailInvalidMessage(
+                        f"Auto-Submitted must be one of {', '.join(AUTO_SUBMITTED_VALUES)}, got {message.auto_submitted!r}.",
+                        "Use auto-generated for automatic mail, auto-replied for an automatic answer to one message.",
+                    )
+                mime[AUTO_SUBMITTED_HEADER] = message.auto_submitted
+            if message.automation_marker:
+                marker = automation_marker_value(message.automation_marker)
+                if not marker:
+                    raise EmailInvalidMessage(
+                        "The automation marker must be one line of printable ASCII (at most 200 characters).",
+                        "Give an identifier such as occurrence:<run id>.",
+                    )
+                mime[AUTOMATION_MARKER_HEADER] = marker
         except (ValueError, TypeError) as exc:
             raise EmailInvalidMessage(
                 "A message header is not valid (line breaks are not allowed in headers).",

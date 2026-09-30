@@ -18,13 +18,22 @@ policy and the limits run here, always, for every caller.
 from __future__ import annotations
 
 import ssl
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, Optional
 
 from .client import DEFAULT_MAX_MESSAGE_BYTES, EmailClient
 from .errors import EmailDisabled, EmailInvalidMessage, EmailNotConfigured
 from .limits import SendRateLimiter
-from .models import EmailAccount, EmailSecret, OutgoingMessage, SendLimits, SendResult
+from .models import (
+    AUTO_SUBMITTED_GENERATED,
+    AUTO_SUBMITTED_REPLIED,
+    EmailAccount,
+    EmailSecret,
+    OutgoingMessage,
+    SendLimits,
+    SendResult,
+    automation_marker_value,
+)
 from .oauth import OAuthTokenProvider
 from .policy import PolicyDecision, RecipientPolicy, evaluate, parse_recipients
 
@@ -46,6 +55,11 @@ class EmailContext:
     # are not fetched; the read returns a typed skip record instead (never a cut body).
     max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES
     on_sent: Optional[Callable[[Dict[str, Any]], None]] = field(default=None, repr=False)
+    # Set by a host for a context used by something that sends automatically (an automation
+    # occurrence, a notification): every message sent through it carries RFC 3834
+    # `Auto-Submitted` and the framework marker (`X-AbstractFramework-Automation: <value>`),
+    # so this account's own mail watcher never admits it (no self-triggering loop).
+    automation_marker: str = ""
 
     def __repr__(self) -> str:
         return f"EmailContext(address={self.account.address!r}, enabled={self.enabled}, source={self.source!r})"
@@ -81,8 +95,27 @@ class EmailContext:
         return guarded_send(self, message)
 
 
+def mark_automatic(message: OutgoingMessage, marker: str) -> OutgoingMessage:
+    """`message` with the framework marker and RFC 3834 `Auto-Submitted` (kept when set).
+
+    `Auto-Submitted` is `auto-replied` for an answer to one message (In-Reply-To set), else
+    `auto-generated`.
+    """
+
+    marker_value = automation_marker_value(marker)
+    if not marker_value:
+        raise EmailInvalidMessage(
+            "The automation marker must be one line of printable ASCII (at most 200 characters).",
+            "Give an identifier such as occurrence:<run id>.",
+        )
+    auto = message.auto_submitted or (AUTO_SUBMITTED_REPLIED if message.in_reply_to else AUTO_SUBMITTED_GENERATED)
+    return replace(message, auto_submitted=auto, automation_marker=message.automation_marker or marker_value)
+
+
 def guarded_send(ctx: EmailContext, message: OutgoingMessage) -> SendResult:
     ctx.require_enabled()
+    if ctx.automation_marker:
+        message = mark_automatic(message, ctx.automation_marker)
     if not ctx.account.can_send:
         raise EmailNotConfigured(
             "This account has no SMTP (send) settings.",
@@ -100,7 +133,15 @@ def guarded_send(ctx: EmailContext, message: OutgoingMessage) -> SendResult:
         raise
     if ctx.on_sent is not None:
         try:
-            ctx.on_sent({"message_id": result.message_id, "accepted": list(result.accepted), "refused": dict(result.refused)})
+            ctx.on_sent(
+                {
+                    "message_id": result.message_id,
+                    "accepted": list(result.accepted),
+                    "refused": dict(result.refused),
+                    "auto_submitted": message.auto_submitted,
+                    "automation_marker": message.automation_marker,
+                }
+            )
         except Exception:
             pass
     return result

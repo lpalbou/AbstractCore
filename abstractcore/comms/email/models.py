@@ -486,6 +486,32 @@ class Attachment:
         return b""
 
 
+# RFC 3834 section 5: a message sent automatically carries `Auto-Submitted: auto-generated`
+# (not a response to one message) or `auto-replied` (a response to one message); mail
+# written by a person carries none (or `no`). Responders must not answer such messages.
+AUTO_SUBMITTED_HEADER = "Auto-Submitted"
+AUTO_SUBMITTED_GENERATED = "auto-generated"
+AUTO_SUBMITTED_REPLIED = "auto-replied"
+AUTO_SUBMITTED_VALUES = (AUTO_SUBMITTED_GENERATED, AUTO_SUBMITTED_REPLIED)
+# The framework's own marker on every message it sends automatically (notifications, digests,
+# send-email actions, agent sends from automations): the value names what sent it (e.g.
+# `occurrence:<run id>`, `notification:<key>`). A mail watcher never admits a message that
+# carries it and comes from its own account, so an automation can never trigger itself.
+AUTOMATION_MARKER_HEADER = "X-AbstractFramework-Automation"
+MAX_AUTOMATION_MARKER = 200
+
+
+def automation_marker_value(value: Any) -> str:
+    """A marker value as sent: one line of printable ASCII, at most 200 characters, else ""."""
+
+    text = str(value or "").strip()
+    if not text or len(text) > MAX_AUTOMATION_MARKER:
+        return ""
+    if any(not (32 <= ord(c) < 127) for c in text):
+        return ""
+    return text
+
+
 @dataclass(frozen=True)
 class OutgoingMessage:
     to: Tuple[str, ...] = ()
@@ -497,6 +523,11 @@ class OutgoingMessage:
     attachments: Tuple[Attachment, ...] = ()
     in_reply_to: str = ""
     references: Tuple[str, ...] = ()
+    # RFC 3834 `Auto-Submitted` ("auto-generated" | "auto-replied"; "" = written by a person)
+    # and the framework marker (`X-AbstractFramework-Automation`, "" = none). Set by the
+    # sender for automatic mail, or stamped by `guarded_send` from `EmailContext.automation_marker`.
+    auto_submitted: str = ""
+    automation_marker: str = ""
 
     @property
     def recipients(self) -> List[str]:
@@ -564,6 +595,11 @@ class MessageSummary:
     x_priority: Optional[int] = None
     priority: Optional[str] = None
     list_unsubscribe: bool = False
+    # RFC 3834 `Auto-Submitted`, lower-cased keyword without parameters ("no", "auto-generated",
+    # "auto-replied", or an extension keyword); None when the header is absent or empty.
+    auto_submitted: Optional[str] = None
+    # The framework marker header's value (`X-AbstractFramework-Automation`); "" when absent.
+    framework_marker: str = ""
 
     @property
     def seen(self) -> bool:
@@ -592,6 +628,8 @@ class MessageSummary:
             "x_priority": self.x_priority,
             "priority": self.priority,
             "list_unsubscribe": self.list_unsubscribe,
+            "auto_submitted": self.auto_submitted,
+            "framework_marker": self.framework_marker,
         }
 
 

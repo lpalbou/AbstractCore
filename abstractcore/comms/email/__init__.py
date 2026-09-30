@@ -23,8 +23,8 @@ credentials), `oauth` (OAuth2 / XOAUTH2), `store` (settings + secret + status), 
 (the guarded send), `errors` (typed errors), `legacy` (one-time import of pre-2.20 settings).
 """
 
-from .client import DEFAULT_MAX_MESSAGE_BYTES, MAX_LIST_LIMIT, EmailClient, tls_context
-from .context import EmailContext, guarded_send
+from .client import DEFAULT_MAX_MESSAGE_BYTES, MAX_LIST_LIMIT, EmailClient, auto_submitted_value, tls_context
+from .context import EmailContext, guarded_send, mark_automatic
 from .errors import (
     EmailAgentToolsOff,
     EmailAttachmentNotFound,
@@ -54,6 +54,11 @@ from .errors import (
 )
 from .limits import SendRateLimiter
 from .models import (
+    AUTO_SUBMITTED_GENERATED,
+    AUTO_SUBMITTED_HEADER,
+    AUTO_SUBMITTED_REPLIED,
+    AUTO_SUBMITTED_VALUES,
+    AUTOMATION_MARKER_HEADER,
     Attachment,
     AttachmentInfo,
     EmailAccount,
@@ -68,6 +73,7 @@ from .models import (
     SendLimits,
     SendResult,
     SmtpSettings,
+    automation_marker_value,
 )
 from .oauth import (
     BUILTIN_CLIENTS,
@@ -87,6 +93,14 @@ from .store import EmailAccountStore, EmailSettings
 from .vault import SecretVault
 
 __all__ = [
+    "AUTO_SUBMITTED_GENERATED",
+    "AUTO_SUBMITTED_HEADER",
+    "AUTO_SUBMITTED_REPLIED",
+    "AUTO_SUBMITTED_VALUES",
+    "AUTOMATION_MARKER_HEADER",
+    "auto_submitted_value",
+    "automation_marker_value",
+    "mark_automatic",
     "DEFAULT_MAX_MESSAGE_BYTES",
     "MAX_LIST_LIMIT",
     "BUILTIN_CLIENTS",
