@@ -79,8 +79,8 @@ def voice_api(monkeypatch):
 
         def engine_runtime_status(engine, *, kind=None):
             calls.append(engine)
-            if engine not in {"supertonic", "faster-whisper", "piper"}:
-                raise ValueError(f"unknown AbstractVoice engine {engine!r}; known engines: supertonic, faster-whisper, piper")
+            if engine not in {"supertonic", "faster-whisper", "piper", "transformers-asr"}:
+                raise ValueError(f"unknown AbstractVoice engine {engine!r}; known engines: supertonic, faster-whisper, piper, transformers-asr")
             ok = engine in installed
             cmd = {"supertonic": 'pip install "abstractvoice[supertonic]"', "faster-whisper": 'pip install "abstractvoice[stt]"'}.get(
                 engine, f'pip install "abstractvoice[{engine}]"'
@@ -94,9 +94,14 @@ def voice_api(monkeypatch):
                 missing_modules=() if ok else ({"supertonic": ("onnxruntime",), "faster-whisper": ("faster_whisper",)}.get(engine, (engine,))),
             )
 
+        def known_engines(kind=None):
+            table = {"tts": ("openai", "supertonic", "piper"), "stt": ("openai", "faster-whisper", "transformers-asr")}
+            return table[kind] if kind else ("openai", "supertonic", "piper", "faster-whisper", "transformers-asr")
+
         pkg = types.ModuleType("abstractvoice")
         mod = types.ModuleType("abstractvoice.engine_runtime")
         mod.engine_runtime_status = engine_runtime_status
+        mod.known_engines = known_engines
         pkg.engine_runtime = mod
         monkeypatch.setitem(sys.modules, "abstractvoice", pkg)
         monkeypatch.setitem(sys.modules, "abstractvoice.engine_runtime", mod)
@@ -216,7 +221,8 @@ def test_an_engine_abstractvoice_does_not_have_is_reported_in_its_words(packages
     packages(dists={"abstractvoice"})
     voice_api()
     flag = re_mod.route_engine_missing("voxtral", "x", "output.voice")
-    assert flag["install"] is None and "unknown AbstractVoice engine 'voxtral'" in flag["reason"]
+    assert flag["install"] is None
+    assert flag["reason"] == "'voxtral' is not a voice engine AbstractVoice has (it has: openai, supertonic, piper). Pick a voice engine on the Multimodal page."
 
 
 def test_without_abstractvoice_every_local_voice_route_is_missing_it(packages):
@@ -346,6 +352,134 @@ def test_the_recommended_plan_rows_carry_it(pin_host, packages, voice_api, monke
     by_route = {row["route"]: row for row in plan["recommended"]}
     assert "engine_missing" not in by_route["output.voice"]
     assert by_route["output.image"]["engine_missing"]["engine"] == "mlx-gen"
+    # Speech input: the download is the Hugging Face repo, the ENGINE is the
+    # route's (faster-whisper), never AbstractVoice asked for "huggingface".
+    voice = by_route["input.voice"]
+    assert (voice["provider"], voice["artifact"]) == ("huggingface", "Systran/faster-whisper-base")
+    assert (voice["route_provider"], voice["route_model"]) == ("faster-whisper", "base")
+    assert voice["engine_missing"]["engine"] == "faster-whisper"
+    assert "faster_whisper missing" in voice["engine_missing"]["reason"]
+
+
+def test_the_recommended_plan_judges_the_routes_engine_not_the_download_provider(pin_host, packages, voice_api, monkeypatch, tmp_path):
+    """Round 2 item 1, reproduced on a hermetic gateway (/models/availability):
+    input.voice carried engine_missing "unknown AbstractVoice engine 'huggingface'"."""
+
+    from abstractcore.config import model_materializer as mm
+    from tests.models_engines_fakes import isolate_host
+
+    isolate_host(tmp_path, monkeypatch)
+    pin_host(MAC)
+    packages(dists={"abstractvoice"})
+    calls = voice_api(installed={"supertonic", "faster-whisper"})
+    by_route = {row["route"]: row for row in mm.recommended_plan()["recommended"]}
+    assert "engine_missing" not in by_route["input.voice"]
+    assert "huggingface" not in calls
+
+
+def test_speech_input_aliases_resolve_to_abstractvoices_engines(packages, voice_api):
+    """The plugin's STT aliases (abstractcore_plugin.py `_norm_compat_provider_id`)."""
+
+    packages(dists={"abstractvoice"})
+    calls = voice_api(installed={"faster-whisper", "transformers-asr"})
+    for alias in ("whisper", "local", "faster_whisper", "Faster-Whisper"):
+        assert re_mod.route_engine_missing(alias, "base", "input.voice") is None, alias
+    for alias in ("hf", "hf-asr", "transformers", "transformers_asr"):
+        assert re_mod.route_engine_missing(alias, "openai/whisper-small", "input.voice") is None, alias
+    assert set(calls) == {"faster-whisper", "transformers-asr"}
+    # Output voice keeps AbstractVoice's own ids: "local" is not a TTS engine.
+    assert re_mod.voice_engine_id("local", "output.voice") == "local"
+
+
+def test_a_download_source_on_the_transcription_route_says_what_to_do(packages, voice_api):
+    packages(dists={"abstractvoice"})
+    voice_api(installed={"faster-whisper"})
+    flag = re_mod.route_engine_missing("huggingface", "Systran/faster-whisper-base", "input.voice")
+    assert flag["install"] is None and flag["engine"] == "huggingface"
+    assert flag["reason"] == (
+        "'huggingface' is not a transcription engine AbstractVoice has (it has: openai, faster-whisper, "
+        "transformers-asr). Pick a transcription engine on the Multimodal page."
+    )
+
+
+# ---------------------------------------------------------------------------
+# The repair of a route stored with the download pair
+# ---------------------------------------------------------------------------
+
+
+def _raw_store(tmp_path, routes: dict):
+    cfg = tmp_path / "abstractcore.json"
+    raw = json.dumps({"capability_defaults": {"version": 1, "routes": routes, "seeded": cd.RECOMMENDED_SEED_VERSION}})
+    cfg.write_text(raw, encoding="utf-8")
+    return cfg, raw
+
+
+def test_a_voice_route_holding_the_download_pair_is_repaired_on_disk_with_a_backup(tmp_path, packages, voice_api):
+    packages(dists={"abstractvoice"})
+    voice_api(installed={"faster-whisper"})
+    cfg, raw = _raw_store(tmp_path, {
+        "input.voice": {"provider": "huggingface", "model": "Systran/faster-whisper-base", "options": {"language": "fr"}},
+        "output.voice": {"provider": "supertonic", "model": "supertonic-3"},
+    })
+    manager = ConfigurationManager(config_file=cfg, apply_env=False)
+    stored = json.loads(cfg.read_text())["capability_defaults"]["routes"]
+    assert stored["input.voice"] == {"provider": "faster-whisper", "model": "base", "options": {"language": "fr"}}
+    assert stored["output.voice"] == {"provider": "supertonic", "model": "supertonic-3"}
+    backups = sorted(tmp_path.glob("abstractcore.json.route-repair-*.bak"))
+    assert len(backups) == 1 and backups[0].read_text() == raw
+    assert manager._download_pair_repairs[0]["before"] == {"provider": "huggingface", "model": "Systran/faster-whisper-base"}
+    rows = _rows(manager)
+    assert (rows["input.voice"]["provider"], rows["input.voice"]["model"]) == ("faster-whisper", "base")
+    assert "engine_missing" not in rows["input.voice"]
+    # Idempotent: a second load has nothing to repair and writes no backup.
+    before = cfg.read_bytes()
+    again = ConfigurationManager(config_file=cfg, apply_env=False)
+    assert again._download_pair_repairs == [] and cfg.read_bytes() == before
+    assert len(list(tmp_path.glob("abstractcore.json.route-repair-*.bak"))) == 1
+
+
+def test_an_unknown_pair_is_left_alone_and_the_grid_says_what_to_do(tmp_path, packages, voice_api):
+    packages(dists={"abstractvoice"})
+    voice_api(installed={"faster-whisper"})
+    cfg, raw = _raw_store(tmp_path, {"input.voice": {"provider": "huggingface", "model": "someone/whisper-custom"}})
+    manager = ConfigurationManager(config_file=cfg, apply_env=False)
+    assert cfg.read_text() == raw and not list(tmp_path.glob("*.route-repair-*.bak"))
+    flag = _rows(manager)["input.voice"]["engine_missing"]
+    assert "Pick a transcription engine on the Multimodal page." in flag["reason"]
+
+
+def test_the_repair_only_follows_the_catalog_route_key():
+    doc = {"capability_defaults": {"routes": {
+        # The same download pair on a route the catalog does not name for it: untouched.
+        "output.voice": {"provider": "huggingface", "model": "Systran/faster-whisper-base"},
+        "input.voice": {"provider": "huggingface", "model": "Systran/faster-whisper-base"},
+    }}}
+    changes = cd.repair_download_pair_routes(doc)
+    assert [c["key"] for c in changes] == ["input.voice"]
+    assert doc["capability_defaults"]["routes"]["output.voice"]["provider"] == "huggingface"
+    assert cd.repair_download_pair_routes(doc) == []
+
+
+def test_every_recommendation_run_by_another_engine_is_in_the_catalog():
+    """The catalog artifact's `route` and RECOMMENDED_MODELS never disagree: a
+    recommended route whose provider is not its download provider is exactly
+    the catalog's `route` for that download."""
+
+    from abstractcore.config.model_catalog import route_for_download
+
+    picks = []
+    for key, rec in cd.RECOMMENDED_MODELS.items():
+        picks.append((key, rec.route, rec.download))
+        picks.extend((key, alt.route, alt.download) for alt in rec.by_accelerator.values())
+    checked = 0
+    for key, route, download in picks:
+        if route.provider == download["provider"]:
+            continue
+        checked += 1
+        assert route_for_download(download["provider"], download["artifact"]) == {
+            "key": key, "provider": route.provider, "model": route.model,
+        }, key
+    assert checked >= 1
 
 
 def test_the_cli_grid_and_models_status_print_it(tmp_path, pin_host, packages, capsys):
@@ -360,3 +494,26 @@ def test_the_cli_grid_and_models_status_print_it(tmp_path, pin_host, packages, c
     cli._print_capability_defaults({"config_file": "x", "routes": rows})
     out = capsys.readouterr().out
     assert f"- input.text: mlx/{MLX_TEXT} (" in out and "⚠️ engine not installed: MLX (mlx-lm)" in out
+
+
+def test_the_transcription_routes_weights_are_probed_where_the_download_puts_them(pin_host, monkeypatch, tmp_path):
+    """faster-whisper `base` is the Hugging Face repo Systran/faster-whisper-base
+    (catalog `route`): the grid probes that repo, not a provider named
+    faster-whisper that has no materializer."""
+
+    from abstractcore.config import model_materializer as mm
+    from tests.models_engines_fakes import isolate_host
+
+    isolate_host(tmp_path, monkeypatch)
+    pin_host(MAC)
+    probed = []
+
+    def fake_probe(provider, artifact, base_url=None):
+        probed.append((provider, artifact))
+        return mm.ModelPresence(provider, artifact, mm.PRESENCE_INSTALLED, evidence="test")
+
+    monkeypatch.setattr(mm, "probe", fake_probe)
+    rows = mm.annotate_route_availability([{"key": "input.voice", "provider": "faster-whisper", "model": "base"}])
+    assert probed == [("huggingface", "Systran/faster-whisper-base")]
+    assert rows[0]["availability"]["status"] == mm.PRESENCE_INSTALLED
+    assert rows[0]["download_provider"] == "huggingface" and rows[0]["download_artifact"] == "Systran/faster-whisper-base"

@@ -9,7 +9,7 @@ plugin; it only normalizes the configuration shape.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 
 CAPABILITY_DEFAULTS_VERSION = 1
@@ -1277,6 +1277,56 @@ def upgrade_recommended_seed(
         )
     config.seeded = RECOMMENDED_SEED_VERSION
     return True
+
+
+def repair_download_pair_routes(document: Any) -> List[Dict[str, Any]]:
+    """Rewrite, IN PLACE, every route of a raw config store document that holds
+    a curated DOWNLOAD pair instead of the route that runs it.
+
+    A route stored as `input.voice` = `huggingface` / `Systran/faster-whisper-base`
+    names where the weights come from, not an engine: AbstractVoice has no
+    engine called `huggingface`, so every call fails ("unknown AbstractVoice
+    engine"). The catalog artifact's `route` (`model_catalog.route_for_download`)
+    says which route runs that download (`faster-whisper` / `base`); a stored
+    route whose key, provider and model are EXACTLY that catalog key and
+    download pair is rewritten to it. Every other field of the route
+    (`base_url`, `options`, ...) is kept. Anything else is left untouched (the
+    grid then says why it cannot run: `route_engines.route_engine_missing`).
+
+    Idempotent: a repaired route no longer matches a download pair. Returns
+    `[{key, before: {provider, model}, after: {provider, model}}]`, empty when
+    nothing changed.
+    """
+
+    from .model_catalog import route_for_download
+
+    changes: List[Dict[str, Any]] = []
+    if not isinstance(document, dict):
+        return changes
+    section = document.get("capability_defaults")
+    routes = section.get("routes") if isinstance(section, dict) else None
+    if not isinstance(routes, dict):
+        return changes
+    for key, route in routes.items():
+        if not isinstance(route, dict):
+            continue
+        provider = str(route.get("provider") or "").strip()
+        model = str(route.get("model") or "").strip()
+        if not provider or not model:
+            continue
+        served = route_for_download(provider, model)
+        if served is None or served["key"] != str(key).strip().lower():
+            continue
+        if (served["provider"], served["model"]) == (provider, model):
+            continue
+        route["provider"] = served["provider"]
+        route["model"] = served["model"]
+        changes.append({
+            "key": key,
+            "before": {"provider": provider, "model": model},
+            "after": {"provider": served["provider"], "model": served["model"]},
+        })
+    return changes
 
 
 def capability_defaults_from_dict(value: Any) -> CapabilityDefaultsConfig:
