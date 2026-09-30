@@ -294,12 +294,17 @@ def test_live_read_headers_body_and_attachment_metadata(live_mailbox, delivered,
     assert delivered["nonce"] in detail.text and detail.html == ""
     assert detail.summary.message_id == delivered["sent"].message_id, "the server rewrote the Message-ID"
     assert att is not None and len(detail.attachments) == 1
-    assert (att.filename, att.content_type, att.size) == (ATTACHMENT_NAME, "text/plain", len(_attachment_bytes(delivered["nonce"])))
+    sent_bytes = _attachment_bytes(delivered["nonce"])
+    assert (att.filename, att.content_type) == (ATTACHMENT_NAME, "text/plain")
+    # `size` is the server-reported ENCODED size of the part (a transfer encoding never shrinks the
+    # content); the decoded size is the download result's.
+    assert att.size >= len(sent_bytes) > 0
     # Downloading the attachment (BODY.PEEK) returns the exact bytes.
     out = tmp_path / "att"
     out.mkdir()
     saved = client.download_attachment(summary.uid, 0, str(out))
-    assert Path(saved["path"]).read_bytes() == _attachment_bytes(delivered["nonce"])
+    assert saved["size"] == len(sent_bytes)
+    assert Path(saved["path"]).read_bytes() == sent_bytes
 
 
 def test_live_search_by_subject_nonce(live_mailbox, delivered, tmp_path):
