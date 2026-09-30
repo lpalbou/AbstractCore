@@ -8206,10 +8206,22 @@ Errors are classified from protocol reply codes and exception types, never from 
 
 ## Consoles
 
-- **Web console** (`abstractcore serve`, then `/console`): the **Email** tab has the Account form
-  (Save and test), Test, Turn off / Turn on, Disconnect (with an inline confirmation), **Agent
-  email tools**, the recipient policy editor with a Check field, the send limits and the status of
-  the last test. It uses the `/acore/email` routes ([Server](docs/server.md)).
+- **Web console** (`abstractcore serve`, then `/console`): the **Email** tab shows, in order:
+  - **Email address**: your own address (the registered address: where notifications go and the
+    first address your agents may write to), with its own **Save**.
+  - **Mailbox**: tabs **Google**, **Microsoft** and **Other**. Google and Microsoft sign in with
+    the provider (your own client under Advanced). Other asks for the email address and the
+    password only: the servers are discovered from the address and shown on one line with
+    **Edit**; **Server settings** open by themselves when discovery finds nothing. **Connect**
+    tests reading and sending, then stores; an error names the step that failed. Once connected:
+    the status line ("Connected as ... · Password · checked 2 min ago"), **Test**, and
+    **Disconnect** with an inline confirmation.
+  - **Agent email tools**: a switch (off by default; unavailable until a mailbox is connected).
+  - **Advanced**: the recipient rules (mode, entries, Check a recipient), the send limits and the
+    folder (both saved when you leave the field), and the **Use this mailbox** switch.
+
+  Switches and Advanced fields apply at once; the Email address is the only field with a Save
+  button. The tab uses the `/acore/email` routes ([Server](docs/server.md)).
 - **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) shows the same
   sections with the same words: `c` connect, `t` test, `o` turn off/on, `x` disconnect, `p`
   recipient policy, `l` send limits, `a` Agent email tools on/off.
@@ -26990,7 +27002,7 @@ fresh one. The server landing page (`/`) links to the console as well.
 | **Overview** | This machine: OS, architecture, accelerator, RAM or unified memory, the usable model-memory ceiling and its source, free memory now, free disk for each model cache, Python version. An engines summary and server health (version, whether a bearer token is required). | Jump to Models or Engines. | `abstractcore host profile --json`, `abstractcore engines status --probe` |
 | **Models** | The model catalog, one row per downloadable artifact (provider, artifact id, quantization, download size, weights status, fit badge), the models already installed with their sizes, and any running jobs with progress bars. | Search, filter, Download, Delete, Cancel a job. | `abstractcore models search <q> --engine <id> --fits`, `abstractcore models download`, `abstractcore models delete`, `abstractcore models list` |
 | **Engines** | Each engine (Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face): supported on this host, installed and version, running and reachable, base URL, model count. | Install (with confirmation), Open download page, Refresh (live probe). | `abstractcore engines status --probe`, `abstractcore engines install <id>`, `abstractcore engines open <id>` |
-| **Email** | The connected account (address, IMAP/SMTP servers, credentials storage), the last connection test with its cause and fix, the recipient policy and the send limits with their usage. | Save and test an account, Sign in with OAuth2 (Microsoft or Google; device code or sign-in link, Cancel sign-in), Test, Turn off / Turn on, Disconnect (inline confirmation), turn **Agent email tools** on or off (default off), edit the recipient policy (mode, entries, Check a recipient), set the send limits. See [Email](docs/email.md). | `abstractcore email status`, `abstractcore email connect`, `abstractcore email policy set`, `abstractcore email limits set`, `abstractcore email agent-tools on\|off` |
+| **Email** | Your email address, the mailbox (connected address, sign-in method, last check), the recipient rules and the send limits with their usage. | Save the email address; connect a mailbox (tabs Google / Microsoft / Other: address + password, servers discovered), Test, Disconnect (inline confirmation); the **Agent email tools** and **Use this mailbox** switches; recipient rules, send limits and folder under Advanced (applied at once). See [Email](docs/email.md). | `abstractcore email status`, `abstractcore email connect ... --password-stdin`, `abstractcore email policy set`, `abstractcore email limits set`, `abstractcore email folder`, `abstractcore email agent-tools on\|off` |
 | **Providers** | Read-only list of providers (`GET /providers`) and the configured capability defaults (`GET /v1/config/capability-defaults`). | Nothing to edit here. | `abstractcore config providers --probe`, `abstractcore config defaults` |
 
 API keys and default models are configured on the host with `abstractcore --config`; the console
@@ -27106,8 +27118,16 @@ dialogs open as bottom sheets. On touch screens, buttons, tabs and selects are a
 tall, form fields use 16 px text (iOS does not zoom into a focused field), and table text is
 14 px. The page respects the notch and home-indicator areas of phones.
 
+On phones (below 768 px) the content uses the full width: cards become flat sections with a
+hairline divider, forms stack in one column, and the page is the only scroll area. The list
+panels (Catalog, Installed, Providers, Capability defaults) fold from their heading; they start
+open and the browser remembers what you folded. Forms are at most 720 px wide, with labels above
+the fields and short fields (port and security, per hour and per day) side by side from 768 px.
+Every on/off setting is a switch labelled by its feature, applied at once.
+
 The layout reads the UI kit's responsive tokens (`--tap-min`, `--vh-full`, `--safe-*`,
-`--gutter`), which `abstractcore.console.theme_sync` copies from the kit together with the themes.
+`--gutter`) and its switch, form, card and tabs rules (`KIT_SWITCH_CSS`, `KIT_FORM_CSS`), which
+`abstractcore.console.theme_sync` copies verbatim from the kit together with the themes.
 
 ## Embedding the Models and Engines screens
 

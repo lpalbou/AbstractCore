@@ -217,10 +217,22 @@ Errors are classified from protocol reply codes and exception types, never from 
 
 ## Consoles
 
-- **Web console** (`abstractcore serve`, then `/console`): the **Email** tab has the Account form
-  (Save and test), Test, Turn off / Turn on, Disconnect (with an inline confirmation), **Agent
-  email tools**, the recipient policy editor with a Check field, the send limits and the status of
-  the last test. It uses the `/acore/email` routes ([Server](server.md)).
+- **Web console** (`abstractcore serve`, then `/console`): the **Email** tab shows, in order:
+  - **Email address**: your own address (the registered address: where notifications go and the
+    first address your agents may write to), with its own **Save**.
+  - **Mailbox**: tabs **Google**, **Microsoft** and **Other**. Google and Microsoft sign in with
+    the provider (your own client under Advanced). Other asks for the email address and the
+    password only: the servers are discovered from the address and shown on one line with
+    **Edit**; **Server settings** open by themselves when discovery finds nothing. **Connect**
+    tests reading and sending, then stores; an error names the step that failed. Once connected:
+    the status line ("Connected as ... · Password · checked 2 min ago"), **Test**, and
+    **Disconnect** with an inline confirmation.
+  - **Agent email tools**: a switch (off by default; unavailable until a mailbox is connected).
+  - **Advanced**: the recipient rules (mode, entries, Check a recipient), the send limits and the
+    folder (both saved when you leave the field), and the **Use this mailbox** switch.
+
+  Switches and Advanced fields apply at once; the Email address is the only field with a Save
+  button. The tab uses the `/acore/email` routes ([Server](server.md)).
 - **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) shows the same
   sections with the same words: `c` connect, `t` test, `o` turn off/on, `x` disconnect, `p`
   recipient policy, `l` send limits, `a` Agent email tools on/off.
