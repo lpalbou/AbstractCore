@@ -106,6 +106,28 @@ def no_external_http(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_discovery_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Mail server discovery never reaches the network in tests: its default lookups refuse
+    and are recorded, and any recorded attempt fails the test at teardown (discovery turns a
+    step's exception into a `tried` row, so raising alone would pass silently). A test injects
+    its own lookups (`http_get=`, `resolve_srv=`, `resolve_mx=`, or `discovery._net`)."""
+
+    from abstractcore.comms.email import discovery
+
+    attempts = []
+
+    def refuse(*args, **kwargs):
+        attempts.append(args)
+        raise OSError("network refused in tests")
+
+    monkeypatch.setattr(discovery._net, "http_get", refuse)
+    monkeypatch.setattr(discovery._net, "resolve_srv", refuse)
+    monkeypatch.setattr(discovery._net, "resolve_mx", refuse)
+    yield
+    assert not attempts, f"mail server discovery tried the network in a test: {attempts!r}"
+
+
+@pytest.fixture(autouse=True)
 def reset_tool_resolver() -> Iterator[None]:
     from abstractcore.tools import comms_tools
 

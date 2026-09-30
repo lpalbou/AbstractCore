@@ -93,6 +93,32 @@ def builtin_client(provider: str) -> Optional[Dict[str, str]]:
     return {"client_id": str(entry["client_id"]).strip(), "client_secret": str(entry.get("client_secret") or "")}
 
 
+_PROVIDER_LABELS = {"google": "Google", "microsoft": "Microsoft"}
+
+
+def oauth_providers_public(configured: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """`[{id, available, reason}]` for the "Sign in with Google / Microsoft" buttons.
+
+    `available` when this version has a built-in client for the provider, or when `configured`
+    (an embedding host's own clients, e.g. a gateway admin setting: `{provider: truthy}`) names
+    one. `reason` says why not (None when available).
+    """
+
+    configured = configured or {}
+    out: List[Dict[str, Any]] = []
+    for prov in ("google", "microsoft"):
+        label = _PROVIDER_LABELS[prov]
+        available = builtin_client(prov) is not None or bool(configured.get(prov))
+        out.append(
+            {
+                "id": prov,
+                "available": available,
+                "reason": None if available else f"No built-in {label} sign-in client in this version: add your own client id under Advanced.",
+            }
+        )
+    return out
+
+
 def resolve_oauth_client(provider: str, client_id: str = "", client_secret: str = "") -> Dict[str, str]:
     """Which OAuth client signs in: `{client_id, client_secret, source}`.
 
