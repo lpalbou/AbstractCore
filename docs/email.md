@@ -130,8 +130,8 @@ it prints the sign-in prompt to stderr as one JSON line, which the terminal cons
 {"oauth_prompt": {"flow": "loopback", "authorization_url": "https://...", "expires_at": 1790000000.0}}
 ```
 
-The web console (**Sign in with OAuth2** on the Email tab) and the terminal console (`g` on the
-Email screen) offer the same sign-in with the same fields: provider, address, client id, client
+The web console (**Sign in with OAuth2** on the Email tab) and the terminal console (the Google
+and Microsoft tabs of the Email screen's Mailbox card) offer the same sign-in with the same fields: provider, address, client id, client
 secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
 AbstractCore, so open its sign-in page in a browser on that machine; the device-code flow works
 from any browser.
@@ -221,9 +221,12 @@ Errors are classified from protocol reply codes and exception types, never from 
   (Save and test), Test, Turn off / Turn on, Disconnect (with an inline confirmation), **Agent
   email tools**, the recipient policy editor with a Check field, the send limits and the status of
   the last test. It uses the `/acore/email` routes ([Server](server.md)).
-- **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) shows the same
-  sections with the same words: `c` connect, `t` test, `o` turn off/on, `x` disconnect, `p`
-  recipient policy, `l` send limits, `a` Agent email tools on/off.
+- **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) has the same cards
+  with the same words: the email address with its own Save, the Mailbox card (Google / Microsoft
+  / Other, servers found from the address, one Connect; connected: Test and Disconnect), the
+  **Agent email tools** switch, and Advanced (recipient rules, send limits, folder, **Use this
+  mailbox**). Switches read `[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space`
+  switches ([Terminal console](console-tui.md#email-keys)).
 
 Both consoles name the account they configure: the account of this AbstractCore install, with the
 path of its settings file.

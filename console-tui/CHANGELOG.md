@@ -6,6 +6,34 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
+### Changed
+
+- The **Email** screen follows the account-page design, card by card, in the web
+  console's words. **Email address**: one field with its own Save. **Mailbox**:
+  tabs Google / Microsoft / Other; Other asks for the address and the password
+  only, finds the mail servers from the address (`abstractcore email discover`)
+  and shows them as one line, with Server settings folded unless nothing is found
+  (they then open with the reason); one **Connect** stores and tests, and its
+  error says what failed. Connected: one status line ("Connected as … · method ·
+  checked … ago"), **Test**, and **Disconnect** with an inline confirmation.
+  **Agent email tools** is a switch. **Advanced** holds the recipient rules
+  (entries added and removed at once), the send limits and the folder (saved on
+  Enter or when the field loses focus, the folder without reconnecting) and the
+  **Use this mailbox** switch. The letter verbs (`c`, `g`, `t`, `o`, `x`, `p`,
+  `l`, `a`), the Save and test form and the per-section Save buttons are gone.
+  Needs the AbstractCore CLI with `email discover` and `email folder`.
+- Persistent on/off settings are switches: `[x]` on (accent, bold), `[ ]` off,
+  `[-]` unavailable with the reason after an em dash; `Space` or `Enter`
+  switches and the status line names the new state. On the Model, Media,
+  Embeddings and Server screens an on/off field reads `[x] on` / `[ ] off` and
+  switches at once, without the old "Set true? / Keep as is" prompt; switching
+  on a flag AbstractCore marks UNSAFE still asks first.
+
+### Fixed
+
+- The Models filter test waits for the worker's catalog call instead of
+  asserting before it (it failed about one run in three under a parallel run).
+
 ## [0.5.0] — 2026-09-30
 
 Released with AbstractCore 2.20.1 (the 2.20.0 publish of this crate stopped on a
