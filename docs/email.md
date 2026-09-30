@@ -9,7 +9,8 @@ What you can rely on:
 
 - **Settings, not environment variables.** The account lives in the `email` section of
   AbstractCore's config file ([Centralized Config](centralized-config.md)); credentials are given as
-  direct parameters (`--password <value>`) and stored encrypted.
+  direct parameters (`--password <value>`), or on stdin from scripts (`--password-stdin`), and
+  stored encrypted.
 - **Encrypted credentials.** The password (or OAuth2 tokens) is sealed with AES-256-GCM in
   `<config dir>/email/secret.enc`. The key is kept in the OS keychain (macOS Keychain, Windows
   Credential Manager, Linux Secret Service). On a host without a keychain the key is written to a
@@ -46,7 +47,21 @@ abstractcore email connect \
 ```
 
 `connect` signs in to IMAP and SMTP first and stores nothing if either fails; the error says what
-went wrong and what to do. Useful options:
+went wrong and what to do.
+
+**From a script or another program, pass the password on stdin.** A command line is visible to
+every local user (`ps`) while the command runs; stdin is not. `--password-stdin` reads exactly one
+line from stdin and removes only its trailing newline (spaces are kept):
+
+```bash
+printf '%s\n' "$MAIL_PASSWORD" | abstractcore email connect \
+  --address me@example.com \
+  --imap-host imap.example.com --smtp-host smtp.example.com \
+  --password-stdin
+```
+
+`--password-stdin` cannot be combined with `--password` or `--oauth`; the terminal console passes
+the password this way. Useful options:
 
 | Option | Meaning |
 |---|---|
@@ -85,7 +100,8 @@ with the provider:
 
 - **Your own client** (bring your own): a Google Cloud OAuth client with the Gmail scope, or a
   Microsoft Entra app with the IMAP and SMTP scopes. Pass `--client-id <value>` (and
-  `--client-secret <value>` when the provider issued one).
+  `--client-secret <value>` when the provider issued one; from a script, `--client-secret-stdin`
+  reads it from stdin as one line, like `--password-stdin`).
 - **The built-in AbstractFramework client**: used when you omit `--client-id` and this version
   ships a registered client for the provider (`abstractcore.comms.email.BUILTIN_CLIENTS`). When
   none is registered, the command stops before contacting the provider and asks for your own

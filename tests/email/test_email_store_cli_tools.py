@@ -337,3 +337,62 @@ def test_http_connect_policy_limits_toggle_disconnect(http, imap, smtp, ca) -> N
     responses.append(r.text)
     assert r.json()["configured"] is False
     assert all(PASSWORD not in text for text in responses)
+
+
+# ------------------------------------------------------------------ secrets on stdin (2.20.1)
+
+
+def _connect_stdin(imap, smtp, ca, monkeypatch, stdin_text, *extra):
+    import io
+
+    from abstractcore.config.email_cli import handle_email
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(stdin_text))
+    return handle_email([
+        "connect", "--address", ME, *extra,
+        "--imap-host", "localhost", "--imap-port", str(imap.port), "--imap-security", imap.security,
+        "--smtp-host", "localhost", "--smtp-port", str(smtp.port), "--smtp-security", smtp.security,
+        "--ca-file", str(ca.ca_pem), "--json",
+    ])
+
+
+def test_cli_password_stdin_reads_one_line_and_strips_only_the_newline(imap, smtp, ca, config_file, capsys, monkeypatch) -> None:
+    # Only the first line is the password; its newline is removed and nothing else (the servers
+    # accept exactly PASSWORD, so a kept newline or a trimmed character fails the connection test).
+    code = _connect_stdin(imap, smtp, ca, monkeypatch, PASSWORD + "\nsecond line is never read\n", "--password-stdin")
+    out = capsys.readouterr()
+    assert code == 0, out
+    doc = json.loads(out.out)
+    assert doc["configured"] and doc["secret_set"] and doc["status"]["legs"]["imap"] == {"ok": True}
+    assert PASSWORD not in out.out + out.err and PASSWORD not in _all_files_text(config_file)
+    assert EmailAccountStore(config_file)._load_secret().password == PASSWORD
+
+
+def test_cli_password_stdin_keeps_surrounding_spaces(imap, smtp, ca, config_file, capsys, monkeypatch) -> None:
+    # " PASSWORD" is a different password: the leading space must reach the server (auth fails).
+    code = _connect_stdin(imap, smtp, ca, monkeypatch, " " + PASSWORD + "\n", "--password-stdin")
+    assert code == 2
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "email_auth_failed"
+
+
+@pytest.mark.parametrize(
+    "stdin_text, extra, needle, fix_needle",
+    [
+        ("", ("--password-stdin",), "empty password", "--password-stdin"),
+        ("\n", ("--password-stdin",), "empty password", "--password-stdin"),
+        (PASSWORD + "\n", ("--password-stdin", "--password", PASSWORD), "both given", "--password <value>, or --password-stdin"),
+        (PASSWORD + "\n", ("--password-stdin", "--client-secret-stdin", "--oauth", "google"), "cannot be combined", "--password-stdin"),
+        (PASSWORD + "\n", ("--client-secret-stdin",), "only used with --oauth", "--oauth"),
+    ],
+)
+def test_cli_stdin_secret_refusals_are_typed_and_store_nothing(
+    imap, smtp, ca, config_file, capsys, monkeypatch, stdin_text, extra, needle, fix_needle
+) -> None:
+    code = _connect_stdin(imap, smtp, ca, monkeypatch, stdin_text, *extra)
+    out = capsys.readouterr()
+    assert code == 1, out
+    err = json.loads(out.out)["error"]
+    assert err["code"] == "email_invalid_settings"
+    assert needle in err["cause"] and fix_needle in err["fix"]
+    assert PASSWORD not in out.out + out.err
+    assert EmailAccountStore(config_file).public()["configured"] is False

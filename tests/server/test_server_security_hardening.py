@@ -549,3 +549,26 @@ def test_server_blocks_private_url_fetches_by_default(monkeypatch) -> None:
         },
     )
     assert r.status_code == 403
+
+
+def test_validation_errors_never_echo_or_log_a_malformed_secret_field(monkeypatch, caplog) -> None:
+    # A secret field of the wrong type (`"password": 987654321`) makes pydantic report the value
+    # itself as the error input; the 422 response and the log must name the field, never the value.
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setattr(server_app, "_server_auth_enabled", lambda: False)
+    monkeypatch.setattr(server_app, "_server_allows_unauthenticated", lambda: True)
+    client = TestClient(server_app.app)
+    seen: List[str] = []
+    monkeypatch.setattr(server_app.logger, "error", lambda *a, **k: seen.append(repr((a, k))))
+
+    r = client.put("/acore/email", json={"address": "x@example.test", "password": 987654321})
+    assert r.status_code == 422
+    assert "987654321" not in r.text and "body -> password" in r.text
+    r = client.post("/acore/email/oauth/start", json={"address": "x@example.test", "provider": "google", "client_secret": ["cs-LEAK-1"]})
+    assert r.status_code == 422
+    assert "cs-LEAK-1" not in r.text and "body -> client_secret" in r.text
+    # A non-secret field still shows its input (the redaction is by field, not blanket).
+    r = client.put("/acore/email", json={"address": "x@example.test", "password": "pw", "imap": {"host": "h", "port": "not-a-port"}})
+    assert r.status_code == 422 and "not-a-port" in r.text and "pw" not in r.json()["error"]["details"][0].get("input", "")
+    logged = "\n".join(seen)
+    assert "987654321" not in logged and "cs-LEAK-1" not in logged and "body -> password" in logged

@@ -4921,6 +4921,16 @@ fn email_doc(configured: bool) -> Value {
     })
 }
 
+/// The stdin line of each email action (the secret, never in argv).
+fn email_stdin_lines(cmds: &[Cmd]) -> Vec<Option<String>> {
+    cmds.iter()
+        .filter_map(|c| match c {
+            Cmd::Email(a) => Some(a.stdin_secret.as_ref().map(|s| s.line())),
+            _ => None,
+        })
+        .collect()
+}
+
 fn email_actions(cmds: Vec<Cmd>) -> Vec<(String, Vec<String>, String)> {
     cmds.into_iter()
         .filter_map(|c| match &c {
@@ -5083,7 +5093,7 @@ fn email_verbs_test_toggle_and_confirmed_disconnect() {
 }
 
 #[test]
-fn email_connect_form_builds_argv_and_redacts_the_password() {
+fn email_connect_form_puts_the_password_on_stdin_and_redacts_it() {
     let mut h = harness();
     h.load_fixtures();
     h.store.email.set(Loadable::Ready(email_doc(false)));
@@ -5135,7 +5145,13 @@ fn email_connect_form_builds_argv_and_redacts_the_password() {
         !s.contains("-dash-Secret-42"),
         "the password is masked on screen:\n{s}"
     );
-    let acts = email_actions(h.drain_cmds());
+    let cmds = h.drain_cmds();
+    assert_eq!(
+        email_stdin_lines(&cmds),
+        vec![Some("-dash-Secret-42\n".to_string())],
+        "the password goes to the command's stdin"
+    );
+    let acts = email_actions(cmds);
     let [(label, args, debug)] = acts.as_slice() else {
         panic!("expected one email action, got {acts:?}")
     };
@@ -5145,7 +5161,7 @@ fn email_connect_form_builds_argv_and_redacts_the_password() {
         &vec![
             "connect".to_string(),
             "--address=me@example.test".to_string(),
-            "--password=-dash-Secret-42".to_string(),
+            "--password-stdin".to_string(),
             "--imap-host=imap.example.test".to_string(),
             "--imap-security=ssl".to_string(),
             "--imap-folder=INBOX".to_string(),
@@ -5237,7 +5253,7 @@ fn email_policy_and_limits_forms_write_through_the_cli() {
 }
 
 #[test]
-fn email_oauth_form_streams_the_prompt_and_redacts_the_client_secret() {
+fn email_oauth_form_streams_the_prompt_and_sends_the_client_secret_on_stdin() {
     let mut h = harness();
     h.load_fixtures();
     h.store.email.set(Loadable::Ready(email_doc(false)));
@@ -5292,6 +5308,11 @@ fn email_oauth_form_streams_the_prompt_and_redacts_the_client_secret() {
         })
         .collect();
     assert_eq!(oauth_flags, vec![true], "one streaming OAuth action");
+    assert_eq!(
+        email_stdin_lines(&cmds),
+        vec![Some("-client-Secret-77\n".to_string())],
+        "the client secret goes to the command's stdin"
+    );
     let acts = email_actions(cmds);
     let [(label, args, debug)] = acts.as_slice() else {
         panic!("expected one email action, got {acts:?}")
@@ -5304,7 +5325,7 @@ fn email_oauth_form_streams_the_prompt_and_redacts_the_client_secret() {
             "--address=me@example.test",
             "--oauth=microsoft",
             "--client-id=my-client-id",
-            "--client-secret=-client-Secret-77",
+            "--client-secret-stdin",
         ]
         .iter()
         .map(|s| s.to_string())

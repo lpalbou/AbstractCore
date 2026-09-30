@@ -14,7 +14,11 @@
 //! Turn on, `x` Disconnect (confirm), `p` Recipient policy, `l` Send
 //! limits, `a` Agent email tools on/off (default off; `abstractcore
 //! email agent-tools on|off`). Every value is passed as `--flag=value`,
-//! so a password or entry starting with `-` cannot be read as a flag.
+//! so an entry starting with `-` cannot be read as a flag. A password or
+//! OAuth client secret never goes on the command line (every local user
+//! can read argv with `ps` while the command runs): the command gets
+//! `--password-stdin` / `--client-secret-stdin` and the secret is
+//! written to its stdin (`EmailAction::stdin_secret`).
 //!
 //! The account shown is the one of this AbstractCore install (the core
 //! settings file); a gateway keeps its own account per user, configured
@@ -26,7 +30,7 @@ use serde_json::Value;
 
 use crate::store::Loadable;
 use crate::worker::{cancel_email_oauth, next_form_id, Cmd, EmailAction};
-use crate::writes::Arg;
+use crate::writes::{Arg, StdinSecret};
 
 use super::forms::{
     confirm_danger, install_dirty_guard, install_write_done, message_slot, open_form_guarded,
@@ -119,6 +123,7 @@ fn send_action(ctx: &Ctx, label: &str, args: Vec<Arg>, form_id: Option<u64>) {
         label: label.to_string(),
         args,
         form_id,
+        stdin_secret: None,
         oauth: false,
     })));
 }
@@ -493,6 +498,81 @@ fn text_row(
 
 const SECURITY: [&str; 2] = ["ssl", "starttls"];
 
+/// The Account form's values, as typed (trimmed where the form trims).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ConnectFields {
+    pub address: String,
+    pub display_name: String,
+    pub username: String,
+    /// Never trimmed: spaces can belong to a password.
+    pub password: String,
+    pub imap_host: String,
+    pub imap_port: String,
+    pub imap_security: usize,
+    pub folder: String,
+    pub smtp_host: String,
+    pub smtp_port: String,
+    pub smtp_security: usize,
+    pub ca_file: String,
+    pub registered: String,
+}
+
+/// Save and test: `email connect --address=… --password-stdin …`, the
+/// password on stdin. Errors are the form's words.
+pub(crate) fn connect_action(
+    f: &ConnectFields,
+    form_id: Option<u64>,
+) -> Result<EmailAction, String> {
+    if f.address.is_empty() {
+        return Err("Address is required".into());
+    }
+    if f.password.is_empty() {
+        return Err("Password is required (it is stored encrypted and never shown again)".into());
+    }
+    let secret = StdinSecret::new(f.password.clone())
+        .map_err(|_| "The password cannot contain a line break".to_string())?;
+    if f.imap_host.is_empty() && f.smtp_host.is_empty() {
+        return Err("give an IMAP host (read) and/or an SMTP host (send)".into());
+    }
+    for (label, p) in [("IMAP port", &f.imap_port), ("SMTP port", &f.smtp_port)] {
+        if !p.is_empty() && p.parse::<u16>().map(|n| n == 0).unwrap_or(true) {
+            return Err(format!("{label} must be a number (1-65535)"));
+        }
+    }
+    let mut args = vec![
+        Arg::p("connect"),
+        Arg::p(format!("--address={}", f.address)),
+        Arg::p("--password-stdin"),
+    ];
+    let mut opt = |flag: &str, value: &str| {
+        if !value.is_empty() {
+            args.push(Arg::p(format!("--{flag}={value}")));
+        }
+    };
+    opt("display-name", &f.display_name);
+    opt("username", &f.username);
+    if !f.imap_host.is_empty() {
+        opt("imap-host", &f.imap_host);
+        opt("imap-port", &f.imap_port);
+        opt("imap-security", SECURITY[f.imap_security.min(1)]);
+        opt("imap-folder", &f.folder);
+    }
+    if !f.smtp_host.is_empty() {
+        opt("smtp-host", &f.smtp_host);
+        opt("smtp-port", &f.smtp_port);
+        opt("smtp-security", SECURITY[f.smtp_security.min(1)]);
+    }
+    opt("ca-file", &f.ca_file);
+    opt("registered-address", &f.registered);
+    Ok(EmailAction {
+        label: "email Save and test".to_string(),
+        args,
+        form_id,
+        stdin_secret: Some(secret),
+        oauth: false,
+    })
+}
+
 fn security_index(v: &str) -> usize {
     SECURITY.iter().position(|x| *x == v).unwrap_or(0)
 }
@@ -577,63 +657,28 @@ fn open_connect_form(cx: Scope, ctx: &Ctx) {
             }
             form_error.set(None);
             let v = |sig: Signal<String>| sig.get_untracked().trim().to_string();
-            let addr = v(address);
-            if addr.is_empty() {
-                form_error.set(Some("Address is required".into()));
-                return;
-            }
-            let pw = password.get_untracked();
-            if pw.is_empty() {
-                form_error.set(Some(
-                    "Password is required (it is stored encrypted and never shown again)".into(),
-                ));
-                return;
-            }
-            if v(imap_host).is_empty() && v(smtp_host).is_empty() {
-                form_error.set(Some(
-                    "give an IMAP host (read) and/or an SMTP host (send)".into(),
-                ));
-                return;
-            }
-            for (label, p) in [("IMAP port", v(imap_port)), ("SMTP port", v(smtp_port))] {
-                if !p.is_empty() && p.parse::<u16>().map(|n| n == 0).unwrap_or(true) {
-                    form_error.set(Some(format!("{label} must be a number (1-65535)")));
-                    return;
-                }
-            }
-            let mut args = vec![
-                Arg::p("connect"),
-                Arg::p(format!("--address={addr}")),
-                Arg::Secret(format!("--password={pw}")),
-            ];
-            let mut opt = |flag: &str, value: String| {
-                if !value.is_empty() {
-                    args.push(Arg::p(format!("--{flag}={value}")));
-                }
+            let fields = ConnectFields {
+                address: v(address),
+                display_name: v(display_name),
+                username: v(username),
+                password: password.get_untracked(),
+                imap_host: v(imap_host),
+                imap_port: v(imap_port),
+                imap_security: imap_sec.get_untracked(),
+                folder: v(folder),
+                smtp_host: v(smtp_host),
+                smtp_port: v(smtp_port),
+                smtp_security: smtp_sec.get_untracked(),
+                ca_file: v(ca_file),
+                registered: v(registered),
             };
-            opt("display-name", v(display_name));
-            opt("username", v(username));
-            if !v(imap_host).is_empty() {
-                opt("imap-host", v(imap_host));
-                opt("imap-port", v(imap_port));
-                opt(
-                    "imap-security",
-                    SECURITY[imap_sec.get_untracked().min(1)].to_string(),
-                );
-                opt("imap-folder", v(folder));
+            match connect_action(&fields, Some(form_id)) {
+                Ok(action) => {
+                    in_flight.set(true);
+                    ctx3.send(Cmd::Email(Box::new(action)));
+                }
+                Err(e) => form_error.set(Some(e)),
             }
-            if !v(smtp_host).is_empty() {
-                opt("smtp-host", v(smtp_host));
-                opt("smtp-port", v(smtp_port));
-                opt(
-                    "smtp-security",
-                    SECURITY[smtp_sec.get_untracked().min(1)].to_string(),
-                );
-            }
-            opt("ca-file", v(ca_file));
-            opt("registered-address", v(registered));
-            in_flight.set(true);
-            send_action(&ctx3, "email Save and test", args, Some(form_id));
         };
         let sec_opts = || vec![SelectOption::new("SSL"), SelectOption::new("STARTTLS")];
         Block::new()
@@ -679,6 +724,56 @@ fn open_connect_form(cx: Scope, ctx: &Ctx) {
 
 const OAUTH_PROVIDERS: [&str; 2] = ["microsoft", "google"];
 const OAUTH_FLOWS: [&str; 3] = ["", "device", "loopback"];
+
+/// The OAuth2 form's values (trimmed, except the client secret).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct OAuthFields {
+    pub provider: usize,
+    pub address: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub tenant: String,
+    pub flow: usize,
+}
+
+/// Start sign-in: `email connect --address=… --oauth=… [--client-secret-stdin]`,
+/// the client secret (when given) on stdin.
+pub(crate) fn oauth_action(f: &OAuthFields, form_id: Option<u64>) -> Result<EmailAction, String> {
+    if f.address.is_empty() {
+        return Err("Address is required".into());
+    }
+    let prov = OAUTH_PROVIDERS[f.provider.min(1)];
+    let mut args = vec![
+        Arg::p("connect"),
+        Arg::p(format!("--address={}", f.address)),
+        Arg::p(format!("--oauth={prov}")),
+    ];
+    if !f.client_id.is_empty() {
+        args.push(Arg::p(format!("--client-id={}", f.client_id)));
+    }
+    let mut stdin_secret = None;
+    if !f.client_secret.is_empty() {
+        stdin_secret = Some(
+            StdinSecret::new(f.client_secret.clone())
+                .map_err(|_| "The client secret cannot contain a line break".to_string())?,
+        );
+        args.push(Arg::p("--client-secret-stdin"));
+    }
+    if prov == "microsoft" && !f.tenant.is_empty() {
+        args.push(Arg::p(format!("--tenant={}", f.tenant)));
+    }
+    let flow = OAUTH_FLOWS[f.flow.min(2)];
+    if !flow.is_empty() {
+        args.push(Arg::p(format!("--oauth-flow={flow}")));
+    }
+    Ok(EmailAction {
+        label: "email OAuth2 sign-in".to_string(),
+        args,
+        form_id,
+        stdin_secret,
+        oauth: true,
+    })
+}
 
 /// The OAuth2 sign-in form (`g`): the web console's "Sign in with
 /// OAuth2" card, field for field. Submitting runs `abstractcore email
@@ -740,38 +835,21 @@ fn open_oauth_form(cx: Scope, ctx: &Ctx) {
             }
             form_error.set(None);
             let v = |sig: Signal<String>| sig.get_untracked().trim().to_string();
-            let addr = v(address);
-            if addr.is_empty() {
-                form_error.set(Some("Address is required".into()));
-                return;
+            let fields = OAuthFields {
+                provider: provider.get_untracked(),
+                address: v(address),
+                client_id: v(client_id),
+                client_secret: client_secret.get_untracked(),
+                tenant: v(tenant),
+                flow: flow.get_untracked(),
+            };
+            match oauth_action(&fields, Some(form_id)) {
+                Ok(action) => {
+                    in_flight.set(true);
+                    ctx3.send(Cmd::Email(Box::new(action)));
+                }
+                Err(e) => form_error.set(Some(e)),
             }
-            let prov = OAUTH_PROVIDERS[provider.get_untracked().min(1)];
-            let mut args = vec![
-                Arg::p("connect"),
-                Arg::p(format!("--address={addr}")),
-                Arg::p(format!("--oauth={prov}")),
-            ];
-            if !v(client_id).is_empty() {
-                args.push(Arg::p(format!("--client-id={}", v(client_id))));
-            }
-            let secret = client_secret.get_untracked();
-            if !secret.is_empty() {
-                args.push(Arg::Secret(format!("--client-secret={secret}")));
-            }
-            if prov == "microsoft" && !v(tenant).is_empty() {
-                args.push(Arg::p(format!("--tenant={}", v(tenant))));
-            }
-            let f = OAUTH_FLOWS[flow.get_untracked().min(2)];
-            if !f.is_empty() {
-                args.push(Arg::p(format!("--oauth-flow={f}")));
-            }
-            in_flight.set(true);
-            ctx3.send(Cmd::Email(Box::new(EmailAction {
-                label: "email OAuth2 sign-in".to_string(),
-                args,
-                form_id: Some(form_id),
-                oauth: true,
-            })));
         };
         let store = ctx2.store;
         let prompt_line = dyn_view(LayoutStyle::line(1).shrink(0.0), move || {
@@ -1039,4 +1117,135 @@ fn open_limits_form(cx: Scope, ctx: &Ctx) {
             .element(&t)
             .build()
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::build_command;
+    use crate::worker::email_argv;
+    use std::path::Path;
+
+    const PW: &str = " pw-SENTINEL-7f3a -x ";
+    const CS: &str = "cs-SENTINEL-91be";
+
+    fn fields() -> ConnectFields {
+        ConnectFields {
+            address: "me@example.test".into(),
+            password: PW.into(),
+            imap_host: "imap.example.test".into(),
+            smtp_host: "smtp.example.test".into(),
+            smtp_port: "587".into(),
+            smtp_security: 1,
+            ..ConnectFields::default()
+        }
+    }
+
+    /// The args of the process the worker would spawn for this action.
+    fn spawned_args(action: &EmailAction) -> Vec<String> {
+        let argv = email_argv(action);
+        let command = build_command(
+            Path::new("/usr/local/bin/abstractcore"),
+            &argv,
+            action.stdin_secret.is_some(),
+        );
+        command
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// Save and test: the password is nowhere on the command line (nor in
+    /// Debug); the command reads it from stdin, as one line, untrimmed.
+    #[test]
+    fn connect_puts_the_password_on_stdin_never_in_argv() {
+        let action = connect_action(&fields(), Some(7)).unwrap();
+        let args = spawned_args(&action);
+        assert!(args.iter().all(|a| !a.contains("SENTINEL")), "{args:?}");
+        assert_eq!(
+            &args[..4],
+            [
+                "email",
+                "connect",
+                "--address=me@example.test",
+                "--password-stdin"
+            ]
+        );
+        assert!(
+            args.contains(&"--smtp-security=starttls".to_string()),
+            "{args:?}"
+        );
+        assert_eq!(args.last().map(String::as_str), Some("--json"));
+        assert_eq!(
+            action.stdin_secret.as_ref().unwrap().line(),
+            format!("{PW}\n")
+        );
+        assert!(!format!("{action:?}").contains("SENTINEL"));
+        assert!(!action.oauth);
+    }
+
+    #[test]
+    fn connect_refuses_what_the_form_refuses() {
+        let mut f = fields();
+        f.password = "two\nlines".into();
+        assert!(connect_action(&f, None).unwrap_err().contains("line break"));
+        f.password.clear();
+        assert!(connect_action(&f, None)
+            .unwrap_err()
+            .starts_with("Password is required"));
+        let mut f = fields();
+        f.imap_port = "0".into();
+        assert_eq!(
+            connect_action(&f, None).unwrap_err(),
+            "IMAP port must be a number (1-65535)"
+        );
+        let mut f = fields();
+        f.address.clear();
+        assert_eq!(connect_action(&f, None).unwrap_err(), "Address is required");
+    }
+
+    /// OAuth2 sign-in: an own client secret goes on stdin with
+    /// `--client-secret-stdin`; without one, stdin carries nothing.
+    #[test]
+    fn oauth_puts_the_client_secret_on_stdin_never_in_argv() {
+        let f = OAuthFields {
+            provider: 0,
+            address: "me@example.test".into(),
+            client_id: "my-client".into(),
+            client_secret: CS.into(),
+            tenant: "contoso".into(),
+            flow: 1,
+        };
+        let action = oauth_action(&f, Some(3)).unwrap();
+        let args = spawned_args(&action);
+        assert!(args.iter().all(|a| !a.contains("SENTINEL")), "{args:?}");
+        for want in [
+            "--oauth=microsoft",
+            "--client-id=my-client",
+            "--client-secret-stdin",
+            "--tenant=contoso",
+            "--oauth-flow=device",
+        ] {
+            assert!(args.contains(&want.to_string()), "{want} missing: {args:?}");
+        }
+        assert_eq!(
+            action.stdin_secret.as_ref().unwrap().line(),
+            format!("{CS}\n")
+        );
+        assert!(!format!("{action:?}").contains("SENTINEL"));
+        assert!(action.oauth);
+
+        let public = oauth_action(
+            &OAuthFields {
+                client_secret: String::new(),
+                ..f
+            },
+            None,
+        )
+        .unwrap();
+        assert!(public.stdin_secret.is_none());
+        assert!(!spawned_args(&public)
+            .iter()
+            .any(|a| a.contains("client-secret")));
+    }
 }

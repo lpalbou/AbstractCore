@@ -8,7 +8,23 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [0.5.0] — 2026-09-30
 
-Released with AbstractCore 2.20.0.
+Released with AbstractCore 2.20.1 (the 2.20.0 publish of this crate stopped on a
+Linux test failure, so 0.5.0 never reached crates.io; it ships with 2.20.1 and
+includes the two fixes below).
+
+### Security
+
+- The Email screen never puts a secret on a command line: Save and test runs
+  `abstractcore email connect … --password-stdin` and OAuth2 sign-in
+  `--client-secret-stdin`, with the secret written to the command's stdin (one
+  line, then stdin is closed). Before, `--password=<value>` and
+  `--client-secret=<value>` were in argv, readable by every local user (`ps`)
+  while the command ran. Needs AbstractCore 2.20.1 or later.
+
+### Fixed
+
+- Cancel and timeout kill the command's whole process group: on Linux a shell
+  child kept the output pipes open, so **Cancel sign-in** waited 30 s.
 
 ### Added
 
@@ -21,14 +37,14 @@ Released with AbstractCore 2.20.0.
   console's Email tab, same fields and words. `c` connect (Save and test), `t`
   test, `o` turn off/on, `x` disconnect (confirmed, defaults to Cancel), `p`
   recipient policy, `l` send limits. Every change runs `abstractcore email …
-  --json`; the password rides a redacted argument and is never shown or
+  --json`; the password goes to its stdin (see Security) and is never shown or
   journaled. The footer lists `1-9,0,@ ←/→ screens`.
 - `g` on the Email screen: **Sign in with OAuth2** (provider, address, client id,
   client secret, tenant, flow — the web console's card). The form stays open
   while `abstractcore email connect --oauth … --json` waits for the approval and
   shows the device code or sign-in address streamed from its `oauth_prompt`
   stderr line; **Cancel sign-in** kills the command (nothing is stored). The
-  client secret rides a redacted argument.
+  client secret goes to the command's stdin, never its argv.
 
 ### Changed
 

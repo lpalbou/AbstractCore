@@ -23,7 +23,7 @@ use crate::store::{
     models_from_payload, AvailabilityData, ConfigMirror, JournalEntry, Loadable, ProfilesData,
     RoutesData, Store,
 };
-use crate::writes::{eval_file_expect, Arg, Expect, WriteSpec, WriteVerb};
+use crate::writes::{eval_file_expect, Arg, Expect, StdinSecret, WriteSpec, WriteVerb};
 
 static OP_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -72,8 +72,11 @@ pub enum Cmd {
 }
 
 /// One email verb. `args` follow `abstractcore email`; `--json` is
-/// appended by the worker. A password rides `Arg::Secret` (redacted in
-/// Debug, in the journal and in every error label).
+/// appended by the worker. A password or client secret never rides argv
+/// (readable by every local user via `ps` while the command runs): the
+/// args carry `--password-stdin` / `--client-secret-stdin` and the
+/// secret rides `stdin_secret`, written to the command's stdin (redacted
+/// in Debug, in the journal and in every error label).
 #[derive(Clone, Debug)]
 pub struct EmailAction {
     /// What the journal and the busy strip say ("email test").
@@ -81,6 +84,8 @@ pub struct EmailAction {
     pub args: Vec<Arg>,
     /// The form to close on success (None for key verbs).
     pub form_id: Option<u64>,
+    /// The one secret line written to the command's stdin, if any.
+    pub stdin_secret: Option<StdinSecret>,
     /// An OAuth2 sign-in (`connect --oauth …`): the command waits for a
     /// person, streams its `oauth_prompt` into `store.email_oauth_prompt`
     /// and can be cancelled (`cancel_email_oauth`).
@@ -281,6 +286,53 @@ fn handle(
     }
 }
 
+/// The argv of one email verb: `email <args…> --json`.
+pub(crate) fn email_argv(action: &EmailAction) -> Vec<&str> {
+    let mut argv: Vec<&str> = vec!["email"];
+    argv.extend(action.args.iter().map(Arg::value));
+    argv.push("--json");
+    argv
+}
+
+/// What the journal and error labels name: the args, secrets redacted.
+fn email_redacted_label(action: &EmailAction) -> String {
+    format!(
+        "abstractcore email {}",
+        action
+            .args
+            .iter()
+            .map(|a| match a {
+                Arg::Plain(s) => s.clone(),
+                Arg::Secret(_) => "«redacted»".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
+/// Run one email verb: `abstractcore email <args…> --json`, its secret
+/// (if any) written to the command's stdin, never on its command line.
+/// An OAuth2 sign-in streams its prompt to `on_prompt` and stops when
+/// `cancel` turns true; other verbs ignore both. `timeout` bounds the
+/// command (`EMAIL_TIMEOUT`, or `EMAIL_OAUTH_TIMEOUT` for a sign-in).
+pub(crate) fn run_email_action(
+    cli: &CoreCli,
+    action: &EmailAction,
+    timeout: Duration,
+    on_prompt: Box<dyn Fn(Value) + Send>,
+    cancel: &AtomicBool,
+) -> Result<crate::cli::CliOutput, crate::cli::CliError> {
+    let argv = email_argv(action);
+    let stdin_line = action.stdin_secret.as_ref().map(StdinSecret::line);
+    let stdin = stdin_line.as_deref();
+    let redacted = email_redacted_label(action);
+    if action.oauth {
+        cli.run_email_streaming(&argv, stdin, &redacted, timeout, on_prompt, cancel)
+    } else {
+        cli.run_email(&argv, stdin, &redacted, timeout)
+    }
+}
+
 /// One email verb: run it, journal it (redacted), route the outcome to
 /// its form, then re-read the status so the screen shows the truth.
 fn handle_email(
@@ -301,30 +353,16 @@ fn handle_email(
     };
     let op = next_op();
     begin(store, wake, op, &action.label);
-    let mut argv: Vec<&str> = vec!["email"];
-    argv.extend(action.args.iter().map(Arg::value));
-    argv.push("--json");
-    let redacted = format!(
-        "abstractcore email {}",
-        action
-            .args
-            .iter()
-            .map(|a| match a {
-                Arg::Plain(s) => s.clone(),
-                Arg::Secret(_) => "«redacted»".to_string(),
-            })
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
+    let redacted = email_redacted_label(action);
     let outcome = if action.oauth {
         EMAIL_OAUTH_CANCEL.store(false, Ordering::SeqCst);
         let (store_p, wake_p) = (*store, wake.clone());
         let on_prompt: Box<dyn Fn(Value) + Send> = Box::new(move |p: Value| {
             wake_p.post(move || store_p.email_oauth_prompt.set(Some(p)));
         });
-        let out = cli.run_email_streaming(
-            &argv,
-            &redacted,
+        let out = run_email_action(
+            cli,
+            action,
             EMAIL_OAUTH_TIMEOUT,
             on_prompt,
             &EMAIL_OAUTH_CANCEL,
@@ -333,7 +371,13 @@ fn handle_email(
         wake.post(move || store_c.email_oauth_prompt.set(None));
         out
     } else {
-        cli.run_email(&argv, &redacted, EMAIL_TIMEOUT)
+        run_email_action(
+            cli,
+            action,
+            EMAIL_TIMEOUT,
+            Box::new(|_| {}),
+            &EMAIL_OAUTH_CANCEL,
+        )
     };
     let (notice, journal) = match &outcome {
         Ok(_) => (format!("{}: done", action.label), Ok("ok".to_string())),

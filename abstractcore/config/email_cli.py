@@ -13,7 +13,11 @@
     abstractcore email registered-address me@example.com
 
 Credentials are direct parameters (`--password <value>`, `--client-secret <value>`) and are
-stored encrypted; they are never printed. Every verb takes `--json` (the `email_settings_v1`
+stored encrypted; they are never printed. A script or program passes them on stdin instead, so
+the secret never appears on a command line (where other local users can read it while the
+command runs): `--password-stdin` / `--client-secret-stdin` read exactly one line from stdin
+(the trailing newline is removed, nothing else), e.g.
+`printf '%s\n' "$PW" | abstractcore email connect --address me@example.com ... --password-stdin`. Every verb takes `--json` (the `email_settings_v1`
 document of `EmailAccountStore.public()`, or `{ok: false, error: {code, cause, fix}}`).
 Exit codes: 0 ok, 1 error, 2 refused (a failed connection test, or `disconnect` without
 `--yes`).
@@ -187,6 +191,61 @@ def _obtain_oauth_tokens(args: argparse.Namespace, oauth: Any, client_secret: st
     return loop.finish(timeout_s=float(args.oauth_timeout))
 
 
+def _read_stdin_secret(flag: str, what: str) -> str:
+    """One secret from stdin: exactly one line, the trailing newline removed (nothing else)."""
+    from abstractcore.comms.email import EmailInvalidSettings
+
+    stream = sys.stdin
+    if stream is None:
+        raise EmailInvalidSettings(
+            f"{flag} was given but this process has no stdin.",
+            f"Pipe the {what} into the command (printf '%s\\n' \"$SECRET\" | abstractcore email connect ... {flag}).",
+        )
+    line = stream.readline()
+    if line.endswith("\n"):
+        line = line[:-1]
+        if line.endswith("\r"):
+            line = line[:-1]
+    if not line:
+        raise EmailInvalidSettings(
+            f"{flag} read an empty {what} from stdin.",
+            f"Write the {what} as the first line of stdin (printf '%s\\n' \"$SECRET\" | abstractcore email connect ... {flag}).",
+        )
+    return line
+
+
+def _stdin_secrets(args: argparse.Namespace) -> None:
+    """Resolve `--password-stdin` / `--client-secret-stdin` into args.password / args.client_secret."""
+    from abstractcore.comms.email import EmailInvalidSettings
+
+    if args.password_stdin and args.client_secret_stdin:
+        raise EmailInvalidSettings(
+            "--password-stdin and --client-secret-stdin cannot be combined (stdin carries one secret).",
+            "Use --password-stdin for a password account, or --client-secret-stdin with --oauth.",
+        )
+    if args.password_stdin:
+        if args.password:
+            raise EmailInvalidSettings(
+                "--password and --password-stdin were both given.",
+                "Give the password once: --password <value>, or --password-stdin with the password on stdin.",
+            )
+        if args.oauth:
+            raise EmailInvalidSettings("--password-stdin is not used with --oauth.", "Remove --password-stdin; OAuth2 signs in through the browser.")
+        args.password = _read_stdin_secret("--password-stdin", "password")
+    if args.client_secret_stdin:
+        if args.client_secret:
+            raise EmailInvalidSettings(
+                "--client-secret and --client-secret-stdin were both given.",
+                "Give the client secret once: --client-secret <value>, or --client-secret-stdin with the secret on stdin.",
+            )
+        if not args.oauth:
+            raise EmailInvalidSettings(
+                "--client-secret-stdin is only used with --oauth.",
+                "Add --oauth google|microsoft|custom, or remove --client-secret-stdin.",
+            )
+        args.client_secret = _read_stdin_secret("--client-secret-stdin", "client secret")
+
+
 def cmd_connect(args: argparse.Namespace) -> int:
     from abstractcore.comms.email import (
         EmailAccount,
@@ -203,6 +262,7 @@ def cmd_connect(args: argparse.Namespace) -> int:
 
     as_json = bool(args.json)
     try:
+        _stdin_secrets(args)
         preset = provider_preset(args.oauth, tenant=args.tenant or "") if args.oauth and args.oauth != "custom" else {}
         address = (args.address or "").strip() or (args.username or "").strip()
         if not address:
@@ -254,7 +314,8 @@ def cmd_connect(args: argparse.Namespace) -> int:
             if not args.password:
                 raise EmailInvalidSettings(
                     "The password is missing.",
-                    "Give --password <value> (an app password for providers with two-step verification), or --oauth <provider>.",
+                    "Give --password <value> (an app password for providers with two-step verification; "
+                    "--password-stdin reads it from stdin), or --oauth <provider>.",
                 )
             account = EmailAccount.build(
                 address=address, username=args.username or address, imap=imap, smtp=smtp,
@@ -475,6 +536,10 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--display-name", help="Name shown to recipients")
     c.add_argument("--username", help="Sign-in user name (default: the address)")
     c.add_argument("--password", help="Password or app password (stored encrypted)")
+    c.add_argument(
+        "--password-stdin", action="store_true",
+        help="Read the password from stdin (one line; for scripts: the password never appears on a command line)",
+    )
     c.add_argument("--imap-host")
     c.add_argument("--imap-port", type=int)
     c.add_argument("--imap-security", choices=("ssl", "starttls"))
@@ -490,6 +555,10 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--oauth", choices=("google", "microsoft", "custom"), help="Sign in with OAuth2 instead of a password")
     c.add_argument("--client-id", help="Your own OAuth client id (default: the built-in AbstractFramework client, when one is registered for the provider)")
     c.add_argument("--client-secret", help="Your own OAuth client secret (stored encrypted)")
+    c.add_argument(
+        "--client-secret-stdin", action="store_true",
+        help="Read the OAuth client secret from stdin (one line; the secret never appears on a command line)",
+    )
     c.add_argument("--tenant", help="Microsoft tenant (default common)")
     c.add_argument("--oauth-flow", choices=("device", "loopback"), help="device code (Microsoft default) or browser on this machine (Google default)")
     c.add_argument("--token-endpoint")

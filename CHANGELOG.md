@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.20.1] - 2026-09-30
+
+Secrets never on a command line, and the terminal console `abstractcore-console` 0.5.0 (its
+2.20.0 publish stopped on a Linux test failure; 0.5.0 never reached crates.io and ships with this
+release, with the fixes below).
+
+### Added
+- `abstractcore email connect --password-stdin` and `--client-secret-stdin`: read the password or
+  the OAuth client secret from stdin (exactly one line; only the trailing newline is removed) so a
+  script or program never puts it on a command line, where every local user can read it (`ps`)
+  while the command runs. Each refuses to combine with its argv form (`--password <value>`,
+  `--client-secret <value>`), with the other stdin flag, or with the wrong sign-in
+  (`--password-stdin` with `--oauth`, `--client-secret-stdin` without it), with a typed
+  `email_invalid_settings` error naming the fix. `--password <value>` stays for people typing
+  commands.
+
+### Security
+- The terminal console's Email screen passed the password (`--password=<value>`) and the OAuth
+  client secret (`--client-secret=<value>`) in the argv of `abstractcore email connect`, visible
+  to other local users while the command ran. It now runs the command with
+  `--password-stdin` / `--client-secret-stdin`, writes the secret to its stdin and closes it.
+- A request validation error (422) on a secret field of the wrong type (`"password": 123`,
+  `"client_secret": [...]`) no longer logs or returns the value: the server redacts the input of
+  any error whose field path names a secret, on every route.
+
+### Fixed
+- Terminal console: cancelling or timing out a command kills its whole process group, so a
+  child it started cannot keep the output pipes open (on Linux the OAuth2 **Cancel sign-in**
+  waited 30 s; this failed the crate's release test).
+
 ## [2.20.0] - 2026-09-30
 
 Email becomes a configured, encrypted, policy-bound account. The terminal console ships as

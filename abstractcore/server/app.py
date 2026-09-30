@@ -1537,7 +1537,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "field": " -> ".join(str(loc) for loc in error["loc"]),
             "message": error["msg"],
             "type": error["type"],
-            "input": _redact_sensitive_data(error.get("input")),
+            # A malformed secret field (`"password": 123`) carries the value itself as the
+            # input: redact by the field path, not only by the keys inside the input.
+            "input": (
+                _REDACTED
+                if any(_is_sensitive_name(loc) for loc in error["loc"])
+                else _redact_sensitive_data(error.get("input"))
+            ),
         })
 
     # Log detailed validation error information

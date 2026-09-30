@@ -366,3 +366,57 @@ def test_the_token_client_never_posts_to_a_plain_http_endpoint(oauth_server) -> 
     with pytest.raises(EmailInvalidSettings) as info:
         OAuthTokenClient(raw, client_secret="s").refresh("rt-x")
     assert "https" in info.value.cause
+
+
+def test_cli_client_secret_stdin_signs_in_with_the_piped_secret(imap, smtp, ca, oauth_server, config_file, capsys, monkeypatch) -> None:
+    # The token endpoint accepts exactly oauth_server.client_secret: the sign-in succeeds only when
+    # the first stdin line, minus its newline, is the secret; the second line is never read.
+    import io
+
+    from abstractcore.config.email_cli import handle_email
+
+    def approve_soon() -> None:
+        for _ in range(100):
+            if oauth_server.devices:
+                oauth_server.approve_all_devices()
+                return
+            time.sleep(0.05)
+
+    threading.Thread(target=approve_soon, daemon=True).start()
+    monkeypatch.setattr("sys.stdin", io.StringIO(oauth_server.client_secret + "\nnot-read\n"))
+    code = handle_email([
+        "connect", "--address", ME, "--oauth", "custom", "--client-id", oauth_server.client_id,
+        "--client-secret-stdin", "--oauth-flow", "device",
+        "--token-endpoint", f"{oauth_server.base_url}/token", "--device-endpoint", f"{oauth_server.base_url}/device",
+        "--scope", "mail", "--imap-host", "localhost", "--imap-port", str(imap.port), "--imap-security", "ssl",
+        "--ca-file", str(ca.ca_pem), "--json",
+    ])
+    out = capsys.readouterr()
+    assert code == 0, out
+    assert json.loads(out.out)["auth_kind"] == "oauth2"
+    assert oauth_server.client_secret not in out.out + out.err
+    from abstractcore.comms.email import EmailAccountStore
+
+    assert EmailAccountStore(config_file)._load_secret().client_secret == oauth_server.client_secret
+
+
+@pytest.mark.parametrize(
+    "stdin_text, extra, needle",
+    [
+        ("s3\n", ("--client-secret-stdin", "--client-secret", "s3"), "both given"),
+        ("", ("--client-secret-stdin",), "empty client secret"),
+        ("pw\n", ("--password-stdin",), "not used with --oauth"),
+    ],
+)
+def test_cli_client_secret_stdin_refusals_stop_before_the_network(config_file, capsys, monkeypatch, stdin_text, extra, needle) -> None:
+    import io
+
+    from abstractcore.config.email_cli import handle_email
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(stdin_text))
+    code = handle_email(["connect", "--address", ME, "--oauth", "google", "--client-id", "mine", *extra, "--json"])
+    out = capsys.readouterr()
+    assert code == 1, out
+    err = json.loads(out.out)["error"]
+    assert err["code"] == "email_invalid_settings" and needle in err["cause"] and err["fix"]
+    assert not config_file.exists()

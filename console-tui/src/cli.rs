@@ -5,7 +5,7 @@
 //! from `config … --json` subcommands and exit codes; human output
 //! (`--status`, wizard prose) is never scraped (risk-map fact #9).
 
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -372,18 +372,22 @@ impl CoreCli {
     ///
     /// The email verbs print ONE JSON document and exit 0 (ok), 1
     /// (error) or 2 (refused: a failed connection test, a missing
-    /// `--yes`). argv may carry a secret (`--password <value>`), so
-    /// errors name `redacted_label`, never the args. A refusal's message
+    /// `--yes`). A secret never rides argv (readable by every local user
+    /// while the command runs): it goes in `stdin` (`--password-stdin`,
+    /// `--client-secret-stdin`), written as one line, then stdin is
+    /// closed. Errors name `redacted_label`, never the args. A refusal's message
     /// is the CLI's own typed words: `cause — Fix: fix` from
     /// `{ok:false, error:{code, cause, fix}}`, or the first failed leg
     /// of a connection test.
     pub fn run_email(
         &self,
         args: &[&str],
+        stdin: Option<&str>,
         redacted_label: &str,
         timeout: Duration,
     ) -> Result<CliOutput, CliError> {
-        let (status, stdout, stderr) = self.run_raw(args, redacted_label, timeout)?;
+        let (status, stdout, stderr) =
+            run_raw_at_stdin(&self.bin, args, stdin, redacted_label, timeout)?;
         email_outcome(status, &stdout, &stderr)
     }
 
@@ -395,6 +399,7 @@ impl CoreCli {
     pub fn run_email_streaming(
         &self,
         args: &[&str],
+        stdin: Option<&str>,
         redacted_label: &str,
         timeout: Duration,
         on_prompt: Box<dyn Fn(Value) + Send>,
@@ -405,14 +410,19 @@ impl CoreCli {
                 on_prompt(p);
             }
         });
-        let (status, stdout, stderr) =
-            run_raw_streaming_at(&self.bin, args, redacted_label, timeout, on_line, cancel)?;
+        let (status, stdout, stderr) = run_raw_streaming_at(
+            &self.bin,
+            args,
+            stdin,
+            redacted_label,
+            timeout,
+            on_line,
+            cancel,
+        )?;
         email_outcome(status, &stdout, &stderr)
     }
 
-    /// Shared subprocess mechanics: spawn, drain both pipes on reader
-    /// threads (a large payload can never deadlock), wait with a
-    /// deadline, kill on overrun.
+    /// `run_raw_at` on this CLI's binary (no stdin).
     fn run_raw(
         &self,
         args: &[&str],
@@ -478,6 +488,37 @@ fn own_process_group(command: &mut Command) {
     }
 }
 
+/// The subprocess every runner spawns: `bin args…`, stdout and stderr
+/// piped, in its own process group. stdin is piped only when the caller
+/// has data for it (a secret), else null.
+pub(crate) fn build_command(bin: &Path, args: &[&str], stdin_piped: bool) -> Command {
+    let mut command = Command::new(bin);
+    command
+        .args(args)
+        .stdin(if stdin_piped {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    own_process_group(&mut command);
+    command
+}
+
+/// Write `data` to the child's stdin on a thread, then close stdin (the
+/// reader sees EOF after the line). A child that exits without reading
+/// only breaks the pipe; the error is ignored.
+fn feed_stdin(child: &mut std::process::Child, data: Option<&str>) {
+    if let (Some(mut pipe), Some(data)) = (child.stdin.take(), data) {
+        let data = data.to_string();
+        std::thread::spawn(move || {
+            let _ = pipe.write_all(data.as_bytes());
+            drop(pipe);
+        });
+    }
+}
+
 /// Kill the command and every process in its group, then reap it.
 fn kill_tree(child: &mut std::process::Child) {
     #[cfg(unix)]
@@ -498,21 +539,16 @@ fn kill_tree(child: &mut std::process::Child) {
 pub(crate) fn run_raw_streaming_at(
     bin: &Path,
     args: &[&str],
+    stdin: Option<&str>,
     redacted_label: &str,
     timeout: Duration,
     mut on_line: Box<dyn FnMut(&str) + Send>,
     cancel: &AtomicBool,
 ) -> Result<(std::process::ExitStatus, String, String), CliError> {
-    let mut command = Command::new(bin);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    own_process_group(&mut command);
-    let mut child = command
+    let mut child = build_command(bin, args, stdin.is_some())
         .spawn()
         .map_err(|e| CliError::core(CliErrorKind::Spawn, format!("{}: {e}", bin.display())))?;
+    feed_stdin(&mut child, stdin);
 
     let stdout = child.stdout.take().expect("piped");
     let stderr = child.stderr.take().expect("piped");
@@ -567,22 +603,31 @@ pub(crate) fn run_raw_streaming_at(
     Ok((status, stdout, stderr))
 }
 
+/// Shared subprocess mechanics: spawn, drain both pipes on reader
+/// threads (a large payload can never deadlock), wait with a deadline,
+/// kill the whole process group on overrun.
 pub(crate) fn run_raw_at(
     bin: &Path,
     args: &[&str],
     redacted_label: &str,
     timeout: Duration,
 ) -> Result<(std::process::ExitStatus, String, String), CliError> {
-    let mut command = Command::new(bin);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    own_process_group(&mut command);
-    let mut child = command
+    run_raw_at_stdin(bin, args, None, redacted_label, timeout)
+}
+
+/// `run_raw_at` that writes `stdin` (a secret line) to the child, then
+/// closes its stdin.
+pub(crate) fn run_raw_at_stdin(
+    bin: &Path,
+    args: &[&str],
+    stdin: Option<&str>,
+    redacted_label: &str,
+    timeout: Duration,
+) -> Result<(std::process::ExitStatus, String, String), CliError> {
+    let mut child = build_command(bin, args, stdin.is_some())
         .spawn()
         .map_err(|e| CliError::core(CliErrorKind::Spawn, format!("{}: {e}", bin.display())))?;
+    feed_stdin(&mut child, stdin);
 
     let stdout = child.stdout.take().expect("piped");
     let stderr = child.stderr.take().expect("piped");
@@ -928,6 +973,7 @@ echo '{"oauth_prompt": {"flow": "device", "user_code": "WDJB-MJHT", "verificatio
 sleep 0.3
 echo '{"ok": true, "schema": "email_settings_v1", "auth_kind": "oauth2"}'"#,
                 ],
+                None,
                 "email connect --oauth",
                 Duration::from_secs(10),
                 Box::new(move |p| {
@@ -965,6 +1011,7 @@ echo '{"ok": true, "schema": "email_settings_v1", "auth_kind": "oauth2"}'"#,
                 // platform (a shell may exec a lone last command), so the test
                 // proves the whole process group is killed.
                 &["-c", "sleep 30; true"],
+                None,
                 "email connect --oauth",
                 Duration::from_secs(60),
                 Box::new(|_| {}),
@@ -973,5 +1020,124 @@ echo '{"ok": true, "schema": "email_settings_v1", "auth_kind": "oauth2"}'"#,
             .unwrap_err();
         assert_eq!(err.kind, CliErrorKind::Cancelled);
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod stdin_secret_tests {
+    use super::*;
+    use crate::ui::email::{connect_action, oauth_action, ConnectFields, OAuthFields};
+    use crate::worker::run_email_action;
+
+    /// Every run here is bounded: a child left waiting on an open stdin
+    /// fails the test in seconds, not after the 20-minute sign-in limit.
+    const BOUND: Duration = Duration::from_secs(10);
+
+    /// A fake `abstractcore`: reads ONE stdin line, then the rest until
+    /// EOF (so it only answers once stdin is closed), and prints the hex
+    /// of the line, of the rest and of its own argv.
+    const FAKE_CLI: &str = r#"#!/bin/sh
+IFS= read -r line
+rest=$(cat)
+hex() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n'; }
+printf '{"ok": true, "line": "%s", "rest": "%s", "argv": "%s"}\n' "$(hex "$line")" "$(hex "$rest")" "$(hex "$*")"
+"#;
+
+    /// The fake CLI as an executable file in a fresh temp directory.
+    fn fake_cli() -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "acore-console-fake-cli-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("abstractcore");
+        std::fs::write(&bin, FAKE_CLI).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        bin
+    }
+
+    fn unhex(s: &str) -> String {
+        let bytes: Vec<u8> = (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    /// What the fake saw: (stdin line, rest of stdin, argv).
+    fn seen(out: &CliOutput) -> (String, String, String) {
+        let f = |k: &str| unhex(out.value[k].as_str().unwrap());
+        (f("line"), f("rest"), f("argv"))
+    }
+
+    /// The TUI's Save and test action, run by the worker's runner against
+    /// the fake CLI: the password reaches the child on stdin (exact bytes,
+    /// spaces kept), stdin is closed after that one line, and argv never
+    /// holds it.
+    #[test]
+    fn the_password_reaches_the_child_on_stdin_and_never_in_argv() {
+        let pw = "  pw-SENTINEL-c0de é \"x\" ";
+        let action = connect_action(
+            &ConnectFields {
+                address: "me@example.test".into(),
+                password: pw.into(),
+                imap_host: "imap.example.test".into(),
+                ..ConnectFields::default()
+            },
+            None,
+        )
+        .unwrap();
+        let cli = CoreCli::new(fake_cli());
+        let never = AtomicBool::new(false);
+        let out = run_email_action(&cli, &action, BOUND, Box::new(|_| {}), &never).unwrap();
+        let (line, rest, argv) = seen(&out);
+        assert_eq!(line, pw);
+        assert_eq!(rest, "", "exactly one line on stdin, then EOF");
+        assert!(
+            argv.starts_with("email connect --address=me@example.test --password-stdin"),
+            "{argv}"
+        );
+        assert!(!argv.contains("SENTINEL"), "{argv}");
+    }
+
+    /// The OAuth2 sign-in (the streaming runner): the client secret
+    /// reaches the child on stdin, never in argv.
+    #[test]
+    fn the_client_secret_reaches_the_child_on_stdin_and_never_in_argv() {
+        let action = oauth_action(
+            &OAuthFields {
+                address: "me@example.test".into(),
+                client_id: "mine".into(),
+                client_secret: "cs-SENTINEL-51".into(),
+                ..OAuthFields::default()
+            },
+            None,
+        )
+        .unwrap();
+        assert!(action.oauth);
+        let cli = CoreCli::new(fake_cli());
+        let never = AtomicBool::new(false);
+        let out = run_email_action(&cli, &action, BOUND, Box::new(|_| {}), &never).unwrap();
+        let (line, rest, argv) = seen(&out);
+        assert_eq!(line, "cs-SENTINEL-51");
+        assert_eq!(rest, "");
+        assert!(argv.contains("--client-secret-stdin"), "{argv}");
+        assert!(!argv.contains("SENTINEL"), "{argv}");
+    }
+
+    /// Without a secret stdin is null: the reader sees EOF at once.
+    #[test]
+    fn no_secret_means_null_stdin() {
+        let cli = CoreCli::new(fake_cli());
+        let out = cli
+            .run_email(&["status"], None, "email status", Duration::from_secs(10))
+            .unwrap();
+        let (line, rest, argv) = seen(&out);
+        assert_eq!(
+            (line.as_str(), rest.as_str(), argv.as_str()),
+            ("", "", "status")
+        );
     }
 }

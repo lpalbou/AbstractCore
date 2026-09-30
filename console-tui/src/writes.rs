@@ -45,6 +45,33 @@ impl std::fmt::Debug for Arg {
     }
 }
 
+/// A secret handed to a command on its stdin (one line, then stdin is
+/// closed), never on its command line: argv is readable by every local
+/// user (`ps`) while the command runs. Debug redacts, like `Arg::Secret`.
+#[derive(Clone)]
+pub struct StdinSecret(String);
+
+impl StdinSecret {
+    /// Refuses a value with a line break: the reader takes exactly one line.
+    pub fn new(value: impl Into<String>) -> Result<StdinSecret, String> {
+        let value = value.into();
+        if value.contains('\n') || value.contains('\r') {
+            return Err("the secret contains a line break; it must be one line".into());
+        }
+        Ok(StdinSecret(value))
+    }
+    /// The bytes written to the child's stdin: the secret and one newline.
+    pub fn line(&self) -> String {
+        format!("{}\n", self.0)
+    }
+}
+
+impl std::fmt::Debug for StdinSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "«redacted»")
+    }
+}
+
 /// A direct file mutation (data, not closures — Debug-able, testable,
 /// and structurally unable to smuggle behavior). Secrets never travel
 /// this lane: every secret field has a CLI setter.
