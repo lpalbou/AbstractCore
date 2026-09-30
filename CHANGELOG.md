@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   16 px text and table text is 14 px. Card and form grids never get wider than their pane.
 - `abstractcore.console.theme_sync` also carries ui-kit's responsive token layer as
   `KIT_RESPONSIVE_CSS` (`--tap-min`, `--vh-full`, `--safe-*`, `--gutter`, the coarse-pointer
-  floors, `text-size-adjust`). `themes.py` is regenerated from ui-kit 0.3.1, and the sync refuses
+  floors, `text-size-adjust`). `themes.py` is regenerated from ui-kit 0.3.2, and the sync refuses
   a kit without that layer.
 
 ### Fixed
