@@ -7,23 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-09-30
+
+The web console works on phones, tablets and any window size, following the AbstractFramework
+responsive system of `@abstractframework/ui-kit` 0.3.2.
+
+### Added
+- `abstractcore.console.themes.KIT_RESPONSIVE_CSS`: the UI kit's responsive token layer
+  (`--tap-min`, `--vh-full`, `--safe-*`, `--gutter`, the coarse-pointer floors,
+  `text-size-adjust`). `abstractcore.console.theme_sync` generates it with the themes and refuses
+  a kit without that layer. `themes.py` is regenerated from ui-kit 0.3.2.
+
 ### Changed
-- Web console (`/console`) is responsive: framework breakpoints (480 / 768 / 1024 / 1440 px,
-  500 px tall), `viewport-fit=cover`, safe-area padding on the top bar, tabs and page. Dialogs are
-  bottom sheets below 768 px wide or 500 px tall. On touch screens, targets are 44 px, inputs use
-  16 px text and table text is 14 px. Card and form grids never get wider than their pane.
-- `abstractcore.console.theme_sync` also carries ui-kit's responsive token layer as
-  `KIT_RESPONSIVE_CSS` (`--tap-min`, `--vh-full`, `--safe-*`, `--gutter`, the coarse-pointer
-  floors, `text-size-adjust`). `themes.py` is regenerated from ui-kit 0.3.2, and the sync refuses
-  a kit without that layer.
+- Web console (`/console`): it uses the framework breakpoints (480, 768, 1024 and 1440 px wide,
+  500 px tall), `viewport-fit=cover`, and safe-area padding on the top bar, tabs and page.
+  Dialogs open as bottom sheets below 768 px wide or 500 px tall. On touch screens, targets are
+  44 px, fields use 16 px text, native selects show a drawn chevron at 44 px, and table text is
+  14 px. Card and form grids stay within their pane.
+- On phones, the console's tables scroll sideways inside their frame, and long artifact ids stay
+  on one line with an ellipsis (the full id is the tooltip).
 
 ### Fixed
-- Long configuration paths in the Providers and Email tabs wrap inside their pane. On a phone
-  the page was up to 568 px wide.
-- The Overview Engines card no longer pushes the page sideways at 320 px or with the largest font
-  size: its status chips wrap and shrink within the card.
-- On phones the model tables scroll sideways inside their frame, and long artifact ids stay on one
-  line with an ellipsis (the full id is the tooltip). A 72-character id used to wrap over 16 lines.
+- Long configuration paths in the Providers and Email tabs wrap inside their pane.
+- The Overview key/value cards (Engines) stay within the page at 320 px and with the largest font
+  size.
 
 ## [2.20.2] - 2026-09-30
 

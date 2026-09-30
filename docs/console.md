@@ -136,6 +136,19 @@ The console uses the AbstractFramework UI kit themes. By default it follows your
 or dark preference; the top bar has a theme picker (every kit theme) and a light/dark toggle. The
 choice is stored in `localStorage`.
 
+## Responsive layout
+
+The console works in any browser window and on phones and tablets. The tab strip scrolls
+sideways when the tabs do not fit, and long configuration paths wrap inside their pane. On
+phones, tables scroll sideways inside their frame, and long artifact ids stay on one line with an
+ellipsis (hover or long-press shows the full id). Below 768 px wide, or in phone landscape,
+dialogs open as bottom sheets. On touch screens, buttons, tabs and selects are at least 44 px
+tall, form fields use 16 px text (iOS does not zoom into a focused field), and table text is
+14 px. The page respects the notch and home-indicator areas of phones.
+
+The layout reads the UI kit's responsive tokens (`--tap-min`, `--vh-full`, `--safe-*`,
+`--gutter`), which `abstractcore.console.theme_sync` copies from the kit together with the themes.
+
 ## Embedding the Models and Engines screens
 
 Hosts such as AbstractGateway embed the Models and Engines screens in their own console. Two ways
