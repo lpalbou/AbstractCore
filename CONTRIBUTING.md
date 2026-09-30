@@ -145,6 +145,40 @@ marker first, then a broader pass before release. See
   reason is a collection error, as is a test module that reads the real-home
   path without the marker. `pytest --markers` lists both.
 
+#### Live email tests (opt-in)
+
+`tests/email/live/` runs the email library against a **real test mailbox**
+(framework backlog 0992): verified TLS with the default trust store (plus a
+negative control that must fail), connect and test through `EmailAccountStore`,
+capabilities and folders, a uniquely tagged message sent to the account's own
+address and delivered through `fetch_new`, read, search, a threaded reply, the
+mailbox staying read-only (`\Seen` unchanged by our reads), and the recipient
+policy and send limits refusing before any SMTP call. They carry the
+`live_email` marker and `@pytest.mark.network`, so they are skipped by default
+and in CI.
+
+The test harness reads the mailbox from these environment variables (the tests'
+input only; product code takes accounts through AbstractCore settings, never
+environment variables): `AF_TEST_EMAIL_IMAP_HOST`, `AF_TEST_EMAIL_IMAP_PORT`,
+`AF_TEST_EMAIL_IMAP_SECURITY`, `AF_TEST_EMAIL_SMTP_HOST`,
+`AF_TEST_EMAIL_SMTP_PORT`, `AF_TEST_EMAIL_SMTP_SECURITY`,
+`AF_TEST_EMAIL_USERNAME`, `AF_TEST_EMAIL_ADDRESS`, `AF_TEST_EMAIL_PASSWORD`.
+Any missing variable skips the tests with the list of missing names. Keep them in
+a private file (mode 0600) and load it into the test process only:
+
+```bash
+set -a; . ~/.config/abstractframework-test/email.env; set +a; \
+  python -m pytest tests/email/live -m live_email --allow-network -s --durations=0
+```
+
+`-s` shows one `LIVE-FACT` line per observation (TLS version and issuer,
+capabilities such as IDLE, UIDVALIDITY, delivery time); no credential value
+is ever printed: the harness keeps the values in redacting objects and scrubs
+them from failure reports and captured output. Mail only goes to the test
+account's own address (a guard refuses any other recipient before `MAIL FROM`),
+and every message is small and tagged `[af-live-test]`: the mailbox is read-only,
+so nothing can be cleaned up afterwards. Use a dedicated test mailbox.
+
 ## Documentation
 
 If a change affects user-facing behavior, update the docs entry points:

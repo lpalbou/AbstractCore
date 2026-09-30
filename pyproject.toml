@@ -470,6 +470,7 @@ markers = [
     "large_files: Tests requiring large test files",
     "requires_deps: Tests requiring optional dependencies",
     "asyncio: Async tests (pytest-asyncio)",
+    "live_email: opt-in tests against a real test mailbox (need every AF_TEST_EMAIL_* variable and --allow-network; skipped otherwise)",
 ]
 
 # Coverage configuration
