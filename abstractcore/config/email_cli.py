@@ -420,7 +420,11 @@ def cmd_status(args: argparse.Namespace) -> int:
     except EmailError as err:
         return _fail(err, bool(args.json))
     if args.json:
-        _print_json({**doc, "notices": notices})
+        # `oauth_providers` as the web route gives it, so a terminal client can tell whether
+        # "Sign in with Google/Microsoft" has a built-in client in this version.
+        from abstractcore.comms.email import oauth_providers_public
+
+        _print_json({**doc, "notices": notices, "oauth_providers": oauth_providers_public()})
     else:
         _print_status(doc, notices)
     return EXIT_OK

@@ -86,8 +86,12 @@ def test_cli_status_policy_limits_enable_disconnect(imap, smtp, ca, config_file,
     assert handle_email(["limits", "set", "--per-hour", "5", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["per_hour"] == 5
     assert handle_email(["disable"]) == 0
-    assert handle_email(["status", "--json"]) == 0
     capsys.readouterr()
+    assert handle_email(["status", "--json"]) == 0
+    status_doc = json.loads(capsys.readouterr().out)
+    # The terminal console reads this like the web route: which OAuth sign-ins have a built-in client.
+    assert [p["id"] for p in status_doc["oauth_providers"]] == ["google", "microsoft"]
+    assert all({"id", "available", "reason"} <= set(p) for p in status_doc["oauth_providers"])
     assert EmailAccountStore(config_file).public()["enabled"] is False
     assert handle_email(["enable"]) == 0
     assert handle_email(["test", "--json"]) == 0
