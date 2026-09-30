@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.20.1] - 2026-09-30
 
-Secrets never on a command line, and the terminal console `abstractcore-console` 0.5.0 (its
+Email secrets never on a command line, and the terminal console `abstractcore-console` 0.5.0 (its
 2.20.0 publish stopped on a Linux test failure; 0.5.0 never reached crates.io and ships with this
 release, with the fixes below).
 
