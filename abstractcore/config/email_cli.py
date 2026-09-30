@@ -136,7 +136,7 @@ def _print_status(doc: Dict[str, Any], notices: List[str]) -> None:
             f"{lim.get('per_day')} per day ({lim.get('used_last_day')} used)"
         )
     if doc.get("registered_address"):
-        print(f"  Registered address: {doc['registered_address']}")
+        print(f"  Email address: {doc['registered_address']}")
     print(f"  Agent email tools: {_agent_tools_text(doc.get('agent_tools') or {})}")
     if doc.get("config_file"):
         print(f"  Settings: this AbstractCore install ({doc['config_file']})")
@@ -534,7 +534,7 @@ def cmd_enable(args: argparse.Namespace, enabled: bool) -> int:
     if args.json:
         _print_json({"ok": True, "enabled": doc["enabled"]})
     else:
-        print("Email turned " + ("on." if enabled else "off (no reading, no sending; settings kept)."))
+        print("Use this mailbox: " + ("on." if enabled else "off (no reading, no sending; settings kept)."))
     return EXIT_OK
 
 
@@ -556,6 +556,21 @@ def cmd_agent_tools(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_folder(args: argparse.Namespace) -> int:
+    from abstractcore.comms.email import EmailError
+
+    try:
+        doc = _store(args).set_folder(args.name)
+    except EmailError as err:
+        return _fail(err, bool(args.json))
+    folder = (doc.get("imap") or {}).get("folder") or "INBOX"
+    if args.json:
+        _print_json({"ok": True, "folder": folder})
+    else:
+        print(f"The mailbox is read from the folder {folder}.")
+    return EXIT_OK
+
+
 def cmd_registered(args: argparse.Namespace) -> int:
     from abstractcore.comms.email import EmailError
 
@@ -566,7 +581,7 @@ def cmd_registered(args: argparse.Namespace) -> int:
     if args.json:
         _print_json({"ok": True, "registered_address": doc["registered_address"]})
     else:
-        print(f"Registered address: {doc['registered_address'] or '(the account address)'}")
+        print(f"Email address: {doc['registered_address'] or '(the mailbox address)'}")
     return EXIT_OK
 
 
@@ -634,6 +649,8 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--ca-file", help=argparse.SUPPRESS)
     common(sub.add_parser("status", help="Show the account, policy, limits and last test"))
     common(sub.add_parser("folders", help="List the mailbox folders"))
+    fo = common(sub.add_parser("folder", help='Set the folder the mailbox is read from ("" = INBOX)'))
+    fo.add_argument("name")
     d = common(sub.add_parser("disconnect", help="Delete the stored credentials and account settings"))
     d.add_argument("--yes", action="store_true")
 
@@ -680,6 +697,8 @@ def handle_email(argv: List[str]) -> int:
         return cmd_status(args)
     if args.cmd == "folders":
         return cmd_folders(args)
+    if args.cmd == "folder":
+        return cmd_folder(args)
     if args.cmd == "disconnect":
         return cmd_disconnect(args)
     if args.cmd == "policy":

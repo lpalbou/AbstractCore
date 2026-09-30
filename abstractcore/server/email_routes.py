@@ -15,6 +15,7 @@ through `abstractcore email ... --json`. Every route calls `EmailAccountStore` a
     PUT    /acore/email/limits               {per_hour, per_day}
     PUT    /acore/email/enabled              {enabled}
     PUT    /acore/email/agent-tools          {enabled}         "Agent email tools" (default off)
+    PUT    /acore/email/folder               {folder}          the IMAP folder the mailbox is read from ("" = INBOX)
     PUT    /acore/email/registered-address   {address}         the email address ("self": notifications, default recipient); "" clears it
     POST   /acore/email/oauth/start          begin an OAuth2 sign-in (device code or loopback browser flow)
     POST   /acore/email/oauth/finish         {flow_id, wait_s}  complete it (pending until approved)
@@ -152,6 +153,12 @@ class EnabledBody(BaseModel):
     model_config = ConfigDict(json_schema_extra={"examples": [{"enabled": True}]})
 
     enabled: bool
+
+
+class FolderBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"folder": "INBOX"}]})
+
+    folder: str = Field("", description="The IMAP folder name as the server lists it; empty = INBOX")
 
 
 class AddressBody(BaseModel):
@@ -335,6 +342,15 @@ async def email_agent_tools(body: EnabledBody, request: Request) -> Any:
 
     _principal(request)
     return await _call(lambda: {"ok": True, **_store().set_agent_tools(body.enabled)})
+
+
+@router.put("/acore/email/folder", summary="Set the folder the mailbox is read from")
+async def email_folder(body: FolderBody, request: Request) -> Any:
+    """The IMAP folder agents and the mail watcher read (`""` = INBOX). The mailbox connection is
+    kept and nothing is tested; 404 `email_not_configured` when no mailbox is connected."""
+
+    _principal(request)
+    return await _call(lambda: {"ok": True, **_store().set_folder(body.folder)})
 
 
 @router.put("/acore/email/registered-address", summary="Set or clear the email address (\"self\")")

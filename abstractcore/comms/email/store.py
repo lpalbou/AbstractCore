@@ -305,6 +305,35 @@ class EmailAccountStore:
         self._update(enabled=bool(enabled))
         return self.public()
 
+    def set_folder(self, folder: str) -> Dict[str, Any]:
+        """The IMAP folder the mailbox is read from (agents' list/search, the mail watcher).
+
+        Empty = INBOX. The connection (servers, password or tokens) is kept; nothing is tested.
+        """
+
+        st = self.settings()
+        acct = st.account
+        if acct is None:
+            raise EmailNotConfigured(
+                "No mailbox is connected, so there is no folder to set.",
+                "Connect a mailbox first (`abstractcore email connect --address <a> --password-stdin`).",
+            )
+        if acct.imap is None:
+            raise EmailInvalidSettings(
+                "This mailbox has no IMAP (reading) server, so it has no folder.",
+                "Connect it again with an IMAP server to read mail.",
+            )
+        name = str(folder or "").strip() or "INBOX"
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in name) or len(name) > 255:
+            raise EmailInvalidSettings(
+                f"{name[:60]!r} is not a usable folder name (control characters or longer than 255).",
+                "Give the folder's name as the mail server lists it (`abstractcore email folders`), e.g. INBOX.",
+            )
+        raw = acct.to_dict()
+        raw["imap"] = {**(raw.get("imap") or {}), "folder": name}
+        self._update(account=EmailAccount.from_dict(raw).to_dict())
+        return self.public()
+
     def set_agent_tools(self, enabled: bool) -> Dict[str, Any]:
         """The "Agent email tools" toggle (default off). Turning it on without a connected,
         turned-on account is allowed and changes nothing until the account is usable."""
