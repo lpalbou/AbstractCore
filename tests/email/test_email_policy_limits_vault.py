@@ -227,3 +227,20 @@ def test_secret_repr_and_str_redact() -> None:
 
     with pytest.raises(TypeError):
         pickle.dumps(s)
+
+
+def test_self_follows_the_registered_address_in_allowlist_mode() -> None:
+    """`self_addresses` widens an allowlist for the caller that passes them (never a denylist)."""
+    from abstractcore.comms.email.policy import RecipientPolicy, evaluate
+
+    policy = RecipientPolicy.default_for("old@example.test")
+    stale = evaluate(policy, to=["new@example.test"])
+    assert stale.allowed is False
+    fresh = evaluate(policy, to=["new@example.test"], self_addresses=("new@example.test", "mailbox@example.test"))
+    assert fresh.allowed is True
+    own = evaluate(policy, to=["mailbox@example.test"], self_addresses=("new@example.test", "mailbox@example.test"))
+    assert own.allowed is True
+    # Anyone else is still refused; a denylist is not widened.
+    assert evaluate(policy, to=["boss@example.test"], self_addresses=("new@example.test",)).allowed is False
+    deny = RecipientPolicy(mode="denylist", entries=("new@example.test",))
+    assert evaluate(deny, to=["new@example.test"], self_addresses=("new@example.test",)).allowed is False

@@ -291,11 +291,21 @@ def evaluate(
     to: Sequence[str] = (),
     cc: Sequence[str] = (),
     bcc: Sequence[str] = (),
+    self_addresses: Sequence[str] = (),
 ) -> PolicyDecision:
-    """Evaluate every recipient of one message against the policy."""
+    """Evaluate every recipient of one message against the policy. `self_addresses`, when given,
+    are treated as allowlist entries (a caller that wants "self" always allowed passes the
+    registered address); the account context does NOT pass them: the user's policy applies to
+    every send, notifications and sign-in codes included, and the default allowlist entry follows
+    the registered address (`EmailAccountStore.set_registered_address`)."""
 
     addresses = {e for e in policy.entries if "@" in e}
     domains = {e for e in policy.entries if "@" not in e}
+    for raw_self in self_addresses or ():
+        try:
+            addresses.add(normalize_address(str(raw_self or "")))
+        except ValueError:
+            continue
     verdicts: List[RecipientVerdict] = []
     for field_name, values in (("to", to), ("cc", cc), ("bcc", bcc)):
         for raw in values or ():

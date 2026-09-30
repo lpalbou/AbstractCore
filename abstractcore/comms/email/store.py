@@ -25,7 +25,7 @@ import os
 import secrets as _secrets
 import ssl
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
@@ -379,7 +379,28 @@ class EmailAccountStore:
                     f"The registered address {addr!r} is not a valid email address.",
                     "Give the address as name@example.test.",
                 ) from None
+        # The default allowlist holds the registered address: when it changes, the entry follows
+        # (the old one goes, the new one comes), so the policy the console shows stays true.
+        try:
+            st = self.settings()
+            old_addr = (st.registered_address or "").strip().lower()
+            pol = st.policy
+        except EmailInvalidSettings:
+            old_addr, pol = "", None
         self._update(registered_address=addr)
+        if pol is not None and pol.mode == "allowlist":
+            entries = list(pol.entries)
+            if old_addr and old_addr in entries:
+                entries = [e for e in entries if e != old_addr]
+            if addr:
+                try:
+                    norm = normalize_address(addr)
+                except ValueError:
+                    norm = ""
+                if norm and norm not in entries:
+                    entries.append(norm)
+            if tuple(entries) != tuple(pol.entries):
+                self._update(policy=replace(pol, entries=tuple(entries)))
         return self.public()
 
     def context(self, *, ssl_context: Optional[ssl.SSLContext] = None, require_enabled: bool = True) -> EmailContext:

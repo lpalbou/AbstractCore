@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `abstractcore email` texts say "Email address" and "Use this mailbox".
 
 ### Fixed
+- The default allowlist entry follows the registered address when it changes
+  (`EmailAccountStore.set_registered_address` swaps the old address for the new one). Before,
+  changing the email address after connecting left the old address in the allowlist, so a sign-in
+  code or a notification to the new address was refused as "not in the allowlist".
+  `evaluate(..., self_addresses=)` lets a caller treat given addresses as allowlist entries.
 - Web console: Copy buttons work when the console is opened over plain http from another machine
   (textarea fallback when the Clipboard API is unavailable) and say "Copy failed — select and
   copy" when nothing was copied.
