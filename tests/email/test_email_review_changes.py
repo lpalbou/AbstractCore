@@ -396,9 +396,10 @@ def test_web_console_email_tab_names_its_account_and_offers_agent_email_tools() 
     from abstractcore.console.web import _EMAIL_HTML, render_console_html
 
     page = render_console_html()
-    assert 'data-acc="email-scope"' in _EMAIL_HTML and "The email account of this AbstractCore install" in _EMAIL_HTML
-    assert "Settings → My email" in _EMAIL_HTML  # where a gateway user's account lives
-    assert "<h3>Agent email tools</h3>" in _EMAIL_HTML and 'data-acc="email-agent-tools"' in _EMAIL_HTML
-    assert 'data-acc-action="agent-tools-save"' in _EMAIL_HTML and "abstractcore email agent-tools on|off" in _EMAIL_HTML
-    assert 'ctx.request("PUT", `${base}/agent-tools`, { enabled })' in page
+    assert 'data-acc="email-scope"' in _EMAIL_HTML and "the email settings of this AbstractCore install" in _EMAIL_HTML
+    assert "gateway console (My account)" in _EMAIL_HTML  # where a gateway user's own settings live
+    # "Agent email tools" is a switch labelled by the feature (DESIGN §2), applied at once.
+    assert '<span class="af-switch__label">Agent email tools</span>' in _EMAIL_HTML and 'data-acc="email-agent-tools"' in _EMAIL_HTML
+    assert 'role="switch"' in _EMAIL_HTML and "abstractcore email agent-tools on|off" in _EMAIL_HTML
+    assert "`${base}/agent-tools`" in page and 'ctx.request("PUT", path, { enabled: next })' in page
     assert "d.config_file" in page  # the scope line names the core config file
