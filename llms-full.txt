@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-25
-Package version: 2.19.2
+Package version: 2.20.0
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -1251,6 +1251,7 @@ You can also persist settings (including API keys) via the config CLI:
 - Embeddings and semantic search → [Embeddings](docs/embeddings.md)
 - Observability: global event bus + interaction traces → [Architecture](docs/architecture.md), [API Reference (Events)](docs/api-reference.md#eventtype), [Interaction Tracing](docs/interaction-tracing.md)
 - MCP (Model Context Protocol): discover tools from MCP servers (HTTP/stdio) → [MCP](docs/mcp.md)
+- Email: one IMAP/SMTP account (password or OAuth2), encrypted credentials, recipient policy, send limits, read-only mailbox and email tools → [Email](docs/email.md)
 - OpenAI-compatible server: one `/v1` gateway for chat + optional `/v1/images/*` and `/v1/audio/*` endpoints → [Server](docs/server.md)
 
 ## Tool calling (passthrough by default)
@@ -1520,6 +1521,15 @@ abstractcore engines status --probe              # Ollama / LM Studio / MLX / ll
 abstractcore engines install ollama --dry-run    # the exact install command
 ```
 
+Email (see [Email](docs/email.md)):
+
+```bash
+abstractcore email connect --address me@example.com \
+  --imap-host imap.example.com --smtp-host smtp.example.com --password <value>
+abstractcore email test
+abstractcore email status
+```
+
 ## Built-in CLI apps
 
 AbstractCore also ships with ready-to-use CLI apps:
@@ -1558,6 +1568,7 @@ Core features:
 - [Capabilities](docs/capabilities.md) — supported features and current limitations
 - [Interaction Tracing](docs/interaction-tracing.md) — inspect prompts/responses/usage for observability
 - [MCP](docs/mcp.md) — consume MCP tool servers (HTTP/stdio) as tool sources
+- [Email](docs/email.md) — connect a mailbox, recipient policy, send limits, email tools and the `abstractcore.comms.email` library
 
 Reference and internals:
 - [Architecture](docs/architecture.md) — system overview + event system
@@ -4593,6 +4604,25 @@ report = eject_unclaimed("mlx", "mlx-community/Qwen3-4B-4bit")  # skipped while 
 `eject(backend, model)` unloads every holder regardless of claims. See
 [Memory and Model Residency](docs/memory-management.md) for the snapshot fields, the claims registry and
 the HTTP routes.
+
+## Email (`abstractcore.comms.email`)
+
+`abstractcore.comms.email` is the typed mail library behind the email tools, the CLI and the
+consoles. `EmailAccountStore` holds one account with encrypted credentials; its context applies
+the recipient policy and the send limits before every send:
+
+```python
+from abstractcore.comms.email import EmailAccountStore, SearchCriteria, OutgoingMessage
+
+ctx = EmailAccountStore().context()   # typed error when no account is connected or it is turned off
+client = ctx.client()
+found = client.search(SearchCriteria.build(from_domain="example.org", since="7d"), limit=20)
+ctx.send(OutgoingMessage(to=("me@example.com",), subject="Report", text="Done."))
+```
+
+The mailbox is read-only, TLS is always verified and errors are typed with a cause and a fix.
+Hosts bind a per-user account with `set_email_account_resolver` / `use_email_context`. See
+**[Email](docs/email.md)** for the CLI, the recipient policy, send limits, OAuth2 and the tools.
 
 ## Application identity (About screens)
 

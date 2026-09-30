@@ -6,6 +6,10 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-30
+
+Released with AbstractCore 2.20.0.
+
 ### Added
 
 - `a` on the Email screen: **Agent email tools** on/off (default off; `abstractcore

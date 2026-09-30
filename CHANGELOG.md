@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Email becomes a configured, encrypted, policy-bound account (target 2.20.0).
+## [2.20.0] - 2026-09-30
+
+Email becomes a configured, encrypted, policy-bound account. The terminal console ships as
+`abstractcore-console` 0.5.0 with a new Email screen.
 
 ### Added
 - `abstractcore.comms.email`: one typed mail library used by the CLI, the consoles, the tools and

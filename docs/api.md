@@ -366,6 +366,25 @@ report = eject_unclaimed("mlx", "mlx-community/Qwen3-4B-4bit")  # skipped while 
 [Memory and Model Residency](memory-management.md) for the snapshot fields, the claims registry and
 the HTTP routes.
 
+## Email (`abstractcore.comms.email`)
+
+`abstractcore.comms.email` is the typed mail library behind the email tools, the CLI and the
+consoles. `EmailAccountStore` holds one account with encrypted credentials; its context applies
+the recipient policy and the send limits before every send:
+
+```python
+from abstractcore.comms.email import EmailAccountStore, SearchCriteria, OutgoingMessage
+
+ctx = EmailAccountStore().context()   # typed error when no account is connected or it is turned off
+client = ctx.client()
+found = client.search(SearchCriteria.build(from_domain="example.org", since="7d"), limit=20)
+ctx.send(OutgoingMessage(to=("me@example.com",), subject="Report", text="Done."))
+```
+
+The mailbox is read-only, TLS is always verified and errors are typed with a cause and a fix.
+Hosts bind a per-user account with `set_email_account_resolver` / `use_email_context`. See
+**[Email](email.md)** for the CLI, the recipient policy, send limits, OAuth2 and the tools.
+
 ## Application identity (About screens)
 
 `abstractcore.utils.identity` gives AbstractFramework applications the facts an About screen

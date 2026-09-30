@@ -270,6 +270,7 @@ You can also persist settings (including API keys) via the config CLI:
 - Embeddings and semantic search → [Embeddings](docs/embeddings.md)
 - Observability: global event bus + interaction traces → [Architecture](docs/architecture.md), [API Reference (Events)](docs/api-reference.md#eventtype), [Interaction Tracing](docs/interaction-tracing.md)
 - MCP (Model Context Protocol): discover tools from MCP servers (HTTP/stdio) → [MCP](docs/mcp.md)
+- Email: one IMAP/SMTP account (password or OAuth2), encrypted credentials, recipient policy, send limits, read-only mailbox and email tools → [Email](docs/email.md)
 - OpenAI-compatible server: one `/v1` gateway for chat + optional `/v1/images/*` and `/v1/audio/*` endpoints → [Server](docs/server.md)
 
 ## Tool calling (passthrough by default)
@@ -539,6 +540,15 @@ abstractcore engines status --probe              # Ollama / LM Studio / MLX / ll
 abstractcore engines install ollama --dry-run    # the exact install command
 ```
 
+Email (see [Email](docs/email.md)):
+
+```bash
+abstractcore email connect --address me@example.com \
+  --imap-host imap.example.com --smtp-host smtp.example.com --password <value>
+abstractcore email test
+abstractcore email status
+```
+
 ## Built-in CLI apps
 
 AbstractCore also ships with ready-to-use CLI apps:
@@ -577,6 +587,7 @@ Core features:
 - [Capabilities](docs/capabilities.md) — supported features and current limitations
 - [Interaction Tracing](docs/interaction-tracing.md) — inspect prompts/responses/usage for observability
 - [MCP](docs/mcp.md) — consume MCP tool servers (HTTP/stdio) as tool sources
+- [Email](docs/email.md) — connect a mailbox, recipient policy, send limits, email tools and the `abstractcore.comms.email` library
 
 Reference and internals:
 - [Architecture](docs/architecture.md) — system overview + event system
