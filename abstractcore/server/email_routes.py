@@ -6,6 +6,7 @@ through `abstractcore email ... --json`. Every route calls `EmailAccountStore` a
 
     GET    /acore/email                      settings + status (+ notices, oauth_providers)
     POST   /acore/email/discover             {address}  the mailbox's IMAP/SMTP servers (auto-discovery)
+                                             and `defaults`, the server fields a form pre-fills
     PUT    /acore/email                      connect the mailbox: test, then store (password in the body;
                                              never echoed; imap/smtp omitted = discovered from the address)
     POST   /acore/email/test                 sign in to IMAP and SMTP with the stored account
@@ -246,10 +247,18 @@ async def email_get(request: Request) -> Any:
 async def email_discover(body: DiscoverBody, request: Request) -> Any:
     """Known providers, the domain's autoconfig file, the Thunderbird ISPDB, DNS SRV, then MX
     (`abstractcore.comms.email.discovery`). Always 200 for a valid address: `found` says whether
-    both servers were found, `tried` lists every step."""
+    both servers were found, `tried` lists every step. `defaults` is what the form pre-fills
+    (`discovery.server_defaults`): the discovered servers and login, else the standard
+    imap./smtp.<domain> 993/465 SSL, with a one-sentence `message`."""
 
     _principal(request)
-    return await _call(lambda: _discover(body.address))
+    from ..comms.email import discovery
+
+    def run() -> Dict[str, Any]:
+        found = _discover(body.address)
+        return {**found, "defaults": discovery.server_defaults(found["address"], found)}
+
+    return await _call(run)
 
 
 def connect_servers(address: str, imap_body: Optional[ServerBody], smtp_body: Optional[ServerBody], username: str = ""):

@@ -357,7 +357,16 @@ def test_http_discover_route(http, monkeypatch) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["found"] is True and body["source"] == "autoconfig" and body["imap"]["host"] == "imap.corp.test"
-    assert set(body) == {"address", "domain", "found", "source", "provider", "imap", "smtp", "username", "tried"}
+    assert set(body) == {"address", "domain", "found", "source", "provider", "imap", "smtp", "username", "tried", "defaults"}
+    assert body["defaults"] == {
+        "imap": {"host": "imap.corp.test", "port": 993, "security": "ssl"},
+        "smtp": {"host": "smtp.corp.test", "port": 465, "security": "ssl"},
+        "login": "me@corp.test", "source": "discovered", "provider": None, "message": "Settings found for corp.test.",
+    }
+    _use_net(monkeypatch, FakeNet())
+    std = http.post("/acore/email/discover", json={"address": "me@corp.test"}).json()
+    assert std["found"] is False and std["defaults"]["source"] == "standard"
+    assert std["defaults"]["smtp"] == {"host": "smtp.corp.test", "port": 465, "security": "ssl"}
     bad = http.post("/acore/email/discover", json={"address": "nope"})
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "email_invalid_settings"
 
@@ -438,3 +447,44 @@ def test_cli_connect_without_hosts_discovers_and_discover_verb(config_file, monk
     assert err["code"] == "email_discovery_failed" and "--imap-host" in err["fix"]
     assert handle_email(["discover", "me@corp.test"]) == 1
     assert "Couldn't find the mail servers for corp.test" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ server_defaults (what a form pre-fills)
+
+
+def test_server_defaults_uses_what_discovery_found_including_starttls_and_the_login_form() -> None:
+    net = FakeNet()
+    ms = discovery.server_defaults("someone@hotmail.com", discover_servers("someone@hotmail.com", **net.kw()))
+    assert ms["source"] == "discovered" and ms["provider"] == "microsoft"
+    assert ms["smtp"] == {"host": "smtp-mail.outlook.com", "port": 587, "security": "starttls"}
+    assert ms["login"] == "someone@hotmail.com" and ms["message"] == "Settings found for hotmail.com."
+    # The local-part login form resolves to the actual string.
+    free = discovery.server_defaults("jean.dupont@free.fr", discover_servers("jean.dupont@free.fr", **net.kw()))
+    assert free["login"] == "jean.dupont" and free["source"] == "discovered"
+    assert net.calls == []
+
+
+def test_server_defaults_falls_back_to_standard_servers_and_keeps_a_partial_leg() -> None:
+    nothing = discover_servers("me@corp.test", **FakeNet().kw())
+    std = discovery.server_defaults("me@corp.test", nothing)
+    assert std == {
+        "imap": {"host": "imap.corp.test", "port": 993, "security": "ssl"},
+        "smtp": {"host": "smtp.corp.test", "port": 465, "security": "ssl"},
+        "login": "me@corp.test", "source": "standard", "provider": None,
+        "message": "Standard settings for corp.test — change them if your provider uses others.",
+    }
+    partial = discover_servers("me@corp.test", **FakeNet(srv={"_imaps._tcp.corp.test": [(0, 0, 1993, "mail.corp.test")]}).kw())
+    got = discovery.server_defaults("me@corp.test", partial)
+    assert got["source"] == "standard" and got["imap"] == {"host": "mail.corp.test", "port": 1993, "security": "ssl"}
+    assert got["smtp"] == {"host": "smtp.corp.test", "port": 465, "security": "ssl"}
+
+
+def test_server_defaults_is_pure_when_given_a_result_and_refuses_a_non_address(monkeypatch) -> None:
+    def boom(*_a, **_k):
+        raise AssertionError("no network when a discovery result is given")
+
+    monkeypatch.setattr(discovery, "discover_servers", boom)
+    got = discovery.server_defaults("a@b.example", {"found": False, "imap": None, "smtp": None})
+    assert got["imap"]["host"] == "imap.b.example"
+    with pytest.raises(ValueError):
+        discovery.server_defaults("not-an-address", {"found": False})
