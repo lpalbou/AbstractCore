@@ -15,7 +15,7 @@ use crate::worker::Cmd;
 use crate::writes;
 
 use super::editors::open_field_editor;
-use super::util::{error_panel, line, span, span_bold};
+use super::util::{error_panel, line, span, span_bold, switch_spans, SpanSpec, Switch};
 use super::widths;
 use super::Ctx;
 
@@ -189,10 +189,8 @@ pub fn page(
         });
         match pair {
             Some((section, key, fv)) => {
-                let mut spans = vec![
-                    span_bold(format!(" {section}.{key} "), t.accent),
-                    span(fv.display.clone(), t.text),
-                ];
+                let mut spans = vec![span_bold(format!(" {section}.{key} "), t.accent)];
+                spans.extend(value_spans(&t, &section, &key, &fv.display));
                 spans.push(span("  ", t.text));
                 spans.extend(super::util::state_spans(&t, &fv.state));
                 if let Some(n) = &fv.note {
@@ -215,6 +213,52 @@ pub fn page(
         .child(body)
         .child(detail)
         .build()
+}
+
+/// Is `section.key` a persistent on/off setting (a switch)?
+pub fn is_switch(section: &str, key: &str) -> bool {
+    crate::schema::section(section)
+        .and_then(|s| s.fields.iter().find(|f| f.key == key))
+        .is_some_and(|f| matches!(f.kind, FieldKind::Bool))
+}
+
+/// The switch state of a bool field's display (`true` / `false`); None
+/// for anything else (a broken value keeps its own words).
+fn switch_of(section: &str, key: &str, display: &str) -> Option<Switch> {
+    if !is_switch(section, key) {
+        return None;
+    }
+    match display {
+        "true" => Some(Switch::On),
+        "false" => Some(Switch::Off),
+        _ => None,
+    }
+}
+
+/// The table's value cell: `[x] on` / `[ ] off` for a switch (one ink
+/// per table row, so the marker carries the state), else the value.
+pub fn value_cell(section: &str, key: &str, display: &str) -> String {
+    match switch_of(section, key, display) {
+        Some(st) => format!(
+            "{} {}",
+            st.marker(),
+            if st == Switch::On { "on" } else { "off" }
+        ),
+        None => display.to_string(),
+    }
+}
+
+/// The selected-row line's value: a switch is highlighted when ON
+/// (accent + bold), plain when OFF.
+fn value_spans(t: &TokenSet, section: &str, key: &str, display: &str) -> Vec<SpanSpec> {
+    match switch_of(section, key, display) {
+        Some(st) => {
+            let mut v = switch_spans(t, if st == Switch::On { "on" } else { "off" }, &st);
+            v.push(span("  space switches", t.text_faint));
+            v
+        }
+        None => vec![span(display.to_string(), t.text)],
+    }
 }
 
 /// `gcx` builds the table (viewport + element); `page_cx` is the scope
@@ -257,8 +301,9 @@ fn fields_table(
         };
         let mut row = vec![(*section).to_string(), (*key).to_string()];
         // The FULL value: a model id or a path is exactly the sort of
-        // string a 38-char cap turned into its neighbour's twin.
-        row.push(fv.display.clone());
+        // string a 38-char cap turned into its neighbour's twin. An
+        // on/off setting reads as the switch it is.
+        row.push(value_cell(section, key, &fv.display));
         row.push(state);
         if w >= 100 {
             row.push(fv.note.clone().unwrap_or_default());

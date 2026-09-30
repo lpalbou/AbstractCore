@@ -4889,17 +4889,27 @@ fn footer_lists_the_arrow_keys_for_screens() {
 }
 
 // ---------------------------------------------------------------------
-// Email screen (@) — backlog 0992 WP1: the web console's Email tab,
-// same fields and words, every write through `abstractcore email`.
+// Email screen (@): the account-page design (single user) — Email
+// address with its own Save, the Mailbox card (tabs Google / Microsoft /
+// Other, servers found from the address, ONE Connect; connected: status
+// + Test + Disconnect), the Agent email tools switch, Advanced (rules,
+// limits, folder, "Use this mailbox"). Every write goes through
+// `abstractcore email`.
 // ---------------------------------------------------------------------
 
 fn email_doc(configured: bool) -> Value {
     if !configured {
         return json!({
             "schema": "email_settings_v1", "configured": false, "enabled": true,
+            "agent_tools": {"enabled": false, "active": false, "reason": "off (your choice; default)"},
             "policy": {"mode": "allowlist", "entries": [], "default": true},
             "limits": {"per_hour": 20, "per_day": 100, "used_last_hour": 0, "used_last_day": 0},
+            "registered_address": "me@fastmail.test", "registered_address_stored": "me@fastmail.test",
             "status": {"last_test": "", "legs": {}}, "secret_set": false, "secret_storage": "",
+            "config_file": "/home/me/.abstractcore/config/abstractcore.json",
+            "oauth_providers": [
+                {"id": "google", "available": false, "reason": "No built-in Google sign-in client in this version: add your own client id under Advanced."},
+                {"id": "microsoft", "available": true, "reason": null}],
         });
     }
     json!({
@@ -4911,7 +4921,7 @@ fn email_doc(configured: bool) -> Value {
         "secret_set": true, "secret_storage": "os-keychain", "secret_warning": "",
         "policy": {"mode": "allowlist", "entries": ["me@example.test", "example.org"], "default": false},
         "limits": {"per_hour": 20, "per_day": 100, "used_last_hour": 2, "used_last_day": 5},
-        "registered_address": "me@example.test",
+        "registered_address": "me@example.test", "registered_address_stored": "me@example.test",
         "agent_tools": {"enabled": false, "active": false, "reason": "off (your choice; default)"},
         "config_file": "/home/me/.abstractcore/config/abstractcore.json",
         "status": {"last_test": "2026-09-29T20:00:00+00:00",
@@ -4919,6 +4929,22 @@ fn email_doc(configured: bool) -> Value {
                    "legs": {"imap": {"ok": true}, "smtp": {"ok": false, "cause": "The SMTP server rejected the user name or password."}}},
         "notices": [],
     })
+}
+
+fn discovery_found(address: &str) -> Value {
+    json!({"address": address, "result": {
+        "address": address, "domain": "fastmail.test", "found": true, "source": "known",
+        "provider": null,
+        "imap": {"host": "imap.fastmail.test", "port": 993, "security": "ssl"},
+        "smtp": {"host": "smtp.fastmail.test", "port": 465, "security": "ssl"},
+        "username": address, "tried": [{"step": "known", "result": "found"}]}})
+}
+
+fn discovery_missing(address: &str) -> Value {
+    json!({"address": address, "result": {
+        "address": address, "domain": "nowhere.test", "found": false, "source": null,
+        "provider": null, "imap": null, "smtp": null, "username": address,
+        "tried": [{"step": "known", "result": "not listed"}, {"step": "mx", "result": "no record"}]}})
 }
 
 /// The stdin line of each email action (the secret, never in argv).
@@ -4944,71 +4970,565 @@ fn email_actions(cmds: Vec<Cmd>) -> Vec<(String, Vec<String>, String)> {
         .collect()
 }
 
-#[test]
-fn email_screen_renders_account_status_policy_and_limits() {
-    let mut h = harness();
+fn strs(v: &[&str]) -> Vec<String> {
+    v.iter().map(|s| s.to_string()).collect()
+}
+
+/// Write a buffer snapshot when CORE_TUI_SHOTS names a directory (the
+/// report's before/after evidence); always returns the screen.
+fn shot(h: &mut Harness, name: &str) -> String {
+    let s = h.turns(3);
+    if let Ok(dir) = std::env::var("CORE_TUI_SHOTS") {
+        let size = h.term.screen().size();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(format!("{dir}/{name}-{}x{}.txt", size.w, size.h), &s).unwrap();
+    }
+    s
+}
+
+fn email_harness(size: Size, doc: Value) -> Harness {
+    let mut h = harness_sized(size);
     h.load_fixtures();
-    h.store.email.set(Loadable::Ready(email_doc(true)));
-    let s = h.goto_screen(ui::SCREEN_EMAIL);
+    h.store.email.set(Loadable::Ready(doc));
+    h.goto_screen(ui::SCREEN_EMAIL);
+    h
+}
+
+impl Harness {
+    /// One left click (SGR press + release, 1-based) on a cell.
+    fn click_at(&mut self, col: i32, row: i32) {
+        let (cx, cy) = (col + 1, row + 1);
+        self.key(format!("\x1b[<0;{cx};{cy}M").as_bytes());
+        self.key(format!("\x1b[<0;{cx};{cy}m").as_bytes());
+        self.turns(2);
+    }
+
+    /// Click the first occurrence of `needle` on the screen.
+    fn click(&mut self, needle: &str) {
+        let s = self.turns(2);
+        let (col, row) =
+            find_text(&s, needle).unwrap_or_else(|| panic!("{needle:?} is on screen:\n{s}"));
+        self.click_at(col + 1, row);
+    }
+
+    /// Click the LAST `needle` on the first row that also contains
+    /// `row_has` (a button sits right of its row's label).
+    fn click_on_row(&mut self, row_has: &str, needle: &str) {
+        let s = self.turns(2);
+        let hit = s.lines().enumerate().find_map(|(row, l)| {
+            if !l.contains(row_has) {
+                return None;
+            }
+            l.rfind(needle)
+                .map(|b| (l[..b].chars().count() as i32, row as i32))
+        });
+        let (col, row) =
+            hit.unwrap_or_else(|| panic!("{needle:?} on a row with {row_has:?}:\n{s}"));
+        self.click_at(col + 1, row);
+    }
+
+    /// Click the FIRST `needle` on the first row containing `row_has`.
+    fn click_first_on_row(&mut self, row_has: &str, needle: &str) {
+        let s = self.turns(2);
+        let hit = s.lines().enumerate().find_map(|(row, l)| {
+            if !l.contains(row_has) {
+                return None;
+            }
+            l.find(needle)
+                .map(|b| (l[..b].chars().count() as i32, row as i32))
+        });
+        let (col, row) =
+            hit.unwrap_or_else(|| panic!("{needle:?} on a row with {row_has:?}:\n{s}"));
+        self.click_at(col + 1, row);
+    }
+
+    /// The paint of the first cell of `needle` on screen.
+    fn paint_of(&mut self, needle: &str) -> abstracttui::testing::Paint {
+        let s = self.turns(2);
+        let (col, row) =
+            find_text(&s, needle).unwrap_or_else(|| panic!("{needle:?} is on screen:\n{s}"));
+        self.term.screen().cell(col, row).expect("cell").paint
+    }
+}
+
+fn tokens() -> abstracttui::theme::TokenSet {
+    abstracttui::app::current_theme().tokens
+}
+
+fn is_bold(p: &abstracttui::testing::Paint) -> bool {
+    p.attrs.contains(abstracttui::testing::Attrs::BOLD)
+}
+
+fn email_cmds(cmds: &[Cmd]) -> Vec<&abstractcore_console::worker::EmailAction> {
+    cmds.iter()
+        .filter_map(|c| match c {
+            Cmd::Email(a) => Some(a.as_ref()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Not connected: tabs Google / Microsoft / Other; the prefilled address
+/// is looked up at once; the answer picks the tab and becomes ONE
+/// summary line; Server settings stay folded; ONE Connect. None of the
+/// old words survive.
+#[test]
+fn email_mailbox_tabs_find_the_servers_from_the_address() {
+    let mut h = email_harness(Size::new(120, 40), email_doc(false));
+    let cmds = h.drain_cmds();
+    assert!(
+        cmds.iter()
+            .any(|c| matches!(c, Cmd::EmailDiscover { address } if address == "me@fastmail.test")),
+        "the prefilled address is looked up: {cmds:?}"
+    );
+    let s = h.turns(2);
     for want in [
-        "● connected",
-        "Credentials encrypted, key in the OS keychain",
-        "Account",
-        "me@example.test",
-        "imap.example.test:993 ssl, folder INBOX",
-        "smtp.example.test:587 starttls",
-        "Recipient policy",
-        "allowlist: only these recipients",
-        "· example.org",
-        "Send limits",
-        "20 (2 sent in the last hour)",
-        "The SMTP server rejected the user name or password.",
-        "Fix: Check the password.",
+        "Email address",
+        "Where notifications go, and the first address your agents may write to.",
+        "Mailbox",
+        "Google",
+        "Microsoft",
+        "Other",
+        "Sign in with Google",
+        "No built-in Google sign-in client in this version: add your own client id under Advanced.",
+        "[-] Agent email tools — Connect a mailbox first.",
+        "▸ Advanced",
+    ] {
+        assert!(s.contains(want), "missing {want:?}:\n{s}");
+    }
+    h.store
+        .email_discovery
+        .set(Some(discovery_found("me@fastmail.test")));
+    let s = h.turns(3);
+    assert_eq!(
+        h.ui.email.tab.get_untracked(),
+        2,
+        "a non-Google/Microsoft provider: Other"
+    );
+    for want in [
+        "imap.fastmail.test · 993 · SSL  ·  smtp.fastmail.test · 465 · SSL",
+        "Password",
+        "Use an app password if your provider needs one.",
+        "▸ Server settings",
+        "Connect",
     ] {
         assert!(s.contains(want), "missing {want:?}:\n{s}");
     }
     assert!(
-        s.contains("c connect") && s.contains("t test"),
-        "footer names the verbs:\n{s}"
+        !s.contains("IMAP host"),
+        "Server settings stay folded:\n{s}"
     );
+    for gone in [
+        "Save and test",
+        "smtp.example.com",
+        "Turn on",
+        "Turn off",
+        "Registered address",
+        "optional",
+    ] {
+        assert!(!s.contains(gone), "{gone:?} is gone:\n{s}");
+    }
 }
 
+/// A Google address picks the Google tab (the person has not chosen one).
 #[test]
-fn email_screen_names_its_account_and_toggles_agent_email_tools() {
-    let mut h = harness();
-    h.load_fixtures();
-    h.store.email.set(Loadable::Ready(email_doc(true)));
-    let s = h.goto_screen(ui::SCREEN_EMAIL);
+fn email_lookup_picks_the_google_tab_for_a_google_mailbox() {
+    let mut h = email_harness(Size::new(120, 40), email_doc(false));
+    let mut found = discovery_found("me@fastmail.test");
+    found["result"]["provider"] = json!("google");
+    h.store.email_discovery.set(Some(found));
+    h.turns(3);
+    assert_eq!(h.ui.email.tab.get_untracked(), 0);
+}
+
+/// Nothing found: Server settings open by themselves, with the reason.
+#[test]
+fn email_discovery_failure_opens_server_settings_with_the_reason() {
+    let mut doc = email_doc(false);
+    doc["registered_address_stored"] = json!("me@nowhere.test");
+    let mut h = email_harness(Size::new(120, 40), doc);
+    h.store
+        .email_discovery
+        .set(Some(discovery_missing("me@nowhere.test")));
+    let s = h.turns(3);
+    assert_eq!(h.ui.email.tab.get_untracked(), 2);
     for want in [
-        "Core settings: /home/me/.abstractcore/config/abstractcore.json",
-        "Agent email tools   off — off (your choice; default)",
-        "a: Agent email tools on/off (default off",
+        "Couldn't find the mail servers for nowhere.test. Enter them here.",
+        "▾ Server settings",
+        "IMAP host",
+        "SMTP host",
     ] {
         assert!(s.contains(want), "missing {want:?}:\n{s}");
     }
-    h.drain_cmds();
-    h.key(b"a");
+}
+
+/// Connect sends the address and the password only (the CLI finds the
+/// servers); the password rides stdin and is masked on screen. A
+/// discovery refusal opens Server settings and says what failed.
+#[test]
+fn email_connect_sends_address_and_password_only() {
+    let mut h = email_harness(Size::new(120, 40), email_doc(false));
+    h.store
+        .email_discovery
+        .set(Some(discovery_found("me@fastmail.test")));
+    h.turns(3);
+    h.click_first_on_row("Password", "▐");
+    h.type_text("-dash-Secret-42");
     h.turns(2);
+    h.drain_cmds();
+    h.click("Connect");
+    let s = h.turns(2);
+    assert!(!s.contains("-dash-Secret-42"), "masked:\n{s}");
+    assert!(s.contains("⟳ connecting"), "busy while connecting:\n{s}");
+    let cmds = h.drain_cmds();
+    assert_eq!(
+        email_stdin_lines(&cmds),
+        vec![Some("-dash-Secret-42\n".to_string())]
+    );
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1, "ONE primary action");
+    assert_eq!(acts[0].label, "Connect");
+    assert_eq!(acts[0].form_id, Some(h.ui.email.fid_connect));
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["connect", "--address=me@fastmail.test", "--password-stdin"])
+    );
+    assert!(!format!("{cmds:?}").contains("Secret-42"));
+
+    // The worker answers: refused, servers not found.
+    h.store
+        .email_error_code
+        .set(Some("email_discovery_failed".into()));
+    h.ui.write_done.set(Some((
+        h.ui.email.fid_connect,
+        Err("Couldn't find the mail servers for fastmail.test.".into()),
+    )));
+    let s = h.turns(3);
+    for want in [
+        "✗ Couldn't find the mail servers for fastmail.test.",
+        "Couldn't find the mail servers for fastmail.test. Enter them here.",
+        "IMAP host",
+    ] {
+        assert!(s.contains(want), "missing {want:?}:\n{s}");
+    }
+    assert!(!h.ui.email.connecting.get_untracked());
+}
+
+/// Connected: one status line + Test + Disconnect; Disconnect asks
+/// inline first, Cancel keeps the mailbox.
+#[test]
+fn email_connected_status_test_and_disconnect_confirm() {
+    let mut h = email_harness(Size::new(120, 40), email_doc(true));
+    let s = h.turns(2);
+    for want in [
+        "Connected as me@example.test · Password · checked",
+        "Last check failed: The SMTP server rejected the user name or password.",
+        "Fix: Check the password.",
+        "Test",
+        "Disconnect",
+    ] {
+        assert!(s.contains(want), "missing {want:?}:\n{s}");
+    }
+    assert!(!s.contains("Google"), "no tabs once connected:\n{s}");
+    h.drain_cmds();
+    h.click_on_row("Test", "Test");
     let acts = email_actions(h.drain_cmds());
-    assert_eq!(acts.len(), 1, "{acts:?}");
-    assert_eq!(acts[0].0, "email Agent email tools on");
-    assert_eq!(acts[0].1, vec!["agent-tools".to_string(), "on".to_string()]);
+    assert_eq!(acts.len(), 1);
+    assert_eq!(acts[0].1, strs(&["test"]));
+
+    h.click_on_row("Test", "Disconnect");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Disconnect this mailbox? Your agents lose email until you connect again.")
+            && s.contains("Policy and limits are kept."),
+        "{s}"
+    );
+    assert!(
+        email_actions(h.drain_cmds()).is_empty(),
+        "asking writes nothing"
+    );
+    h.click_on_row("Cancel", "Cancel");
+    let s = h.turns(2);
+    assert!(!s.contains("Disconnect this mailbox?"), "{s}");
+    assert!(email_actions(h.drain_cmds()).is_empty(), "Cancel keeps it");
+
+    h.click_on_row("Test", "Disconnect");
+    h.click_on_row("Cancel", "Disconnect");
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1);
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["disconnect", "--yes"])
+    );
+    assert_eq!(
+        acts[0].ok_notice.as_deref(),
+        Some("Mailbox disconnected. Policy and limits are kept.")
+    );
+}
+
+/// The Agent email tools switch: `[ ]` plain, `[x]` accent + bold,
+/// `[-]` faint with its reason; click and Space switch; an unavailable
+/// switch answers with its reason and writes nothing.
+#[test]
+fn email_agent_tools_is_a_switch_with_its_three_states() {
+    let t = tokens();
+    let mut h = email_harness(Size::new(120, 40), email_doc(true));
+    let p = h.paint_of("[ ] Agent email tools");
+    assert_eq!(p.fg, Some(t.text), "OFF is plain text");
+    assert!(!is_bold(&p));
+    h.drain_cmds();
+    h.click("[ ] Agent email tools");
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1, "{cmds:?}");
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["agent-tools", "on"])
+    );
+    assert_eq!(
+        acts[0].ok_notice.as_deref(),
+        Some("Agent email tools are on.")
+    );
 
     let mut on = email_doc(true);
     on["agent_tools"] = json!({"enabled": true, "active": true, "reason": ""});
     h.store.email.set(Loadable::Ready(on));
+    h.turns(3);
+    // Focus sits on the switch after the click: move it off to read the
+    // resting ink, then Space from a fresh click.
     let s = h.turns(2);
+    assert!(s.contains("[x] Agent email tools"), "{s}");
+    h.key(b" ");
+    h.turns(2);
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1, "Space switches the focused switch: {cmds:?}");
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["agent-tools", "off"])
+    );
+    h.key(b"\t");
+    h.turns(2);
+    let p = h.paint_of("[x] Agent email tools");
+    assert_eq!(p.fg, Some(t.accent), "ON wears the accent");
+    assert!(is_bold(&p), "ON is bold");
+
+    let mut paused = email_doc(true);
+    paused["enabled"] = json!(false);
+    h.store.email.set(Loadable::Ready(paused));
+    let s = h.turns(3);
     assert!(
-        s.contains("on: your agents and workflows have the email tools"),
+        s.contains("[-] Agent email tools — “Use this mailbox” is off (Advanced)."),
         "{s}"
     );
-    h.key(b"a");
-    h.turns(2);
-    let acts = email_actions(h.drain_cmds());
-    assert_eq!(
-        acts[0].1,
-        vec!["agent-tools".to_string(), "off".to_string()]
+
+    h.store.email.set(Loadable::Ready(email_doc(false)));
+    h.turns(3);
+    let p = h.paint_of("[-] Agent email tools — Connect a mailbox first.");
+    assert_eq!(p.fg, Some(t.text_faint), "UNAVAILABLE is faint");
+    h.drain_cmds();
+    h.click("[-] Agent email tools");
+    let s = h.turns(2);
+    assert!(
+        email_cmds(&h.drain_cmds()).is_empty(),
+        "unavailable writes nothing"
     );
+    assert!(
+        s.contains("Agent email tools: Connect a mailbox first."),
+        "the attempt answers with the reason:\n{s}"
+    );
+}
+
+/// The Email address card: one field, its own Save, "Saved" inline.
+#[test]
+fn email_address_saves_inline() {
+    let mut h = email_harness(Size::new(120, 40), email_doc(true));
+    h.ui.email.address.set("new@example.test".into());
+    h.turns(2);
+    h.drain_cmds();
+    h.click_on_row("Email address", "Save");
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1, "{cmds:?}");
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["registered-address", "new@example.test"])
+    );
+    assert_eq!(acts[0].form_id, Some(h.ui.email.fid_address));
+    h.ui.write_done
+        .set(Some((h.ui.email.fid_address, Ok("ok".into()))));
+    let s = h.turns(3);
+    assert!(s.contains("✓ Saved"), "{s}");
+    h.ui.write_done.set(Some((
+        h.ui.email.fid_address,
+        Err("'x' is not a valid email address.".into()),
+    )));
+    let s = h.turns(3);
+    assert!(s.contains("✗ 'x' is not a valid email address."), "{s}");
+    assert_eq!(
+        s.matches("Save").count(),
+        1,
+        "the ONE Save on the screen is the address field's:\n{s}"
+    );
+}
+
+/// Advanced: recipient rules apply on add/remove, limits save on
+/// Enter, the folder shows, and "Use this mailbox" is a switch.
+#[test]
+fn email_advanced_rules_limits_and_use_this_mailbox() {
+    let mut h = email_harness(Size::new(120, 70), email_doc(true));
+    h.click("▸ Advanced");
+    let s = h.turns(3);
+    for want in [
+        "Recipient rules",
+        "Only these recipients (allowlist)",
+        "· example.org",
+        "Remove",
+        "Send limits",
+        "Per hour",
+        "Per day",
+        "2 sent in the last hour, 5 in the last day.",
+        "Folder",
+        "INBOX",
+        "[x] Use this mailbox",
+        "Off keeps the settings but stops watching, sending and notifications.",
+    ] {
+        assert!(s.contains(want), "missing {want:?}:\n{s}");
+    }
+    h.drain_cmds();
+    let s = h.turns(2);
+    h.click_on_row("· example.org", "Remove");
+    let acts = email_actions(h.drain_cmds());
+    assert!(!acts.is_empty(), "Remove writes:\n{s}");
+    assert_eq!(acts[0].1, strs(&["policy", "set", "--remove=example.org"]));
+
+    h.ui.email.policy_add.set("corp.test".into());
+    h.turns(2);
+    h.click_on_row("Add", "Add");
+    let acts = email_actions(h.drain_cmds());
+    assert_eq!(acts[0].1, strs(&["policy", "set", "--add=corp.test"]));
+
+    h.click_first_on_row("Per hour", "▐");
+    h.key(b"\x1b[F");
+    h.turn();
+    h.key(b"\x7f\x7f");
+    h.turn();
+    h.type_text("5\r");
+    h.turns(2);
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1, "{cmds:?}");
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["limits", "set", "--per-hour=5", "--per-day=100"])
+    );
+    h.ui.write_done
+        .set(Some((h.ui.email.fid_limits, Ok("ok".into()))));
+    let s = h.turns(3);
+    assert!(
+        s.contains("✓ Saved"),
+        "{:?} {:?}\n{s}",
+        h.ui.email.limits_note.get_untracked(),
+        h.ui.write_done.get_untracked()
+    );
+
+    h.click("[x] Use this mailbox");
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["disable"])
+    );
+    assert_eq!(
+        acts[0].ok_notice.as_deref(),
+        Some("This mailbox is not in use (settings kept).")
+    );
+}
+
+/// Microsoft: the built-in client is available; an own client secret
+/// rides stdin; the device code shows while the sign-in waits. Google
+/// without a built-in client: the button is unavailable with the reason.
+#[test]
+fn email_oauth_tabs_sign_in_and_stream_the_prompt() {
+    let mut h = email_harness(Size::new(120, 40), email_doc(false));
+    h.drain_cmds();
+    h.click("Sign in with Google");
+    assert!(
+        email_cmds(&h.drain_cmds()).is_empty(),
+        "an unavailable sign-in starts nothing"
+    );
+    h.click("Microsoft");
+    let s = h.turns(2);
+    assert_eq!(h.ui.email.tab.get_untracked(), 1, "{s}");
+    assert!(s.contains("Sign in with Microsoft"), "{s}");
+    h.ui.email.client_id.set("my-client-id".into());
+    h.ui.email.client_secret.set("-client-Secret-77".into());
+    h.click("▸ Advanced: your own sign-in client");
+    let s = h.turns(3);
+    assert!(s.contains("Client secret") && s.contains("Tenant"), "{s}");
+    assert!(!s.contains("client-Secret-77"), "masked:\n{s}");
+    h.drain_cmds();
+    h.click("Sign in with Microsoft");
+    let cmds = h.drain_cmds();
+    assert_eq!(
+        email_stdin_lines(&cmds),
+        vec![Some("-client-Secret-77\n".to_string())]
+    );
+    let acts = email_cmds(&cmds);
+    assert!(acts[0].oauth);
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&[
+            "connect",
+            "--address=me@fastmail.test",
+            "--oauth=microsoft",
+            "--client-id=my-client-id",
+            "--client-secret-stdin"
+        ])
+    );
+    h.store.email_oauth_prompt.set(Some(json!({
+        "flow": "device", "user_code": "WDJB-MJHT",
+        "verification_uri": "https://example.test/device", "expires_at": 0,
+    })));
+    let s = h.turns(2);
+    assert!(
+        s.contains("Open https://example.test/device and enter the code WDJB-MJHT"),
+        "{s}"
+    );
+    assert!(s.contains("Cancel sign-in"), "{s}");
 }
 
 #[test]
@@ -5029,320 +5549,155 @@ fn email_screen_is_reached_with_at_and_loads_when_not_asked() {
         "the screen asks for its view: {cmds:?}"
     );
     h.store.email.set(Loadable::Ready(email_doc(false)));
-    let s = h.turns(2);
-    assert!(s.contains("○ not connected"), "{s}");
+    let s = h.turns(3);
+    assert!(s.contains("Sign in with Google"), "{s}");
     assert!(
-        s.contains("No entries: an empty allowlist refuses every recipient."),
-        "{s}"
-    );
-    h.drain_cmds();
-    h.key(b"t");
-    let s = h.turns(2);
-    assert!(
-        email_actions(h.drain_cmds()).is_empty(),
-        "no test without an account"
-    );
-    assert!(
-        s.contains("press c to connect one"),
-        "the refusal says what to do:\n{s}"
+        s.contains("space switch"),
+        "the footer teaches the switch key:\n{s}"
     );
 }
 
-#[test]
-fn email_verbs_test_toggle_and_confirmed_disconnect() {
-    let mut h = harness();
-    h.load_fixtures();
-    h.store.email.set(Loadable::Ready(email_doc(true)));
-    h.goto_screen(ui::SCREEN_EMAIL);
-    h.drain_cmds();
-    h.key(b"t");
-    h.turns(2);
-    h.key(b"o");
-    h.turns(2);
-    let acts = email_actions(h.drain_cmds());
-    assert_eq!(
-        acts.iter().map(|a| a.1.clone()).collect::<Vec<_>>(),
-        vec![vec!["test".to_string()], vec!["disable".to_string()]]
-    );
-    assert_eq!(acts[1].0, "email Turn off");
+// ---------------------------------------------------------------------
+// Settings switches (Server / Media / Model / Embeddings screens).
+// ---------------------------------------------------------------------
 
-    h.key(b"x");
-    let s = h.turns(2);
+/// An on/off setting reads as a switch and Space applies it at once;
+/// the write's label names the NEW state. Only switching an UNSAFE
+/// flag ON still asks.
+#[test]
+fn bool_settings_are_switches_that_apply_at_once() {
+    let mut h = harness_sized(Size::new(120, 40));
+    h.load_fixtures();
+    // A file Python accepts (the fixture's broken rows would close the
+    // CLI write door, which is not what this test is about).
+    let clean = || {
+        let mut raw = config_fixture_value();
+        raw["logging"]["console_level"] = json!("INFO");
+        raw["video"]["max_frames"] = json!(3);
+        raw
+    };
+    h.store.cfg.set(Loadable::Ready(mirror_of(clean())));
+    let s = h.goto_screen(6);
     assert!(
-        s.contains("Disconnect deletes the stored password or tokens"),
+        s.lines()
+            .any(|l| l.contains("allow_unauthentic") && l.contains("[x] on")),
         "{s}"
     );
-    h.key(b"\r"); // the danger confirm defaults to Cancel
-    h.turns(2);
     assert!(
-        email_actions(h.drain_cmds()).is_empty(),
-        "Enter keeps the account"
+        s.lines()
+            .any(|l| l.contains("allow_local_files") && l.contains("[ ] off")),
+        "{s}"
     );
-    h.key(b"x");
+    assert!(s.contains("space switch"), "footer:\n{s}");
+    h.ui.server_sel.set(23); // offline.allow_network (off)
     h.turns(2);
-    h.key(b"\x1b[A"); // up to "Disconnect now"
-    h.turn();
+    h.drain_cmds();
+    h.key(b" ");
+    let s = h.turns(2);
+    assert!(
+        !s.contains("Keep as is"),
+        "no confirmation for a plain switch:\n{s}"
+    );
+    let cmds = h.drain_cmds();
+    let [Cmd::Write(spec)] = cmds.as_slice() else {
+        panic!("one write, got {cmds:?}\n{s}")
+    };
+    assert_eq!(spec.label, "offline.allow_network is on");
+
+    h.ui.server_sel.set(16); // logging.verbatim_enabled (on), by Enter
+    h.turns(2);
     h.key(b"\r");
     h.turns(2);
-    let acts = email_actions(h.drain_cmds());
-    assert_eq!(acts.len(), 1, "{acts:?}");
-    assert_eq!(
-        acts[0].1,
-        vec!["disconnect".to_string(), "--yes".to_string()]
-    );
-}
-
-#[test]
-fn email_connect_form_puts_the_password_on_stdin_and_redacts_it() {
-    let mut h = harness();
-    h.load_fixtures();
-    h.store.email.set(Loadable::Ready(email_doc(false)));
-    h.goto_screen(ui::SCREEN_EMAIL);
-    h.drain_cmds();
-    h.key(b"c");
-    let s = h.turns(2);
-    for label in [
-        "Address",
-        "Display name",
-        "User name",
-        "Password",
-        "IMAP host",
-        "IMAP port",
-        "IMAP security",
-        "Folder",
-        "SMTP host",
-        "SMTP port",
-        "SMTP security",
-        "CA file",
-        "Registered address",
-        "Save and test",
-    ] {
-        assert!(
-            s.contains(label),
-            "the form carries the web console's field {label:?}:\n{s}"
-        );
-    }
-    h.type_text("me@example.test");
-    h.turns(1);
-    for _ in 0..3 {
-        h.key(b"\t");
-        h.turn();
-    }
-    h.type_text("-dash-Secret-42");
-    h.turns(1);
-    h.key(b"\t");
-    h.turn();
-    h.type_text("imap.example.test");
-    h.turns(1);
-    for _ in 0..9 {
-        h.key(b"\t");
-        h.turn();
-    }
-    h.type_text("\r"); // Save and test
-    h.turns(2);
-    let s = h.term.screen().to_text();
-    assert!(
-        !s.contains("-dash-Secret-42"),
-        "the password is masked on screen:\n{s}"
-    );
     let cmds = h.drain_cmds();
-    assert_eq!(
-        email_stdin_lines(&cmds),
-        vec![Some("-dash-Secret-42\n".to_string())],
-        "the password goes to the command's stdin"
-    );
-    let acts = email_actions(cmds);
-    let [(label, args, debug)] = acts.as_slice() else {
-        panic!("expected one email action, got {acts:?}")
+    let [Cmd::Write(spec)] = cmds.as_slice() else {
+        panic!("Enter switches too, got {cmds:?}")
     };
-    assert_eq!(label, "email Save and test");
-    assert_eq!(
-        args,
-        &vec![
-            "connect".to_string(),
-            "--address=me@example.test".to_string(),
-            "--password-stdin".to_string(),
-            "--imap-host=imap.example.test".to_string(),
-            "--imap-security=ssl".to_string(),
-            "--imap-folder=INBOX".to_string(),
-        ]
-        .into_iter()
-        .filter(|a| a != "--imap-folder=INBOX")
-        .collect::<Vec<_>>(),
-    );
-    assert!(
-        !debug.contains("Secret-42"),
-        "Debug of the command redacts the password: {debug}"
-    );
-}
+    assert_eq!(spec.label, "logging.verbatim_enabled is off");
 
-#[test]
-fn email_policy_and_limits_forms_write_through_the_cli() {
-    let mut h = harness();
-    h.load_fixtures();
-    h.store.email.set(Loadable::Ready(email_doc(true)));
-    h.goto_screen(ui::SCREEN_EMAIL);
-    h.drain_cmds();
-    h.key(b"p");
-    let s = h.turns(2);
-    assert!(
-        s.contains("me@example.test, example.org"),
-        "entries prefilled:\n{s}"
-    );
-    h.key(b"\t"); // mode → entries
-    h.turn();
-    h.key(b"\x1b[F"); // End: append after the prefilled entries
-    h.turn();
-    h.type_text(", corp.test");
-    h.turns(1);
-    h.key(b"\t");
-    h.turn();
-    h.type_text("\r"); // Save policy
+    h.ui.server_sel.set(1); // server.allow_unauthenticated (on → off)
+    h.turns(2);
+    h.key(b" ");
     h.turns(2);
     let cmds = h.drain_cmds();
-    let form_id = cmds
-        .iter()
-        .find_map(|c| match c {
-            Cmd::Email(a) => a.form_id,
-            _ => None,
-        })
-        .expect("the policy write carries its form id");
-    let acts = email_actions(cmds);
-    assert_eq!(
-        acts[0].1,
-        [
-            "policy",
-            "set",
-            "--clear",
-            "--mode=allowlist",
-            "--add=me@example.test",
-            "--add=example.org",
-            "--add=corp.test"
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>()
-    );
-    // The worker's completion closes the form (success).
-    h.ui.write_done.set(Some((form_id, Ok("ok".into()))));
-    h.store.email.set(Loadable::Ready(email_doc(true)));
-    h.turns(3);
-    h.key(b"l");
-    h.turns(2);
-    // Per hour is focused, prefilled "20": clear it and type 5.
-    h.key(b"\x1b[F");
-    h.turn();
-    h.key(b"\x7f\x7f");
-    h.turn();
-    h.type_text("5");
-    h.turns(1);
-    h.key(b"\t");
-    h.turn();
-    h.key(b"\t");
-    h.turn();
-    h.type_text("\r"); // Save limits
-    h.turns(2);
-    let acts = email_actions(h.drain_cmds());
-    assert_eq!(
-        acts.last().expect("a limits action").1,
-        ["limits", "set", "--per-hour=5", "--per-day=100"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn email_oauth_form_streams_the_prompt_and_sends_the_client_secret_on_stdin() {
-    let mut h = harness();
-    h.load_fixtures();
-    h.store.email.set(Loadable::Ready(email_doc(false)));
-    h.goto_screen(ui::SCREEN_EMAIL);
-    h.drain_cmds();
-    h.key(b"g");
-    let s = h.turns(2);
-    for label in [
-        "Sign in with OAuth2",
-        "Provider",
-        "Address",
-        "Client id",
-        "Client secret",
-        "Tenant",
-        "Sign-in flow",
-        "Start sign-in",
-        "Cancel sign-in",
-    ] {
-        assert!(
-            s.contains(label),
-            "the form carries the web console's field {label:?}:\n{s}"
-        );
-    }
-    h.key(b"\t"); // provider (Microsoft) -> address
-    h.turn();
-    h.type_text("me@example.test");
-    h.turns(1);
-    h.key(b"\t");
-    h.turn();
-    h.type_text("my-client-id");
-    h.turns(1);
-    h.key(b"\t");
-    h.turn();
-    h.type_text("-client-Secret-77");
-    h.turns(1);
-    for _ in 0..3 {
-        h.key(b"\t"); // tenant -> flow -> Start sign-in
-        h.turn();
-    }
-    h.type_text("\r");
-    let s = h.turns(2);
-    assert!(
-        !s.contains("client-Secret-77"),
-        "the client secret is masked on screen:\n{s}"
-    );
-    let cmds = h.drain_cmds();
-    let oauth_flags: Vec<bool> = cmds
-        .iter()
-        .filter_map(|c| match c {
-            Cmd::Email(a) => Some(a.oauth),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(oauth_flags, vec![true], "one streaming OAuth action");
-    assert_eq!(
-        email_stdin_lines(&cmds),
-        vec![Some("-client-Secret-77\n".to_string())],
-        "the client secret goes to the command's stdin"
-    );
-    let acts = email_actions(cmds);
-    let [(label, args, debug)] = acts.as_slice() else {
-        panic!("expected one email action, got {acts:?}")
+    let [Cmd::Write(spec)] = cmds.as_slice() else {
+        panic!("switching an unsafe flag OFF applies at once, got {cmds:?}")
     };
-    assert_eq!(label, "email OAuth2 sign-in");
-    assert_eq!(
-        args,
-        &[
-            "connect",
-            "--address=me@example.test",
-            "--oauth=microsoft",
-            "--client-id=my-client-id",
-            "--client-secret-stdin",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>()
-    );
-    assert!(
-        !debug.contains("Secret-77"),
-        "Debug of the command redacts the client secret: {debug}"
-    );
-    // The worker streams the command's oauth_prompt: the form shows it.
-    h.store.email_oauth_prompt.set(Some(json!({
-        "flow": "device", "user_code": "WDJB-MJHT",
-        "verification_uri": "https://example.test/device", "expires_at": 0,
-    })));
+    assert_eq!(spec.label, "server.allow_unauthenticated is off");
+
+    // Switching an UNSAFE flag ON asks first.
+    h.ui.server_sel.set(5); // server.allow_local_files (off)
+    h.turns(2);
+    h.key(b" ");
     let s = h.turns(2);
     assert!(
-        s.contains("Open https://example.test/device and enter the code WDJB-MJHT"),
-        "the device code shows while the sign-in waits:\n{s}"
+        s.contains("abstractcore flags server.allow_local_files UNSAFE"),
+        "{s}"
     );
+    assert!(
+        !h.drain_cmds().iter().any(|c| matches!(c, Cmd::Write(_))),
+        "nothing written before the answer"
+    );
+}
+
+// ---------------------------------------------------------------------
+// Buffer snapshots (report evidence): `CORE_TUI_SHOTS=<dir> cargo test
+// --test headless_ui write_after_shots -- --ignored`.
+// ---------------------------------------------------------------------
+
+#[test]
+#[ignore]
+fn write_after_shots() {
+    assert!(
+        std::env::var("CORE_TUI_SHOTS").is_ok(),
+        "set CORE_TUI_SHOTS"
+    );
+    for size in [Size::new(120, 40), Size::new(60, 30)] {
+        let mut h = email_harness(size, email_doc(false));
+        shot(&mut h, "email-not-connected-google");
+        h.ui.email.tab.set(1);
+        shot(&mut h, "email-not-connected-microsoft");
+        h.store
+            .email_discovery
+            .set(Some(discovery_found("me@fastmail.test")));
+        shot(&mut h, "email-other-servers-found");
+        h.ui.email.connecting.set(true);
+        shot(&mut h, "email-other-connecting");
+        h.ui.email.connecting.set(false);
+        h.ui.email.connect_error.set(Some(
+            "Sign-in refused by imap.fastmail.test — check the password.".into(),
+        ));
+        shot(&mut h, "email-other-connect-error");
+
+        let mut doc = email_doc(false);
+        doc["registered_address_stored"] = json!("me@nowhere.test");
+        let mut h = email_harness(size, doc);
+        h.store
+            .email_discovery
+            .set(Some(discovery_missing("me@nowhere.test")));
+        shot(&mut h, "email-other-servers-not-found");
+
+        let mut h = email_harness(size, email_doc(true));
+        shot(&mut h, "email-connected");
+        h.ui.email.confirm_disconnect.set(true);
+        shot(&mut h, "email-connected-disconnect-confirm");
+        h.ui.email.confirm_disconnect.set(false);
+        let mut on = email_doc(true);
+        on["agent_tools"] = json!({"enabled": true, "active": true, "reason": ""});
+        h.store.email.set(Loadable::Ready(on));
+        shot(&mut h, "email-connected-agent-tools-on");
+        h.ui.email.advanced_folded.set(false);
+        shot(&mut h, "email-connected-advanced");
+        let mut paused = email_doc(true);
+        paused["enabled"] = json!(false);
+        h.store.email.set(Loadable::Ready(paused));
+        h.ui.email.advanced_folded.set(true);
+        shot(&mut h, "email-connected-not-in-use");
+
+        let mut h = harness_sized(size);
+        h.load_fixtures();
+        h.goto_screen(6);
+        shot(&mut h, "server-settings");
+        h.ui.server_sel.set(23);
+        shot(&mut h, "server-settings-switch-selected");
+    }
 }

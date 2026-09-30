@@ -14,6 +14,7 @@ pub mod providers;
 pub mod review;
 pub mod routes;
 pub mod sections;
+pub mod switch;
 pub mod util;
 pub mod widths;
 pub mod wizard;
@@ -127,6 +128,10 @@ pub struct UiState {
     pub write_done: Signal<Option<(u64, Result<String, String>)>>,
     /// Bumped whenever the shared modal slot closes.
     pub modal_epoch: Signal<u64>,
+    /// The Email screen's drafts and inline outcomes (root-owned: they
+    /// survive screen switches, and a late timer never writes a
+    /// disposed signal).
+    pub email: email::EmailUi,
 }
 
 impl UiState {
@@ -145,6 +150,7 @@ impl UiState {
             server_sel: cx.signal(0),
             write_done: cx.signal(None),
             modal_epoch: cx.signal(0),
+            email: email::EmailUi::create(cx),
         }
     }
 }
@@ -846,6 +852,7 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                 0 => pairs.push(("Enter", "open section")),
                                 1 | 4 | 5 | 6 => {
                                     pairs.push(("Enter/e", "edit field"));
+                                    pairs.push(("space", "switch"));
                                     pairs.push(("x", "clear field"));
                                 }
                                 2 => {
