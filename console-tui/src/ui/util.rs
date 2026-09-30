@@ -207,3 +207,111 @@ pub fn human_bytes(n: u64) -> String {
         format!("{v:.1} {}", UNITS[u])
     }
 }
+
+// ---------------------------------------------------------------------
+// State switches (the framework's state-toggle rule, terminal form).
+// ---------------------------------------------------------------------
+
+/// The state of one persistent on/off setting. A switch is labelled by
+/// the FEATURE ("Agent email tools"), never by a verb ("Turn on"), and
+/// its marker shows the current state: `[x]` on (accent, bold), `[ ]`
+/// off (plain), `[-]` unavailable (faint, the reason after an em dash).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Switch {
+    On,
+    Off,
+    /// Rendered, never actionable; the reason says what unlocks it.
+    Unavailable(String),
+}
+
+impl Switch {
+    pub fn from_bool(on: bool) -> Switch {
+        if on {
+            Switch::On
+        } else {
+            Switch::Off
+        }
+    }
+
+    pub fn marker(&self) -> &'static str {
+        match self {
+            Switch::On => "[x]",
+            Switch::Off => "[ ]",
+            Switch::Unavailable(_) => "[-]",
+        }
+    }
+}
+
+/// `[x] Label` / `[ ] Label` / `[-] Label — reason`: the plain-text form
+/// for table cells (which carry one ink per row).
+pub fn switch_text(label: &str, state: &Switch) -> String {
+    match state {
+        Switch::Unavailable(reason) => format!("{} {label} — {reason}", state.marker()),
+        _ => format!("{} {label}", state.marker()),
+    }
+}
+
+/// The styled form: ON is accent + bold, OFF plain text, UNAVAILABLE
+/// faint with its reason. The marker and the label share one ink so the
+/// whole switch reads as its state.
+pub fn switch_spans(t: &TokenSet, label: &str, state: &Switch) -> Vec<SpanSpec> {
+    match state {
+        Switch::On => vec![span_bold(format!("{} {label}", state.marker()), t.accent)],
+        Switch::Off => vec![span(format!("{} {label}", state.marker()), t.text)],
+        Switch::Unavailable(reason) => vec![span(
+            format!("{} {label} — {reason}", state.marker()),
+            t.text_faint,
+        )],
+    }
+}
+
+#[cfg(test)]
+mod switch_tests {
+    use super::*;
+
+    fn tokens() -> TokenSet {
+        abstracttui::theme::default_theme().tokens
+    }
+
+    /// ON is highlighted (accent + bold); removing the highlight or the
+    /// marker turns this red.
+    #[test]
+    fn on_is_marked_and_highlighted() {
+        let t = tokens();
+        let spans = switch_spans(&t, "Agent email tools", &Switch::On);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].0, "[x] Agent email tools");
+        assert_eq!(spans[0].1, t.accent, "ON wears the accent ink");
+        assert!(spans[0].2, "ON is bold");
+    }
+
+    #[test]
+    fn off_is_plain() {
+        let t = tokens();
+        let spans = switch_spans(&t, "Use this mailbox", &Switch::Off);
+        assert_eq!(spans[0].0, "[ ] Use this mailbox");
+        assert_eq!(spans[0].1, t.text, "OFF is plain text ink");
+        assert!(!spans[0].2, "OFF is not bold");
+        assert_ne!(t.text, t.accent, "the theme tells ON from OFF");
+    }
+
+    /// UNAVAILABLE is dimmed and says why, after an em dash.
+    #[test]
+    fn unavailable_is_dimmed_with_its_reason() {
+        let t = tokens();
+        let state = Switch::Unavailable("connect a mailbox first".into());
+        let spans = switch_spans(&t, "Agent email tools", &state);
+        assert_eq!(
+            spans[0].0,
+            "[-] Agent email tools — connect a mailbox first"
+        );
+        assert_eq!(spans[0].1, t.text_faint, "UNAVAILABLE is faint");
+        assert!(!spans[0].2);
+        assert_eq!(
+            switch_text("Agent email tools", &state),
+            "[-] Agent email tools — connect a mailbox first"
+        );
+        assert_eq!(switch_text("x", &Switch::from_bool(true)), "[x] x");
+        assert_eq!(switch_text("x", &Switch::from_bool(false)), "[ ] x");
+    }
+}

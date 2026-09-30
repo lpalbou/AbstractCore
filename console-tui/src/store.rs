@@ -1033,6 +1033,13 @@ pub struct Store {
     /// "device", "user_code", "verification_uri", …}` or `{"flow":
     /// "loopback", "authorization_url", …}`); None when none waits.
     pub email_oauth_prompt: Signal<Option<Value>>,
+    /// The last mail-server lookup (`abstractcore email discover
+    /// --address=… --json`): `{"address", "result": <discovery dict>}`
+    /// or `{"address", "error": "<words>"}`; None before the first.
+    pub email_discovery: Signal<Option<Value>>,
+    /// The machine code of the last refused email verb (e.g.
+    /// `email_discovery_failed`), None after a success.
+    pub email_error_code: Signal<Option<String>>,
 }
 
 impl Store {
@@ -1053,6 +1060,8 @@ impl Store {
             probe_busy: cx.signal(false),
             email: cx.signal(Loadable::default()),
             email_oauth_prompt: cx.signal(None),
+            email_discovery: cx.signal(None),
+            email_error_code: cx.signal(None),
         }
     }
 
@@ -1070,6 +1079,8 @@ impl Store {
             tests: _,              // dated live-provider evidence, not file state
             probe_busy: _,         // owned by the worker's probe lifecycle
             email_oauth_prompt: _, // owned by the worker's sign-in in flight
+            email_discovery: _,    // a lookup about an address, not file state
+            email_error_code: _,   // the last verb's outcome, not file state
             cfg,
             routes,
             profiles,

@@ -15,7 +15,7 @@ use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
 use abstracttui::reactive::WakeHandle;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::cli::{CliError, CliErrorKind, CoreCli};
 use crate::config::{self, ConfigPath, FileState};
@@ -69,6 +69,10 @@ pub enum Cmd {
     /// One `abstractcore email …` verb (connect / test / disconnect /
     /// policy / limits / enable / disable), then a fresh status read.
     Email(Box<EmailAction>),
+    /// `abstractcore email discover <address> --json`: find the mail
+    /// servers of an address (the Mailbox card's Other tab summary).
+    /// Changes nothing; the answer lands in `store.email_discovery`.
+    EmailDiscover { address: String },
 }
 
 /// One email verb. `args` follow `abstractcore email`; `--json` is
@@ -90,6 +94,9 @@ pub struct EmailAction {
     /// person, streams its `oauth_prompt` into `store.email_oauth_prompt`
     /// and can be cancelled (`cancel_email_oauth`).
     pub oauth: bool,
+    /// The notice on success, describing the NEW state ("Agent email
+    /// tools are on."); None says "<label>: done".
+    pub ok_notice: Option<String>,
 }
 
 /// Set by `cancel_email_oauth`; the running OAuth sign-in is killed.
@@ -283,7 +290,35 @@ fn handle(
             );
         }
         Cmd::Email(action) => handle_email(store, wake, cli, action, done),
+        Cmd::EmailDiscover { address } => handle_email_discover(store, wake, cli, address),
     }
+}
+
+/// A server lookup may try autoconfig, the ISPDB, SRV and MX records
+/// (each bounded by the CLI's own per-step timeout).
+const DISCOVER_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// Find the mail servers of `address` (`abstractcore email discover
+/// <address> --json`); the document, or the refusal's words, lands in
+/// `store.email_discovery` tagged with the address, so a stale answer
+/// never describes a newer entry. Changes nothing on disk.
+fn handle_email_discover(store: &Store, wake: &WakeHandle, cli: Option<&CoreCli>, address: &str) {
+    let answer = match cli {
+        None => json!({"address": address, "error": no_cli_error().to_string()}),
+        Some(cli) => {
+            let op = next_op();
+            begin(store, wake, op, "finding the mail servers");
+            let out = cli.run_email_discover(address, DISCOVER_TIMEOUT);
+            let store_b = *store;
+            wake.post(move || store_b.end_busy(op));
+            match out {
+                Ok(v) => json!({"address": address, "result": v}),
+                Err(e) => json!({"address": address, "error": e.message}),
+            }
+        }
+    };
+    let store = *store;
+    wake.post(move || store.email_discovery.set(Some(answer)));
 }
 
 /// The argv of one email verb: `email <args…> --json`.
@@ -380,12 +415,19 @@ fn handle_email(
         )
     };
     let (notice, journal) = match &outcome {
-        Ok(_) => (format!("{}: done", action.label), Ok("ok".to_string())),
+        Ok(_) => (
+            action
+                .ok_notice
+                .clone()
+                .unwrap_or_else(|| format!("{}: done", action.label)),
+            Ok("ok".to_string()),
+        ),
         Err(e) => (
             format!("{}: {}", action.label, e.message),
             Err(e.message.clone()),
         ),
     };
+    let error_code = outcome.as_ref().err().and_then(|e| e.reason_code.clone());
     if let Some(fid) = action.form_id {
         done(fid, journal.clone());
     }
@@ -398,6 +440,7 @@ fn handle_email(
             action: redacted,
             outcome: journal,
         });
+        store.email_error_code.set(error_code);
         match status {
             Ok(out) => store.email.set(Loadable::Ready(out.value)),
             Err(e) => store.email.set(Loadable::Failed(e)),
@@ -708,7 +751,7 @@ fn probe_generation(
         if row.get("enabled").and_then(Value::as_bool) == Some(false) {
             return (
                 Verdict::NotProven,
-                format!("profile {id} is disabled — enable it (e on Providers) before testing"),
+                format!("profile {id} is not enabled — open it (e on Providers) and check [x] enabled before testing"),
             );
         }
         if !s("api_key").is_empty() || !s("api_key_env_var").is_empty() {
@@ -1975,11 +2018,14 @@ mod tests {
         let (v, _) = probe_generation(&s.cfg_path(), &never, None, None);
         assert_eq!(v, crate::probes::Verdict::NotProven);
 
-        // Disabled profile: NotProven with the enable teaching.
+        // A profile that is not enabled: NotProven, naming the switch.
         s.write(&profile("", "", false));
         let (v, d) = probe_generation(&s.cfg_path(), &never, None, None);
         assert_eq!(v, crate::probes::Verdict::NotProven);
-        assert!(d.contains("disabled"), "{d}");
+        assert!(
+            d.contains("is not enabled") && d.contains("[x] enabled"),
+            "{d}"
+        );
 
         // A default naming a MISSING profile is a broken route: Failed.
         s.write(&json!({"default_models": {

@@ -42,6 +42,11 @@ pub struct CliError {
     /// core binary's name (M3 review P3-1: "abstractcore exited with
     /// 2" for an abstractcore-chat argparse refusal).
     pub program: &'static str,
+    /// The machine code of a refusal, when the CLI printed one (an
+    /// email verb's `reason_code`, else its `error.code`, e.g.
+    /// `email_discovery_failed`). Screens branch on this, never on the
+    /// words.
+    pub reason_code: Option<String>,
 }
 
 impl CliError {
@@ -50,6 +55,7 @@ impl CliError {
             kind,
             message,
             program: "abstractcore",
+            reason_code: None,
         }
     }
 
@@ -58,6 +64,7 @@ impl CliError {
             kind,
             message,
             program: "abstractcore-chat",
+            reason_code: None,
         }
     }
 
@@ -422,6 +429,22 @@ impl CoreCli {
         email_outcome(status, &stdout, &stderr)
     }
 
+    /// `abstractcore email discover <address> --json`: the discovery
+    /// document (`{address, domain, found, source, provider, imap, smtp,
+    /// username, tried}`) whether it found the servers (exit 0) or not
+    /// (exit 1, `found: false` — an answer, not a failure). A typed
+    /// refusal (an address that is not one) or no document is an error.
+    pub fn run_email_discover(&self, address: &str, timeout: Duration) -> Result<Value, CliError> {
+        let args = email_discover_argv(address);
+        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+        let label = format!("abstractcore email discover {address}");
+        let (status, stdout, stderr) = self.run_raw(&argv, &label, timeout)?;
+        match last_json_object(&stdout) {
+            Some(doc) if doc.get("found").is_some() => Ok(doc),
+            _ => email_outcome(status, &stdout, &stderr).map(|o| o.value),
+        }
+    }
+
     /// `run_raw_at` on this CLI's binary (no stdin).
     fn run_raw(
         &self,
@@ -431,6 +454,18 @@ impl CoreCli {
     ) -> Result<(std::process::ExitStatus, String, String), CliError> {
         run_raw_at(&self.bin, args, redacted_label, timeout)
     }
+}
+
+/// The argv of a server lookup. The address is a positional argument,
+/// so the caller refuses one starting with `-` first (it would read as
+/// a flag); `plausible_address` in the Email screen does.
+pub fn email_discover_argv(address: &str) -> Vec<String> {
+    vec![
+        "email".into(),
+        "discover".into(),
+        address.trim().to_string(),
+        "--json".into(),
+    ]
 }
 
 /// The outcome of one email verb: its JSON document, or the CLI's own
@@ -447,7 +482,9 @@ fn email_outcome(
             .as_ref()
             .and_then(email_error_text)
             .unwrap_or_else(|| error_line(stdout, stderr));
-        return Err(CliError::core(CliErrorKind::Exit(code), msg));
+        let mut err = CliError::core(CliErrorKind::Exit(code), msg);
+        err.reason_code = doc.as_ref().and_then(email_reason_code);
+        return Err(err);
     }
     let value = doc.ok_or_else(|| {
         CliError::core(
@@ -678,6 +715,16 @@ fn fallback_lines(stderr: &str) -> Vec<String> {
         .collect()
 }
 
+/// The machine code of an email refusal: `reason_code` (the discovery
+/// refusal's field), else `error.code` (every typed email error).
+pub fn email_reason_code(doc: &Value) -> Option<String> {
+    doc.get("reason_code")
+        .or_else(|| doc.get("error").and_then(|e| e.get("code")))
+        .and_then(Value::as_str)
+        .filter(|c| !c.is_empty())
+        .map(str::to_string)
+}
+
 /// The typed words of a refused email verb: `{error:{cause, fix}}`, a
 /// refusal `message`, or the first failed leg of `email test`.
 pub fn email_error_text(doc: &Value) -> Option<String> {
@@ -854,6 +901,59 @@ mod tests {
             Some("Re-run with --yes to confirm.")
         );
         assert_eq!(email_error_text(&json!({"ok": true})), None);
+    }
+
+    /// `email discover` answers "not found" with exit 1 and a document:
+    /// that is an answer, not a failure; a typed refusal is an error
+    /// with its words and code. The argv is `email discover <addr> --json`.
+    #[test]
+    fn email_discover_reads_found_and_not_found_and_refusals() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "acore-console-discover-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("abstractcore");
+        std::fs::write(
+            &bin,
+            r#"#!/bin/sh
+[ "$1 $2 $4" = "email discover --json" ] || { echo "bad argv: $*" >&2; exit 9; }
+case "$3" in
+  me@nowhere.test) echo '{"address":"me@nowhere.test","found":false,"tried":[]}'; exit 1;;
+  bad) echo '{"ok":false,"error":{"code":"email_invalid_settings","cause":"bad is not valid.","fix":"Give name@example.com."}}'; exit 1;;
+  *) echo "{\"address\":\"$3\",\"found\":true}"; exit 0;;
+esac
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let cli = CoreCli::new(bin);
+        let t = Duration::from_secs(10);
+        let run = |addr: &str| {
+            // ETXTBSY guard (see fake_cli): retry a busy first exec.
+            for _ in 0..50 {
+                match cli.run_email_discover(addr, t) {
+                    Err(e) if e.kind == CliErrorKind::Spawn => {
+                        std::thread::sleep(Duration::from_millis(20))
+                    }
+                    other => return other,
+                }
+            }
+            cli.run_email_discover(addr, t)
+        };
+        let found = run("me@fastmail.test").unwrap();
+        assert_eq!(found["found"], serde_json::json!(true));
+        let missing = run("me@nowhere.test").unwrap();
+        assert_eq!(missing["found"], serde_json::json!(false));
+        let err = run("bad").unwrap_err();
+        assert_eq!(
+            err.message,
+            "bad is not valid. — Fix: Give name@example.com."
+        );
+        assert_eq!(err.reason_code.as_deref(), Some("email_invalid_settings"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

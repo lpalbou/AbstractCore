@@ -407,9 +407,21 @@ fn open_enum_editor_vec(
 }
 
 // ---------------------------------------------------------------------
-// Bool toggle — with the danger confirm on the UNSAFE server flags.
+// Bool switch — applies at once; only switching an UNSAFE server flag
+// ON asks first.
 // ---------------------------------------------------------------------
 
+/// The notice a switch write ends with: the NEW state, named.
+pub fn switch_label(section: &str, key: &str, on: bool) -> String {
+    format!("{section}.{key} is {}", if on { "on" } else { "off" })
+}
+
+/// A persistent on/off setting is a switch (the framework's state-toggle
+/// rule): Space or Enter on its row writes the other state at once and
+/// the status line names the new one ("✓ logging.verbatim_enabled is
+/// off — verified: …"). The one exception keeps its confirmation:
+/// turning ON a flag abstractcore itself flags UNSAFE
+/// (`server.allow_unauthenticated`).
 fn open_toggle(
     cx: Scope,
     ctx: &Ctx,
@@ -425,40 +437,23 @@ fn open_toggle(
     let ctx2 = ctx.clone();
     let base = ctx.write_base();
     let submit = move || match writes::set_scalar(section, key, Value::Bool(target), base, None) {
-        Ok(spec) => ctx2.send(Cmd::Write(Box::new(spec))),
+        Ok(mut spec) => {
+            spec.label = switch_label(section, key, target);
+            ctx2.send(Cmd::Write(Box::new(spec)))
+        }
         Err(e) => ctx2.store.notice.set(Some(e)),
     };
     if unsafe_flag && target {
         super::forms::confirm_danger(
             cx,
             ctx.ui,
-            format!(
-                "{section}.{key} = true is flagged UNSAFE in abstractcore's own status. Enable it?"
-            ),
-            "Enable (unsafe)",
+            format!("abstractcore flags {section}.{key} UNSAFE when on. Switch it on anyway?"),
+            "Switch on (unsafe)",
             "Keep it off",
             submit,
         );
     } else {
-        // A plain flip still confirms — a single keystroke silently
-        // toggling server config would be too cheap an accident.
-        open_prompt(
-            cx,
-            ctx.ui,
-            abstracttui::app::ChoicePrompt::new(format!(
-                "Set {section}.{key} = {target}? (now {current_true})"
-            ))
-            .option("go", format!("Set {target}"))
-            .option("keep", "Keep as is")
-            .initial("go"),
-            move |outcome| {
-                if let abstracttui::app::ChoiceOutcome::Answered(a) = outcome {
-                    if a.selected.iter().any(|s| s == "go") {
-                        submit();
-                    }
-                }
-            },
-        );
+        submit();
     }
 }
 
