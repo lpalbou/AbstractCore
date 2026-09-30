@@ -24,7 +24,17 @@ What you can rely on:
   nothing is marked read, moved or deleted.
 - **A recipient policy** decides who can receive mail at all, and **send limits** cap how much is
   sent, for every sender (the CLI, the consoles, tools, and hosts such as the gateway).
-- **Whole messages.** Bodies are returned in full, never cut.
+- **Whole messages.** Bodies are returned in full, never cut. Reading a message fetches its
+  structure and then only its text and HTML parts; attachments are listed (name, type, size) and
+  downloaded one at a time on request. A message whose bodies exceed the reading limit (25 MiB by
+  default) is returned with its headers, its attachment list and a typed skip record instead of
+  the bodies.
+- **Agents only with your consent.** Agents get the email tools only when you turn on **Agent email tools**
+  (off by default).
+
+This page describes the account of an AbstractCore install, kept in AbstractCore's own settings.
+An AbstractGateway keeps a separate account for each of its users (see
+[One install, one gateway: two accounts](#one-install-one-gateway-two-accounts)).
 
 ## Connect an account
 
@@ -60,6 +70,8 @@ abstractcore email test              # sign in to IMAP and SMTP with the stored 
 abstractcore email folders           # list the mailbox folders
 abstractcore email disable           # turn email off (no reading, no sending; settings kept)
 abstractcore email enable
+abstractcore email agent-tools on    # let agents use the email tools (default off)
+abstractcore email agent-tools off
 abstractcore email disconnect --yes  # delete the stored credentials and account (policy and limits kept)
 ```
 
@@ -107,6 +119,25 @@ Email screen) offer the same sign-in with the same fields: provider, address, cl
 secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
 AbstractCore, so open its sign-in page in a browser on that machine; the device-code flow works
 from any browser.
+
+## Agent email tools
+
+The email tools (`list_emails`, `read_email`, `send_email`, ...; see [Tool Calling](tool-calling.md))
+use this account only when **Agent email tools** is on. It is off by default, and it takes effect
+only while the account is connected and turned on:
+
+```bash
+abstractcore email agent-tools on
+abstractcore email agent-tools off
+```
+
+The same switch is on the Email tab of the web console and the Email screen of the terminal
+console (`a`), and at `PUT /acore/email/agent-tools`. `status` shows its state as
+`agent_tools: {enabled, active, reason}`: `enabled` is your choice, `active` says whether agents
+have the tools right now, and `reason` says why not. While it is off, every email tool answers
+`email_agent_tools_off` with the command that turns it on. You still use the account yourself
+from the CLI and the consoles; every send by an agent still passes the recipient policy, the send
+limits and the host's approval gate.
 
 ## Recipient policy
 
@@ -161,6 +192,8 @@ Every failure has a stable code, a cause and a fix, for example:
 | `email_recipient_refused` | the server refused a recipient (SMTP 550/553) |
 | `email_policy_refused` | the recipient policy refused the message |
 | `email_rate_limited` | a send limit is reached |
+| `email_agent_tools_off` | an agent used an email tool while **Agent email tools** is off |
+| `email_message_too_large` | a message's bodies (or an attachment) exceed the reading limit: the read returns a skip record, a download is refused |
 | `email_oauth_reauthorize` | the OAuth2 grant expired or was revoked: sign in again |
 | `email_not_configured`, `email_disabled`, `email_secret_unavailable` | no account, email turned off, credentials missing |
 
@@ -169,12 +202,30 @@ Errors are classified from protocol reply codes and exception types, never from 
 ## Consoles
 
 - **Web console** (`abstractcore serve`, then `/console`): the **Email** tab has the Account form
-  (Save and test), Test, Turn off / Turn on, Disconnect (with an inline confirmation), the
-  recipient policy editor with a Check field, the send limits and the status of the last test. It
-  uses the `/acore/email` routes ([Server](server.md)).
+  (Save and test), Test, Turn off / Turn on, Disconnect (with an inline confirmation), **Agent
+  email tools**, the recipient policy editor with a Check field, the send limits and the status of
+  the last test. It uses the `/acore/email` routes ([Server](server.md)).
 - **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) shows the same
   sections with the same words: `c` connect, `t` test, `o` turn off/on, `x` disconnect, `p`
-  recipient policy, `l` send limits.
+  recipient policy, `l` send limits, `a` Agent email tools on/off.
+
+Both consoles name the account they configure: the account of this AbstractCore install, with the
+path of its settings file.
+
+## One install, one gateway: two accounts
+
+AbstractCore and AbstractGateway keep separate email settings:
+
+| Where | Whose account | Configured with |
+|---|---|---|
+| AbstractCore settings (`<config dir>/abstractcore.json`, `<config dir>/email/`) | the account of this AbstractCore install, used by `abstractcore email`, the AbstractCore consoles and the email tools in plain Python use | `abstractcore email ...`, the AbstractCore web and terminal consoles |
+| AbstractGateway data folder (one store per user) | each gateway user's own account, used by that user's agents, automations and notifications | the gateway console (**My email**), `abstractgateway email ...` |
+
+On a single-user machine that runs both, you may therefore see two accounts. The gateway never
+reads the AbstractCore account: connect the mailbox you want your gateway agents to use in the
+gateway console. Each store has its own **Agent email tools** switch. The only automatic transfer
+is the one-time import of the pre-2.20 environment configuration described below; the gateway
+does the same once for its administrator (see the gateway's email documentation).
 
 ## Python
 
@@ -195,11 +246,30 @@ ctx.send(OutgoingMessage(to=("me@example.com",), subject="Report", text="Done.")
 ```
 
 `SearchCriteria` takes typed fields only: `from_address`, `from_domain`, `to_address`,
-`subject_contains` (a literal, case-insensitive substring), `since`, `before` and `unseen`.
+`subject_contains` (a literal, case-insensitive substring), `since`, `before`, `unseen` and
+`has_attachment` (checked on each message's MIME structure). `client.search(...)` returns
+`has_more` and `next_before_uid` when it stopped at `limit`; pass `before_uid=` to continue.
+
+Message summaries carry `uid`, `subject`, `from`, `to`, `cc`, `date`, `internaldate`, `flags`,
+`seen`, `size`, `has_attachments`, `reply_to`, `in_reply_to`, `list_unsubscribe` (the header is
+present) and the priority headers as typed values: `importance` (`low` | `normal` | `high`),
+`x_priority` (1 highest to 5 lowest) and `priority` (`normal` | `urgent` | `non-urgent`); a value
+outside those sets is `None`.
+
+`client.get(uid)` fetches the message structure, then only its text/plain and text/html parts.
+Attachments are listed with `filename`, `content_type`, `size` (the size on the wire, encoded, as
+the server reports it), `encoding`, `disposition` and `content_id`. When the bodies exceed the
+reading limit (`max_message_bytes`, default 25 MiB, set on `EmailClient(...)`, on
+`EmailContext`, or per call), the detail has `skipped = {code: "email_message_too_large", cause,
+fix, uid, folder, size, limit}` and no bodies (`body_text` / `body_html` are `None` in
+`to_dict()`, with `body_skipped` holding the record).
 `client.fetch_new(cursor)` returns the messages that arrived after a stored
-`{uidvalidity, last_uid}` cursor, and reports `reset=True` when the server rebuilt the folder.
-`client.download_attachment(uid, index, folder_path)` saves an attachment under a sanitized name
-and never overwrites a file. `client.build_reply(uid, text=...)` prepares a reply with
+`{uidvalidity, last_uid}` cursor, and reports `reset=True` when the server rebuilt the folder;
+when nothing is left to resynchronise it returns a new baseline (`reset=True, baseline=True`, the
+cursor at the newest message), so a rebuilt folder is never replayed.
+`client.download_attachment(uid, index, folder_path)` fetches only that attachment, saves it under
+a sanitized name and never overwrites a file (above the reading limit it raises
+`EmailMessageTooLarge`). `client.build_reply(uid, text=...)` prepares a reply with
 `In-Reply-To` / `References` set and the recipient taken from `Reply-To` (else `From`).
 
 A host that serves several users (the gateway) keeps one `EmailAccountStore(config_file=...)` per

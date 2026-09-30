@@ -4912,6 +4912,8 @@ fn email_doc(configured: bool) -> Value {
         "policy": {"mode": "allowlist", "entries": ["me@example.test", "example.org"], "default": false},
         "limits": {"per_hour": 20, "per_day": 100, "used_last_hour": 2, "used_last_day": 5},
         "registered_address": "me@example.test",
+        "agent_tools": {"enabled": false, "active": false, "reason": "off (your choice; default)"},
+        "config_file": "/home/me/.abstractcore/config/abstractcore.json",
         "status": {"last_test": "2026-09-29T20:00:00+00:00",
                    "last_error": {"code": "email_auth_failed", "cause": "The SMTP server rejected the user name or password.", "fix": "Check the password."},
                    "legs": {"imap": {"ok": true}, "smtp": {"ok": false, "cause": "The SMTP server rejected the user name or password."}}},
@@ -4958,6 +4960,44 @@ fn email_screen_renders_account_status_policy_and_limits() {
     assert!(
         s.contains("c connect") && s.contains("t test"),
         "footer names the verbs:\n{s}"
+    );
+}
+
+#[test]
+fn email_screen_names_its_account_and_toggles_agent_email_tools() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.store.email.set(Loadable::Ready(email_doc(true)));
+    let s = h.goto_screen(ui::SCREEN_EMAIL);
+    for want in [
+        "Core settings: /home/me/.abstractcore/config/abstractcore.json",
+        "Agent email tools   off — off (your choice; default)",
+        "a: Agent email tools on/off (default off",
+    ] {
+        assert!(s.contains(want), "missing {want:?}:\n{s}");
+    }
+    h.drain_cmds();
+    h.key(b"a");
+    h.turns(2);
+    let acts = email_actions(h.drain_cmds());
+    assert_eq!(acts.len(), 1, "{acts:?}");
+    assert_eq!(acts[0].0, "email Agent email tools on");
+    assert_eq!(acts[0].1, vec!["agent-tools".to_string(), "on".to_string()]);
+
+    let mut on = email_doc(true);
+    on["agent_tools"] = json!({"enabled": true, "active": true, "reason": ""});
+    h.store.email.set(Loadable::Ready(on));
+    let s = h.turns(2);
+    assert!(
+        s.contains("on: your agents and workflows have the email tools"),
+        "{s}"
+    );
+    h.key(b"a");
+    h.turns(2);
+    let acts = email_actions(h.drain_cmds());
+    assert_eq!(
+        acts[0].1,
+        vec!["agent-tools".to_string(), "off".to_string()]
     );
 }
 

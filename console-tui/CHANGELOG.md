@@ -8,6 +8,10 @@ All notable changes, one entry per build wave, each with its gate line
 
 ### Added
 
+- `a` on the Email screen: **Agent email tools** on/off (default off; `abstractcore
+  email agent-tools on|off`), shown in the Account block with its state and reason.
+  The screen names the account it configures: this install's, with its core
+  settings file.
 - **Email** screen (`@`, after Engines): the account, the last connection test
   with its cause and fix, the recipient policy and the send limits — the web
   console's Email tab, same fields and words. `c` connect (Save and test), `t`

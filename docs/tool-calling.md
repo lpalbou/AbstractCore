@@ -237,11 +237,25 @@ Two properties are stated in the tool schemas and matter operationally:
 
 **Email tools (opt-in):**
 
-`abstractcore.tools.comms_tools` provides `list_email_accounts`, `list_emails`, `search_emails`,
-`read_email`, `get_email_attachment` (IMAP, read-only) and `send_email`, `reply_email` (SMTP) for
-the account connected in AbstractCore's settings (`abstractcore email connect`, see
-[Email](email.md)). The model never chooses the account's server, sender or credentials, and
-results never contain a password, host or user name. Behavior you can rely on:
+`abstractcore.tools.comms_tools` provides `list_email_accounts`, `list_email_folders`,
+`list_emails`, `search_emails`, `read_email`, `get_email_attachment` (IMAP, read-only) and
+`send_email`, `reply_email` (SMTP) for the account connected in AbstractCore's settings
+(`abstractcore email connect`, see [Email](email.md)). The model never chooses the account's
+server, sender or credentials, and results never contain a password, host or user name. Behavior
+you can rely on:
+
+- **Off until you turn it on.** The tools use the local account only when **Agent email tools**
+  is on (`abstractcore email agent-tools on`, or the consoles); otherwise each call answers
+  `email_agent_tools_off` with that command.
+- **Pages, not truncation.** `list_emails` and `search_emails` return at most `limit` messages
+  (1 to 100; a larger value is refused with `email_invalid_settings`) plus `has_more` and
+  `next_cursor`; call again with `cursor=next_cursor` (same filters) for the next page.
+  `search_emails` also filters on `has_attachment`. Each message carries `has_attachments`,
+  `reply_to`, `in_reply_to`, `importance`, `x_priority`, `priority` and `list_unsubscribe`.
+- **Bodies without attachments.** `read_email` downloads only the text and HTML parts; the
+  attachments are listed and `get_email_attachment` downloads one. A message over the reading
+  limit comes back with `body_text` / `body_html` set to `null`, a `body_skipped` record
+  (`email_message_too_large`) and a notice.
 
 - **Verified TLS, read-only mailbox, whole bodies.** Every connection checks the certificate and
   the host name; the mailbox is opened with EXAMINE and read with BODY.PEEK (nothing is marked

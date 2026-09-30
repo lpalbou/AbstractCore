@@ -324,6 +324,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Email | POST | `/acore/email/policy/check` | Evaluate recipients against the policy | JSON `addresses` |
 | Email | PUT | `/acore/email/limits` | Set the send limits | JSON `per_hour`, `per_day` |
 | Email | PUT | `/acore/email/enabled` | Turn email on or off | JSON `enabled` |
+| Email | PUT | `/acore/email/agent-tools` | Turn **Agent email tools** on or off (default off); the response's `agent_tools` is `{enabled, active, reason}` | JSON `enabled` |
 | Email | PUT | `/acore/email/registered-address` | Set your own address (the default allowlist entry) | JSON `address` |
 | Email | POST | `/acore/email/oauth/start`, `/acore/email/oauth/finish` | OAuth2 sign-in (device code or browser on the server's machine), then connect; `finish` answers `{pending: true}` until the sign-in is approved and a flow is used once | JSON `address`, `provider`, optional `client_id` (empty = the built-in client when registered), `client_secret`, `flow`, `tenant`, `ca_file`; then `flow_id`, `wait_s` (at most 60) |
 | Email | POST | `/acore/email/oauth/cancel` | Drop a pending OAuth2 sign-in (closes its loopback listener) | JSON `flow_id` |

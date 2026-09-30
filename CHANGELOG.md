@@ -44,12 +44,38 @@ Email becomes a configured, encrypted, policy-bound account (target 2.20.0).
 - `abstractcore.testing.mailserver`: hermetic IMAP, SMTP (aiosmtpd) and OAuth2 servers with a
   throwaway CA for tests. `aiosmtpd` joins the `test` extra.
 - Base dependencies `cryptography` and `keyring`.
+- **Agent email tools** (off by default): the email tools use the local account only when it is
+  turned on (`abstractcore email agent-tools on|off`, `PUT /acore/email/agent-tools`, the web
+  console's Email tab, `a` on the terminal console's Email screen); otherwise they answer
+  `email_agent_tools_off`. The settings document carries `agent_tools: {enabled, active, reason}`
+  (config field `email.agent_tools`). Hosts with their own resolver keep their own switch.
+- Reading by MIME structure: `read_email` / `EmailClient.get` fetch BODYSTRUCTURE and then only
+  the text and HTML parts; `get_email_attachment` / `download_attachment` fetch only that part.
+  A reading limit (`max_message_bytes`, default 25 MiB) returns a typed skip record
+  (`email_message_too_large`, `body_skipped`, bodies `null`) instead of the bodies.
+- Message summaries add `has_attachments`, `reply_to`, `in_reply_to`, `list_unsubscribe` and the
+  typed priority headers `importance`, `x_priority`, `priority`; `search_emails(has_attachment=)`
+  and `SearchCriteria(has_attachment=)`; a `list_email_folders` tool.
+- `list_emails` / `search_emails` return `has_more` and `next_cursor` (pass `cursor=` for the next
+  page); `limit` is 1 to 100 (`MAX_LIST_LIMIT`).
+- Both consoles name the account they configure (the AbstractCore install's, with its settings
+  file); [Email](docs/email.md) explains how it differs from a gateway user's account.
 
 ### Changed
 - `send_email` no longer accepts a `headers` argument (From and Reply-To are always the account's;
   threading headers come from `reply_email`). `read_email`'s `max_body_chars` is accepted and
   ignored: bodies are never truncated.
 - `send_email` results no longer include the SMTP host and user name.
+- Attachment `size` in `read_email` / `MessageDetail` is the part's size on the wire (encoded) as
+  the server reports it; the saved file's size is in the download result.
+- `fetch_new` after a UIDVALIDITY rebuild with nothing to resynchronise returns a new baseline
+  (`reset=True, baseline=True`, cursor at the newest message) instead of a cursor at UID 0.
+- A `limit` above 100 in `list_emails` / `search_emails` is refused with `email_invalid_settings`.
+
+### Removed
+- `abstractcore.tools.email_digests.send_email_digest` (sending outside the tools and the host's
+  approval gate). Render with `render_email_digest_text` and send with `send_email` or
+  `EmailContext.send`.
 - The terminal console's Server screen no longer lists the legacy flat email fields.
 
 ### Migration

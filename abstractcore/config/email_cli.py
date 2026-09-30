@@ -134,7 +134,7 @@ def _agent_tools_text(at: Dict[str, Any]) -> str:
     """The consoles' words for the "Agent email tools" toggle."""
 
     if at.get("active"):
-        return "on: agents have the email tools (policy, limits and approval still apply)"
+        return "on: your agents and workflows have the email tools (policy, limits and approval still apply)"
     reason = str(at.get("reason") or "")
     return f"off — {reason}" if reason else "off"
 

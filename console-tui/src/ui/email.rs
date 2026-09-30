@@ -12,8 +12,13 @@
 //! OAuth2 (Microsoft / Google; the device code or sign-in address shows
 //! while the command waits for the approval), `t` Test, `o` Turn off /
 //! Turn on, `x` Disconnect (confirm), `p` Recipient policy, `l` Send
-//! limits. Every value is passed as `--flag=value`, so a password
-//! or entry starting with `-` cannot be read as a flag.
+//! limits, `a` Agent email tools on/off (default off; `abstractcore
+//! email agent-tools on|off`). Every value is passed as `--flag=value`,
+//! so a password or entry starting with `-` cannot be read as a flag.
+//!
+//! The account shown is the one of this AbstractCore install (the core
+//! settings file); a gateway keeps its own account per user, configured
+//! in the gateway console (My email).
 
 use abstracttui::prelude::*;
 use abstracttui::widgets::{Block, Button};
@@ -38,6 +43,7 @@ pub const HINTS: &[(&str, &str)] = &[
     ("x", "disconnect"),
     ("p", "recipient policy"),
     ("l", "send limits"),
+    ("a", "agent email tools"),
 ];
 
 fn s<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -133,6 +139,32 @@ pub fn oauth_prompt_text(p: &Value) -> String {
     }
 }
 
+/// The "Agent email tools" line (the gateway consoles' words).
+pub fn agent_tools_text(doc: &Value) -> String {
+    let at = doc.get("agent_tools").cloned().unwrap_or(Value::Null);
+    if at.get("active").and_then(Value::as_bool).unwrap_or(false) {
+        return "on: your agents and workflows have the email tools (policy, limits and approval still apply)".into();
+    }
+    match s(&at, "reason") {
+        "" => "off".into(),
+        reason => format!("off — {reason}"),
+    }
+}
+
+/// Which account this screen configures: the core settings of this
+/// install (the file first, so a narrow terminal keeps it).
+pub fn scope_text(doc: &Value) -> String {
+    let file = s(doc, "config_file");
+    let file = if file.is_empty() {
+        "(default file)"
+    } else {
+        file
+    };
+    format!(
+        "Core settings: {file} — the email account of this AbstractCore install (a gateway user's account is set in the gateway console, My email)."
+    )
+}
+
 fn kv(t: &TokenSet, label: &str, value: String) -> View {
     line(vec![
         span(format!("  {:<20}", label), t.text_muted),
@@ -149,7 +181,8 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
             ensure_loaded(&ctx_load);
         });
     }
-    let (c_connect, c_test, c_toggle, c_disc, c_pol, c_lim, c_oauth) = (
+    let (c_connect, c_test, c_toggle, c_disc, c_pol, c_lim, c_oauth, c_agent) = (
+        ctx.clone(),
         ctx.clone(),
         ctx.clone(),
         ctx.clone(),
@@ -246,6 +279,22 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
         .shortcut(KeyChord::plain(Key::Char('l')), move |_| {
             open_limits_form(cx, &c_lim)
         })
+        .shortcut(KeyChord::plain(Key::Char('a')), move |_| {
+            let on = c_agent.store.email.with_untracked(|e| {
+                e.ready()
+                    .and_then(|d| d.get("agent_tools"))
+                    .and_then(|a| a.get("enabled"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            });
+            let state = if on { "off" } else { "on" };
+            send_action(
+                &c_agent,
+                &format!("email Agent email tools {state}"),
+                vec![Arg::p("agent-tools"), Arg::p(state)],
+                None,
+            );
+        })
         .child(body)
         .build()
 }
@@ -321,6 +370,7 @@ fn render(t: &TokenSet, doc: &Value) -> View {
             "Registered address",
             s(doc, "registered_address").to_string(),
         ))
+        .child(kv(t, "Agent email tools", agent_tools_text(doc)))
         .build();
 
     let st = doc.get("status").cloned().unwrap_or(Value::Null);
@@ -409,8 +459,9 @@ fn render(t: &TokenSet, doc: &Value) -> View {
         .child(Block::new().title("Status").child(status.build()).element(t).build())
         .child(Block::new().title("Recipient policy").child(policy.build()).element(t).build())
         .child(Block::new().title("Send limits").child(limits).element(t).build())
+        .child(line(vec![span(format!(" {}", scope_text(doc)), t.text_faint)]))
         .child(line(vec![span(
-            " The mailbox is only read (never marked read, moved or deleted). CLI: abstractcore email status",
+            " a: Agent email tools on/off (default off; they work only with a connected, turned-on account). The mailbox is only read (never marked read, moved or deleted).",
             t.text_faint,
         )]))
         .build()
