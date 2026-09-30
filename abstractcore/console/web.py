@@ -160,6 +160,8 @@ _FRAGMENT_CSS = """
   .acc-root .acc-hint { font-size: var(--font-size-body, 14px); }
   .acc-root .acc-sub, .acc-root .acc-cli-line { font-size: var(--font-size-md, 13px); }
   .acc-root .acc-chip, .acc-root .acc-badge { font-size: var(--font-size-sm, 12px); }
+  /* Links that act as buttons (overview "Manage engines" / "Browse models"): 44 px rows. */
+  .acc-root .acc-sub a, .acc-root .acc-card a { display: inline-flex; align-items: center; min-height: var(--tap-min, 44px); }
 }
 """
 
@@ -197,6 +199,11 @@ body { min-height: var(--vh-full, 100vh); background: var(--bg-primary, #1a1a2e)
 @media (pointer: coarse) {
   .acc-topbar select, .acc-topbar button, .acc-tabs button { min-height: var(--tap-min, 44px); }
   .acc-topbar select { font-size: var(--font-size-input, 16px); }
+  /* WebKit ignores min-height on native-appearance selects (23 px on iOS
+     whatever the CSS says): drop the native look on touch and draw the
+     chevron (the kit 0.3.2 rule; this standalone page does not load the kit's
+     component CSS; embedded, the gateway page styles its selects itself). */
+  select:not([multiple]):where(:not([size]), [size="1"]) { appearance: none; -webkit-appearance: none; min-height: var(--tap-min, 44px); font-size: var(--font-size-input, 16px); padding: 0 32px 0 10px; background-image: var(--af-select-chevron, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23aaa' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")); background-repeat: no-repeat; background-position: right 10px center; }
 }
 """
 

@@ -201,6 +201,12 @@ def test_the_responsive_token_layer_is_carried_and_served() -> None:
     assert KIT_RESPONSIVE_CSS in html
     assert "viewport-fit=cover" in html
     assert "maximum-scale" not in html and "user-scalable" not in html
+    # WebKit ignores min-height on native selects: on touch they drop the native
+    # look (the kit 0.3.2 rule, mirrored because the kit component CSS is not loaded).
+    coarse = html[html.index("@media (pointer: coarse)"):]
+    assert 'select:not([multiple]):where(:not([size]), [size="1"]) { appearance: none;' in coarse
+    # ...but never through the embeddable fragment, whose CSS must stay scoped to .acc-root.
+    assert "select:not([multiple])" not in fragment("models")["css"]
 
 
 def test_theme_sync_refuses_a_kit_without_the_responsive_layer() -> None:
