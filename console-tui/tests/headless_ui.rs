@@ -4791,11 +4791,14 @@ fn arrows_move_the_caret_in_a_focused_text_field() {
     assert_eq!(h.ui.screen.get_untracked(), ui::SCREEN_CATALOG);
     h.key(b"\r");
     h.settle_until("the filter applied", |s| s.contains("filter \"gemmXa\""));
-    assert!(
-        h.mock.called("catalog q=gemmXa engine=- fits=false"),
-        "the caret moved inside the field: {:?}",
-        h.mock.calls()
-    );
+    // The screen shows the filter before the worker thread has made the
+    // call: wait for the call itself (a bare assert here raced the
+    // worker under a loaded parallel run).
+    h.wait_for_call("the caret moved inside the field", |calls| {
+        calls
+            .iter()
+            .any(|c| c == "catalog q=gemmXa engine=- fits=false")
+    });
     assert_eq!(h.ui.screen.get_untracked(), ui::SCREEN_CATALOG);
     // Positive control: the field is closed, Right is global.
     h.key(RIGHT);
@@ -5456,6 +5459,29 @@ fn email_advanced_rules_limits_and_use_this_mailbox() {
         h.ui.email.limits_note.get_untracked(),
         h.ui.write_done.get_untracked()
     );
+
+    // Folder: saved on Enter, without reconnecting.
+    h.click_first_on_row("Folder", "▐");
+    h.key(b"\x1b[F");
+    h.turn();
+    for _ in 0..5 {
+        h.key(b"\x7f");
+        h.turn();
+    }
+    h.type_text("Archive\r");
+    h.turns(2);
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1, "{cmds:?}");
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["folder", "Archive"])
+    );
+    assert_eq!(acts[0].form_id, Some(h.ui.email.fid_folder));
 
     h.click("[x] Use this mailbox");
     let cmds = h.drain_cmds();

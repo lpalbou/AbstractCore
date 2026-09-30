@@ -129,6 +129,13 @@ pub struct EmailUi {
     pub per_hour: Signal<String>,
     pub per_day: Signal<String>,
     seen_limits: Signal<Option<(i64, i64)>>,
+    /// The last values sent (Enter then leaving the field sends once).
+    limits_sent: Signal<Option<(String, String)>>,
+    folder_sent: Signal<Option<String>>,
+    /// Advanced → Folder (saved on Enter or when it loses focus).
+    pub folder_edit: Signal<String>,
+    seen_folder: Signal<Option<String>>,
+    pub folder_note: Signal<Option<Result<String, String>>>,
     pub limits_note: Signal<Option<Result<String, String>>>,
     /// The address a server lookup is running for.
     pub pending_discovery: Signal<Option<String>>,
@@ -137,6 +144,7 @@ pub struct EmailUi {
     pub fid_address: u64,
     pub fid_connect: u64,
     pub fid_limits: u64,
+    pub fid_folder: u64,
 }
 
 impl EmailUi {
@@ -174,6 +182,11 @@ impl EmailUi {
             per_hour: cx.signal(String::new()),
             per_day: cx.signal(String::new()),
             seen_limits: cx.signal(None),
+            limits_sent: cx.signal(None),
+            folder_sent: cx.signal(None),
+            folder_edit: cx.signal(String::new()),
+            seen_folder: cx.signal(None),
+            folder_note: cx.signal(None),
             limits_note: cx.signal(None),
             pending_discovery: cx.signal(None),
             seeded: cx.signal(false),
@@ -181,6 +194,7 @@ impl EmailUi {
             fid_address: next_form_id(),
             fid_connect: next_form_id(),
             fid_limits: next_form_id(),
+            fid_folder: next_form_id(),
         }
     }
 }
@@ -651,6 +665,27 @@ pub(crate) fn limits_action(
     })
 }
 
+/// The folder the mailbox is read from: `email folder <name>` ("" = INBOX).
+pub(crate) fn folder_action(name: &str, form_id: Option<u64>) -> Result<EmailAction, String> {
+    let name = name.trim();
+    if name.starts_with('-') {
+        return Err(format!(
+            "{name:?}: a folder name here cannot start with \"-\"."
+        ));
+    }
+    Ok(EmailAction {
+        label: "Folder".into(),
+        args: vec![Arg::p("folder"), Arg::p(name)],
+        form_id,
+        stdin_secret: None,
+        oauth: false,
+        ok_notice: Some(format!(
+            "The mailbox is read from the folder {}.",
+            if name.is_empty() { "INBOX" } else { name }
+        )),
+    })
+}
+
 fn plain_action(label: &str, args: Vec<Arg>, ok_notice: String) -> EmailAction {
     EmailAction {
         label: label.to_string(),
@@ -864,6 +899,18 @@ fn install_effects(cx: Scope, ctx: &Ctx) {
                 ui.tab_chosen.set(true);
             }
         }
+        let folder = doc
+            .get("imap")
+            .map(|i| s(i, "folder").to_string())
+            .filter(|f| !f.is_empty())
+            .unwrap_or_else(|| "INBOX".into());
+        if ui
+            .seen_folder
+            .with_untracked(|f| f.as_deref() != Some(&folder))
+        {
+            ui.seen_folder.set(Some(folder.clone()));
+            ui.folder_edit.set(folder);
+        }
         if let Some(lim) = doc.get("limits").filter(|l| l.is_object()) {
             let n = |k: &str| lim.get(k).and_then(Value::as_i64).unwrap_or(0);
             let now = (n("per_hour"), n("per_day"));
@@ -897,6 +944,12 @@ fn install_effects(cx: Scope, ctx: &Ctx) {
                     ui.confirm_disconnect.set(false);
                 }
                 Err(e) => ui.connect_error.set(Some(e)),
+            }
+        } else if fid == ui.fid_folder {
+            uis.write_done.set(None);
+            match outcome {
+                Ok(_) => flash(ui, ui.folder_note, "Saved"),
+                Err(e) => ui.folder_note.set(Some(Err(e))),
             }
         } else if fid == ui.fid_limits {
             uis.write_done.set(None);
@@ -1864,12 +1917,14 @@ fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme
                 .seen_limits
                 .get_untracked()
                 .is_some_and(|(sh, sd)| h.trim() == sh.to_string() && d.trim() == sd.to_string());
-            if same {
+            let pending = (h.trim().to_string(), d.trim().to_string());
+            if same || ui.limits_sent.get_untracked().as_ref() == Some(&pending) {
                 return;
             }
             match limits_action(&h, &d, Some(ui.fid_limits)) {
                 Ok(a) => {
                     ui.limits_note.set(None);
+                    ui.limits_sent.set(Some(pending));
                     send(&ctx, a);
                 }
                 Err(e) => ui.limits_note.set(Some(Err(e))),
@@ -1939,31 +1994,83 @@ fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme
             ),
         )
     });
-    let folder = dyn_view(col(), move || {
-        let t = theme.get().tokens;
-        let f = store
-            .email
-            .with(|e| {
-                e.ready()
-                    .and_then(|d| d.get("imap").cloned())
-                    .map(|i| s(&i, "folder").to_string())
-            })
-            .filter(|f| !f.is_empty())
-            .unwrap_or_else(|| "INBOX".into());
-        Element::new()
-            .style(LayoutStyle::row().gap(1).h(1))
-            .child(
-                Element::new()
-                    .style(LayoutStyle::default().w(LABEL_W).h(1).shrink(0.0))
-                    .child(line(vec![span("Folder", t.text_muted)]))
-                    .build(),
-            )
-            .child(line(vec![
-                span(f, t.text),
-                span("  (set in Server settings when you connect)", t.text_faint),
-            ]))
-            .build()
-    });
+    let save_folder = {
+        let ctx = ctx.clone();
+        move || {
+            let name = ui.folder_edit.get_untracked();
+            let trimmed = name.trim().to_string();
+            if ui.seen_folder.get_untracked().as_deref() == Some(trimmed.as_str())
+                || ui.folder_sent.get_untracked().as_deref() == Some(trimmed.as_str())
+            {
+                return;
+            }
+            let connected = store
+                .email
+                .with_untracked(|e| e.ready().map(|d| b(d, "configured")).unwrap_or(false));
+            if !connected {
+                ui.folder_note.set(Some(Err(NO_MAILBOX.into())));
+                return;
+            }
+            match folder_action(&name, Some(ui.fid_folder)) {
+                Ok(a) => {
+                    ui.folder_note.set(None);
+                    ui.folder_sent.set(Some(trimmed));
+                    send(&ctx, a);
+                }
+                Err(e) => ui.folder_note.set(Some(Err(e))),
+            }
+        }
+    };
+    let folder_focused = cx.signal(false);
+    let folder_was = cx.signal(false);
+    {
+        let save = save_folder.clone();
+        cx.effect(move || {
+            let f = folder_focused.get();
+            if folder_was.get_untracked() && !f {
+                save();
+            }
+            folder_was.set(f);
+        });
+    }
+    let folder = Element::new()
+        .style(LayoutStyle::column())
+        .child(
+            Element::new()
+                .style(LayoutStyle::row().gap(2).h(1))
+                .child(field_w(
+                    &t,
+                    "Folder",
+                    LABEL_W,
+                    TextInput::new()
+                        .layout(LayoutStyle::default().w(24).h(1))
+                        .value(ui.folder_edit)
+                        .on_submit(move |_| save_folder())
+                        .element(cx, &t)
+                        .focus_signal(folder_focused)
+                        .build(),
+                ))
+                .child(dyn_view(
+                    LayoutStyle::row().h(1).w(9).shrink(0.0),
+                    move || {
+                        let t = theme.get().tokens;
+                        match ui.folder_note.get() {
+                            Some(Ok(w)) => line(vec![span_bold(format!("✓ {w}"), t.ok)]),
+                            _ => empty(),
+                        }
+                    },
+                ))
+                .build(),
+        )
+        .child(dyn_view(col(), move || {
+            let t = theme.get().tokens;
+            match ui.folder_note.get() {
+                Some(Err(e)) => wrapped_bold(format!("✗ {e}"), t.error),
+                _ => empty(),
+            }
+        }))
+        .child(helper(&t, "The folder your agents read. Empty = INBOX."))
+        .build();
     let ctx_use = ctx.clone();
     let notice = store.notice;
     let use_mailbox = SwitchRow::new(
@@ -2219,6 +2326,19 @@ mod tests {
             limits_action("x", "1", None).unwrap_err(),
             "Per hour must be a whole number."
         );
+    }
+
+    #[test]
+    fn folder_action_sets_the_folder_or_inbox() {
+        let a = folder_action(" Archive ", Some(4)).unwrap();
+        assert_eq!(spawned_args(&a), ["email", "folder", "Archive", "--json"]);
+        assert_eq!(
+            a.ok_notice.as_deref(),
+            Some("The mailbox is read from the folder Archive.")
+        );
+        let inbox = folder_action("", None).unwrap();
+        assert_eq!(spawned_args(&inbox), ["email", "folder", "", "--json"]);
+        assert!(folder_action("--yes", None).is_err(), "never a flag");
     }
 
     #[test]
