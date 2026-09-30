@@ -751,7 +751,7 @@ fn probe_generation(
         if row.get("enabled").and_then(Value::as_bool) == Some(false) {
             return (
                 Verdict::NotProven,
-                format!("profile {id} is not enabled — open it (e on Providers) and check [x] Enabled before testing"),
+                format!("profile {id} is not enabled — open it (e on Providers) and check [x] enabled before testing"),
             );
         }
         if !s("api_key").is_empty() || !s("api_key_env_var").is_empty() {
@@ -2023,7 +2023,7 @@ mod tests {
         let (v, d) = probe_generation(&s.cfg_path(), &never, None, None);
         assert_eq!(v, crate::probes::Verdict::NotProven);
         assert!(
-            d.contains("is not enabled") && d.contains("[x] Enabled"),
+            d.contains("is not enabled") && d.contains("[x] enabled"),
             "{d}"
         );
 

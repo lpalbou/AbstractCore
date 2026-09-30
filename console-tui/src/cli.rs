@@ -903,6 +903,59 @@ mod tests {
         assert_eq!(email_error_text(&json!({"ok": true})), None);
     }
 
+    /// `email discover` answers "not found" with exit 1 and a document:
+    /// that is an answer, not a failure; a typed refusal is an error
+    /// with its words and code. The argv is `email discover <addr> --json`.
+    #[test]
+    fn email_discover_reads_found_and_not_found_and_refusals() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "acore-console-discover-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("abstractcore");
+        std::fs::write(
+            &bin,
+            r#"#!/bin/sh
+[ "$1 $2 $4" = "email discover --json" ] || { echo "bad argv: $*" >&2; exit 9; }
+case "$3" in
+  me@nowhere.test) echo '{"address":"me@nowhere.test","found":false,"tried":[]}'; exit 1;;
+  bad) echo '{"ok":false,"error":{"code":"email_invalid_settings","cause":"bad is not valid.","fix":"Give name@example.com."}}'; exit 1;;
+  *) echo "{\"address\":\"$3\",\"found\":true}"; exit 0;;
+esac
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let cli = CoreCli::new(bin);
+        let t = Duration::from_secs(10);
+        let run = |addr: &str| {
+            // ETXTBSY guard (see fake_cli): retry a busy first exec.
+            for _ in 0..50 {
+                match cli.run_email_discover(addr, t) {
+                    Err(e) if e.kind == CliErrorKind::Spawn => {
+                        std::thread::sleep(Duration::from_millis(20))
+                    }
+                    other => return other,
+                }
+            }
+            cli.run_email_discover(addr, t)
+        };
+        let found = run("me@fastmail.test").unwrap();
+        assert_eq!(found["found"], serde_json::json!(true));
+        let missing = run("me@nowhere.test").unwrap();
+        assert_eq!(missing["found"], serde_json::json!(false));
+        let err = run("bad").unwrap_err();
+        assert_eq!(
+            err.message,
+            "bad is not valid. — Fix: Give name@example.com."
+        );
+        assert_eq!(err.reason_code.as_deref(), Some("email_invalid_settings"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn error_line_prefers_the_cli_error() {
         let out = "some noise\n❌ Error: Unknown provider 'x'\nmore";
