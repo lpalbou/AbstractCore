@@ -37,6 +37,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Web console: Copy buttons work when the console is opened over plain http from another machine
   (textarea fallback when the Clipboard API is unavailable) and say "Copy failed — select and
   copy" when nothing was copied.
+- A settings save keeps the keys this version does not know in `abstractcore.json`. The first save
+  after a restart (any setter: a route, a default, a timeout) removed a key you added yourself (a
+  top-level key, `vision.user_note`) and every key a newer AbstractCore had written, for example
+  after a downgrade. Such keys are now written back unchanged: top-level keys, unknown fields of
+  every section, unknown `capability_defaults` keys and route keys this version cannot parse,
+  unknown `provider_profiles` keys and unknown columns of a profile that still exists. Known keys
+  are validated as before, and a route or profile you delete stays deleted.
+
+### Documentation
+- Docker: the server examples name the current image, `ghcr.io/lpalbou/abstractcore-server:2.21.0`
+  (they still named 2.13.12).
 
 ## [2.21.0] - 2026-09-30
 

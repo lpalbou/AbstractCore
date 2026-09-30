@@ -1136,6 +1136,11 @@ class ConfigurationManager:
             'email': asdict(self.config.email),
         }
 
+        # Keys this version does not know (a user's own key, a key a newer core
+        # wrote) ride along unchanged; without this the merge below reads
+        # their absence from `mine` as a delete (defect D-B, 2026-09-30).
+        self._carry_unknown_store_keys(config_dict)
+
         # The merge is a no-op when nothing else wrote since this manager
         # loaded; `_read_store_document()` returning None (absent/unreadable/
         # not an object) means there is nothing to merge against.
@@ -1182,6 +1187,98 @@ class ConfigurationManager:
             os.chmod(self.config_file, 0o600)
         except Exception:
             pass
+
+    # Sections serialised whole from a dataclass (`asdict`): every field is
+    # always present in `mine`, so a baseline sub-key absent from it is a key
+    # this version does not know.
+    _DATACLASS_STORE_SECTIONS = (
+        "vision", "audio", "video", "embeddings", "app_defaults", "default_models",
+        "api_keys", "server", "cache", "logging", "streaming", "timeouts",
+        "offline", "maintenance", "email",
+    )
+    _CAPABILITY_DEFAULTS_KEYS = frozenset({"version", "routes", "seeded"})
+
+    def _carry_unknown_store_keys(self, config_dict: Dict[str, Any]) -> None:
+        """Copy the keys this version does not know from the baseline into `config_dict`.
+
+        THE RULE: a save publishes the sections this version knows and keeps
+        everything else in the document it loaded, unchanged in value.
+        `_dict_to_config` filters each section down to the fields this version
+        knows, so without this every unknown key -- a user's own top-level key,
+        a `vision.user_note`, a column or route a NEWER core wrote before a
+        downgrade -- is absent from `mine`, and the three-way merge reads
+        "in my baseline, absent from mine, unchanged on disk" as a DELETE.
+
+        Carried from the baseline (so the merge sees them as unchanged by this
+        manager, and another writer's later change or delete of them wins):
+
+          - top-level keys that are not a known section;
+          - sub-keys of the dataclass sections that are not fields;
+          - `capability_defaults` keys other than version/routes/seeded, and
+            route keys this version cannot parse (a future modality); a route
+            row's unknown fields already survive as `options`;
+          - `provider_profiles` keys other than `profiles`, and unknown columns
+            of a profile row that is still present (a deleted row stays deleted).
+
+        Known keys are never carried: a known row or field absent from `mine`
+        is a deliberate delete (`clear-default`, `delete-provider`) or a value
+        that serialises by omission (`seeded: None`).
+        """
+        base = self._store_baseline
+        if not isinstance(base, dict) or not base:
+            return
+
+        for key, value in base.items():
+            if key not in config_dict:
+                config_dict[key] = copy.deepcopy(value)
+
+        for section in self._DATACLASS_STORE_SECTIONS:
+            raw = base.get(section)
+            mine = config_dict.get(section)
+            if not isinstance(raw, dict) or not isinstance(mine, dict):
+                continue
+            for key, value in raw.items():
+                if key not in mine:
+                    mine[key] = copy.deepcopy(value)
+
+        raw_caps = base.get("capability_defaults")
+        mine_caps = config_dict.get("capability_defaults")
+        # Only the `{version, routes}` layout: in the legacy flat layout the
+        # top-level keys ARE routes, which this version has parsed.
+        if isinstance(raw_caps, dict) and isinstance(raw_caps.get("routes"), dict) and isinstance(mine_caps, dict):
+            for key, value in raw_caps.items():
+                if key not in self._CAPABILITY_DEFAULTS_KEYS and key not in mine_caps:
+                    mine_caps[key] = copy.deepcopy(value)
+            mine_routes = mine_caps.setdefault("routes", {})
+            if isinstance(mine_routes, dict):
+                for route_key, route in raw_caps["routes"].items():
+                    if route_key in mine_routes:
+                        continue
+                    try:
+                        split_capability_default_route(route_key)
+                    except Exception:
+                        mine_routes[route_key] = copy.deepcopy(route)
+
+        raw_profiles = base.get("provider_profiles")
+        mine_profiles = config_dict.get("provider_profiles")
+        if (
+            isinstance(raw_profiles, dict)
+            and isinstance(raw_profiles.get("profiles"), dict)
+            and isinstance(mine_profiles, dict)
+        ):
+            for key, value in raw_profiles.items():
+                if key != "profiles" and key not in mine_profiles:
+                    mine_profiles[key] = copy.deepcopy(value)
+            mine_rows = mine_profiles.get("profiles")
+            if isinstance(mine_rows, dict):
+                known_columns = {f.name for f in fields(ProviderProfile)}
+                for profile_id, raw_row in raw_profiles["profiles"].items():
+                    mine_row = mine_rows.get(profile_id)
+                    if not isinstance(raw_row, dict) or not isinstance(mine_row, dict):
+                        continue
+                    for column, value in raw_row.items():
+                        if column not in known_columns and column not in mine_row:
+                            mine_row[column] = copy.deepcopy(value)
 
     def _yield_seed_upgrade_to_disk(self, config_dict: Dict[str, Any], disk: Dict[str, Any]) -> None:
         """Let a route another writer saved win over this manager's in-memory seed upgrade.

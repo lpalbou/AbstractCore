@@ -2274,7 +2274,7 @@ on `abstractcore[gpu]` when you want local native inference engines.
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.13.12
+docker pull ghcr.io/lpalbou/abstractcore-server:2.21.0
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -2295,7 +2295,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.13.12
+  ghcr.io/lpalbou/abstractcore-server:2.21.0
 ```
 
 `ABSTRACTCORE_AUTH_TOKEN` is the AbstractCore server auth token. Clients send it as `Authorization: Bearer <token>`.
@@ -2317,7 +2317,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_AUTH_TOKEN="$ABSTRACTCORE_AUTH_TOKEN" \
   -e OPENAI_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.13.12
+  ghcr.io/lpalbou/abstractcore-server:2.21.0
 ```
 
 ### Docker Compose
@@ -2327,7 +2327,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.13.12
+    image: ghcr.io/lpalbou/abstractcore-server:2.21.0
     ports:
       - "8000:8000"
     environment:
