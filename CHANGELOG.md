@@ -85,6 +85,9 @@ know, and transcription routes written with a download provider are repaired. Th
   `abstractcore email folder`. See [Terminal console](docs/console-tui.md#email-keys).
 
 ### Fixed
+- A Hugging Face model on a computer with no Hugging Face cache yet reads as not downloaded
+  (`absent`, downloadable), not `unknown`: a fresh install's Transcription card said "Unknown" and
+  "Download all" skipped the model.
 - Transcription showed "Engine missing: unknown AbstractVoice engine 'huggingface'": the
   recommended download plan asked AbstractVoice for the engine of the download provider
   (`huggingface`) instead of the route's engine (`faster-whisper`). Plan rows carry
