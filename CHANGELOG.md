@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
 ### Added
+
 - `McpClient.initialize()` and `McpStdioClient.initialize()` run the MCP handshake explicitly and
   return the server's `initialize` result (`serverInfo`, `protocolVersion`, `capabilities`);
   `initialize_result` keeps it. `list_tools_page(cursor=None)` returns one `tools/list` page and
@@ -15,7 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `McpStdioClient(..., inherit_env=False)` starts the server with exactly the given `env`
   instead of this process's environment plus `env`.
 
+### Changed
+
+- A stored policy written before the two lists existed migrates on load: an allowlist's entries
+  become Always allowed, a denylist's entries become Always denied, the mode is kept. The stored
+  and returned policy keeps `entries` (the list the mode uses), so readers of `{mode, entries}`
+  keep their meaning; `{mode, entries}` bodies are still accepted.
+- A domain entry now also covers its subdomains (`example.com` matches `a@mail.example.com`,
+  never `a@badexample.com`); before, each subdomain needed its own entry.
+- The account's own addresses (registered address and mailbox address) are always allowed; the
+  email context, `POST /acore/email/policy/check` and `abstractcore email policy check` pass them.
+
 ### Fixed
+
 - `McpClient` (Streamable HTTP) now sends `initialize` and the `notifications/initialized`
   notification before its first request, sends the server's `MCP-Session-Id` on every later
   request and the negotiated `MCP-Protocol-Version`, and reads responses sent as
@@ -41,18 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `abstractcore email policy set --always-allow <entry> --always-deny <entry>`. `policy show`
   prints both lists. Each verdict carries `source` (`self`, `always_deny`, `always_allow`,
   `mode`).
-
-### Changed
-- A stored policy written before the two lists existed migrates on load: an allowlist's entries
-  become Always allowed, a denylist's entries become Always denied, the mode is kept. The stored
-  and returned policy keeps `entries` (the list the mode uses), so readers of `{mode, entries}`
-  keep their meaning; `{mode, entries}` bodies are still accepted.
-- A domain entry now also covers its subdomains (`example.com` matches `a@mail.example.com`,
-  never `a@badexample.com`); before, each subdomain needed its own entry.
-- The account's own addresses (registered address and mailbox address) are always allowed; the
-  email context, `POST /acore/email/policy/check` and `abstractcore email policy check` pass them.
-
-### Fixed
 - In denylist mode the account's own address was denied when a caller passed it as "self" (it was
   merged into the mode's matched set). Self is now its own first precedence step.
 - Changing the registered address stored the policy as an object instead of its dict form.
