@@ -47,7 +47,7 @@ def test_cli_connect_tests_then_stores_with_default_policy_and_limits(imap, smtp
     doc = json.loads(capsys.readouterr().out)
     assert doc["configured"] and doc["address"] == ME and doc["secret_set"]
     assert doc["secret_storage"] == "os-keychain"
-    assert doc["policy"] == {"mode": "allowlist", "entries": [ME], "always_allow": [ME], "always_deny": [], "default": False}
+    assert doc["policy"] == {"mode": "allowlist", "entries": [ME], "always_allow": [ME], "always_deny": [], "default": False, "self_addresses": [ME]}
     assert doc["limits"]["per_hour"] == 100 and doc["limits"]["per_day"] == 1000
     assert doc["limits"]["source"] == "default"
     assert doc["status"]["legs"] == {"imap": {"ok": True}, "smtp": {"ok": True}}

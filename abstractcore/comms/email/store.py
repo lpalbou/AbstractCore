@@ -139,6 +139,21 @@ class EmailSettings:
         return tuple(a for a in (self.registered_address, self.account.address if self.account else "") if a)
 
 
+def _normalized_selves(st: "EmailSettings") -> List[str]:
+    """The own addresses in the policy's comparable form (what the consoles show as "your
+    address", always allowed; never a removable entry)."""
+
+    out: List[str] = []
+    for a in st.self_addresses:
+        try:
+            n = normalize_address(a)
+        except ValueError:
+            continue
+        if n not in out:
+            out.append(n)
+    return out
+
+
 def default_display_name(address: str) -> str:
     """The sender name of a new connection nobody named: the address's local part
     (`jean.dupont@example.org` -> `jean.dupont`)."""
@@ -654,7 +669,7 @@ class EmailAccountStore:
             "secret_storage": {"keyring": "os-keychain", "file": "key-file"}.get(location, ""),
             "secret_warning": KEY_FILE_WARNING if location == "file" else "",
             "policy": (
-                {**st.policy.to_dict(), "default": st.policy_is_default}
+                {**st.policy.to_dict(), "default": st.policy_is_default, "self_addresses": _normalized_selves(st)}
                 if st
                 else None
             ),

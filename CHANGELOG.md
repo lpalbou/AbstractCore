@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   address is allowed, then Always denied refuses, then Always allowed allows, then the mode.
   To, Cc and Bcc are all checked, for agent sends and notifications alike. A refusal reads
   "Not sent: x@denied.gov is on your Always denied list (denied.gov)."
+- `GET /acore/email` policy carries `self_addresses` (the own addresses, normalised: always
+  allowed, shown fixed by the consoles).
 - `RecipientPolicy.build(..., always_allow=, always_deny=)`, `with_changes(always_allow=,
   always_deny=)` (a given list replaces that list), `EmailAccountStore.set_policy(always_allow=,
   always_deny=)`, `PUT /acore/email/policy` fields `always_allow` / `always_deny`, and
@@ -37,8 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In denylist mode the account's own address was denied when a caller passed it as "self" (it was
   merged into the mode's matched set). Self is now its own first precedence step.
 - Changing the registered address stored the policy as an object instead of its dict form.
-- The web console's Email tab no longer copies the Allowed list into the Denied list when the mode
-  changes: the chips show the list the selected mode uses.
+- The web console's Email tab (Advanced) shows the mode ("Only the Allowed list" / "Anyone not on
+  the Denied list"), the **Always allowed** and **Always denied** lists and the sentence "Denied
+  always wins. Your own address is always allowed. A domain also covers its subdomains."; every
+  add, remove or mode change saves at once. The own address shows as a fixed chip ("(your
+  address)", not removable). The limits read "Send at most [n] per hour and [n] per day.".
 
 ## [2.22.0] - 2026-10-01
 
