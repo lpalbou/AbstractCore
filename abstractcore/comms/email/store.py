@@ -131,6 +131,13 @@ class EmailSettings:
             return self.registered_address
         return self.account.address if self.account else ""
 
+    @property
+    def self_addresses(self) -> tuple:
+        """Every own address (registered address and mailbox address): always allowed by the
+        recipient policy."""
+
+        return tuple(a for a in (self.registered_address, self.account.address if self.account else "") if a)
+
 
 def default_display_name(address: str) -> str:
     """The sender name of a new connection nobody named: the address's local part
@@ -356,9 +363,16 @@ class EmailAccountStore:
         add: Sequence[str] = (),
         remove: Sequence[str] = (),
         clear: bool = False,
+        always_allow: Optional[Sequence[str]] = None,
+        always_deny: Optional[Sequence[str]] = None,
     ) -> Dict[str, Any]:
+        """Change the recipient policy. `always_allow` / `always_deny`, when given, replace
+        that list; None keeps it."""
+
         current = self.settings().policy
-        new = current.with_changes(mode=mode, add=add, remove=remove, clear=clear)
+        new = current.with_changes(
+            mode=mode, add=add, remove=remove, clear=clear, always_allow=always_allow, always_deny=always_deny
+        )
         self._update(policy=new.to_dict())
         return self.public()
 
@@ -464,8 +478,9 @@ class EmailAccountStore:
                     f"The registered address {addr!r} is not a valid email address.",
                     "Give the address as name@example.test.",
                 ) from None
-        # The default allowlist holds the registered address: when it changes, the entry follows
-        # (the old one goes, the new one comes), so the policy the console shows stays true.
+        # The default Always allowed list holds the registered address: when it changes, the
+        # entry follows (the old one goes, the new one comes), so the policy the console shows
+        # stays true.
         try:
             st = self.settings()
             old_addr = (st.registered_address or "").strip().lower()
@@ -474,7 +489,7 @@ class EmailAccountStore:
             old_addr, pol = "", None
         self._update(registered_address=addr)
         if pol is not None and pol.mode == "allowlist":
-            entries = list(pol.entries)
+            entries = list(pol.always_allow)
             if old_addr and old_addr in entries:
                 entries = [e for e in entries if e != old_addr]
             if addr:
@@ -484,8 +499,8 @@ class EmailAccountStore:
                     norm = ""
                 if norm and norm not in entries:
                     entries.append(norm)
-            if tuple(entries) != tuple(pol.entries):
-                self._update(policy=replace(pol, entries=tuple(entries)))
+            if tuple(entries) != tuple(pol.always_allow):
+                self._update(policy=replace(pol, always_allow=tuple(entries)).to_dict())
         return self.public()
 
     def context(self, *, ssl_context: Optional[ssl.SSLContext] = None, require_enabled: bool = True) -> EmailContext:
@@ -639,7 +654,7 @@ class EmailAccountStore:
             "secret_storage": {"keyring": "os-keychain", "file": "key-file"}.get(location, ""),
             "secret_warning": KEY_FILE_WARNING if location == "file" else "",
             "policy": (
-                {"mode": st.policy.mode, "entries": list(st.policy.entries), "default": st.policy_is_default}
+                {**st.policy.to_dict(), "default": st.policy_is_default}
                 if st
                 else None
             ),

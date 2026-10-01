@@ -2039,7 +2039,9 @@ _JS_TEMPLATE = r"""
     const listeners = [];
     function on(name, type, fn) { const e = el(name); if (e) { e.addEventListener(type, fn); listeners.push([e, type, fn]); } }
     const onEnter = (fn) => (e) => { if (e.key === "Enter") { e.preventDefault(); fn(); } };
-    on("email-policy-mode", "change", () => { renderEntries(); savePolicy(); });
+    // The chips under the mode are the list that mode uses (Only these -> Always allowed,
+    // Everyone except these -> Always denied): switching the mode shows that list, never copies one into the other.
+    on("email-policy-mode", "change", () => { entries = doc.policy[val("email-policy-mode") === "allowlist" ? "always_allow" : "always_deny"].slice(); renderEntries(); savePolicy(); });
     on("email-per-hour", "change", saveLimits);
     on("email-per-day", "change", saveLimits);
     on("email-folder", "change", saveFolder);

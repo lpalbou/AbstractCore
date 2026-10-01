@@ -39,13 +39,13 @@ def test_normalisation_is_case_insensitive_and_idna() -> None:
     assert evaluate(policy, to=["BOSS@corp.test", "anyone@XN--BCHER-KVA.example"]).allowed
 
 
-def test_domain_entry_matches_that_domain_only_not_subdomains() -> None:
+def test_domain_entry_covers_its_subdomains_by_dot_suffix_only() -> None:
+    """Round 3 recipient rules: "A domain also covers its subdomains" (dot-suffix, never a
+    bare string suffix)."""
     policy = RecipientPolicy.build("allowlist", ["corp.test"])
-    decision = evaluate(policy, to=["a@corp.test", "b@eu.corp.test"])
+    decision = evaluate(policy, to=["a@corp.test", "b@eu.corp.test", "c@badcorp.test"])
     assert not decision.allowed
-    assert [v.address for v in decision.refused] == ["b@eu.corp.test"]
-    policy2 = RecipientPolicy.build("allowlist", ["corp.test", "eu.corp.test"])
-    assert evaluate(policy2, to=["b@eu.corp.test"]).allowed
+    assert [v.address for v in decision.refused] == ["c@badcorp.test"]
 
 
 def test_allowlist_refuses_the_whole_message_naming_addresses_fields_and_rule() -> None:
@@ -107,9 +107,13 @@ def test_display_names_are_ignored_by_recipient_parsing() -> None:
 
 def test_policy_edits_add_remove_mode() -> None:
     p = RecipientPolicy.build("allowlist", ["a@example.test"])
-    p2 = p.with_changes(add=["example.org"], mode="denylist")
-    assert p2.mode == "denylist" and p2.entries == ("a@example.test", "example.org")
+    assert p.with_changes(add=["example.org"]).entries == ("a@example.test", "example.org")
+    # add/remove/clear act on the list the (new) mode uses: denylist -> Always denied.
+    p2 = p.with_changes(add=["example.org", "a@example.test"], mode="denylist")
+    assert p2.mode == "denylist" and p2.entries == ("example.org", "a@example.test")
+    assert p2.always_allow == ("a@example.test",)  # the Allowed list is kept
     assert p2.with_changes(remove=["A@EXAMPLE.test"]).entries == ("example.org",)
+    assert p2.with_changes(clear=True).always_deny == () and p2.with_changes(clear=True).always_allow == ("a@example.test",)
     with pytest.raises(EmailInvalidSettings):
         p2.with_changes(remove=["missing@example.test"])
 
@@ -231,7 +235,7 @@ def test_secret_repr_and_str_redact() -> None:
 
 
 def test_self_follows_the_registered_address_in_allowlist_mode() -> None:
-    """`self_addresses` widens an allowlist for the caller that passes them (never a denylist)."""
+    """`self_addresses` are always allowed, whatever the mode."""
     from abstractcore.comms.email.policy import RecipientPolicy, evaluate
 
     policy = RecipientPolicy.default_for("old@example.test")
@@ -241,7 +245,11 @@ def test_self_follows_the_registered_address_in_allowlist_mode() -> None:
     assert fresh.allowed is True
     own = evaluate(policy, to=["mailbox@example.test"], self_addresses=("new@example.test", "mailbox@example.test"))
     assert own.allowed is True
-    # Anyone else is still refused; a denylist is not widened.
+    # Anyone else is still refused.
     assert evaluate(policy, to=["boss@example.test"], self_addresses=("new@example.test",)).allowed is False
-    deny = RecipientPolicy(mode="denylist", entries=("new@example.test",))
-    assert evaluate(deny, to=["new@example.test"], self_addresses=("new@example.test",)).allowed is False
+    # Self is its own precedence step (round 3, recipient rules): the own address is allowed in
+    # denylist mode too, even when the denylist names it; before, self was merged into the
+    # mode's matched set and a denylist therefore DENIED it.
+    deny = RecipientPolicy.build("denylist", ["new@example.test"])
+    assert evaluate(deny, to=["new@example.test"], self_addresses=("new@example.test",)).allowed is True
+    assert evaluate(deny, to=["new@example.test"]).allowed is False

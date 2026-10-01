@@ -89,7 +89,12 @@ class EmailContext:
             bcc = parse_recipients(list(message.bcc))
         except ValueError as exc:
             raise EmailInvalidMessage(f"A recipient is not valid: {exc}.", "Give recipients as name@example.test.") from None
-        return evaluate(self.policy, to=to, cc=cc, bcc=bcc)
+        return evaluate(self.policy, to=to, cc=cc, bcc=bcc, self_addresses=self.self_addresses())
+
+    def self_addresses(self) -> tuple:
+        """The account's own addresses (registered address, mailbox address): always allowed."""
+
+        return tuple(a for a in (self.registered_address, self.account.address if self.account else "") if a)
 
     def send(self, message: OutgoingMessage) -> SendResult:
         return guarded_send(self, message)

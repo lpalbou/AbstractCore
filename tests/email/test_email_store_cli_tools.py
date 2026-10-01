@@ -47,7 +47,7 @@ def test_cli_connect_tests_then_stores_with_default_policy_and_limits(imap, smtp
     doc = json.loads(capsys.readouterr().out)
     assert doc["configured"] and doc["address"] == ME and doc["secret_set"]
     assert doc["secret_storage"] == "os-keychain"
-    assert doc["policy"] == {"mode": "allowlist", "entries": [ME], "default": False}
+    assert doc["policy"] == {"mode": "allowlist", "entries": [ME], "always_allow": [ME], "always_deny": [], "default": False}
     assert doc["limits"]["per_hour"] == 100 and doc["limits"]["per_day"] == 1000
     assert doc["limits"]["source"] == "default"
     assert doc["status"]["legs"] == {"imap": {"ok": True}, "smtp": {"ok": True}}
@@ -204,7 +204,7 @@ def test_send_email_enforces_policy_on_to_cc_bcc_and_sends_nothing(imap, smtp, c
     t = _tools()
     refused = t.send_email(to=ME, bcc="leak@attacker.test", subject="s", body_text="b")
     assert refused["success"] is False and refused["error_code"] == "email_policy_refused"
-    assert refused["refused"] == [{"address": "leak@attacker.test", "field": "bcc", "allowed": False, "rule": "allowlist", "reason": "not in the allowlist"}]
+    assert refused["refused"] == [{"address": "leak@attacker.test", "field": "bcc", "allowed": False, "rule": "allowlist", "reason": "not in the allowlist", "source": "mode"}]
     assert smtp.messages == []
     ok = t.send_email(to=ME, subject="Status", body_text="all good")
     assert ok["success"] and ok["accepted"] == [ME] and len(smtp.messages) == 1
