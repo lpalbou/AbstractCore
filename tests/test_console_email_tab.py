@@ -46,8 +46,15 @@ def test_email_tab_has_the_design_order_and_no_save_per_section() -> None:
     for gone in ("Save and test", "Save policy", "Save limits", "Save notifications", "Turn on", "Turn off", "Registered address", "optional", "example.com\"", "smtp.example.com", "imap.example.com"):
         assert gone not in html, gone
     assert 'placeholder=' not in html.split('data-acc="email-advanced"')[0]  # no placeholders in the forms
-    # Tabs Google / Microsoft / Other, ONE Connect, the connected state's Test + Disconnect.
-    assert [m for m in re.findall(r'role="tab"[^>]*>([^<]+)<', html)] == ["Google", "Microsoft", "Other"]
+    # Tabs IMAP (first, the default) / Google / Microsoft, ONE Connect, the connected state's Test + Disconnect.
+    assert [m for m in re.findall(r'role="tab"[^>]*>([^<]+)<', html)] == ["IMAP", "Google", "Microsoft"]
+    assert re.search(r'id="acc-email-tab-imap"[^>]*aria-selected="true"', html)
+    # DESIGN v2 §3: no User name / Display name fields, no Server settings disclosure; the
+    # login and CA file sit behind small links.
+    for gone in ("User name", "Display name", "Server settings", "email-display-name", ">Other<"):
+        assert gone not in html, gone
+    assert re.search(r'id="acc-email-login-field"[^>]*hidden', html) and re.search(r'id="acc-email-ca-field"[^>]*hidden', html)
+    assert ">My provider uses a different login name<" in html and ">Custom certificate<" in html
     assert html.count('data-acc-action="email-connect"') == 1
     assert "Disconnect this mailbox? Your agents lose email until you connect again. Policy and limits are kept." in html
     # The CLI line never shows a password on the command line.
@@ -55,11 +62,15 @@ def test_email_tab_has_the_design_order_and_no_save_per_section() -> None:
 
 
 def test_email_tab_switches_use_the_kit_markup_labelled_by_the_feature() -> None:
-    for label, action in (("Agent email tools", "agent-tools-switch"), ("Use this mailbox", "mailbox-switch")):
+    for label, action in (("Agent email tools", "agent-tools-switch"), ("Active", "mailbox-switch")):
         m = re.search(r'<button type="button" role="switch" class="af-switch af-switch--row" aria-checked="false" data-acc-action="' + action + r'"[^>]*>(.*?)</button>', _EMAIL_HTML, re.S)
         assert m, action
         assert f'<span class="af-switch__label">{label}</span>' in m.group(1)
-
+    # "Active" lives in the Mailbox card's connected state, not in Advanced.
+    connected = _EMAIL_HTML.split('data-acc="email-connected"')[1].split("</section>")[0]
+    assert 'data-acc-action="mailbox-switch"' in connected
+    assert "Off pauses watching and sending; your settings are kept." in connected
+    assert "Use this mailbox" not in _EMAIL_HTML
 
 def test_kit_form_and_switch_css_are_generated_and_served() -> None:
     assert KIT_FORM_CSS.startswith("/* af-form:begin") and KIT_FORM_CSS.rstrip().endswith("/* af-form:end */")
@@ -137,9 +148,14 @@ CONNECTED = {
     "status": {"last_test": "", "last_ok": (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat(), "last_error": None},
 }
 FOUND = {"address": "me@fastmail.com", "domain": "fastmail.com", "found": True, "source": "known", "provider": None,
-         "imap": {"host": "imap.fastmail.com", "port": 993, "security": "ssl"}, "smtp": {"host": "smtp.fastmail.com", "port": 465, "security": "ssl"},
-         "username": "me@fastmail.com", "tried": []}
-NOT_FOUND = {**FOUND, "address": "me@small-isp.net", "domain": "small-isp.net", "found": False, "source": None, "imap": None, "smtp": None}
+         "imap": {"host": "imap.fastmail.com", "port": 993, "security": "ssl"}, "smtp": {"host": "smtp.fastmail.com", "port": 587, "security": "starttls"},
+         "username": "me@fastmail.com", "tried": [],
+         "defaults": {"imap": {"host": "imap.fastmail.com", "port": 993, "security": "ssl"}, "smtp": {"host": "smtp.fastmail.com", "port": 587, "security": "starttls"},
+                      "login": "me", "source": "discovered", "provider": None, "message": "Settings found for fastmail.com."}}
+NOT_FOUND = {**FOUND, "address": "me@small-isp.net", "domain": "small-isp.net", "found": False, "source": None, "imap": None, "smtp": None,
+             "defaults": {"imap": {"host": "imap.small-isp.net", "port": 993, "security": "ssl"}, "smtp": {"host": "smtp.small-isp.net", "port": 465, "security": "ssl"},
+                          "login": "me@small-isp.net", "source": "standard", "provider": None,
+                          "message": "Standard settings for small-isp.net — change them if your provider uses others."}}
 
 
 def _free_port() -> int:
@@ -202,13 +218,14 @@ def served(tmp_path_factory):
 class FakeEmail:
     """`/acore/email*` from fake records; every request is recorded."""
 
-    def __init__(self, doc, discover=FOUND, fail=None):
+    def __init__(self, doc, discover=FOUND, fail=None, hold_discover=False):
         self.doc = json.loads(json.dumps(doc))
         if self.doc.get("configured"):  # "checked 2 min ago", relative to now
             self.doc["status"]["last_ok"] = (datetime.now(timezone.utc) - timedelta(minutes=2, seconds=5)).isoformat()
         self.discover = discover
         self.fail = fail or {}  # "METHOD /path" -> (status, error body)
         self.calls = []
+        self.hold_discover = hold_discover  # True: discovery never answers (the standard pre-fill stays)
 
     def __call__(self, route):
         req = route.request
@@ -220,6 +237,8 @@ class FakeEmail:
             status, err = self.fail[key]
             return route.fulfill(status=status, content_type="application/json", body=json.dumps({"ok": False, "error": err}))
         if path.endswith("/discover"):
+            if self.hold_discover:
+                return route.abort()
             return route.fulfill(status=200, content_type="application/json", body=json.dumps(self.discover))
         if key == "PUT /acore/email/agent-tools":
             self.doc["agent_tools"] = {**self.doc["agent_tools"], "enabled": body["enabled"]}
@@ -263,59 +282,105 @@ def test_type_scale_and_layout_at_desktop_and_phone(served) -> None:
     fake.doc["registered_address_stored"] = "me@small-isp.net"
     ctx, page = _open(served, fake)
     try:
-        page.click("#acc-email-tab-other")
-        page.wait_for_selector('[data-acc="email-servers"][open]')  # discovery failed -> Server settings open by themselves
+        page.wait_for_selector('#acc-email-tab-imap[aria-selected="true"]')  # IMAP is the default tab
+        page.wait_for_function("document.querySelector('[data-acc=\"email-servers-source\"]').textContent.startsWith('Standard settings for small-isp.net')")
         page.evaluate("document.querySelector('[data-acc=\"email-advanced\"]').open = true")
         root = page.locator("#acc-email")
         assert page.evaluate(LABEL_SCALE_JS, root.element_handle()) == []
         assert root.bounding_box()["width"] <= 720.5
-        # Labels above their fields; port + security side by side on desktop.
+        # Server | Port | Security on one row on desktop, captions above the fields.
         geo = page.evaluate("""() => {
           const r = (s) => document.querySelector(s).getBoundingClientRect();
-          return { label: r('label[for="acc-email-imap-port"]'), port: r('#acc-email-imap-port'), sec: r('#acc-email-imap-security'),
+          return { label: r('label[for="acc-email-imap-port"]'), host: r('#acc-email-imap-host'), port: r('#acc-email-imap-port'), sec: r('#acc-email-imap-security'),
                    card: r('[data-acc="email-mailbox-card"]'), widest: Math.max(...Array.from(document.querySelectorAll('#acc-email input, #acc-email select')).filter((e) => e.getClientRects().length).map((e) => e.getBoundingClientRect().right)) };
         }""")
         assert geo["label"]["bottom"] <= geo["port"]["top"] + 0.5
-        assert abs(geo["port"]["top"] - geo["sec"]["top"]) < 1 and geo["sec"]["left"] > geo["port"]["right"]
+        assert abs(geo["host"]["top"] - geo["port"]["top"]) < 1 and abs(geo["port"]["top"] - geo["sec"]["top"]) < 1
+        assert geo["host"]["right"] < geo["port"]["left"] < geo["sec"]["left"]
         assert geo["widest"] <= geo["card"]["right"] + 0.5
-        assert "Couldn't find the mail servers for small-isp.net" in page.inner_text('[data-acc="email-servers-reason"]')
-        # Phone: one column, the page gutter <= 16 px, flat sections (no card border).
+        # Phone: the server full width, then port + security; gutter <= 16 px; flat sections.
         page.set_viewport_size({"width": 390, "height": 844})
         geo = page.evaluate("""() => {
           const r = (s) => document.querySelector(s).getBoundingClientRect();
           const card = document.querySelector('[data-acc="email-mailbox-card"]');
-          return { port: r('#acc-email-imap-port'), sec: r('#acc-email-imap-security'), left: r('#acc-email').left,
+          return { host: r('#acc-email-imap-host'), port: r('#acc-email-imap-port'), sec: r('#acc-email-imap-security'), left: r('#acc-email').left,
                    border: getComputedStyle(card).borderLeftWidth, docW: document.documentElement.scrollWidth };
         }""")
-        assert geo["sec"]["top"] > geo["port"]["bottom"]
+        assert geo["port"]["top"] > geo["host"]["bottom"] and abs(geo["port"]["top"] - geo["sec"]["top"]) < 1
         assert geo["left"] <= 16.5 and geo["border"] == "0px" and geo["docW"] <= 390
         assert page.evaluate(LABEL_SCALE_JS, root.element_handle()) == []
     finally:
         ctx.close()
 
 
-def test_not_connected_other_tab_discovers_and_connect_names_the_failing_step(served) -> None:
+def test_imap_pane_prefills_standard_servers_at_once_then_discovery_without_overwriting_edits(served) -> None:
+    fake = FakeEmail(EMPTY, hold_discover=True)
+    fake.doc["registered_address_stored"] = ""
+    fake.doc["registered_address"] = ""
+    base, browser = served
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    page = ctx.new_page()
+    try:
+        page.route("**/acore/email**", fake)
+        page.goto(f"{base}/console", wait_until="domcontentloaded")
+        page.evaluate(f"sessionStorage.setItem('abstractcore_console_token', '{TOKEN}')")
+        page.goto(f"{base}/console", wait_until="domcontentloaded")
+        page.click("#acc-tab-button-email")
+        page.wait_for_selector('#acc-email-tab-imap[aria-selected="true"]')
+        assert page.input_value("#acc-email-imap-host") == ""
+        page.fill("#acc-email-address", "me@example.org")
+        # Immediately, before any discovery answer: the standard servers.
+        assert page.input_value("#acc-email-imap-host") == "imap.example.org" and page.input_value("#acc-email-imap-port") == "993"
+        assert page.input_value("#acc-email-smtp-host") == "smtp.example.org" and page.input_value("#acc-email-smtp-port") == "465"
+        assert page.input_value("#acc-email-smtp-security") == "ssl"
+        assert page.text_content('[data-acc="email-servers-source"]').startswith("Standard settings for example.org — change them if your provider uses others.")
+        # Discovery that fails keeps the standard values and says why.
+        page.wait_for_function("document.querySelector('[data-acc=\"email-servers-source\"]').textContent.startsWith('The server lookup failed')")
+        assert page.input_value("#acc-email-imap-host") == "imap.example.org"
+        # Discovery that answers replaces every field the user did not edit (587 STARTTLS, login form).
+        fake.hold_discover = False
+        page.fill("#acc-email-smtp-host", "")
+        page.type("#acc-email-smtp-host", "mail.mine.example")  # an edit: never overwritten
+        page.fill("#acc-email-address", "me@fastmail.com")
+        page.wait_for_function("document.querySelector('[data-acc=\"email-servers-source\"]').textContent === 'Settings found for fastmail.com.'")
+        assert page.input_value("#acc-email-imap-host") == "imap.fastmail.com"
+        assert page.input_value("#acc-email-smtp-host") == "mail.mine.example"
+        assert page.input_value("#acc-email-smtp-port") == "587" and page.input_value("#acc-email-smtp-security") == "starttls"
+        # The login is hidden by default and holds discovery's form; the link reveals it.
+        assert page.locator('[data-acc="email-login-field"]').is_hidden()
+        page.click('[data-acc-action="login-reveal"]')
+        assert page.locator('[data-acc="email-login-field"]').is_visible() and page.input_value("#acc-email-username") == "me"
+        assert page.locator('[data-acc="email-ca-field"]').is_hidden()
+        # A security change moves an unedited port.
+        page.select_option("#acc-email-imap-security", "starttls")
+        assert page.input_value("#acc-email-imap-port") == "143"
+    finally:
+        ctx.close()
+
+
+def test_not_connected_imap_tab_connects_with_the_fields_shown_and_names_the_failing_step(served) -> None:
     fake = FakeEmail(EMPTY, fail={"PUT /acore/email": (422, {"code": "email_auth_failed", "cause": "The IMAP server rejected the user name or password.", "fix": "Use an app password.", "details": {"protocol": "imap", "host": "imap.fastmail.com", "port": 993}})})
     ctx, page = _open(served, fake)
     try:
-        # Default tab: servers found for a provider other than Google/Microsoft -> Other.
-        page.wait_for_selector('#acc-email-tab-other[aria-selected="true"]')
-        page.wait_for_function("document.querySelector('[data-acc=\"email-servers-summary\"]').textContent.includes('993')")
-        assert page.text_content('[data-acc="email-servers-summary"]') == "imap.fastmail.com · 993 · SSL  ·  smtp.fastmail.com · 465 · SSL"
+        page.wait_for_selector('#acc-email-tab-imap[aria-selected="true"]')
+        page.wait_for_function("document.querySelector('[data-acc=\"email-servers-source\"]').textContent === 'Settings found for fastmail.com.'")
         assert page.input_value("#acc-email-address") == "me@fastmail.com"  # prefilled from the Email address
-        assert page.get_attribute('[data-acc="email-servers"]', "open") is None  # folded when discovery works
+        page.click('[data-acc-action="email-connect"]')
+        assert page.inner_text('[data-acc="email-connect-error"]') == "Enter the password (or app password) of the mailbox."
         page.fill("#acc-email-password", "app-password")
         page.click('[data-acc-action="email-connect"]')
         err = page.locator('[data-acc="email-connect-error"]')
-        err.wait_for(state="visible")
+        page.wait_for_function("document.querySelector('[data-acc=\"email-connect-error\"]').textContent.startsWith('Sign-in refused')")
         assert err.inner_text().startswith("Sign-in refused by imap.fastmail.com — check the password")
         method, path, body = [c for c in fake.calls if c[0] == "PUT" and c[1] == "/acore/email"][-1]
-        assert body["address"] == "me@fastmail.com" and body["imap"]["host"] == "imap.fastmail.com" and body["test"] is True
+        assert body["address"] == "me@fastmail.com" and body["test"] is True and body["username"] == "me"
+        assert body["imap"]["host"] == "imap.fastmail.com" and body["smtp"] == {"host": "smtp.fastmail.com", "port": 587, "security": "starttls", "ca_file": ""}
+        assert "display_name" not in body
         # The agent-tools switch is unavailable with the reason while no mailbox is connected.
         sw = page.locator('[data-acc="email-agent-tools"]')
         assert sw.get_attribute("aria-disabled") == "true"
         assert page.inner_text("#acc-email-agent-tools-reason") == "Connect a mailbox first."
-        sw.click(force=True)  # aria-disabled: focusable, but a click changes nothing
+        sw.click(force=True)
         assert not [c for c in fake.calls if c[1] == "/acore/email/agent-tools"]
         # Microsoft has no built-in client here: its button is unavailable with the reason.
         page.click("#acc-email-tab-microsoft")
@@ -331,10 +396,16 @@ def test_connected_state_switches_apply_at_once_and_revert_on_failure(served) ->
     try:
         status = page.locator('[data-acc="email-status"]')
         status.wait_for(state="visible")
-        assert status.inner_text() == "Connected as me@fastmail.com · Password · checked 2 min ago", status.inner_text()
+        assert status.inner_text() == "Connected as me@fastmail.com · IMAP · checked 2 min ago", status.inner_text()
         assert page.locator('[data-acc="email-setup"]').is_hidden()
-        visible_buttons = page.eval_on_selector_all('[data-acc="email-mailbox-card"] button', "bs => bs.filter((b) => b.getClientRects().length).map((b) => b.textContent.trim())")
+        visible_buttons = page.eval_on_selector_all('[data-acc="email-mailbox-card"] button:not([role="switch"])', "bs => bs.filter((b) => b.getClientRects().length).map((b) => b.textContent.trim())")
         assert visible_buttons == ["Test", "Disconnect"]
+        # Active: the mailbox's switch, in the Mailbox card.
+        active = page.locator('[data-acc="email-mailbox-card"] [data-acc="email-enabled"]')
+        assert active.is_visible() and active.get_attribute("aria-checked") == "true"
+        active.click()
+        page.wait_for_function("document.querySelector('#acc-email [data-acc=\"message\"]').textContent.startsWith('The mailbox is paused')")
+        assert ("PUT", "/acore/email/enabled", {"enabled": False}) in fake.calls
         sw = page.locator('[data-acc="email-agent-tools"]')
         assert sw.get_attribute("aria-checked") == "false" and sw.get_attribute("aria-disabled") is None
         sw.click()

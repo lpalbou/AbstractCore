@@ -83,6 +83,13 @@ class EmailSettings:
         return self.account.address if self.account else ""
 
 
+def default_display_name(address: str) -> str:
+    """The sender name of a new connection nobody named: the address's local part
+    (`jean.dupont@example.org` -> `jean.dupont`)."""
+
+    return str(address or "").strip().split("@", 1)[0]
+
+
 class EmailAccountStore:
     def __init__(
         self,
@@ -216,6 +223,12 @@ class EmailAccountStore:
 
         A failed test raises the first leg's typed error and stores nothing. A new account's
         recipient policy defaults to an allowlist holding the registered address.
+
+        Nobody is asked for a display name (the From header's name, `client.build_mime`): an
+        account given none keeps the stored account's name, else gets the address's local part
+        (`default_display_name`). The email address ("self") is set to the mailbox address when
+        none is stored and none is given (`registered_address`), so the address the console
+        shows is always explicit.
         """
 
         if not isinstance(secret, EmailSecret) or not secret.is_set:
@@ -241,9 +254,15 @@ class EmailAccountStore:
                     raise _error_from_leg(r)
         self.vault.store(secret.sealed_payload(), reuse_key=False)
         current = self.settings()
+        if not account.display_name:
+            kept = current.account.display_name if current.account is not None else ""
+            account = replace(account, display_name=kept or default_display_name(account.address))
         values: Dict[str, Any] = {"account": account.to_dict()}
         if registered_address is not None:
             values["registered_address"] = registered_address.strip()
+        elif not current.registered_address:
+            registered_address = account.address
+            values["registered_address"] = account.address
         if current.policy_is_default:
             base = (registered_address or current.registered_address or account.address).strip()
             values["policy"] = RecipientPolicy.default_for(base).to_dict()

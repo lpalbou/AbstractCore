@@ -87,9 +87,11 @@ _STT_PROVIDER_ALIASES = {
 
 # What to do about a voice route whose provider is no AbstractVoice engine:
 # (what the id is not, the engine kind to list, the fix).
+# The fix names both places the route is set: the gateway console's
+# Multimodal page and the core consoles' Routes.
 _VOICE_PICK = {
-    "input.voice": ("a transcription engine", "stt", "Pick a transcription engine on the Multimodal page."),
-    "output.voice": ("a voice engine", "tts", "Pick a voice engine on the Multimodal page."),
+    "input.voice": ("a transcription engine", "stt", "Pick a transcription engine for speech input (Multimodal page in the gateway console, Routes in the core console)."),
+    "output.voice": ("a voice engine", "tts", "Pick a voice engine for speech output (Multimodal page in the gateway console, Routes in the core console)."),
 }
 
 
@@ -242,7 +244,7 @@ def _voice(provider: str, key: str = "") -> Optional[Dict[str, Any]]:
         # says what the id is not and what to do (a download source such as
         # `huggingface` on a transcription route is the usual case), with the
         # engines AbstractVoice lists for that kind (`known_engines`).
-        what, kind, fix = _VOICE_PICK.get(key, ("an AbstractVoice engine", None, "Pick a voice engine on the Multimodal page."))
+        what, kind, fix = _VOICE_PICK.get(key, ("an AbstractVoice engine", None, _VOICE_PICK["output.voice"][2]))
         engines = ", ".join(known_engines(kind))
         return _missing(
             provider,
