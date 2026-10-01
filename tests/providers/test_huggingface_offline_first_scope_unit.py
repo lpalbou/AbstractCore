@@ -195,7 +195,14 @@ def test_a_fully_cached_model_loads_with_zero_network(offline_first, no_network,
     assert no_network == [], f"a cached load reached for the network: {no_network}"
     assert provider.model == _REPO, "the handle the caller named is kept"
     assert provider.model_instance is not None and provider.tokenizer is not None
-    assert provider.model_instance.config._commit_hash == _SHA, "the commit identity survives a directory load"
+    # The commit identity survives a directory load: the provider's weights identity is the hub
+    # commit (from the config's commit hash where transformers keeps one, else the snapshots/<sha>
+    # directory the load used) — not a transformers-internal attribute.
+    from abstractcore.providers.weights_fingerprint import weights_fingerprint_for_revision
+
+    assert provider.prompt_cache_weights_fingerprint() == weights_fingerprint_for_revision(_SHA), (
+        "the commit identity survives a directory load"
+    )
     assert provider._transformers_source.model == str(snap)
     assert _flags() == {}, f"a load wrote process-wide offline flags: {_flags()}"
 
