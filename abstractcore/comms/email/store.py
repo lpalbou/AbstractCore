@@ -76,15 +76,35 @@ def limits_source(stored: Any) -> str:
 
     - nothing stored -> "default": the current defaults (100 per hour, 1000 per day; 20 / 100 until 2.21);
     - `set_by: user` -> "user": the user's choice, kept across upgrades;
-    - values without the marker -> "legacy": written by 2.21 or earlier, when connecting also stored the
-      then-defaults 20 / 100. Such a 20 / 100 cannot be told apart from a user who chose 20 / 100
-      (`abstractcore email limits set`, the console), so it is kept as stored, never raised:
-      `abstractcore email limits reset` (or setting new values) moves the account on.
+    - exactly the old defaults (20 per hour AND 100 per day) without the marker -> "default": 2.21 and
+      earlier stored the then-defaults at connect, so an unmarked 20 / 100 is the old default, not a
+      choice (operator ruling 2026-10-01: those accounts move to the new defaults). Nothing is rewritten
+      on disk; the next `set_limits` stores the user's choice with the marker;
+    - any other values without the marker -> "legacy": a value someone set before the marker existed,
+      kept as stored: `abstractcore email limits reset` (or setting new values) moves the account on.
     """
 
     if not isinstance(stored, dict) or not any(k in stored for k in ("per_hour", "per_day")):
         return "default"
-    return "user" if stored.get("set_by") == "user" else "legacy"
+    if stored.get("set_by") == "user":
+        return "user"
+    if _is_old_default_pair(stored):
+        return "default"
+    return "legacy"
+
+
+# The send limits 2.21 and earlier wrote at connect (no `set_by` marker existed then).
+OLD_DEFAULT_LIMITS = {"per_hour": 20, "per_day": 100}
+
+
+def _is_old_default_pair(stored: Dict[str, Any]) -> bool:
+    try:
+        return (
+            int(stored.get("per_hour")) == OLD_DEFAULT_LIMITS["per_hour"]
+            and int(stored.get("per_day")) == OLD_DEFAULT_LIMITS["per_day"]
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 @dataclass(frozen=True)
@@ -171,7 +191,9 @@ class EmailAccountStore:
             account=account,
             policy=policy,
             policy_is_default=is_default,
-            limits=SendLimits.from_dict(sec.get("limits") or {}),
+            limits=SendLimits.from_dict(
+                {} if limits_source(sec.get("limits")) == "default" else (sec.get("limits") or {})
+            ),
             limits_source=limits_source(sec.get("limits")),
             registered_address=registered,
             legacy_import=dict(sec.get("legacy_import") or {}),

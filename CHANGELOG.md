@@ -40,9 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email send limits default to 100 per hour and 1000 per day (were 20 and 100). Connecting a
   mailbox no longer stores the defaults, so an account where nobody set limits follows the
   defaults; limits set with `abstractcore email limits set`, `PUT /acore/email/limits` or the
-  console are stored with `set_by: "user"` (only the windows set) and kept across upgrades. A
-  20 / 100 stored by 2.21 or earlier cannot be told apart from a user who chose it, so it is kept;
-  the new `abstractcore email limits reset` (`EmailAccountStore.reset_limits()`) follows the
+  console are stored with `set_by: "user"` (only the windows set) and kept across upgrades. An
+  unmarked 20 / 100 stored by 2.21 or earlier is the old default and follows the new defaults; any
+  other unmarked value is kept; the new `abstractcore email limits reset` (`EmailAccountStore.reset_limits()`) follows the
   defaults again. The limits document gains `source`: `default` | `user` | `legacy`.
 - Connecting a mailbox sets the email address when none is stored, and a connection given no
   display name keeps the stored one, else uses the address's local part (`abstractcore email

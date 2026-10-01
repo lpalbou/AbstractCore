@@ -8186,8 +8186,9 @@ abstractcore email limits reset     # forget the stored limits: follow the defau
 
 Limits you set are stored and kept across upgrades; an account where nobody set them follows the
 defaults, including a later change of the defaults. Until 2.21 the defaults were 20 and 100, and
-connecting an account stored them. Such a stored 20 / 100 cannot be told apart from a user who
-chose 20 / 100, so an upgrade keeps it: `limits show` marks it "stored by an earlier version", and
+connecting an account stored them without marking who set them. An upgrade treats exactly that
+unmarked pair (20 per hour and 100 per day) as the old defaults, so the account follows the new ones;
+any other unmarked value is kept: `limits show` marks it "stored by an earlier version", and
 `limits reset` (or setting new values) moves the account on. `limits show --json` reports the
 origin as `source`: `default`, `user` or `legacy`.
 

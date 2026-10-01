@@ -60,12 +60,17 @@ def test_a_user_set_old_default_is_kept(config_file) -> None:
     assert _lim(EmailAccountStore(config_file)) == (20, 100, "user")
 
 
-def test_a_legacy_unmarked_old_default_is_kept_as_stored(config_file) -> None:
-    # 2.21 stored {20, 100} at connect: indistinguishable from a user's choice -> never raised.
+def test_an_unmarked_old_default_pair_follows_the_new_defaults(config_file) -> None:
+    # 2.21 stored {20, 100} at connect (operator ruling 2026-10-01): it is the old default -> 100 / 1000.
     _write_section(config_file, {"per_hour": 20, "per_day": 100})
     store = EmailAccountStore(config_file)
-    assert _lim(store) == (20, 100, "legacy")
+    assert _lim(store) == (100, 1000, "default")
     assert _stored(config_file) == {"per_hour": 20, "per_day": 100}  # reading writes nothing
+
+
+def test_an_unmarked_half_old_default_is_kept_as_legacy(config_file) -> None:
+    _write_section(config_file, {"per_hour": 20, "per_day": 300})
+    assert _lim(EmailAccountStore(config_file)) == (20, 300, "legacy")
 
 
 def test_a_legacy_custom_value_is_kept(config_file) -> None:
@@ -92,7 +97,7 @@ def test_setting_a_window_on_a_legacy_record_marks_it_user_and_keeps_the_other(c
 def test_reset_follows_the_defaults_again(config_file, capsys) -> None:
     from abstractcore.config.email_cli import handle_email
 
-    _write_section(config_file, {"per_hour": 20, "per_day": 100})
+    _write_section(config_file, {"per_hour": 30, "per_day": 300})
     assert handle_email(["limits", "show"]) == 0
     assert "stored by an earlier version" in capsys.readouterr().out
     assert handle_email(["limits", "reset", "--json"]) == 0
