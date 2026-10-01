@@ -134,7 +134,7 @@ EMPTY = {
     "schema": "email_settings_v1", "configured": False, "enabled": False,
     "agent_tools": {"enabled": False, "active": False, "reason": "no mailbox is connected"},
     "address": "", "display_name": "", "username": "", "auth_kind": "", "imap": None, "smtp": None, "oauth": None,
-    "secret_storage": "", "secret_warning": "", "policy": {"mode": "allowlist", "entries": [], "default": True},
+    "secret_storage": "", "secret_warning": "", "policy": {"mode": "allowlist", "entries": [], "always_allow": [], "always_deny": [], "self_addresses": [], "default": True},
     "limits": LIMITS, "registered_address": "me@fastmail.com", "registered_address_stored": "me@fastmail.com",
     "status": {"last_test": "", "last_ok": "", "last_error": None}, "notices": [],
     "oauth_providers": [{"id": "google", "available": True, "reason": None}, {"id": "microsoft", "available": False, "reason": "No built-in Microsoft sign-in client in this version."}],
@@ -144,7 +144,7 @@ CONNECTED = {
     "secret_storage": "key-file", "agent_tools": {"enabled": False, "active": False, "reason": "off (your choice; default)"},
     "imap": {"host": "imap.fastmail.com", "port": 993, "security": "ssl", "folder": "INBOX", "ca_file": ""},
     "smtp": {"host": "smtp.fastmail.com", "port": 465, "security": "ssl", "ca_file": ""},
-    "policy": {"mode": "allowlist", "entries": ["me@fastmail.com"], "default": False},
+    "policy": {"mode": "allowlist", "entries": ["me@fastmail.com"], "always_allow": ["me@fastmail.com"], "always_deny": [], "self_addresses": ["me@fastmail.com"], "default": False},
     "status": {"last_test": "", "last_ok": (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat(), "last_error": None},
 }
 FOUND = {"address": "me@fastmail.com", "domain": "fastmail.com", "found": True, "source": "known", "provider": None,
@@ -246,6 +246,12 @@ class FakeEmail:
             self.doc["imap"]["folder"] = body["folder"] or "INBOX"
         elif key == "PUT /acore/email/registered-address":
             self.doc["registered_address_stored"] = body["address"]
+        elif key == "PUT /acore/email/policy":
+            pol = {**self.doc["policy"], "mode": body["mode"], "default": False}
+            pol["always_allow"] = [e.lower() for e in body["always_allow"]]
+            pol["always_deny"] = [e.lower() for e in body["always_deny"]]
+            pol["entries"] = pol["always_allow"] if body["mode"] == "allowlist" else pol["always_deny"]
+            self.doc["policy"] = pol
         elif key == "PUT /acore/email/limits":
             self.doc["limits"] = {**self.doc["limits"], "per_hour": body["per_hour"], "per_day": body["per_day"]}
         return route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True, **self.doc}))
@@ -561,5 +567,42 @@ def test_list_panels_collapse_and_remember(served) -> None:
         page.click("#acc-tab-button-catalog")
         assert page.get_attribute('[data-acc-section="catalog"]', "aria-expanded") == "false"
         assert page.locator('[data-acc="catalog-table"]').is_hidden()
+    finally:
+        ctx.close()
+
+
+def test_recipient_rules_show_both_lists_fix_the_own_address_and_auto_save(served) -> None:
+    """Round 3 recipient rules (DESIGN-v3 §13.3) in the core console: the mode, "Always allowed" and
+    "Always denied" with the same words as the gateway console; the own address is a fixed chip
+    (no remove button); every add / remove / mode change saves at once with BOTH lists."""
+    fake = FakeEmail(CONNECTED)
+    ctx, page = _open(served, fake)
+    try:
+        page.evaluate("document.querySelector('[data-acc=\"email-advanced\"]').open = true")
+        card = page.locator('[data-acc="email-policy-card"]')
+        text = card.inner_text()
+        for words in ("Your agents may send to", "Always allowed", "Always denied",
+                      "Denied always wins. Your own address is always allowed. A domain also covers its subdomains."):
+            assert words in text, words
+        assert page.eval_on_selector_all("#acc-email-policy-mode option", "os => os.map((o) => o.textContent)") == ["Only the Allowed list", "Anyone not on the Denied list"]
+        own = page.locator('[data-acc="email-allow-entries"] li.acc-chip-fixed')
+        assert own.inner_text() == "me@fastmail.com (your address)"
+        assert own.locator("button").count() == 0
+        page.fill("#acc-email-deny-new", "xxx.gov")
+        page.press("#acc-email-deny-new", "Enter")
+        page.wait_for_function("document.querySelector('[data-acc=\"email-policy-saved\"]').textContent === 'Saved'")
+        assert ("PUT", "/acore/email/policy", {"mode": "allowlist", "always_allow": ["me@fastmail.com"], "always_deny": ["xxx.gov"]}) in fake.calls
+        assert page.eval_on_selector_all('[data-acc="email-deny-entries"] li span', "s => s.map((x) => x.textContent)") == ["xxx.gov"]
+        page.fill("#acc-email-allow-new", "abstractframework.ai")
+        page.click('[data-acc-action="policy-add-allow"]')
+        page.wait_for_function("document.querySelectorAll('[data-acc=\"email-allow-entries\"] li').length === 2")
+        page.click('[data-acc="email-deny-entries"] [data-acc-action="policy-remove"]')
+        page.wait_for_function("document.querySelector('[data-acc=\"email-deny-entries\"] li.acc-muted') !== null")
+        page.select_option("#acc-email-policy-mode", "denylist")
+        page.wait_for_function("document.querySelector('[data-acc=\"email-policy-saved\"]').textContent === 'Saved'")
+        assert fake.calls[-1][2] == {"mode": "denylist", "always_allow": ["me@fastmail.com", "abstractframework.ai"], "always_deny": []}
+        # Limits: one sentence on one line at desktop width.
+        tops = page.eval_on_selector_all('[data-acc="email-limits-card"] .acc-sentence input', "is => is.map((i) => Math.round(i.getBoundingClientRect().top))")
+        assert len(set(tops)) == 1, tops
     finally:
         ctx.close()

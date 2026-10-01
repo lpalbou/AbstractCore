@@ -474,19 +474,31 @@ def cmd_policy(args: argparse.Namespace) -> int:
     store = _store(args)
     try:
         if args.policy_cmd == "set":
-            if not (args.mode or args.add or args.remove or args.clear):
-                print("Nothing to change: give --mode, --add, --remove or --clear.", file=sys.stderr)
+            if not (args.mode or args.add or args.remove or args.clear or args.always_allow is not None or args.always_deny is not None):
+                print("Nothing to change: give --mode, --add, --remove, --clear, --always-allow or --always-deny.", file=sys.stderr)
                 return EXIT_ERROR
-            doc = store.set_policy(mode=args.mode, add=args.add or (), remove=args.remove or (), clear=bool(args.clear))
+
+            def _replacement(values):
+                return None if values is None else [v for v in values if str(v).strip()]
+
+            doc = store.set_policy(
+                mode=args.mode,
+                add=args.add or (),
+                remove=args.remove or (),
+                clear=bool(args.clear),
+                always_allow=_replacement(args.always_allow),
+                always_deny=_replacement(args.always_deny),
+            )
             pol = doc["policy"]
         elif args.policy_cmd == "check":
-            policy = store.settings().policy
+            st = store.settings()
+            policy = st.policy
             try:
                 addrs = parse_recipients(list(args.addresses))
             except ValueError as exc:
                 print(f"Error: {exc}", file=sys.stderr)
                 return EXIT_ERROR
-            decision = evaluate(policy, to=addrs)
+            decision = evaluate(policy, to=addrs, self_addresses=st.self_addresses)
             if as_json:
                 _print_json(decision.to_dict())
             else:
@@ -505,6 +517,9 @@ def cmd_policy(args: argparse.Namespace) -> int:
             print(f"  {e}")
         if not pol.get("entries"):
             print("  (no entries)" + ("  -- an empty allowlist refuses every recipient" if pol["mode"] == "allowlist" else ""))
+        print("Always allowed: " + (", ".join(pol.get("always_allow") or []) or "(none)"))
+        print("Always denied: " + (", ".join(pol.get("always_deny") or []) or "(none)"))
+        print("Denied wins over allowed; your own address is always allowed; a domain also covers its subdomains.")
     return EXIT_OK
 
 
@@ -673,6 +688,10 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--add", action="append", help="Exact address or domain (repeatable)")
     ps.add_argument("--remove", action="append", help="Entry to remove (repeatable)")
     ps.add_argument("--clear", action="store_true", help="Remove every entry first")
+    ps.add_argument("--always-allow", action="append", metavar="ADDRESS_OR_DOMAIN",
+                    help="Always allowed list (repeatable; REPLACES the list; --always-allow '' empties it)")
+    ps.add_argument("--always-deny", action="append", metavar="ADDRESS_OR_DOMAIN",
+                    help="Always denied list (repeatable; REPLACES the list; --always-deny '' empties it). Denied wins over allowed")
     pc = common(psub.add_parser("check", help="Would these recipients be allowed?"))
     pc.add_argument("addresses", nargs="+")
 

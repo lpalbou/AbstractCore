@@ -11,7 +11,9 @@ through `abstractcore email ... --json`. Every route calls `EmailAccountStore` a
                                              never echoed; imap/smtp omitted = discovered from the address)
     POST   /acore/email/test                 sign in to IMAP and SMTP with the stored account
     DELETE /acore/email                      disconnect: delete the credentials and account settings
-    PUT    /acore/email/policy               {mode, entries}   recipient policy (replaces the entries)
+    PUT    /acore/email/policy               {mode, entries, always_allow?, always_deny?}
+                                                               recipient policy (replaces the entries;
+                                                               a list given replaces that list)
     POST   /acore/email/policy/check         {addresses}       would they be allowed?
     PUT    /acore/email/limits               {per_hour, per_day}
     PUT    /acore/email/enabled              {enabled}
@@ -135,6 +137,9 @@ class PolicyBody(BaseModel):
 
     mode: str = "allowlist"
     entries: List[str] = Field(default_factory=list)
+    # None keeps the stored list; a list replaces it.
+    always_allow: Optional[List[str]] = None
+    always_deny: Optional[List[str]] = None
 
 
 class CheckBody(BaseModel):
@@ -313,7 +318,9 @@ async def email_delete(request: Request) -> Any:
 @router.put("/acore/email/policy", summary="Set the recipient policy")
 async def email_policy(body: PolicyBody, request: Request) -> Any:
     _principal(request)
-    return await _call(lambda: {"ok": True, **_store().set_policy(mode=body.mode, add=body.entries, clear=True)})
+    return await _call(lambda: {"ok": True, **_store().set_policy(
+        mode=body.mode, add=body.entries, clear=True, always_allow=body.always_allow, always_deny=body.always_deny
+    )})
 
 
 @router.post("/acore/email/policy/check", summary="Check recipients against the policy")
@@ -326,7 +333,8 @@ async def email_policy_check(body: CheckBody, request: Request) -> Any:
             addrs = parse_recipients(list(body.addresses))
         except ValueError as exc:
             raise EmailInvalidMessage(f"A recipient is not valid: {exc}.", "Give recipients as name@example.com.") from None
-        return evaluate(_store().settings().policy, to=addrs).to_dict()
+        st = _store().settings()
+        return evaluate(st.policy, to=addrs, self_addresses=st.self_addresses).to_dict()
 
     return await _call(run)
 

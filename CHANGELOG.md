@@ -25,6 +25,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which servers ignore, so strict servers refused every later request).
 - `list_tools()` on both clients follows `nextCursor` and returns every page (it returned the
   first page only); a server that repeats a cursor or exceeds 100 pages raises `McpProtocolError`.
+- Recipient rules: the email recipient policy has two lists, `always_allow` ("Always allowed")
+  and `always_deny` ("Always denied"), each holding exact addresses (`name@example.com`) or
+  domains (`example.com`, which also covers its subdomains). The mode decides only recipients on
+  neither list: `allowlist` ("Only the Allowed list") refuses them, `denylist` ("Anyone not on
+  the Denied list") allows them. Precedence, in one function (`evaluate`): the account's own
+  address is allowed, then Always denied refuses, then Always allowed allows, then the mode.
+  To, Cc and Bcc are all checked, for agent sends and notifications alike. A refusal reads
+  "Not sent: x@denied.gov is on your Always denied list (denied.gov)."
+- `GET /acore/email` policy carries `self_addresses` (the own addresses, normalised: always
+  allowed, shown fixed by the consoles).
+- `RecipientPolicy.build(..., always_allow=, always_deny=)`, `with_changes(always_allow=,
+  always_deny=)` (a given list replaces that list), `EmailAccountStore.set_policy(always_allow=,
+  always_deny=)`, `PUT /acore/email/policy` fields `always_allow` / `always_deny`, and
+  `abstractcore email policy set --always-allow <entry> --always-deny <entry>`. `policy show`
+  prints both lists. Each verdict carries `source` (`self`, `always_deny`, `always_allow`,
+  `mode`).
+
+### Changed
+- A stored policy written before the two lists existed migrates on load: an allowlist's entries
+  become Always allowed, a denylist's entries become Always denied, the mode is kept. The stored
+  and returned policy keeps `entries` (the list the mode uses), so readers of `{mode, entries}`
+  keep their meaning; `{mode, entries}` bodies are still accepted.
+- A domain entry now also covers its subdomains (`example.com` matches `a@mail.example.com`,
+  never `a@badexample.com`); before, each subdomain needed its own entry.
+- The account's own addresses (registered address and mailbox address) are always allowed; the
+  email context, `POST /acore/email/policy/check` and `abstractcore email policy check` pass them.
+
+### Fixed
+- In denylist mode the account's own address was denied when a caller passed it as "self" (it was
+  merged into the mode's matched set). Self is now its own first precedence step.
+- Changing the registered address stored the policy as an object instead of its dict form.
+- The web console's Email tab (Advanced) shows the mode ("Only the Allowed list" / "Anyone not on
+  the Denied list"), the **Always allowed** and **Always denied** lists and the sentence "Denied
+  always wins. Your own address is always allowed. A domain also covers its subdomains."; every
+  add, remove or mode change saves at once. The own address shows as a fixed chip ("(your
+  address)", not removable). The limits read "Send at most [n] per hour and [n] per day.".
 
 ## [2.22.0] - 2026-10-01
 

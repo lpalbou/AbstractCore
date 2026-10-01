@@ -293,6 +293,8 @@ _EMAIL_CSS = """
 .acc-email ul.acc-chips li.acc-muted { border: 0; padding: 0; color: var(--text-muted, #999); }
 .acc-email ul.acc-chips li .acc-btn.acc-link { padding: 0 6px; min-height: 0; line-height: 1.4; }
 .acc-email .acc-chip-add { max-width: 420px; }
+.acc-email .acc-list-title { margin: 4px 0 0; font-size: var(--font-size-base, 14px); font-weight: 600; }
+.acc-email ul.acc-chips li.acc-chip-fixed { padding-right: 10px; }
 .acc-email .af-switch--row { padding-top: 0; padding-bottom: 0; }
 .acc-email .af-switch__desc { font-size: max(var(--font-size-sm, 12px), 13px); }
 .acc-email .acc-cli-line { margin: 0; }
@@ -538,13 +540,17 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
     <summary><h3 class="af-card__title">Advanced</h3><span class="af-card__desc">Who your agents may write to, send limits, the folder they watch</span></summary>
     <div class="acc-advanced-body">
       <div class="acc-sentence-block" data-acc="email-policy-card">
-        <p class="acc-sentence"><label for="acc-email-policy-mode">Your agents may send to</label> <select id="acc-email-policy-mode" data-acc="email-policy-mode"><option value="allowlist">Only these recipients</option><option value="denylist">Everyone except these</option></select> <span class="acc-saved" data-acc="email-policy-saved" role="status" aria-live="polite"></span></p>
-        <ul class="acc-chips" data-acc="email-policy-entries" aria-label="Recipients"></ul>
-        <div class="af-form__inline acc-chip-add"><input type="text" id="acc-email-policy-new" data-acc="email-policy-new" autocomplete="off" spellcheck="false" aria-label="Add an address or domain" aria-describedby="acc-email-policy-help"><button type="button" class="acc-btn" data-acc-action="policy-add">Add</button></div>
-        <p class="af-form__help" id="acc-email-policy-help">An address (name@example.com) or a domain (example.com). A message with any refused recipient (To, Cc or Bcc) is not sent.</p>
+        <p class="acc-sentence"><label for="acc-email-policy-mode">Your agents may send to</label> <select id="acc-email-policy-mode" data-acc="email-policy-mode" aria-describedby="acc-email-policy-help"><option value="allowlist">Only the Allowed list</option><option value="denylist">Anyone not on the Denied list</option></select> <span class="acc-saved" data-acc="email-policy-saved" role="status" aria-live="polite"></span></p>
+        <p class="acc-list-title" id="acc-email-allow-title">Always allowed</p>
+        <ul class="acc-chips" data-acc="email-allow-entries" aria-labelledby="acc-email-allow-title"></ul>
+        <div class="af-form__inline acc-chip-add"><input type="text" id="acc-email-allow-new" data-acc="email-allow-new" autocomplete="off" spellcheck="false" placeholder="e.g. abstractframework.ai" aria-label="Address or domain to always allow"><button type="button" class="acc-btn" data-acc-action="policy-add-allow">Add</button></div>
+        <p class="acc-list-title" id="acc-email-deny-title">Always denied</p>
+        <ul class="acc-chips" data-acc="email-deny-entries" aria-labelledby="acc-email-deny-title"></ul>
+        <div class="af-form__inline acc-chip-add"><input type="text" id="acc-email-deny-new" data-acc="email-deny-new" autocomplete="off" spellcheck="false" placeholder="e.g. xxx.gov" aria-label="Address or domain to always deny"><button type="button" class="acc-btn" data-acc-action="policy-add-deny">Add</button></div>
+        <p class="af-form__help" id="acc-email-policy-help">Denied always wins. Your own address is always allowed. A domain also covers its subdomains. To, Cc and Bcc are all checked: a message with any refused recipient is not sent.</p>
       </div>
       <div class="acc-sentence-block" data-acc="email-limits-card">
-        <p class="acc-sentence">At most <input type="text" class="acc-num" id="acc-email-per-hour" data-acc="email-per-hour" inputmode="numeric" aria-label="Messages per hour"> per hour and <input type="text" class="acc-num" id="acc-email-per-day" data-acc="email-per-day" inputmode="numeric" aria-label="Messages per day"> per day. <span class="acc-saved" data-acc="email-limits-saved" role="status" aria-live="polite"></span></p>
+        <p class="acc-sentence">Send at most <input type="text" class="acc-num" id="acc-email-per-hour" data-acc="email-per-hour" inputmode="numeric" aria-label="Messages per hour"> per hour and <input type="text" class="acc-num" id="acc-email-per-day" data-acc="email-per-day" inputmode="numeric" aria-label="Messages per day"> per day. <span class="acc-saved" data-acc="email-limits-saved" role="status" aria-live="polite"></span></p>
         <p class="af-form__help" data-acc="email-usage"></p>
       </div>
       <div class="acc-sentence-block" data-acc="email-folder-card">
@@ -554,7 +560,7 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
     </div>
   </details>
   <p class="af-form__help" data-acc="email-scope">These are the email settings of this AbstractCore install. A gateway keeps its own per user: each user sets theirs in the gateway console (My account).</p>
-  <div class="acc-cli-line">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email registered-address &lt;email address&gt;</code>, <code>printf '%s\\n' "$PASSWORD" | abstractcore email connect --address &lt;email address&gt; --password-stdin</code>, <code>abstractcore email connect --address &lt;email address&gt; --oauth google|microsoft</code>, <code>abstractcore email agent-tools on|off</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 100 --per-day 1000</code>, <code>abstractcore email folder &lt;name&gt;</code>, <code>abstractcore email enable|disable</code> (Active)</div>
+  <div class="acc-cli-line">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email registered-address &lt;email address&gt;</code>, <code>printf '%s\\n' "$PASSWORD" | abstractcore email connect --address &lt;email address&gt; --password-stdin</code>, <code>abstractcore email connect --address &lt;email address&gt; --oauth google|microsoft</code>, <code>abstractcore email agent-tools on|off</code>, <code>abstractcore email policy set --mode allowlist --always-allow &lt;address or domain&gt; --always-deny &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 100 --per-day 1000</code>, <code>abstractcore email folder &lt;name&gt;</code>, <code>abstractcore email enable|disable</code> (Active)</div>
 </div>"""
 
 _TEMPLATES: Dict[str, str] = {
@@ -1541,7 +1547,9 @@ _JS_TEMPLATE = r"""
   function emailController(ctx) {
     const base = `${ctx.apiBase}/email`;
     let doc = null;
-    let entries = [];
+    // Recipient rules: the two lists as stored, and the own addresses (always allowed, shown fixed).
+    let lists = { always_allow: [], always_deny: [] };
+    let selves = [];
     let confirming = false;
     let oauthFlow = null; // {id, cancelled}: the sign-in being awaited
     let tab = null; // imap | google | microsoft
@@ -1622,9 +1630,13 @@ _JS_TEMPLATE = r"""
     }
     function fill(d) {
       setIfIdle("email-registered", ownAddress(d));
-      const pol = d.policy || { mode: "allowlist", entries: [] };
+      const pol = d.policy || { mode: "allowlist", always_allow: [], always_deny: [], self_addresses: [] };
+      if (!Array.isArray(pol.always_allow) || !Array.isArray(pol.always_deny) || !Array.isArray(pol.self_addresses)) {
+        throw new Error("The email policy has no always_allow / always_deny / self_addresses (server older than the console?)");
+      }
       setVal("email-policy-mode", pol.mode);
-      entries = Array.isArray(pol.entries) ? pol.entries.slice() : [];
+      lists = { always_allow: pol.always_allow.slice(), always_deny: pol.always_deny.slice() };
+      selves = pol.self_addresses.slice();
       const lim = d.limits || {};
       setIfIdle("email-per-hour", lim.per_hour); setIfIdle("email-per-day", lim.per_day);
       setIfIdle("email-folder", d.imap ? d.imap.folder || "INBOX" : "");
@@ -1813,11 +1825,16 @@ _JS_TEMPLATE = r"""
       if (d.config_file) el("email-scope").textContent = `These are the email settings of this AbstractCore install (${d.config_file}). A gateway keeps its own per user: each user sets theirs in the gateway console (My account).`;
     }
     function renderEntries() {
-      const ul = el("email-policy-entries");
-      const mode = val("email-policy-mode");
-      ul.innerHTML = entries.length
-        ? entries.map((e) => `<li><span>${esc(e)}</span><button type="button" class="acc-btn acc-link" data-acc-action="policy-remove" data-entry="${esc(e)}" aria-label="Remove ${esc(e)}" title="Remove ${esc(e)}">×</button></li>`).join("")
-        : `<li class="acc-muted">${mode === "allowlist" ? "Nobody yet: your agents may not write to anyone." : "Nobody excluded: your agents may write to anyone."}</li>`;
+      for (const [which, name] of [["always_allow", "email-allow-entries"], ["always_deny", "email-deny-entries"]]) {
+        const items = lists[which];
+        const chip = (e) => selves.includes(e)
+          // The own address is always allowed: a fixed chip, never removable.
+          ? `<li class="acc-chip-fixed"><span>${esc(e)} (your address)</span></li>`
+          : `<li><span>${esc(e)}</span><button type="button" class="acc-btn acc-link" data-acc-action="policy-remove" data-list="${which}" data-entry="${esc(e)}" aria-label="Remove ${esc(e)}" title="Remove ${esc(e)}">×</button></li>`;
+        el(name).innerHTML = items.length
+          ? items.map(chip).join("")
+          : `<li class="acc-muted">${which === "always_allow" && val("email-policy-mode") === "allowlist" ? "Nobody yet: your agents may send only to your own address." : "Nobody yet."}</li>`;
+      }
     }
     async function load() {
       try { doc = await ctx.request("GET", base); fill(doc); render(); }
@@ -1845,7 +1862,7 @@ _JS_TEMPLATE = r"""
       }
     }
     async function savePolicy() {
-      const out = await run("Recipient rules", () => ctx.request("PUT", `${base}/policy`, { mode: val("email-policy-mode"), entries }));
+      const out = await run("Recipient rules", () => ctx.request("PUT", `${base}/policy`, { mode: val("email-policy-mode"), always_allow: lists.always_allow, always_deny: lists.always_deny }));
       if (out) flash("email-policy-saved", "Saved");
       else if (doc) { fill(doc); renderEntries(); } // not saved: show what is stored
     }
@@ -2025,16 +2042,24 @@ _JS_TEMPLATE = r"""
         if (out) setMessage(ctx, `Mailbox ${addr} disconnected. Policy and limits are kept.`, "ok");
         return;
       }
-      if (name === "policy-add") {
-        const v = val("email-policy-new");
-        if (!v || entries.includes(v)) { setVal("email-policy-new", ""); return; }
-        entries.push(v);
-        setVal("email-policy-new", "");
+      if (name === "policy-add-allow" || name === "policy-add-deny") {
+        const which = name === "policy-add-allow" ? "always_allow" : "always_deny";
+        const field = which === "always_allow" ? "email-allow-new" : "email-deny-new";
+        const v = val(field);
+        if (!v || lists[which].includes(v.toLowerCase())) { setVal(field, ""); return; }
+        lists[which] = lists[which].concat([v]);
+        setVal(field, "");
         renderEntries();
         await savePolicy();
         return;
       }
-      if (name === "policy-remove") { entries = entries.filter((e) => e !== target.dataset.entry); renderEntries(); await savePolicy(); return; }
+      if (name === "policy-remove") {
+        const which = target.dataset.list;
+        lists[which] = lists[which].filter((e) => e !== target.dataset.entry);
+        renderEntries();
+        await savePolicy();
+        return;
+      }
     }
     const listeners = [];
     function on(name, type, fn) { const e = el(name); if (e) { e.addEventListener(type, fn); listeners.push([e, type, fn]); } }
@@ -2047,7 +2072,8 @@ _JS_TEMPLATE = r"""
     on("email-address", "input", prefill);
     on("email-password", "keydown", onEnter(connectOther));
     on("email-oauth-client-id", "input", renderOauth);
-    on("email-policy-new", "keydown", onEnter(() => action("policy-add")));
+    on("email-allow-new", "keydown", onEnter(() => action("policy-add-allow")));
+    on("email-deny-new", "keydown", onEnter(() => action("policy-add-deny")));
     for (const f of SERVER_FIELDS) on(f, "input", () => edited.add(f));
     // A security change moves an unedited port to that security's standard port.
     for (const leg of ["imap", "smtp"]) {
