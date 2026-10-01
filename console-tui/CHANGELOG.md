@@ -11,18 +11,35 @@ Released with AbstractCore 2.22.0, whose `abstractcore email discover` and
 
 ### Changed
 
+- **Email**: the address is asked once. No email address stored and no mailbox:
+  the Email address card says connecting sets it, and the mailbox form's address
+  is the only address field. An email address stored: the mailbox form shows
+  "Mailbox account: <address>" with a "› Use a different account" link that shows
+  the field (prefilled); the email address reads as text until "› Use <address>
+  instead" or a connection. A server lookup that ends after the screen state is
+  gone no longer panics.
+- **Email → Mailbox**: the tabs are **IMAP** (first, the default), Google and
+  Microsoft. The IMAP tab shows every field: mailbox address, password, and the
+  incoming (IMAP) and outgoing (SMTP) server, port and security, filled with
+  `imap.<domain>` 993 SSL / `smtp.<domain>` 465 SSL as soon as the address has a
+  domain, then with the settings `abstractcore email discover --json` returns in
+  `defaults` (never over a field you edited); one line says where they come from.
+  No User name and no Display name fields: a small "My provider uses a different
+  login name" link reveals a Login field, and "Custom certificate" reveals the CA
+  file. Connected: the **Active** switch (formerly Advanced → "Use this mailbox")
+  sits next to Test and Disconnect. **Advanced** reads as three sentences: "Your
+  agents may send to …", "At most N per hour and M per day." with the usage, and
+  "Watch folder …". A failed Test, Disconnect, switch or recipient change says its
+  cause inline. The Email address card says when the connected mailbox is another
+  account.
 - The **Email** screen follows the account-page design, card by card, in the web
-  console's words. **Email address**: one field with its own Save. **Mailbox**:
-  tabs Google / Microsoft / Other; Other asks for the address and the password
-  only, finds the mail servers from the address (`abstractcore email discover`)
-  and shows them as one line, with Server settings folded unless nothing is found
-  (they then open with the reason); one **Connect** stores and tests, and its
-  error says what failed. Connected: one status line ("Connected as … · method ·
-  checked … ago"), **Test**, and **Disconnect** with an inline confirmation.
-  **Agent email tools** is a switch. **Advanced** holds the recipient rules
-  (entries added and removed at once), the send limits and the folder (saved on
-  Enter or when the field loses focus, the folder without reconnecting) and the
-  **Use this mailbox** switch. The letter verbs (`c`, `g`, `t`, `o`, `x`, `p`,
+  console's words. **Email address**: one field with its own Save. **Mailbox**
+  (above): one **Connect** stores and tests, and its error says what failed.
+  Connected: one status line ("Connected as … · method · checked … ago"),
+  **Test**, and **Disconnect** with an inline confirmation. **Agent email tools**
+  is a switch. **Advanced**: recipient entries are added and removed at once; the
+  limits and the folder save on Enter or when the field loses focus (the folder
+  without reconnecting). The letter verbs (`c`, `g`, `t`, `o`, `x`, `p`,
   `l`, `a`), the Save and test form and the per-section Save buttons are gone.
   Needs the AbstractCore CLI with `email discover` and `email folder`.
 - Persistent on/off settings are switches: `[x]` on (accent, bold), `[ ]` off,

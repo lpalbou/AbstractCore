@@ -50,6 +50,18 @@ know, and transcription routes written with a download provider are repaired. Th
   who your agents may send to, "At most N per hour and N per day", and the watched folder.
   "Save and test", "Turn on/off", "Save policy" and "Save limits" are gone; the CLI hint uses
   `--password-stdin`. Forms are at most 720 px wide with labels above the fields.
+- Web console and terminal console, Email: the address is asked once. With no email address
+  stored and no mailbox, the mailbox form's address is the only address field (connecting sets the
+  email address from it). With an email address stored, the mailbox form shows "Mailbox account:
+  <address> — Use a different account"; the link shows the field, prefilled, and the email address
+  is read-only until you connect or go back to it. "Your mailbox is a different account" shows only
+  when the two addresses differ.
+- Email send limits default to 100 per hour and 1000 per day (were 20 and 100). Connecting a
+  mailbox does not store the defaults, so an account where nobody set limits follows the
+  defaults; limits set with `abstractcore email limits set`, `PUT /acore/email/limits` or the
+  console are stored with `set_by: "user"` (only the windows set) and kept across upgrades.
+  `abstractcore email limits reset` (`EmailAccountStore.reset_limits()`) follows the defaults
+  again. The limits document gains `source`: `default` | `user` | `legacy`.
 - Connecting a mailbox sets the email address when none is stored. A connection given no display
   name keeps the stored one, else uses the address's local part (`abstractcore email connect
   --display-name` still sets it); a connection given no user name signs in with the discovered
@@ -59,13 +71,18 @@ know, and transcription routes written with a download provider are repaired. Th
   "Dark theme" switch.
 - `abstractcore email` texts say "Email address" and "Use this mailbox".
 - Terminal console `abstractcore-console` 0.6.0: the **Email** screen follows the web console card
-  by card (Email address with its own Save; the Mailbox card with servers found from the address
-  and one Connect; connected: status line, Test and Disconnect with an inline confirmation; the
-  **Agent email tools** switch; Advanced with the recipient rules, the send limits and the folder,
-  saved as you edit). On/off settings on every screen are switches (`[x]` on, `[ ]` off, `[-]`
-  unavailable with the reason; `Space` or `Enter`) that apply at once; switching on a flag marked
-  UNSAFE still asks first. It needs this release's `abstractcore email discover` and `abstractcore
-  email folder`. See [Terminal console](docs/console-tui.md#email-keys).
+  by card: Email address with its own Save; the Mailbox card with the tabs **IMAP** (first, the
+  default), Google and Microsoft, the IMAP tab showing every server field pre-filled from the
+  address (standard values at once, then `abstractcore email discover --json` `defaults`, never
+  over an edit), Login and CA file behind small links, the address asked once, and one Connect;
+  connected: status line, the **Active** switch, Test and Disconnect with an inline confirmation;
+  the **Agent email tools** switch; Advanced as three sentences (recipients, limits, watched
+  folder) saved as you edit, every failure with its cause inline. On/off settings on every screen
+  are switches (`[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space` or `Enter`) that
+  apply at once; switching on a flag marked UNSAFE still asks first. The Routes screen reads a
+  route whose provider is no engine (for example `input.voice` = `huggingface`) as "unknown
+  engine" with AbstractCore's reason. It needs this release's `abstractcore email discover` and
+  `abstractcore email folder`. See [Terminal console](docs/console-tui.md#email-keys).
 
 ### Fixed
 - Transcription showed "Engine missing: unknown AbstractVoice engine 'huggingface'": the
@@ -96,6 +113,10 @@ know, and transcription routes written with a download provider are repaired. Th
   (`faster-whisper` / `base`) the first time this version loads the config, after writing a copy
   of the file to `abstractcore.json.route-repair-<time>.bak` (mode 0600). The repair runs once and
   changes nothing else; any other route is left as it is.
+- Send limits: an unmarked 20 / 100 stored by 2.21 or earlier (the old defaults, written at
+  connect) follows the new defaults 100 / 1000; any other unmarked value is kept as a `legacy`
+  limit. Run `abstractcore email limits set` to keep 20 / 100, or `abstractcore email limits
+  reset` to follow the defaults.
 - Keys written by a newer AbstractCore, or added by hand, survive saves from this version: a
   downgrade followed by an upgrade keeps them.
 - `abstractcore-console` 0.6.0 calls `abstractcore email discover` and `abstractcore email

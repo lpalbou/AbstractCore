@@ -226,14 +226,23 @@ the policy decides who *can* receive mail; approval decides whether a given send
 
 ## Send limits
 
-Each account has a limit per rolling hour and per rolling day (default 20 and 100). The count is
+Each account has a limit per rolling hour and per rolling day (default 100 and 1000). The count is
 kept in `<config dir>/email/sends.json`, shared by every process using the account; a message the
 server did not accept does not count. `0` means no sending in that window.
 
 ```bash
 abstractcore email limits show
-abstractcore email limits set --per-hour 20 --per-day 100
+abstractcore email limits set --per-hour 100 --per-day 1000
+abstractcore email limits reset     # forget the stored limits: follow the defaults
 ```
+
+Limits you set are stored and kept across upgrades; an account where nobody set them follows the
+defaults, including a later change of the defaults. Until 2.21 the defaults were 20 and 100, and
+connecting an account stored them without marking who set them. An upgrade treats exactly that
+unmarked pair (20 per hour and 100 per day) as the old defaults, so the account follows the new ones;
+any other unmarked value is kept: `limits show` marks it "stored by an earlier version", and
+`limits reset` (or setting new values) moves the account on. `limits show --json` reports the
+origin as `source`: `default`, `user` or `legacy`.
 
 ## Errors
 
@@ -259,10 +268,13 @@ Errors are classified from protocol reply codes and exception types, never from 
 ## Consoles
 
 - **Web console** (`abstractcore serve`, then `/console`): the **Email** tab shows, in order:
-  - **Email address**: your own address (the registered address: where notifications go and the
-    first address your agents may write to), with its own **Save**.
-  - **Mailbox**: tabs **IMAP** (first, the default), **Google** and **Microsoft**. The IMAP pane
-    shows every field: **Mailbox address**, **Password** (an app password if your provider needs
+  - **Email address**: your own address (the registered address: the first address your agents
+    may write to; empty means the mailbox's own address), with its own **Save**.
+  - **Mailbox**: tabs **IMAP** (first, the default), **Google** and **Microsoft**. The address is
+    asked once: with no email address stored, the mailbox form's address is the only address
+    field and connecting sets the email address from it; with one stored, the form shows
+    "Mailbox account: <address>" and **Use a different account** opens the field, prefilled.
+    The IMAP pane shows every field: **Mailbox address**, **Password** (an app password if your provider needs
     one), **Incoming mail (IMAP)** and **Outgoing mail (SMTP)**, each as Server / Port /
     Security. As soon as the address has a domain the servers are filled with `imap.<domain>` 993
     SSL and `smtp.<domain>` 465 SSL, then with what [discovery](#server-discovery) finds, never
@@ -282,10 +294,11 @@ Errors are classified from protocol reply codes and exception types, never from 
   button. A connection stores no display name you did not give: it keeps the stored one, else
   uses the address's local part. The tab uses the `/acore/email` routes ([Server](server.md)).
 - **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) has the same cards
-  with the same words: the email address with its own Save, the Mailbox card (Google / Microsoft
-  / Other, servers found from the address, one Connect; connected: Test and Disconnect), the
-  **Agent email tools** switch, and Advanced (recipient rules, send limits, folder, **Use this
-  mailbox**). Switches read `[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space`
+  with the same words: the email address with its own Save, the Mailbox card (tabs IMAP, Google,
+  Microsoft; the IMAP tab with the address, password and server fields pre-filled from the
+  address, one Connect; connected: the **Active** switch, Test and Disconnect), the **Agent email
+  tools** switch, and Advanced (who your agents may send to, the send limits, the watched
+  folder). Switches read `[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space`
   switches ([Terminal console](console-tui.md#email-keys)).
 
 Both consoles name the account they configure: the account of this AbstractCore install, with the

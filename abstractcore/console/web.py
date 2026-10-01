@@ -239,6 +239,7 @@ _EMAIL_CSS = """
   border: 1px solid var(--ui-border-2, rgba(255,255,255,.14)); border-radius: var(--radius-sm, 4px); }
 .acc-email input[aria-invalid="true"] { border-color: var(--error, #e74c3c); }
 .acc-email input:disabled { opacity: .6; cursor: not-allowed; }
+.acc-email input[readonly] { opacity: .7; }
 .acc-email .acc-btn { font-size: var(--font-size-base, 14px); padding: 7px 14px; min-height: 36px; }
 .acc-email .acc-btn.acc-link { padding: 2px 4px; min-height: 0; }
 .acc-email .acc-btn[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
@@ -260,6 +261,9 @@ _EMAIL_CSS = """
 .acc-email .acc-server-fields { display: grid; grid-template-columns: minmax(0, 1fr) 96px 132px; gap: var(--space-3, 12px); min-width: 0; }
 .acc-email .acc-field-caption { margin: 0; color: var(--text-secondary, #aaa); font-size: max(var(--font-size-sm, 12px), 13px); font-weight: 400; line-height: 1.3; }
 .acc-email .acc-source-line { overflow-wrap: anywhere; }
+.acc-email .acc-fixed-address { margin: 0 0 12px; overflow-wrap: anywhere; }
+.acc-email .acc-fixed-address .acc-btn.acc-link, .acc-email .acc-own-link { padding: 2px 0; }
+.acc-email .acc-own-link { align-self: flex-start; font-size: max(var(--font-size-sm, 12px), 13px); }
 .acc-email .acc-more-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: -6px 0 0; }
 .acc-email .acc-more-links .acc-btn.acc-link { font-size: max(var(--font-size-sm, 12px), 13px); padding: 2px 0; }
 .acc-email .acc-more-links .acc-btn.acc-link[aria-expanded="true"] { display: none; }
@@ -302,7 +306,7 @@ _EMAIL_CSS = """
   .acc-email input[type=text], .acc-email input[type=email], .acc-email input[type=password], .acc-email select { font-size: var(--font-size-input, 16px); min-height: var(--tap-min, 44px); }
   .acc-email .acc-btn, .acc-email .acc-btn.acc-link, .acc-email .acc-more-links .acc-btn.acc-link, .acc-email ul.acc-chips li .acc-btn.acc-link { min-height: var(--tap-min, 44px); }
   .acc-email details > summary { min-height: var(--tap-min, 44px); display: flex; align-items: center; }
-  .acc-email .af-form__help, .acc-email .acc-field-caption, .acc-email .af-switch__desc, .acc-email .acc-saved, .acc-email .acc-more-links .acc-btn.acc-link { font-size: max(var(--font-size-sm, 12px), 14px); }
+  .acc-email .af-form__help, .acc-email .acc-field-caption, .acc-email .af-switch__desc, .acc-email .acc-saved, .acc-email .acc-more-links .acc-btn.acc-link, .acc-email .acc-own-link { font-size: max(var(--font-size-sm, 12px), 14px); }
   .acc-email .acc-sentence input.acc-num, .acc-email .acc-sentence input.acc-word, .acc-email .acc-sentence select { min-height: var(--tap-min, 44px); }
 }
 """
@@ -399,15 +403,16 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
   <div class="acc-message acc-warn" data-acc="email-notices"></div>
   <section class="af-card" data-acc="email-identity-card" aria-labelledby="acc-email-identity-h">
     <div class="af-card__header"><h3 class="af-card__title" id="acc-email-identity-h">Email address</h3></div>
-    <div class="af-form__field">
+    <div class="af-form__field" data-acc="email-identity-field">
       <div class="af-form__inline">
         <input type="email" id="acc-email-registered" data-acc="email-registered" autocomplete="email" aria-labelledby="acc-email-identity-h" aria-describedby="acc-email-identity-help acc-email-identity-error">
         <button type="button" class="acc-btn" data-acc-action="identity-save" data-acc="email-identity-save">Save</button>
       </div>
-      <p class="af-form__help" id="acc-email-identity-help">Where notifications go, and the first address your agents may write to. Empty = the mailbox's own address.</p>
+      <p class="af-form__help" id="acc-email-identity-help">The first address your agents may write to. Empty = the mailbox's own address.</p>
       <p class="af-form__help" data-acc="email-identity-differs" hidden></p>
       <p class="af-form__error" id="acc-email-identity-error" data-acc="email-identity-error" role="alert" hidden></p>
     </div>
+    <p class="af-form__help" data-acc="email-identity-pending" hidden>The first address your agents may write to. Connecting a mailbox below sets it to the mailbox's address.</p>
   </section>
   <section class="af-card" data-acc="email-mailbox-card" aria-labelledby="acc-email-mailbox-h">
     <div class="af-card__header"><h3 class="af-card__title" id="acc-email-mailbox-h">Mailbox</h3></div>
@@ -419,10 +424,12 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
         <button type="button" class="af-tabs__tab" role="tab" id="acc-email-tab-microsoft" data-acc-tab="microsoft" aria-controls="acc-email-panel-oauth" aria-selected="false" tabindex="-1">Microsoft</button>
       </div>
       <div class="af-tabs__panel" role="tabpanel" id="acc-email-panel-imap" data-acc="email-panel-imap" aria-labelledby="acc-email-tab-imap">
-        <div class="af-form__field">
+        <p class="acc-fixed-address" data-acc="email-address-fixed" hidden>Mailbox account: <strong data-acc="email-address-fixed-value"></strong> — <button type="button" class="acc-btn acc-link" data-acc-action="mailbox-address-reveal" aria-controls="acc-email-address-field acc-email-oauth-address-field" aria-expanded="false">Use a different account</button></p>
+        <div class="af-form__field" id="acc-email-address-field" data-acc="email-address-field">
           <label class="af-form__label" for="acc-email-address">Mailbox address</label>
           <input type="email" id="acc-email-address" data-acc="email-address" autocomplete="email" aria-describedby="acc-email-address-help">
           <p class="af-form__help" id="acc-email-address-help">The account your agents read and send from — usually your own address.</p>
+          <button type="button" class="acc-btn acc-link acc-own-link" data-acc-action="mailbox-address-own" data-acc="email-address-own" hidden></button>
         </div>
         <div class="af-form__field">
           <label class="af-form__label" for="acc-email-password">Password</label>
@@ -467,10 +474,12 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
         <p class="af-form__help">Connect tests reading and sending first and stores nothing if the test fails. The mailbox is only read: never marked read, moved or deleted.</p>
       </div>
       <div class="af-tabs__panel" role="tabpanel" id="acc-email-panel-oauth" data-acc="email-panel-oauth" aria-labelledby="acc-email-tab-google" hidden>
-        <div class="af-form__field">
+        <p class="acc-fixed-address" data-acc="email-oauth-address-fixed" hidden>Mailbox account: <strong data-acc="email-oauth-address-fixed-value"></strong> — <button type="button" class="acc-btn acc-link" data-acc-action="mailbox-address-reveal" aria-controls="acc-email-address-field acc-email-oauth-address-field" aria-expanded="false">Use a different account</button></p>
+        <div class="af-form__field" id="acc-email-oauth-address-field" data-acc="email-oauth-address-field">
           <label class="af-form__label" for="acc-email-oauth-address">Mailbox address</label>
           <input type="email" id="acc-email-oauth-address" data-acc="email-oauth-address" autocomplete="email" aria-describedby="acc-email-oauth-help">
           <p class="af-form__help" id="acc-email-oauth-help" data-acc="email-oauth-help">The Google sign-in page opens with this address.</p>
+          <button type="button" class="acc-btn acc-link acc-own-link" data-acc-action="mailbox-address-own" data-acc="email-oauth-address-own" hidden></button>
         </div>
         <div class="af-form__actions">
           <button type="button" class="acc-btn acc-primary" data-acc-action="oauth-start" data-acc="email-oauth-start">Sign in with Google</button>
@@ -545,7 +554,7 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
     </div>
   </details>
   <p class="af-form__help" data-acc="email-scope">These are the email settings of this AbstractCore install. A gateway keeps its own per user: each user sets theirs in the gateway console (My account).</p>
-  <div class="acc-cli-line">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email registered-address &lt;email address&gt;</code>, <code>printf '%s\\n' "$PASSWORD" | abstractcore email connect --address &lt;email address&gt; --password-stdin</code>, <code>abstractcore email connect --address &lt;email address&gt; --oauth google|microsoft</code>, <code>abstractcore email agent-tools on|off</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 20 --per-day 100</code>, <code>abstractcore email folder &lt;name&gt;</code>, <code>abstractcore email enable|disable</code> (Active)</div>
+  <div class="acc-cli-line">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email registered-address &lt;email address&gt;</code>, <code>printf '%s\\n' "$PASSWORD" | abstractcore email connect --address &lt;email address&gt; --password-stdin</code>, <code>abstractcore email connect --address &lt;email address&gt; --oauth google|microsoft</code>, <code>abstractcore email agent-tools on|off</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 100 --per-day 1000</code>, <code>abstractcore email folder &lt;name&gt;</code>, <code>abstractcore email enable|disable</code> (Active)</div>
 </div>"""
 
 _TEMPLATES: Dict[str, str] = {
@@ -1538,6 +1547,7 @@ _JS_TEMPLATE = r"""
     let tab = null; // imap | google | microsoft
     let discovery = null; // {address, domain, pending, defaults, error}
     let discoverTimer = null;
+    let otherAccount = false; // "Use a different account" was chosen: the mailbox forms edit their own address
     const edited = new Set(); // server fields the user typed in: never overwritten by a pre-fill
     const busy = new Set();
     const timers = {};
@@ -1572,12 +1582,44 @@ _JS_TEMPLATE = r"""
     }
     function adopt(out) {
       if (out && out.schema === "email_settings_v1") {
+        if (out.configured) otherAccount = false; // a later disconnect starts again from the Email address
         doc = { ...out, notices: (doc && doc.notices) || [], oauth_providers: out.oauth_providers || (doc && doc.oauth_providers) };
         fill(doc);
       }
       render();
     }
     function ownAddress(d) { return (d && (d.registered_address_stored || "")) || ""; }
+    // ONE address question (DESIGN v2 §11 G5). Not connected and no Email
+    // address: the mailbox form's address is the only address field (Connect
+    // sets the Email address from it, EmailAccountStore.connect). An Email
+    // address set: the mailbox forms show it as a read-only line, "Use a
+    // different account" reveals their field (prefilled) and the Email address
+    // turns read-only meanwhile. Connected: only the Email address field.
+    // Never two editable address fields on screen.
+    const ADDRESS_PANES = ["email-address", "email-oauth-address"];
+    function renderAddressMode() {
+      const d = doc || {};
+      const connected = Boolean(d.configured);
+      const own = ownAddress(d);
+      const fixed = !connected && Boolean(own) && !otherAccount;
+      const locked = !connected && Boolean(own) && otherAccount;
+      el("email-identity-field").hidden = !connected && !own;
+      el("email-identity-pending").hidden = connected || Boolean(own);
+      const reg = el("email-registered");
+      reg.readOnly = locked;
+      if (locked) reg.setAttribute("aria-readonly", "true"); else reg.removeAttribute("aria-readonly");
+      el("email-identity-save").hidden = locked;
+      for (const name of ADDRESS_PANES) {
+        el(`${name}-fixed`).hidden = !fixed;
+        el(`${name}-fixed-value`).textContent = own;
+        el(`${name}-field`).hidden = fixed;
+        const back = el(`${name}-own`);
+        back.hidden = !locked;
+        back.textContent = locked ? `Use ${own} instead` : "";
+        if (fixed && val(name) !== own) { setVal(name, own); if (name === "email-address") prefill(); }
+      }
+      for (const b of ctx.host.querySelectorAll('[data-acc-action="mailbox-address-reveal"]')) b.setAttribute("aria-expanded", otherAccount ? "true" : "false");
+    }
     function fill(d) {
       setIfIdle("email-registered", ownAddress(d));
       const pol = d.policy || { mode: "allowlist", entries: [] };
@@ -1749,9 +1791,10 @@ _JS_TEMPLATE = r"""
         pickDefaultTab();
       } else renderOauth();
       el("email-disconnect-confirm").hidden = !(connected && confirming);
+      renderAddressMode();
       const differs = el("email-identity-differs");
       const own = ownAddress(d).toLowerCase();
-      if (connected && own && d.address && own !== String(d.address).toLowerCase()) {
+      if (connected && own && d.address && own.trim() !== String(d.address).trim().toLowerCase()) {
         differs.textContent = `Your mailbox is a different account: ${d.address}.`;
         differs.hidden = false;
       } else { differs.textContent = ""; differs.hidden = true; }
@@ -1923,6 +1966,14 @@ _JS_TEMPLATE = r"""
       if (name === "refresh") { await load(); return; }
       if (name === "identity-save") { await saveIdentity(); return; }
       if (name === "email-connect") { await connectOther(); return; }
+      if (name === "mailbox-address-reveal" || name === "mailbox-address-own") {
+        otherAccount = name === "mailbox-address-reveal";
+        renderAddressMode();
+        const pane = tab === "imap" ? "email-address" : "email-oauth-address";
+        if (otherAccount) { el(pane).focus(); el(pane).select(); }
+        else el(`${pane}-fixed`).querySelector("button").focus();
+        return;
+      }
       if (name === "login-reveal" || name === "ca-reveal") {
         const [field, link, input] = name === "login-reveal"
           ? ["email-login-field", "email-login-link", "email-username"] : ["email-ca-field", "email-ca-link", "email-ca-file"];

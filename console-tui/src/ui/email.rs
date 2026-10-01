@@ -4,18 +4,32 @@
 //!
 //! 1. **Email address** — one field with its own inline Save (where
 //!    notifications go, and the first address agents may write to).
-//! 2. **Mailbox** — not connected: tabs Google / Microsoft / Other. The
-//!    Other tab asks only for the address and the password; the mail
-//!    servers are found from the address (`abstractcore email discover`)
-//!    and shown as one summary line, with "Server settings" folded (it
-//!    opens by itself, with the reason, when nothing is found). ONE
-//!    primary action, Connect (store + connection test). Connected: one
-//!    status line + Test + Disconnect (inline confirmation).
+//!    When the connected mailbox is another account, one muted line
+//!    says so.
+//! 2. **Mailbox** — not connected: tabs IMAP (first, the default) /
+//!    Google / Microsoft. The IMAP tab shows every field: the mailbox
+//!    address, the password, and the incoming (IMAP) and outgoing
+//!    (SMTP) server, port and security — filled with the standard
+//!    `imap.<domain>` 993 SSL / `smtp.<domain>` 465 SSL the moment the
+//!    address has a domain, then with the discovered defaults
+//!    (`abstractcore email discover --json` → `defaults`, core
+//!    `discovery.server_defaults`), never over a field the person
+//!    edited; one source line says where they come from. No user name
+//!    and no display name fields: the login is the discovered one (a
+//!    small "different login name" link reveals it), the display name
+//!    is the CLI's default; the CA file sits behind a small "Custom
+//!    certificate" link. ONE primary action, Connect (store +
+//!    connection test). Connected: one status line, the **Active**
+//!    switch, Test + Disconnect (inline confirmation).
 //! 3. **Agent email tools** — one switch, unavailable with its reason
-//!    until a mailbox is connected and in use.
-//! 4. **Advanced** (folded) — recipient rules (add/remove apply at
-//!    once), send limits (saved on Enter or when the field loses
-//!    focus), the folder, and the "Use this mailbox" switch.
+//!    until a mailbox is connected and active.
+//! 4. **Advanced** (folded) — three plain sentences: who your agents
+//!    may send to (mode + entries, add/remove apply at once), "At most
+//!    N per hour and M per day" (saved on Enter or when a field loses
+//!    focus) with the usage, and the watched folder.
+//!
+//! Every failed action says why, inline where it was asked (the CLI's
+//! own sentence), not only in the status line.
 //!
 //! No Save per section: switches apply immediately, the only Save is the
 //! Email address field's own.
@@ -62,15 +76,31 @@ pub const HINTS: &[(&str, &str)] = &[
 // ---------------------------------------------------------------------
 
 pub const ADDRESS_HELP: &str =
-    "Where notifications go, and the first address your agents may write to.";
+    "The first address your agents may write to.";
+/// The Email address card while no address is stored and no mailbox is
+/// connected: the mailbox form's address is then the only address field.
+pub const ADDRESS_PENDING: &str = "The first address your agents may write to. Connecting a mailbox below sets it to the mailbox's address.";
+/// The Email address card while "Use a different account" is open.
+pub const ADDRESS_LOCKED: &str = "Read-only while you connect a different mailbox account below.";
+pub const OTHER_ACCOUNT_LINK: &str = "Use a different account";
+pub const MAILBOX_ADDRESS_HELP: &str =
+    "The account your agents read and send from \u{2014} usually your own address.";
 pub const PASSWORD_HELP: &str = "Use an app password if your provider needs one.";
 pub const AGENT_TOOLS_DESC: &str = "Your agents and workflows may list, search, read, send and reply to your mail. Every send still follows your recipient rules, your limits and the approval gate.";
-pub const USE_MAILBOX_DESC: &str =
-    "Off keeps the settings but stops watching, sending and notifications.";
+pub const ACTIVE_DESC: &str =
+    "Off pauses watching, sending and notifications; your settings are kept.";
 pub const DISCONNECT_CONFIRM: &str = "Disconnect this mailbox? Your agents lose email until you connect again. Policy and limits are kept.";
 pub const NO_MAILBOX: &str = "Connect a mailbox first.";
-pub const MAILBOX_NOT_IN_USE: &str = "\u{201c}Use this mailbox\u{201d} is off (Advanced).";
-pub const TABS: [&str; 3] = ["Google", "Microsoft", "Other"];
+pub const MAILBOX_PAUSED: &str = "Your mailbox is paused (Mailbox \u{2192} Active is off).";
+/// Mailbox tabs: IMAP first and the default.
+pub const TABS: [&str; 3] = ["IMAP", "Google", "Microsoft"];
+pub const TAB_IMAP: usize = 0;
+pub const LOGIN_LINK: &str = "My provider uses a different login name";
+pub const LOGIN_HELP: &str =
+    "The name your provider signs you in with, when it is not your address.";
+pub const CERT_LINK: &str = "Custom certificate";
+pub const CA_HELP: &str =
+    "A certificate file (PEM) for a server signed by its own authority; empty = the system's.";
 
 /// Label column of the screen's fields.
 const LABEL_W: i32 = 15;
@@ -90,10 +120,8 @@ fn b(v: &Value, key: &str) -> bool {
 
 #[derive(Clone, Copy)]
 pub struct EmailUi {
-    /// Mailbox tab: 0 Google, 1 Microsoft, 2 Other.
+    /// Mailbox tab: 0 IMAP (the default), 1 Google, 2 Microsoft.
     pub tab: Signal<usize>,
-    /// The person picked a tab: the lookup no longer chooses one.
-    tab_chosen: Signal<bool>,
     /// The Email address card's field, and its inline outcome.
     pub address: Signal<String>,
     pub address_note: Signal<Option<Result<String, String>>>,
@@ -101,20 +129,30 @@ pub struct EmailUi {
     seen_address: Signal<Option<String>>,
     /// The mailbox address (every tab; prefilled from the email address).
     pub mb_address: Signal<String>,
+    /// "Use a different account" was chosen: the mailbox form edits its
+    /// own address and the Email address reads as text meanwhile.
+    pub other_account: Signal<bool>,
     pub password: Signal<String>,
-    pub servers_folded: Signal<bool>,
-    /// Why Server settings opened by itself (discovery found nothing).
-    pub servers_reason: Signal<Option<String>>,
-    pub username: Signal<String>,
-    pub display_name: Signal<String>,
+    /// The login (the discovered form; shown only after the "different
+    /// login name" link).
+    pub login: Signal<String>,
+    pub login_open: Signal<bool>,
     pub imap_host: Signal<String>,
     pub imap_port: Signal<String>,
     pub imap_sec: Signal<usize>,
-    pub folder: Signal<String>,
     pub smtp_host: Signal<String>,
     pub smtp_port: Signal<String>,
     pub smtp_sec: Signal<usize>,
     pub ca_file: Signal<String>,
+    pub ca_open: Signal<bool>,
+    /// The values the form last filled in by itself: a field that still
+    /// holds its filled value (or nothing) was not edited, so newer
+    /// defaults may replace it.
+    auto_fill: Signal<ServerFill>,
+    /// Debounce generation of the server lookup while typing.
+    lookup_gen: Signal<u64>,
+    /// The address the fields were last filled for.
+    filled_for: Signal<Option<String>>,
     pub oauth_folded: Signal<bool>,
     pub client_id: Signal<String>,
     pub client_secret: Signal<String>,
@@ -137,6 +175,12 @@ pub struct EmailUi {
     seen_folder: Signal<Option<String>>,
     pub folder_note: Signal<Option<Result<String, String>>>,
     pub limits_note: Signal<Option<Result<String, String>>>,
+    /// The outcome of Test / Disconnect / Active (the mailbox card).
+    pub mailbox_note: Signal<Option<Result<String, String>>>,
+    /// The outcome of the Agent email tools switch.
+    pub tools_note: Signal<Option<Result<String, String>>>,
+    /// The outcome of a recipient-rule change.
+    pub policy_note: Signal<Option<Result<String, String>>>,
     /// The address a server lookup is running for.
     pub pending_discovery: Signal<Option<String>>,
     seeded: Signal<bool>,
@@ -145,30 +189,34 @@ pub struct EmailUi {
     pub fid_connect: u64,
     pub fid_limits: u64,
     pub fid_folder: u64,
+    pub fid_mailbox: u64,
+    pub fid_tools: u64,
+    pub fid_policy: u64,
 }
 
 impl EmailUi {
     pub fn create(cx: Scope) -> EmailUi {
         EmailUi {
-            tab: cx.signal(0),
-            tab_chosen: cx.signal(false),
+            tab: cx.signal(TAB_IMAP),
             address: cx.signal(String::new()),
             address_note: cx.signal(None),
             seen_address: cx.signal(None),
             mb_address: cx.signal(String::new()),
+            other_account: cx.signal(false),
             password: cx.signal(String::new()),
-            servers_folded: cx.signal(true),
-            servers_reason: cx.signal(None),
-            username: cx.signal(String::new()),
-            display_name: cx.signal(String::new()),
+            login: cx.signal(String::new()),
+            login_open: cx.signal(false),
             imap_host: cx.signal(String::new()),
             imap_port: cx.signal(String::new()),
             imap_sec: cx.signal(0),
-            folder: cx.signal(String::new()),
             smtp_host: cx.signal(String::new()),
             smtp_port: cx.signal(String::new()),
             smtp_sec: cx.signal(0),
             ca_file: cx.signal(String::new()),
+            ca_open: cx.signal(false),
+            auto_fill: cx.signal(ServerFill::default()),
+            lookup_gen: cx.signal(0),
+            filled_for: cx.signal(None),
             oauth_folded: cx.signal(true),
             client_id: cx.signal(String::new()),
             client_secret: cx.signal(String::new()),
@@ -188,6 +236,9 @@ impl EmailUi {
             seen_folder: cx.signal(None),
             folder_note: cx.signal(None),
             limits_note: cx.signal(None),
+            mailbox_note: cx.signal(None),
+            tools_note: cx.signal(None),
+            policy_note: cx.signal(None),
             pending_discovery: cx.signal(None),
             seeded: cx.signal(false),
             flash_gen: cx.signal(0),
@@ -195,6 +246,9 @@ impl EmailUi {
             fid_connect: next_form_id(),
             fid_limits: next_form_id(),
             fid_folder: next_form_id(),
+            fid_mailbox: next_form_id(),
+            fid_tools: next_form_id(),
+            fid_policy: next_form_id(),
         }
     }
 }
@@ -227,36 +281,140 @@ fn domain_of(addr: &str) -> &str {
     addr.trim().rsplit_once('@').map(|(_, d)| d).unwrap_or("")
 }
 
-fn security_word(sec: &str) -> &'static str {
-    if sec == "starttls" {
-        "STARTTLS"
-    } else {
-        "SSL"
-    }
-}
-
-/// "imap.fastmail.com · 993 · SSL  ·  smtp.fastmail.com · 465 · SSL".
-pub fn servers_summary(found: &Value) -> String {
-    ["imap", "smtp"]
-        .iter()
-        .filter_map(|leg| found.get(*leg).filter(|v| v.is_object()))
-        .map(|srv| {
-            format!(
-                "{} · {} · {}",
-                s(srv, "host"),
-                srv.get("port").and_then(Value::as_i64).unwrap_or(0),
-                security_word(s(srv, "security"))
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("  ·  ")
-}
-
 /// The discovery answer about `addr`, if the last lookup was for it.
 fn answer_for(d: &Option<Value>, addr: &str) -> Option<Value> {
     d.as_ref()
         .filter(|v| s(v, "address").eq_ignore_ascii_case(addr.trim()))
         .cloned()
+}
+
+/// The values of the IMAP pane's server fields (and the login).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ServerFill {
+    pub imap_host: String,
+    pub imap_port: String,
+    /// 0 SSL, 1 STARTTLS.
+    pub imap_sec: usize,
+    pub smtp_host: String,
+    pub smtp_port: String,
+    pub smtp_sec: usize,
+    pub login: String,
+}
+
+/// What the form fills in for an address, and the one sentence that
+/// says where the values come from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ServerDefaults {
+    pub fill: ServerFill,
+    /// `"discovered"` or `"standard"`.
+    pub source: String,
+    /// `google` / `microsoft` when the mailbox is one (its tab signs in
+    /// without a password).
+    pub provider: Option<String>,
+    pub message: String,
+}
+
+/// The standard servers of an address's domain, filled the moment the
+/// address has one (before any lookup answers): `imap.<domain>` 993
+/// SSL, `smtp.<domain>` 465 SSL, the address as the login — the same
+/// fallback as core `discovery.server_defaults`.
+pub fn standard_defaults(addr: &str) -> Option<ServerDefaults> {
+    let addr = addr.trim();
+    if !plausible_address(addr) {
+        return None;
+    }
+    let domain = domain_of(addr);
+    Some(ServerDefaults {
+        fill: ServerFill {
+            imap_host: format!("imap.{domain}"),
+            imap_port: "993".into(),
+            imap_sec: 0,
+            smtp_host: format!("smtp.{domain}"),
+            smtp_port: "465".into(),
+            smtp_sec: 0,
+            login: addr.to_string(),
+        },
+        source: "standard".into(),
+        provider: None,
+        message: format!(
+            "Standard settings for {domain} \u{2014} change them if your provider uses others."
+        ),
+    })
+}
+
+/// The `defaults` of a lookup answer (`{address, result: <abstractcore
+/// email discover --json>}` or `{address, error}`). An answer WITHOUT
+/// `defaults` is an AbstractCore older than this console: said loudly,
+/// never papered over.
+pub fn discovered_defaults(answer: &Value) -> Result<ServerDefaults, String> {
+    if let Some(err) = answer.get("error").and_then(Value::as_str) {
+        return Err(format!("Couldn't look up the mail servers: {err}"));
+    }
+    let Some(d) = answer
+        .get("result")
+        .and_then(|r| r.get("defaults"))
+        .filter(|d| d.is_object())
+    else {
+        return Err("This AbstractCore sent no server defaults (`abstractcore email discover --json` has no \"defaults\"): update AbstractCore. The standard settings are shown.".into());
+    };
+    let leg = |k: &str| -> Result<(String, String, usize), String> {
+        let v = d
+            .get(k)
+            .filter(|v| v.is_object())
+            .ok_or_else(|| format!("The server defaults have no {k} server."))?;
+        let port = v
+            .get("port")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| format!("The {k} server default has no port."))?;
+        Ok((
+            s(v, "host").to_string(),
+            port.to_string(),
+            security_index(s(v, "security")),
+        ))
+    };
+    let (imap_host, imap_port, imap_sec) = leg("imap")?;
+    let (smtp_host, smtp_port, smtp_sec) = leg("smtp")?;
+    let login = match s(d, "login") {
+        "" => s(answer, "address").trim().to_string(),
+        l => l.to_string(),
+    };
+    Ok(ServerDefaults {
+        fill: ServerFill {
+            imap_host,
+            imap_port,
+            imap_sec,
+            smtp_host,
+            smtp_port,
+            smtp_sec,
+            login,
+        },
+        source: s(d, "source").to_string(),
+        provider: Some(s(d, "provider").to_string()).filter(|p| !p.is_empty()),
+        message: s(d, "message").to_string(),
+    })
+}
+
+/// Newer defaults over the fields: a field still holding what the form
+/// last filled in (or nothing) takes the new value; a field the person
+/// edited keeps theirs.
+pub fn merge_fill(current: &ServerFill, auto: &ServerFill, new: &ServerFill) -> ServerFill {
+    let text = |c: &String, a: &String, n: &String| {
+        if c.is_empty() || c == a {
+            n.clone()
+        } else {
+            c.clone()
+        }
+    };
+    let pick = |c: usize, a: usize, n: usize| if c == a { n } else { c };
+    ServerFill {
+        imap_host: text(&current.imap_host, &auto.imap_host, &new.imap_host),
+        imap_port: text(&current.imap_port, &auto.imap_port, &new.imap_port),
+        imap_sec: pick(current.imap_sec, auto.imap_sec, new.imap_sec),
+        smtp_host: text(&current.smtp_host, &auto.smtp_host, &new.smtp_host),
+        smtp_port: text(&current.smtp_port, &auto.smtp_port, &new.smtp_port),
+        smtp_sec: pick(current.smtp_sec, auto.smtp_sec, new.smtp_sec),
+        login: text(&current.login, &auto.login, &new.login),
+    }
 }
 
 fn provider_label(p: &str) -> &'static str {
@@ -365,7 +523,7 @@ pub fn summary_line(doc: &Value) -> String {
     format!(
         "mailbox {}{} · agent email tools {} · {}",
         s(doc, "address"),
-        if in_use { "" } else { " (not in use)" },
+        if in_use { "" } else { " (paused)" },
         if tools { "on" } else { "off" },
         if failed { "last check failed" } else { "ok" }
     )
@@ -377,7 +535,7 @@ pub fn agent_tools_switch(doc: &Value) -> Switch {
         return Switch::Unavailable(NO_MAILBOX.into());
     }
     if !doc.get("enabled").and_then(Value::as_bool).unwrap_or(true) {
-        return Switch::Unavailable(MAILBOX_NOT_IN_USE.into());
+        return Switch::Unavailable(MAILBOX_PAUSED.into());
     }
     Switch::from_bool(
         doc.get("agent_tools")
@@ -386,8 +544,8 @@ pub fn agent_tools_switch(doc: &Value) -> Switch {
     )
 }
 
-/// The "Use this mailbox" switch state.
-pub fn use_mailbox_switch(doc: &Value) -> Switch {
+/// The mailbox's "Active" switch state.
+pub fn active_switch(doc: &Value) -> Switch {
     if !b(doc, "configured") {
         return Switch::Unavailable(NO_MAILBOX.into());
     }
@@ -455,18 +613,19 @@ fn security_index(v: &str) -> usize {
     SECURITY.iter().position(|x| *x == v).unwrap_or(0)
 }
 
-/// The Other tab's values, as typed (trimmed where the form trims).
+/// The IMAP tab's values, as typed (trimmed where the form trims).
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ConnectFields {
     pub address: String,
-    pub display_name: String,
-    pub username: String,
+    /// The login; sent only when it is not the address (the CLI's
+    /// default). The display name is never asked: the CLI keeps a
+    /// stored one and defaults a new one.
+    pub login: String,
     /// Never trimmed: spaces can belong to a password.
     pub password: String,
     pub imap_host: String,
     pub imap_port: String,
     pub imap_security: usize,
-    pub folder: String,
     pub smtp_host: String,
     pub smtp_port: String,
     pub smtp_security: usize,
@@ -474,9 +633,9 @@ pub(crate) struct ConnectFields {
 }
 
 /// Connect: `email connect --address=… --password-stdin …`, the password
-/// on stdin. Without hosts the CLI finds the servers from the address
-/// (and refuses with `email_discovery_failed` when it can't). Errors are
-/// the form's words.
+/// on stdin, and the servers exactly as the fields show them. Without
+/// hosts the CLI finds the servers from the address (and refuses with
+/// `email_discovery_failed` when it can't). Errors are the form's words.
 pub(crate) fn connect_action(
     f: &ConnectFields,
     form_id: Option<u64>,
@@ -504,15 +663,13 @@ pub(crate) fn connect_action(
             args.push(Arg::p(format!("--{flag}={value}")));
         }
     };
-    opt("display-name", &f.display_name);
-    opt("username", &f.username);
+    if !f.login.eq_ignore_ascii_case(&f.address) {
+        opt("username", &f.login);
+    }
     if !f.imap_host.is_empty() {
         opt("imap-host", &f.imap_host);
         opt("imap-port", &f.imap_port);
         opt("imap-security", SECURITY[f.imap_security.min(1)]);
-    }
-    if !f.folder.is_empty() {
-        opt("imap-folder", &f.folder);
     }
     if !f.smtp_host.is_empty() {
         opt("smtp-host", &f.smtp_host);
@@ -608,8 +765,9 @@ pub(crate) fn address_action(addr: &str, form_id: Option<u64>) -> Result<EmailAc
     })
 }
 
-/// A switch write: the notice names the NEW state.
-pub(crate) fn switch_action(feature: &str, on: bool) -> EmailAction {
+/// A switch write: the notice names the NEW state. `feature` is
+/// `agent-tools` or `active` (the mailbox's Active switch).
+pub(crate) fn switch_action(feature: &str, on: bool, form_id: Option<u64>) -> EmailAction {
     let (args, notice) = match feature {
         "agent-tools" => (
             vec![Arg::p("agent-tools"), Arg::p(if on { "on" } else { "off" })],
@@ -618,9 +776,9 @@ pub(crate) fn switch_action(feature: &str, on: bool) -> EmailAction {
         _ => (
             vec![Arg::p(if on { "enable" } else { "disable" })],
             if on {
-                "This mailbox is in use.".to_string()
+                "Your mailbox is active.".to_string()
             } else {
-                "This mailbox is not in use (settings kept).".to_string()
+                "Your mailbox is paused; your settings are kept.".to_string()
             },
         ),
     };
@@ -628,10 +786,10 @@ pub(crate) fn switch_action(feature: &str, on: bool) -> EmailAction {
         label: if feature == "agent-tools" {
             "Agent email tools".into()
         } else {
-            "Use this mailbox".into()
+            "Active".into()
         },
         args,
-        form_id: None,
+        form_id,
         stdin_secret: None,
         oauth: false,
         ok_notice: Some(notice),
@@ -686,11 +844,11 @@ pub(crate) fn folder_action(name: &str, form_id: Option<u64>) -> Result<EmailAct
     })
 }
 
-fn plain_action(label: &str, args: Vec<Arg>, ok_notice: String) -> EmailAction {
+fn plain_action(label: &str, args: Vec<Arg>, ok_notice: String, form_id: u64) -> EmailAction {
     EmailAction {
         label: label.to_string(),
         args,
-        form_id: None,
+        form_id: Some(form_id),
         stdin_secret: None,
         oauth: false,
         ok_notice: Some(ok_notice),
@@ -722,44 +880,65 @@ fn request_discovery(ctx: &Ctx) {
     ctx.send(Cmd::EmailDiscover { address: addr });
 }
 
-/// Fill the empty Server settings fields from the lookup's answer.
-fn prefill_servers(ctx: &Ctx) {
-    let ui = ctx.ui.email;
-    let addr = ui.mb_address.get_untracked();
-    let Some(answer) = ctx
+/// The defaults for the address in the field: the lookup's, once it
+/// answered for this address, else the standard ones of its domain.
+/// The second value is the lookup's failure (said under the fields).
+fn defaults_for(ctx: &Ctx, addr: &str) -> (Option<ServerDefaults>, Option<String>) {
+    let answer = ctx
         .store
         .email_discovery
-        .with_untracked(|d| answer_for(d, &addr))
-    else {
-        return;
-    };
-    let Some(found) = answer.get("result").filter(|r| b(r, "found")) else {
-        return;
-    };
-    let port = |v: &Value| {
-        v.get("port")
-            .and_then(Value::as_i64)
-            .map(|p| p.to_string())
-            .unwrap_or_default()
-    };
-    if let Some(imap) = found.get("imap").filter(|v| v.is_object()) {
-        if ui.imap_host.with_untracked(String::is_empty) {
-            ui.imap_host.set(s(imap, "host").to_string());
-            ui.imap_port.set(port(imap));
-            ui.imap_sec.set(security_index(s(imap, "security")));
+        .with_untracked(|d| answer_for(d, addr));
+    match answer.as_ref().map(discovered_defaults) {
+        Some(Ok(d)) => (Some(d), None),
+        Some(Err(e)) => (standard_defaults(addr), Some(e)),
+        None => (standard_defaults(addr), None),
+    }
+}
+
+fn read_fill(ui: EmailUi) -> ServerFill {
+    ServerFill {
+        imap_host: ui.imap_host.get_untracked(),
+        imap_port: ui.imap_port.get_untracked(),
+        imap_sec: ui.imap_sec.get_untracked(),
+        smtp_host: ui.smtp_host.get_untracked(),
+        smtp_port: ui.smtp_port.get_untracked(),
+        smtp_sec: ui.smtp_sec.get_untracked(),
+        login: ui.login.get_untracked(),
+    }
+}
+
+fn write_fill(ui: EmailUi, f: &ServerFill) {
+    fn set_if<T: Clone + PartialEq + 'static>(sig: Signal<T>, v: &T) {
+        if sig.with_untracked(|c| c != v) {
+            sig.set(v.clone());
         }
     }
-    if let Some(smtp) = found.get("smtp").filter(|v| v.is_object()) {
-        if ui.smtp_host.with_untracked(String::is_empty) {
-            ui.smtp_host.set(s(smtp, "host").to_string());
-            ui.smtp_port.set(port(smtp));
-            ui.smtp_sec.set(security_index(s(smtp, "security")));
-        }
-    }
-    let user = s(found, "username");
-    if ui.username.with_untracked(String::is_empty) && !user.is_empty() && user != addr.trim() {
-        ui.username.set(user.to_string());
-    }
+    set_if(ui.imap_host, &f.imap_host);
+    set_if(ui.imap_port, &f.imap_port);
+    set_if(ui.imap_sec, &f.imap_sec);
+    set_if(ui.smtp_host, &f.smtp_host);
+    set_if(ui.smtp_port, &f.smtp_port);
+    set_if(ui.smtp_sec, &f.smtp_sec);
+    set_if(ui.login, &f.login);
+}
+
+/// Fill the IMAP pane's server fields for the address in the field
+/// (standard at once, the lookup's when it answered), never over a
+/// field the person edited.
+fn fill_servers(ctx: &Ctx) {
+    let ui = ctx.ui.email;
+    let addr = ui.mb_address.get_untracked().trim().to_string();
+    let (Some(defaults), _) = defaults_for(ctx, &addr) else {
+        return;
+    };
+    let merged = merge_fill(
+        &read_fill(ui),
+        &ui.auto_fill.get_untracked(),
+        &defaults.fill,
+    );
+    write_fill(ui, &merged);
+    ui.auto_fill.set(defaults.fill);
+    ui.filled_for.set(Some(addr));
 }
 
 fn flash(ui: EmailUi, note: Signal<Option<Result<String, String>>>, text: &str) {
@@ -891,12 +1070,12 @@ fn install_effects(cx: Scope, ctx: &Ctx) {
                 stored
             };
             ui.mb_address.set(mb);
-            if s(&doc, "auth_kind") == "password" {
-                ui.tab.set(2);
-                ui.tab_chosen.set(true);
-            } else if let Some(p) = doc.get("oauth").map(|o| s(o, "provider")) {
-                ui.tab.set(usize::from(p == "microsoft"));
-                ui.tab_chosen.set(true);
+            // IMAP is the default tab; a mailbox signed in with Google
+            // or Microsoft reopens on its own tab after a disconnect.
+            if s(&doc, "auth_kind") == "oauth2" {
+                if let Some(p) = doc.get("oauth").map(|o| s(o, "provider")) {
+                    ui.tab.set(if p == "microsoft" { 2 } else { 1 });
+                }
             }
         }
         let folder = doc
@@ -922,16 +1101,49 @@ fn install_effects(cx: Scope, ctx: &Ctx) {
         }
     });
 
-    // Completions of this screen's writes (by form id).
+    // ONE address question: while the email address is the mailbox
+    // account (Fixed), the mailbox form follows it (a save lands, another
+    // console wrote); a connection ends "Use a different account".
+    cx.effect(move || {
+        let other = ui.other_account.get();
+        let Some(doc) = store.email.with(|e| e.ready().cloned()) else {
+            return;
+        };
+        match address_mode(&doc, other) {
+            AddressMode::Connected if other => ui.other_account.set(false),
+            AddressMode::Fixed(own) if ui.mb_address.with_untracked(|a| a.trim() != own) => {
+                ui.mb_address.set(own)
+            }
+            _ => {}
+        }
+    });
+
+    // Completions of this screen's writes (by form id). A failure is
+    // said inline where it was asked, in the CLI's own words.
     cx.effect(move || {
         let Some((fid, outcome)) = uis.write_done.get() else {
             return;
         };
-        if fid == ui.fid_address {
+        let note = if fid == ui.fid_address {
+            Some((ui.address_note, "Saved"))
+        } else if fid == ui.fid_folder {
+            Some((ui.folder_note, "Saved"))
+        } else if fid == ui.fid_limits {
+            Some((ui.limits_note, "Saved"))
+        } else if fid == ui.fid_mailbox {
+            Some((ui.mailbox_note, "Done"))
+        } else if fid == ui.fid_tools {
+            Some((ui.tools_note, "Saved"))
+        } else if fid == ui.fid_policy {
+            Some((ui.policy_note, "Saved"))
+        } else {
+            None
+        };
+        if let Some((note, word)) = note {
             uis.write_done.set(None);
             match outcome {
-                Ok(_) => flash(ui, ui.address_note, "Saved"),
-                Err(e) => ui.address_note.set(Some(Err(e))),
+                Ok(_) => flash(ui, note, word),
+                Err(e) => note.set(Some(Err(e))),
             }
         } else if fid == ui.fid_connect {
             uis.write_done.set(None);
@@ -945,81 +1157,70 @@ fn install_effects(cx: Scope, ctx: &Ctx) {
                 }
                 Err(e) => ui.connect_error.set(Some(e)),
             }
-        } else if fid == ui.fid_folder {
-            uis.write_done.set(None);
-            match outcome {
-                Ok(_) => flash(ui, ui.folder_note, "Saved"),
-                Err(e) => ui.folder_note.set(Some(Err(e))),
-            }
-        } else if fid == ui.fid_limits {
-            uis.write_done.set(None);
-            match outcome {
-                Ok(_) => flash(ui, ui.limits_note, "Saved"),
-                Err(e) => ui.limits_note.set(Some(Err(e))),
-            }
         }
     });
 
-    // A lookup answered: it is no longer pending, and when it found
-    // nothing for the address in the field, Server settings open with
-    // the reason.
-    cx.effect(move || {
-        let answer = store.email_discovery.get();
-        let addr = ui.mb_address.get();
-        if let Some(a) = answer.as_ref() {
-            let who = s(a, "address").to_string();
-            if ui
-                .pending_discovery
-                .with_untracked(|p| p.as_deref() == Some(who.as_str()))
+    // The mailbox address changed: the standard servers of its domain
+    // at once, then a lookup once typing pauses (~400 ms).
+    {
+        let ctx = ctx.clone();
+        cx.effect(move || {
+            let addr = ui.mb_address.get().trim().to_string();
+            let configured = store
+                .email
+                .with(|e| e.ready().map(|d| b(d, "configured")).unwrap_or(false));
+            if configured
+                || !plausible_address(&addr)
+                || ui
+                    .filled_for
+                    .with_untracked(|f| f.as_deref() == Some(&addr))
             {
-                ui.pending_discovery.set(None);
+                return;
             }
-        }
-        // Until the person picks a tab, the lookup picks the one that
-        // matches the address: Google, Microsoft, or Other (any other
-        // provider, or none found: the servers are typed by hand).
-        if let Some(found) = answer_for(&answer, &addr).and_then(|a| a.get("result").cloned()) {
-            if !ui.tab_chosen.get_untracked() {
-                let tab = match s(&found, "provider") {
-                    "google" => 0,
-                    "microsoft" => 1,
-                    _ => 2,
-                };
-                if ui.tab.get_untracked() != tab {
-                    ui.tab.set(tab);
+            untrack(|| fill_servers(&ctx));
+            let g = ui.lookup_gen.get_untracked() + 1;
+            ui.lookup_gen.set(g);
+            let ctx_t = ctx.clone();
+            // The screen state may be gone when the pause ends (a test
+            // harness dropped): then there is nothing to look up.
+            abstracttui::reactive::after(LOOKUP_DEBOUNCE, move || {
+                if ui.lookup_gen.try_get_untracked() == Some(g)
+                    && ui
+                        .mb_address
+                        .try_get_untracked()
+                        .is_some_and(|a| a.trim() == addr)
+                {
+                    request_discovery(&ctx_t);
+                }
+            });
+        });
+    }
+
+    // A lookup answered: it is no longer pending, and its defaults
+    // replace the fields the person did not edit.
+    {
+        let ctx = ctx.clone();
+        cx.effect(move || {
+            let answer = store.email_discovery.get();
+            if let Some(a) = answer.as_ref() {
+                let who = s(a, "address").to_string();
+                if ui
+                    .pending_discovery
+                    .with_untracked(|p| p.as_deref() == Some(who.as_str()))
+                {
+                    ui.pending_discovery.set(None);
                 }
             }
-        }
-        match answer_for(&answer, &addr) {
-            Some(a) if a.get("result").is_some_and(|r| !b(r, "found")) => {
-                ui.servers_reason.set(Some(format!(
-                    "Couldn't find the mail servers for {}. Enter them here.",
-                    domain_of(&addr)
-                )));
-                ui.servers_folded.set(false);
-            }
-            Some(a)
-                if a.get("result").is_some_and(|r| b(r, "found"))
-                    && ui.servers_reason.with_untracked(Option::is_some) =>
-            {
-                ui.servers_reason.set(None);
-            }
-            _ => {}
-        }
-    });
-
-    // Connect refused because the CLI found no servers either.
-    cx.effect(move || {
-        if store.email_error_code.get().as_deref() == Some("email_discovery_failed") {
             let addr = ui.mb_address.get_untracked();
-            ui.servers_reason.set(Some(format!(
-                "Couldn't find the mail servers for {}. Enter them here.",
-                domain_of(&addr)
-            )));
-            ui.servers_folded.set(false);
-        }
-    });
+            if answer_for(&answer, &addr).is_some() {
+                untrack(|| fill_servers(&ctx));
+            }
+        });
+    }
 }
+
+/// The pause in typing after which the mailbox address is looked up.
+const LOOKUP_DEBOUNCE: Duration = Duration::from_millis(400);
 
 fn heading(t: &TokenSet, text: &str) -> View {
     line(vec![span_bold(format!(" {text}"), t.text)])
@@ -1145,9 +1346,166 @@ fn page(
     col.build()
 }
 
+/// The stored email address ("" when none).
+fn stored_address(doc: &Value) -> String {
+    doc.get("registered_address_stored")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| s(doc, "registered_address"))
+        .trim()
+        .to_string()
+}
+
+/// ONE address question (DESIGN v2 §11 G5): which address field shows.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AddressMode {
+    /// A mailbox is connected: only the Email address field.
+    Connected,
+    /// No email address and no mailbox: only the mailbox form's address
+    /// field (Connect sets the email address from it).
+    Free,
+    /// An email address is set: the mailbox form shows it as the line
+    /// "Mailbox account: x@y — Use a different account".
+    Fixed(String),
+    /// "Use a different account": the mailbox form's field (prefilled);
+    /// the Email address reads as text.
+    Different(String),
+}
+
+pub fn address_mode(doc: &Value, other_account: bool) -> AddressMode {
+    if b(doc, "configured") {
+        return AddressMode::Connected;
+    }
+    let own = stored_address(doc);
+    if own.is_empty() {
+        AddressMode::Free
+    } else if other_account {
+        AddressMode::Different(own)
+    } else {
+        AddressMode::Fixed(own)
+    }
+}
+
+/// The read-only line of the mailbox form (its link is on the next line).
+pub fn mailbox_account_line(own: &str) -> String {
+    format!("Mailbox account: {own}")
+}
+
+/// The address mode, as a signal that changes only when the mode does
+/// (so the fields remount only then: focus and drafts survive writes).
+fn mode_signal(cx: Scope, ctx: &Ctx) -> Signal<AddressMode> {
+    let store = ctx.store;
+    let ui = ctx.ui.email;
+    let compute = move || {
+        let other = ui.other_account.get();
+        store.email.with(|e| {
+            e.ready()
+                .map(|d| address_mode(d, other))
+                .unwrap_or(AddressMode::Connected)
+        })
+    };
+    let mode = cx.signal(untrack(compute));
+    cx.effect(move || {
+        let now = compute();
+        if mode.with_untracked(|m| *m != now) {
+            mode.set(now);
+        }
+    });
+    mode
+}
+
+/// "Your mailbox is a different account: x@y." — only when a mailbox is
+/// connected with an address that is not the email address.
+pub fn different_account_line(doc: &Value) -> Option<String> {
+    if !b(doc, "configured") {
+        return None;
+    }
+    let registered = doc
+        .get("registered_address_stored")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| s(doc, "registered_address"))
+        .trim();
+    let mailbox = s(doc, "address").trim();
+    (!registered.is_empty() && !mailbox.is_empty() && !registered.eq_ignore_ascii_case(mailbox))
+        .then(|| format!("Your mailbox is a different account: {mailbox}."))
+}
+
+/// The inline failure of a note (the CLI's own sentence), nothing else.
+fn error_line(
+    theme: Signal<&'static abstracttui::theme::Theme>,
+    note: Signal<Option<Result<String, String>>>,
+) -> View {
+    dyn_view(col(), move || {
+        let t = theme.get().tokens;
+        match note.get() {
+            Some(Err(e)) => wrapped_bold(format!("✗ {e}"), t.error),
+            _ => empty(),
+        }
+    })
+}
+
+/// The "✓ Saved" cell right of a field (9 cells, empty otherwise).
+fn saved_cell(
+    theme: Signal<&'static abstracttui::theme::Theme>,
+    note: Signal<Option<Result<String, String>>>,
+) -> View {
+    dyn_view(LayoutStyle::row().h(1).w(9).shrink(0.0), move || {
+        let t = theme.get().tokens;
+        match note.get() {
+            Some(Ok(w)) => line(vec![span_bold(format!("✓ {w}"), t.ok)]),
+            _ => empty(),
+        }
+    })
+}
+
+/// Words of a sentence around inline fields: exactly as wide as they are.
+fn words(t: &TokenSet, text: &str) -> View {
+    let w = abstracttui::text::measure(text, Size::new(1000, 1)).w;
+    Element::new()
+        .style(LayoutStyle::default().w(w).h(1).shrink(0.0))
+        .child(line(vec![span(text.to_string(), t.text)]))
+        .build()
+}
+
+/// A small link-like button ("› Custom certificate").
+fn link_button(cx: Scope, text: &str, on_click: impl FnMut() + 'static) -> View {
+    Element::new()
+        .style(LayoutStyle::row().h(1))
+        .child(
+            Button::new(format!("› {text}"))
+                .style(ButtonStyle {
+                    fg: TokenId::Link,
+                    ..ButtonStyle::default()
+                })
+                .on_click(on_click)
+                .view(cx),
+        )
+        .build()
+}
+
 fn address_card(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
     let t = theme.get_untracked().tokens;
+    let mode = mode_signal(cx, ctx);
+    let ctx_b = ctx.clone();
+    let body = dyn_view_scoped(col(), move |acx| {
+        let t = theme.get().tokens;
+        match mode.get() {
+            AddressMode::Free => helper(&t, ADDRESS_PENDING),
+            AddressMode::Different(own) => Element::new()
+                .style(LayoutStyle::column())
+                .child(wrapped(own, t.text))
+                .child(helper(&t, ADDRESS_LOCKED))
+                .build(),
+            AddressMode::Connected | AddressMode::Fixed(_) => address_field(acx, &ctx_b, theme),
+        }
+    });
+    card(&t, "Email address", body)
+}
+
+/// The Email address field with its inline Save.
+fn address_field(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
+    let t = theme.get_untracked().tokens;
     let ui = ctx.ui.email;
+    let store = ctx.store;
     let save = {
         let ctx = ctx.clone();
         move || match address_action(&ui.address.get_untracked(), Some(ui.fid_address)) {
@@ -1172,33 +1530,25 @@ fn address_card(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme:
                 .view(cx),
         ))
         .child(Button::new("Save").on_click(save).view(cx))
-        .child(dyn_view(
-            LayoutStyle::row().h(1).w(9).shrink(0.0),
-            move || {
-                let t = theme.get().tokens;
-                match ui.address_note.get() {
-                    Some(Ok(w)) => line(vec![span_bold(format!("✓ {w}"), t.ok)]),
-                    _ => empty(),
-                }
-            },
-        ))
+        .child(saved_cell(theme, ui.address_note))
         .build();
-    card(
-        &t,
-        "Email address",
-        Element::new()
-            .style(LayoutStyle::column())
-            .child(row)
-            .child(dyn_view(col(), move || {
-                let t = theme.get().tokens;
-                match ui.address_note.get() {
-                    Some(Err(e)) => wrapped_bold(format!("✗ {e}"), t.error),
-                    _ => empty(),
-                }
-            }))
-            .child(helper(&t, ADDRESS_HELP))
-            .build(),
-    )
+    let other_account = dyn_view(col(), move || {
+        let t = theme.get().tokens;
+        match store
+            .email
+            .with(|e| e.ready().and_then(different_account_line))
+        {
+            Some(text) => helper(&t, &text),
+            None => empty(),
+        }
+    });
+    Element::new()
+        .style(LayoutStyle::column())
+        .child(row)
+        .child(error_line(theme, ui.address_note))
+        .child(other_account)
+        .child(helper(&t, ADDRESS_HELP))
+        .build()
 }
 
 fn mailbox_card(
@@ -1209,14 +1559,15 @@ fn mailbox_card(
 ) -> View {
     let t = theme.get_untracked().tokens;
     let body = if configured {
-        connected_view(ctx, theme)
+        connected_view(cx, ctx, theme)
     } else {
         not_connected_view(cx, ctx, theme)
     };
     card(&t, "Mailbox", body)
 }
 
-fn connected_view(ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
+fn connected_view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
+    let t = theme.get_untracked().tokens;
     let store = ctx.store;
     let ui = ctx.ui.email;
     let status = dyn_view(col(), move || {
@@ -1227,9 +1578,6 @@ fn connected_view(ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) 
         let mut col = Element::new()
             .style(LayoutStyle::column())
             .child(wrapped_bold(connected_line(&doc, now_secs()), t.ok));
-        if !doc.get("enabled").and_then(Value::as_bool).unwrap_or(true) {
-            col = col.child(wrapped(MAILBOX_NOT_IN_USE.to_string(), t.warn));
-        }
         if let Some(err) = doc
             .get("status")
             .and_then(|st| st.get("last_error"))
@@ -1248,6 +1596,27 @@ fn connected_view(ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) 
         }
         col.build()
     });
+    // The Active switch (it was Advanced's "Use this mailbox").
+    let ctx_active = ctx.clone();
+    let notice = store.notice;
+    let active = SwitchRow::new(
+        "Active",
+        move || {
+            store
+                .email
+                .with(|e| e.ready().map(active_switch))
+                .unwrap_or(Switch::Unavailable(NO_MAILBOX.into()))
+        },
+        move |on| {
+            ui.mailbox_note.set(None);
+            send(
+                &ctx_active,
+                switch_action("active", on, Some(ui.fid_mailbox)),
+            )
+        },
+    )
+    .on_refused(move |r| notice.set(Some(format!("Active: {r}"))))
+    .view(cx);
     let actions = {
         let ctx = ctx.clone();
         dyn_view_scoped(col(), move |acx| {
@@ -1265,6 +1634,7 @@ fn connected_view(ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) 
                                     .style(danger_style())
                                     .on_click(move || {
                                         ui.confirm_disconnect.set(false);
+                                        ui.mailbox_note.set(None);
                                         send(
                                             &ctx_yes,
                                             plain_action(
@@ -1272,6 +1642,7 @@ fn connected_view(ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) 
                                                 vec![Arg::p("disconnect"), Arg::p("--yes")],
                                                 "Mailbox disconnected. Policy and limits are kept."
                                                     .into(),
+                                                ui.fid_mailbox,
                                             ),
                                         );
                                     })
@@ -1294,12 +1665,14 @@ fn connected_view(ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) 
                     .child(
                         Button::new("Test")
                             .on_click(move || {
+                                ui.mailbox_note.set(None);
                                 send(
                                     &ctx_test,
                                     plain_action(
                                         "Test",
                                         vec![Arg::p("test")],
                                         "Connection test passed (IMAP and SMTP).".into(),
+                                        ui.fid_mailbox,
                                     ),
                                 )
                             })
@@ -1318,7 +1691,10 @@ fn connected_view(ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) 
     Element::new()
         .style(LayoutStyle::column())
         .child(status)
+        .child(active)
+        .child(helper(&t, ACTIVE_DESC))
         .child(actions)
+        .child(error_line(theme, ui.mailbox_note))
         .build()
 }
 
@@ -1330,7 +1706,9 @@ fn not_connected_view(
     let t = theme.get_untracked().tokens;
     let ui = ctx.ui.email;
     let store = ctx.store;
-    // A prefilled address is looked up at once (it picks the tab).
+    // A prefilled address gets its standard servers and is looked up at
+    // once.
+    fill_servers(ctx);
     request_discovery(ctx);
     // The bar only (panels need a scope of their own: built below).
     let mut tabs = Tabs::new();
@@ -1339,35 +1717,33 @@ fn not_connected_view(
     }
     let bar = tabs
         .active(ui.tab)
-        .on_change(move |_| ui.tab_chosen.set(true))
         .layout(LayoutStyle::column().h(2).shrink(0.0))
         .element(cx, &t)
         .build();
     let ctx_p = ctx.clone();
     let panel = dyn_view_scoped(col(), move |pcx| {
         let tab = ui.tab.get();
-        if tab == 2 {
-            other_panel(pcx, &ctx_p, theme)
+        if tab == TAB_IMAP {
+            imap_panel(pcx, &ctx_p, theme)
         } else {
             oauth_panel(pcx, &ctx_p, theme, tab)
         }
     });
-    let ctx_c = ctx.clone();
     let waiting = dyn_view_scoped(col(), move |wcx| {
         let t = theme.get().tokens;
         if !ui.connecting.get() {
             return empty();
         }
+        let oauth = ui.tab.get_untracked() != TAB_IMAP;
         let text = match store.email_oauth_prompt.get() {
             Some(p) => oauth_prompt_text(&p),
-            None if ui.tab.get_untracked() < 2 => "starting the sign-in…".into(),
+            None if oauth => "starting the sign-in…".into(),
             None => "connecting — signing in to the IMAP and SMTP servers…".into(),
         };
-        let _ = &ctx_c;
         let mut col = Element::new()
             .style(LayoutStyle::column())
             .child(wrapped_bold(format!("⟳ {text}"), t.info));
-        if ui.tab.get_untracked() < 2 {
+        if oauth {
             col = col.child(
                 Element::new()
                     .style(LayoutStyle::row().h(1))
@@ -1397,16 +1773,17 @@ fn not_connected_view(
         .build()
 }
 
+/// The Google (tab 1) / Microsoft (tab 2) sign-in pane.
 fn oauth_panel(
     cx: Scope,
     ctx: &Ctx,
     theme: Signal<&'static abstracttui::theme::Theme>,
     tab: usize,
 ) -> View {
-    let t = theme.get_untracked().tokens;
     let ui = ctx.ui.email;
     let store = ctx.store;
-    let provider = OAUTH_PROVIDERS[tab.min(1)];
+    let pidx = tab.saturating_sub(1).min(1);
+    let provider = OAUTH_PROVIDERS[pidx];
     let ctx_btn = ctx.clone();
     let button = dyn_view_scoped(col(), move |bcx| {
         let t = theme.get().tokens;
@@ -1424,7 +1801,7 @@ fn oauth_panel(
             }
             let v = |sig: Signal<String>| sig.get_untracked().trim().to_string();
             let f = OAuthFields {
-                provider: tab,
+                provider: pidx,
                 address: v(ui.mb_address),
                 client_id: v(ui.client_id),
                 client_secret: ui.client_secret.get_untracked(),
@@ -1465,7 +1842,7 @@ fn oauth_panel(
                 .style(LayoutStyle::column())
                 .child(input(dcx, &t, "Client id", ui.client_id, false, 60))
                 .child(input(dcx, &t, "Client secret", ui.client_secret, true, 60));
-            if tab == 1 {
+            if provider == "microsoft" {
                 col = col.child(input(dcx, &t, "Tenant", ui.tenant, false, 40));
             }
             col.child(field_w(
@@ -1490,14 +1867,58 @@ fn oauth_panel(
         .view(cx);
     Element::new()
         .style(LayoutStyle::column())
-        .child(mailbox_address_input(cx, ctx, &t))
+        .child(mailbox_address_block(cx, ctx, theme))
         .child(button)
         .child(advanced)
         .build()
 }
 
+/// The mailbox address (every tab), ONE address question (DESIGN v2 §11
+/// G5): the field while no email address is stored; the line "Mailbox
+/// account: x@y — Use a different account" while one is (the link shows
+/// the field, prefilled, with a way back).
+fn mailbox_address_block(
+    cx: Scope,
+    ctx: &Ctx,
+    theme: Signal<&'static abstracttui::theme::Theme>,
+) -> View {
+    let ui = ctx.ui.email;
+    let mode = mode_signal(cx, ctx);
+    let ctx_b = ctx.clone();
+    dyn_view_scoped(col(), move |mcx| {
+        let t = theme.get().tokens;
+        let mut col = Element::new().style(LayoutStyle::column());
+        match mode.get() {
+            AddressMode::Fixed(own) => {
+                // Two lines (the link on its own, like the screen's other
+                // small links): one line overflows a 60-column terminal.
+                col = col
+                    .child(wrapped(mailbox_account_line(&own), t.text))
+                    .child(link_button(mcx, OTHER_ACCOUNT_LINK, move || {
+                        ui.other_account.set(true)
+                    }));
+                col = col.child(helper(&t, MAILBOX_ADDRESS_HELP));
+            }
+            AddressMode::Different(own) => {
+                col = col
+                    .child(mailbox_address_input(mcx, &ctx_b, &t))
+                    .child(helper(&t, MAILBOX_ADDRESS_HELP))
+                    .child(link_button(mcx, &format!("Use {own} instead"), move || {
+                        ui.other_account.set(false)
+                    }));
+            }
+            AddressMode::Free | AddressMode::Connected => {
+                col = col
+                    .child(mailbox_address_input(mcx, &ctx_b, &t))
+                    .child(helper(&t, MAILBOX_ADDRESS_HELP));
+            }
+        }
+        col.build()
+    })
+}
+
 /// The mailbox address field (every tab): the servers are looked up
-/// when it loses focus or is submitted.
+/// when typing pauses, when it loses focus, or on Enter.
 fn mailbox_address_input(cx: Scope, ctx: &Ctx, t: &TokenSet) -> View {
     let ui = ctx.ui.email;
     let focused = cx.signal(false);
@@ -1515,7 +1936,7 @@ fn mailbox_address_input(cx: Scope, ctx: &Ctx, t: &TokenSet) -> View {
     let ctx_submit = ctx.clone();
     field_w(
         t,
-        "Email address",
+        "Mailbox address",
         LABEL_W,
         TextInput::new()
             .layout(LayoutStyle::default().grow(1.0).max_w(44).h(1))
@@ -1527,150 +1948,175 @@ fn mailbox_address_input(cx: Scope, ctx: &Ctx, t: &TokenSet) -> View {
     )
 }
 
-fn other_panel(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
-    let t = theme.get_untracked().tokens;
+/// The one sentence under the server fields: where the values come
+/// from ("Settings found for …" / "Standard settings for …"), a lookup
+/// in flight, a lookup that failed (its cause), and the Google /
+/// Microsoft hint.
+fn source_view(ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
     let ui = ctx.ui.email;
     let store = ctx.store;
-    let address = mailbox_address_input(cx, ctx, &t);
-    let summary = dyn_view(col(), move || {
+    dyn_view(col(), move || {
         let t = theme.get().tokens;
         let addr = ui.mb_address.get().trim().to_string();
+        let Some(standard) = standard_defaults(&addr) else {
+            return helper(
+                &t,
+                "The mail servers are filled in from your mailbox address.",
+            );
+        };
         let answer = store.email_discovery.with(|d| answer_for(d, &addr));
         let pending = ui
             .pending_discovery
             .with(|p| p.as_deref() == Some(addr.as_str()));
-        if !plausible_address(&addr) {
-            return helper(&t, "The mail servers are found from your email address.");
-        }
-        match answer {
-            None if pending => line(vec![span(
-                format!("⟳ finding the mail servers for {}…", domain_of(&addr)),
-                t.info,
-            )]),
-            None => helper(
-                &t,
-                &format!(
-                    "Press Enter in the address field to find the mail servers for {}.",
-                    domain_of(&addr)
-                ),
-            ),
-            Some(a) => {
-                match a.get("result") {
-                    Some(found) if b(found, "found") => {
-                        let mut col = Element::new()
-                            .style(LayoutStyle::column())
-                            .child(wrapped(servers_summary(found), t.text));
-                        let prov = s(found, "provider");
-                        if !prov.is_empty() {
-                            let p = provider_label(prov);
-                            col = col.child(helper(
-                            &t,
-                            &format!("This is a {p} mailbox: the {p} tab signs in without a password."),
-                        ));
-                        }
-                        col.build()
-                    }
-                    Some(_) => wrapped(
-                        format!(
-                            "Couldn't find the mail servers for {}. Enter them in Server settings.",
-                            domain_of(&addr)
-                        ),
-                        t.warn,
-                    ),
-                    None => wrapped(
-                        format!("Couldn't look up the mail servers: {}", s(&a, "error")),
-                        t.warn,
-                    ),
-                }
-            }
-        }
-    });
-    let ctx_prefill = ctx.clone();
-    let servers = Disclosure::new("Server settings")
-        .folded(ui.servers_folded)
-        .max_body_rows(0)
-        .on_toggle(move |folded| {
-            if !folded {
-                prefill_servers(&ctx_prefill);
-            }
-        })
-        .body(move |dcx| {
-            let t = theme.get_untracked().tokens;
-            let sec = || vec![SelectOption::new("SSL"), SelectOption::new("STARTTLS")];
-            let reason = dyn_view(col(), move || {
-                let t = theme.get().tokens;
-                match ui.servers_reason.get() {
-                    Some(r) => wrapped_bold(r, t.warn),
-                    None => empty(),
-                }
-            });
-            // Port and security side by side on a wide terminal, one
-            // above the other on a narrow one (no wrapping row: a
-            // wrapped row measures one line and paints two).
-            let wide = use_viewport(dcx).get_untracked().w >= 100;
-            let pair = |_dcx: Scope, a: View, b_: View| {
-                let cell = |w: i32, v: View| {
-                    Element::new()
-                        .style(LayoutStyle::default().w(w).h(1).shrink(0.0))
-                        .child(v)
-                        .build()
-                };
-                if wide {
-                    Element::new()
-                        .style(LayoutStyle::row().gap(2).h(1))
-                        .child(cell(LABEL_W + 1 + 8, a))
-                        .child(cell(13 + 1 + 14, b_))
-                        .build()
+        let mut col = Element::new().style(LayoutStyle::column());
+        match answer.as_ref().map(discovered_defaults) {
+            Some(Ok(d)) => {
+                let message = if d.message.is_empty() {
+                    standard.message.clone()
                 } else {
-                    Element::new()
-                        .style(LayoutStyle::column())
-                        .child(a)
-                        .child(b_)
-                        .build()
+                    d.message.clone()
+                };
+                col = col.child(helper(&t, &message));
+                if let Some(p) = d
+                    .provider
+                    .as_deref()
+                    .filter(|p| OAUTH_PROVIDERS.contains(p))
+                {
+                    let p = provider_label(p);
+                    col = col.child(helper(
+                        &t,
+                        &format!("This is a {p} mailbox: the {p} tab signs in without a password."),
+                    ));
                 }
-            };
+            }
+            Some(Err(e)) => {
+                col = col
+                    .child(helper(&t, &standard.message))
+                    .child(wrapped(e, t.warn));
+            }
+            None => {
+                col = col.child(helper(&t, &standard.message));
+                if pending {
+                    col = col.child(line(vec![span(
+                        format!("⟳ looking up the settings for {}…", domain_of(&addr)),
+                        t.info,
+                    )]));
+                }
+            }
+        }
+        col.build()
+    })
+}
+
+/// One server leg: a heading, then Server · Port · Security on one row
+/// on a wide terminal (server above port + security on a narrow one;
+/// fixed cells, never a wrapping row: it measures one line and paints
+/// two).
+fn server_rows(
+    cx: Scope,
+    t: &TokenSet,
+    heading_text: &str,
+    host: Signal<String>,
+    port: Signal<String>,
+    security: Signal<usize>,
+) -> View {
+    let wide = use_viewport(cx).get_untracked().w >= 100;
+    let cell = |w: i32, v: View| {
+        Element::new()
+            .style(LayoutStyle::default().w(w).h(1).shrink(0.0))
+            .child(v)
+            .build()
+    };
+    let host_in = |w: i32| {
+        TextInput::new()
+            .layout(LayoutStyle::default().w(w).h(1))
+            .value(host)
+            .view(cx)
+    };
+    let port_in = || {
+        TextInput::new()
+            .layout(LayoutStyle::default().w(7).h(1))
+            .value(port)
+            .view(cx)
+    };
+    let sec_in = || {
+        Select::new(vec![
+            SelectOption::new("SSL"),
+            SelectOption::new("STARTTLS"),
+        ])
+        .value(security)
+        .layout(LayoutStyle::default().w(14).h(1))
+        .view(cx)
+    };
+    let port_sec = |port_label_w: i32| {
+        Element::new()
+            .style(LayoutStyle::row().gap(2).h(1))
+            .child(cell(
+                port_label_w + 1 + 7,
+                field_w(t, "Port", port_label_w, port_in()),
+            ))
+            .child(cell(8 + 1 + 14, field_w(t, "Security", 8, sec_in())))
+            .build()
+    };
+    let body = if wide {
+        Element::new()
+            .style(LayoutStyle::row().gap(2).h(1))
+            .child(cell(
+                LABEL_W + 1 + 34,
+                field_w(t, "Server", LABEL_W, host_in(34)),
+            ))
+            .child(port_sec(4))
+            .build()
+    } else {
+        Element::new()
+            .style(LayoutStyle::column())
+            .child(field_w(
+                t,
+                "Server",
+                LABEL_W,
+                TextInput::new()
+                    .layout(LayoutStyle::default().grow(1.0).max_w(44).h(1))
+                    .value(host)
+                    .view(cx),
+            ))
+            .child(port_sec(LABEL_W))
+            .build()
+    };
+    Element::new()
+        .style(LayoutStyle::column())
+        .child(heading(t, heading_text))
+        .child(body)
+        .build()
+}
+
+/// The IMAP tab: every field visible, servers pre-filled.
+fn imap_panel(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
+    let t = theme.get_untracked().tokens;
+    let ui = ctx.ui.email;
+    let login = dyn_view_scoped(col(), move |lcx| {
+        let t = theme.get().tokens;
+        if ui.login_open.get() {
             Element::new()
                 .style(LayoutStyle::column())
-                .child(reason)
-                .child(input(dcx, &t, "IMAP host", ui.imap_host, false, 44))
-                .child(pair(
-                    dcx,
-                    input(dcx, &t, "IMAP port", ui.imap_port, false, 7),
-                    field_w(
-                        &t,
-                        "IMAP security",
-                        if wide { 13 } else { LABEL_W },
-                        Select::new(sec())
-                            .value(ui.imap_sec)
-                            .layout(LayoutStyle::default().w(14).h(1))
-                            .view(dcx),
-                    ),
-                ))
-                .child(input(dcx, &t, "Folder", ui.folder, false, 30))
-                .child(input(dcx, &t, "SMTP host", ui.smtp_host, false, 44))
-                .child(pair(
-                    dcx,
-                    input(dcx, &t, "SMTP port", ui.smtp_port, false, 7),
-                    field_w(
-                        &t,
-                        "SMTP security",
-                        if wide { 13 } else { LABEL_W },
-                        Select::new(sec())
-                            .value(ui.smtp_sec)
-                            .layout(LayoutStyle::default().w(14).h(1))
-                            .view(dcx),
-                    ),
-                ))
-                .child(input(dcx, &t, "User name", ui.username, false, 44))
-                .child(input(dcx, &t, "Display name", ui.display_name, false, 44))
-                .child(input(dcx, &t, "CA file", ui.ca_file, false, 60))
-                .child(helper(
-                    &t,
-                    "Empty fields use what was found; the user name defaults to the address, the folder to INBOX.",
-                ))
+                .child(input(lcx, &t, "Login", ui.login, false, 44))
+                .child(helper(&t, LOGIN_HELP))
                 .build()
-        })
-        .view(cx);
+        } else {
+            link_button(lcx, LOGIN_LINK, move || ui.login_open.set(true))
+        }
+    });
+    let cert = dyn_view_scoped(col(), move |ccx| {
+        let t = theme.get().tokens;
+        if ui.ca_open.get() {
+            Element::new()
+                .style(LayoutStyle::column())
+                .child(input(ccx, &t, "CA file", ui.ca_file, false, 60))
+                .child(helper(&t, CA_HELP))
+                .build()
+        } else {
+            link_button(ccx, CERT_LINK, move || ui.ca_open.set(true))
+        }
+    });
     let ctx_connect = ctx.clone();
     let connect = move || {
         if ui.connecting.get_untracked() {
@@ -1679,13 +2125,11 @@ fn other_panel(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::
         let v = |sig: Signal<String>| sig.get_untracked().trim().to_string();
         let f = ConnectFields {
             address: v(ui.mb_address),
-            display_name: v(ui.display_name),
-            username: v(ui.username),
+            login: v(ui.login),
             password: ui.password.get_untracked(),
             imap_host: v(ui.imap_host),
             imap_port: v(ui.imap_port),
             imap_security: ui.imap_sec.get_untracked(),
-            folder: v(ui.folder),
             smtp_host: v(ui.smtp_host),
             smtp_port: v(ui.smtp_port),
             smtp_security: ui.smtp_sec.get_untracked(),
@@ -1702,11 +2146,28 @@ fn other_panel(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::
     };
     Element::new()
         .style(LayoutStyle::column())
-        .child(address)
+        .child(mailbox_address_block(cx, ctx, theme))
         .child(input(cx, &t, "Password", ui.password, true, 44))
         .child(helper(&t, PASSWORD_HELP))
-        .child(summary)
-        .child(servers)
+        .child(server_rows(
+            cx,
+            &t,
+            "Incoming mail (IMAP)",
+            ui.imap_host,
+            ui.imap_port,
+            ui.imap_sec,
+        ))
+        .child(server_rows(
+            cx,
+            &t,
+            "Outgoing mail (SMTP)",
+            ui.smtp_host,
+            ui.smtp_port,
+            ui.smtp_sec,
+        ))
+        .child(source_view(ctx, theme))
+        .child(login)
+        .child(cert)
         .child(
             Element::new()
                 .style(LayoutStyle::row().h(1))
@@ -1723,6 +2184,7 @@ fn agent_tools_card(
 ) -> View {
     let t = theme.get_untracked().tokens;
     let store = ctx.store;
+    let ui = ctx.ui.email;
     let ctx_sw = ctx.clone();
     let notice = store.notice;
     card(
@@ -1739,11 +2201,18 @@ fn agent_tools_card(
                             .with(|e| e.ready().map(agent_tools_switch))
                             .unwrap_or(Switch::Unavailable(NO_MAILBOX.into()))
                     },
-                    move |on| send(&ctx_sw, switch_action("agent-tools", on)),
+                    move |on| {
+                        ui.tools_note.set(None);
+                        send(
+                            &ctx_sw,
+                            switch_action("agent-tools", on, Some(ui.fid_tools)),
+                        )
+                    },
                 )
                 .on_refused(move |r| notice.set(Some(format!("Agent email tools: {r}"))))
                 .view(cx),
             )
+            .child(error_line(theme, ui.tools_note))
             .child(helper(&t, AGENT_TOOLS_DESC))
             .build(),
     )
@@ -1759,10 +2228,19 @@ fn advanced(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
         .view(cx)
 }
 
+/// Advanced: three plain sentences — who your agents may send to, at
+/// most how many per hour and per day, and the watched folder.
 fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
     let t = theme.get_untracked().tokens;
     let store = ctx.store;
     let ui = ctx.ui.email;
+    let policy = move |ctx: &Ctx, args: Vec<Arg>, notice: String| {
+        ui.policy_note.set(None);
+        send(
+            ctx,
+            plain_action("Recipient rules", args, notice, ui.fid_policy),
+        );
+    };
 
     // Recipient rules: the mode applies on change, entries on add/remove.
     let mode = cx.signal(0usize);
@@ -1794,37 +2272,35 @@ fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme
         }
     });
     let ctx_mode = ctx.clone();
-    let mode_select = field_w(
-        &t,
-        "Mode",
-        LABEL_W,
-        Select::new(vec![
-            SelectOption::new("Only these recipients (allowlist)"),
-            SelectOption::new("Everyone except these (denylist)"),
-        ])
-        .value(mode)
-        .layout(LayoutStyle::default().grow(1.0).max_w(38).h(1))
-        .on_change(move |i| {
-            let (m, words) = if i == 1 {
-                ("denylist", "everyone except the listed recipients")
-            } else {
-                ("allowlist", "only the listed recipients")
-            };
-            send(
-                &ctx_mode,
-                plain_action(
-                    "Recipient rules",
+    let mode_select = Element::new()
+        .style(LayoutStyle::row().gap(1).h(1))
+        .child(words(&t, "Your agents may send to"))
+        .child(
+            Select::new(vec![
+                SelectOption::new("Only these recipients"),
+                SelectOption::new("Everyone except these"),
+            ])
+            .value(mode)
+            .layout(LayoutStyle::default().w(25).h(1).shrink(0.0))
+            .on_change(move |i| {
+                let (m, words) = if i == 1 {
+                    ("denylist", "everyone except the listed recipients")
+                } else {
+                    ("allowlist", "only the listed recipients")
+                };
+                policy(
+                    &ctx_mode,
                     vec![
                         Arg::p("policy"),
                         Arg::p("set"),
                         Arg::p(format!("--mode={m}")),
                     ],
-                    format!("Recipient rules: {words}."),
-                ),
-            );
-        })
-        .view(cx),
-    );
+                    format!("Your agents may send to {words}."),
+                );
+            })
+            .view(cx),
+        )
+        .build();
     let ctx_rm = ctx.clone();
     let list = dyn_view_scoped(col(), move |lcx| {
         let t = theme.get().tokens;
@@ -1834,9 +2310,9 @@ fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme
             col = col.child(helper(
                 &t,
                 if mode.get() == 0 {
-                    "No entries: an empty allowlist refuses every recipient."
+                    "No recipients yet: your agents cannot send to anyone."
                 } else {
-                    "No entries: every recipient is allowed."
+                    "No exceptions: your agents may send to everyone."
                 },
             ));
         }
@@ -1850,17 +2326,14 @@ fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme
                     .child(
                         Button::new("Remove")
                             .on_click(move || {
-                                send(
+                                policy(
                                     &ctx2,
-                                    plain_action(
-                                        "Recipient rules",
-                                        vec![
-                                            Arg::p("policy"),
-                                            Arg::p("set"),
-                                            Arg::p(format!("--remove={entry}")),
-                                        ],
-                                        format!("Removed {entry} from the recipient rules."),
-                                    ),
+                                    vec![
+                                        Arg::p("policy"),
+                                        Arg::p("set"),
+                                        Arg::p(format!("--remove={entry}")),
+                                    ],
+                                    format!("Removed {entry} from the recipient rules."),
                                 )
                             })
                             .view(lcx),
@@ -1878,33 +2351,28 @@ fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme
                 return;
             }
             ui.policy_add.set(String::new());
-            send(
+            policy(
                 &ctx,
-                plain_action(
-                    "Recipient rules",
-                    vec![
-                        Arg::p("policy"),
-                        Arg::p("set"),
-                        Arg::p(format!("--add={e}")),
-                    ],
-                    format!("Added {e} to the recipient rules."),
-                ),
+                vec![
+                    Arg::p("policy"),
+                    Arg::p("set"),
+                    Arg::p(format!("--add={e}")),
+                ],
+                format!("Added {e} to the recipient rules."),
             );
         }
     };
     let add2 = add.clone();
     let add_row = Element::new()
         .style(LayoutStyle::row().gap(1).h(1))
-        .child(field_w(
-            &t,
-            "Add",
-            LABEL_W,
+        .child(
             TextInput::new()
                 .layout(LayoutStyle::default().grow(1.0).max_w(36).h(1))
                 .value(ui.policy_add)
+                .placeholder("name@example.com or example.com")
                 .on_submit(move |_| add2())
                 .view(cx),
-        ))
+        )
         .child(Button::new("Add").on_click(add).view(cx))
         .build();
 
@@ -1931,7 +2399,7 @@ fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme
             }
         }
     };
-    let limit_input = |label: &str, value: Signal<String>, label_w: i32| {
+    let limit_input = |value: Signal<String>| {
         let focused = cx.signal(false);
         let was = cx.signal(false);
         let save = save_limits.clone();
@@ -1943,41 +2411,23 @@ fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme
             was.set(f);
         });
         let save2 = save_limits.clone();
-        field_w(
-            &t,
-            label,
-            label_w,
-            TextInput::new()
-                .layout(LayoutStyle::default().w(7).h(1))
-                .value(value)
-                .on_submit(move |_| save2())
-                .element(cx, &t)
-                .focus_signal(focused)
-                .build(),
-        )
+        TextInput::new()
+            .layout(LayoutStyle::default().w(6).h(1).shrink(0.0))
+            .value(value)
+            .on_submit(move |_| save2())
+            .element(cx, &t)
+            .focus_signal(focused)
+            .build()
     };
     let limits_row = Element::new()
-        .style(LayoutStyle::row().gap(2))
-        .child(limit_input("Per hour", ui.per_hour, LABEL_W))
-        .child(limit_input("Per day", ui.per_day, 8))
-        .child(dyn_view(
-            LayoutStyle::row().h(1).w(9).shrink(0.0),
-            move || {
-                let t = theme.get().tokens;
-                match ui.limits_note.get() {
-                    Some(Ok(w)) => line(vec![span_bold(format!("✓ {w}"), t.ok)]),
-                    _ => empty(),
-                }
-            },
-        ))
+        .style(LayoutStyle::row().gap(1).h(1))
+        .child(words(&t, "At most"))
+        .child(limit_input(ui.per_hour))
+        .child(words(&t, "per hour and"))
+        .child(limit_input(ui.per_day))
+        .child(words(&t, "per day."))
+        .child(saved_cell(theme, ui.limits_note))
         .build();
-    let limits_error = dyn_view(col(), move || {
-        let t = theme.get().tokens;
-        match ui.limits_note.get() {
-            Some(Err(e)) => wrapped_bold(format!("✗ {e}"), t.error),
-            _ => empty(),
-        }
-    });
     let usage = dyn_view(col(), move || {
         let t = theme.get().tokens;
         let lim = store
@@ -2033,76 +2483,36 @@ fn advanced_body(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme
             folder_was.set(f);
         });
     }
-    let folder = Element::new()
-        .style(LayoutStyle::column())
+    let folder_row = Element::new()
+        .style(LayoutStyle::row().gap(1).h(1))
+        .child(words(&t, "Watch folder"))
         .child(
-            Element::new()
-                .style(LayoutStyle::row().gap(2).h(1))
-                .child(field_w(
-                    &t,
-                    "Folder",
-                    LABEL_W,
-                    TextInput::new()
-                        .layout(LayoutStyle::default().w(24).h(1))
-                        .value(ui.folder_edit)
-                        .on_submit(move |_| save_folder())
-                        .element(cx, &t)
-                        .focus_signal(folder_focused)
-                        .build(),
-                ))
-                .child(dyn_view(
-                    LayoutStyle::row().h(1).w(9).shrink(0.0),
-                    move || {
-                        let t = theme.get().tokens;
-                        match ui.folder_note.get() {
-                            Some(Ok(w)) => line(vec![span_bold(format!("✓ {w}"), t.ok)]),
-                            _ => empty(),
-                        }
-                    },
-                ))
+            TextInput::new()
+                .layout(LayoutStyle::default().w(24).h(1).shrink(0.0))
+                .value(ui.folder_edit)
+                .on_submit(move |_| save_folder())
+                .element(cx, &t)
+                .focus_signal(folder_focused)
                 .build(),
         )
-        .child(dyn_view(col(), move || {
-            let t = theme.get().tokens;
-            match ui.folder_note.get() {
-                Some(Err(e)) => wrapped_bold(format!("✗ {e}"), t.error),
-                _ => empty(),
-            }
-        }))
-        .child(helper(&t, "The folder your agents read. Empty = INBOX."))
+        .child(saved_cell(theme, ui.folder_note))
         .build();
-    let ctx_use = ctx.clone();
-    let notice = store.notice;
-    let use_mailbox = SwitchRow::new(
-        "Use this mailbox",
-        move || {
-            store
-                .email
-                .with(|e| e.ready().map(use_mailbox_switch))
-                .unwrap_or(Switch::Unavailable(NO_MAILBOX.into()))
-        },
-        move |on| send(&ctx_use, switch_action("use-mailbox", on)),
-    )
-    .on_refused(move |r| notice.set(Some(format!("Use this mailbox: {r}"))))
-    .view(cx);
 
     Element::new()
         .style(LayoutStyle::column())
-        .child(heading(&t, "Recipient rules"))
         .child(mode_select)
         .child(list)
         .child(add_row)
+        .child(error_line(theme, ui.policy_note))
         .child(helper(
             &t,
             "Exact addresses or domains (a subdomain only as its own entry). To, Cc and Bcc are checked; one refused recipient refuses the message.",
         ))
-        .child(heading(&t, "Send limits"))
         .child(limits_row)
-        .child(limits_error)
+        .child(error_line(theme, ui.limits_note))
         .child(usage)
-        .child(folder)
-        .child(use_mailbox)
-        .child(helper(&t, USE_MAILBOX_DESC))
+        .child(folder_row)
+        .child(error_line(theme, ui.folder_note))
         .build()
 }
 
@@ -2280,17 +2690,19 @@ mod tests {
 
     #[test]
     fn switch_actions_name_the_new_state() {
-        let on = switch_action("agent-tools", true);
+        let on = switch_action("agent-tools", true, Some(9));
         assert_eq!(spawned_args(&on), ["email", "agent-tools", "on", "--json"]);
         assert_eq!(on.ok_notice.as_deref(), Some("Agent email tools are on."));
-        let off = switch_action("use-mailbox", false);
+        assert_eq!(on.form_id, Some(9), "a failure lands inline");
+        let off = switch_action("active", false, None);
         assert_eq!(spawned_args(&off), ["email", "disable", "--json"]);
+        assert_eq!(off.label, "Active");
         assert_eq!(
             off.ok_notice.as_deref(),
-            Some("This mailbox is not in use (settings kept).")
+            Some("Your mailbox is paused; your settings are kept.")
         );
         assert_eq!(
-            spawned_args(&switch_action("use-mailbox", true)),
+            spawned_args(&switch_action("active", true, None)),
             ["email", "enable", "--json"]
         );
     }
@@ -2348,21 +2760,18 @@ mod tests {
             agent_tools_switch(&none),
             Switch::Unavailable(NO_MAILBOX.into())
         );
-        assert_eq!(
-            use_mailbox_switch(&none),
-            Switch::Unavailable(NO_MAILBOX.into())
-        );
+        assert_eq!(active_switch(&none), Switch::Unavailable(NO_MAILBOX.into()));
         let on = json!({"configured": true, "enabled": true,
                         "agent_tools": {"enabled": true, "active": true}});
         assert_eq!(agent_tools_switch(&on), Switch::On);
-        assert_eq!(use_mailbox_switch(&on), Switch::On);
+        assert_eq!(active_switch(&on), Switch::On);
         let paused = json!({"configured": true, "enabled": false,
                             "agent_tools": {"enabled": true}});
         assert_eq!(
             agent_tools_switch(&paused),
-            Switch::Unavailable(MAILBOX_NOT_IN_USE.into())
+            Switch::Unavailable(MAILBOX_PAUSED.into())
         );
-        assert_eq!(use_mailbox_switch(&paused), Switch::Off);
+        assert_eq!(active_switch(&paused), Switch::Off);
     }
 
     #[test]
@@ -2392,13 +2801,6 @@ mod tests {
             "1 day ago"
         );
         assert!(ago("", t).is_none());
-        let found = json!({"found": true,
-            "imap": {"host": "imap.fastmail.com", "port": 993, "security": "ssl"},
-            "smtp": {"host": "smtp.fastmail.com", "port": 465, "security": "ssl"}});
-        assert_eq!(
-            servers_summary(&found),
-            "imap.fastmail.com · 993 · SSL  ·  smtp.fastmail.com · 465 · SSL"
-        );
         let doc = json!({"address": "me@x.test", "auth_kind": "oauth2",
                          "oauth": {"provider": "google"},
                          "status": {"last_test": "2026-09-29T20:00:00Z"}});
@@ -2418,5 +2820,149 @@ mod tests {
         ] {
             assert!(!plausible_address(bad), "{bad}");
         }
+    }
+
+    /// The moment the address has a domain: imap./smtp.<domain>, 993 /
+    /// 465 SSL, the address as the login, and the standard sentence.
+    #[test]
+    fn standard_defaults_fill_the_domain_servers() {
+        assert!(standard_defaults("me@").is_none());
+        assert!(standard_defaults("me@example").is_none());
+        let d = standard_defaults(" me@example.com ").unwrap();
+        assert_eq!(
+            d.fill,
+            ServerFill {
+                imap_host: "imap.example.com".into(),
+                imap_port: "993".into(),
+                imap_sec: 0,
+                smtp_host: "smtp.example.com".into(),
+                smtp_port: "465".into(),
+                smtp_sec: 0,
+                login: "me@example.com".into(),
+            }
+        );
+        assert_eq!(d.source, "standard");
+        assert_eq!(
+            d.message,
+            "Standard settings for example.com \u{2014} change them if your provider uses others."
+        );
+    }
+
+    /// The lookup's `defaults` (core `server_defaults`) become the
+    /// fields; an answer without them is said loudly, never hidden.
+    #[test]
+    fn discovered_defaults_read_the_cli_answer_or_fail_loudly() {
+        let answer = json!({"address": "me@fastmail.com", "result": {
+            "found": true, "provider": null,
+            "defaults": {
+                "imap": {"host": "imap.fastmail.com", "port": 993, "security": "ssl"},
+                "smtp": {"host": "smtp.fastmail.com", "port": 587, "security": "starttls"},
+                "login": "me", "source": "discovered", "provider": null,
+                "message": "Settings found for fastmail.com."}}});
+        let d = discovered_defaults(&answer).unwrap();
+        assert_eq!(d.fill.smtp_port, "587");
+        assert_eq!(d.fill.smtp_sec, 1, "STARTTLS");
+        assert_eq!(d.fill.login, "me");
+        assert_eq!(d.message, "Settings found for fastmail.com.");
+        assert_eq!(d.provider, None);
+
+        let old = json!({"address": "me@fastmail.com", "result": {"found": true}});
+        assert!(discovered_defaults(&old)
+            .unwrap_err()
+            .contains("has no \"defaults\""));
+        let failed = json!({"address": "me@x.com", "error": "timed out"});
+        assert_eq!(
+            discovered_defaults(&failed).unwrap_err(),
+            "Couldn't look up the mail servers: timed out"
+        );
+    }
+
+    /// Newer defaults replace what the form filled in, never an edit.
+    #[test]
+    fn merge_fill_never_overwrites_an_edited_field() {
+        let standard = standard_defaults("me@example.com").unwrap().fill;
+        let empty = ServerFill::default();
+        // First fill: everything empty takes the standard values.
+        let first = merge_fill(&empty, &empty, &standard);
+        assert_eq!(first, standard);
+        // The person edits the IMAP host and the SMTP security.
+        let mut edited = first.clone();
+        edited.imap_host = "mail.example.com".into();
+        edited.smtp_sec = 1;
+        let mut found = standard.clone();
+        found.smtp_host = "smtp.provider.net".into();
+        found.smtp_port = "587".into();
+        found.imap_sec = 1;
+        found.smtp_sec = 0;
+        let merged = merge_fill(&edited, &standard, &found);
+        assert_eq!(merged.imap_host, "mail.example.com", "edited: kept");
+        assert_eq!(merged.smtp_sec, 1, "edited: kept");
+        assert_eq!(
+            merged.smtp_host, "smtp.provider.net",
+            "not edited: replaced"
+        );
+        assert_eq!(merged.smtp_port, "587");
+        assert_eq!(merged.imap_sec, 1);
+    }
+
+    /// No display name and no folder on Connect; the login only when it
+    /// is not the address.
+    #[test]
+    fn connect_sends_the_login_only_when_it_differs() {
+        let mut f = fields();
+        f.login = "ME@example.test".into();
+        let args = spawned_args(&connect_action(&f, None).unwrap());
+        assert!(
+            !args.iter().any(|a| a.starts_with("--username")),
+            "{args:?}"
+        );
+        assert!(
+            !args.iter().any(|a| a.starts_with("--display-name")),
+            "{args:?}"
+        );
+        assert!(
+            !args.iter().any(|a| a.starts_with("--imap-folder")),
+            "{args:?}"
+        );
+        f.login = "me".into();
+        let args = spawned_args(&connect_action(&f, None).unwrap());
+        assert!(args.contains(&"--username=me".to_string()), "{args:?}");
+    }
+
+    #[test]
+    fn a_mailbox_of_another_account_is_said_once() {
+        let mut doc = json!({"configured": true, "address": "box@corp.test",
+                             "registered_address_stored": "me@home.test"});
+        assert_eq!(
+            different_account_line(&doc).as_deref(),
+            Some("Your mailbox is a different account: box@corp.test.")
+        );
+        doc["address"] = json!("ME@home.test");
+        assert_eq!(different_account_line(&doc), None);
+        doc["configured"] = json!(false);
+        doc["address"] = json!("box@corp.test");
+        assert_eq!(different_account_line(&doc), None);
+    }
+
+    #[test]
+    fn one_address_question_picks_the_one_field() {
+        let mut doc = json!({"configured": false, "registered_address_stored": ""});
+        assert_eq!(address_mode(&doc, false), AddressMode::Free);
+        assert_eq!(address_mode(&doc, true), AddressMode::Free);
+        doc["registered_address_stored"] = json!(" me@home.test ");
+        assert_eq!(
+            address_mode(&doc, false),
+            AddressMode::Fixed("me@home.test".into())
+        );
+        assert_eq!(
+            address_mode(&doc, true),
+            AddressMode::Different("me@home.test".into())
+        );
+        doc["configured"] = json!(true);
+        assert_eq!(address_mode(&doc, true), AddressMode::Connected);
+        assert_eq!(
+            mailbox_account_line("me@home.test"),
+            "Mailbox account: me@home.test"
+        );
     }
 }

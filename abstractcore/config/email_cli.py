@@ -9,7 +9,7 @@
     abstractcore email test | status | folders
     abstractcore email disconnect --yes
     abstractcore email policy show | set --mode allowlist --add me@example.com --add example.org | check <address>...
-    abstractcore email limits set --per-hour 20 --per-day 100
+    abstractcore email limits show | set --per-hour 100 --per-day 1000 | reset   (reset = follow the defaults)
     abstractcore email enable | disable            "Use this mailbox" (settings kept)
     abstractcore email agent-tools on | off      "Agent email tools" (default off)
     abstractcore email registered-address me@example.com   the email address ("self"); "" clears it
@@ -517,6 +517,8 @@ def cmd_limits(args: argparse.Namespace) -> int:
                 print("Nothing to change: give --per-hour and/or --per-day.", file=sys.stderr)
                 return EXIT_ERROR
             doc = _store(args).set_limits(per_hour=args.per_hour, per_day=args.per_day)
+        elif args.limits_cmd == "reset":
+            doc = _store(args).reset_limits()
         else:
             doc = _store(args).public()
     except EmailError as err:
@@ -525,7 +527,11 @@ def cmd_limits(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(lim)
     else:
-        print(f"Send limits: {lim['per_hour']} per hour ({lim['used_last_hour']} used), {lim['per_day']} per day ({lim['used_last_day']} used)")
+        origin = {"default": " (the defaults)", "user": " (set by you)", "legacy": " (stored by an earlier version; `limits reset` follows the defaults)"}
+        print(
+            f"Send limits: {lim['per_hour']} per hour ({lim['used_last_hour']} used), {lim['per_day']} per day ({lim['used_last_day']} used)"
+            + origin[lim["source"]]
+        )
     return EXIT_OK
 
 
@@ -676,6 +682,7 @@ def build_parser() -> argparse.ArgumentParser:
     ls = common(lsub.add_parser("set"))
     ls.add_argument("--per-hour", type=int)
     ls.add_argument("--per-day", type=int)
+    common(lsub.add_parser("reset", help="Forget the stored limits: follow the defaults (100 per hour, 1000 per day)"))
 
     common(sub.add_parser("enable", help='"Use this mailbox": on'))
     common(sub.add_parser("disable", help='"Use this mailbox": off (settings kept)'))

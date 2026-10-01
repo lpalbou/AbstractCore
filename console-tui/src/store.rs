@@ -136,6 +136,13 @@ pub struct EngineMissing {
 }
 
 impl EngineMissing {
+    /// Core named no install command: the route's provider is not an
+    /// engine at all (`route_engines._voice`: "'huggingface' is not a
+    /// transcription engine AbstractVoice has …"), not a missing one.
+    pub fn is_unknown_engine(&self) -> bool {
+        self.install.is_none()
+    }
+
     pub fn from_value(v: Option<&Value>) -> Option<EngineMissing> {
         let v = v.filter(|v| v.is_object())?;
         let engine = s(v, "engine").unwrap_or_default();
@@ -274,8 +281,15 @@ impl RouteRow {
                 return "cannot run here".to_string();
             }
             // ...and runnable is not the same as installed (`engine_missing`).
-            if self.engine_missing.is_some() {
-                return "engine not installed".to_string();
+            // With nothing to install, the provider is no engine at all
+            // (a download source such as `huggingface` on a voice route):
+            // "not installed" would send the operator to install nothing.
+            if let Some(m) = &self.engine_missing {
+                return if m.is_unknown_engine() {
+                    "unknown engine".to_string()
+                } else {
+                    "engine not installed".to_string()
+                };
             }
             return "configured".to_string();
         }
@@ -406,7 +420,14 @@ impl RoutesData {
 #[derive(Clone, Debug, Default)]
 pub struct WeightsRow {
     pub status: String,
+    /// The provider whose tool fetches `artifact`: the row's
+    /// `download_provider` when the route's engine is not where its
+    /// weights come from (`input.voice` faster-whisper `base` is the
+    /// Hugging Face repo `Systran/faster-whisper-base`), else the route's.
     pub provider: String,
+    /// The route's own provider when it differs from `provider` (the
+    /// engine that runs the weights).
+    pub route_provider: Option<String>,
     pub artifact: String,
     pub detail: String,
     pub instruction: String,
@@ -471,7 +492,13 @@ impl AvailabilityData {
                 key,
                 WeightsRow {
                     status,
-                    provider: s(row, "provider").unwrap_or_default(),
+                    provider: s(row, "download_provider")
+                        .filter(|p| !p.is_empty())
+                        .or_else(|| s(row, "provider"))
+                        .unwrap_or_default(),
+                    route_provider: s(row, "download_provider")
+                        .filter(|p| !p.is_empty())
+                        .and_then(|_| s(row, "provider")),
                     artifact: s(row, "download_artifact")
                         .or_else(|| s(&a, "artifact"))
                         .or_else(|| s(row, "model"))

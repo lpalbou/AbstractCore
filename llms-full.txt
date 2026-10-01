@@ -8285,14 +8285,23 @@ the policy decides who *can* receive mail; approval decides whether a given send
 
 ## Send limits
 
-Each account has a limit per rolling hour and per rolling day (default 20 and 100). The count is
+Each account has a limit per rolling hour and per rolling day (default 100 and 1000). The count is
 kept in `<config dir>/email/sends.json`, shared by every process using the account; a message the
 server did not accept does not count. `0` means no sending in that window.
 
 ```bash
 abstractcore email limits show
-abstractcore email limits set --per-hour 20 --per-day 100
+abstractcore email limits set --per-hour 100 --per-day 1000
+abstractcore email limits reset     # forget the stored limits: follow the defaults
 ```
+
+Limits you set are stored and kept across upgrades; an account where nobody set them follows the
+defaults, including a later change of the defaults. Until 2.21 the defaults were 20 and 100, and
+connecting an account stored them without marking who set them. An upgrade treats exactly that
+unmarked pair (20 per hour and 100 per day) as the old defaults, so the account follows the new ones;
+any other unmarked value is kept: `limits show` marks it "stored by an earlier version", and
+`limits reset` (or setting new values) moves the account on. `limits show --json` reports the
+origin as `source`: `default`, `user` or `legacy`.
 
 ## Errors
 
@@ -8318,10 +8327,13 @@ Errors are classified from protocol reply codes and exception types, never from 
 ## Consoles
 
 - **Web console** (`abstractcore serve`, then `/console`): the **Email** tab shows, in order:
-  - **Email address**: your own address (the registered address: where notifications go and the
-    first address your agents may write to), with its own **Save**.
-  - **Mailbox**: tabs **IMAP** (first, the default), **Google** and **Microsoft**. The IMAP pane
-    shows every field: **Mailbox address**, **Password** (an app password if your provider needs
+  - **Email address**: your own address (the registered address: the first address your agents
+    may write to; empty means the mailbox's own address), with its own **Save**.
+  - **Mailbox**: tabs **IMAP** (first, the default), **Google** and **Microsoft**. The address is
+    asked once: with no email address stored, the mailbox form's address is the only address
+    field and connecting sets the email address from it; with one stored, the form shows
+    "Mailbox account: <address>" and **Use a different account** opens the field, prefilled.
+    The IMAP pane shows every field: **Mailbox address**, **Password** (an app password if your provider needs
     one), **Incoming mail (IMAP)** and **Outgoing mail (SMTP)**, each as Server / Port /
     Security. As soon as the address has a domain the servers are filled with `imap.<domain>` 993
     SSL and `smtp.<domain>` 465 SSL, then with what [discovery](docs/email.md#server-discovery) finds, never
@@ -8341,10 +8353,11 @@ Errors are classified from protocol reply codes and exception types, never from 
   button. A connection stores no display name you did not give: it keeps the stored one, else
   uses the address's local part. The tab uses the `/acore/email` routes ([Server](docs/server.md)).
 - **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) has the same cards
-  with the same words: the email address with its own Save, the Mailbox card (Google / Microsoft
-  / Other, servers found from the address, one Connect; connected: Test and Disconnect), the
-  **Agent email tools** switch, and Advanced (recipient rules, send limits, folder, **Use this
-  mailbox**). Switches read `[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space`
+  with the same words: the email address with its own Save, the Mailbox card (tabs IMAP, Google,
+  Microsoft; the IMAP tab with the address, password and server fields pre-filled from the
+  address, one Connect; connected: the **Active** switch, Test and Disconnect), the **Agent email
+  tools** switch, and Advanced (who your agents may send to, the send limits, the watched
+  folder). Switches read `[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space`
   switches ([Terminal console](docs/console-tui.md#email-keys)).
 
 Both consoles name the account they configure: the account of this AbstractCore install, with the
@@ -27389,10 +27402,10 @@ bar has the focus. The screen has four cards:
 
 | Card | What it holds |
 |---|---|
-| Email address | one field with its own **Save** ("✓ Saved" for two seconds): where notifications go, and the first address your agents may write to |
-| Mailbox | not connected: tabs **Google** / **Microsoft** / **Other**. Other asks for the email address and the password only; the mail servers are found from the address (`abstractcore email discover`) and shown as one line, and **Server settings** stay folded unless nothing is found (they then open with the reason). One **Connect** stores and tests; its error says what failed. Google and Microsoft sign in through the provider (the device code or sign-in address shows while it waits; **Cancel sign-in** stops it); your own client goes under their Advanced. Connected: "Connected as … · method · checked … ago", **Test** and **Disconnect** (asks inline first) |
+| Email address | one field with its own **Save** ("✓ Saved" for two seconds): the first address your agents may write to. With no address stored and no mailbox, the card says connecting sets it, and the mailbox form's address is the only address field |
+| Mailbox | not connected: tabs **IMAP** (first, the default) / **Google** / **Microsoft**. The IMAP tab shows the mailbox address, the password, and the incoming (IMAP) and outgoing (SMTP) server, port and security, filled with `imap.<domain>` 993 SSL / `smtp.<domain>` 465 SSL as soon as the address has a domain, then with what `abstractcore email discover` finds (never over a field you edited); one line says where they come from. "My provider uses a different login name" reveals a Login field and "Custom certificate" the CA file. With an email address stored, the form shows "Mailbox account: <address>" and "› Use a different account" opens the field. One **Connect** stores and tests; its error says what failed. Google and Microsoft sign in through the provider (the device code or sign-in address shows while it waits; **Cancel sign-in** stops it); your own client goes under their Advanced. Connected: "Connected as … · method · checked … ago", the **Active** switch, **Test** and **Disconnect** (asks inline first) |
 | Agent email tools | the switch (off by default); unavailable until a mailbox is connected and in use |
-| Advanced (folded) | recipient rules (mode, entries added and removed at once), send limits per hour and per day (saved on `Enter` or when the field loses focus), the folder the mailbox is read from (saved the same way), and the **Use this mailbox** switch (off keeps the settings but stops watching, sending and notifications) |
+| Advanced (folded) | three sentences: "Your agents may send to …" (only these recipients or everyone except these; entries added and removed at once), "At most N per hour and M per day." with this hour's and today's count, and "Watch folder …" (limits and folder saved on `Enter` or when the field loses focus); a failed change says its cause inline |
 
 ### Models keys
 

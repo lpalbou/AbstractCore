@@ -3,7 +3,7 @@
 The counter is a small JSON file of send timestamps (the last 24 hours only) next to the
 account store, updated under an exclusive file lock so concurrent processes share one count.
 
-    limiter = SendRateLimiter(path, SendLimits(per_hour=20, per_day=100))
+    limiter = SendRateLimiter(path, SendLimits(per_hour=100, per_day=1000))
     token = limiter.reserve()          # raises EmailRateLimited when a window is full
     try: send(...)
     except NothingSent: limiter.refund(token)

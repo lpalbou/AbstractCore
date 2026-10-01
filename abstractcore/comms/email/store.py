@@ -41,7 +41,15 @@ from .errors import (
     EmailSecretUnavailable,
 )
 from .limits import SendRateLimiter
-from .models import EmailAccount, EmailSecret, ImapSettings, SendLimits, SmtpSettings
+from .models import (
+    DEFAULT_PER_DAY,
+    DEFAULT_PER_HOUR,
+    EmailAccount,
+    EmailSecret,
+    ImapSettings,
+    SendLimits,
+    SmtpSettings,
+)
 from .oauth import OAuthTokenProvider
 from .policy import RecipientPolicy, normalize_address
 from .vault import KEY_FILE_WARNING, SecretVault
@@ -63,6 +71,42 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def limits_source(stored: Any) -> str:
+    """Where an account's send limits come from, from the stored `limits` section.
+
+    - nothing stored -> "default": the current defaults (100 per hour, 1000 per day; 20 / 100 until 2.21);
+    - `set_by: user` -> "user": the user's choice, kept across upgrades;
+    - exactly the old defaults (20 per hour AND 100 per day) without the marker -> "default": 2.21 and
+      earlier stored the then-defaults at connect, so an unmarked 20 / 100 is the old default, not a
+      choice (operator ruling 2026-10-01: those accounts move to the new defaults). Nothing is rewritten
+      on disk; the next `set_limits` stores the user's choice with the marker;
+    - any other values without the marker -> "legacy": a value someone set before the marker existed,
+      kept as stored: `abstractcore email limits reset` (or setting new values) moves the account on.
+    """
+
+    if not isinstance(stored, dict) or not any(k in stored for k in ("per_hour", "per_day")):
+        return "default"
+    if stored.get("set_by") == "user":
+        return "user"
+    if _is_old_default_pair(stored):
+        return "default"
+    return "legacy"
+
+
+# The send limits 2.21 and earlier wrote at connect (no `set_by` marker existed then).
+OLD_DEFAULT_LIMITS = {"per_hour": 20, "per_day": 100}
+
+
+def _is_old_default_pair(stored: Dict[str, Any]) -> bool:
+    try:
+        return (
+            int(stored.get("per_hour")) == OLD_DEFAULT_LIMITS["per_hour"]
+            and int(stored.get("per_day")) == OLD_DEFAULT_LIMITS["per_day"]
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 @dataclass(frozen=True)
 class EmailSettings:
     enabled: bool
@@ -73,6 +117,11 @@ class EmailSettings:
     limits: SendLimits
     registered_address: str
     legacy_import: Dict[str, Any]
+    # Where `limits` comes from: "default" (nothing stored: the current defaults, which follow
+    # a later change of the defaults), "user" (set with `set_limits`, never changed by an
+    # upgrade) or "legacy" (stored by 2.21 or earlier without a marker: kept as stored, see
+    # `limits_source`).
+    limits_source: str = "default"
 
     @property
     def self_address(self) -> str:
@@ -142,7 +191,10 @@ class EmailAccountStore:
             account=account,
             policy=policy,
             policy_is_default=is_default,
-            limits=SendLimits.from_dict(sec.get("limits") or {}),
+            limits=SendLimits.from_dict(
+                {} if limits_source(sec.get("limits")) == "default" else (sec.get("limits") or {})
+            ),
+            limits_source=limits_source(sec.get("limits")),
             registered_address=registered,
             legacy_import=dict(sec.get("legacy_import") or {}),
         )
@@ -266,9 +318,8 @@ class EmailAccountStore:
         if current.policy_is_default:
             base = (registered_address or current.registered_address or account.address).strip()
             values["policy"] = RecipientPolicy.default_for(base).to_dict()
-        sec = self._section()
-        if not sec.get("limits"):
-            values["limits"] = SendLimits().to_dict()
+        # The send limits are not written here: nothing stored means the current defaults
+        # (`limits_source` "default"), so a later change of the defaults reaches this account.
         if not current.legacy_import:
             values["legacy_import"] = {"done": True, "at": _now_iso(), "source": "none"}
         self._update(**values)
@@ -312,12 +363,27 @@ class EmailAccountStore:
         return self.public()
 
     def set_limits(self, *, per_hour: Optional[int] = None, per_day: Optional[int] = None) -> Dict[str, Any]:
-        current = self.settings().limits
-        new = SendLimits.build(
-            current.per_hour if per_hour is None else per_hour,
-            current.per_day if per_day is None else per_day,
-        )
-        self._update(limits=new.to_dict())
+        """Set the send limits the user chose. Only the windows set (now or before) are stored,
+        marked `set_by: user`; an upgrade never changes them. A window never set keeps following
+        the defaults."""
+
+        stored = self._section().get("limits") or {}
+        chosen = {k: stored[k] for k in ("per_hour", "per_day") if isinstance(stored, dict) and k in stored}
+        if per_hour is not None:
+            chosen["per_hour"] = per_hour
+        if per_day is not None:
+            chosen["per_day"] = per_day
+        new = SendLimits.build(chosen.get("per_hour", DEFAULT_PER_HOUR), chosen.get("per_day", DEFAULT_PER_DAY))
+        doc: Dict[str, Any] = {k: getattr(new, k) for k in ("per_hour", "per_day") if k in chosen}
+        if doc:
+            doc["set_by"] = "user"
+        self._update(limits=doc)
+        return self.public()
+
+    def reset_limits(self) -> Dict[str, Any]:
+        """Forget the stored send limits: the account follows the defaults again."""
+
+        self._update(limits={})
         return self.public()
 
     def set_enabled(self, enabled: bool) -> Dict[str, Any]:
@@ -518,8 +584,6 @@ class EmailAccountStore:
         }
         if not sec.get("policy"):
             values["policy"] = RecipientPolicy.default_for(account.address).to_dict()
-        if not sec.get("limits"):
-            values["limits"] = SendLimits().to_dict()
         manager = self._manager()
         manager.clear_legacy_email_fields()
         manager.update_email_settings(**values)
@@ -602,6 +666,7 @@ class EmailAccountStore:
             out["limits"] = {
                 "per_hour": st.limits.per_hour,
                 "per_day": st.limits.per_day,
+                "source": st.limits_source,
                 "used_last_hour": usage.get("used_last_hour", 0),
                 "used_last_day": usage.get("used_last_day", 0),
             }

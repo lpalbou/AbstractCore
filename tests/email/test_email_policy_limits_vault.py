@@ -160,7 +160,8 @@ def test_refund_returns_a_slot_and_zero_means_no_sending(tmp_path: Path) -> None
 
 
 def test_limits_validation() -> None:
-    assert SendLimits().to_dict() == {"per_hour": 20, "per_day": 100}
+    assert SendLimits().to_dict() == {"per_hour": 100, "per_day": 1000}
+    assert SendLimits.from_dict({}).to_dict() == {"per_hour": 100, "per_day": 1000}
     with pytest.raises(EmailInvalidSettings):
         SendLimits.build(-1, 10)
     with pytest.raises(EmailInvalidSettings):
