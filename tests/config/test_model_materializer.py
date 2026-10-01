@@ -747,3 +747,16 @@ def test_a_download_never_answers_from_a_sweep_taken_before_it(monkeypatch):
         outcome = mm.download("lmstudio", "already/here")
     assert outcome.ok is True, "the post-download check must re-read, not reuse the sweep"
     assert len(reads) > 1
+
+
+def test_no_hf_cache_at_all_reads_as_not_downloaded(monkeypatch):
+    """A fresh computer has no Hugging Face cache: the model is simply not downloaded yet.
+
+    Reported as `unknown`, the gateway's Transcription card showed "Unknown" on every fresh install and
+    "Download all" skipped the model (round 2, adversary F2)."""
+
+    monkeypatch.setattr(mm, "_hf_cache_dirs", lambda: [])
+    presence = mm.probe("mlx-gen", "acme/never-fetched")
+    assert presence.status == mm.PRESENCE_ABSENT
+    assert presence.downloadable is True
+    assert "not downloaded yet" in (presence.detail or "")

@@ -1268,9 +1268,9 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
         return ModelPresence(
             provider,
             artifact,
-            PRESENCE_UNKNOWN,
-            evidence="hf cache scan",
-            detail="no Hugging Face cache directory exists on this machine yet",
+            PRESENCE_ABSENT,
+            evidence="hf cache scan (no cache directory)",
+            detail=f"{repo_id} is not downloaded yet: no Hugging Face cache exists on this computer",
             instruction=f"abstractcore models download {provider} {repo_id}",
             downloadable=True,
         )
