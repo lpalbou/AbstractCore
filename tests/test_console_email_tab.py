@@ -551,6 +551,7 @@ def test_list_panels_collapse_and_remember(served) -> None:
         page.goto(f"{base}/console", wait_until="domcontentloaded")
         page.click("#acc-tab-button-catalog")
         btn = page.locator('[data-acc-section="catalog"]')
+        btn.wait_for(state="visible")  # the tab's panel renders after its first fetch
         assert btn.get_attribute("aria-expanded") == "true"
         assert btn.bounding_box()["height"] >= 44
         btn.click()
