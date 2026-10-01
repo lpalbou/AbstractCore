@@ -637,6 +637,34 @@ See [Server](server.md#agentic-cli-integration) for details and supported format
 
 ---
 
+### Issue: A mailbox does not connect
+
+**Symptoms:**
+- `abstractcore email connect` (or **Connect** on the console's Email tab) stops with
+  `email_discovery_failed`, `email_auth_failed`, `email_tls_failed` or `email_unreachable`.
+
+**Checks and fixes:**
+
+```bash
+abstractcore email discover me@example.com   # which servers the address leads to, and every step tried
+```
+
+- `email_discovery_failed`: no step found both servers. Give them yourself
+  (`--imap-host`, `--smtp-host`, or the Server fields on the IMAP tab); your provider's help pages
+  list them.
+- `email_auth_failed`: the password was refused. Many providers need an **app password** when
+  two-step verification is on; if your provider signs in with a name other than the address, pass
+  `--username` (in the console: **My provider uses a different login name**).
+- `email_tls_failed`: the port and security do not match (993 SSL or 143 STARTTLS for IMAP,
+  465 SSL or 587 STARTTLS for SMTP), or the server is signed by a private CA (`--ca-file`, in the
+  console: **Custom certificate**).
+- `email_unreachable`: the host name is wrong or a firewall blocks the port.
+
+`abstractcore email test` checks the stored account again once it connects. See
+[Email](email.md#errors).
+
+---
+
 ## Provider-Specific Issues
 
 ### Native MLX concurrency and MTP

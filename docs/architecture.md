@@ -982,6 +982,44 @@ graph TD
 See [Local Models](models.md), [Local Engines](engines.md), [Web Console](console.md) and
 [Terminal Console](console-tui.md).
 
+### 12. Email
+
+`abstractcore.comms.email` holds one mailbox per install. The CLI (`abstractcore email ...`), the
+`/acore/email` routes used by the web console, the terminal console (which drives the CLI) and the
+email tools all go through `EmailAccountStore`, so every surface applies the same policy, limits
+and TLS rules.
+
+```mermaid
+graph TD
+    CLI["abstractcore email ..."] --> STORE
+    TUI["abstractcore-console (terminal)"] --> CLI
+    WEB["/console Email tab"] --> HTTP["/acore/email/* routes"]
+    HTTP --> STORE
+    HTTP --> DISC
+    TOOLS["email tools (Agent email tools on)"] --> CTX
+
+    subgraph EMAIL[abstractcore.comms.email]
+        STORE["store.EmailAccountStore: account, connect, folder, email address"]
+        DISC["discovery: discover_servers, server_defaults"]
+        VAULT["vault.SecretVault: AES-256-GCM secret.enc, key in the OS keychain"]
+        CTX["context.EmailContext: guarded_send"]
+        POL["policy: allowlist / denylist"]
+        LIM["limits: per hour / per day, sends.json"]
+        CLIENT["client.EmailClient: IMAP read-only, SMTP, verified TLS"]
+    end
+
+    CLI --> DISC
+    STORE --> VAULT
+    STORE --> CTX
+    CTX --> POL
+    CTX --> LIM
+    CTX --> CLIENT
+    CLIENT --> SERVERS["IMAP and SMTP servers"]
+```
+
+Discovery only reads public HTTPS and DNS answers and returns server settings; it never stores
+anything. See [Email](email.md).
+
 ## Architecture Benefits
 
 ### 1. Provider Agnostic

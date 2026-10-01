@@ -5,83 +5,107 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.22.0] - 2026-10-01
+
+Mailbox servers are found from the address, the web console's Email tab connects over IMAP with
+every server field visible and pre-filled, a settings save keeps the keys this version does not
+know, and transcription routes written with a download provider are repaired. The terminal console
+`abstractcore-console` 0.6.0 ships with this release.
 
 ### Added
 - `abstractcore.comms.email.discovery.discover_servers(address)` and `POST /acore/email/discover`:
   a mailbox's IMAP and SMTP servers are found from its address (known providers, the domain's
-  autoconfig file, the Thunderbird ISPDB, DNS SRV, then MX). `PUT /acore/email` and
-  `abstractcore email connect` without servers discover them; nothing found is a 400
-  `email_discovery_failed`.
-- `PUT /acore/email/folder`, `EmailAccountStore.set_folder()` and `abstractcore email folder
-  <name>`: the folder the mailbox is read from changes without connecting again.
-- `abstractcore.console.themes.KIT_SWITCH_CSS` and `KIT_FORM_CSS`: the UI kit's switch and form,
-  card and tabs rules (ui-kit 0.3.3), copied verbatim by `abstractcore.console.theme_sync`
-  (`parse_kit_block`), which refuses a kit without them.
+  autoconfig file, the Thunderbird ISPDB, DNS SRV, then MX; HTTPS only, public hosts only, safe
+  XML). `PUT /acore/email` and `abstractcore email connect` without servers discover them; nothing
+  found is a 400 `email_discovery_failed` listing the steps tried. `abstractcore email discover
+  <address>` prints the result.
 - `abstractcore.comms.email.discovery.server_defaults(address, discovered=None)`: the server
   fields a mailbox form pre-fills (the discovered servers and login, else the standard
   `imap.<domain>` 993 SSL and `smtp.<domain>` 465 SSL), with one sentence saying which.
   `POST /acore/email/discover` and `abstractcore email discover --json` return it as `defaults`.
+- `PUT /acore/email/folder`, `EmailAccountStore.set_folder()` and `abstractcore email folder
+  <name>`: the folder the mailbox is read from changes without connecting again (empty = INBOX).
+- `GET /acore/email` and `abstractcore email status --json` list `oauth_providers` (whether this
+  version has a built-in sign-in client for Google and Microsoft) and `registered_address_stored`.
+- `abstractcore.console.themes.KIT_SWITCH_CSS` and `KIT_FORM_CSS`: the UI kit's switch and form,
+  card and tabs rules (ui-kit 0.3.3), copied verbatim by `abstractcore.console.theme_sync`
+  (`parse_kit_block`), which refuses a kit without them.
 - Model catalog: an artifact may carry `route: {key, provider, model}`, the capability route that
   runs it when the engine is not the download provider (`model_catalog.route_for_download`).
   The speech input model (Hugging Face `Systran/faster-whisper-base`) is run by faster-whisper
   `base`.
 
 ### Changed
-- Web console, Email tab (round 2): the Mailbox tabs are **IMAP** (first, the default), Google,
-  Microsoft. The IMAP pane shows every field: Mailbox address, Password, Incoming mail (IMAP) and
-  Outgoing mail (SMTP) as Server / Port / Security rows, filled with `imap.<domain>` 993 SSL and
-  `smtp.<domain>` 465 SSL as soon as the address has a domain, then with the discovered settings,
-  never over a field you edited; one line says where they came from. No User name or Display
-  name fields: a small link "My provider uses a different login name" shows a Login field, and
-  "Custom certificate" shows the CA file. Once connected, the Mailbox card holds the **Active**
-  switch ("Use this mailbox" left Advanced). Advanced is three short sentences: who your agents
-  may send to, "At most N per hour and N per day", and the watched folder.
-- Connecting a mailbox sets the email address when none is stored, and a connection given no
-  display name keeps the stored one, else uses the address's local part (`abstractcore email
-  connect --display-name` still sets it).
 - Web console, Email tab: in order, **Email address** (the only field with a Save button),
-  **Mailbox** (tabs Google / Microsoft / Other; Other asks for the address and password only, the
-  servers are discovered and shown on one line with Edit, Server settings open by themselves when
-  discovery fails; one **Connect** that tests then stores, with an inline error naming the failing
-  step; once connected, a status line with Test and Disconnect), the **Agent email tools** switch,
-  and **Advanced** (recipient rules, send limits and folder saved as you edit, the **Use this
-  mailbox** switch). "Save and test", "Turn on/off", "Save policy" and "Save limits" are gone; the
-  CLI hint uses `--password-stdin`. Forms are at most 720 px wide with labels above the fields.
+  **Mailbox**, the **Agent email tools** switch, and **Advanced**. The Mailbox tabs are **IMAP**
+  (first, the default), **Google** and **Microsoft**. The IMAP pane shows every field: Mailbox
+  address, Password, and Incoming mail (IMAP) and Outgoing mail (SMTP) as Server / Port / Security
+  rows, filled with `imap.<domain>` 993 SSL and `smtp.<domain>` 465 SSL as soon as the address has
+  a domain, then with the discovered settings, never over a field you edited; one line says where
+  they came from. There are no User name or Display name fields: a small link "My provider uses a
+  different login name" shows a Login field, and "Custom certificate" shows the CA file. One
+  **Connect** tests reading and sending, then stores; an error names the step that failed. Once
+  connected, the Mailbox card shows the status line, the **Active** switch, **Test**, and
+  **Disconnect** with an inline confirmation. Advanced is three short sentences saved as you edit:
+  who your agents may send to, "At most N per hour and N per day", and the watched folder.
+  "Save and test", "Turn on/off", "Save policy" and "Save limits" are gone; the CLI hint uses
+  `--password-stdin`. Forms are at most 720 px wide with labels above the fields.
+- Connecting a mailbox sets the email address when none is stored. A connection given no display
+  name keeps the stored one, else uses the address's local part (`abstractcore email connect
+  --display-name` still sets it); a connection given no user name signs in with the discovered
+  form, else the address.
 - Web console on phones: the content uses the full width (flat sections, one page scroll); the
   list panels fold from their heading and the browser remembers it. The dark/light control is a
   "Dark theme" switch.
 - `abstractcore email` texts say "Email address" and "Use this mailbox".
+- Terminal console `abstractcore-console` 0.6.0: the **Email** screen follows the web console card
+  by card (Email address with its own Save; the Mailbox card with servers found from the address
+  and one Connect; connected: status line, Test and Disconnect with an inline confirmation; the
+  **Agent email tools** switch; Advanced with the recipient rules, the send limits and the folder,
+  saved as you edit). On/off settings on every screen are switches (`[x]` on, `[ ]` off, `[-]`
+  unavailable with the reason; `Space` or `Enter`) that apply at once; switching on a flag marked
+  UNSAFE still asks first. It needs this release's `abstractcore email discover` and `abstractcore
+  email folder`. See [Terminal console](docs/console-tui.md#email-keys).
 
 ### Fixed
 - Transcription showed "Engine missing: unknown AbstractVoice engine 'huggingface'": the
   recommended download plan asked AbstractVoice for the engine of the download provider
-  (`huggingface`) instead of the route's engine (`faster-whisper`). Plan rows now carry
+  (`huggingface`) instead of the route's engine (`faster-whisper`). Plan rows carry
   `route_provider` / `route_model` and judge that engine; the grid probes the transcription
-  model's weights in the Hugging Face cache. A stored route that holds a catalog download pair
-  (`input.voice` = `huggingface` / `Systran/faster-whisper-base`) is repaired to the catalog's
-  route when the config loads, with a `abstractcore.json.route-repair-<time>.bak` copy first; any
-  other unknown voice provider says to pick a transcription engine (Multimodal page in the gateway console, Routes in the core console).
+  model's weights in the Hugging Face cache. Any other unknown voice provider says to pick a
+  transcription engine (Multimodal page in the gateway console, Routes in the core console).
   Speech input accepts AbstractVoice's aliases (`whisper`, `local`, `hf`, `transformers`).
 - The default allowlist entry follows the registered address when it changes
-  (`EmailAccountStore.set_registered_address` swaps the old address for the new one). Before,
-  changing the email address after connecting left the old address in the allowlist, so a sign-in
-  code or a notification to the new address was refused as "not in the allowlist".
+  (`EmailAccountStore.set_registered_address` swaps the old address for the new one), so a sign-in
+  code or a notification to a changed address is no longer refused as "not in the allowlist".
   `evaluate(..., self_addresses=)` lets a caller treat given addresses as allowlist entries.
 - Web console: Copy buttons work when the console is opened over plain http from another machine
   (textarea fallback when the Clipboard API is unavailable) and say "Copy failed — select and
   copy" when nothing was copied.
-- A settings save keeps the keys this version does not know in `abstractcore.json`. The first save
-  after a restart (any setter: a route, a default, a timeout) removed a key you added yourself (a
-  top-level key, `vision.user_note`) and every key a newer AbstractCore had written, for example
-  after a downgrade. Such keys are now written back unchanged: top-level keys, unknown fields of
-  every section, unknown `capability_defaults` keys and route keys this version cannot parse,
-  unknown `provider_profiles` keys and unknown columns of a profile that still exists. Known keys
-  are validated as before, and a route or profile you delete stays deleted.
+- A settings save keeps the keys this version does not know in `abstractcore.json`: top-level
+  keys, unknown fields of every section, unknown `capability_defaults` keys and route keys this
+  version cannot parse, unknown `provider_profiles` keys and unknown columns of a profile that
+  still exists are written back unchanged. Before, the first save after a restart (any setter: a
+  route, a default, a timeout) removed a key you added yourself (a top-level key,
+  `vision.user_note`) and every key a newer AbstractCore had written. Known keys are validated as
+  before, and a route or profile you delete stays deleted.
+
+### Migration
+- Config repair on load: a stored `input.voice` route that holds a catalog download pair
+  (`huggingface` / `Systran/faster-whisper-base`) is rewritten to the catalog's route
+  (`faster-whisper` / `base`) the first time this version loads the config, after writing a copy
+  of the file to `abstractcore.json.route-repair-<time>.bak` (mode 0600). The repair runs once and
+  changes nothing else; any other route is left as it is.
+- Keys written by a newer AbstractCore, or added by hand, survive saves from this version: a
+  downgrade followed by an upgrade keeps them.
+- `abstractcore-console` 0.6.0 calls `abstractcore email discover` and `abstractcore email
+  folder`: upgrade AbstractCore to 2.22.0 together with the terminal console.
 
 ### Documentation
-- Docker: the server examples name the current image, `ghcr.io/lpalbou/abstractcore-server:2.21.0`
-  (they still named 2.13.12).
+- Docker: the server examples name the current image, `ghcr.io/lpalbou/abstractcore-server:2.22.0`.
+- [Email](docs/email.md) describes server discovery, the folder verb, the Email tab's cards and
+  the terminal Email screen; [Centralized Config](docs/centralized-config.md) describes how a save
+  keeps unknown keys and the voice-route repair.
 
 ## [2.21.0] - 2026-09-30
 

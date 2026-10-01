@@ -26,6 +26,20 @@ API keys saved via `--config` or `--set-api-key` are persisted here and automati
 
 HTTP server settings saved via `--config` or the `--set-server-*` commands are also injected into the corresponding `ABSTRACTCORE_SERVER_*`, `HOST`, and `PORT` environment variables when those variables are not already set.
 
+A save writes back the keys this version does not know: your own top-level
+keys, unknown fields of any section (for example `vision.user_note`), and keys
+written by a newer AbstractCore (`capability_defaults` keys and route keys this
+version cannot parse, `provider_profiles` keys, unknown columns of a profile
+that still exists). Known keys are validated on every save, and a route or
+profile you delete stays deleted. A file that does not parse is copied aside as
+`abstractcore.json.corrupt-<time>.bak` before defaults are used.
+
+When the file loads, a speech input route (`input.voice`) that names a catalog
+download instead of its engine (`huggingface` / `Systran/faster-whisper-base`)
+is rewritten to the engine route the catalog gives (`faster-whisper` / `base`),
+after a copy of the file is written to
+`abstractcore.json.route-repair-<time>.bak`. Other routes are left as they are.
+
 Provider endpoint profiles are also stored in this file. They let you create a
 named reusable provider such as `endpoint:ovh-provider` without putting the
 endpoint URL or API key in workflows or route defaults.

@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-30
-Package version: 2.21.0
+Package version: 2.22.0
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -1251,7 +1251,7 @@ You can also persist settings (including API keys) via the config CLI:
 - Embeddings and semantic search → [Embeddings](docs/embeddings.md)
 - Observability: global event bus + interaction traces → [Architecture](docs/architecture.md), [API Reference (Events)](docs/api-reference.md#eventtype), [Interaction Tracing](docs/interaction-tracing.md)
 - MCP (Model Context Protocol): discover tools from MCP servers (HTTP/stdio) → [MCP](docs/mcp.md)
-- Email: one IMAP/SMTP account (password or OAuth2), encrypted credentials, recipient policy, send limits, read-only mailbox and email tools → [Email](docs/email.md)
+- Email: one IMAP/SMTP account (password or OAuth2; servers found from the address), encrypted credentials, recipient policy, send limits, read-only mailbox and email tools → [Email](docs/email.md)
 - OpenAI-compatible server: one `/v1` gateway for chat + optional `/v1/images/*` and `/v1/audio/*` endpoints → [Server](docs/server.md)
 
 ## Tool calling (passthrough by default)
@@ -1524,8 +1524,7 @@ abstractcore engines install ollama --dry-run    # the exact install command
 Email (see [Email](docs/email.md)):
 
 ```bash
-abstractcore email connect --address me@example.com \
-  --imap-host imap.example.com --smtp-host smtp.example.com --password <value>
+abstractcore email connect --address me@example.com --password <value>   # servers found from the address
 abstractcore email test
 abstractcore email status
 ```
@@ -3806,6 +3805,34 @@ See [Server](docs/server.md#agentic-cli-integration) for details and supported f
 
 ---
 
+### Issue: A mailbox does not connect
+
+**Symptoms:**
+- `abstractcore email connect` (or **Connect** on the console's Email tab) stops with
+  `email_discovery_failed`, `email_auth_failed`, `email_tls_failed` or `email_unreachable`.
+
+**Checks and fixes:**
+
+```bash
+abstractcore email discover me@example.com   # which servers the address leads to, and every step tried
+```
+
+- `email_discovery_failed`: no step found both servers. Give them yourself
+  (`--imap-host`, `--smtp-host`, or the Server fields on the IMAP tab); your provider's help pages
+  list them.
+- `email_auth_failed`: the password was refused. Many providers need an **app password** when
+  two-step verification is on; if your provider signs in with a name other than the address, pass
+  `--username` (in the console: **My provider uses a different login name**).
+- `email_tls_failed`: the port and security do not match (993 SSL or 143 STARTTLS for IMAP,
+  465 SSL or 587 STARTTLS for SMTP), or the server is signed by a private CA (`--ca-file`, in the
+  console: **Custom certificate**).
+- `email_unreachable`: the host name is wrong or a firewall blocks the port.
+
+`abstractcore email test` checks the stored account again once it connects. See
+[Email](docs/email.md#errors).
+
+---
+
 ## Provider-Specific Issues
 
 ### Native MLX concurrency and MTP
@@ -4619,6 +4646,11 @@ client = ctx.client()
 found = client.search(SearchCriteria.build(from_domain="example.org", since="7d"), limit=20)
 ctx.send(OutgoingMessage(to=("me@example.com",), subject="Report", text="Done."))
 ```
+
+`discover_servers(address)` finds a mailbox's IMAP and SMTP servers from its address, and
+`server_defaults(address, discovered)` gives the server fields a form pre-fills (the discovered
+ones, else the standard `imap.<domain>` 993 / `smtp.<domain>` 465 SSL).
+`EmailAccountStore.set_folder(name)` changes the folder that is read without connecting again.
 
 The mailbox is read-only, TLS is always verified and errors are typed with a cause and a fix.
 Hosts bind a per-user account with `set_email_account_resolver` / `use_email_context`. See
@@ -6613,6 +6645,44 @@ graph TD
 See [Local Models](docs/models.md), [Local Engines](docs/engines.md), [Web Console](docs/console.md) and
 [Terminal Console](docs/console-tui.md).
 
+### 12. Email
+
+`abstractcore.comms.email` holds one mailbox per install. The CLI (`abstractcore email ...`), the
+`/acore/email` routes used by the web console, the terminal console (which drives the CLI) and the
+email tools all go through `EmailAccountStore`, so every surface applies the same policy, limits
+and TLS rules.
+
+```mermaid
+graph TD
+    CLI["abstractcore email ..."] --> STORE
+    TUI["abstractcore-console (terminal)"] --> CLI
+    WEB["/console Email tab"] --> HTTP["/acore/email/* routes"]
+    HTTP --> STORE
+    HTTP --> DISC
+    TOOLS["email tools (Agent email tools on)"] --> CTX
+
+    subgraph EMAIL[abstractcore.comms.email]
+        STORE["store.EmailAccountStore: account, connect, folder, email address"]
+        DISC["discovery: discover_servers, server_defaults"]
+        VAULT["vault.SecretVault: AES-256-GCM secret.enc, key in the OS keychain"]
+        CTX["context.EmailContext: guarded_send"]
+        POL["policy: allowlist / denylist"]
+        LIM["limits: per hour / per day, sends.json"]
+        CLIENT["client.EmailClient: IMAP read-only, SMTP, verified TLS"]
+    end
+
+    CLI --> DISC
+    STORE --> VAULT
+    STORE --> CTX
+    CTX --> POL
+    CTX --> LIM
+    CTX --> CLIENT
+    CLIENT --> SERVERS["IMAP and SMTP servers"]
+```
+
+Discovery only reads public HTTPS and DNS answers and returns server settings; it never stores
+anything. See [Email](docs/email.md).
+
 ## Architecture Benefits
 
 ### 1. Provider Agnostic
@@ -8038,6 +8108,16 @@ abstractcore email connect \
 `connect` signs in to IMAP and SMTP first and stores nothing if either fails; the error says what
 went wrong and what to do.
 
+**Without `--imap-host` and `--smtp-host`, the servers are found from the address** (see
+[Server discovery](docs/email.md#server-discovery)):
+
+```bash
+abstractcore email connect --address me@example.com --password <value>
+```
+
+When nothing is found the command stops with `email_discovery_failed` and lists the steps it
+tried; give the servers yourself then.
+
 **From a script or another program, pass the password on stdin.** A command line is visible to
 every local user (`ps`) while the command runs; stdin is not. `--password-stdin` reads exactly one
 line from stdin and removes only its trailing newline (spaces are kept):
@@ -8054,12 +8134,12 @@ the password this way. Useful options:
 
 | Option | Meaning |
 |---|---|
-| `--username <name>` | Sign-in name when it differs from the address |
-| `--display-name <name>` | Name shown to recipients |
+| `--username <name>` | Sign-in name when it differs from the address (default: the discovered form, else the address) |
+| `--display-name <name>` | Name shown to recipients (default: the stored one, else the address's local part) |
 | `--imap-port`, `--imap-security ssl\|starttls`, `--imap-folder` | IMAP settings (default SSL on 993, folder `INBOX`) |
 | `--smtp-port`, `--smtp-security ssl\|starttls` | SMTP settings (default SSL on 465; port 587 selects STARTTLS) |
 | `--ca-file <pem>` | Trust a private CA (also `--imap-ca-file`, `--smtp-ca-file`) |
-| `--registered-address <address>` | Your own address, the default allowlist entry (default: `--address`) |
+| `--registered-address <address>` | Your own address, the default allowlist entry (default: the stored one, else `--address`) |
 | `--no-test` | Store without the connection test |
 | `--key-storage auto\|keyring\|file` | Where the encryption key goes (before the verb: `abstractcore email --key-storage file connect ...`) |
 
@@ -8072,6 +8152,9 @@ Other verbs:
 abstractcore email status            # account, credentials storage, policy, limits, last test
 abstractcore email test              # sign in to IMAP and SMTP with the stored account
 abstractcore email folders           # list the mailbox folders
+abstractcore email folder Archive    # read another folder, without connecting again ("" = INBOX)
+abstractcore email discover me@example.com   # find the IMAP and SMTP servers of an address
+abstractcore email registered-address me@example.com   # your email address ("" clears it)
 abstractcore email disable           # turn email off (no reading, no sending; settings kept)
 abstractcore email enable
 abstractcore email agent-tools on    # let agents use the email tools (default off)
@@ -8081,6 +8164,34 @@ abstractcore email disconnect --yes  # delete the stored credentials and account
 
 Every verb accepts `--json`. Exit codes: 0 success, 1 error, 2 refused (a failed connection test,
 or `disconnect` without `--yes`).
+
+### Server discovery
+
+`abstractcore email discover <address>`, `POST /acore/email/discover` and
+`abstractcore.comms.email.discovery.discover_servers(address)` look for a mailbox's servers in
+this order, stopping at the first step that finds both:
+
+1. known providers: a built-in table of common providers (Gmail, Outlook.com, iCloud, Yahoo,
+   Fastmail, GMX, Zoho and others; values from the Thunderbird ISPDB);
+2. the domain's own autoconfig file (`https://autoconfig.<domain>/mail/config-v1.1.xml`, then
+   `https://<domain>/.well-known/autoconfig/mail/config-v1.1.xml`);
+3. the Thunderbird ISPDB online (`https://autoconfig.thunderbird.net/v1.1/<domain>`);
+4. DNS SRV records (`_imaps._tcp`, `_submissions._tcp`, `_submission._tcp`);
+5. the domain's MX hosts, matched to a known provider (Google Workspace, Microsoft 365,
+   Fastmail).
+
+Only encrypted servers are returned (SSL or STARTTLS). Lookups use HTTPS only (redirects too),
+refuse hosts that resolve to loopback, private or other non-public addresses, and parse XML with
+every DTD and entity declaration refused; each step has a timeout and the whole lookup a time
+budget. The result is `{address, domain, found, source, provider, imap, smtp, username, tried}`: `tried`
+lists every step with its outcome, and `username` is the sign-in form (the address, or the local
+part for the providers that use it).
+
+`discovery.server_defaults(address, discovered=None)` turns that result into the values a form
+pre-fills: the discovered servers and login, else the standard `imap.<domain>` 993 SSL and
+`smtp.<domain>` 465 SSL with the address as login, plus a one-sentence `message` saying which
+(`source`: `discovered` or `standard`). `POST /acore/email/discover` and `abstractcore email
+discover --json` return it as `defaults`.
 
 ### OAuth2 (Google, Microsoft)
 
@@ -8119,9 +8230,9 @@ it prints the sign-in prompt to stderr as one JSON line, which the terminal cons
 {"oauth_prompt": {"flow": "loopback", "authorization_url": "https://...", "expires_at": 1790000000.0}}
 ```
 
-The web console (**Sign in with OAuth2** on the Email tab) and the terminal console (the Google
-and Microsoft tabs of the Email screen's Mailbox card) offer the same sign-in with the same fields: provider, address, client id, client
-secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
+The web console and the terminal console (the Google and Microsoft tabs of the Email page's
+Mailbox card) offer the same sign-in with the same fields: address, and under Advanced your own
+client id, client secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
 AbstractCore, so open its sign-in page in a browser on that machine; the device-code flow works
 from any browser.
 
@@ -8209,19 +8320,26 @@ Errors are classified from protocol reply codes and exception types, never from 
 - **Web console** (`abstractcore serve`, then `/console`): the **Email** tab shows, in order:
   - **Email address**: your own address (the registered address: where notifications go and the
     first address your agents may write to), with its own **Save**.
-  - **Mailbox**: tabs **Google**, **Microsoft** and **Other**. Google and Microsoft sign in with
-    the provider (your own client under Advanced). Other asks for the email address and the
-    password only: the servers are discovered from the address and shown on one line with
-    **Edit**; **Server settings** open by themselves when discovery finds nothing. **Connect**
-    tests reading and sending, then stores; an error names the step that failed. Once connected:
-    the status line ("Connected as ... · Password · checked 2 min ago"), **Test**, and
+  - **Mailbox**: tabs **IMAP** (first, the default), **Google** and **Microsoft**. The IMAP pane
+    shows every field: **Mailbox address**, **Password** (an app password if your provider needs
+    one), **Incoming mail (IMAP)** and **Outgoing mail (SMTP)**, each as Server / Port /
+    Security. As soon as the address has a domain the servers are filled with `imap.<domain>` 993
+    SSL and `smtp.<domain>` 465 SSL, then with what [discovery](docs/email.md#server-discovery) finds, never
+    over a field you edited; one line says where the values came from. The link **My provider
+    uses a different login name** shows a Login field, and **Custom certificate** shows the CA
+    file. **Connect** tests reading and sending, then stores; an error names the step that
+    failed. Google and Microsoft sign in with the provider (your own client under Advanced).
+    Once connected: the status line ("Connected as ... · Password · checked 2 min ago"), the
+    **Active** switch (off pauses watching and sending; your settings are kept), **Test**, and
     **Disconnect** with an inline confirmation.
   - **Agent email tools**: a switch (off by default; unavailable until a mailbox is connected).
-  - **Advanced**: the recipient rules (mode, entries, Check a recipient), the send limits and the
-    folder (both saved when you leave the field), and the **Use this mailbox** switch.
+  - **Advanced**, three sentences saved as you edit: "Your agents may send to" (Only these
+    recipients / Everyone except these, with the entries as chips), "At most N per hour and N
+    per day" (with this hour's and today's count), and "Watch folder".
 
   Switches and Advanced fields apply at once; the Email address is the only field with a Save
-  button. The tab uses the `/acore/email` routes ([Server](docs/server.md)).
+  button. A connection stores no display name you did not give: it keeps the stored one, else
+  uses the address's local part. The tab uses the `/acore/email` routes ([Server](docs/server.md)).
 - **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) has the same cards
   with the same words: the email address with its own Save, the Mailbox card (Google / Microsoft
   / Other, servers found from the address, one Connect; connected: Test and Disconnect), the
@@ -16558,6 +16676,20 @@ API keys saved via `--config` or `--set-api-key` are persisted here and automati
 
 HTTP server settings saved via `--config` or the `--set-server-*` commands are also injected into the corresponding `ABSTRACTCORE_SERVER_*`, `HOST`, and `PORT` environment variables when those variables are not already set.
 
+A save writes back the keys this version does not know: your own top-level
+keys, unknown fields of any section (for example `vision.user_note`), and keys
+written by a newer AbstractCore (`capability_defaults` keys and route keys this
+version cannot parse, `provider_profiles` keys, unknown columns of a profile
+that still exists). Known keys are validated on every save, and a route or
+profile you delete stays deleted. A file that does not parse is copied aside as
+`abstractcore.json.corrupt-<time>.bak` before defaults are used.
+
+When the file loads, a speech input route (`input.voice`) that names a catalog
+download instead of its engine (`huggingface` / `Systran/faster-whisper-base`)
+is rewritten to the engine route the catalog gives (`faster-whisper` / `base`),
+after a copy of the file is written to
+`abstractcore.json.route-repair-<time>.bak`. Other routes are left as they are.
+
 Provider endpoint profiles are also stored in this file. They let you create a
 named reusable provider such as `endpoint:ovh-provider` without putting the
 endpoint URL or API key in workflows or route defaults.
@@ -24765,7 +24897,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Runtime | POST | `/acore/models/unlock` | Clear a text runtime's lock (works even after eviction) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | GET | `/acore/models/context_estimate` | Analytical context-fit estimate for a provider/model on this host | `provider`, `model`, optional `context_length` |
 | Email | GET | `/acore/email` | The email account, policy, limits and last test (`email_settings_v1`; never a secret) — see [Email](docs/email.md) | — |
-| Email | PUT | `/acore/email` | Connect: test IMAP/SMTP, then store (the password is sealed, never returned) | JSON `address`, `password`, `imap{host,port,security,folder,ca_file}`, `smtp{...}`, optional `display_name`, `username`, `registered_address`, `test` |
+| Email | POST | `/acore/email/discover` | Find the mailbox's IMAP and SMTP servers from its address; `defaults` holds the values a form pre-fills (discovered, else the standard `imap.<domain>` 993 / `smtp.<domain>` 465 SSL) — see [Email](docs/email.md#server-discovery) | JSON `address` |
+| Email | PUT | `/acore/email` | Connect: test IMAP/SMTP, then store (the password is sealed, never returned). Without `imap` and `smtp` the servers are discovered from the address (400 `email_discovery_failed` with `tried` when none are found); sets the email address when none is stored | JSON `address`, `password`, optional `imap{host,port,security,folder,ca_file}`, `smtp{...}`, `display_name` (default: the stored one, else the local part), `username` (default: the discovered form, else the address), `registered_address`, `test` |
 | Email | POST | `/acore/email/test` | Sign in to IMAP and SMTP with the stored account | — |
 | Email | DELETE | `/acore/email` | Disconnect: delete the credentials and account (policy and limits kept) | — |
 | Email | PUT | `/acore/email/policy` | Replace the recipient policy | JSON `mode` (`allowlist`/`denylist`), `entries` |
@@ -24773,6 +24906,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Email | PUT | `/acore/email/limits` | Set the send limits | JSON `per_hour`, `per_day` |
 | Email | PUT | `/acore/email/enabled` | Turn email on or off | JSON `enabled` |
 | Email | PUT | `/acore/email/agent-tools` | Turn **Agent email tools** on or off (default off); the response's `agent_tools` is `{enabled, active, reason}` | JSON `enabled` |
+| Email | PUT | `/acore/email/folder` | Set the folder the mailbox is read from, without connecting again | JSON `folder` (empty = `INBOX`) |
 | Email | PUT | `/acore/email/registered-address` | Set your own address (the default allowlist entry) | JSON `address` |
 | Email | POST | `/acore/email/oauth/start`, `/acore/email/oauth/finish` | OAuth2 sign-in (device code or browser on the server's machine), then connect; `finish` answers `{pending: true}` until the sign-in is approved and a flow is used once | JSON `address`, `provider`, optional `client_id` (empty = the built-in client when registered), `client_secret`, `flow`, `tenant`, `ca_file`; then `flow_id`, `wait_s` (at most 60) |
 | Email | POST | `/acore/email/oauth/cancel` | Drop a pending OAuth2 sign-in (closes its loopback listener) | JSON `flow_id` |
@@ -26722,7 +26856,7 @@ on `abstractcore[gpu]` when you want local native inference engines.
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.21.0
+docker pull ghcr.io/lpalbou/abstractcore-server:2.22.0
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -26743,7 +26877,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.21.0
+  ghcr.io/lpalbou/abstractcore-server:2.22.0
 ```
 
 `ABSTRACTCORE_AUTH_TOKEN` is the AbstractCore server auth token. Clients send it as `Authorization: Bearer <token>`.
@@ -26765,7 +26899,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_AUTH_TOKEN="$ABSTRACTCORE_AUTH_TOKEN" \
   -e OPENAI_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.21.0
+  ghcr.io/lpalbou/abstractcore-server:2.22.0
 ```
 
 ### Docker Compose
@@ -26775,7 +26909,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.21.0
+    image: ghcr.io/lpalbou/abstractcore-server:2.22.0
     ports:
       - "8000:8000"
     environment:
@@ -27005,7 +27139,7 @@ fresh one. The server landing page (`/`) links to the console as well.
 | **Overview** | This machine: OS, architecture, accelerator, RAM or unified memory, the usable model-memory ceiling and its source, free memory now, free disk for each model cache, Python version. An engines summary and server health (version, whether a bearer token is required). | Jump to Models or Engines. | `abstractcore host profile --json`, `abstractcore engines status --probe` |
 | **Models** | The model catalog, one row per downloadable artifact (provider, artifact id, quantization, download size, weights status, fit badge), the models already installed with their sizes, and any running jobs with progress bars. | Search, filter, Download, Delete, Cancel a job. | `abstractcore models search <q> --engine <id> --fits`, `abstractcore models download`, `abstractcore models delete`, `abstractcore models list` |
 | **Engines** | Each engine (Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face): supported on this host, installed and version, running and reachable, base URL, model count. | Install (with confirmation), Open download page, Refresh (live probe). | `abstractcore engines status --probe`, `abstractcore engines install <id>`, `abstractcore engines open <id>` |
-| **Email** | Your email address, the mailbox (connected address, sign-in method, last check), the recipient rules and the send limits with their usage. | Save the email address; connect a mailbox (tabs Google / Microsoft / Other: address + password, servers discovered), Test, Disconnect (inline confirmation); the **Agent email tools** and **Use this mailbox** switches; recipient rules, send limits and folder under Advanced (applied at once). See [Email](docs/email.md). | `abstractcore email status`, `abstractcore email connect ... --password-stdin`, `abstractcore email policy set`, `abstractcore email limits set`, `abstractcore email folder`, `abstractcore email agent-tools on\|off` |
+| **Email** | Your email address, the mailbox (connected address, sign-in method, last check), the recipient rules and the send limits with their usage. | Save the email address; connect a mailbox (tabs IMAP / Google / Microsoft; IMAP shows the address, password and server fields, pre-filled from the address), Test, Disconnect (inline confirmation); the mailbox's **Active** switch and the **Agent email tools** switch; recipient rules, send limits and folder under Advanced (applied at once). See [Email](docs/email.md). | `abstractcore email status`, `abstractcore email connect ... --password-stdin`, `abstractcore email policy set`, `abstractcore email limits set`, `abstractcore email folder`, `abstractcore email agent-tools on\|off` |
 | **Providers** | Read-only list of providers (`GET /providers`) and the configured capability defaults (`GET /v1/config/capability-defaults`). | Nothing to edit here. | `abstractcore config providers --probe`, `abstractcore config defaults` |
 
 API keys and default models are configured on the host with `abstractcore --config`; the console

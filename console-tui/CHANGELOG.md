@@ -4,7 +4,10 @@ All notable changes, one entry per build wave, each with its gate line
 (build/test/clippy state at the wave's close). Charter:
 `LAUNCH-PROMPT.md`.
 
-## [Unreleased]
+## [0.6.0] — 2026-10-01
+
+Released with AbstractCore 2.22.0, whose `abstractcore email discover` and
+`abstractcore email folder` the Email screen calls.
 
 ### Changed
 

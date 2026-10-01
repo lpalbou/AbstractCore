@@ -381,6 +381,11 @@ found = client.search(SearchCriteria.build(from_domain="example.org", since="7d"
 ctx.send(OutgoingMessage(to=("me@example.com",), subject="Report", text="Done."))
 ```
 
+`discover_servers(address)` finds a mailbox's IMAP and SMTP servers from its address, and
+`server_defaults(address, discovered)` gives the server fields a form pre-fills (the discovered
+ones, else the standard `imap.<domain>` 993 / `smtp.<domain>` 465 SSL).
+`EmailAccountStore.set_folder(name)` changes the folder that is read without connecting again.
+
 The mailbox is read-only, TLS is always verified and errors are typed with a cause and a fix.
 Hosts bind a per-user account with `set_email_account_resolver` / `use_email_context`. See
 **[Email](email.md)** for the CLI, the recipient policy, send limits, OAuth2 and the tools.

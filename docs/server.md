@@ -317,7 +317,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Runtime | POST | `/acore/models/unlock` | Clear a text runtime's lock (works even after eviction) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | GET | `/acore/models/context_estimate` | Analytical context-fit estimate for a provider/model on this host | `provider`, `model`, optional `context_length` |
 | Email | GET | `/acore/email` | The email account, policy, limits and last test (`email_settings_v1`; never a secret) — see [Email](email.md) | — |
-| Email | PUT | `/acore/email` | Connect: test IMAP/SMTP, then store (the password is sealed, never returned) | JSON `address`, `password`, `imap{host,port,security,folder,ca_file}`, `smtp{...}`, optional `display_name`, `username`, `registered_address`, `test` |
+| Email | POST | `/acore/email/discover` | Find the mailbox's IMAP and SMTP servers from its address; `defaults` holds the values a form pre-fills (discovered, else the standard `imap.<domain>` 993 / `smtp.<domain>` 465 SSL) — see [Email](email.md#server-discovery) | JSON `address` |
+| Email | PUT | `/acore/email` | Connect: test IMAP/SMTP, then store (the password is sealed, never returned). Without `imap` and `smtp` the servers are discovered from the address (400 `email_discovery_failed` with `tried` when none are found); sets the email address when none is stored | JSON `address`, `password`, optional `imap{host,port,security,folder,ca_file}`, `smtp{...}`, `display_name` (default: the stored one, else the local part), `username` (default: the discovered form, else the address), `registered_address`, `test` |
 | Email | POST | `/acore/email/test` | Sign in to IMAP and SMTP with the stored account | — |
 | Email | DELETE | `/acore/email` | Disconnect: delete the credentials and account (policy and limits kept) | — |
 | Email | PUT | `/acore/email/policy` | Replace the recipient policy | JSON `mode` (`allowlist`/`denylist`), `entries` |
@@ -325,6 +326,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Email | PUT | `/acore/email/limits` | Set the send limits | JSON `per_hour`, `per_day` |
 | Email | PUT | `/acore/email/enabled` | Turn email on or off | JSON `enabled` |
 | Email | PUT | `/acore/email/agent-tools` | Turn **Agent email tools** on or off (default off); the response's `agent_tools` is `{enabled, active, reason}` | JSON `enabled` |
+| Email | PUT | `/acore/email/folder` | Set the folder the mailbox is read from, without connecting again | JSON `folder` (empty = `INBOX`) |
 | Email | PUT | `/acore/email/registered-address` | Set your own address (the default allowlist entry) | JSON `address` |
 | Email | POST | `/acore/email/oauth/start`, `/acore/email/oauth/finish` | OAuth2 sign-in (device code or browser on the server's machine), then connect; `finish` answers `{pending: true}` until the sign-in is approved and a flow is used once | JSON `address`, `provider`, optional `client_id` (empty = the built-in client when registered), `client_secret`, `flow`, `tenant`, `ca_file`; then `flow_id`, `wait_s` (at most 60) |
 | Email | POST | `/acore/email/oauth/cancel` | Drop a pending OAuth2 sign-in (closes its loopback listener) | JSON `flow_id` |
@@ -2274,7 +2276,7 @@ on `abstractcore[gpu]` when you want local native inference engines.
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.21.0
+docker pull ghcr.io/lpalbou/abstractcore-server:2.22.0
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -2295,7 +2297,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.21.0
+  ghcr.io/lpalbou/abstractcore-server:2.22.0
 ```
 
 `ABSTRACTCORE_AUTH_TOKEN` is the AbstractCore server auth token. Clients send it as `Authorization: Bearer <token>`.
@@ -2317,7 +2319,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_AUTH_TOKEN="$ABSTRACTCORE_AUTH_TOKEN" \
   -e OPENAI_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.21.0
+  ghcr.io/lpalbou/abstractcore-server:2.22.0
 ```
 
 ### Docker Compose
@@ -2327,7 +2329,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.21.0
+    image: ghcr.io/lpalbou/abstractcore-server:2.22.0
     ports:
       - "8000:8000"
     environment:
