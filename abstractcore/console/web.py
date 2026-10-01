@@ -408,7 +408,7 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
         <input type="email" id="acc-email-registered" data-acc="email-registered" autocomplete="email" aria-labelledby="acc-email-identity-h" aria-describedby="acc-email-identity-help acc-email-identity-error">
         <button type="button" class="acc-btn" data-acc-action="identity-save" data-acc="email-identity-save">Save</button>
       </div>
-      <p class="af-form__help" id="acc-email-identity-help">Where notifications go, and the first address your agents may write to. Empty = the mailbox's own address.</p>
+      <p class="af-form__help" id="acc-email-identity-help">The first address your agents may write to. Empty = the mailbox's own address.</p>
       <p class="af-form__help" data-acc="email-identity-differs" hidden></p>
       <p class="af-form__error" id="acc-email-identity-error" data-acc="email-identity-error" role="alert" hidden></p>
     </div>

@@ -76,7 +76,7 @@ pub const HINTS: &[(&str, &str)] = &[
 // ---------------------------------------------------------------------
 
 pub const ADDRESS_HELP: &str =
-    "Where notifications go, and the first address your agents may write to.";
+    "The first address your agents may write to.";
 /// The Email address card while no address is stored and no mailbox is
 /// connected: the mailbox form's address is then the only address field.
 pub const ADDRESS_PENDING: &str = "The first address your agents may write to. Connecting a mailbox below sets it to the mailbox's address.";
