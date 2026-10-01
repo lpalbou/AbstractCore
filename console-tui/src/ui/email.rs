@@ -86,8 +86,7 @@ pub const MAILBOX_ADDRESS_HELP: &str =
     "The account your agents read and send from \u{2014} usually your own address.";
 pub const PASSWORD_HELP: &str = "Use an app password if your provider needs one.";
 pub const AGENT_TOOLS_DESC: &str = "Your agents and workflows may list, search, read, send and reply to your mail. Every send still follows your recipient rules, your limits and the approval gate.";
-pub const ACTIVE_DESC: &str =
-    "Off pauses watching, sending and notifications; your settings are kept.";
+pub const ACTIVE_DESC: &str = "Off pauses watching and sending; your settings are kept.";
 pub const DISCONNECT_CONFIRM: &str = "Disconnect this mailbox? Your agents lose email until you connect again. Policy and limits are kept.";
 pub const NO_MAILBOX: &str = "Connect a mailbox first.";
 pub const MAILBOX_PAUSED: &str = "Your mailbox is paused (Mailbox \u{2192} Active is off).";

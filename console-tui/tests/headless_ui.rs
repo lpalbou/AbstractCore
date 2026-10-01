@@ -5601,7 +5601,7 @@ fn email_connected_status_active_test_and_disconnect_confirm() {
         "Last check failed: The SMTP server rejected the user name or password.",
         "Fix: Check the password.",
         "[x] Active",
-        "Off pauses watching, sending and notifications; your settings are kept.",
+        "Off pauses watching and sending; your settings are kept.",
         "Test",
         "Disconnect",
     ] {
