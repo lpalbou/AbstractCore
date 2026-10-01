@@ -439,6 +439,108 @@ def test_connected_state_switches_apply_at_once_and_revert_on_failure(served) ->
         ctx.close()
 
 
+# The editable address fields on screen (visible, not read-only).
+EDITABLE_ADDRESSES_JS = """() => Array.from(document.querySelectorAll('#acc-email input[type=email]'))
+  .filter((e) => e.getClientRects().length && !e.readOnly).map((e) => e.id)"""
+
+
+def _open_email(served, fake, width=1440, height=900):
+    base, browser = served
+    ctx = browser.new_context(viewport={"width": width, "height": height})
+    page = ctx.new_page()
+    page.route("**/acore/email**", fake)
+    page.goto(f"{base}/console", wait_until="domcontentloaded")
+    page.evaluate(f"sessionStorage.setItem('abstractcore_console_token', '{TOKEN}')")
+    page.goto(f"{base}/console", wait_until="domcontentloaded")
+    page.click("#acc-tab-button-email")
+    page.wait_for_selector('#acc-email-tab-imap[aria-selected="true"]')
+    return ctx, page
+
+
+def test_one_address_question_no_email_address_yet(served) -> None:
+    """DESIGN v2 §11 G5: no Email address and no mailbox -> the mailbox form's address is the
+    only address field; Connect sends it (the store sets the Email address from it)."""
+    fake = FakeEmail(EMPTY)
+    fake.doc["registered_address_stored"] = ""
+    fake.doc["registered_address"] = ""
+    ctx, page = _open_email(served, fake)
+    try:
+        assert page.evaluate(EDITABLE_ADDRESSES_JS) == ["acc-email-address"]
+        assert page.locator('[data-acc="email-identity-field"]').is_hidden()
+        assert page.inner_text('[data-acc="email-identity-pending"]') == "The first address your agents may write to. Connecting a mailbox below sets it to the mailbox's address."
+        assert page.locator('[data-acc="email-address-fixed"]').is_hidden()
+        page.click("#acc-email-tab-google")
+        assert page.evaluate(EDITABLE_ADDRESSES_JS) == ["acc-email-oauth-address"]
+        page.click("#acc-email-tab-imap")
+        page.fill("#acc-email-address", "me@fastmail.com")
+        page.wait_for_function("document.querySelector('[data-acc=\"email-servers-source\"]').textContent === 'Settings found for fastmail.com.'")
+        page.fill("#acc-email-password", "app-password")
+        page.click('[data-acc-action="email-connect"]')
+        page.wait_for_function("document.querySelector('#acc-email [data-acc=\"message\"]').textContent.startsWith('Mailbox connected')")
+        body = [c for c in fake.calls if c[0] == "PUT" and c[1] == "/acore/email"][-1][2]
+        assert body["address"] == "me@fastmail.com" and "registered_address" not in body
+    finally:
+        ctx.close()
+
+
+def test_one_address_question_email_address_set_reads_as_a_line_until_a_different_account(served) -> None:
+    fake = FakeEmail(EMPTY)
+    ctx, page = _open_email(served, fake)
+    try:
+        page.wait_for_function("document.querySelector('[data-acc=\"email-servers-source\"]').textContent === 'Settings found for fastmail.com.'")
+        line = page.locator('[data-acc="email-address-fixed"]')
+        assert line.is_visible() and line.inner_text() == "Mailbox account: me@fastmail.com — Use a different account"
+        assert page.locator('[data-acc="email-address-field"]').is_hidden()
+        assert page.evaluate(EDITABLE_ADDRESSES_JS) == ["acc-email-registered"]
+        assert page.input_value("#acc-email-address") == "me@fastmail.com"  # Connect uses the Email address
+        # Google/Microsoft: the same line.
+        page.click("#acc-email-tab-google")
+        assert page.inner_text('[data-acc="email-oauth-address-fixed"]') == "Mailbox account: me@fastmail.com — Use a different account"
+        assert page.evaluate(EDITABLE_ADDRESSES_JS) == ["acc-email-registered"]
+        page.click("#acc-email-tab-imap")
+        # "Use a different account": the mailbox field, prefilled and focused; the Email address read-only.
+        page.click('[data-acc="email-address-fixed"] [data-acc-action="mailbox-address-reveal"]')
+        assert page.evaluate(EDITABLE_ADDRESSES_JS) == ["acc-email-address"]
+        assert page.evaluate("document.activeElement.id") == "acc-email-address"
+        assert page.input_value("#acc-email-address") == "me@fastmail.com"
+        assert page.locator('[data-acc="email-identity-save"]').is_hidden()
+        assert page.get_attribute("#acc-email-registered", "aria-readonly") == "true"
+        page.fill("#acc-email-address", "test@small-isp.net")
+        page.click("#acc-email-tab-google")
+        assert page.evaluate(EDITABLE_ADDRESSES_JS) == ["acc-email-oauth-address"]
+        page.click("#acc-email-tab-imap")
+        # Back to the Email address: one field again, the mailbox form follows it.
+        own = page.locator('[data-acc="email-address-own"]')
+        assert own.inner_text() == "Use me@fastmail.com instead"
+        own.click()
+        assert page.evaluate(EDITABLE_ADDRESSES_JS) == ["acc-email-registered"]
+        assert page.input_value("#acc-email-address") == "me@fastmail.com"
+        # A new Email address saved while not connected: the line and the form follow it.
+        page.fill("#acc-email-registered", "me@work.example.org")
+        page.click('[data-acc-action="identity-save"]')
+        page.wait_for_function("document.querySelector('[data-acc=\"email-address-fixed-value\"]').textContent === 'me@work.example.org'")
+        assert page.input_value("#acc-email-address") == "me@work.example.org"
+        assert page.input_value("#acc-email-imap-host") == "imap.work.example.org"
+    finally:
+        ctx.close()
+
+
+def test_connected_shows_one_address_field_and_the_different_account_note_only_when_different(served) -> None:
+    for address, note in (("me@fastmail.com", None), ("ME@fastmail.com", None), ("test@fastmail.com", "Your mailbox is a different account: test@fastmail.com.")):
+        fake = FakeEmail({**CONNECTED, "address": address})
+        ctx, page = _open(served, fake)
+        try:
+            page.locator('[data-acc="email-status"]').wait_for(state="visible")
+            assert page.evaluate(EDITABLE_ADDRESSES_JS) == ["acc-email-registered"]
+            differs = page.locator('[data-acc="email-identity-differs"]')
+            if note is None:
+                assert differs.is_hidden(), address
+            else:
+                assert differs.is_visible() and differs.inner_text() == note
+        finally:
+            ctx.close()
+
+
 def test_list_panels_collapse_and_remember(served) -> None:
     base, browser = served
     ctx = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True)
