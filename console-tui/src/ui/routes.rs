@@ -216,6 +216,15 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                         ),
                         t.error,
                     ));
+                } else if let Some(m) = r
+                    .engine_missing
+                    .as_ref()
+                    .filter(|m| r.configured && m.is_unknown_engine())
+                {
+                    // Not an engine at all (nothing to install): Core's
+                    // sentence says what the id is not, which engines
+                    // exist, and what to do — never "not installed".
+                    spans.push(span(format!("{} — Enter edits it  ", m.reason), t.error));
                 } else if let Some(m) = r.engine_missing.as_ref().filter(|_| r.configured) {
                     // Runnable here, not installed: Core's sentence carries
                     // the exact install command; `i` on Engines runs it when
@@ -270,6 +279,18 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                         _ => t.text_muted,
                     };
                     spans.push(span(format!("  weights {} ", wr.label()), tone));
+                    // The engine runs weights another provider fetches
+                    // (transcription: faster-whisper runs `base`, the
+                    // Hugging Face repo Systran/faster-whisper-base).
+                    if let Some(engine) = &wr.route_provider {
+                        spans.push(span(
+                            format!(
+                                "· run by {engine}, fetched from {} {} ",
+                                wr.provider, wr.artifact
+                            ),
+                            t.text_faint,
+                        ));
+                    }
                     if wr.status == "absent" && !wr.artifact.is_empty() {
                         spans.push(span(
                             format!("· w downloads {} ", wr.artifact),

@@ -4668,6 +4668,86 @@ fn routes_screen_flags_a_route_whose_engine_is_not_installed() {
     );
 }
 
+/// The transcription route (round 2, item 1). A route whose provider is
+/// no engine at all (the download source `huggingface`, Core's
+/// `engine_missing` with nothing to install) reads `unknown engine` with
+/// Core's true reason — never "engine not installed". The repaired route
+/// (`faster-whisper · base`) names the engine that runs the weights and
+/// where they are fetched from, and `w` fetches them with THAT provider.
+#[test]
+fn routes_transcription_route_shows_its_engine_and_a_true_reason() {
+    let mut h = harness_sized(Size::new(240, 40));
+    h.load_fixtures();
+    let why = "'huggingface' is not a transcription engine AbstractVoice has (it has: faster-whisper, transformers-asr). Pick a transcription engine on the Multimodal page.";
+    let mut doc = routes_fixture();
+    for r in doc["routes"].as_array_mut().unwrap() {
+        if r["key"] == "input.voice" {
+            r["provider"] = json!("huggingface");
+            r["model"] = json!("Systran/faster-whisper-base");
+            r["configured"] = json!(true);
+            r["engine_missing"] = json!({"engine": "huggingface", "name": "huggingface",
+                "reason": why, "install": null});
+        }
+    }
+    h.store
+        .routes
+        .set(Loadable::Ready(RoutesData::from_value(&doc)));
+    h.goto_screen(3);
+    let s = h.select_route("input.voice");
+    let row = s
+        .lines()
+        .find(|l| l.contains("input.voice") && l.contains("huggingface"))
+        .unwrap_or_else(|| panic!("the input.voice row:\n{s}"));
+    assert!(row.contains("unknown engine"), "state column: {row}");
+    assert!(
+        !s.contains("engine not installed"),
+        "not a missing install:\n{s}"
+    );
+    assert!(s.contains(why), "Core's reason on the detail line:\n{s}");
+
+    // Repaired: faster-whisper runs `base`, fetched from Hugging Face.
+    let mut doc = routes_fixture();
+    for r in doc["routes"].as_array_mut().unwrap() {
+        if r["key"] == "input.voice" {
+            r["provider"] = json!("faster-whisper");
+            r["model"] = json!("base");
+            r["configured"] = json!(true);
+        }
+    }
+    h.store
+        .routes
+        .set(Loadable::Ready(RoutesData::from_value(&doc)));
+    let mut avail = availability_fixture();
+    avail["routes"].as_array_mut().unwrap().push(json!({
+        "key": "input.voice", "provider": "faster-whisper", "model": "base",
+        "download_provider": "huggingface",
+        "download_artifact": "Systran/faster-whisper-base",
+        "availability": {"provider": "huggingface", "artifact": "Systran/faster-whisper-base",
+                         "status": "absent", "downloadable": true,
+                         "instruction": "abstractcore models download huggingface Systran/faster-whisper-base"}}));
+    h.store
+        .availability
+        .set(Loadable::Ready(AvailabilityData::from_value(&avail)));
+    let s = h.select_route("input.voice");
+    let row = s
+        .lines()
+        .find(|l| l.contains("input.voice") && l.contains("faster-whisper"))
+        .unwrap_or_else(|| panic!("the input.voice row:\n{s}"));
+    assert!(row.contains("base"), "{row}");
+    assert!(
+        s.contains("run by faster-whisper, fetched from huggingface Systran/faster-whisper-base"),
+        "detail line:\n{s}"
+    );
+    assert!(!s.contains("unknown engine"), "{s}");
+    h.drain_cmds();
+    h.key(b"w");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Download Systran/faster-whisper-base with") && s.contains("huggingface?"),
+        "the weights are fetched by the download provider:\n{s}"
+    );
+}
+
 /// Models: a model that fits once the Mac's GPU memory limit is raised
 /// (Core `needs_gpu_limit`, backlog 0947) shows the verdict and the exact
 /// command on its detail line — never a bare "too large".
@@ -4893,10 +4973,10 @@ fn footer_lists_the_arrow_keys_for_screens() {
 
 // ---------------------------------------------------------------------
 // Email screen (@): the account-page design (single user) — Email
-// address with its own Save, the Mailbox card (tabs Google / Microsoft /
-// Other, servers found from the address, ONE Connect; connected: status
-// + Test + Disconnect), the Agent email tools switch, Advanced (rules,
-// limits, folder, "Use this mailbox"). Every write goes through
+// address with its own Save, the Mailbox card (tabs IMAP / Google /
+// Microsoft, the IMAP servers visible and pre-filled, ONE Connect;
+// connected: status + Active + Test + Disconnect), the Agent email tools
+// switch, Advanced (recipients, limits, folder). Every write goes through
 // `abstractcore email`.
 // ---------------------------------------------------------------------
 
@@ -4940,14 +5020,24 @@ fn discovery_found(address: &str) -> Value {
         "provider": null,
         "imap": {"host": "imap.fastmail.test", "port": 993, "security": "ssl"},
         "smtp": {"host": "smtp.fastmail.test", "port": 465, "security": "ssl"},
-        "username": address, "tried": [{"step": "known", "result": "found"}]}})
+        "username": address, "tried": [{"step": "known", "result": "found"}],
+        "defaults": {
+            "imap": {"host": "imap.fastmail.test", "port": 993, "security": "ssl"},
+            "smtp": {"host": "smtp.fastmail.test", "port": 587, "security": "starttls"},
+            "login": address, "source": "discovered", "provider": null,
+            "message": "Settings found for fastmail.test."}}})
 }
 
 fn discovery_missing(address: &str) -> Value {
     json!({"address": address, "result": {
         "address": address, "domain": "nowhere.test", "found": false, "source": null,
         "provider": null, "imap": null, "smtp": null, "username": address,
-        "tried": [{"step": "known", "result": "not listed"}, {"step": "mx", "result": "no record"}]}})
+        "tried": [{"step": "known", "result": "not listed"}, {"step": "mx", "result": "no record"}],
+        "defaults": {
+            "imap": {"host": "imap.nowhere.test", "port": 993, "security": "ssl"},
+            "smtp": {"host": "smtp.nowhere.test", "port": 465, "security": "ssl"},
+            "login": address, "source": "standard", "provider": null,
+            "message": "Standard settings for nowhere.test — change them if your provider uses others."}}})
 }
 
 /// The stdin line of each email action (the secret, never in argv).
@@ -5071,12 +5161,14 @@ fn email_cmds(cmds: &[Cmd]) -> Vec<&abstractcore_console::worker::EmailAction> {
         .collect()
 }
 
-/// Not connected: tabs Google / Microsoft / Other; the prefilled address
-/// is looked up at once; the answer picks the tab and becomes ONE
-/// summary line; Server settings stay folded; ONE Connect. None of the
-/// old words survive.
+/// Not connected: tabs IMAP (first, the default) / Google / Microsoft.
+/// The IMAP pane shows every field at once, the servers pre-filled with
+/// the standard imap./smtp.<domain> 993/465 SSL before any lookup
+/// answers, and one source line; no User name, no Display name, no
+/// "Server settings" fold; the CA file and the login sit behind small
+/// links. The prefilled address is looked up at once.
 #[test]
-fn email_mailbox_tabs_find_the_servers_from_the_address() {
+fn email_imap_tab_is_first_with_the_servers_visible_and_prefilled() {
     let mut h = email_harness(Size::new(120, 40), email_doc(false));
     let cmds = h.drain_cmds();
     assert!(
@@ -5085,47 +5177,50 @@ fn email_mailbox_tabs_find_the_servers_from_the_address() {
         "the prefilled address is looked up: {cmds:?}"
     );
     let s = h.turns(2);
+    assert_eq!(h.ui.email.tab.get_untracked(), ui::email::TAB_IMAP);
+    let bar = s
+        .lines()
+        .find(|l| l.contains("IMAP") && l.contains("Google"))
+        .unwrap_or_else(|| panic!("the tab bar:\n{s}"));
+    let at = |w: &str| bar.find(w).unwrap();
+    assert!(
+        at("IMAP") < at("Google") && at("Google") < at("Microsoft"),
+        "IMAP first: {bar}"
+    );
     for want in [
-        "Email address",
-        "Where notifications go, and the first address your agents may write to.",
-        "Mailbox",
-        "Google",
-        "Microsoft",
-        "Other",
-        "Sign in with Google",
-        "No built-in Google sign-in client in this version: add your own client id under Advanced.",
+        "Mailbox account: me@fastmail.test",
+        "› Use a different account",
+        "The account your agents read and send from — usually your own address.",
+        "Password",
+        "Use an app password if your provider needs one.",
+        "Incoming mail (IMAP)",
+        "imap.fastmail.test",
+        "993",
+        "Outgoing mail (SMTP)",
+        "smtp.fastmail.test",
+        "465",
+        "Standard settings for fastmail.test — change them if your provider uses others.",
+        "⟳ looking up the settings for fastmail.test…",
+        "› My provider uses a different login name",
+        "› Custom certificate",
+        "Connect",
         "[-] Agent email tools — Connect a mailbox first.",
         "▸ Advanced",
     ] {
         assert!(s.contains(want), "missing {want:?}:\n{s}");
     }
-    h.store
-        .email_discovery
-        .set(Some(discovery_found("me@fastmail.test")));
-    let s = h.turns(3);
-    assert_eq!(
-        h.ui.email.tab.get_untracked(),
-        2,
-        "a non-Google/Microsoft provider: Other"
-    );
-    for want in [
-        "imap.fastmail.test · 993 · SSL  ·  smtp.fastmail.test · 465 · SSL",
-        "Password",
-        "Use an app password if your provider needs one.",
-        "▸ Server settings",
-        "Connect",
-    ] {
-        assert!(s.contains(want), "missing {want:?}:\n{s}");
-    }
-    assert!(
-        !s.contains("IMAP host"),
-        "Server settings stay folded:\n{s}"
-    );
+    assert_eq!(h.ui.email.smtp_port.get_untracked(), "465");
     for gone in [
+        "Mailbox address",
+        "User name",
+        "Display name",
+        "Server settings",
+        "CA file",
+        "Other",
+        "Login ",
         "Save and test",
         "smtp.example.com",
         "Turn on",
-        "Turn off",
         "Registered address",
         "optional",
     ] {
@@ -5133,20 +5228,194 @@ fn email_mailbox_tabs_find_the_servers_from_the_address() {
     }
 }
 
-/// A Google address picks the Google tab (the person has not chosen one).
-#[test]
-fn email_lookup_picks_the_google_tab_for_a_google_mailbox() {
-    let mut h = email_harness(Size::new(120, 40), email_doc(false));
-    let mut found = discovery_found("me@fastmail.test");
-    found["result"]["provider"] = json!("google");
-    h.store.email_discovery.set(Some(found));
-    h.turns(3);
-    assert_eq!(h.ui.email.tab.get_untracked(), 0);
+/// The address fields on screen: rows holding a label and an input.
+fn address_inputs(s: &str) -> Vec<&'static str> {
+    ["Email address", "Mailbox address"]
+        .into_iter()
+        .filter(|label| s.lines().any(|l| l.contains(label) && l.contains('▐')))
+        .collect()
 }
 
-/// Nothing found: Server settings open by themselves, with the reason.
+/// ONE address question (DESIGN v2 §11 G5): no email address stored and
+/// no mailbox -> the mailbox form's address is the only address field,
+/// and Connect sends it (the CLI's connect sets the email address).
 #[test]
-fn email_discovery_failure_opens_server_settings_with_the_reason() {
+fn email_one_address_question_without_an_email_address() {
+    let mut doc = email_doc(false);
+    doc["registered_address_stored"] = json!("");
+    doc["registered_address"] = json!("");
+    let mut h = email_harness(Size::new(120, 50), doc);
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Mailbox address"], "{s}");
+    assert!(s.contains(ui::email::ADDRESS_PENDING), "{s}");
+    assert!(!s.contains("Use a different account"), "{s}");
+    h.ui.email.tab.set(1);
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Mailbox address"], "Google: {s}");
+    h.ui.email.tab.set(0);
+    h.turns(2);
+    h.click_first_on_row("Mailbox address", "▐");
+    h.type_text("me@fastmail.test");
+    h.click_first_on_row("Password", "▐");
+    h.type_text("app-pass");
+    h.turns(2);
+    h.drain_cmds();
+    h.click_on_row("│  Connect ", "Connect"); // the button, not the card-1 sentence
+    let s = h.turns(2);
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1, "{cmds:?}\n{s}");
+    let args: Vec<String> = acts[0].args.iter().map(|a| a.value().to_string()).collect();
+    assert!(
+        args.contains(&"--address=me@fastmail.test".to_string()),
+        "{args:?}"
+    );
+    // Connected (the CLI stored the email address): only the Email address field.
+    h.store.email.set(Loadable::Ready(email_doc(true)));
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+}
+
+/// An email address stored: the mailbox form shows "Mailbox account: x@y"
+/// and "› Use a different account"; the link shows the field (prefilled), the
+/// Email address reads as text meanwhile, and "Use x@y instead" goes
+/// back. Never two address fields.
+#[test]
+fn email_one_address_question_with_an_email_address() {
+    let mut h = email_harness(Size::new(120, 50), email_doc(false));
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+    assert!(
+        s.contains("Mailbox account: me@fastmail.test") && s.contains("› Use a different account"),
+        "{s}"
+    );
+    h.ui.email.tab.set(2);
+    let s = h.turns(3);
+    assert!(
+        s.contains("Mailbox account: me@fastmail.test") && s.contains("› Use a different account"),
+        "Microsoft: {s}"
+    );
+    assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+    h.ui.email.tab.set(0);
+    h.turns(2);
+    h.click("Use a different account");
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Mailbox address"], "{s}");
+    assert_eq!(
+        h.ui.email.mb_address.get_untracked(),
+        "me@fastmail.test",
+        "prefilled"
+    );
+    assert!(s.contains(ui::email::ADDRESS_LOCKED), "{s}");
+    assert!(s.contains("› Use me@fastmail.test instead"), "{s}");
+    h.ui.email.mb_address.set("box@corp.test".into());
+    h.ui.email.tab.set(1);
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Mailbox address"], "Google: {s}");
+    h.ui.email.tab.set(0);
+    h.turns(2);
+    h.click("Use me@fastmail.test instead");
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+    assert_eq!(h.ui.email.mb_address.get_untracked(), "me@fastmail.test");
+    // A new email address saved (or written by another console): the
+    // line and the form follow it.
+    let mut doc = email_doc(false);
+    doc["registered_address_stored"] = json!("me@work.test");
+    h.store.email.set(Loadable::Ready(doc));
+    let s = h.turns(3);
+    assert!(
+        s.contains("Mailbox account: me@work.test") && s.contains("› Use a different account"),
+        "{s}"
+    );
+    assert_eq!(h.ui.email.mb_address.get_untracked(), "me@work.test");
+    assert_eq!(h.ui.email.imap_host.get_untracked(), "imap.work.test");
+}
+
+/// Connected: one Email address field; the different-account note only
+/// when the addresses really differ (case-insensitive).
+#[test]
+fn email_connected_says_a_different_account_only_when_it_is_one() {
+    for (stored, note) in [
+        ("me@example.test", false),
+        ("ME@Example.test", false),
+        ("me@home.test", true),
+    ] {
+        let mut doc = email_doc(true);
+        doc["registered_address_stored"] = json!(stored);
+        let mut h = email_harness(Size::new(120, 50), doc);
+        let s = h.turns(3);
+        assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+        assert_eq!(
+            s.contains("Your mailbox is a different account: me@example.test."),
+            note,
+            "{stored}: {s}"
+        );
+        assert!(!s.contains("Mailbox account:"), "{s}");
+    }
+}
+
+/// The lookup's defaults replace the standard values (587 STARTTLS
+/// here) and the source line says where they come from — except in a
+/// field the person edited.
+#[test]
+fn email_discovered_defaults_replace_every_field_the_person_did_not_edit() {
+    let mut h = email_harness(Size::new(120, 40), email_doc(false));
+    h.turns(2);
+    // The person types their own IMAP server.
+    h.click_first_on_row("imap.fastmail.test", "▐");
+    h.key(b"\x1b[F");
+    h.turn();
+    for _ in 0.."imap.fastmail.test".len() {
+        h.key(b"\x7f");
+    }
+    h.type_text("mail.custom.test");
+    h.turns(2);
+    assert_eq!(h.ui.email.imap_host.get_untracked(), "mail.custom.test");
+    h.store
+        .email_discovery
+        .set(Some(discovery_found("me@fastmail.test")));
+    let s = h.turns(3);
+    assert_eq!(
+        h.ui.email.imap_host.get_untracked(),
+        "mail.custom.test",
+        "edited: kept"
+    );
+    assert_eq!(h.ui.email.smtp_port.get_untracked(), "587");
+    assert_eq!(h.ui.email.smtp_sec.get_untracked(), 1);
+    for want in [
+        "mail.custom.test",
+        "587",
+        "STARTTLS",
+        "Settings found for fastmail.test.",
+    ] {
+        assert!(s.contains(want), "missing {want:?}:\n{s}");
+    }
+    assert!(!s.contains("Standard settings"), "{s}");
+    assert!(!s.contains("⟳ looking up"), "{s}");
+}
+
+/// A Google address stays on IMAP (the default) and says the Google tab
+/// signs in without a password.
+#[test]
+fn email_a_google_mailbox_is_pointed_to_its_tab() {
+    let mut h = email_harness(Size::new(120, 40), email_doc(false));
+    let mut found = discovery_found("me@fastmail.test");
+    found["result"]["defaults"]["provider"] = json!("google");
+    h.store.email_discovery.set(Some(found));
+    let s = h.turns(3);
+    assert_eq!(h.ui.email.tab.get_untracked(), ui::email::TAB_IMAP);
+    assert!(
+        s.contains("This is a Google mailbox: the Google tab signs in without a password."),
+        "{s}"
+    );
+}
+
+/// Nothing found: the standard values stay, with the standard sentence.
+/// An AbstractCore that sends no `defaults` is said loudly, and a lookup
+/// that failed says its cause.
+#[test]
+fn email_lookup_failures_keep_the_standard_values_and_say_why() {
     let mut doc = email_doc(false);
     doc["registered_address_stored"] = json!("me@nowhere.test");
     let mut h = email_harness(Size::new(120, 40), doc);
@@ -5154,23 +5423,82 @@ fn email_discovery_failure_opens_server_settings_with_the_reason() {
         .email_discovery
         .set(Some(discovery_missing("me@nowhere.test")));
     let s = h.turns(3);
-    assert_eq!(h.ui.email.tab.get_untracked(), 2);
     for want in [
-        "Couldn't find the mail servers for nowhere.test. Enter them here.",
-        "▾ Server settings",
-        "IMAP host",
-        "SMTP host",
+        "imap.nowhere.test",
+        "smtp.nowhere.test",
+        "Standard settings for nowhere.test — change them if your provider uses others.",
     ] {
         assert!(s.contains(want), "missing {want:?}:\n{s}");
     }
+    h.store
+        .email_discovery
+        .set(Some(json!({"address": "me@nowhere.test",
+        "result": {"found": true, "imap": {"host": "x"}}})));
+    let s = h.turns(3);
+    assert!(
+        s.contains("This AbstractCore sent no server defaults"),
+        "an old core is said loudly:\n{s}"
+    );
+    assert_eq!(h.ui.email.imap_host.get_untracked(), "imap.nowhere.test");
+    h.store.email_discovery.set(Some(
+        json!({"address": "me@nowhere.test", "error": "the lookup timed out"}),
+    ));
+    let s = h.turns(3);
+    assert!(
+        s.contains("Couldn't look up the mail servers: the lookup timed out"),
+        "{s}"
+    );
 }
 
-/// Connect sends the address and the password only (the CLI finds the
-/// servers); the password rides stdin and is masked on screen. A
-/// discovery refusal opens Server settings and says what failed.
+/// Typing a new address fills its domain's standard servers at once and
+/// looks it up when typing pauses (~400 ms), once.
 #[test]
-fn email_connect_sends_address_and_password_only() {
+fn email_typing_an_address_prefills_then_looks_it_up_after_a_pause() {
     let mut h = email_harness(Size::new(120, 40), email_doc(false));
+    h.turns(2);
+    h.click("Use a different account");
+    h.click_first_on_row("Mailbox address", "▐");
+    h.key(b"\x1b[F");
+    h.turn();
+    for _ in 0.."fastmail.test".len() {
+        h.key(b"\x7f");
+    }
+    h.turn();
+    h.drain_cmds();
+    h.type_text("corp.example");
+    let s = h.turns(2);
+    assert!(
+        s.contains("imap.corp.example") && s.contains("smtp.corp.example"),
+        "{s}"
+    );
+    let early = h.drain_cmds();
+    assert!(
+        !early
+            .iter()
+            .any(|c| matches!(c, Cmd::EmailDiscover { address } if address == "me@corp.example")),
+        "no lookup while typing: {early:?}"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(450));
+    h.turns(3);
+    let cmds = h.drain_cmds();
+    let lookups: Vec<_> = cmds
+        .iter()
+        .filter(|c| matches!(c, Cmd::EmailDiscover { .. }))
+        .collect();
+    assert_eq!(lookups.len(), 1, "{cmds:?}");
+    assert!(
+        matches!(lookups[0], Cmd::EmailDiscover { address } if address == "me@corp.example"),
+        "{lookups:?}"
+    );
+}
+
+/// Connect sends the address, the password (stdin, masked) and the
+/// servers exactly as shown; no user name, no display name. The login
+/// link reveals ONE Login field whose value is sent only when it is not
+/// the address; the certificate link reveals the CA file.
+#[test]
+fn email_connect_sends_the_visible_servers_and_the_login_only_when_it_differs() {
+    let mut h = email_harness(Size::new(120, 50), email_doc(false));
     h.store
         .email_discovery
         .set(Some(discovery_found("me@fastmail.test")));
@@ -5179,7 +5507,7 @@ fn email_connect_sends_address_and_password_only() {
     h.type_text("-dash-Secret-42");
     h.turns(2);
     h.drain_cmds();
-    h.click("Connect");
+    h.click_on_row("Connect", "Connect");
     let s = h.turns(2);
     assert!(!s.contains("-dash-Secret-42"), "masked:\n{s}");
     assert!(s.contains("⟳ connecting"), "busy while connecting:\n{s}");
@@ -5198,50 +5526,127 @@ fn email_connect_sends_address_and_password_only() {
             .iter()
             .map(|a| a.value().to_string())
             .collect::<Vec<_>>(),
-        strs(&["connect", "--address=me@fastmail.test", "--password-stdin"])
+        strs(&[
+            "connect",
+            "--address=me@fastmail.test",
+            "--password-stdin",
+            "--imap-host=imap.fastmail.test",
+            "--imap-port=993",
+            "--imap-security=ssl",
+            "--smtp-host=smtp.fastmail.test",
+            "--smtp-port=587",
+            "--smtp-security=starttls",
+        ])
     );
     assert!(!format!("{cmds:?}").contains("Secret-42"));
 
-    // The worker answers: refused, servers not found.
-    h.store
-        .email_error_code
-        .set(Some("email_discovery_failed".into()));
+    // The worker answers: refused, with the step and the cause.
     h.ui.write_done.set(Some((
         h.ui.email.fid_connect,
-        Err("Couldn't find the mail servers for fastmail.test.".into()),
+        Err("Sign-in refused by imap.fastmail.test — check the password.".into()),
     )));
     let s = h.turns(3);
-    for want in [
-        "✗ Couldn't find the mail servers for fastmail.test.",
-        "Couldn't find the mail servers for fastmail.test. Enter them here.",
-        "IMAP host",
-    ] {
-        assert!(s.contains(want), "missing {want:?}:\n{s}");
-    }
+    assert!(
+        s.contains("✗ Sign-in refused by imap.fastmail.test — check the password."),
+        "{s}"
+    );
     assert!(!h.ui.email.connecting.get_untracked());
+
+    // A different login name, and a custom certificate.
+    h.click("› My provider uses a different login name");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Login") && s.contains(ui::email::LOGIN_HELP),
+        "{s}"
+    );
+    assert_eq!(
+        h.ui.email.login.get_untracked(),
+        "me@fastmail.test",
+        "prefilled"
+    );
+    h.ui.email.login.set("me".into());
+    h.click("› Custom certificate");
+    let s = h.turns(2);
+    assert!(s.contains("CA file"), "{s}");
+    h.ui.email.ca_file.set("/etc/ssl/corp.pem".into());
+    h.turns(2);
+    h.drain_cmds();
+    h.click_on_row("Connect", "Connect");
+    let cmds = h.drain_cmds();
+    let args: Vec<String> = email_cmds(&cmds)[0]
+        .args
+        .iter()
+        .map(|a| a.value().to_string())
+        .collect();
+    assert!(args.contains(&"--username=me".to_string()), "{args:?}");
+    assert!(
+        args.contains(&"--ca-file=/etc/ssl/corp.pem".to_string()),
+        "{args:?}"
+    );
+    assert!(
+        !args.iter().any(|a| a.starts_with("--display-name")),
+        "{args:?}"
+    );
 }
 
-/// Connected: one status line + Test + Disconnect; Disconnect asks
-/// inline first, Cancel keeps the mailbox.
+/// Connected: one status line, the Active switch (relocated from
+/// Advanced), Test + Disconnect; Disconnect asks inline first, Cancel
+/// keeps the mailbox; a failed Test or Active says its cause inline.
 #[test]
-fn email_connected_status_test_and_disconnect_confirm() {
+fn email_connected_status_active_test_and_disconnect_confirm() {
     let mut h = email_harness(Size::new(120, 40), email_doc(true));
     let s = h.turns(2);
     for want in [
         "Connected as me@example.test · Password · checked",
         "Last check failed: The SMTP server rejected the user name or password.",
         "Fix: Check the password.",
+        "[x] Active",
+        "Off pauses watching, sending and notifications; your settings are kept.",
         "Test",
         "Disconnect",
     ] {
         assert!(s.contains(want), "missing {want:?}:\n{s}");
     }
     assert!(!s.contains("Google"), "no tabs once connected:\n{s}");
+    assert!(!s.contains("Use this mailbox"), "renamed Active:\n{s}");
     h.drain_cmds();
     h.click_on_row("Test", "Test");
-    let acts = email_actions(h.drain_cmds());
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
     assert_eq!(acts.len(), 1);
-    assert_eq!(acts[0].1, strs(&["test"]));
+    assert_eq!(acts[0].form_id, Some(h.ui.email.fid_mailbox));
+    h.ui.write_done.set(Some((
+        h.ui.email.fid_mailbox,
+        Err("Couldn't reach smtp.example.test:587 (connection refused).".into()),
+    )));
+    let s = h.turns(3);
+    assert!(
+        s.contains("✗ Couldn't reach smtp.example.test:587 (connection refused)."),
+        "a failed Test says why, inline:\n{s}"
+    );
+
+    h.click("[x] Active");
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1, "{cmds:?}");
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["disable"])
+    );
+    assert_eq!(acts[0].form_id, Some(h.ui.email.fid_mailbox));
+    assert_eq!(
+        acts[0].ok_notice.as_deref(),
+        Some("Your mailbox is paused; your settings are kept.")
+    );
+    let s = h.turns(2);
+    assert!(
+        !s.contains("✗ Couldn't reach"),
+        "a new attempt clears the old cause:\n{s}"
+    );
 
     h.click_on_row("Test", "Disconnect");
     let s = h.turns(2);
@@ -5305,6 +5710,16 @@ fn email_agent_tools_is_a_switch_with_its_three_states() {
         acts[0].ok_notice.as_deref(),
         Some("Agent email tools are on.")
     );
+    assert_eq!(acts[0].form_id, Some(h.ui.email.fid_tools));
+    h.ui.write_done.set(Some((
+        h.ui.email.fid_tools,
+        Err("Connect a mailbox that passed its connection test first.".into()),
+    )));
+    let s = h.turns(3);
+    assert!(
+        s.contains("✗ Connect a mailbox that passed its connection test first."),
+        "a refused switch says why, inline:\n{s}"
+    );
 
     let mut on = email_doc(true);
     on["agent_tools"] = json!({"enabled": true, "active": true, "reason": ""});
@@ -5338,7 +5753,7 @@ fn email_agent_tools_is_a_switch_with_its_three_states() {
     h.store.email.set(Loadable::Ready(paused));
     let s = h.turns(3);
     assert!(
-        s.contains("[-] Agent email tools — “Use this mailbox” is off (Advanced)."),
+        s.contains("[-] Agent email tools — Your mailbox is paused (Mailbox → Active is off)."),
         "{s}"
     );
 
@@ -5396,43 +5811,72 @@ fn email_address_saves_inline() {
     );
 }
 
-/// Advanced: recipient rules apply on add/remove, limits save on
-/// Enter, the folder shows, and "Use this mailbox" is a switch.
+/// Advanced: three plain sentences — who your agents may send to (mode +
+/// entries; add/remove apply at once, a refusal says why inline), "At
+/// most N per hour and M per day" (saved on Enter) with the usage, and
+/// the watched folder. The mailbox switch is no longer here.
 #[test]
-fn email_advanced_rules_limits_and_use_this_mailbox() {
+fn email_advanced_is_three_sentences() {
     let mut h = email_harness(Size::new(120, 70), email_doc(true));
     h.click("▸ Advanced");
     let s = h.turns(3);
     for want in [
-        "Recipient rules",
-        "Only these recipients (allowlist)",
+        "Your agents may send to",
+        "Only these recipients",
         "· example.org",
         "Remove",
-        "Send limits",
-        "Per hour",
-        "Per day",
+        "At most",
+        "per hour and",
+        "per day.",
         "2 sent in the last hour, 5 in the last day.",
-        "Folder",
+        "Watch folder",
         "INBOX",
-        "[x] Use this mailbox",
-        "Off keeps the settings but stops watching, sending and notifications.",
     ] {
         assert!(s.contains(want), "missing {want:?}:\n{s}");
+    }
+    let limits = s.lines().find(|l| l.contains("At most")).unwrap();
+    assert!(
+        limits.contains("20") && limits.contains("per hour and") && limits.contains("100"),
+        "one sentence: {limits}"
+    );
+    for gone in [
+        "Use this mailbox",
+        "Send limits",
+        "Per hour",
+        "(allowlist)",
+        "Mode ",
+    ] {
+        assert!(!s.contains(gone), "{gone:?} is gone:\n{s}");
     }
     h.drain_cmds();
     let s = h.turns(2);
     h.click_on_row("· example.org", "Remove");
-    let acts = email_actions(h.drain_cmds());
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
     assert!(!acts.is_empty(), "Remove writes:\n{s}");
-    assert_eq!(acts[0].1, strs(&["policy", "set", "--remove=example.org"]));
+    assert_eq!(
+        acts[0]
+            .args
+            .iter()
+            .map(|a| a.value().to_string())
+            .collect::<Vec<_>>(),
+        strs(&["policy", "set", "--remove=example.org"])
+    );
+    assert_eq!(acts[0].form_id, Some(h.ui.email.fid_policy));
+    h.ui.write_done.set(Some((
+        h.ui.email.fid_policy,
+        Err("example.org is not in the list.".into()),
+    )));
+    let s = h.turns(3);
+    assert!(s.contains("✗ example.org is not in the list."), "{s}");
 
     h.ui.email.policy_add.set("corp.test".into());
     h.turns(2);
-    h.click_on_row("Add", "Add");
+    h.click_on_row("corp.test", "Add");
     let acts = email_actions(h.drain_cmds());
     assert_eq!(acts[0].1, strs(&["policy", "set", "--add=corp.test"]));
 
-    h.click_first_on_row("Per hour", "▐");
+    h.click_first_on_row("At most", "▐");
     h.key(b"\x1b[F");
     h.turn();
     h.key(b"\x7f\x7f");
@@ -5461,7 +5905,7 @@ fn email_advanced_rules_limits_and_use_this_mailbox() {
     );
 
     // Folder: saved on Enter, without reconnecting.
-    h.click_first_on_row("Folder", "▐");
+    h.click_first_on_row("Watch folder", "▐");
     h.key(b"\x1b[F");
     h.turn();
     for _ in 0..5 {
@@ -5482,21 +5926,14 @@ fn email_advanced_rules_limits_and_use_this_mailbox() {
         strs(&["folder", "Archive"])
     );
     assert_eq!(acts[0].form_id, Some(h.ui.email.fid_folder));
-
-    h.click("[x] Use this mailbox");
-    let cmds = h.drain_cmds();
-    let acts = email_cmds(&cmds);
-    assert_eq!(
-        acts[0]
-            .args
-            .iter()
-            .map(|a| a.value().to_string())
-            .collect::<Vec<_>>(),
-        strs(&["disable"])
-    );
-    assert_eq!(
-        acts[0].ok_notice.as_deref(),
-        Some("This mailbox is not in use (settings kept).")
+    h.ui.write_done.set(Some((
+        h.ui.email.fid_folder,
+        Err("The folder Archive does not exist on imap.example.test.".into()),
+    )));
+    let s = h.turns(3);
+    assert!(
+        s.contains("✗ The folder Archive does not exist on imap.example.test."),
+        "{s}"
     );
 }
 
@@ -5506,6 +5943,13 @@ fn email_advanced_rules_limits_and_use_this_mailbox() {
 #[test]
 fn email_oauth_tabs_sign_in_and_stream_the_prompt() {
     let mut h = email_harness(Size::new(120, 40), email_doc(false));
+    h.click_on_row("IMAP", "Google");
+    let s = h.turns(2);
+    assert_eq!(h.ui.email.tab.get_untracked(), 1, "{s}");
+    assert!(
+        !s.contains("Incoming mail"),
+        "the IMAP pane is IMAP's:\n{s}"
+    );
     h.drain_cmds();
     h.click("Sign in with Google");
     assert!(
@@ -5514,7 +5958,7 @@ fn email_oauth_tabs_sign_in_and_stream_the_prompt() {
     );
     h.click("Microsoft");
     let s = h.turns(2);
-    assert_eq!(h.ui.email.tab.get_untracked(), 1, "{s}");
+    assert_eq!(h.ui.email.tab.get_untracked(), 2, "{s}");
     assert!(s.contains("Sign in with Microsoft"), "{s}");
     h.ui.email.client_id.set("my-client-id".into());
     h.ui.email.client_secret.set("-client-Secret-77".into());
@@ -5576,7 +6020,7 @@ fn email_screen_is_reached_with_at_and_loads_when_not_asked() {
     );
     h.store.email.set(Loadable::Ready(email_doc(false)));
     let s = h.turns(3);
-    assert!(s.contains("Sign in with Google"), "{s}");
+    assert!(s.contains("Incoming mail (IMAP)"), "{s}");
     assert!(
         s.contains("space switch"),
         "the footer teaches the switch key:\n{s}"
@@ -5679,20 +6123,28 @@ fn write_after_shots() {
     );
     for size in [Size::new(120, 40), Size::new(60, 30)] {
         let mut h = email_harness(size, email_doc(false));
-        shot(&mut h, "email-not-connected-google");
-        h.ui.email.tab.set(1);
-        shot(&mut h, "email-not-connected-microsoft");
+        shot(&mut h, "email-not-connected-imap");
         h.store
             .email_discovery
             .set(Some(discovery_found("me@fastmail.test")));
-        shot(&mut h, "email-other-servers-found");
+        shot(&mut h, "email-imap-settings-found");
+        h.ui.email.login_open.set(true);
+        h.ui.email.ca_open.set(true);
+        shot(&mut h, "email-imap-login-and-certificate");
+        h.ui.email.login_open.set(false);
+        h.ui.email.ca_open.set(false);
         h.ui.email.connecting.set(true);
-        shot(&mut h, "email-other-connecting");
+        shot(&mut h, "email-imap-connecting");
         h.ui.email.connecting.set(false);
         h.ui.email.connect_error.set(Some(
             "Sign-in refused by imap.fastmail.test — check the password.".into(),
         ));
-        shot(&mut h, "email-other-connect-error");
+        shot(&mut h, "email-imap-connect-error");
+        h.ui.email.connect_error.set(None);
+        h.ui.email.tab.set(1);
+        shot(&mut h, "email-not-connected-google");
+        h.ui.email.tab.set(2);
+        shot(&mut h, "email-not-connected-microsoft");
 
         let mut doc = email_doc(false);
         doc["registered_address_stored"] = json!("me@nowhere.test");
@@ -5700,13 +6152,28 @@ fn write_after_shots() {
         h.store
             .email_discovery
             .set(Some(discovery_missing("me@nowhere.test")));
-        shot(&mut h, "email-other-servers-not-found");
+        shot(&mut h, "email-imap-servers-not-found");
+
+        // ONE address question (G5).
+        let mut doc = email_doc(false);
+        doc["registered_address_stored"] = json!("");
+        doc["registered_address"] = json!("");
+        let mut h = email_harness(size, doc);
+        shot(&mut h, "email-no-email-address");
+        let mut h = email_harness(size, email_doc(false));
+        h.ui.email.other_account.set(true);
+        shot(&mut h, "email-different-account-open");
 
         let mut h = email_harness(size, email_doc(true));
         shot(&mut h, "email-connected");
         h.ui.email.confirm_disconnect.set(true);
         shot(&mut h, "email-connected-disconnect-confirm");
         h.ui.email.confirm_disconnect.set(false);
+        h.ui.email.mailbox_note.set(Some(Err(
+            "Couldn't reach smtp.example.test:587 (connection refused).".into(),
+        )));
+        shot(&mut h, "email-connected-test-failed");
+        h.ui.email.mailbox_note.set(None);
         let mut on = email_doc(true);
         on["agent_tools"] = json!({"enabled": true, "active": true, "reason": ""});
         h.store.email.set(Loadable::Ready(on));
@@ -5717,7 +6184,55 @@ fn write_after_shots() {
         paused["enabled"] = json!(false);
         h.store.email.set(Loadable::Ready(paused));
         h.ui.email.advanced_folded.set(true);
-        shot(&mut h, "email-connected-not-in-use");
+        shot(&mut h, "email-connected-paused");
+        let mut other = email_doc(true);
+        other["registered_address_stored"] = json!("me@home.test");
+        h.store.email.set(Loadable::Ready(other));
+        shot(&mut h, "email-connected-different-account");
+
+        // Routes: the transcription route (unknown engine, then repaired).
+        let mut h = harness_sized(size);
+        h.load_fixtures();
+        let mut doc = routes_fixture();
+        for r in doc["routes"].as_array_mut().unwrap() {
+            if r["key"] == "input.voice" {
+                r["provider"] = json!("huggingface");
+                r["model"] = json!("Systran/faster-whisper-base");
+                r["configured"] = json!(true);
+                r["engine_missing"] = json!({"engine": "huggingface", "name": "huggingface",
+                    "reason": "'huggingface' is not a transcription engine AbstractVoice has (it has: faster-whisper, transformers-asr). Pick a transcription engine on the Multimodal page.",
+                    "install": null});
+            }
+        }
+        h.store
+            .routes
+            .set(Loadable::Ready(RoutesData::from_value(&doc)));
+        h.goto_screen(3);
+        h.select_route("input.voice");
+        shot(&mut h, "routes-transcription-unknown-engine");
+        let mut doc = routes_fixture();
+        for r in doc["routes"].as_array_mut().unwrap() {
+            if r["key"] == "input.voice" {
+                r["provider"] = json!("faster-whisper");
+                r["model"] = json!("base");
+                r["configured"] = json!(true);
+            }
+        }
+        h.store
+            .routes
+            .set(Loadable::Ready(RoutesData::from_value(&doc)));
+        let mut avail = availability_fixture();
+        avail["routes"].as_array_mut().unwrap().push(json!({
+            "key": "input.voice", "provider": "faster-whisper", "model": "base",
+            "download_provider": "huggingface",
+            "download_artifact": "Systran/faster-whisper-base",
+            "availability": {"provider": "huggingface", "artifact": "Systran/faster-whisper-base",
+                             "status": "absent", "downloadable": true}}));
+        h.store
+            .availability
+            .set(Loadable::Ready(AvailabilityData::from_value(&avail)));
+        h.select_route("input.voice");
+        shot(&mut h, "routes-transcription-repaired");
 
         let mut h = harness_sized(size);
         h.load_fixtures();

@@ -47,6 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Connecting a mailbox sets the email address when none is stored, and a connection given no
   display name keeps the stored one, else uses the address's local part (`abstractcore email
   connect --display-name` still sets it).
+- Web console and terminal console, Email: the address is asked once. With no email address
+  stored and no mailbox, the mailbox form's address is the only address field (connecting sets the
+  email address from it). With an email address stored, the mailbox form shows "Mailbox account:
+  <address> — Use a different account"; the link shows the field, prefilled, and the email address
+  is read-only until you connect or go back to it. "Your mailbox is a different account" shows only
+  when the two addresses differ.
 - Web console, Email tab: in order, **Email address** (the only field with a Save button),
   **Mailbox** (tabs Google / Microsoft / Other; Other asks for the address and password only, the
   servers are discovered and shown on one line with Edit, Server settings open by themselves when
