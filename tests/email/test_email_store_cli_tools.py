@@ -423,3 +423,31 @@ def test_folder_is_set_without_reconnecting_over_http_and_cli(http, imap, smtp, 
     assert handle_email(["folder", "Sent", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == {"ok": True, "folder": "Sent"}
     assert EmailAccountStore(config_file).public()["imap"]["folder"] == "Sent"
+
+
+# ------------------------------------------------------------------ round 2: no display-name question, one address model
+
+
+def test_connect_defaults_the_display_name_to_the_local_part_and_keeps_a_stored_one(imap, smtp, ca, config_file) -> None:
+    store = EmailAccountStore(config_file)
+    store.connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD), test=False)
+    assert store.settings().account.display_name == ME.split("@", 1)[0]
+    # A stored name (set by an earlier connection or `--display-name`) is kept on reconnect.
+    store.connect(account_for(imap, smtp, ca, display_name="Me Myself"), EmailSecret(PASSWORD), test=False)
+    store.connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD), test=False)
+    assert store.settings().account.display_name == "Me Myself"
+
+
+def test_cli_display_name_flag_still_overrides(imap, smtp, ca, config_file, capsys) -> None:
+    assert _connect_cli(imap, smtp, ca, "--display-name", "Ops Desk", "--json") == 0
+    assert EmailAccountStore(config_file).settings().account.display_name == "Ops Desk"
+
+
+def test_connect_sets_the_email_address_only_when_none_is_stored(imap, smtp, ca, config_file) -> None:
+    store = EmailAccountStore(config_file)
+    assert store.public()["registered_address_stored"] == ""
+    store.connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD), test=False)
+    assert store.public()["registered_address_stored"] == ME
+    store.set_registered_address("other@example.test")
+    store.connect(account_for(imap, smtp, ca), EmailSecret(PASSWORD), test=False)
+    assert store.public()["registered_address_stored"] == "other@example.test"

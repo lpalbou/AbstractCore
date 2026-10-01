@@ -379,6 +379,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
         found = discovery.discover_servers(args.address, timeout=args.timeout)
     except ValueError:
         return _fail(EmailInvalidSettings(f"{args.address!r} is not a valid email address.", "Give the address as name@example.com."), bool(args.json))
+    found = {**found, "defaults": discovery.server_defaults(found["address"], found)}
     if args.json:
         _print_json(found)
     elif found["found"]:
@@ -610,7 +611,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = common(sub.add_parser("connect", help="Connect the mailbox (test, then store); servers discovered when no host is given"))
     c.add_argument("--address", help="The mailbox's address (the sender)")
-    c.add_argument("--display-name", help="Name shown to recipients")
+    c.add_argument("--display-name", help="Name shown to recipients (default: the stored one, else the address's local part)")
     c.add_argument("--username", help="Sign-in user name (default: the discovered form, else the address)")
     c.add_argument("--password", help="Password or app password (stored encrypted)")
     c.add_argument(

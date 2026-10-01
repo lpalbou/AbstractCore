@@ -436,7 +436,11 @@ def test_cli_connect_without_hosts_discovers_and_discover_verb(config_file, monk
 
     _use_net(monkeypatch, FakeNet(http={AUTOCONFIG: autoconfig_xml()}))
     assert handle_email(["discover", "me@corp.test", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["source"] == "autoconfig"
+    out = json.loads(capsys.readouterr().out)
+    assert out["source"] == "autoconfig"
+    # The same `defaults` as POST /acore/email/discover (the core TUI reads it from here).
+    assert out["defaults"] == discovery.server_defaults("me@corp.test", {k: v for k, v in out.items() if k != "defaults"})
+    assert out["defaults"]["source"] == "discovered" and out["defaults"]["message"] == "Settings found for corp.test."
     assert handle_email(["connect", "--address", "me@corp.test", "--password", "pw-1", "--no-test", "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
     assert doc["imap"]["host"] == "imap.corp.test" and doc["smtp"]["port"] == 465

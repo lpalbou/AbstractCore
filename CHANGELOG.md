@@ -21,13 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `abstractcore.comms.email.discovery.server_defaults(address, discovered=None)`: the server
   fields a mailbox form pre-fills (the discovered servers and login, else the standard
   `imap.<domain>` 993 SSL and `smtp.<domain>` 465 SSL), with one sentence saying which.
-  `POST /acore/email/discover` returns it as `defaults`.
+  `POST /acore/email/discover` and `abstractcore email discover --json` return it as `defaults`.
 - Model catalog: an artifact may carry `route: {key, provider, model}`, the capability route that
   runs it when the engine is not the download provider (`model_catalog.route_for_download`).
   The speech input model (Hugging Face `Systran/faster-whisper-base`) is run by faster-whisper
   `base`.
 
 ### Changed
+- Web console, Email tab (round 2): the Mailbox tabs are **IMAP** (first, the default), Google,
+  Microsoft. The IMAP pane shows every field: Mailbox address, Password, Incoming mail (IMAP) and
+  Outgoing mail (SMTP) as Server / Port / Security rows, filled with `imap.<domain>` 993 SSL and
+  `smtp.<domain>` 465 SSL as soon as the address has a domain, then with the discovered settings,
+  never over a field you edited; one line says where they came from. No User name or Display
+  name fields: a small link "My provider uses a different login name" shows a Login field, and
+  "Custom certificate" shows the CA file. Once connected, the Mailbox card holds the **Active**
+  switch ("Use this mailbox" left Advanced). Advanced is three short sentences: who your agents
+  may send to, "At most N per hour and N per day", and the watched folder.
+- Connecting a mailbox sets the email address when none is stored, and a connection given no
+  display name keeps the stored one, else uses the address's local part (`abstractcore email
+  connect --display-name` still sets it).
 - Web console, Email tab: in order, **Email address** (the only field with a Save button),
   **Mailbox** (tabs Google / Microsoft / Other; Other asks for the address and password only, the
   servers are discovered and shown on one line with Edit, Server settings open by themselves when
@@ -49,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model's weights in the Hugging Face cache. A stored route that holds a catalog download pair
   (`input.voice` = `huggingface` / `Systran/faster-whisper-base`) is repaired to the catalog's
   route when the config loads, with a `abstractcore.json.route-repair-<time>.bak` copy first; any
-  other unknown voice provider says "Pick a transcription engine on the Multimodal page."
+  other unknown voice provider says to pick a transcription engine (Multimodal page in the gateway console, Routes in the core console).
   Speech input accepts AbstractVoice's aliases (`whisper`, `local`, `hf`, `transformers`).
 - The default allowlist entry follows the registered address when it changes
   (`EmailAccountStore.set_registered_address` swaps the old address for the new one). Before,

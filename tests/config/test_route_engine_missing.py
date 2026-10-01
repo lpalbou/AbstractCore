@@ -222,7 +222,7 @@ def test_an_engine_abstractvoice_does_not_have_is_reported_in_its_words(packages
     voice_api()
     flag = re_mod.route_engine_missing("voxtral", "x", "output.voice")
     assert flag["install"] is None
-    assert flag["reason"] == "'voxtral' is not a voice engine AbstractVoice has (it has: openai, supertonic, piper). Pick a voice engine on the Multimodal page."
+    assert flag["reason"] == "'voxtral' is not a voice engine AbstractVoice has (it has: openai, supertonic, piper). Pick a voice engine for speech output (Multimodal page in the gateway console, Routes in the core console)."
 
 
 def test_without_abstractvoice_every_local_voice_route_is_missing_it(packages):
@@ -398,7 +398,8 @@ def test_a_download_source_on_the_transcription_route_says_what_to_do(packages, 
     assert flag["install"] is None and flag["engine"] == "huggingface"
     assert flag["reason"] == (
         "'huggingface' is not a transcription engine AbstractVoice has (it has: openai, faster-whisper, "
-        "transformers-asr). Pick a transcription engine on the Multimodal page."
+        "transformers-asr). Pick a transcription engine for speech input (Multimodal page in the gateway console, "
+        "Routes in the core console)."
     )
 
 
@@ -445,7 +446,7 @@ def test_an_unknown_pair_is_left_alone_and_the_grid_says_what_to_do(tmp_path, pa
     manager = ConfigurationManager(config_file=cfg, apply_env=False)
     assert cfg.read_text() == raw and not list(tmp_path.glob("*.route-repair-*.bak"))
     flag = _rows(manager)["input.voice"]["engine_missing"]
-    assert "Pick a transcription engine on the Multimodal page." in flag["reason"]
+    assert "Pick a transcription engine for speech input" in flag["reason"]
 
 
 def test_the_repair_only_follows_the_catalog_route_key():
