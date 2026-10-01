@@ -755,6 +755,62 @@ def require_servers(address: str, **kwargs: Any) -> Dict[str, Any]:
     return found
 
 
+STANDARD_IMAP_PORT = 993
+STANDARD_SMTP_PORT = 465
+
+
+def _clean_leg(leg: Any) -> Optional[Dict[str, Any]]:
+    """A discovered `{host, port, security}` leg, or None when it has no host."""
+
+    if not isinstance(leg, dict) or not str(leg.get("host") or "").strip():
+        return None
+    return {"host": str(leg["host"]).strip(), "port": int(leg["port"]), "security": str(leg.get("security") or "ssl")}
+
+
+def server_defaults(address: str, discovered: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The server fields a mailbox form pre-fills for `address`.
+
+    `discovered` is a `discover_servers(address)` result; when it is None, discovery runs here
+    (network). With `discovered` given this is a pure function.
+
+    Returns `{imap: {host, port, security}, smtp: {host, port, security}, login, source, provider,
+    message}`:
+
+    - discovery found both servers -> its values (`source: "discovered"`, `login` = its user name:
+      the address, or the local part for a provider that signs in with it);
+    - otherwise -> the standard `imap.<domain>` 993 SSL and `smtp.<domain>` 465 SSL, `login` =
+      the address (`source: "standard"`); a server discovery found on its own is kept.
+
+    `message` is one sentence a form shows under the fields. Raises ValueError when `address` is
+    not an email address.
+    """
+
+    text = str(address or "").strip()
+    _local, domain = split_address(text)  # ValueError for a non-address
+    if discovered is None:
+        discovered = discover_servers(text)
+    found = bool(discovered.get("found"))
+    imap = _clean_leg(discovered.get("imap"))
+    smtp = _clean_leg(discovered.get("smtp"))
+    if found and imap and smtp:
+        return {
+            "imap": imap,
+            "smtp": smtp,
+            "login": str(discovered.get("username") or text),
+            "source": "discovered",
+            "provider": discovered.get("provider") or None,
+            "message": f"Settings found for {domain}.",
+        }
+    return {
+        "imap": imap or _leg(f"imap.{domain}", STANDARD_IMAP_PORT, "ssl"),
+        "smtp": smtp or _leg(f"smtp.{domain}", STANDARD_SMTP_PORT, "ssl"),
+        "login": text,
+        "source": "standard",
+        "provider": None,
+        "message": f"Standard settings for {domain} — change them if your provider uses others.",
+    }
+
+
 class _Net:
     """The default network steps, looked up at call time (tests replace them)."""
 
@@ -773,4 +829,5 @@ __all__ = [
     "parse_autoconfig",
     "parse_xml",
     "require_servers",
+    "server_defaults",
 ]

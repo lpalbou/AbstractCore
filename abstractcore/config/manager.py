@@ -10,7 +10,7 @@ import os
 import uuid
 import importlib.util
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional, Tuple, Union
 from dataclasses import dataclass, asdict, field, fields
 from datetime import datetime, timezone
 
@@ -676,6 +676,10 @@ class ConfigurationManager:
         # the BASELINE of the three-way merge that keeps a save from reverting
         # another writer's rows. `{}` means "no trustworthy baseline" (fresh
         # install or unreadable file) and the merge degrades to a whole publish.
+        # A route stored with a curated DOWNLOAD pair instead of the route that
+        # runs it (`input.voice` = huggingface / Systran/faster-whisper-base)
+        # is repaired on disk first, backup kept (`_repair_download_pair_routes`).
+        self._download_pair_repairs: List[Dict[str, Any]] = self._repair_download_pair_routes()
         self._store_baseline: Dict[str, Any] = self._read_store_document() or {}
         # Routes the recommended-seed upgrade added IN MEMORY at load (key ->
         # the added route's dict), not yet on disk. They are not this
@@ -990,6 +994,70 @@ class ConfigurationManager:
 
             seed_recommended_capability_defaults(config.capability_defaults)
             return config
+
+    def _repair_download_pair_routes(self) -> List[Dict[str, Any]]:
+        """Repair, on disk, the routes that hold a curated download pair
+        (`capability_defaults.repair_download_pair_routes`).
+
+        Only when there is something to repair: the raw file is copied to
+        `<config>.route-repair-<stamp>.bak` (bytes, mode 0600) and the repaired
+        document is published atomically (unique temp + rename, like
+        `_save_config`). Idempotent (a repaired store has nothing left to
+        repair) and never fatal: an unreadable or unparseable file is left to
+        `_load_config`'s own handling, and a failed backup skips the rewrite.
+        Returns the changes (logged at WARNING)."""
+
+        import logging
+
+        log = logging.getLogger(__name__)
+        try:
+            raw = self.config_file.read_bytes()
+            document = json.loads(raw.decode("utf-8"))
+        except Exception:
+            return []
+        from .capability_defaults import repair_download_pair_routes
+
+        try:
+            changes = repair_download_pair_routes(document)
+        except Exception as exc:  # pragma: no cover - defensive
+            log.warning("route repair skipped for %s: %s", str(self.config_file), exc)
+            return []
+        if not changes:
+            return []
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup = self.config_file.with_suffix(self.config_file.suffix + f".route-repair-{stamp}.bak")
+        tmp = self.config_file.with_suffix(self.config_file.suffix + f".{os.getpid()}-{uuid.uuid4().hex[:8]}.tmp")
+        try:
+            backup.write_bytes(raw)
+            try:
+                os.chmod(backup, 0o600)
+            except Exception:
+                pass
+            with open(tmp, "w") as f:
+                json.dump(document, f, indent=2)
+                f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+            try:
+                os.chmod(tmp, 0o600)
+            except Exception:
+                pass
+            tmp.replace(self.config_file)
+        except Exception as exc:
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+            log.warning("route repair not written for %s: %s", str(self.config_file), exc)
+            return []
+        for change in changes:
+            log.warning(
+                "repaired capability route %s in %s: %s/%s -> %s/%s (backup %s)",
+                change["key"], str(self.config_file),
+                change["before"]["provider"], change["before"]["model"],
+                change["after"]["provider"], change["after"]["model"], str(backup),
+            )
+        return [dict(change, backup=str(backup)) for change in changes]
 
     def _backup_unreadable_config(self, error: Exception) -> None:
         """Copy an unparseable config aside (timestamped) and warn loudly.

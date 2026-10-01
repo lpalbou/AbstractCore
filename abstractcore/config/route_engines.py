@@ -55,6 +55,7 @@ __all__ = [
     "provider_engines_installed",
     "route_engine_missing",
     "routes_engine_missing",
+    "voice_engine_id",
 ]
 
 # The first AbstractVoice with `abstractvoice.engine_runtime` (the public
@@ -66,6 +67,42 @@ ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR = "0.13.2"
 # core install for them, and whether they are configured is not a runtime
 # question.
 _REMOTE_VOICE_PROVIDERS = frozenset({"openai", "openai-compatible"})
+
+# The speech-input provider ids AbstractVoice's AbstractCore plugin accepts on
+# an STT route besides its engine ids (`integrations/abstractcore_plugin.py`:
+# `_norm_compat_provider_id`, `_engine_aliases`, `_stt_model_ids_for_provider`).
+# Its public `engine_runtime` alias table (abstractvoice 0.13.2) does not carry
+# them, so they are mirrored here, explicitly; everything else goes through
+# `engine_runtime.normalize_engine_id` (underscores, the TTS aliases). A new
+# alias upstream belongs in `engine_runtime._ALIASES` and then here.
+_STT_PROVIDER_ALIASES = {
+    "whisper": "faster-whisper",
+    "local": "faster-whisper",
+    "faster_whisper": "faster-whisper",
+    "transformers": "transformers-asr",
+    "transformers_asr": "transformers-asr",
+    "hf": "transformers-asr",
+    "hf-asr": "transformers-asr",
+}
+
+# What to do about a voice route whose provider is no AbstractVoice engine:
+# (what the id is not, the engine kind to list, the fix).
+_VOICE_PICK = {
+    "input.voice": ("a transcription engine", "stt", "Pick a transcription engine on the Multimodal page."),
+    "output.voice": ("a voice engine", "tts", "Pick a voice engine on the Multimodal page."),
+}
+
+
+def voice_engine_id(provider: Any, key: Any = None) -> str:
+    """The AbstractVoice engine id a voice route's provider names: `whisper` /
+    `local` -> `faster-whisper`, `hf` -> `transformers-asr` on `input.voice`
+    (the plugin's aliases), else the id as given (lowercased). No lookup of
+    whether the engine exists: `route_engine_missing` answers that."""
+
+    pid = str(provider or "").strip().lower()
+    if str(key or "").strip().lower() == "input.voice":
+        return _STT_PROVIDER_ALIASES.get(pid, pid)
+    return pid
 
 
 def _importable(module: str) -> bool:
@@ -171,7 +208,8 @@ def _mlx_gen() -> Optional[Dict[str, Any]]:
     )
 
 
-def _voice(provider: str) -> Optional[Dict[str, Any]]:
+def _voice(provider: str, key: str = "") -> Optional[Dict[str, Any]]:
+    provider = voice_engine_id(provider, key)
     if provider in _REMOTE_VOICE_PROVIDERS:
         return None
     if not _distributed("abstractvoice"):
@@ -185,7 +223,7 @@ def _voice(provider: str) -> Optional[Dict[str, Any]]:
             install,
         )
     try:
-        from abstractvoice.engine_runtime import engine_runtime_status
+        from abstractvoice.engine_runtime import engine_runtime_status, known_engines
     except ImportError:
         # The light install's floor IS this floor: upgrading AbstractCore upgrades AbstractVoice.
         install = _pip_command("-U", "abstractcore")
@@ -199,10 +237,19 @@ def _voice(provider: str) -> Optional[Dict[str, Any]]:
         )
     try:
         status = engine_runtime_status(provider)
-    except ValueError as exc:
-        # Not an engine AbstractVoice has: the route cannot run, and its own
-        # words say which engines exist.
-        return _missing(provider, provider, str(exc), None)
+    except ValueError:
+        # Not an engine AbstractVoice has: the route cannot run. The reason
+        # says what the id is not and what to do (a download source such as
+        # `huggingface` on a transcription route is the usual case), with the
+        # engines AbstractVoice lists for that kind (`known_engines`).
+        what, kind, fix = _VOICE_PICK.get(key, ("an AbstractVoice engine", None, "Pick a voice engine on the Multimodal page."))
+        engines = ", ".join(known_engines(kind))
+        return _missing(
+            provider,
+            provider,
+            f"{provider!r} is not {what} AbstractVoice has (it has: {engines}). {fix}",
+            None,
+        )
     if status.installed:
         return None
     # AbstractVoice's own `install_command` / `reason` name its standalone extra
@@ -270,7 +317,7 @@ def route_engine_missing(provider: Any, model: Any = None, key: Any = None) -> O
         return None
     route_key = str(key or "").strip().lower()
     if route_key in ("input.voice", "output.voice"):
-        return _voice(pid)
+        return _voice(pid, route_key)
     if pid == "mlx":
         return _python_engine("mlx", "MLX (mlx-lm)", ("mlx_lm",), "the mlx provider runs models with it")
     if pid == "mlx-gen":

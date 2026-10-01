@@ -95,6 +95,17 @@
           "properties": {"speculation": {}},
           "additionalProperties": false
         },
+        "route": {
+          "type": "object",
+          "description": "The capability route that runs this artifact when its engine is not the download provider (AbstractVoice's faster-whisper runs `base`, fetched from a Hugging Face repo): what a surface shows and writes for that route, and the target of the repair of a route stored with the download pair.",
+          "required": ["key", "provider", "model"],
+          "properties": {
+            "key": {"type": "string", "minLength": 1},
+            "provider": {"type": "string", "minLength": 1},
+            "model": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        },
         "note": {"type": "string", "minLength": 1},
         "upstream": {"$ref": "#/$defs/upstream"},
         "resident": {

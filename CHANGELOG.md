@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `abstractcore.console.themes.KIT_SWITCH_CSS` and `KIT_FORM_CSS`: the UI kit's switch and form,
   card and tabs rules (ui-kit 0.3.3), copied verbatim by `abstractcore.console.theme_sync`
   (`parse_kit_block`), which refuses a kit without them.
+- `abstractcore.comms.email.discovery.server_defaults(address, discovered=None)`: the server
+  fields a mailbox form pre-fills (the discovered servers and login, else the standard
+  `imap.<domain>` 993 SSL and `smtp.<domain>` 465 SSL), with one sentence saying which.
+  `POST /acore/email/discover` returns it as `defaults`.
+- Model catalog: an artifact may carry `route: {key, provider, model}`, the capability route that
+  runs it when the engine is not the download provider (`model_catalog.route_for_download`).
+  The speech input model (Hugging Face `Systran/faster-whisper-base`) is run by faster-whisper
+  `base`.
 
 ### Changed
 - Web console, Email tab: in order, **Email address** (the only field with a Save button),
@@ -34,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `abstractcore email` texts say "Email address" and "Use this mailbox".
 
 ### Fixed
+- Transcription showed "Engine missing: unknown AbstractVoice engine 'huggingface'": the
+  recommended download plan asked AbstractVoice for the engine of the download provider
+  (`huggingface`) instead of the route's engine (`faster-whisper`). Plan rows now carry
+  `route_provider` / `route_model` and judge that engine; the grid probes the transcription
+  model's weights in the Hugging Face cache. A stored route that holds a catalog download pair
+  (`input.voice` = `huggingface` / `Systran/faster-whisper-base`) is repaired to the catalog's
+  route when the config loads, with a `abstractcore.json.route-repair-<time>.bak` copy first; any
+  other unknown voice provider says "Pick a transcription engine on the Multimodal page."
+  Speech input accepts AbstractVoice's aliases (`whisper`, `local`, `hf`, `transformers`).
 - The default allowlist entry follows the registered address when it changes
   (`EmailAccountStore.set_registered_address` swaps the old address for the new one). Before,
   changing the email address after connecting left the old address in the allowlist, so a sign-in

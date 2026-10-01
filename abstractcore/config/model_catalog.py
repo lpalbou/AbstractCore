@@ -41,6 +41,7 @@ __all__ = [
     "catalog",
     "search",
     "catalog_id_for",
+    "route_for_download",
     "hub_cache_path",
     "quant_class",
     "recommended_text_model",
@@ -764,7 +765,7 @@ def validate_catalog(data: Any) -> List[str]:
                     "capabilities_key", "tags", "starter", "artifacts")
     required_art = ("provider", "artifact", "quant", "download_bytes", "size_source", "verified")
     allowed_row = set(required_row) | {"notes", "capabilities_override", "kv_geometry"}
-    allowed_art = set(required_art) | {"recommended", "options", "upstream", "note", "resident"}
+    allowed_art = set(required_art) | {"recommended", "options", "upstream", "note", "resident", "route"}
     seen: set = set()
     for i, row in enumerate(rows):
         where = f"rows[{i}]"
@@ -829,6 +830,14 @@ def validate_catalog(data: Any) -> List[str]:
                 errors.append(f"{aw}.note must be a non-empty string")
             if "resident" in art:
                 errors.extend(_validate_resident(aw, art.get("resident")))
+            if "route" in art:
+                route = art.get("route")
+                if (
+                    not isinstance(route, dict)
+                    or set(route) != {"key", "provider", "model"}
+                    or not all(isinstance(route.get(k), str) and route.get(k) for k in ("key", "provider", "model"))
+                ):
+                    errors.append(f"{aw}.route must be {{key, provider, model}} (non-empty strings)")
     return errors
 
 
@@ -1049,6 +1058,30 @@ def _artifact_index() -> Dict[Tuple[str, str], str]:
         for art in row.get("artifacts") or []:
             index[(_norm(art.get("provider")), _norm(art.get("artifact")))] = row["id"]
     return index
+
+
+@functools.lru_cache(maxsize=1)
+def _download_routes() -> Dict[Tuple[str, str], Dict[str, str]]:
+    index: Dict[Tuple[str, str], Dict[str, str]] = {}
+    for row in _load_seed_cached().get("rows") or []:
+        for art in row.get("artifacts") or []:
+            route = art.get("route")
+            if isinstance(route, dict):
+                index[(str(art.get("provider") or ""), str(art.get("artifact") or ""))] = {
+                    "key": str(route["key"]), "provider": str(route["provider"]), "model": str(route["model"]),
+                }
+    return index
+
+
+def route_for_download(provider: Any, artifact: Any) -> Optional[Dict[str, str]]:
+    """`{key, provider, model}`: the capability route that runs the curated
+    download `(provider, artifact)` when its engine is not the download provider
+    (the catalog artifact's `route`: `huggingface` `Systran/faster-whisper-base`
+    -> `input.voice` `faster-whisper` `base`), else None. An exact lookup of the
+    catalog pair, nothing inferred from the ids."""
+
+    found = _download_routes().get((str(provider or "").strip(), str(artifact or "").strip()))
+    return dict(found) if found else None
 
 
 def catalog_id_for(provider: Any, artifact: Any) -> Optional[str]:

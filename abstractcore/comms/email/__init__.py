@@ -54,7 +54,7 @@ from .errors import (
     EmailTransient,
     EmailUnreachable,
 )
-from .discovery import EmailDiscoveryFailed, discover_servers, require_servers
+from .discovery import EmailDiscoveryFailed, discover_servers, require_servers, server_defaults
 from .limits import SendRateLimiter
 from .models import (
     AUTO_SUBMITTED_GENERATED,
@@ -166,6 +166,7 @@ __all__ = [
     "discover_servers",
     "oauth_providers_public",
     "require_servers",
+    "server_defaults",
     "evaluate",
     "guarded_send",
     "normalize_address",

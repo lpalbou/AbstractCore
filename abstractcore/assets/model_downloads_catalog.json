@@ -2,7 +2,7 @@
  "$schema": "./model_downloads_catalog.schema.json",
  "schema": "model_downloads_catalog_v1",
  "version": "2026-09-29",
- "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer. upstream={method, checked, revision?} records an id verified to exist upstream on that date (hf_api: HfApi.model_info(files_metadata=True), download_bytes = the weight files; ollama_registry: the registry manifest, download_bytes = the sum of its layers); such an artifact must carry its verified size. options carries route options the recommendation copies (the MTP builds: speculation). resident={bytes, source} (optional, per artifact) is the MEASURED memory the engine needs while it runs, for models whose working memory is not their file size (video generation): the fit verdict uses it instead of download_bytes, and `source` says where and at which profile it was measured.",
+ "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer. upstream={method, checked, revision?} records an id verified to exist upstream on that date (hf_api: HfApi.model_info(files_metadata=True), download_bytes = the weight files; ollama_registry: the registry manifest, download_bytes = the sum of its layers); such an artifact must carry its verified size. options carries route options the recommendation copies (the MTP builds: speculation). resident={bytes, source} (optional, per artifact) is the MEASURED memory the engine needs while it runs, for models whose working memory is not their file size (video generation): the fit verdict uses it instead of download_bytes, and `source` says where and at which profile it was measured. route={key, provider, model} (optional, per artifact) names the capability route that runs the artifact when its engine is not the download provider (AbstractVoice's faster-whisper runs `base`, fetched as a Hugging Face repo): what a surface shows and writes for that route, and how a route stored with the download pair is repaired (capability_defaults.repair_download_pair_routes).",
  "companion_sizes": {
   "mlx-community/Qwen3.5-4B-MTP-4bit": {
    "download_bytes": 67859512,
@@ -4345,6 +4345,11 @@
      "download_bytes": 147886409,
      "size_source": "catalog",
      "verified": true,
+     "route": {
+      "key": "input.voice",
+      "provider": "faster-whisper",
+      "model": "base"
+     },
      "upstream": {
       "method": "hf_api",
       "checked": "2026-09-28",
@@ -4381,6 +4386,11 @@
      "download_bytes": 11105348328,
      "size_source": "catalog",
      "verified": true,
+     "route": {
+      "key": "output.music",
+      "provider": "acestep",
+      "model": "ACE-Step/acestep-v15-xl-turbo-diffusers"
+     },
      "upstream": {
       "method": "hf_api",
       "checked": "2026-09-28",

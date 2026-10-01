@@ -62,6 +62,7 @@ from .capability_defaults import (
     capability_route_key,
     recommended_model_downloads,
 )
+from .model_catalog import route_for_download
 
 # Reuse, do not reinvent: `abstractcore.download` already defines the progress
 # vocabulary the async download API speaks. The materializer is the SYNC lane
@@ -3563,10 +3564,16 @@ def recommended_plan(*, base_urls: Optional[Dict[str, str]] = None) -> Dict[str,
     one probe per recommended artifact, no downloads, no hub contact.
     """
 
+    from .capability_defaults import recommended_capability_default_routes
     from .model_catalog import recommended_text_model
     from .route_engines import route_engine_missing
 
     urls = {k.lower(): v for k, v in (base_urls or {}).items()}
+    # The ROUTE each download serves (`route_provider` / `route_model`): the
+    # engine that runs it, which is not always the download provider
+    # (speech input: AbstractVoice's faster-whisper runs `base`, fetched as the
+    # Hugging Face repo Systran/faster-whisper-base).
+    routes = recommended_capability_default_routes()
     # The text row says WHY it is the pick and whether it fits this host
     # (`recommended_text_model`): a tier the fit estimate doubts stays the
     # tier, with its `warning` for the surface to show.
@@ -3577,9 +3584,17 @@ def recommended_plan(*, base_urls: Optional[Dict[str, str]] = None) -> Dict[str,
             presence = probe(item["provider"], item["artifact"], base_url=urls.get(item["provider"].lower()))
             row = dict(item)
             row.update(presence.to_dict())
+            route = routes.get(item["route"])
+            route_provider = route.provider if route is not None and route.provider else item["provider"]
+            route_model = route.model if route is not None and route.model else item["artifact"]
+            row["route_provider"] = route_provider
+            row["route_model"] = route_model
             # Weights are one half of "ready": the engine that runs them may
-            # not be installed here (`engine_missing`, route_engines.py).
-            engine = route_engine_missing(item["provider"], item["artifact"], item["route"])
+            # not be installed here (`engine_missing`, route_engines.py). It is
+            # the ROUTE's engine: judging the download provider asked
+            # AbstractVoice for an engine named `huggingface` (round 2 item 1:
+            # "unknown AbstractVoice engine 'huggingface'" on Transcription).
+            engine = route_engine_missing(route_provider, route_model, item["route"])
             if engine is not None:
                 row["engine_missing"] = engine
             if item["route"] == "input.text" and (item["provider"], item["artifact"]) == (text_pick["provider"], text_pick["artifact"]):
@@ -3718,7 +3733,17 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
 
             rec = _recommendation_for(key)
             artifact = model
-            if rec and _matches_installed_id(model, rec["artifact"]) and _norm(provider) == _norm(rec["provider"]):
+            probe_provider = provider
+            served = route_for_download(rec["provider"], rec["artifact"]) if rec else None
+            if served and served["key"] == key and _norm(provider) == _norm(served["provider"]) and model == served["model"]:
+                # The route's engine is not the download provider (the
+                # catalog artifact's `route`: faster-whisper `base` is the
+                # Hugging Face repo Systran/faster-whisper-base): the weights
+                # are probed where the download puts them.
+                probe_provider = rec["provider"]
+                artifact = rec["artifact"]
+                row["download_provider"] = rec["provider"]
+            elif rec and _matches_installed_id(model, rec["artifact"]) and _norm(provider) == _norm(rec["provider"]):
                 # The route stores the served id; the recommendation names the
                 # exact weights. Fetch what the recommendation names.
                 artifact = rec["artifact"]
@@ -3735,10 +3760,10 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
                 out.append(row)
                 continue
 
-            cache_key = (_provider_id(provider), _norm(artifact), base_url or "")
+            cache_key = (_provider_id(probe_provider), _norm(artifact), base_url or "")
             presence = seen_cache.get(cache_key)
             if presence is None:
-                presence = probe(provider, artifact, base_url=base_url)
+                presence = probe(probe_provider, artifact, base_url=base_url)
                 seen_cache[cache_key] = presence
             row["availability"] = presence.to_dict()
             if artifact != model:
