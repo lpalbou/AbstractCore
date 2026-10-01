@@ -749,7 +749,7 @@ def require_servers(address: str, **kwargs: Any) -> Dict[str, Any]:
     if not found["found"]:
         raise EmailDiscoveryFailed(
             f"Couldn't find the mail servers for {found['domain']}.",
-            "Open Server settings and enter them.",
+            "Standard settings are filled in: check them and change any your provider does differently.",
             details={"domain": found["domain"], "tried": found["tried"]},
         )
     return found

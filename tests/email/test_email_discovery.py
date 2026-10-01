@@ -194,7 +194,7 @@ def test_require_servers_raises_the_typed_error_with_what_was_tried() -> None:
         require_servers("me@corp.test", **FakeNet().kw())
     err = info.value
     assert err.code == "email_discovery_failed"
-    assert err.message == "Couldn't find the mail servers for corp.test. Open Server settings and enter them."
+    assert err.message == "Couldn't find the mail servers for corp.test. Standard settings are filled in: check them and change any your provider does differently."
     assert err.details["domain"] == "corp.test" and err.details["tried"][0] == {"step": "known", "result": "no match"}
 
 
@@ -405,7 +405,7 @@ def test_http_connect_discovery_failure_is_a_typed_400(http, monkeypatch) -> Non
     assert r.status_code == 400, r.text
     err = r.json()["error"]
     assert err["code"] == "email_discovery_failed"
-    assert err["message"] == "Couldn't find the mail servers for corp.test. Open Server settings and enter them."
+    assert err["message"] == "Couldn't find the mail servers for corp.test. Standard settings are filled in: check them and change any your provider does differently."
     assert [row["step"] for row in err["tried"]][:2] == ["known", "autoconfig"]
     assert http.get("/acore/email").json()["configured"] is False
 
