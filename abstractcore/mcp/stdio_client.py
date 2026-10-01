@@ -8,13 +8,22 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from importlib import metadata
-from typing import Any, Deque, Dict, List, Optional, Sequence
+from typing import Any, Deque, Dict, List, Optional, Sequence, Tuple
 
-from .client import McpError, McpJsonRpcRequest, McpProtocolError, McpRpcError
+from .client import (
+    DEFAULT_PROTOCOL_VERSION,
+    McpError,
+    McpJsonRpcRequest,
+    McpProtocolError,
+    McpRpcError,
+    collect_tool_pages,
+    default_client_version,
+    initialize_params,
+    tools_page,
+)
 
 
-_DEFAULT_PROTOCOL_VERSION = "2025-11-25"
+_DEFAULT_PROTOCOL_VERSION = DEFAULT_PROTOCOL_VERSION
 
 
 @dataclass(frozen=True)
@@ -50,6 +59,7 @@ class McpStdioClient:
         self._id_iter = itertools.count(1)
         self._init_attempted = False
         self._initialized = False
+        self._init_result: Optional[Dict[str, Any]] = None
 
         self._proc = subprocess.Popen(
             cmd,
@@ -83,14 +93,20 @@ class McpStdioClient:
 
     @staticmethod
     def _default_client_version() -> str:
-        for pkg in ("abstractcore", "AbstractCore"):
-            try:
-                v = str(metadata.version(pkg) or "").strip()
-            except Exception:
-                v = ""
-            if v:
-                return v
-        return "0.0.0"
+        return default_client_version()
+
+    @property
+    def initialize_result(self) -> Optional[Dict[str, Any]]:
+        """The server's `initialize` result (serverInfo, protocolVersion, capabilities), once known."""
+        return self._init_result
+
+    @property
+    def pid(self) -> int:
+        return int(self._proc.pid)
+
+    def stderr_tail(self, lines: int = 20) -> str:
+        with self._cond:
+            return "\n".join(list(self._stderr_tail)[-lines:])
 
     @staticmethod
     def _merge_env(env: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
@@ -261,33 +277,30 @@ class McpStdioClient:
             raise McpProtocolError("MCP response missing result object")
         return result
 
+    def initialize(self) -> Dict[str, Any]:
+        """Run the MCP handshake: `initialize`, then the `notifications/initialized` notification.
+
+        Returns the server's initialize result; errors propagate (McpRpcError when refused).
+        """
+        self._init_attempted = True
+        result = self._request_no_init(
+            method="initialize",
+            params=initialize_params(
+                protocol_version=self._protocol_version,
+                client_name=self._client_name,
+                client_version=self._client_version,
+            ),
+        )
+        self._init_result = dict(result)
+        self.notify(method="notifications/initialized")
+        self._initialized = True
+        return dict(result)
+
     def _ensure_initialized(self) -> None:
         if self._initialized or self._init_attempted:
             return
-        self._init_attempted = True
-
-        params: Dict[str, Any] = {
-            "protocolVersion": self._protocol_version,
-            # Match the MCP reference client's envelope shape (server-side validators often
-            # expect these keys to exist even when the values are null).
-            "capabilities": {
-                "experimental": None,
-                "sampling": None,
-                "elicitation": None,
-                "roots": None,
-                "tasks": None,
-            },
-            "clientInfo": {"name": self._client_name, "version": self._client_version or "0.0.0"},
-        }
-
         try:
-            self._request_no_init(method="initialize", params=params)
-            # Best-effort "initialized" notification.
-            try:
-                self.notify(method="initialized", params={})
-            except Exception:
-                pass
-            self._initialized = True
+            self.initialize()
         except McpRpcError as e:
             # Some non-conformant servers may not implement initialize; allow continuing.
             if int(getattr(e, "code", 0)) == -32601:
@@ -309,20 +322,17 @@ class McpStdioClient:
             self._ensure_initialized()
         return self._request_no_init(method=method, params=params)
 
-    def list_tools(self, *, cursor: Optional[str] = None) -> List[Dict[str, Any]]:
-        params: Optional[Dict[str, Any]] = None
-        if cursor is not None:
-            params = {"cursor": str(cursor)}
+    def list_tools_page(self, *, cursor: Optional[str] = None) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        """One `tools/list` page: (tools, nextCursor or None)."""
+        params = {"cursor": str(cursor)} if cursor is not None else None
+        return tools_page(self.request(method="tools/list", params=params))
 
-        result = self.request(method="tools/list", params=params)
-        tools = result.get("tools")
-        if not isinstance(tools, list):
-            raise McpProtocolError("MCP tools/list result missing tools list")
-        out: List[Dict[str, Any]] = []
-        for t in tools:
-            if isinstance(t, dict):
-                out.append(t)
-        return out
+    def list_tools(self, *, cursor: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Every tool the server lists, following `nextCursor` (from `cursor` when given)."""
+        return collect_tool_pages(
+            lambda c: self.request(method="tools/list", params={"cursor": c} if c is not None else None),
+            cursor=cursor,
+        )
 
     def call_tool(self, *, name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         tool_name = str(name or "").strip()

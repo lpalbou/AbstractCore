@@ -5,6 +5,25 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `McpClient.initialize()` and `McpStdioClient.initialize()` run the MCP handshake explicitly and
+  return the server's `initialize` result (`serverInfo`, `protocolVersion`, `capabilities`);
+  `initialize_result` keeps it. `list_tools_page(cursor=None)` returns one `tools/list` page and
+  its `nextCursor`.
+
+### Fixed
+- `McpClient` (Streamable HTTP) now sends `initialize` and the `notifications/initialized`
+  notification before its first request, sends the server's `MCP-Session-Id` on every later
+  request and the negotiated `MCP-Protocol-Version`, and reads responses sent as
+  `text/event-stream`. It used to post `tools/list` without a handshake, which conformant servers
+  refuse.
+- `McpStdioClient` sends `notifications/initialized` after `initialize` (it sent `initialized`,
+  which servers ignore, so strict servers refused every later request).
+- `list_tools()` on both clients follows `nextCursor` and returns every page (it returned the
+  first page only); a server that repeats a cursor or exceeds 100 pages raises `McpProtocolError`.
+
 ## [2.22.0] - 2026-10-01
 
 Mailbox servers are found from the address, the web console's Email tab connects over IMAP with

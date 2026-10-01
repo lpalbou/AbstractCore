@@ -52,16 +52,26 @@ def execute_mcp_tool_call(call: dict) -> dict:
 
 ### Streamable HTTP
 
-`McpClient` posts JSON-RPC to the server URL. It automatically sets an `Accept` header compatible
-with streamable HTTP (`application/json, text/event-stream`) and will capture `MCP-Session-Id`
-responses when provided.
+`McpClient` posts JSON-RPC to the server URL. It sets an `Accept` header compatible with
+streamable HTTP (`application/json, text/event-stream`), runs the handshake (`initialize`, then the
+`notifications/initialized` notification) before its first request, sends the server's
+`MCP-Session-Id` and the negotiated `MCP-Protocol-Version` on every later request, and reads
+responses sent as JSON or as an event stream. Call `client.initialize()` to run the handshake
+explicitly and get the server's `serverInfo`, `protocolVersion` and `capabilities`.
 
 See `abstractcore/abstractcore/mcp/client.py`.
 
 ### stdio
 
-`McpStdioClient` spawns an MCP server subprocess and communicates over stdin/stdout with JSON-RPC,
-including a best-effort initialization handshake.
+`McpStdioClient` spawns an MCP server subprocess and communicates over stdin/stdout with JSON-RPC.
+It runs the same handshake (`initialize`, then `notifications/initialized`) before its first
+request; `client.initialize()` runs it explicitly. `close()` terminates the subprocess (and kills
+it if it does not exit within 2 seconds).
+
+### Tool pagination
+
+`list_tools()` follows `nextCursor` and returns every tool the server lists;
+`list_tools_page(cursor=None)` returns one page and the next cursor.
 
 See `abstractcore/abstractcore/mcp/stdio_client.py`.
 
