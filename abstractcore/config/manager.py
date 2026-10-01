@@ -283,7 +283,9 @@ class EmailConfig:
       sign-in method (password | oauth2) and OAuth client settings; `{}` = not connected;
     - `policy`: recipient policy `{mode: allowlist|denylist, entries: [address | domain]}`;
       `{}` = the default (allowlist holding the registered address);
-    - `limits`: `{per_hour, per_day}` send limits; `{}` = 20 / 100;
+    - `limits`: `{per_hour, per_day, set_by: "user"}` the send limits the user set; `{}` = the
+      defaults, 100 / 1000 (20 / 100 until 2.21; values stored without `set_by` by 2.21 or
+      earlier are kept as stored, `comms.email.store.limits_source`);
     - `registered_address`: the user's own address (the default allowlist entry); empty =
       the account's address;
     - `legacy_import`: record of the one-time import of the pre-2.20 settings below.

@@ -185,14 +185,22 @@ the policy decides who *can* receive mail; approval decides whether a given send
 
 ## Send limits
 
-Each account has a limit per rolling hour and per rolling day (default 20 and 100). The count is
+Each account has a limit per rolling hour and per rolling day (default 100 and 1000). The count is
 kept in `<config dir>/email/sends.json`, shared by every process using the account; a message the
 server did not accept does not count. `0` means no sending in that window.
 
 ```bash
 abstractcore email limits show
-abstractcore email limits set --per-hour 20 --per-day 100
+abstractcore email limits set --per-hour 100 --per-day 1000
+abstractcore email limits reset     # forget the stored limits: follow the defaults
 ```
+
+Limits you set are stored and kept across upgrades; an account where nobody set them follows the
+defaults, including a later change of the defaults. Until 2.21 the defaults were 20 and 100, and
+connecting an account stored them. Such a stored 20 / 100 cannot be told apart from a user who
+chose 20 / 100, so an upgrade keeps it: `limits show` marks it "stored by an earlier version", and
+`limits reset` (or setting new values) moves the account on. `limits show --json` reports the
+origin as `source`: `default`, `user` or `legacy`.
 
 ## Errors
 

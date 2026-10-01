@@ -545,7 +545,7 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
     </div>
   </details>
   <p class="af-form__help" data-acc="email-scope">These are the email settings of this AbstractCore install. A gateway keeps its own per user: each user sets theirs in the gateway console (My account).</p>
-  <div class="acc-cli-line">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email registered-address &lt;email address&gt;</code>, <code>printf '%s\\n' "$PASSWORD" | abstractcore email connect --address &lt;email address&gt; --password-stdin</code>, <code>abstractcore email connect --address &lt;email address&gt; --oauth google|microsoft</code>, <code>abstractcore email agent-tools on|off</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 20 --per-day 100</code>, <code>abstractcore email folder &lt;name&gt;</code>, <code>abstractcore email enable|disable</code> (Active)</div>
+  <div class="acc-cli-line">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email registered-address &lt;email address&gt;</code>, <code>printf '%s\\n' "$PASSWORD" | abstractcore email connect --address &lt;email address&gt; --password-stdin</code>, <code>abstractcore email connect --address &lt;email address&gt; --oauth google|microsoft</code>, <code>abstractcore email agent-tools on|off</code>, <code>abstractcore email policy set --mode allowlist --add &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 100 --per-day 1000</code>, <code>abstractcore email folder &lt;name&gt;</code>, <code>abstractcore email enable|disable</code> (Active)</div>
 </div>"""
 
 _TEMPLATES: Dict[str, str] = {

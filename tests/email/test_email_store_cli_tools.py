@@ -48,7 +48,8 @@ def test_cli_connect_tests_then_stores_with_default_policy_and_limits(imap, smtp
     assert doc["configured"] and doc["address"] == ME and doc["secret_set"]
     assert doc["secret_storage"] == "os-keychain"
     assert doc["policy"] == {"mode": "allowlist", "entries": [ME], "default": False}
-    assert doc["limits"]["per_hour"] == 20 and doc["limits"]["per_day"] == 100
+    assert doc["limits"]["per_hour"] == 100 and doc["limits"]["per_day"] == 1000
+    assert doc["limits"]["source"] == "default"
     assert doc["status"]["legs"] == {"imap": {"ok": True}, "smtp": {"ok": True}}
     assert PASSWORD not in json.dumps(doc)
     assert PASSWORD not in _all_files_text(config_file)

@@ -29,8 +29,13 @@ DEFAULT_PORTS = {
     ("smtp", "starttls"): 587,
 }
 
-DEFAULT_PER_HOUR = 20
-DEFAULT_PER_DAY = 100
+DEFAULT_PER_HOUR = 100
+DEFAULT_PER_DAY = 1000
+# The earlier defaults (20 per hour, 100 per day, until 2.21). A stored limit with these values and no
+# `set_by` marker cannot be told apart from a user who chose them, so it is kept as is
+# (`store.EmailAccountStore.settings`, limits_source "legacy").
+LEGACY_DEFAULT_PER_HOUR = 20
+LEGACY_DEFAULT_PER_DAY = 100
 MAX_LIMIT = 100_000
 
 
