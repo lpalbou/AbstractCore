@@ -77,6 +77,12 @@ pub const HINTS: &[(&str, &str)] = &[
 
 pub const ADDRESS_HELP: &str =
     "Where notifications go, and the first address your agents may write to.";
+/// The Email address card while no address is stored and no mailbox is
+/// connected: the mailbox form's address is then the only address field.
+pub const ADDRESS_PENDING: &str = "The first address your agents may write to. Connecting a mailbox below sets it to the mailbox's address.";
+/// The Email address card while "Use a different account" is open.
+pub const ADDRESS_LOCKED: &str = "Read-only while you connect a different mailbox account below.";
+pub const OTHER_ACCOUNT_LINK: &str = "Use a different account";
 pub const MAILBOX_ADDRESS_HELP: &str =
     "The account your agents read and send from \u{2014} usually your own address.";
 pub const PASSWORD_HELP: &str = "Use an app password if your provider needs one.";
@@ -123,6 +129,9 @@ pub struct EmailUi {
     seen_address: Signal<Option<String>>,
     /// The mailbox address (every tab; prefilled from the email address).
     pub mb_address: Signal<String>,
+    /// "Use a different account" was chosen: the mailbox form edits its
+    /// own address and the Email address reads as text meanwhile.
+    pub other_account: Signal<bool>,
     pub password: Signal<String>,
     /// The login (the discovered form; shown only after the "different
     /// login name" link).
@@ -193,6 +202,7 @@ impl EmailUi {
             address_note: cx.signal(None),
             seen_address: cx.signal(None),
             mb_address: cx.signal(String::new()),
+            other_account: cx.signal(false),
             password: cx.signal(String::new()),
             login: cx.signal(String::new()),
             login_open: cx.signal(false),
@@ -1091,6 +1101,23 @@ fn install_effects(cx: Scope, ctx: &Ctx) {
         }
     });
 
+    // ONE address question: while the email address is the mailbox
+    // account (Fixed), the mailbox form follows it (a save lands, another
+    // console wrote); a connection ends "Use a different account".
+    cx.effect(move || {
+        let other = ui.other_account.get();
+        let Some(doc) = store.email.with(|e| e.ready().cloned()) else {
+            return;
+        };
+        match address_mode(&doc, other) {
+            AddressMode::Connected if other => ui.other_account.set(false),
+            AddressMode::Fixed(own) if ui.mb_address.with_untracked(|a| a.trim() != own) => {
+                ui.mb_address.set(own)
+            }
+            _ => {}
+        }
+    });
+
     // Completions of this screen's writes (by form id). A failure is
     // said inline where it was asked, in the CLI's own words.
     cx.effect(move || {
@@ -1154,9 +1181,14 @@ fn install_effects(cx: Scope, ctx: &Ctx) {
             let g = ui.lookup_gen.get_untracked() + 1;
             ui.lookup_gen.set(g);
             let ctx_t = ctx.clone();
+            // The screen state may be gone when the pause ends (a test
+            // harness dropped): then there is nothing to look up.
             abstracttui::reactive::after(LOOKUP_DEBOUNCE, move || {
-                if ui.lookup_gen.get_untracked() == g
-                    && ui.mb_address.get_untracked().trim() == addr
+                if ui.lookup_gen.try_get_untracked() == Some(g)
+                    && ui
+                        .mb_address
+                        .try_get_untracked()
+                        .is_some_and(|a| a.trim() == addr)
                 {
                     request_discovery(&ctx_t);
                 }
@@ -1314,6 +1346,73 @@ fn page(
     col.build()
 }
 
+/// The stored email address ("" when none).
+fn stored_address(doc: &Value) -> String {
+    doc.get("registered_address_stored")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| s(doc, "registered_address"))
+        .trim()
+        .to_string()
+}
+
+/// ONE address question (DESIGN v2 §11 G5): which address field shows.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AddressMode {
+    /// A mailbox is connected: only the Email address field.
+    Connected,
+    /// No email address and no mailbox: only the mailbox form's address
+    /// field (Connect sets the email address from it).
+    Free,
+    /// An email address is set: the mailbox form shows it as the line
+    /// "Mailbox account: x@y — Use a different account".
+    Fixed(String),
+    /// "Use a different account": the mailbox form's field (prefilled);
+    /// the Email address reads as text.
+    Different(String),
+}
+
+pub fn address_mode(doc: &Value, other_account: bool) -> AddressMode {
+    if b(doc, "configured") {
+        return AddressMode::Connected;
+    }
+    let own = stored_address(doc);
+    if own.is_empty() {
+        AddressMode::Free
+    } else if other_account {
+        AddressMode::Different(own)
+    } else {
+        AddressMode::Fixed(own)
+    }
+}
+
+/// The read-only line of the mailbox form (its link is on the next line).
+pub fn mailbox_account_line(own: &str) -> String {
+    format!("Mailbox account: {own}")
+}
+
+/// The address mode, as a signal that changes only when the mode does
+/// (so the fields remount only then: focus and drafts survive writes).
+fn mode_signal(cx: Scope, ctx: &Ctx) -> Signal<AddressMode> {
+    let store = ctx.store;
+    let ui = ctx.ui.email;
+    let compute = move || {
+        let other = ui.other_account.get();
+        store.email.with(|e| {
+            e.ready()
+                .map(|d| address_mode(d, other))
+                .unwrap_or(AddressMode::Connected)
+        })
+    };
+    let mode = cx.signal(untrack(compute));
+    cx.effect(move || {
+        let now = compute();
+        if mode.with_untracked(|m| *m != now) {
+            mode.set(now);
+        }
+    });
+    mode
+}
+
 /// "Your mailbox is a different account: x@y." — only when a mailbox is
 /// connected with an address that is not the email address.
 pub fn different_account_line(doc: &Value) -> Option<String> {
@@ -1385,6 +1484,26 @@ fn link_button(cx: Scope, text: &str, on_click: impl FnMut() + 'static) -> View 
 
 fn address_card(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
     let t = theme.get_untracked().tokens;
+    let mode = mode_signal(cx, ctx);
+    let ctx_b = ctx.clone();
+    let body = dyn_view_scoped(col(), move |acx| {
+        let t = theme.get().tokens;
+        match mode.get() {
+            AddressMode::Free => helper(&t, ADDRESS_PENDING),
+            AddressMode::Different(own) => Element::new()
+                .style(LayoutStyle::column())
+                .child(wrapped(own, t.text))
+                .child(helper(&t, ADDRESS_LOCKED))
+                .build(),
+            AddressMode::Connected | AddressMode::Fixed(_) => address_field(acx, &ctx_b, theme),
+        }
+    });
+    card(&t, "Email address", body)
+}
+
+/// The Email address field with its inline Save.
+fn address_field(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
+    let t = theme.get_untracked().tokens;
     let ui = ctx.ui.email;
     let store = ctx.store;
     let save = {
@@ -1423,17 +1542,13 @@ fn address_card(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme:
             None => empty(),
         }
     });
-    card(
-        &t,
-        "Email address",
-        Element::new()
-            .style(LayoutStyle::column())
-            .child(row)
-            .child(error_line(theme, ui.address_note))
-            .child(other_account)
-            .child(helper(&t, ADDRESS_HELP))
-            .build(),
-    )
+    Element::new()
+        .style(LayoutStyle::column())
+        .child(row)
+        .child(error_line(theme, ui.address_note))
+        .child(other_account)
+        .child(helper(&t, ADDRESS_HELP))
+        .build()
 }
 
 fn mailbox_card(
@@ -1665,7 +1780,6 @@ fn oauth_panel(
     theme: Signal<&'static abstracttui::theme::Theme>,
     tab: usize,
 ) -> View {
-    let t = theme.get_untracked().tokens;
     let ui = ctx.ui.email;
     let store = ctx.store;
     let pidx = tab.saturating_sub(1).min(1);
@@ -1753,11 +1867,54 @@ fn oauth_panel(
         .view(cx);
     Element::new()
         .style(LayoutStyle::column())
-        .child(mailbox_address_input(cx, ctx, &t))
-        .child(helper(&t, MAILBOX_ADDRESS_HELP))
+        .child(mailbox_address_block(cx, ctx, theme))
         .child(button)
         .child(advanced)
         .build()
+}
+
+/// The mailbox address (every tab), ONE address question (DESIGN v2 §11
+/// G5): the field while no email address is stored; the line "Mailbox
+/// account: x@y — Use a different account" while one is (the link shows
+/// the field, prefilled, with a way back).
+fn mailbox_address_block(
+    cx: Scope,
+    ctx: &Ctx,
+    theme: Signal<&'static abstracttui::theme::Theme>,
+) -> View {
+    let ui = ctx.ui.email;
+    let mode = mode_signal(cx, ctx);
+    let ctx_b = ctx.clone();
+    dyn_view_scoped(col(), move |mcx| {
+        let t = theme.get().tokens;
+        let mut col = Element::new().style(LayoutStyle::column());
+        match mode.get() {
+            AddressMode::Fixed(own) => {
+                // Two lines (the link on its own, like the screen's other
+                // small links): one line overflows a 60-column terminal.
+                col = col
+                    .child(wrapped(mailbox_account_line(&own), t.text))
+                    .child(link_button(mcx, OTHER_ACCOUNT_LINK, move || {
+                        ui.other_account.set(true)
+                    }));
+                col = col.child(helper(&t, MAILBOX_ADDRESS_HELP));
+            }
+            AddressMode::Different(own) => {
+                col = col
+                    .child(mailbox_address_input(mcx, &ctx_b, &t))
+                    .child(helper(&t, MAILBOX_ADDRESS_HELP))
+                    .child(link_button(mcx, &format!("Use {own} instead"), move || {
+                        ui.other_account.set(false)
+                    }));
+            }
+            AddressMode::Free | AddressMode::Connected => {
+                col = col
+                    .child(mailbox_address_input(mcx, &ctx_b, &t))
+                    .child(helper(&t, MAILBOX_ADDRESS_HELP));
+            }
+        }
+        col.build()
+    })
 }
 
 /// The mailbox address field (every tab): the servers are looked up
@@ -1989,8 +2146,7 @@ fn imap_panel(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::T
     };
     Element::new()
         .style(LayoutStyle::column())
-        .child(mailbox_address_input(cx, ctx, &t))
-        .child(helper(&t, MAILBOX_ADDRESS_HELP))
+        .child(mailbox_address_block(cx, ctx, theme))
         .child(input(cx, &t, "Password", ui.password, true, 44))
         .child(helper(&t, PASSWORD_HELP))
         .child(server_rows(
@@ -2786,5 +2942,27 @@ mod tests {
         doc["configured"] = json!(false);
         doc["address"] = json!("box@corp.test");
         assert_eq!(different_account_line(&doc), None);
+    }
+
+    #[test]
+    fn one_address_question_picks_the_one_field() {
+        let mut doc = json!({"configured": false, "registered_address_stored": ""});
+        assert_eq!(address_mode(&doc, false), AddressMode::Free);
+        assert_eq!(address_mode(&doc, true), AddressMode::Free);
+        doc["registered_address_stored"] = json!(" me@home.test ");
+        assert_eq!(
+            address_mode(&doc, false),
+            AddressMode::Fixed("me@home.test".into())
+        );
+        assert_eq!(
+            address_mode(&doc, true),
+            AddressMode::Different("me@home.test".into())
+        );
+        doc["configured"] = json!(true);
+        assert_eq!(address_mode(&doc, true), AddressMode::Connected);
+        assert_eq!(
+            mailbox_account_line("me@home.test"),
+            "Mailbox account: me@home.test"
+        );
     }
 }

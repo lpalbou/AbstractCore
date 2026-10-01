@@ -8,6 +8,13 @@ All notable changes, one entry per build wave, each with its gate line
 
 ### Changed
 
+- **Email**: the address is asked once. No email address stored and no mailbox:
+  the Email address card says connecting sets it, and the mailbox form's address
+  is the only address field. An email address stored: the mailbox form shows
+  "Mailbox account: <address>" with a "› Use a different account" link that shows
+  the field (prefilled); the email address reads as text until "› Use <address>
+  instead" or a connection. A server lookup that ends after the screen state is
+  gone no longer panics.
 - **Email → Mailbox**: the tabs are **IMAP** (first, the default), Google and
   Microsoft. The IMAP tab shows every field: mailbox address, password, and the
   incoming (IMAP) and outgoing (SMTP) server, port and security, filled with

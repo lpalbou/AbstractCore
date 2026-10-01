@@ -5188,7 +5188,8 @@ fn email_imap_tab_is_first_with_the_servers_visible_and_prefilled() {
         "IMAP first: {bar}"
     );
     for want in [
-        "Mailbox address",
+        "Mailbox account: me@fastmail.test",
+        "› Use a different account",
         "The account your agents read and send from — usually your own address.",
         "Password",
         "Use an app password if your provider needs one.",
@@ -5210,6 +5211,7 @@ fn email_imap_tab_is_first_with_the_servers_visible_and_prefilled() {
     }
     assert_eq!(h.ui.email.smtp_port.get_untracked(), "465");
     for gone in [
+        "Mailbox address",
         "User name",
         "Display name",
         "Server settings",
@@ -5223,6 +5225,133 @@ fn email_imap_tab_is_first_with_the_servers_visible_and_prefilled() {
         "optional",
     ] {
         assert!(!s.contains(gone), "{gone:?} is gone:\n{s}");
+    }
+}
+
+/// The address fields on screen: rows holding a label and an input.
+fn address_inputs(s: &str) -> Vec<&'static str> {
+    ["Email address", "Mailbox address"]
+        .into_iter()
+        .filter(|label| s.lines().any(|l| l.contains(label) && l.contains('▐')))
+        .collect()
+}
+
+/// ONE address question (DESIGN v2 §11 G5): no email address stored and
+/// no mailbox -> the mailbox form's address is the only address field,
+/// and Connect sends it (the CLI's connect sets the email address).
+#[test]
+fn email_one_address_question_without_an_email_address() {
+    let mut doc = email_doc(false);
+    doc["registered_address_stored"] = json!("");
+    doc["registered_address"] = json!("");
+    let mut h = email_harness(Size::new(120, 50), doc);
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Mailbox address"], "{s}");
+    assert!(s.contains(ui::email::ADDRESS_PENDING), "{s}");
+    assert!(!s.contains("Use a different account"), "{s}");
+    h.ui.email.tab.set(1);
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Mailbox address"], "Google: {s}");
+    h.ui.email.tab.set(0);
+    h.turns(2);
+    h.click_first_on_row("Mailbox address", "▐");
+    h.type_text("me@fastmail.test");
+    h.click_first_on_row("Password", "▐");
+    h.type_text("app-pass");
+    h.turns(2);
+    h.drain_cmds();
+    h.click_on_row("│  Connect ", "Connect"); // the button, not the card-1 sentence
+    let s = h.turns(2);
+    let cmds = h.drain_cmds();
+    let acts = email_cmds(&cmds);
+    assert_eq!(acts.len(), 1, "{cmds:?}\n{s}");
+    let args: Vec<String> = acts[0].args.iter().map(|a| a.value().to_string()).collect();
+    assert!(
+        args.contains(&"--address=me@fastmail.test".to_string()),
+        "{args:?}"
+    );
+    // Connected (the CLI stored the email address): only the Email address field.
+    h.store.email.set(Loadable::Ready(email_doc(true)));
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+}
+
+/// An email address stored: the mailbox form shows "Mailbox account: x@y"
+/// and "› Use a different account"; the link shows the field (prefilled), the
+/// Email address reads as text meanwhile, and "Use x@y instead" goes
+/// back. Never two address fields.
+#[test]
+fn email_one_address_question_with_an_email_address() {
+    let mut h = email_harness(Size::new(120, 50), email_doc(false));
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+    assert!(
+        s.contains("Mailbox account: me@fastmail.test") && s.contains("› Use a different account"),
+        "{s}"
+    );
+    h.ui.email.tab.set(2);
+    let s = h.turns(3);
+    assert!(
+        s.contains("Mailbox account: me@fastmail.test") && s.contains("› Use a different account"),
+        "Microsoft: {s}"
+    );
+    assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+    h.ui.email.tab.set(0);
+    h.turns(2);
+    h.click("Use a different account");
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Mailbox address"], "{s}");
+    assert_eq!(
+        h.ui.email.mb_address.get_untracked(),
+        "me@fastmail.test",
+        "prefilled"
+    );
+    assert!(s.contains(ui::email::ADDRESS_LOCKED), "{s}");
+    assert!(s.contains("› Use me@fastmail.test instead"), "{s}");
+    h.ui.email.mb_address.set("box@corp.test".into());
+    h.ui.email.tab.set(1);
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Mailbox address"], "Google: {s}");
+    h.ui.email.tab.set(0);
+    h.turns(2);
+    h.click("Use me@fastmail.test instead");
+    let s = h.turns(3);
+    assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+    assert_eq!(h.ui.email.mb_address.get_untracked(), "me@fastmail.test");
+    // A new email address saved (or written by another console): the
+    // line and the form follow it.
+    let mut doc = email_doc(false);
+    doc["registered_address_stored"] = json!("me@work.test");
+    h.store.email.set(Loadable::Ready(doc));
+    let s = h.turns(3);
+    assert!(
+        s.contains("Mailbox account: me@work.test") && s.contains("› Use a different account"),
+        "{s}"
+    );
+    assert_eq!(h.ui.email.mb_address.get_untracked(), "me@work.test");
+    assert_eq!(h.ui.email.imap_host.get_untracked(), "imap.work.test");
+}
+
+/// Connected: one Email address field; the different-account note only
+/// when the addresses really differ (case-insensitive).
+#[test]
+fn email_connected_says_a_different_account_only_when_it_is_one() {
+    for (stored, note) in [
+        ("me@example.test", false),
+        ("ME@Example.test", false),
+        ("me@home.test", true),
+    ] {
+        let mut doc = email_doc(true);
+        doc["registered_address_stored"] = json!(stored);
+        let mut h = email_harness(Size::new(120, 50), doc);
+        let s = h.turns(3);
+        assert_eq!(address_inputs(&s), vec!["Email address"], "{s}");
+        assert_eq!(
+            s.contains("Your mailbox is a different account: me@example.test."),
+            note,
+            "{stored}: {s}"
+        );
+        assert!(!s.contains("Mailbox account:"), "{s}");
     }
 }
 
@@ -5327,6 +5456,7 @@ fn email_lookup_failures_keep_the_standard_values_and_say_why() {
 fn email_typing_an_address_prefills_then_looks_it_up_after_a_pause() {
     let mut h = email_harness(Size::new(120, 40), email_doc(false));
     h.turns(2);
+    h.click("Use a different account");
     h.click_first_on_row("Mailbox address", "▐");
     h.key(b"\x1b[F");
     h.turn();
@@ -6023,6 +6153,16 @@ fn write_after_shots() {
             .email_discovery
             .set(Some(discovery_missing("me@nowhere.test")));
         shot(&mut h, "email-imap-servers-not-found");
+
+        // ONE address question (G5).
+        let mut doc = email_doc(false);
+        doc["registered_address_stored"] = json!("");
+        doc["registered_address"] = json!("");
+        let mut h = email_harness(size, doc);
+        shot(&mut h, "email-no-email-address");
+        let mut h = email_harness(size, email_doc(false));
+        h.ui.email.other_account.set(true);
+        shot(&mut h, "email-different-account-open");
 
         let mut h = email_harness(size, email_doc(true));
         shot(&mut h, "email-connected");
