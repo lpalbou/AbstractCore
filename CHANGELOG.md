@@ -68,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - A Hugging Face model on a computer with no Hugging Face cache yet reads as not downloaded
-  (, downloadable), not : a fresh install's Transcription card said "Unknown" and
+  (`absent`, downloadable), not `unknown`: a fresh install's Transcription card said "Unknown" and
   "Download all" skipped the model.
 - Transcription showed "Engine missing: unknown AbstractVoice engine 'huggingface'": the
   recommended download plan asked AbstractVoice for the engine of the download provider
