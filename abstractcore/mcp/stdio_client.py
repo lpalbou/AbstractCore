@@ -50,7 +50,10 @@ class McpStdioClient:
         protocol_version: Optional[str] = None,
         client_name: str = "abstractcore.mcp",
         client_version: Optional[str] = None,
+        inherit_env: bool = True,
     ) -> None:
+        """`env` is merged over this process's environment unless `inherit_env=False`, in which
+        case the server gets exactly `env` (keep the host's secrets away from a third-party server)."""
         cmd = [str(c) for c in (command or []) if str(c).strip()]
         if not cmd:
             raise ValueError("McpStdioClient requires a non-empty command")
@@ -70,7 +73,7 @@ class McpStdioClient:
             encoding="utf-8",
             bufsize=1,
             cwd=str(cwd) if cwd else None,
-            env=self._merge_env(env),
+            env=self._merge_env(env) if inherit_env else {str(k): str(v) for k, v in (env or {}).items()},
         )
         if self._proc.stdin is None or self._proc.stdout is None:
             raise McpError("Failed to start MCP stdio subprocess with pipes")

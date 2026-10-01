@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   return the server's `initialize` result (`serverInfo`, `protocolVersion`, `capabilities`);
   `initialize_result` keeps it. `list_tools_page(cursor=None)` returns one `tools/list` page and
   its `nextCursor`.
+- `McpStdioClient(..., inherit_env=False)` starts the server with exactly the given `env`
+  instead of this process's environment plus `env`.
 
 ### Fixed
 - `McpClient` (Streamable HTTP) now sends `initialize` and the `notifications/initialized`

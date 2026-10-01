@@ -258,3 +258,27 @@ def test_stdio_lazy_initialize_sends_notifications_initialized(tmp_path: Path) -
         assert client.initialize_result["serverInfo"]["name"] == "fake-stdio"
     finally:
         client.close()
+
+
+def test_stdio_inherit_env_false_passes_only_the_given_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCP_TEST_HOST_SECRET", "do-not-leak")
+    script = tmp_path / "env_dump.py"
+    script.write_text(
+        "import json, os, sys\n"
+        "for line in sys.stdin:\n"
+        "    req = json.loads(line)\n"
+        "    if req.get('id') is None: continue\n"
+        "    if req['method'] == 'initialize':\n"
+        "        out = {'protocolVersion': '2025-11-25', 'capabilities': {}, 'serverInfo': {'name': 'env', 'version': '0'}}\n"
+        "    else:\n"
+        "        out = {'tools': [{'name': k} for k in sorted(os.environ) if k.startswith('MCP_TEST')]}\n"
+        "    sys.stdout.write(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': out}) + '\\n'); sys.stdout.flush()\n",
+        encoding="utf-8",
+    )
+    import os
+
+    env = {"PATH": os.environ.get("PATH", ""), "MCP_TEST_GIVEN": "1"}
+    with McpStdioClient(command=[sys.executable, "-u", str(script)], env=env, inherit_env=False, timeout_s=5) as client:
+        assert [t["name"] for t in client.list_tools()] == ["MCP_TEST_GIVEN"]
+    with McpStdioClient(command=[sys.executable, "-u", str(script)], env=env, timeout_s=5) as client:
+        assert [t["name"] for t in client.list_tools()] == ["MCP_TEST_GIVEN", "MCP_TEST_HOST_SECRET"]
