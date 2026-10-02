@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [2.23.1] - 2026-10-02
+
+### Fixed
+
+- MLX native lane, prefix cache on small Macs: the prompt cache now sizes itself to the machine — budget `min(8 GiB, working_set / 4)` and a 512 MiB reserve on top of the measured free memory — instead of mlx-vlm's automatic `working_set / 10` budget plus a `max(1 GiB, working_set / 10)` reserve. On a 24 GB Mac running a 27B model that reserve alone was more than the model left free, so every snapshot store was skipped (`native_apc_store_skipped`) and every turn re-prefilled the whole conversation. `mlx_cache_memory_max_gb` still sets the budget explicitly; the degraded reason now also names free memory as a cause.
+- MLX native MTP: a text route with no `speculation` key now inherits optional MTP (`native_mtp`, `require_acceleration: false`) for an artifact whose MTP support is verified, as the console's "Workflow / Gateway default" label always said. Only an explicit `false` turns it off. Before, absence meant off, so any save that dropped the key (a provider move, an MTP picker left on "default") silently disabled speculation (9 instead of 17 tok/s on Qwen3.8-27B oQ4e).
+
 ## [2.23.0] - 2026-10-01
 
 

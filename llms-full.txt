@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-30
-Package version: 2.23.0
+Package version: 2.23.1
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -14007,7 +14007,11 @@ abstractcore config set-default output.text --speculation inherit
 ```
 
 `inherit` removes the configured policy; it does not restore a fresh-install seed.
-With no policy or explicit constructor/request setting, speculation is off.
+With no policy and no constructor/request setting, a model whose MTP support is
+verified (registry drafter or embedded head) runs optional MTP
+(`require_acceleration: false`, falling back to the target-only decoder when the
+head is unavailable); other models run without speculation. Only `off` (`false`)
+switches it off for a verified model (2.23.1; before, no policy meant off).
 An inherited policy prepares an available matching cached head during model load;
 it never downloads weights. Unsupported backends remain non-speculative. A model
 already loaded without a head requires explicit provisioning/reloading before
@@ -14074,10 +14078,17 @@ print(llm.get_prompt_cache_stats())
 llm.unload_model(llm.model)  # Flushes SSD storage for compatible future processes.
 ```
 
-The RAM budget defaults to mlx-vlm's machine-relative sizing,
-`min(8 GiB, recommended working set / 10)` (8 GiB on a 128 GB Mac, about
-1.2 GiB on 16 GB), and it caps EACH retained snapshot: a snapshot larger than
-the budget is not retained and the next turn re-prefills the whole
+The RAM budget is sized to the machine: `min(8 GiB, recommended working set / 4)`
+(8 GiB on a 64 GB+ Mac, 5 GiB on a 24 GB Mac whose GPU limit is 20 GiB, about
+2.7 GiB on 16 GB), with a fixed 512 MiB reserve on top of the measured free
+memory (mlx-vlm evicts the oldest snapshot before a store would eat into it).
+Sizing rule: a 27B hybrid snapshot measures about 98 KB per prompt token, so a
+10k-token conversation needs about 1 GB and the budget holds several turns.
+(Before 2.23.1 mlx-vlm's own shape applied: `working_set / 10` plus a
+`max(1 GiB, working_set / 10)` reserve, which on a 24 GB Mac running a 27B
+model left no room for any snapshot.) The budget caps EACH retained snapshot: a
+snapshot larger than the budget, or one the free memory cannot hold, is not
+retained and the next turn re-prefills the whole
 conversation, which the response reports as `prompt_cache.degraded_reason`
 with the call's `prompt_cache.apc` store/skip counters. A hybrid model's
 snapshot grows roughly 27-50 KB per prompt token, so set
