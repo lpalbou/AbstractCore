@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+- Prompted tool-call parsing exposes structured tool_call_error diagnostics for rejected calls; streaming malformed envelopes expose the same diagnostic for agent recovery.
 
 ## [2.23.1] - 2026-10-02
 

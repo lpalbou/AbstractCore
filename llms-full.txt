@@ -6851,6 +6851,8 @@ AbstractCore provides a universal tool calling system that works across all LLM 
 - [Tool Syntax Rewriting](docs/tool-calling.md#tool-syntax-rewriting)
 - [Event System Integration](docs/tool-calling.md#event-system-integration)
 
+For prompted calls, rejected syntax with no accepted tool calls is reported through `metadata.tool_call_error` (`invalid_tool_syntax` or `unavailable_tool`, plus `available_tools`). Malformed streaming envelopes use `invalid_tool_syntax` as well. Hosts can use this diagnostic for bounded correction; AbstractCore does not grant tools or retry model generation automatically.
+
 ## Quick Start
 
 The simplest way to create and use tools is with the `@tool` decorator:

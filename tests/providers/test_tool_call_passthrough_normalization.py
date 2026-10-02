@@ -365,3 +365,31 @@ def test_native_tool_calls_with_wrapped_function_names_are_mapped_to_allowed_too
     assert resp.tool_calls == [
         {"name": "write_file", "arguments": {"file_path": "x.txt", "content": "hello"}, "call_id": "call_x"}
     ]
+
+
+def test_malformed_tool_call_has_structured_repair_diagnostic() -> None:
+    provider = _DummyProvider(model="qwen3", response=GenerateResponse(
+        content='<tool_call>{"name":"web_search","arguments": BROKEN}</tool_call>', model="qwen3"))
+    response = provider.generate(prompt="Search", tools=[{"name": "web_search", "parameters": {"query": {"type": "string"}}}])
+    assert not response.tool_calls
+    assert response.metadata["tool_call_error"] == {
+        "code": "invalid_tool_syntax", "available_tools": ["web_search"]}
+
+
+def test_operator_nine_xml_calls_require_an_offered_tool() -> None:
+    queries = ["Seagate Exos 12TB HDD price 2026", "Seagate Exos 16TB HDD price 2026",
+               "Seagate Exos 18TB HDD price 2026", "Seagate Exos 24TB HDD price 2026",
+               "Mac mini M6 32GB price availability 2026", "Mac mini M5 Pro 48GB price availability 2026",
+               "Mac Studio M5 36GB price availability 2026", "Mac Studio M5 Ultra 96GB price availability 2026",
+               "Mac Studio M5 256GB price availability 2026"]
+    text = "I'll research current prices.\n" + "\n".join(
+        f"<tool_call>\n<function=web_search>\n<parameter=query>\n{q}\n</parameter>\n</function>\n</tool_call>" for q in queries)
+    for offered in (False, True):
+        provider = _DummyProvider(model="Jundot/Qwen3.8-27B-oQ4e-mtp",
+                                  response=GenerateResponse(content=text, model="qwen3"))
+        response = provider.generate(prompt="Search", tools=[{"name": "web_search", "parameters": {"query": {"type": "string"}}}] if offered else [])
+        if offered:
+            assert [call["arguments"]["query"] for call in response.tool_calls] == queries
+            assert "<tool_call>" not in response.content
+        else:
+            assert not response.tool_calls

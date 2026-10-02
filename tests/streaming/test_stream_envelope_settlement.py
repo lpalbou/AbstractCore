@@ -83,6 +83,7 @@ def test_unclosed_envelope_is_reported_not_printed(parts, caplog):
     assert unparsed[0]["reason"] == "unclosed"
     assert unparsed[0]["text"] == "".join(parts)[len("Hello ") :]
     assert out[-1].metadata["unparsed_tool_call"] == unparsed[0]
+    assert out[-1].metadata["tool_call_error"]["code"] == "invalid_tool_syntax"
     assert any("Unparsed tool call" in w for w in out[-1].metadata["warnings"])
     assert not _calls(out)
 

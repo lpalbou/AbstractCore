@@ -8642,7 +8642,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             # calls must not silently become a final answer (that is how one
             # malformed `<function=functions.browser_probe>` call ended a whole
             # ReAct run) — flag it so hosts/UIs can surface or feed it back.
-            self._warn_unrecognized_tool_syntax(response, content)
+            self._warn_unrecognized_tool_syntax(response, content, allowed_names=allowed_names)
             return response
 
         normalized_parsed = self._normalize_tool_calls_payload(
@@ -8821,6 +8821,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
             warnings_list = []
         warnings_list.append(msg)
         meta["warnings"] = warnings_list
+        # Machine-readable feedback: agent hosts must not infer protocol failures
+        # by matching the human-facing warning string. No calls were accepted.
+        meta["tool_call_error"] = {
+            "code": "unavailable_tool" if dropped_names else "invalid_tool_syntax",
+            "available_tools": sorted(allowed_names or []),
+        }
         response.metadata = meta
 
     def _get_allowed_tool_names(self, tools: List[Dict[str, Any]]) -> set[str]:

@@ -1329,6 +1329,10 @@ class UnifiedStreamProcessor:
                     return metadata
                 meta = dict(metadata or {})
                 meta["unparsed_tool_call"] = unparsed
+                meta["tool_call_error"] = {
+                    "code": "invalid_tool_syntax",
+                    "available_tools": sorted(allowed_tool_names),
+                }
                 preview = preview_text(unparsed.get("text") or "", max_chars=200)
                 return _with_warnings(
                     meta,
