@@ -439,17 +439,15 @@ def test_native_prompt_cache_is_lazy_bounded_and_shared_per_session(monkeypatch)
     kwargs = factory.call_args.kwargs
     # The memory budget caps EACH retained snapshot, and mlx-vlm silently skips
     # a snapshot that does not fit. The flat 0.5 GiB once forced here disabled
-    # reuse past ~10-19k prompt tokens on hybrid models; absent an operator
-    # value the budget is mlx-vlm's machine-relative default, so no constant
-    # may be forced for it (nor for the reserve or checkpoint schedule).
-    # The checkpoint SHAPE is forced on purpose (measured; mission A3 — one
-    # snapshot per call, 8 restorable prompts; pinned in
-    # test_mlx_native_apc_budget_unit / test_mlx_native_apc_lineage_unit), but
-    # the memory budget and reserve never are.
-    for forced in ("memory_max_gb", "memory_reserve_gb"):
-        assert forced not in kwargs["overrides"], forced
+    # reuse past ~10-19k prompt tokens on hybrid models, and mlx-vlm's own
+    # shape (working_set/10 plus a working_set/10 reserve) skipped every store
+    # on a 24 GB Mac running a 27B model (2.23.1). Absent an operator value the
+    # budget is MACHINE-SIZED (min(8 GiB, working_set/4)) with a 512 MiB
+    # reserve -- never a flat constant for the budget.
+    from abstractcore.providers.mlx_native_session import PREFIX_CACHE_RESERVE_GB, machine_prefix_cache_budget_gb
+    assert kwargs["overrides"]["memory_max_gb"] == machine_prefix_cache_budget_gb()
+    assert kwargs["overrides"]["memory_reserve_gb"] == PREFIX_CACHE_RESERVE_GB
     assert kwargs["num_blocks"] * kwargs["block_size"] <= 65536
     explicit = loader.Qwen4Session()
     explicit.prompt_cache(memory_max_gb=3)
     assert factory.call_args.kwargs["overrides"]["memory_max_gb"] == 3.0
-    assert "memory_reserve_gb" not in factory.call_args.kwargs["overrides"]
