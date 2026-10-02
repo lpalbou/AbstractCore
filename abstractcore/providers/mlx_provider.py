@@ -1098,9 +1098,10 @@ class MLXProvider(BaseProvider):
         if not stored and delta["memory_skips"] > 0:
             reason = (
                 f"native_apc_store_skipped: the {prompt_tokens}-token prefix snapshot did not fit "
-                f"the prefix-cache memory budget ({delta['memory_max_bytes'] >> 20} MiB), so the "
-                "next turn on this key re-prefills the whole conversation. Raise "
-                "mlx_cache_memory_max_gb, or unset it for the machine-sized default."
+                f"the prefix-cache memory budget ({delta['memory_max_bytes'] >> 20} MiB) or the free "
+                "memory the loaded model leaves, so the next turn on this key re-prefills the whole "
+                "conversation. Raise mlx_cache_memory_max_gb, unset it for the machine-sized "
+                "default, or load a smaller model."
             )
         elif not stored and delta["rejects"] > 0:
             reason = (
@@ -3538,6 +3539,8 @@ class MLXProvider(BaseProvider):
                 config_file=getattr(self, "_abstractcore_config_file", None),
                 capability_defaults=getattr(self, "_abstractcore_capability_defaults", None),
             ) if getattr(self, "_speculation_default_supported", False) else False
+            from .speculation import inherited_speculation_policy
+            policy = inherited_speculation_policy(policy, bool(getattr(self, "_speculation_default_supported", False)))
             default = normalize_speculation_request(policy if policy is not None else False)
         request = resolve_speculation_request(default, value)
         self._mtp_call_request = request
@@ -4109,7 +4112,9 @@ class MLXProvider(BaseProvider):
                     config_file=getattr(self, "_abstractcore_config_file", None),
                     capability_defaults=getattr(self, "_abstractcore_capability_defaults", None),
                 )
+                from .speculation import inherited_speculation_policy
                 self._speculation_default_supported = describe_speculation_capabilities(self.model, "mlx")["supported"]
+                policy = inherited_speculation_policy(policy, self._speculation_default_supported)
                 if policy is not None and self._speculation_default_supported:
                     self._speculation_request = normalize_speculation_request(policy)
             from .mlx_qwen4 import is_qwen4_checkpoint, embedded_mtp_keys, load_qwen4_session

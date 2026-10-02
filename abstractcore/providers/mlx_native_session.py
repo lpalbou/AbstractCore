@@ -57,6 +57,39 @@ CHECKPOINT_ENTRIES = 8
 CHECKPOINT_GUARD_TOKENS = 8
 
 
+# Prefix-cache sizing rule (framework 0.9.3). mlx-vlm's automatic shape is
+# budget = min(8 GiB, working_set/10) PLUS a reserve of max(1 GiB,
+# working_set/10) that must stay free on top of every snapshot it retains.
+# On a 24 GB Mac running a 27B model (~17 GiB resident, working set raised to
+# 20 GiB) that is a 2 GiB budget and a 2 GiB reserve, and the reserve alone
+# exceeds what the loaded model leaves: every store was skipped
+# (`native_apc_store_skipped`, "did not fit the prefix-cache memory budget
+# (2048 MiB)") and every turn re-prefilled the whole conversation.
+# A 27B hybrid snapshot measures ~98 KB per prompt token (~1 GB at 10k tokens).
+# The framework's rule: budget = min(8 GiB, working_set/4) -- at least four
+# 10k-token conversation snapshots on a 24 GB machine -- and a fixed 512 MiB
+# reserve. The reserve is a margin on top of MEASURED free memory
+# (mlx-vlm `_memory_headroom`: min(working_set - active, free RAM + MLX cache)),
+# so snapshots are evicted LRU-first before they could push the machine into
+# swap; it does not need to scale with the machine. `mlx_cache_memory_max_gb`
+# still sets the budget explicitly.
+PREFIX_CACHE_RESERVE_GB = 0.5
+_PREFIX_CACHE_BUDGET_CAP_GB = 8.0
+
+
+def machine_prefix_cache_budget_gb(working_set_bytes=None) -> float:
+    """min(8 GiB, working_set/4) in GiB; 8 GiB when the working set is unknown."""
+    if working_set_bytes is None:
+        try:
+            import mlx.core as mx
+            working_set_bytes = int(mx.device_info()["max_recommended_working_set_size"])
+        except Exception:
+            working_set_bytes = None
+    if not working_set_bytes:
+        return _PREFIX_CACHE_BUDGET_CAP_GB
+    return min(_PREFIX_CACHE_BUDGET_CAP_GB, working_set_bytes / 4 / (1 << 30))
+
+
 class NativeSession:
     def __init__(self):
         self.model = None
@@ -188,6 +221,10 @@ class NativeSession:
             overrides = {}
             if memory_max_gb is not None:
                 overrides["memory_max_gb"] = float(memory_max_gb)
+            elif "APC_MEMORY_MAX_GB" not in os.environ:
+                overrides["memory_max_gb"] = machine_prefix_cache_budget_gb()
+            if "APC_MEMORY_RESERVE_GB" not in os.environ:
+                overrides["memory_reserve_gb"] = PREFIX_CACHE_RESERVE_GB
             for key, env, measured in (
                 ("checkpoint_interval_tokens", "APC_CHECKPOINT_INTERVAL_TOKENS", CHECKPOINT_INTERVAL_TOKENS),
                 ("checkpoint_entries", "APC_CHECKPOINT_ENTRIES", CHECKPOINT_ENTRIES),

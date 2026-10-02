@@ -249,6 +249,25 @@ def capability_speculation(
     return out
 
 
+def inherited_speculation_policy(policy: Any, supported: bool) -> Any:
+    """The policy a provider runs when the text route names none.
+
+    A route without a `speculation` key INHERITS (the console's "Workflow /
+    Gateway default"); `False` is the only way to switch MTP off. Absence used
+    to collapse to off, so any save that dropped the key (a provider move, a
+    route picker that leaves MTP on "default") silently halved decode speed on
+    a verified MTP artifact (framework 0.9.2: 9 tok/s instead of 17 on the
+    27B oQ4e build). For an artifact whose MTP support is verified, the
+    inherited default is optional native MTP: it falls back to the target-only
+    decoder, loudly, whenever the head is not available.
+    """
+    if policy is not None:
+        return policy
+    if supported:
+        return {"mode": "native_mtp", "require_acceleration": False}
+    return None
+
+
 def configured_speculation_default(*, config_file: Any = None, capability_defaults: Any = None) -> Any:
     """Read the current Core-owned policy, without creating config or loading weights.
 
@@ -379,7 +398,7 @@ def describe_speculation_capabilities(model: str, provider: str, instance: Any =
         config_file=getattr(instance, "_abstractcore_config_file", None),
         capability_defaults=getattr(instance, "_abstractcore_capability_defaults", None),
     )
-    effective_default = normalize_speculation_value(default) if supported else False
+    effective_default = normalize_speculation_value(inherited_speculation_policy(default, supported)) if supported else False
     if instance is not None and getattr(instance, "_speculation_inherits_config", True) is False:
         request = getattr(instance, "_speculation_request", None)
         if request is not None:

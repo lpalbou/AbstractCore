@@ -31,16 +31,56 @@ def apc_factory(monkeypatch):
     return factory
 
 
-def test_session_budget_is_upstream_auto_sizing_unless_the_operator_chose(apc_factory, monkeypatch):
-    monkeypatch.delenv("APC_CHECKPOINT_INTERVAL_TOKENS", raising=False)
-    monkeypatch.delenv("APC_CHECKPOINT_ENTRIES", raising=False)
+def test_session_budget_is_machine_sized_unless_the_operator_chose(apc_factory, monkeypatch):
+    """0.9.3: mlx-vlm's automatic shape (budget ws/10, reserve max(1 GiB, ws/10))
+    skipped EVERY store on a 24 GB Mac running the 27B (2 GiB budget, 2 GiB
+    reserve on top of a ~17 GiB model): every turn re-prefilled the conversation.
+    The framework sizes both: budget min(8 GiB, ws/4), reserve 512 MiB."""
+    import abstractcore.providers.mlx_native_session as ns
+    for env in ("APC_CHECKPOINT_INTERVAL_TOKENS", "APC_CHECKPOINT_ENTRIES", "APC_MEMORY_MAX_GB", "APC_MEMORY_RESERVE_GB"):
+        monkeypatch.delenv(env, raising=False)
+    monkeypatch.setattr(ns, "machine_prefix_cache_budget_gb", lambda working_set_bytes=None: 5.0)
     session = NativeSession()
     assert session.prompt_cache() is session.prompt_cache()
     overrides = apc_factory.call_args.kwargs["overrides"]
-    for forced in ("memory_max_gb", "memory_reserve_gb"):
-        assert forced not in overrides, f"{forced} forced to a constant nobody sized for the model"
+    assert overrides["memory_max_gb"] == 5.0
+    assert overrides["memory_reserve_gb"] == 0.5
     NativeSession().prompt_cache(memory_max_gb=3)
     assert apc_factory.call_args.kwargs["overrides"]["memory_max_gb"] == 3.0
+
+
+def test_machine_budget_rule():
+    from abstractcore.providers.mlx_native_session import machine_prefix_cache_budget_gb
+    assert machine_prefix_cache_budget_gb(20 << 30) == 5.0          # 24 GB Mac, raised limit
+    assert machine_prefix_cache_budget_gb(64 << 30) == 8.0          # capped
+    assert machine_prefix_cache_budget_gb(0) == 8.0                 # unknown
+    # A 27B hybrid snapshot measures ~98 KB/token: 10k tokens must fit with room for more.
+    assert machine_prefix_cache_budget_gb(int(17.8 * (1 << 30))) * (1 << 30) > 4 * 10_000 * 98_000
+
+
+def test_24gb_store_is_admitted_with_the_framework_shape_not_upstreams(monkeypatch):
+    """Model-free replay of mlx-vlm's admission (`_make_room`) with the Mac mini's
+    numbers: 20 GiB working set, ~17.4 GiB active (27B + MTP head + live KV),
+    2.6 GiB free RAM, a 7638-token snapshot at ~98 KB/token."""
+    apc = pytest.importorskip("mlx_vlm.apc")
+    GiB = 1 << 30
+    monkeypatch.setattr(apc, "_metal_working_set_bytes", lambda: 20 * GiB)
+    monkeypatch.setattr(apc, "_free_ram_bytes", lambda: int(2.6 * GiB))
+    monkeypatch.setattr(apc.mx, "get_active_memory", lambda: int(17.4 * GiB))
+    monkeypatch.setattr(apc.mx, "get_cache_memory", lambda: 0)
+    monkeypatch.setattr(apc.mx, "clear_cache", lambda: None)
+    for env in ("APC_MEMORY_MAX_GB", "APC_MEMORY_RESERVE_GB"):
+        monkeypatch.delenv(env, raising=False)
+    snapshot = 7638 * 98_000
+    upstream = apc.APCManager(num_blocks=4, block_size=256)
+    upstream._prefill_reserve_bytes = snapshot
+    assert upstream.memory_max_bytes == 2 * GiB
+    assert upstream._make_room(snapshot, retain_bytes=snapshot) is False
+    from abstractcore.providers.mlx_native_session import PREFIX_CACHE_RESERVE_GB, machine_prefix_cache_budget_gb
+    ours = apc.APCManager(num_blocks=4, block_size=256, overrides={
+        "memory_max_gb": machine_prefix_cache_budget_gb(20 * GiB), "memory_reserve_gb": PREFIX_CACHE_RESERVE_GB})
+    ours._prefill_reserve_bytes = snapshot
+    assert ours._make_room(snapshot, retain_bytes=snapshot) is True
 
 
 def test_session_snapshots_are_one_per_call_with_lineage_depth(apc_factory, monkeypatch):

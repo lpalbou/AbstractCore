@@ -123,9 +123,24 @@ def test_inherited_policy_changes_per_request_without_mutating_session(monkeypat
     provider._apply_per_call_speculation({"num_draft_tokens": 5})
     assert provider._mtp_call_block_size == 5
     assert provider._speculation_request.num_draft_tokens == 2
+    # A route with NO speculation key inherits: a verified MTP artifact keeps
+    # optional MTP (0.9.2 regression: absence collapsed to off, 9 vs 17 tok/s).
     monkeypatch.setattr(spec, "configured_speculation_default", lambda **kw: None)
     provider._apply_per_call_speculation(None)
+    assert provider._mtp_call_disabled is False
+    assert provider._mtp_call_request.enabled
+    assert provider._mtp_call_request.require_acceleration is False
+    # Only an explicit False switches it off.
+    monkeypatch.setattr(spec, "configured_speculation_default", lambda **kw: False)
+    provider._apply_per_call_speculation(None)
     assert provider._mtp_call_disabled is True
+
+
+def test_absent_route_policy_inherits_optional_mtp_only_for_verified_artifacts():
+    assert spec.inherited_speculation_policy(None, True) == {"mode": "native_mtp", "require_acceleration": False}
+    assert spec.inherited_speculation_policy(None, False) is None
+    assert spec.inherited_speculation_policy(False, True) is False
+    assert spec.inherited_speculation_policy({"num_draft_tokens": 3}, True) == {"num_draft_tokens": 3}
 
 
 def test_unsupported_model_does_not_inherit_enabled_default(monkeypatch):
