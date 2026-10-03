@@ -433,7 +433,8 @@ abstractcore models delete lmstudio qwen/qwen3.8-27b@q4_k_m --yes --force
 |---|---|
 | Ollama | `DELETE /api/delete` (with `--force`, a loaded model is unloaded first) |
 | LM Studio | `lms unload` when loaded (`--force`), then removal of the model's files under the LM Studio models folder and its hub entry |
-| MLX / Hugging Face | `scan_cache_dir().delete_revisions(...).execute()` for the whole repo |
+| MLX / Hugging Face | `scan_cache_dir().delete_revisions(...).execute()` for the whole repo, planned on that repo only (another repo that shares a commit hash is never touched) |
+| One GGUF quant (`org/repo:QUANT`) | only that quant's files: its snapshot links and every blob no remaining file uses; the other quants stay. When it is the repo's last model file set, the whole repo goes. A quant that is not cached is `not_found`. |
 
 A delete is refused (exit `2`, HTTP `409`) when a blocker applies, unless `--force`:
 

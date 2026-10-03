@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `models delete huggingface org/repo:QUANT` (and the Gateway's Models-page Delete) removes only
+  that GGUF quant's files and keeps the repo's other quants; the whole repo goes when it was the
+  last model file set. A quant that is not in the cache answers `not_found`.
+
+### Fixed
+
+- A Hugging Face / MLX cache delete is planned on its own repo only. The cache API resolves a
+  commit hash to the first repo that holds it, so a mirror or duplicated repo sharing a commit
+  could be deleted in place of (or along with) the requested one.
+
 ## [2.24.0] - 2026-10-03
 
 ### Added
