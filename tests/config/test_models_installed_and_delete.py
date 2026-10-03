@@ -240,6 +240,31 @@ def test_hf_delete_removes_the_repo_via_the_cache_api(host):
     assert not folder.exists()
 
 
+def test_hf_delete_never_touches_another_repo_that_shares_a_commit_hash(host, monkeypatch):
+    # A mirror / duplicated repo keeps the same commit hashes; the cache API
+    # resolves a hash to the FIRST repo holding it, across the whole cache.
+    import dataclasses
+
+    import huggingface_hub
+
+    mine = make_hf_repo(host["hf"], "mlx-community/Qwen3-0.6B-4bit", {"model.safetensors": b"m" * 351})
+    other = make_hf_repo(host["hf"], "unsloth/Qwen3-0.6B-GGUF", {"Qwen3-0.6B-Q4_K_M.gguf": b"q" * 500})
+    real_scan = huggingface_hub.scan_cache_dir
+
+    def other_repo_first(*args, **kwargs):
+        info = real_scan(*args, **kwargs)
+        ordered = tuple(sorted(info.repos, key=lambda r: r.repo_id != "unsloth/Qwen3-0.6B-GGUF"))
+        return dataclasses.replace(info, repos=ordered)
+
+    monkeypatch.setattr(huggingface_hub, "scan_cache_dir", other_repo_first)
+    planned = mm.delete_artifact("mlx", "mlx-community/Qwen3-0.6B-4bit", dry_run=True)
+    assert planned["status"] == "planned" and planned["freed_bytes"] == 351, planned
+    done = mm.delete_artifact("mlx", "mlx-community/Qwen3-0.6B-4bit")
+    assert done["status"] == "deleted" and done["freed_bytes"] == 351, done
+    assert not mine.exists()
+    assert other.exists() and mm.probe("huggingface", "unsloth/Qwen3-0.6B-GGUF:Q4_K_M").status == mm.PRESENCE_INSTALLED
+
+
 def test_hf_delete_of_one_gguf_quant_keeps_the_other_quants(host):
     folder = make_hf_repo(
         host["hf"],

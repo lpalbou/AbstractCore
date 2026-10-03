@@ -5061,6 +5061,13 @@ def _delete_hf(row: Dict[str, Any], out: Dict[str, Any], dry_run: bool) -> Dict[
     if scan_cache_dir is not None:
         try:
             info = scan_cache_dir(repo["cache_dir"])
+            # `delete_revisions` resolves commit hashes across EVERY repo of
+            # the cache: two repos sharing a commit (a mirror, a duplicated
+            # repo) would both go. Scope the plan to this one repo.
+            import dataclasses
+
+            mine = [r for r in info.repos if getattr(r, "repo_type", "model") == "model" and _norm(r.repo_id) == _norm(repo_id)]
+            info = dataclasses.replace(info, repos=frozenset(mine))
             strategy = info.delete_revisions(*repo["revisions"])
             out["freed_bytes"] = int(getattr(strategy, "expected_freed_size", 0) or 0) or out.get("freed_bytes")
         except Exception as exc:
