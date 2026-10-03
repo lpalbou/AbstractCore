@@ -4848,6 +4848,11 @@ def delete_artifact(
         return _delete_ollama(row, out, base_url, dry_run)
     if pid == "lmstudio":
         return _delete_lmstudio(row, out, dry_run)
+    _repo_id, quant, patterns = hf_artifact_parts(ref)
+    if patterns:
+        # `org/repo:QUANT` names ONE GGUF file set (llama.cpp / LM Studio
+        # style multi-quant repos): delete that set, not its siblings.
+        return _delete_hf_quant(row, out, quant or "", patterns, dry_run)
     out = _delete_hf(row, out, dry_run)
     return _companion_delete(row, out, dry_run=dry_run, with_companions=with_companions)
 
@@ -4962,6 +4967,81 @@ def _delete_lmstudio(row: Dict[str, Any], out: Dict[str, Any], dry_run: bool) ->
         except Exception:
             pass
     out.update(ok=True, status="deleted", message=f"removed {row['artifact']} ({len(removed)} path(s))")
+    return out
+
+
+def _delete_hf_quant(row: Dict[str, Any], out: Dict[str, Any], quant: str, patterns: List[str], dry_run: bool) -> Dict[str, Any]:
+    """Delete one GGUF quant (`org/repo:QUANT`) from a cached Hugging Face repo.
+
+    The repo's snapshot links that match the quant's patterns go, with every
+    blob no remaining link still points to. When the quant is the only model
+    file set in the repo, the whole repo goes (`_delete_hf`), so no empty
+    shell is left behind. A quant that is not in the cache is `not_found` --
+    never a delete of its siblings.
+    """
+
+    repo_id = row["artifact"]
+    repos, _error = _hf_repos()
+    repo = next((r for r in repos if _norm(r["repo_id"]) == _norm(repo_id)), None)
+    if repo is None:
+        out.update(status="not_found", message=f"{repo_id} is not in the Hugging Face cache")
+        return out
+    repo_path = Path(repo["repo_path"])
+    matched: List[Path] = []
+    others: List[Path] = []
+    try:
+        for snap in sorted((repo_path / "snapshots").iterdir()):
+            if not snap.is_dir():
+                continue
+            for path in sorted(snap.rglob("*")):
+                if not (path.is_symlink() or path.is_file()):
+                    continue
+                rel = path.relative_to(snap).as_posix()
+                (matched if _matches_any(rel, patterns) else others).append(path)
+    except Exception as exc:
+        out.update(status="failed", message=f"cannot read the cache entry of {repo_id}: {exc}")
+        return out
+    if not matched:
+        out.update(status="not_found", freed_bytes=None, message=f"{repo_id} is cached but has no {quant} GGUF file")
+        return out
+    if not any(p.name.lower().endswith(_HF_MODEL_FILE_SUFFIXES) for p in others):
+        out = _delete_hf(row, out, dry_run)
+        return out
+
+    def _target(path: Path) -> Path:
+        try:
+            return path.resolve()
+        except Exception:
+            return path
+
+    kept = {_target(p) for p in others}
+    blobs: Dict[Path, int] = {}
+    for path in matched:
+        target = _target(path)
+        if target in kept or target == path:
+            continue
+        try:
+            blobs[target] = int(target.stat().st_size)
+        except Exception:
+            blobs[target] = 0
+    plain = [p for p in matched if not p.is_symlink()]
+    freed = sum(blobs.values()) + sum(int(p.stat().st_size) for p in plain if p.exists())
+    out["freed_bytes"] = freed
+    out["paths"] = [str(p) for p in matched]
+    out["command"] = ["rm", *[str(p) for p in matched], *[str(b) for b in blobs]]
+    if dry_run:
+        out.update(ok=True, status="planned", message=f"would delete the {quant} files of {repo_id} ({len(matched)} file(s))")
+        return out
+    for path in matched + list(blobs):
+        ok, why = _safe_remove(path, [repo_path])
+        if not ok:
+            out.update(status="failed", message=why)
+            return out
+    out.update(
+        ok=True,
+        status="deleted",
+        message=f"deleted the {quant} files of {repo_id} ({len(matched)} file(s)); its other quantizations stay",
+    )
     return out
 
 

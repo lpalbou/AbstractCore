@@ -240,6 +240,38 @@ def test_hf_delete_removes_the_repo_via_the_cache_api(host):
     assert not folder.exists()
 
 
+def test_hf_delete_of_one_gguf_quant_keeps_the_other_quants(host):
+    folder = make_hf_repo(
+        host["hf"],
+        "unsloth/Qwen3-8B-GGUF",
+        {"Qwen3-8B-Q4_K_M.gguf": b"q" * 300, "Qwen3-8B-Q8_0.gguf": b"e" * 500, "README.md": b"r"},
+    )
+    planned = mm.delete_artifact("huggingface", "unsloth/Qwen3-8B-GGUF:Q4_K_M", dry_run=True)
+    assert planned["status"] == "planned" and planned["freed_bytes"] == 300, planned
+    done = mm.delete_artifact("huggingface", "unsloth/Qwen3-8B-GGUF:Q4_K_M")
+    assert done["status"] == "deleted" and done["freed_bytes"] == 300, done
+    assert folder.exists()
+    assert mm.probe("huggingface", "unsloth/Qwen3-8B-GGUF:Q4_K_M").status == mm.PRESENCE_ABSENT
+    assert mm.probe("huggingface", "unsloth/Qwen3-8B-GGUF:Q8_0").status == mm.PRESENCE_INSTALLED
+    blobs = sorted(p.stat().st_size for p in (folder / "blobs").iterdir())
+    assert blobs == [1, 500]
+
+
+def test_hf_delete_of_a_quant_that_is_not_cached_deletes_nothing(host):
+    folder = make_hf_repo(host["hf"], "unsloth/Qwen3-8B-GGUF", {"Qwen3-8B-Q8_0.gguf": b"e" * 50})
+    out = mm.delete_artifact("huggingface", "unsloth/Qwen3-8B-GGUF:Q4_K_M")
+    assert out["status"] == "not_found" and "Q4_K_M" in out["message"]
+    assert mm.probe("huggingface", "unsloth/Qwen3-8B-GGUF:Q8_0").status == mm.PRESENCE_INSTALLED
+    assert folder.exists()
+
+
+def test_hf_delete_of_the_last_quant_removes_the_whole_repo(host):
+    folder = make_hf_repo(host["hf"], "unsloth/Qwen3-8B-GGUF", {"Qwen3-8B-Q4_K_M.gguf": b"q" * 30, "README.md": b"r"})
+    out = mm.delete_artifact("huggingface", "unsloth/Qwen3-8B-GGUF:Q4_K_M")
+    assert out["status"] == "deleted", out
+    assert not folder.exists()
+
+
 def test_hf_delete_through_the_other_engine_is_a_shared_cache_refusal(host):
     folder = make_hf_repo(host["hf"], "mlx-community/Qwen3-8B-4bit", {"model.safetensors": b"m" * 10})
     out = mm.delete_artifact("huggingface", "mlx-community/Qwen3-8B-4bit")
