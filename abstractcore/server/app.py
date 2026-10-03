@@ -10075,6 +10075,10 @@ async def process_chat_completion(
             error=str(e),
             error_type=type(e).__name__
         )
+        if isinstance(e, ModelNotFoundError):
+            # OpenAI layout: an unknown provider or model is the caller's 404.
+            return JSONResponse(status_code=404, content={"error": {
+                "message": str(e), "type": "invalid_request_error", "param": "model", "code": "model_not_found"}})
         if "llm" in locals() and supports_concurrent_generation(llm):
             return JSONResponse(status_code=getattr(e, "http_status", 500), content={"error": {
                 "message": str(e), "type": "native_runtime_error",

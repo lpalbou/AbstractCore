@@ -585,7 +585,9 @@ class ProviderRegistry:
         if not provider_info:
             # Suffix is "" unless a host-injected resolver was present and
             # missed — bare-core error text stays byte-identical.
-            raise ValueError(
+            from ..exceptions import UnknownProviderError
+
+            raise UnknownProviderError(
                 f"Unknown provider: {provider_name}{self._unknown_endpoint_suffix(provider_name)}"
             )
 
@@ -900,7 +902,9 @@ class ProviderRegistry:
             available_providers = ", ".join(self.list_provider_names())
             # Suffix is "" unless a host-injected resolver was present and
             # missed — bare-core error text stays byte-identical.
-            raise ValueError(
+            from ..exceptions import UnknownProviderError
+
+            raise UnknownProviderError(
                 f"Unknown provider: {provider_name}{self._unknown_endpoint_suffix(provider_name)}. "
                 f"Available providers: {available_providers}"
             )

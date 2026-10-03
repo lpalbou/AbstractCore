@@ -127,6 +127,13 @@ class ModelNotFoundError(ProviderError):
     pass
 
 
+class UnknownProviderError(ModelNotFoundError, ValueError):
+    """The provider part of a provider/model id names no registered provider.
+
+    Still a ValueError for callers that caught the untyped error."""
+    pass
+
+
 class ModelArtifactMismatchError(ProviderError):
     """The named model handle cannot be honoured with the artifact that was found.
 
@@ -245,6 +252,7 @@ __all__ = [
     'SessionError',
     'ConfigurationError',
     'ModelNotFoundError',
+    'UnknownProviderError',
     'ModelArtifactMismatchError',
     'format_model_error',
     'format_auth_error',

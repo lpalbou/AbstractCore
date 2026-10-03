@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `POST /v1/chat/completions` with an unknown provider, or a model the provider reports missing, answers `404` with `code: "model_not_found"` in the OpenAI error envelope instead of `500`. The registry raises `UnknownProviderError` (a `ModelNotFoundError` and still a `ValueError`).
+
 - A Hugging Face / MLX cache delete is planned on its own repo only. The cache API resolves a
   commit hash to the first repo that holds it, so a mirror or duplicated repo sharing a commit
   could be deleted in place of (or along with) the requested one.
