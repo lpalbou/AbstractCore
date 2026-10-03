@@ -423,3 +423,21 @@ abstractcore serve
 ```
 
 See **[Server](server.md)**.
+
+## Request-scoped server authentication
+
+`abstractcore.server.auth_policy` exposes the host composition API:
+
+- `ServerAuthPolicy(token, allow_unauthenticated=False)`: immutable policy with
+  a required non-empty token and a strict boolean open-access flag. Its
+  representation omits the token.
+- `use_server_auth_policy(policy)`: context manager applying the policy to the
+  current execution context and restoring the previous policy on exit.
+- `current_server_auth_policy()`: the active host policy, or `None`.
+- `server_auth_token()` and `server_allows_unauthenticated()`: resolve the active
+  policy, or standalone server environment settings when no policy is active.
+
+Use this API when composing Core's ASGI server inside another host. It does not
+persist tokens, expose routes, or choose network access. Open access retains
+Core's restrictions on server-held provider credentials. See
+[Server composition](server.md#embedding-core-in-an-asgi-host) for an example.

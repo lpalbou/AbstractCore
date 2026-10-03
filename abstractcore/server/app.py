@@ -227,6 +227,8 @@ _SENSITIVE_FIELD_NAMES = {
 }
 _SENSITIVE_FIELD_FRAGMENTS = ("api_key", "api-key", "apikey", "authorization", "password", "secret", "token")
 _PLACEHOLDER_API_KEYS = {"not-needed", "not_needed", "notneeded", "unused", "dummy", "empty", "none"}
+from .auth_policy import current_server_auth_policy, server_auth_token, server_allows_unauthenticated
+
 _SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
 _PROVIDER_API_KEY_HEADERS = (
     "x-abstractcore-provider-api-key",
@@ -315,10 +317,7 @@ def _redact_text(text: Any) -> str:
 
 def _server_auth_token() -> str:
     """Return the configured inbound server auth token, if any."""
-    value = os.getenv(_SERVER_AUTH_TOKEN_ENV_VAR)
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return ""
+    return server_auth_token()
 
 
 def _server_auth_enabled() -> bool:
@@ -326,8 +325,7 @@ def _server_auth_enabled() -> bool:
 
 
 def _server_allows_unauthenticated() -> bool:
-    raw = str(os.getenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED") or "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    return server_allows_unauthenticated()
 
 
 def _server_protect_docs() -> bool:
@@ -407,6 +405,11 @@ async def _enforce_server_auth(request: Request, call_next):
             },
         )
 
+    policy = current_server_auth_policy()
+    # Open managed serving grants no server-authenticated credential privileges.
+    # Any supplied Authorization still belongs exclusively to Core authentication.
+    if policy is not None and policy.allow_unauthenticated and not request.headers.get("authorization"):
+        return await call_next(request)
     provided = _extract_bearer_token(request.headers.get("authorization"))
     if not provided:
         return _unauthorized_response("Missing server Authorization bearer token")

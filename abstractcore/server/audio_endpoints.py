@@ -573,14 +573,13 @@ def _require_dict(data: Any, *, where: str) -> Dict[str, Any]:
         raise HTTPException(status_code=422, detail=f"Invalid request body for {where}: expected a JSON object.")
     return data
 
+from .auth_policy import server_auth_token
+
 _SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
 
 
 def _server_auth_token() -> str:
-    value = os.getenv(_SERVER_AUTH_TOKEN_ENV_VAR)
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return ""
+    return server_auth_token()
 
 
 def _server_auth_enabled() -> bool:

@@ -1487,12 +1487,13 @@ def _extract_secret_header(header_value: Any) -> str:
         return value[7:].strip()
     return value
 
+from .auth_policy import server_auth_token
+
 _SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
 
 
 def _server_auth_enabled() -> bool:
-    value = os.getenv(_SERVER_AUTH_TOKEN_ENV_VAR)
-    return isinstance(value, str) and bool(value.strip())
+    return bool(server_auth_token())
 
 
 def _request_has_server_auth(request: Request) -> bool:

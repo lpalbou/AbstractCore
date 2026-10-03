@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Prompted tool-call parsing exposes structured tool_call_error diagnostics for rejected calls; streaming malformed envelopes expose the same diagnostic for agent recovery.
+## [2.24.0] - 2026-10-03
+
+### Added
+
+- Hosting applications can compose the Core ASGI server with a request-scoped
+  `ServerAuthPolicy` and `use_server_auth_policy()` context manager. Host tokens
+  stay separate from standalone server credentials; policies remain isolated
+  across concurrent requests and restore after errors. Optional unauthenticated
+  access preserves restrictions on server-held provider credentials.
+
+### Fixed
+
+- Prompted tool-call parsing exposes structured `tool_call_error` diagnostics for
+  rejected calls; streaming malformed envelopes expose the same diagnostic so
+  agents can recover.
 
 ## [2.23.1] - 2026-10-02
 

@@ -20,7 +20,7 @@ could expose credentials, private network access, local files, or expensive runt
 
 The accepted rules are:
 
-- Environment variables override centralized config, and centralized config overrides defaults.
+- For standalone server configuration, environment variables override centralized config, and centralized config overrides defaults. A composing ASGI host may supply an explicit request-scoped `ServerAuthPolicy`; that scope overrides standalone inbound auth settings without changing process configuration.
 - Server-held provider credentials require inbound AbstractCore server auth before clients can use
   them implicitly.
 - Per-request upstream provider keys use explicit headers, primarily
@@ -29,6 +29,7 @@ The accepted rules are:
   non-loopback targets.
 - Remote URL fetch and local file access stay constrained by explicit operator settings.
 - New server control-plane routes must reuse the same trust model unless a later ADR changes it.
+- Host-managed open serving does not mark anonymous requests as server-authenticated. Supplied bearer tokens still require validation, and server-held provider credentials remain protected.
 
 ## Consequences
 

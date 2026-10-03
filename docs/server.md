@@ -4,6 +4,51 @@ Transform AbstractCore into an OpenAI-compatible API server. One server, all mod
 
 If you want a dedicated **single-model** `/v1` server (one provider/model per worker), see [Endpoint](endpoint.md).
 
+## Serving through AbstractGateway
+
+AbstractGateway can expose Core's OpenAI-compatible serving routes at
+`<gateway-url>/core/v1`. Its console controls enablement, token access, and
+local-network open access. The endpoint uses the Gateway listener and Network
+policy; its Core token is separate from Gateway user tokens and credentials
+used to connect to a remote Core server. Gateway controls the exposed route
+allowlist; Core implements inference and provider credential checks.
+
+Open access does not authorize use of server-held cloud provider credentials.
+Clients using a cloud provider must supply their own
+`X-AbstractCore-Provider-API-Key`, or authenticate with the endpoint's Core token.
+See [Operator control and server trust boundary](adr/0004-operator-control-and-server-trust-boundary.md).
+
+### Embedding Core in an ASGI host
+
+A hosting application can supply a request-scoped authentication policy without
+changing process environment variables:
+
+```python
+from abstractcore.server.app import app as core_app
+from abstractcore.server.auth_policy import ServerAuthPolicy, use_server_auth_policy
+
+policy = ServerAuthPolicy(token="host-managed-core-token", allow_unauthenticated=False)
+
+async def serve_core(scope, receive, send):
+    with use_server_auth_policy(policy):
+        await core_app(scope, receive, send)
+```
+
+Keep the context active for the complete ASGI call, including streamed response
+bodies. Policies are isolated between concurrent requests, propagate to
+context-aware worker threads, and restore the previous policy when the context
+exits. The host owns endpoint enablement, route exposure, network restrictions,
+and token persistence and rotation.
+
+`ServerAuthPolicy` requires a non-empty token and a boolean open-access flag.
+When `allow_unauthenticated=True`, requests without `Authorization` may proceed,
+but they receive no server-authenticated provider credential privileges. Any
+supplied `Authorization` must still be the valid Core bearer token; explicit
+provider credentials use `X-AbstractCore-Provider-API-Key`.
+
+Outside a host policy, standalone server authentication continues to use its
+existing environment/configuration settings. See [API reference](api.md#request-scoped-server-authentication).
+
 ## Web console
 
 `abstractcore serve` prints a one-time link, `http://127.0.0.1:8000/console#claim=<code>`,
