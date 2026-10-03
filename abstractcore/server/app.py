@@ -408,7 +408,7 @@ async def _enforce_server_auth(request: Request, call_next):
     policy = current_server_auth_policy()
     # Open managed serving grants no server-authenticated credential privileges.
     # Any supplied Authorization still belongs exclusively to Core authentication.
-    if policy is not None and policy.allow_unauthenticated and not request.headers.get("authorization"):
+    if policy is not None and policy.allow_unauthenticated and request.headers.get("authorization") is None:
         return await call_next(request)
     provided = _extract_bearer_token(request.headers.get("authorization"))
     if not provided:

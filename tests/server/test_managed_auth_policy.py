@@ -66,6 +66,11 @@ def test_open_managed_policy_reserves_authorization_and_preserves_provider_guard
             for token in [b"wrong", b"standalone", b"client-cloud-key"]:
                 rejected = await app._enforce_server_auth(request([(b"authorization", b"Bearer " + token)]), accepted)
                 assert rejected.status_code == 401
+            for header in [b"", b" ", b"Basic managed", b"Bearer"]:
+                supplied = request([(b"authorization", header)])
+                rejected = await app._enforce_server_auth(supplied, accepted)
+                assert rejected.status_code == 401
+                assert not getattr(supplied.state, "abstractcore_server_authenticated", False)
             assert await app._enforce_server_auth(request([(b"authorization", b"Bearer managed")]), accepted) is True
     asyncio.run(run())
 
