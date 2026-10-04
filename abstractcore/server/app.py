@@ -2176,6 +2176,15 @@ class ChatCompletionRequest(BaseModel):
                     "clients and is disabled by default unless explicitly enabled by the server operator.",
         example=False,
     )
+    response_format: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="OpenAI structured outputs: {\"type\": \"text\"} (default), {\"type\": \"json_object\"}, or "
+                    "{\"type\": \"json_schema\", \"json_schema\": {\"name\", \"schema\", \"strict\"?}}. Providers that "
+                    "constrain decoding receive the schema; every answer is validated against it (feedback retries), "
+                    "and an answer that still does not match is a 500 `structured_output_invalid`. Not combinable with "
+                    "tools.",
+        example={"type": "json_object"},
+    )
 
     class Config:
         json_schema_extra = {
@@ -9733,6 +9742,8 @@ async def process_chat_completion(
 
         _reject_body_api_key(request.api_key)
         provider_api_key = _provider_api_key_from_request(http_request)
+        # Structured outputs (`response_format`): checked before any model is created.
+        response_model = _response_format_model(request, openai_output_format)
 
         # Detect target format for tool call syntax
         target_format = detect_target_format(f"{provider}/{model}", request, http_request)
@@ -9954,6 +9965,11 @@ async def process_chat_completion(
         ]
 
         try:
+            if response_model is not None:
+                return await _structured_chat_completion(
+                    llm, gen_kwargs, response_model, provider, model, request, http_request,
+                    request_id=request_id, cancel_event=cancel_event, loaded_runtime=loaded_runtime,
+                )
             if request.stream:
                 stream_content = (
                         generate_streaming_responses_response(
@@ -10023,7 +10039,7 @@ async def process_chat_completion(
                     )
                 return openai_response
         finally:
-            if not request.stream:
+            if not request.stream or response_model is not None:
                 if loaded_runtime is not None and unload_after_requested:
                     _best_effort_unload_loaded_gateway_runtime(loaded_runtime, request_id=request_id)
                 elif provider_normalized == "ollama" and ollama_key is not None:
@@ -10062,6 +10078,8 @@ async def process_chat_completion(
 
     except HTTPException:
         raise
+    except _OpenAIRequestError as e:
+        return JSONResponse(status_code=e.status, content=e.payload)
     except GenerationCancelledError as e:
         # The client went away (or a Stop severed it): a host decision, not a
         # server failure. Nobody is listening for the body; say so at INFO.
@@ -10088,6 +10106,87 @@ async def process_chat_completion(
             status_code=500,
             detail={"error": {"message": str(e), "type": "server_error"}}
         )
+
+class _OpenAIRequestError(Exception):
+    """A caller error answered in the OpenAI envelope by process_chat_completion."""
+
+    def __init__(self, status: int, message: str, *, type_: str = "invalid_request_error",
+                 param: Optional[str] = None, code: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.payload = {"error": {"message": message, "type": type_, "param": param, "code": code}}
+
+
+def _response_format_model(request: ChatCompletionRequest, openai_output_format: str):
+    """The Pydantic model for `request.response_format` (None for text), or a 400."""
+    from ..structured.json_schema import ResponseFormatError, response_model_for
+
+    raw = getattr(request, "response_format", None)
+    if raw is None or openai_output_format != "chat_completions":
+        return None
+    try:
+        model_cls = response_model_for(raw)
+    except ResponseFormatError as exc:
+        raise _OpenAIRequestError(400, str(exc), param=exc.param, code="invalid_response_format") from None
+    if model_cls is not None and request.tools:
+        raise _OpenAIRequestError(400, "response_format cannot be combined with tools yet: send one or the other.",
+                                  param="response_format", code="unsupported_parameter")
+    return model_cls
+
+
+async def _structured_chat_completion(llm, gen_kwargs: Dict[str, Any], response_model, provider: str, model: str,
+                                      request: ChatCompletionRequest, http_request: Request, *, request_id: str,
+                                      cancel_event, loaded_runtime):
+    """One structured answer through AbstractCore's structured-output handler
+    (native constraint where the provider has one, prompted otherwise; feedback
+    retries), validated against the caller's schema. A stream request receives
+    the validated JSON as one content chunk: it cannot be validated before it ends."""
+    from pydantic import ValidationError
+
+    from ..structured.json_schema import SchemaViolation, instance_of, validate_instance
+
+    spec = getattr(response_model, "__abstractcore_response_format__", {}) or {}
+    kwargs = dict(gen_kwargs)
+    kwargs.update(stream=False, response_model=response_model)
+    kwargs.pop("tools", None)
+    kwargs.pop("tool_choice", None)
+    if loaded_runtime is not None:
+        operation = lambda: _run_loaded_gateway_generation(loaded_runtime, lambda: llm.generate(**kwargs))
+    else:
+        operation = lambda: llm.generate(**kwargs)
+    try:
+        try:
+            result = (await run_sync_with_disconnect(operation, request=http_request, cancel_event=cancel_event)
+                      if cancel_event is not None else operation())
+        finally:
+            if cancel_event is not None:
+                cancel_event.set()
+        data = instance_of(result)
+        validate_instance(data, spec.get("schema") or {"type": "object"})
+    except (ValidationError, json.JSONDecodeError, SchemaViolation) as exc:
+        first = exc.errors()[0].get("msg") if isinstance(exc, ValidationError) and exc.errors() else str(exc)
+        logger.warning("Structured output did not match response_format", request_id=request_id, error=str(first))
+        raise _OpenAIRequestError(
+            500, f"The model's answer did not match response_format ({spec.get('name') or 'schema'}): {first}",
+            type_="server_error", param="response_format", code="structured_output_invalid") from None
+    content = json.dumps(data, ensure_ascii=False)
+    chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
+    created = int(time.time())
+    model_id = f"{provider}/{model}"
+    if not request.stream:
+        return {"id": chat_id, "object": "chat.completion", "created": created, "model": model_id,
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}]}
+
+    def _events() -> Iterator[str]:
+        base = {"id": chat_id, "object": "chat.completion.chunk", "created": created, "model": model_id}
+        yield "data: " + json.dumps({**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": content},
+                                                          "finish_reason": None}]}) + "\n\n"
+        yield "data: " + json.dumps({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"})
+
 
 def _client_disconnect_cancels(llm: Any) -> bool:
     """HTTP-backed providers (Ollama, LM Studio, any OpenAI-compatible server)
