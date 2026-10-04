@@ -13447,6 +13447,9 @@ EXECUTE_COMMAND_MAX_TIMEOUT_S = 600.0
     description="Execute shell commands safely with security controls and platform detection",
     when_to_use="When you need to run system commands, shell scripts, or interact with command-line tools",
     tags=["mutating"],
+    # Round 12: the host stamps the run's workspace set here (paths only); the command runs
+    # inside the OS sandbox built from it (abstractcore.tools.sandbox). Never model-facing.
+    hide_args=["_sandbox"],
     examples=[
         {
             "description": "List current directory contents",
@@ -13475,10 +13478,16 @@ def execute_command(
     timeout: int = 300,
     capture_output: bool = True,
     require_confirmation: bool = False,
-    allow_dangerous: bool = False
+    allow_dangerous: bool = False,
+    _sandbox: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Execute a shell command safely with comprehensive security controls.
+
+    Round 12: when the host stamps ``_sandbox`` (the run's effective workspace set), the
+    command runs inside an OS sandbox (macOS sandbox-exec, Linux bubblewrap/Landlock) with the
+    host's scrubbed environment and a private TMPDIR; with no sandbox available the command is
+    refused (success=False, one sentence) unless the host allowed unsandboxed commands.
 
     Args:
         command: The shell command to execute
@@ -13655,6 +13664,28 @@ def execute_command(
         else:
             working_dir = None
 
+        # Round 12: the OS sandbox this command runs inside (never a parse of the command).
+        from .sandbox import KIND_UNSANDBOXED, refusal_result, sandbox_for_tool_call
+
+        sandbox = sandbox_for_tool_call(_sandbox)
+        if sandbox.refuses:
+            return refusal_result(
+                sandbox,
+                command=str(command),
+                platform=str(current_platform),
+                working_directory=str(working_dir or working_directory or ""),
+            )
+        # Library use with no workspace policy keeps the historical behaviour byte for byte.
+        report_sandbox = sandbox.spec is not None or sandbox.kind != KIND_UNSANDBOXED
+        if sandbox.kind == KIND_UNSANDBOXED:
+            popen_cmd: Any = command
+            popen_shell = True
+            popen_env = sandbox.env_for() if sandbox.spec is not None else None
+        else:
+            popen_cmd, popen_env = sandbox.wrap(command, str(working_dir) if working_dir else None)
+            popen_shell = False
+        sandbox_fields: Dict[str, Any] = {"sandbox": sandbox.describe()} if report_sandbox else {}
+
         # Command execution
         start_time = time.time()
 
@@ -13681,9 +13712,10 @@ def execute_command(
             timeout_drain_gave_up = False
 
             proc = subprocess.Popen(
-                command,
-                shell=True,
+                popen_cmd,
+                shell=popen_shell,
                 cwd=working_dir,
+                env=popen_env,
                 text=True,
                 stdout=subprocess.PIPE if capture_output else None,
                 stderr=subprocess.PIPE if capture_output else None,
@@ -13733,6 +13765,8 @@ def execute_command(
             output_parts.append(f"📁 Working directory: {working_dir or os.getcwd()}")
             output_parts.append(f"⏱️  Execution time: {execution_time:.2f}s")
             output_parts.append(f"🔢 Return code: {result.returncode}")
+            if report_sandbox:
+                output_parts.append(sandbox.rendered_line())
             if timeout_clamp_note:
                 # The command finished, but inside a SHORTER window than the
                 # caller asked for — say so here too, not only on timeouts.
@@ -13786,6 +13820,7 @@ def execute_command(
                 "stdout_truncated": bool(stdout_truncated),
                 "stderr_truncated": bool(stderr_truncated),
                 "rendered": rendered,
+                **sandbox_fields,
             }
 
         except subprocess.TimeoutExpired:
@@ -13804,6 +13839,8 @@ def execute_command(
             ]
             if timeout_clamp_note:
                 parts.append(timeout_clamp_note)
+            if report_sandbox:
+                parts.append(sandbox.rendered_line())
 
             stdout_preview = ""
             stderr_preview = ""
@@ -13867,6 +13904,7 @@ def execute_command(
                 "stdout_truncated": bool(stdout_truncated),
                 "stderr_truncated": bool(stderr_truncated),
                 "rendered": rendered,
+                **sandbox_fields,
             }
 
         except subprocess.CalledProcessError as e:

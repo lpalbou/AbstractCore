@@ -48,7 +48,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 _DEFAULT_TIMEOUT_S = 120.0
 _MAX_OUTPUT_CHARS = 20000
@@ -100,12 +100,27 @@ class ShellSession:
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _closed: bool = False
     _degraded: bool = False  # set after a timeout; next run() drains stale buffered output first
+    # Round 12: the OS sandbox the whole session runs inside (abstractcore.tools.sandbox).
+    # None = no workspace policy (library use). Fixed at start: a `cd` cannot leave it.
+    sandbox: Any = field(default=None, repr=False)
+    sandbox_key: str = ""
 
     def start(self, *, env: Optional[Dict[str, str]] = None) -> None:
         import pty
         import termios
 
-        run_env = dict(os.environ)
+        argv = _shell_argv(self.shell_path)
+        sandbox = self.sandbox
+        if sandbox is not None and getattr(sandbox, "refuses", False):
+            raise RuntimeError(sandbox.refusal())
+        if sandbox is not None and sandbox.spec is not None:
+            # The host's scrubbed env (never os.environ when the host gave one) + private TMPDIR.
+            if sandbox.kind == "unsandboxed":
+                run_env = sandbox.env_for()
+            else:
+                argv, run_env = sandbox.wrap(argv, self.cwd)
+        else:
+            run_env = dict(os.environ)
         # No interactive prompt strings in the output stream; venv activate scripts rewrite PS1
         # unless VIRTUAL_ENV_DISABLE_PROMPT is set, which would re-introduce prompt noise.
         run_env.update({"PS1": "", "PS2": "", "VIRTUAL_ENV_DISABLE_PROMPT": "1"})
@@ -119,7 +134,6 @@ class ShellSession:
                     os.chdir(self.cwd)
             except Exception:
                 pass
-            argv = _shell_argv(self.shell_path)
             try:
                 os.execvpe(argv[0], argv, run_env)
             except Exception:
@@ -414,6 +428,14 @@ def namespaced_session_id(namespace: str, session_id: str) -> str:
     return f"{ns}::{sid}" if ns else sid
 
 
+def _sandbox_key(sandbox: Any) -> str:
+    if sandbox is None:
+        return ""
+    import json
+
+    return json.dumps(sandbox.describe(), sort_keys=True)
+
+
 class ShellSessionRegistry:
     """Process-local registry of persistent shell sessions keyed by id."""
 
@@ -421,15 +443,26 @@ class ShellSessionRegistry:
         self._sessions: Dict[str, ShellSession] = {}
         self._lock = threading.Lock()
 
-    def open(self, *, session_id: Optional[str] = None, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> ShellSession:
+    def open(
+        self,
+        *,
+        session_id: Optional[str] = None,
+        cwd: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
+        sandbox: Any = None,
+    ) -> ShellSession:
+        """Open (or return) a session. `sandbox` (abstractcore.tools.sandbox.Sandbox) binds the
+        whole session; an alive session started under a DIFFERENT sandbox is replaced (its
+        workspaces changed), so a session never keeps wider access than the current call."""
         shell_path = _pick_shell()
         if not shell_path:
             raise RuntimeError("No POSIX shell (bash/sh) found for a persistent session")
         sid = str(session_id or f"sh_{uuid.uuid4().hex[:12]}")
+        key = _sandbox_key(sandbox)
         with self._lock:
             existing = self._sessions.get(sid)
             if existing is not None:
-                if existing.is_alive():
+                if existing.is_alive() and existing.sandbox_key == key:
                     return existing
                 # Dead session being replaced: close it first so its PTY master fd is released
                 # (reopen-after-abnormal-death would otherwise leak the fd).
@@ -437,7 +470,7 @@ class ShellSessionRegistry:
                     existing.close()
                 except Exception:
                     pass
-            session = ShellSession(session_id=sid, shell_path=shell_path, cwd=cwd)
+            session = ShellSession(session_id=sid, shell_path=shell_path, cwd=cwd, sandbox=sandbox, sandbox_key=key)
             session.start(env=env)
             self._sessions[sid] = session
             return session

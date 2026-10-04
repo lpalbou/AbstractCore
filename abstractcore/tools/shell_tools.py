@@ -11,9 +11,11 @@ Safety posture (deliberate, per backlog 0220):
   into their executor).
 - APPROVAL-GATED by default at the runtime layer (listed in `_DEFAULT_REQUIRE_APPROVAL`
   alongside `execute_command`).
-- HONESTLY LABELED: the schema states that a session is NOT an OS sandbox and is NOT durable —
-  see the tool descriptions. Sessions escape per-call working-directory confinement once
-  approved, exactly like `execute_command`.
+- SANDBOXED (round 12): a host running the session for a run stamps the run's workspace set as
+  the hidden `_sandbox` argument; the whole session (and everything it starts) runs inside the
+  OS sandbox built from it (`abstractcore.tools.sandbox`), so `cd` cannot leave the run's
+  workspaces. No sandbox available on the host = the call is refused. NOT durable — see the
+  tool descriptions.
 - SCOPED: hosts inject `_registry_namespace` (hidden from the model schema) at their trust
   boundary so one run's sessions are unreachable from another run. The AbstractRuntime
   TOOL_CALLS handler overwrites this argument with the run id and closes the namespace when
@@ -29,6 +31,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .core import tool
+from .sandbox import KIND_UNSANDBOXED, sandbox_for_tool_call
 from .shell_session import (
     ShellCommandResult,
     get_shell_session_registry,
@@ -77,7 +80,8 @@ def _render_result(result: ShellCommandResult, *, prefix_lines: Optional[list] =
 @tool(
     description=(
         "Run a command in a PERSISTENT shell session (cwd/env/venv persist across calls). "
-        "NOT a sandbox (execute_command-level trust); NOT durable (never survives a host restart)."
+        "Sandboxed to this run's workspaces when the host sets a workspace policy; NOT durable "
+        "(never survives a host restart)."
     ),
     when_to_use=(
         "Multi-step shell workflows where state must persist: activate a venv then run tools in it, "
@@ -87,7 +91,7 @@ def _render_result(result: ShellCommandResult, *, prefix_lines: Optional[list] =
     # Side-effect tag for consumers (abstractagent repeat-guard reads
     # ToolDefinition.tags); mirrors tools/inventory.py — test-pinned.
     tags=["mutating"],
-    hide_args=["_registry_namespace"],
+    hide_args=["_registry_namespace", "_sandbox"],
     examples=[
         {"description": "Create and use a venv across calls", "arguments": {"command": "python3 -m venv .venv && source .venv/bin/activate && pip install requests"}},
         {"description": "Next call, same session: venv still active", "arguments": {"command": "python -c 'import requests; print(requests.__version__)'"}},
@@ -100,6 +104,7 @@ def shell_exec(
     working_directory: Optional[str] = None,
     timeout: float = 120,
     _registry_namespace: str = "",
+    _sandbox: Optional[dict] = None,
 ) -> str:
     """Run `command` in the persistent session `session_id`, creating it if needed.
 
@@ -114,19 +119,27 @@ def shell_exec(
     key = namespaced_session_id(_registry_namespace, sid)
     registry = get_shell_session_registry()
 
+    sandbox = sandbox_for_tool_call(_sandbox)
+    if sandbox.refuses:
+        return f"Error: {sandbox.refusal()}\n{sandbox.rendered_line()}"
+    bound = sandbox if (sandbox.spec is not None or sandbox.kind != KIND_UNSANDBOXED) else None
+
     existing = registry.get(key)
-    created = existing is None or not existing.is_alive()
     try:
         session = registry.open(
             session_id=key,
-            cwd=str(working_directory).strip() if created and working_directory else None,
+            cwd=str(working_directory).strip() if working_directory else None,
+            sandbox=bound,
         )
+        created = session is not existing
         result = session.run(cmd, timeout_s=_coerce_float(timeout, 120.0, cap=_MAX_TIMEOUT_S))
     except Exception as e:
         return f"Error: shell session failed: {e}"
 
-    prefix = [_new_session_notice(sid)] if created else None
-    return _render_result(result, prefix_lines=prefix)
+    prefix = [_new_session_notice(sid)] if created else []
+    if bound is not None:
+        prefix.append(bound.rendered_line())
+    return _render_result(result, prefix_lines=prefix or None)
 
 
 @tool(
