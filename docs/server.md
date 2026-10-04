@@ -340,7 +340,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Audio | POST | `/v1/voice/clone` | AbstractVoice-compatible voice-clone/custom-voice extension | `file`, optional `provider`, `model`, `tts_model`, `cloning_engine`, `base_url`, `name`, `reference_text`, `validate` |
 | Audio | POST | `/{provider}/v1/voice/clone` | Provider-scoped voice-clone route where body model is unprefixed | path `provider`, optional `base_url`, voice-clone form fields |
 | Audio | POST | `/v1/audio/translations` | Reserved OpenAI-compatible translation route | `file`, `model`; returns `501` in this version |
-| Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music plugins | `prompt`/`input`/`text`, optional `provider`, `model`, `lyrics`, `duration_s`, `seed`, `num_inference_steps`, `guidance_scale`, `format`; requires a music capability plugin |
+| Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music and sound-effect plugins | `prompt`/`input`/`text`, optional `task`, `provider`, `model`, `lyrics`, `seconds`/`duration_s`, `seed`, `num_inference_steps`, `guidance_scale`, `format`; requires a music capability plugin |
 | Audio | POST | `/{provider}/v1/audio/music` | Backend-scoped text-to-music route | path `provider`, music body fields |
 | Scene3D | POST | `/v1/scene3d/generations` | Extension endpoint for 3D generation plugins | `prompt` (text→3D) or `image_b64` (image→3D), optional `provider`, `model`, `task` (`t23d`/`i23d`), `format` (`glb` default), backend options (`seed`, `mc_resolution`, …); returns raw model bytes; requires a scene3d capability plugin |
 | Scene3D | POST | `/{provider}/v1/scene3d/generations` | Backend-scoped 3D generation route | path `provider` (e.g. `triposr`, `step1x`, `hunyuan3d21`, `trellis2`), scene3d body fields |
@@ -1126,7 +1126,8 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 | `provider` | no | Music backend selector, for example `acemusic`, `acestep`, `stable-audio`, `stable-audio-3`, or `diffusers`. The provider-scoped path can also select a backend, e.g. `/acemusic/v1/audio/music` or `/diffusers/v1/audio/music`. |
 | `model` | no | Music model id for the selected backend, for example `acemusic/ace-step-api` for remote ACE Music or a Hugging Face repo id for local AbstractMusic backends. |
 | `lyrics` | no | Optional lyrics for vocal music backends. |
-| `duration_s` | no | Requested output duration in seconds. |
+| `task` | no | `text_to_music` (default) or `text_to_audio` for a sound effect. A sound effect is answered from the `sound` output. |
+| `seconds` / `duration_s` | no | Clip length in seconds (one value; both must agree, and it must be positive, else `400`). Without it a sound effect is 5 seconds and music keeps the backend default (30 seconds for Stable Audio 3); the model's maximum still applies. |
 | `seed` | no | Deterministic seed when supported. |
 | `num_inference_steps` | no | Diffusion/sampling step count when supported. |
 | `guidance_scale` | no | Guidance scale when supported. |

@@ -24,11 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `abstractcore.utils.identity.about_card_html` (with `about_version_facts`, `about_links`) renders
   it; the kit's `af-about` CSS is vendored by `python -m abstractcore.console.theme_sync`.
 
+- `POST /v1/audio/music` accepts `seconds` (the clip length; same value as `duration_s`, which
+  stays accepted). A non-positive length or two lengths that disagree answer `400`. The sound
+  output's `seconds`/`duration_s` and `model` reach the music plugin with the task
+  (`text_to_audio`), so a sound effect runs the route's model for the requested length.
+
 - `models delete huggingface org/repo:QUANT` (and the Gateway's Models-page Delete) removes only
   that GGUF quant's files and keeps the repo's other quants; the whole repo goes when it was the
   last model file set. A quant that is not in the cache answers `not_found`.
 
 ### Fixed
+
+- `POST /v1/audio/music` with `task: "text_to_audio"` returns the generated sound effect; it read
+  only the `music` output and answered `500` for the `sound` output a sound effect produces.
 
 - `POST /v1/chat/completions` with an unknown provider, or a model the provider reports missing, answers `404` with `code: "model_not_found"` in the OpenAI error envelope instead of `500`. The registry raises `UnknownProviderError` (a `ModelNotFoundError` and still a `ValueError`).
 

@@ -16,6 +16,7 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import urllib.parse
@@ -234,6 +235,14 @@ class AudioMusicRequest(BaseModel):
     text: Optional[str] = Field(default=None, description="Alias for `prompt`.", examples=["A short calm piano loop."])
     lyrics: Optional[str] = Field(default=None, description="Optional lyrics for backends that support vocal music.")
     duration_s: Optional[float] = Field(default=None, description="Requested output duration in seconds.", examples=[8.0])
+    seconds: Optional[float] = Field(
+        default=None,
+        description=(
+            "Requested length in seconds (the same value as `duration_s`; send one). Without it a sound effect "
+            "(`task=text_to_audio`) is 5 s and music keeps the backend's default (30 s for Stable Audio 3)."
+        ),
+        examples=[3.0],
+    )
     seed: Optional[int] = Field(default=None, description="Optional deterministic seed.", examples=[42])
     num_inference_steps: Optional[int] = Field(default=None, description="Optional diffusion/sampling step count.", examples=[27])
     guidance_scale: Optional[float] = Field(default=None, description="Optional classifier-free guidance scale.", examples=[15.0])
@@ -2598,6 +2607,16 @@ def _audio_music_impl(request: Request, payload: AudioMusicRequest, *, path_prov
         output_spec["provider"] = selected_backend
     if data.get("duration_s") is not None:
         output_spec["duration_s"] = _optional_float(data.get("duration_s"), field="duration_s")
+    if data.get("seconds") is not None:
+        output_spec["seconds"] = _optional_float(data.get("seconds"), field="seconds")
+    for length_key in ("duration_s", "seconds"):
+        length = output_spec.get(length_key)
+        if length is not None and not (math.isfinite(length) and length > 0):
+            raise HTTPException(status_code=400, detail=f"{length_key} must be a positive number of seconds.")
+    if output_spec.get("seconds") is not None and output_spec.get("duration_s") is not None:
+        if output_spec["seconds"] != output_spec["duration_s"]:
+            raise HTTPException(status_code=400, detail="seconds and duration_s disagree; send one.")
+        output_spec.pop("duration_s")
     if data.get("guidance_scale") is not None:
         output_spec["guidance_scale"] = _optional_float(data.get("guidance_scale"), field="guidance_scale")
     if data.get("num_inference_steps") is not None:
@@ -2610,7 +2629,9 @@ def _audio_music_impl(request: Request, payload: AudioMusicRequest, *, path_prov
     core = _music_capability_core_for_request(data, path_provider=path_provider, caller_key=caller_key)
     try:
         result = core.generate(text=str(prompt), output=output_spec)
-        music_items = getattr(result, "outputs", {}).get("music", [])
+        # A sound effect (task text_to_audio) comes back under `sound`, music under `music`.
+        outputs = getattr(result, "outputs", {}) or {}
+        music_items = outputs.get("music") or outputs.get("sound") or []
         music_item = music_items[0] if music_items else None
         audio = getattr(music_item, "data", None)
         content_type = getattr(music_item, "content_type", None)

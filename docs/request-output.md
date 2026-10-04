@@ -20,6 +20,18 @@ resp = llm.generate(
 )
 ```
 
+A sound effect uses the `sound` output and takes its length in `seconds` (or `duration_s`); the
+route's `model` and the task reach the music plugin, and a sound effect without a length is 5
+seconds:
+
+```python
+resp = llm.generate(
+    text="laser gunshot",
+    output={"modality": "sound", "task": "text_to_audio", "seconds": 3, "format": "wav"},
+)
+clip = resp.outputs["sound"][0]
+```
+
 `request=` and the legacy `prompt` / `text` / `messages` / `media` kwargs normalize to the same
 internal contract. This keeps the public API compatible while giving Core one stable semantic
 request shape under the hood.
