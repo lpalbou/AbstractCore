@@ -482,6 +482,7 @@ Server auth:
 - `messages` (required): Array of message objects
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
+- `response_format` (optional): OpenAI structured outputs — `{"type": "text"}` (default), `{"type": "json_object"}` or `{"type": "json_schema", "json_schema": {...}}`. See [Structured outputs](#structured-outputs-response_format) below.
 - `agent_format` (optional, AbstractCore extension): Tool-call syntax output format for agentic clients (`"auto"|"openai"|"codex"|"qwen3"|"llama3"|"gemma"|"xml"|"passthrough"`). When omitted, the server auto-detects from user-agent + model heuristics.
 - `api_key` (deprecated/disabled, AbstractCore extension): Provider API keys are not accepted in request bodies. Configure provider keys on the server or use `X-AbstractCore-Provider-API-Key` for a per-request provider override. Select discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI convenience.
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
@@ -534,6 +535,50 @@ for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="", flush=True)
 ```
+
+#### Structured outputs (`response_format`)
+
+`POST /v1/chat/completions` (and the provider-specific route) accepts OpenAI's `response_format`
+on every provider:
+
+- `{"type": "json_object"}` — the answer is a JSON object.
+- `{"type": "json_schema", "json_schema": {"name": "invoice", "schema": {...}, "strict": true}}` —
+  the answer matches your JSON Schema. `name` uses letters, digits, `_` and `-` (up to 64), and the
+  root schema describes an object.
+
+Providers that can constrain decoding (Ollama, LM Studio, llama.cpp and OpenAI-compatible servers,
+MLX or Transformers with Outlines, Anthropic) receive your schema as is; other providers get it in
+the prompt. Every answer is validated against your schema through AbstractCore's
+[structured-output handler](structured-output.md), with feedback retries when it does not match.
+The validator covers the schema subset OpenAI structured outputs accept (types, `properties`,
+`required`, `additionalProperties`, `items`/`prefixItems`, `enum`/`const`, `anyOf`/`oneOf`/`allOf`,
+local `$ref` into `$defs`, length, size, `pattern` and numeric bounds); `format` and annotation
+keywords are accepted and not enforced.
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
+  -d '{
+    "model": "ollama/qwen3:4b",
+    "messages": [{"role": "user", "content": "Extract: Ada Lovelace, born 1815."}],
+    "response_format": {"type": "json_schema", "json_schema": {"name": "person", "strict": true,
+      "schema": {"type": "object", "properties": {"name": {"type": "string"}, "born": {"type": "integer"}},
+                 "required": ["name", "born"], "additionalProperties": false}}}
+  }'
+```
+
+The validated JSON is the message `content`. With `"stream": true` it arrives as one content chunk
+followed by the stop chunk and `[DONE]`, because the answer is validated before it is sent.
+
+| Status | `error.code` | When |
+|---|---|---|
+| `400` | `invalid_response_format` | The `response_format` is not usable (unknown `type`, missing `name` or `schema`, a schema that does not describe an object or is not valid); `error.param` names the field. Checked before any model loads. |
+| `400` | `unsupported_parameter` | `response_format` sent together with `tools`; send one or the other. |
+| `500` | `structured_output_invalid` | The model's answer still did not match the schema after the retries; the message names the first violation. |
+
+An unknown provider, or a model the provider reports missing, answers `404` with
+`code: "model_not_found"` in the same OpenAI error envelope.
 
 #### Provider `base_url` override (AbstractCore extension)
 

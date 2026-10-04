@@ -150,6 +150,10 @@ llm = create_llm("openai", model="gpt-4o-mini")
 result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
 ```
 
+Over the OpenAI-compatible server, send `response_format` (`{"type": "json_object"}` or a
+`json_schema`) to `POST /v1/chat/completions`; the answer is validated against your schema on every
+provider. See [Server: structured outputs](server.md#structured-outputs-response_format).
+
 See [Structured Output](structured-output.md).
 
 ## Why does structured output retry or fail validation?

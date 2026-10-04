@@ -4,6 +4,11 @@ All notable changes, one entry per build wave, each with its gate line
 (build/test/clippy state at the wave's close). Charter:
 `LAUNCH-PROMPT.md`.
 
+## [0.8.0] — 2026-10-04
+
+Released with AbstractCore 2.25.0. No screen or key changes: the crate is
+versioned with that AbstractCore release.
+
 ## [0.6.0] — 2026-10-01
 
 Released with AbstractCore 2.22.0, whose `abstractcore email discover` and

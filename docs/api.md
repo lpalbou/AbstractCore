@@ -255,6 +255,8 @@ print(result.bullets)
 
 See **[Structured Output](structured-output.md)**.
 
+Over HTTP, `POST /v1/chat/completions` accepts OpenAI's `response_format` (`json_object`, `json_schema`) on every provider and validates the answer against your schema; see [Server: structured outputs](server.md#structured-outputs-response_format).
+
 ## Media input
 
 Media handling is part of the light install. Pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeline). Media behavior is **policy-driven**:

@@ -873,6 +873,8 @@ graph TD
     E --> H
     Img --> H
     F --> I[Provider Discovery]
+    D -->|"response_format"| SO["Structured-output handler<br/>(schema validation + retries)"]
+    SO --> J
 
     H --> J[AbstractCore Library]
     I --> J
@@ -899,6 +901,7 @@ graph TD
 - **OpenAI Compatibility**: Drop-in replacement for OpenAI API clients
 - **Universal Provider Access**: Single API for all providers (OpenAI, Anthropic, Ollama, etc.)
 - **Format Conversion**: Automatic tool call format conversion for agentic CLIs
+- **Structured Outputs**: OpenAI `response_format` (`json_object`, `json_schema`) on `/v1/chat/completions` for every provider; the answer goes through the structured-output handler and is validated against the caller's schema (see [Server](server.md#structured-outputs-response_format))
 - **Streaming Support**: Server-sent events for real-time responses
 - **Model Discovery**: Dynamic model listing across all providers
 - **Embedding Support**: Multi-provider embedding generation (remote OpenAI-compatible providers plus local backends)

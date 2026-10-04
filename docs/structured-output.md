@@ -24,6 +24,8 @@ AbstractCore implements structured output generation using Pydantic models with 
 
 Structured output constrains LLM responses to conform to predefined schemas, enabling direct deserialization into typed objects. AbstractCore uses Pydantic BaseModel classes to define schemas and validate responses.
 
+Over HTTP, the [server](server.md#structured-outputs-response_format) exposes the same handler through OpenAI's `response_format` (`json_object` or `json_schema`) on `POST /v1/chat/completions`, for every provider.
+
 ### Basic Example
 
 ```python
@@ -1004,6 +1006,7 @@ retry = FeedbackRetry(max_attempts=3)
 - [Getting Started](getting-started.md#structured-output) - Quick introduction
 - [API Reference](api-reference.md) - Complete API documentation
 - [Examples](examples.md#structured-output-examples) - Real-world usage patterns
+- [Server: structured outputs](server.md#structured-outputs-response_format) - `response_format` over the OpenAI-compatible API
 - [Response Model Parameter Analysis](archive/structured-response-keyword.md) - Why `response_model`
 - [Native Implementation Test Results](archive/improved-structured-response.md) - Detailed test data
 

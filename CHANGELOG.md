@@ -5,12 +5,21 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.25.0] - 2026-10-04
 
 ### Added
 
+- `POST /v1/chat/completions` accepts OpenAI's `response_format` on every provider:
+  `{"type": "json_object"}` or `{"type": "json_schema", "json_schema": {"name", "schema", "strict"}}`.
+  Providers that constrain decoding receive the schema; every answer goes through the
+  structured-output handler and is validated against the caller's schema (feedback retries). An
+  unusable `response_format` answers `400 invalid_response_format`, `response_format` with `tools`
+  answers `400 unsupported_parameter`, and an answer that still does not match answers
+  `500 structured_output_invalid`. A streamed request receives the validated JSON as one chunk.
+  `abstractcore.structured.json_schema` (`response_model_for`, `validate_instance`) is the validator.
+
 - Console **About** (the *i* button in the top bar): the compact About card shared by every
-  AbstractFramework app (UI kit 0.7.0) with AbstractCore's version, the AbstractFramework and
+  AbstractFramework app (UI kit `AfAbout`) with AbstractCore's version, the AbstractFramework and
   AbstractGateway versions installed on this host, the links and the licence line; no package list.
   `abstractcore.utils.identity.about_card_html` (with `about_version_facts`, `about_links`) renders
   it; the kit's `af-about` CSS is vendored by `python -m abstractcore.console.theme_sync`.
@@ -26,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Hugging Face / MLX cache delete is planned on its own repo only. The cache API resolves a
   commit hash to the first repo that holds it, so a mirror or duplicated repo sharing a commit
   could be deleted in place of (or along with) the requested one.
+
+### Changed
+
+- Console theme CSS re-synced from UI kit 0.8.0. The terminal console crate
+  `abstractcore-console` is versioned 0.8.0 with this release.
 
 ## [2.24.0] - 2026-10-03
 

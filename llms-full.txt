@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-30
-Package version: 2.24.0
+Package version: 2.25.0
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -1025,7 +1025,8 @@ First-class support for:
 - media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
 - optional capability plugins (`core.voice/core.audio/core.vision/core.music/core.scene3d/core.camera`) for deterministic TTS/STT, generative vision, music, 3D generation, and real-camera piloting (via packages such as `abstractvoice`, `abstractvision`, `abstractmusic`, `abstract3d`, and `abstractcamera`)
 - glyph visual-text compression for long documents (**)
-- optional OpenAI-compatible `/v1` gateway server (multi-provider) and single-model endpoint
+- optional OpenAI-compatible `/v1` gateway server (multi-provider, including `response_format`
+  structured outputs validated against your schema) and single-model endpoint
 
 (*) Media input is policy-driven (no silent semantic changes). If a model doesn’t support images, AbstractCore can use a configured vision model to generate short visual observations and inject them into your text-only request (vision fallback). Audio/video attachments are also policy-driven (`audio_policy`, `video_policy`) and may require capability plugins for fallbacks. See [Media Handling](docs/media-handling-system.md) and [Centralized Config](docs/centralized-config.md).
 (**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (included in the light install).
@@ -2995,6 +2996,10 @@ llm = create_llm("openai", model="gpt-4o-mini")
 result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
 ```
 
+Over the OpenAI-compatible server, send `response_format` (`{"type": "json_object"}` or a
+`json_schema`) to `POST /v1/chat/completions`; the answer is validated against your schema on every
+provider. See [Server: structured outputs](docs/server.md#structured-outputs-response_format).
+
 See [Structured Output](docs/structured-output.md).
 
 ## Why does structured output retry or fail validation?
@@ -4520,6 +4525,8 @@ print(result.bullets)
 ```
 
 See **[Structured Output](docs/structured-output.md)**.
+
+Over HTTP, `POST /v1/chat/completions` accepts OpenAI's `response_format` (`json_object`, `json_schema`) on every provider and validates the answer against your schema; see [Server: structured outputs](docs/server.md#structured-outputs-response_format).
 
 ## Media input
 
@@ -6558,6 +6565,8 @@ graph TD
     E --> H
     Img --> H
     F --> I[Provider Discovery]
+    D -->|"response_format"| SO["Structured-output handler<br/>(schema validation + retries)"]
+    SO --> J
 
     H --> J[AbstractCore Library]
     I --> J
@@ -6584,6 +6593,7 @@ graph TD
 - **OpenAI Compatibility**: Drop-in replacement for OpenAI API clients
 - **Universal Provider Access**: Single API for all providers (OpenAI, Anthropic, Ollama, etc.)
 - **Format Conversion**: Automatic tool call format conversion for agentic CLIs
+- **Structured Outputs**: OpenAI `response_format` (`json_object`, `json_schema`) on `/v1/chat/completions` for every provider; the answer goes through the structured-output handler and is validated against the caller's schema (see [Server](docs/server.md#structured-outputs-response_format))
 - **Streaming Support**: Server-sent events for real-time responses
 - **Model Discovery**: Dynamic model listing across all providers
 - **Embedding Support**: Multi-provider embedding generation (remote OpenAI-compatible providers plus local backends)
@@ -8812,6 +8822,8 @@ AbstractCore implements structured output generation using Pydantic models with 
 
 Structured output constrains LLM responses to conform to predefined schemas, enabling direct deserialization into typed objects. AbstractCore uses Pydantic BaseModel classes to define schemas and validate responses.
 
+Over HTTP, the [server](docs/server.md#structured-outputs-response_format) exposes the same handler through OpenAI's `response_format` (`json_object` or `json_schema`) on `POST /v1/chat/completions`, for every provider.
+
 ### Basic Example
 
 ```python
@@ -9792,6 +9804,7 @@ retry = FeedbackRetry(max_attempts=3)
 - [Getting Started](docs/getting-started.md#structured-output) - Quick introduction
 - [API Reference](docs/api-reference.md) - Complete API documentation
 - [Examples](docs/examples.md#structured-output-examples) - Real-world usage patterns
+- [Server: structured outputs](docs/server.md#structured-outputs-response_format) - `response_format` over the OpenAI-compatible API
 - [Response Model Parameter Analysis](docs/archive/structured-response-keyword.md) - Why `response_model`
 - [Native Implementation Test Results](docs/archive/improved-structured-response.md) - Detailed test data
 
@@ -25122,6 +25135,7 @@ Server auth:
 - `messages` (required): Array of message objects
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
+- `response_format` (optional): OpenAI structured outputs — `{"type": "text"}` (default), `{"type": "json_object"}` or `{"type": "json_schema", "json_schema": {...}}`. See [Structured outputs](docs/server.md#structured-outputs-response_format) below.
 - `agent_format` (optional, AbstractCore extension): Tool-call syntax output format for agentic clients (`"auto"|"openai"|"codex"|"qwen3"|"llama3"|"gemma"|"xml"|"passthrough"`). When omitted, the server auto-detects from user-agent + model heuristics.
 - `api_key` (deprecated/disabled, AbstractCore extension): Provider API keys are not accepted in request bodies. Configure provider keys on the server or use `X-AbstractCore-Provider-API-Key` for a per-request provider override. Select discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI convenience.
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
@@ -25174,6 +25188,50 @@ for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="", flush=True)
 ```
+
+#### Structured outputs (`response_format`)
+
+`POST /v1/chat/completions` (and the provider-specific route) accepts OpenAI's `response_format`
+on every provider:
+
+- `{"type": "json_object"}` — the answer is a JSON object.
+- `{"type": "json_schema", "json_schema": {"name": "invoice", "schema": {...}, "strict": true}}` —
+  the answer matches your JSON Schema. `name` uses letters, digits, `_` and `-` (up to 64), and the
+  root schema describes an object.
+
+Providers that can constrain decoding (Ollama, LM Studio, llama.cpp and OpenAI-compatible servers,
+MLX or Transformers with Outlines, Anthropic) receive your schema as is; other providers get it in
+the prompt. Every answer is validated against your schema through AbstractCore's
+[structured-output handler](docs/structured-output.md), with feedback retries when it does not match.
+The validator covers the schema subset OpenAI structured outputs accept (types, `properties`,
+`required`, `additionalProperties`, `items`/`prefixItems`, `enum`/`const`, `anyOf`/`oneOf`/`allOf`,
+local `$ref` into `$defs`, length, size, `pattern` and numeric bounds); `format` and annotation
+keywords are accepted and not enforced.
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
+  -d '{
+    "model": "ollama/qwen3:4b",
+    "messages": [{"role": "user", "content": "Extract: Ada Lovelace, born 1815."}],
+    "response_format": {"type": "json_schema", "json_schema": {"name": "person", "strict": true,
+      "schema": {"type": "object", "properties": {"name": {"type": "string"}, "born": {"type": "integer"}},
+                 "required": ["name", "born"], "additionalProperties": false}}}
+  }'
+```
+
+The validated JSON is the message `content`. With `"stream": true` it arrives as one content chunk
+followed by the stop chunk and `[DONE]`, because the answer is validated before it is sent.
+
+| Status | `error.code` | When |
+|---|---|---|
+| `400` | `invalid_response_format` | The `response_format` is not usable (unknown `type`, missing `name` or `schema`, a schema that does not describe an object or is not valid); `error.param` names the field. Checked before any model loads. |
+| `400` | `unsupported_parameter` | `response_format` sent together with `tools`; send one or the other. |
+| `500` | `structured_output_invalid` | The model's answer still did not match the schema after the retries; the message names the first violation. |
+
+An unknown provider, or a model the provider reports missing, answers `404` with
+`code: "model_not_found"` in the same OpenAI error envelope.
 
 #### Provider `base_url` override (AbstractCore extension)
 
