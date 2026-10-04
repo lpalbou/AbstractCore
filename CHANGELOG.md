@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The music plugin floor is `abstractmusic>=0.1.16` (base, `[apple]` and `[gpu]`): 0.1.16 runs the requested Stable Audio 3 checkpoint (the SFX checkpoint for sound effects) for the requested `seconds`.
+
 - Console theme CSS re-synced from UI kit 0.8.0. The terminal console crate
   `abstractcore-console` is versioned 0.8.0 with this release.
 

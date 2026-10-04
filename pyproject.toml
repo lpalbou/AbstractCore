@@ -98,7 +98,7 @@ dependencies = [
     "keyring>=24.0.0",
     "abstractvoice>=0.13.2",
     "abstractvision>=0.3.33",
-    "abstractmusic>=0.1.15; python_version >= '3.10'",
+    "abstractmusic>=0.1.16; python_version >= '3.10'",
     "abstract3d>=0.1.0; python_version >= '3.10'",
 ]
 
@@ -168,7 +168,7 @@ apple = [
     "abstractvoice[all-apple]>=0.13.2",
     "omnivoice>=0.1.5",
     "abstractvision[all-apple]>=0.3.33",
-    "abstractmusic[all-apple]>=0.1.15",
+    "abstractmusic[all-apple]>=0.1.16",
     # Headless-browser rendering (`browser_probe`, JS rendering in fetch_url). Kept out of light
     # (a browser is never a base-install cost); the browser binary is a one-time step:
     # python -m playwright install --only-shell chromium
@@ -198,7 +198,7 @@ gpu = [
     "abstractvoice[all-gpu]>=0.13.2",
     "omnivoice>=0.1.5",
     "abstractvision[all-gpu]>=0.3.33",  # 0.3.32: no MLX-Gen; stable-diffusion.cpp marked out on Windows; 0.3.33: sequential CPU offload when model offload does not fit
-    "abstractmusic[all-gpu]>=0.1.15",
+    "abstractmusic[all-gpu]>=0.1.16",
     # Headless-browser rendering (`browser_probe`, JS rendering in fetch_url). Kept out of light
     # (a browser is never a base-install cost); the browser binary is a one-time step:
     # python -m playwright install --only-shell chromium
