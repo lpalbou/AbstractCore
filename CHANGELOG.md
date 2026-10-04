@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spawning call refuse; `host_policy()` / `host_sandbox_kind()` report it. Results carry
   `sandbox: {kind, …}` and a `Sandbox: …` line. Library use without a host policy is unchanged.
 
+- CI: a `linux-sandbox` job installs bubblewrap on Ubuntu and runs `tests/tools/test_sandbox_linux.py`
+  (bwrap and Landlock); the job fails when any of those tests is skipped, so the Linux sandbox is verified
+  on a real Linux host on every push to main and every pull request.
+
 - `POST /v1/chat/completions` accepts OpenAI's `response_format` on every provider:
   `{"type": "json_object"}` or `{"type": "json_schema", "json_schema": {"name", "schema", "strict"}}`.
   Providers that constrain decoding receive the schema; every answer goes through the
