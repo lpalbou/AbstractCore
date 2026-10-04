@@ -2385,7 +2385,11 @@ _ABOUT_DIALOG_CSS = """
 dialog.acc-about { max-width: min(460px, calc(100vw - 32px)); margin: auto; color: var(--text-primary, #eee); }
 dialog.acc-about::backdrop { background: rgba(0, 0, 0, 0.45); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 dialog.acc-about[open] { display: block; padding: 16px 18px; border-radius: var(--radius-lg, 12px); border: 1px solid var(--ui-border-1, rgba(255,255,255,.12)); background: var(--bg-card, var(--bg-secondary, #16213e)); box-shadow: var(--ui-shadow-1, 0 8px 30px rgba(0,0,0,.35)); }
-@media (pointer: coarse) { .acc-icon-btn { width: var(--tap-min, 44px); height: var(--tap-min, 44px); } }
+@media (pointer: coarse) {
+  .acc-icon-btn, .af-about-card__close { width: var(--tap-min, 44px); height: var(--tap-min, 44px); }
+  .af-about-card__links { gap: 0 18px; }
+  .af-about-card__link { display: inline-flex; align-items: center; min-height: var(--tap-min, 44px); font-size: var(--font-size-body, 16px); }
+}
 """
 
 
