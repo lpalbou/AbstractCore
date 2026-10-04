@@ -178,7 +178,7 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 - `edit_file` - Edit files using pattern matching and replacement
 - `web_search` - Search the web using DuckDuckGo. See [Web and Document Tools](web-tools.md).
 - `skim_websearch` - Smaller, optionally keyword-filtered search result list. See [Web and Document Tools](web-tools.md).
-- `execute_command` - Execute shell commands safely with security controls
+- `execute_command` - Execute shell commands safely with security controls, inside the run's OS sandbox (see *Command sandbox* below)
 - `browser_probe` - Render a URL or local HTML file in a **headless browser** (Playwright) and verify it actually DISPLAYS — the blank-page class that passes `read_file` review (an agent writes an HTML/JS app, the source looks right, the page renders empty). Returns a `PASS`/`FAIL` verdict with navigation outcome, HTTP status, `readyState`, title, visible-text stats, per-check results (`require_nonblank`, `expect_selector`, `expect_text`), captured console errors + uncaught exceptions (a page can render and still be broken), and an optional screenshot path to feed `analyze_media` for a visual pass. Runs in a worker subprocess with a hard wall-clock kill (never hangs on an infinite-JS-loop page, never leaks a browser); readiness is a content signal, never `networkidle` (refused with teaching) or `sleep`. Local `file://` targets **block outbound network by default** (a generated page must not phone home; blocked requests are reported) and — a browser limitation the report detects and flags — **cannot load ES modules (`<script type="module">`) or `fetch()`** (CORS on the `null` origin), so a modern module/fetch app renders empty as a file: serve it (e.g. `python -m http.server`) and probe the `http://` URL. Requires Playwright, which the light install does not include (`abstractcore[apple]` and `abstractcore[gpu]` do): install one of those, then `python -m playwright install --only-shell chromium` (Linux also needs `python -m playwright install --with-deps chromium`); an absent dependency returns an actionable two-step install hint, never a traceback.
 - `analyze_media` - Answer a question about an image. Delegated sight: the session model's own vision when available, else the configured vision fallback. Returns bounded text — never raw image data into your context
 
@@ -230,12 +230,28 @@ it later.
 
 Two properties are stated in the tool schemas and matter operationally:
 
-- A session is **not a sandbox**: it carries the same trust level as `execute_command`.
-  In AbstractRuntime hosts these tools require approval by default and are excluded from
-  the default toolsets; set `ABSTRACT_ENABLE_SHELL_TOOLS=1` to enable them.
+- A session runs inside the **same OS sandbox as `execute_command`**: when the host stamps the
+  run's workspace set, the whole session (and everything it starts) is bound to the run's
+  workspaces, so `cd` cannot leave them; with no sandbox available the call is refused (see
+  [Command sandbox](#command-sandbox)). In AbstractRuntime hosts these tools require approval by
+  default and are excluded from the default toolsets; set `ABSTRACT_ENABLE_SHELL_TOOLS=1` to enable
+  them.
 - A session is **not durable**: it never survives a host restart. Every fresh session
   announces itself with a "new shell session" notice in the output so callers never
   assume state carried over.
+
+**Command sandbox:**
+
+`execute_command`, `shell_exec` and AbstractRuntime's `local_helper_start` run inside an OS
+sandbox built from the run's effective workspace set (`abstractcore.tools.sandbox`): macOS
+`sandbox-exec`, Linux `bwrap`, or Linux Landlock for "Deny everything, allow listed workspaces".
+Refused workspaces, built-in refusals (credentials, the gateway data folder) and, under the
+allow-list posture, all other user data are unreadable; writes are limited to the read & write
+workspaces, the run's private workspace and its private `TMPDIR`. The command string is never
+parsed — `cd`, `$(…)`, symlinks and scripts are stopped by the kernel. With no sandbox on the host,
+commands are refused with one sentence (the run continues) unless the host allowed unsandboxed
+commands. The tool result carries `sandbox: {kind, …}` and a `Sandbox: …` line. Details:
+[`abstractcore/tools/README.md`](../abstractcore/tools/README.md) (*Command sandbox*).
 
 **Email tools (opt-in):**
 

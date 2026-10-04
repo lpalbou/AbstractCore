@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Command sandbox** (`abstractcore.tools.sandbox`): `execute_command` and the persistent
+  `shell_exec` session run inside an OS sandbox built from the run's effective workspace set, which
+  the host stamps as the hidden `_sandbox` argument (`SandboxSpec`: private workspace, posture
+  `allowed_only` | `any_except_denied`, default mode, allowed rows ro/rw, refused rows, built-in
+  refusals and the host's exceptions). macOS: `sandbox-exec` with a generated profile; Linux:
+  `bwrap`, or Landlock for the allow-list posture. The most specific row wins; built-in refusals
+  are absolute. No sandbox available: the call returns `success: false` with one sentence and runs
+  nothing, unless the host allowed unsandboxed commands. `configure_host(env=…,
+  unsandboxed_commands_allowed=…)` (set once by the host at boot) gives the scrubbed environment
+  every command starts from (plus a private `TMPDIR` in the run's workspace) and makes an unstamped
+  spawning call refuse; `host_policy()` / `host_sandbox_kind()` report it. Results carry
+  `sandbox: {kind, …}` and a `Sandbox: …` line. Library use without a host policy is unchanged.
+
 - `POST /v1/chat/completions` accepts OpenAI's `response_format` on every provider:
   `{"type": "json_object"}` or `{"type": "json_schema", "json_schema": {"name", "schema", "strict"}}`.
   Providers that constrain decoding receive the schema; every answer goes through the

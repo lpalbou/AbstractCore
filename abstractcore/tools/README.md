@@ -645,9 +645,10 @@ def execute_command(
     timeout: int = 300,
     capture_output: bool = True,
     require_confirmation: bool = False,
-    allow_dangerous: bool = False
-) -> str:
-    """Execute shell commands with security controls"""
+    allow_dangerous: bool = False,
+    _sandbox: dict = None,  # hidden; stamped by the host (run's workspace set)
+) -> dict:
+    """Execute shell commands with security controls, inside the run's OS sandbox"""
 ```
 
 **Security Features**:
@@ -656,6 +657,49 @@ def execute_command(
 - Risk assessment and confirmation
 - Comprehensive validation with multiple safety layers
 - Only bypassed with explicit `allow_dangerous=True`
+- **OS sandbox bound to the run's workspaces** (see *Command sandbox* below)
+
+#### Command sandbox (`sandbox.py`)
+
+Every process-spawning tool — `execute_command`, `shell_exec` (the whole persistent session) and
+AbstractRuntime's `local_helper_start` and entity exec tool — runs inside an operating-system
+sandbox built from the run's effective workspace set. The command string is never parsed: `cd`,
+`$(…)`, symlinks, hard links, interpreters and scripts are stopped by the kernel.
+
+- The host (AbstractRuntime) stamps the set as the hidden `_sandbox` argument (paths only):
+  `SandboxSpec(private_workspace, posture, default_mode, allowed=[(path, ro|rw)], refused,
+  builtin_refused, builtin_allowed)`. `build_sandbox(spec).wrap(command, cwd)` returns the argv and
+  environment to run.
+- **"Deny everything, allow listed workspaces"** (`allowed_only`): user data (`/Users`, `/Volumes`,
+  `/home`, `$HOME`, …) is unreadable except the allowed rows and the run's private workspace; only
+  the read & write rows, the private workspace and its private TMPDIR are writable. System roots
+  and the host's own Python stay readable.
+- **"Allow everything, refuse listed workspaces"** (`any_except_denied`): everything is readable
+  except the refused rows; with a read-only default only the read & write rows, the private
+  workspace and its TMPDIR are writable.
+- **Nesting:** the most specific row wins (longest real-path prefix; a refusal wins a tie). Built-in
+  refusals (the gateway data folder, credential folders) are absolute, except the host's own
+  exceptions (`builtin_allowed`, e.g. the run's folder inside the data folder).
+- **Backends:** macOS `/usr/bin/sandbox-exec` with a generated SBPL profile (last matching rule
+  wins, so rules are emitted from the least to the most specific; network and process execution
+  allowed; Apple Events and LaunchServices denied, since they would run code outside the sandbox);
+  Linux `bwrap` (bind mounts, tmpfs over refused folders); Linux Landlock for the allow-list
+  posture when bwrap is absent (kernel ≥ 5.13; a refused row inside an allowed one cannot be
+  expressed and refuses).
+- **Fail closed:** with no sandbox available the tool returns `success: false` with one sentence
+  ("Commands are not sandboxed on this gateway host, so they are refused: …") and the run continues,
+  unless the host allowed unsandboxed commands (`configure_host(unsandboxed_commands_allowed=True)`,
+  which AbstractGateway sets from `serve --unsandboxed-commands`; never an environment variable).
+- **Host policy:** `configure_host(env=<scrubbed env>, unsandboxed_commands_allowed=…)` is called once
+  by the host at boot. The command then starts from that environment only (never `os.environ`) plus
+  a private `TMPDIR=<private workspace>/.tmp`, and a spawning call without a `_sandbox` stamp is
+  refused. `host_policy()` and `host_sandbox_kind()` report the state (variable names only).
+- **Evidence:** the result carries `sandbox: {kind, posture, default_mode, private_workspace, tmpdir,
+  allowed, refused, builtin_refused: <count>}` and the rendered text a line such as
+  `Sandbox: macOS sandbox-exec` or `Sandbox: none — commands refused on this host`.
+- Library use with no host policy and no stamp keeps the historical behaviour (no sandbox).
+- Not covered: `browser_probe` runs a fixed browser worker (its `target` is walled by the runtime's
+  file policy; Chromium cannot run nested inside sandbox-exec without disabling its own sandbox).
 
 **Rich Metadata**:
 All built-in tools include:
