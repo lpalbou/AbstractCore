@@ -30,7 +30,7 @@ Embedding contract (the seam with abstractgateway)::
 from __future__ import annotations
 
 import json
-from typing import Dict
+from typing import Any, Dict
 
 FRAGMENT_KINDS = ("models", "engines")
 
@@ -2247,6 +2247,25 @@ _JS_TEMPLATE = r"""
     const syncForget = () => { if (forget) forget.hidden = !getToken(); };
     if (forget) forget.addEventListener("click", () => { setToken(""); syncForget(); });
 
+    // About (kit 0.7.0 compact card, rendered by the server): a native modal
+    // dialog; a click on the backdrop (the dialog element itself) closes it.
+    const aboutDialog = document.getElementById("acc-about");
+    const aboutOpen = document.getElementById("acc-about-open");
+    if (aboutDialog && aboutOpen && typeof aboutDialog.showModal === "function") {
+      aboutOpen.addEventListener("click", () => {
+        aboutDialog.showModal();
+        const close = aboutDialog.querySelector('[data-action="close-about"]');
+        if (close) close.focus();
+      });
+      aboutDialog.addEventListener("click", (ev) => {
+        const t = ev.target;
+        if (t === aboutDialog || (t && t.closest && t.closest('[data-action="close-about"]'))) aboutDialog.close();
+      });
+      aboutDialog.addEventListener("close", () => aboutOpen.focus());
+    } else if (aboutOpen) {
+      aboutOpen.hidden = true;
+    }
+
     const healthDot = document.getElementById("acc-health-dot");
     const healthText = document.getElementById("acc-health-text");
     async function health() {
@@ -2361,12 +2380,73 @@ def fragment(kind: str) -> Dict[str, str]:
     return {"html": _TEMPLATES[k], "js": _console_js(), "css": _FRAGMENT_CSS.strip() + "\n"}
 
 
+_ABOUT_DIALOG_CSS = """
+.acc-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; }
+dialog.acc-about { max-width: min(460px, calc(100vw - 32px)); margin: auto; color: var(--text-primary, #eee); }
+dialog.acc-about::backdrop { background: rgba(0, 0, 0, 0.45); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+dialog.acc-about[open] { display: block; padding: 16px 18px; border-radius: var(--radius-lg, 12px); border: 1px solid var(--ui-border-1, rgba(255,255,255,.12)); background: var(--bg-card, var(--bg-secondary, #16213e)); box-shadow: var(--ui-shadow-1, 0 8px 30px rgba(0,0,0,.35)); }
+@media (pointer: coarse) { .acc-icon-btn { width: var(--tap-min, 44px); height: var(--tap-min, 44px); } }
+"""
+
+
+def console_about_versions() -> Dict[str, Any]:
+    """Versions the AbstractCore console's About states: this AbstractCore,
+    and the AbstractFramework and AbstractGateway installed on this host
+    (the console is served by ``abstractcore serve``, not through a gateway).
+    A missing distribution is said ("not installed on this host"), never
+    invented. No package list (operator, round 5)."""
+    from importlib import metadata
+
+    from ..utils.identity import installed_version
+
+    def _version(dist: str) -> str:
+        try:
+            return installed_version(dist)
+        except metadata.PackageNotFoundError:
+            return ""
+
+    framework = _version("abstractframework")
+    gateway = _version("abstractgateway")
+    return {
+        "core": _version("abstractcore") or "version not reported",
+        "framework": framework or None,
+        "framework_note": "" if framework else "not installed on this host",
+        "gateway": gateway or None,
+        "gateway_note": "" if gateway else "not installed on this host",
+    }
+
+
+def console_about_card_html() -> str:
+    """The About card of the standalone console: the kit's compact card markup
+    (`abstractcore.utils.identity.about_card_html`, the `AfAbout` twin) with a
+    Close button in its heading row."""
+    from ..utils.identity import about_card_html, app_identity
+
+    v = console_about_versions()
+    close = (
+        '<button type="button" class="af-about-card__close" data-action="close-about" aria-label="Close" title="Close">'
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>'
+        "</button>"
+    )
+    return about_card_html(
+        app_identity("abstractcore", v["core"]),
+        v["framework"],
+        v["gateway"],
+        framework_note=v["framework_note"],
+        gateway_note=v["gateway_note"],
+        title_id="acc-about-title",
+        action_html=close,
+    )
+
+
 def render_console_html(api_base: str = "/acore", title: str = "AbstractCore Console") -> str:
     """The standalone console page (Overview, Models, Engines, Providers, Email)."""
     from html import escape
 
-    from .themes import KIT_FORM_CSS, KIT_LIGHT_THEME_IDS, KIT_RESPONSIVE_CSS, KIT_ROOT_CSS, KIT_SWITCH_CSS, KIT_THEME_CSS, KIT_THEME_SPECS
+    from .themes import KIT_ABOUT_CSS, KIT_FORM_CSS, KIT_LIGHT_THEME_IDS, KIT_RESPONSIVE_CSS, KIT_ROOT_CSS, KIT_SWITCH_CSS, KIT_THEME_CSS, KIT_THEME_SPECS
 
+    about_card = console_about_card_html()
     base = str(api_base or "").rstrip("/")
     config = {
         "apiBase": base,
@@ -2394,6 +2474,10 @@ def render_console_html(api_base: str = "/acore", title: str = "AbstractCore Con
    tabs): GENERATED verbatim copies (themes.py KIT_SWITCH_CSS, KIT_FORM_CSS). */
 {KIT_SWITCH_CSS}
 {KIT_FORM_CSS}
+/* About: the kit's compact card (themes.py KIT_ABOUT_CSS, GENERATED) in a
+   native modal dialog element (Escape + focus containment by the browser). */
+{KIT_ABOUT_CSS}
+{_ABOUT_DIALOG_CSS}
 {_PAGE_CSS}
 {_FRAGMENT_CSS}
 {_EMAIL_CSS}
@@ -2409,7 +2493,9 @@ def render_console_html(api_base: str = "/acore", title: str = "AbstractCore Con
     <span class="af-switch__text"><span class="af-switch__label">Dark theme</span></span>
   </button>
   <button type="button" id="acc-forget-token" hidden title="Forget the server token stored in this tab">Forget token</button>
+  <button type="button" id="acc-about-open" class="acc-icon-btn" aria-haspopup="dialog" aria-controls="acc-about" aria-label="About AbstractCore" title="About"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></button>
 </header>
+<dialog id="acc-about" class="af-appearance af-about acc-about" aria-labelledby="acc-about-title">{about_card}</dialog>
 <nav class="acc-tabs" role="tablist" aria-label="Console sections">
   <button type="button" role="tab" id="acc-tab-button-overview" aria-controls="acc-tab-overview" aria-selected="true">Overview</button>
   <button type="button" role="tab" id="acc-tab-button-catalog" aria-controls="acc-tab-catalog" aria-selected="false">Models</button>

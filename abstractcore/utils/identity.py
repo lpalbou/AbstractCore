@@ -213,12 +213,87 @@ def about_html(identity: AppIdentity, extra: Optional[Mapping[str, str]] = None)
 __all__ = [
     "AppIdentity",
     "FrameworkIdentity",
+    "about_card_html",
     "about_fields",
     "about_html",
     "about_lines",
+    "about_links",
+    "about_version_facts",
     "app_identity",
     "framework_identity",
     "gateway_version_rows",
     "installed_version",
     "known_app_ids",
 ]
+
+
+# --- Compact About card (ui-kit 0.7.0 `AfAbout` twin) -------------------------
+#
+# Content rule (operator, round 5): the app's name and version, the framework
+# version, the gateway version, the links (website, source, docs, issues,
+# feedback, contact) and ONE author/licence line. Never a package list.
+
+
+def about_version_facts(
+    framework: Optional[str],
+    gateway: Optional[str],
+    framework_note: str = "",
+    gateway_note: str = "",
+) -> List[Tuple[str, str]]:
+    """The two version facts of an About card, as the kit's `aboutVersionFacts`."""
+    fw = framework.strip() if isinstance(framework, str) else ""
+    gw = gateway.strip() if isinstance(gateway, str) else ""
+    return [
+        ("AbstractFramework", fw or (framework_note.strip() or "not reported")),
+        ("AbstractGateway", gw or (gateway_note.strip() or "not connected")),
+    ]
+
+
+def about_links(identity: AppIdentity) -> List[Tuple[str, str, str]]:
+    """``(id, label, href)`` of an About card's links, as the kit's `aboutLinks`."""
+    fw = framework_identity()
+    return [
+        ("website", "Website", identity.website),
+        ("source", "Source", identity.repo),
+        ("docs", "Docs", identity.docs),
+        ("issues", "Issues", identity.issues),
+        ("feedback", "Feedback", identity.feedback),
+        ("contact", "Contact", f"mailto:{fw.contact_email}"),
+    ]
+
+
+def about_card_html(
+    identity: AppIdentity,
+    framework: Optional[str],
+    gateway: Optional[str],
+    *,
+    framework_note: str = "",
+    gateway_note: str = "",
+    title_id: str = "",
+    action_html: str = "",
+) -> str:
+    """The compact About card markup, identical in structure and class names
+    to the kit's `AfAbout` (styled by the kit's vendored ``af-about`` CSS).
+    ``action_html`` (trusted markup, e.g. a Close button) ends the heading row."""
+    fw = framework_identity()
+    tid = f' id="{_escape(title_id)}"' if title_id else ""
+    facts = "".join(
+        f'<div class="af-about-card__fact"><dt>{_escape(label)}</dt><dd>{_escape(text)}</dd></div>'
+        for label, text in about_version_facts(framework, gateway, framework_note, gateway_note)
+    )
+    links = []
+    for link_id, label, href in about_links(identity):
+        title = href[len("mailto:"):] if href.startswith("mailto:") else href
+        extra = "" if href.startswith("mailto:") else ' target="_blank" rel="noopener noreferrer"'
+        links.append(
+            f'<a class="af-about-card__link" data-link="{link_id}" href="{_escape(href)}" title="{_escape(title)}"{extra}>{_escape(label)}</a>'
+        )
+    return (
+        f'<div class="af-about-card" data-app="{_escape(identity.id)}">'
+        f'<div class="af-about-card__head"><h2 class="af-about-card__name"{tid}>{_escape(identity.name)} '
+        f'<span class="af-about-card__version">{_escape(identity.version)}</span></h2>{action_html}</div>'
+        f'<dl class="af-about-card__versions">{facts}</dl>'
+        f'<nav class="af-about-card__links" aria-label="{_escape(identity.name)} links">{"".join(links)}</nav>'
+        f'<p class="af-about-card__legal">{_escape(fw.copyright)}</p>'
+        "</div>"
+    )

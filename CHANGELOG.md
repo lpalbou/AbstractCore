@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Console **About** (the *i* button in the top bar): the compact About card shared by every
+  AbstractFramework app (UI kit 0.7.0) with AbstractCore's version, the AbstractFramework and
+  AbstractGateway versions installed on this host, the links and the licence line; no package list.
+  `abstractcore.utils.identity.about_card_html` (with `about_version_facts`, `about_links`) renders
+  it; the kit's `af-about` CSS is vendored by `python -m abstractcore.console.theme_sync`.
+
 - `models delete huggingface org/repo:QUANT` (and the Gateway's Models-page Delete) removes only
   that GGUF quant's files and keeps the repo's other quants; the whole repo goes when it was the
   last model file set. A quant that is not in the cache answers `not_found`.

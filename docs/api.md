@@ -409,6 +409,10 @@ rows = gateway_version_rows({"abstractgateway": "0.4.2", "abstractframework": "0
 - `about_fields()` returns the ordered `(label, value)` rows (application, framework, author,
   copyright, website, source, documentation, issues, feedback, contact); `about_lines()` renders
   them as `label: value` text and `about_html()` as HTML with links.
+- `about_card_html(identity, framework, gateway, *, framework_note="", gateway_note="")` renders
+  the compact About card (the same markup as the UI kit's `AfAbout`, ui-kit 0.7.0): name and
+  version, the two versions (`about_version_facts`), the six links (`about_links`) and the
+  licence line, with no package list. The AbstractCore console uses it.
 - `gateway_version_rows(payload, error=None)` turns a `GET /api/gateway/about` payload into the
   same gateway rows the web applications show; an error or a payload without a gateway version
   gives a single `Gateway → unavailable (...)` row.

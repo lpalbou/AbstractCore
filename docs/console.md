@@ -136,6 +136,12 @@ The console uses the AbstractFramework UI kit themes. By default it follows your
 or dark preference; the top bar has a theme picker (every kit theme) and a light/dark toggle. The
 choice is stored in `localStorage`.
 
+**About** (the *i* button at the end of the top bar) opens the compact About card every
+AbstractFramework app shows: AbstractCore and its version, the AbstractFramework and AbstractGateway
+versions installed on this host (or "not installed on this host"), one row of links (Website,
+Source, Docs, Issues, Feedback, Contact) and the copyright and licence line. It lists no packages.
+Escape, the Close button or a click outside closes it.
+
 ## Responsive layout
 
 The console works in any browser window and on phones and tablets. The tab strip scrolls
