@@ -245,7 +245,7 @@ def test_hf_delete_never_touches_another_repo_that_shares_a_commit_hash(host, mo
     # resolves a hash to the FIRST repo holding it, across the whole cache.
     import dataclasses
 
-    import huggingface_hub
+    huggingface_hub = pytest.importorskip("huggingface_hub")
 
     mine = make_hf_repo(host["hf"], "mlx-community/Qwen3-0.6B-4bit", {"model.safetensors": b"m" * 351})
     other = make_hf_repo(host["hf"], "unsloth/Qwen3-0.6B-GGUF", {"Qwen3-0.6B-Q4_K_M.gguf": b"q" * 500})
