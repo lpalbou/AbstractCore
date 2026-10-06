@@ -254,6 +254,11 @@ def test_bwrap_argv_order_and_masks(tree):
     assert argv[i_mask + 1] == str(tree / "parent")
     i_child = [i for i, a in enumerate(argv) if a == str(tree / "parent/child")][0]
     assert i_mask < i_child and argv[i_child - 1] == "--bind"
+    # The mask is made read-only only AFTER the child is bound inside it (bwrap creates the
+    # child's mount point in the tmpfs; a read-only tmpfs refused it on Linux).
+    i_remount = [i for i, a in enumerate(argv) if a == "--remount-ro" and argv[i + 1] == str(tree / "parent")]
+    assert len(i_remount) == 1 and i_remount[0] > i_child, argv
+    assert argv[i_mask + 2] != "--remount-ro"
     assert argv[argv.index(str(tree / "ro")) - 1] == "--ro-bind"
     ssh = str(tree / "home/.ssh")
     assert argv[argv.index(ssh) - 1] == "--tmpfs"
@@ -282,3 +287,34 @@ def test_describe_counts_builtin_never_lists_them(tree):
     d = build_sandbox(_spec(tree)).describe()
     assert d["builtin_refused"] == 1
     assert str(tree / "home/.ssh") not in json.dumps(d)
+
+
+def test_bwrap_masks_are_remounted_read_only_after_every_mount(tree):
+    """R14.1 (backlog 1002 item 1): every mask is remounted read-only once, after all binds,
+    unless a later rule of the very same path re-bound it."""
+    (tree / "parent/child/sub/deeper").mkdir(parents=True, exist_ok=True)
+    spec = _spec(
+        tree,
+        allowed=(SandboxRow(str(tree / "parent/child"), "rw"), SandboxRow(str(tree / "parent/child/sub/deeper"), "ro")),
+        refused=(str(tree / "parent"), str(tree / "parent/child/sub")),
+    )
+    argv = sb.bwrap_argv(spec)
+    last_bind = max(i for i, a in enumerate(argv) if a in ("--bind", "--ro-bind") and argv[i + 1] != "/")
+    remounts = [argv[i + 1] for i, a in enumerate(argv) if a == "--remount-ro"]
+    assert remounts and all(i > last_bind for i, a in enumerate(argv) if a == "--remount-ro"), argv
+    for masked in (str(tree / "parent"), str(tree / "parent/child/sub"), str(tree / "home/.ssh")):
+        assert remounts.count(masked) == 1, (masked, argv)
+    # Order of masks and binds is still least specific first.
+    order = [argv[i + 1] for i, a in enumerate(argv) if a in ("--tmpfs", "--bind", "--ro-bind") and argv[i + 1].startswith(str(tree / "parent"))]
+    assert order == [str(tree / "parent"), str(tree / "parent/child"), str(tree / "parent/child/sub"), str(tree / "parent/child/sub/deeper")], order
+
+
+def test_landlock_grants_an_allowed_child_of_a_refused_parent(tree, monkeypatch):
+    """Landlock only allows: the child is granted, the refused parent never is (and the spec is expressible)."""
+    monkeypatch.setattr(sb, "host_sandbox_kind", lambda posture="allowed_only": sb.KIND_LANDLOCK)
+    spec = _spec(tree, posture="allowed_only", allowed=(SandboxRow(str(tree / "parent/child"), "rw"),), refused=(str(tree / "parent"),))
+    box = build_sandbox(spec)
+    assert box.kind == sb.KIND_LANDLOCK and not box.refuses, box.describe()
+    rules = dict(sb.landlock_rules(spec))
+    assert rules[str(tree / "parent/child")] == "rw"
+    assert str(tree / "parent") not in rules

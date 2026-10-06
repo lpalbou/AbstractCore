@@ -118,3 +118,60 @@ def test_landlock_refuses_any_except_posture(t, monkeypatch):
     _need_landlock(monkeypatch)
     res = execute_command("echo ran", working_directory=str(t / "priv"), _sandbox=_stamp(t, "any_except_denied"))
     assert res["success"] is False and "ran" not in (res.get("stdout") or "")
+
+
+CHILD = "R14-LINUX-CHILD-OK"
+
+
+@pytest.fixture
+def nested(t):
+    """A refused parent holding an allowed child, which holds a refused grandchild (R12.2)."""
+    for d in ("home/parent/child/deny",):
+        (t / d).mkdir(parents=True, exist_ok=True)
+    (t / "home/parent/secret.txt").write_text(MARK)
+    (t / "home/parent/child/ok.txt").write_text(CHILD)
+    (t / "home/parent/child/deny/x.txt").write_text(MARK)
+    return t
+
+
+def _nested_stamp(t, posture, default_mode="rw", grandchild=True):
+    return SandboxSpec(
+        private_workspace=str(t / "priv"),
+        posture=posture,
+        default_mode=default_mode,
+        allowed=(SandboxRow(str(t / "home/parent/child"), "rw"),),
+        refused=(str(t / "home/parent"),) + ((str(t / "home/parent/child/deny"),) if grandchild else ()),
+        builtin_refused=(str(t / "home/.ssh"),),
+    ).to_stamp()
+
+
+@pytest.mark.parametrize("posture,default_mode", [("any_except_denied", "rw"), ("any_except_denied", "ro"), ("allowed_only", "rw")])
+def test_bwrap_allowed_child_of_a_refused_parent(nested, posture, default_mode):
+    """R14.1 (backlog 1002 item 1): the most specific row wins under bwrap too — the child is
+    readable and writable, the parent's other files and the refused grandchild are not."""
+    _need_bwrap()
+    t = nested
+    stamp = _nested_stamp(t, posture, default_mode)
+    res = execute_command(f"cat {t}/home/parent/child/ok.txt && echo w > {t}/home/parent/child/new.txt && cat {t}/home/parent/child/new.txt", working_directory=str(t / "priv"), _sandbox=stamp)
+    assert res.get("return_code") == 0 and CHILD in res["stdout"] and "w" in res["stdout"], res
+    assert (t / "home/parent/child/new.txt").read_text().strip() == "w"
+    for cmd in (f"cat {t}/home/parent/secret.txt", f"ls {t}/home/parent", f"cat {t}/home/parent/child/deny/x.txt", f"cd {t}/home/parent/child/deny && cat x.txt", f"echo leak > {t}/home/parent/leak.txt"):
+        res = execute_command(cmd, working_directory=str(t / "priv"), _sandbox=stamp)
+        out = (res.get("stdout") or "") + (res.get("stderr") or "")
+        assert "return_code" in res, res.get("error")
+        assert MARK not in out and "secret.txt" not in (res.get("stdout") or ""), (cmd, res)
+    assert not (t / "home/parent/leak.txt").exists()
+
+
+def test_landlock_allowed_child_of_a_refused_parent(nested, monkeypatch):
+    """Landlock grants the child even though its parent is refused (Landlock cannot refuse a
+    grandchild inside the child, so this spec has none)."""
+    _need_landlock(monkeypatch)
+    t = nested
+    stamp = _nested_stamp(t, "allowed_only", grandchild=False)
+    res = execute_command(f"cat {t}/home/parent/child/ok.txt && echo w > {t}/home/parent/child/new.txt", working_directory=str(t / "priv"), _sandbox=stamp)
+    assert res.get("return_code") == 0 and CHILD in res["stdout"], res
+    assert res["sandbox"]["kind"] == "linux-landlock"
+    assert (t / "home/parent/child/new.txt").exists()
+    res = execute_command(f"cat {t}/home/parent/secret.txt", working_directory=str(t / "priv"), _sandbox=stamp)
+    assert MARK not in (res.get("stdout") or "") + (res.get("stderr") or "")

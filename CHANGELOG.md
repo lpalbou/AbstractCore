@@ -5,6 +5,20 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Linux command sandbox: an allowed folder inside a refused one is reachable under bubblewrap.**
+  The bwrap profile masked a refused folder with a tmpfs and remounted it read-only at once, so
+  bwrap could not create the mount point of a more specific allowed folder inside it ("bwrap: Can't
+  mkdir …/parent/child: Read-only file system") and every command failed. The masks are now made
+  read-only after every row is bound, so the most specific row wins on Linux as on macOS (a refused
+  folder inside the allowed child still refuses its subtree). Landlock already granted the child of
+  a refused parent; a test now proves it. Tests: `tests/tools/test_sandbox_spec.py`
+  (argv order) and `tests/tools/test_sandbox_linux.py` (real bwrap and Landlock runs, CI job
+  `linux-sandbox`).
+
 ## [2.25.0] - 2026-10-05
 
 ### Added

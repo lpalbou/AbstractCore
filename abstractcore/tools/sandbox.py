@@ -500,17 +500,36 @@ def bwrap_argv(spec: SandboxSpec, *, bwrap: str = "bwrap") -> List[str]:
     argv += ["--dev", "/dev", "--proc", "/proc"]
     base, builtin = _ordered_rules(spec, user_roots=())
     os.makedirs(private_tmpdir(spec), exist_ok=True)
+    # A refused folder is masked by an empty tmpfs. A more specific allowed row inside it
+    # (the nesting rule: the most specific row wins) is bound AFTER the mask, and bwrap
+    # creates that row's mount point inside the tmpfs, so the tmpfs must stay writable
+    # until every mount is in place: the masks are made read-only at the very end
+    # (`--remount-ro` changes only the tmpfs mount itself, never the rows bound inside it).
+    # Remounting a mask read-only right away refused the child ("bwrap: Can't mkdir
+    # …/parent/child: Read-only file system"; the 0.9.0 runtime linux-sandbox job).
+    masks: List[str] = []
+    mounts: List[Tuple[str, str]] = []  # (path, "mask" | "bind"), in emission order
     for rule in floor_rules + base + builtin:
         if rule.action == "deny":
             if spec.posture == "allowed_only" and not os.path.exists(rule.path):
                 continue
             if os.path.isdir(rule.path):
-                argv += ["--tmpfs", rule.path, "--remount-ro", rule.path]
+                argv += ["--tmpfs", rule.path]
+                masks.append(rule.path)
+                mounts.append((rule.path, "mask"))
             elif os.path.exists(rule.path):
                 argv += ["--ro-bind", "/dev/null", rule.path]
+                mounts.append((rule.path, "bind"))
         elif os.path.exists(rule.path):
             rw = rule.action == "rw" or (rule.action == "read" and spec.posture == "any_except_denied" and spec.default_mode == "rw")
             argv += ["--bind" if rw else "--ro-bind", rule.path, rule.path]
+            mounts.append((rule.path, "bind"))
+    for path in dict.fromkeys(masks):
+        # The topmost mount at this path must still be the mask (a later rule of the very
+        # same path re-bound it: that bind decides, and remounting would hit the bind).
+        last = [kind for (p, kind) in mounts if p == path][-1]
+        if last == "mask":
+            argv += ["--remount-ro", path]
     return argv
 
 

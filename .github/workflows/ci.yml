@@ -113,7 +113,7 @@ jobs:
           print(f"test_sandbox_linux: {len(cases)} collected, {passed} passed, {len(skipped)} skipped, {len(failed)} failed")
           for c in skipped:
               print("SKIPPED:", c.get("name"), "-", (c.find("skipped").get("message") or ""))
-          if len(cases) < 6 or skipped or failed:
+          if len(cases) < 10 or skipped or failed:
               sys.exit("The Linux sandbox tests did not all run and pass on this Linux host.")
           PY
 
