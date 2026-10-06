@@ -244,6 +244,153 @@ def _parse_viewport(viewport: Any) -> Any:
 # parent can enforce the wall-clock guarantee with a process-group kill.
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Local pages: a scoped loopback HTTP origin, never file:// (R14.1, backlog 1002 item 3)
+# --------------------------------------------------------------------------
+#
+# A local page used to be opened as file://, and Chromium lets a file:// page load ANY
+# other file:// URL as a subresource (img, iframe, stylesheet, script): a page inside an
+# allowed workspace could show a refused folder's files in the screenshot or the visible
+# text. The probe now serves the page from a private loopback origin
+# ``http://<random token>.localhost:<port>`` that answers ONLY for files the run may read
+# (the run's sandbox stamp: private workspace, allowed rows ro or rw, refused rows and
+# built-in refusals by the most-specific-row rule; ``sandbox.path_readable``). Relative
+# and root-relative URLs keep working (the URL path is the file's absolute path); a file
+# outside the scope answers 403 and is reported; ``file://`` URLs are never loaded (an
+# http page cannot load file:// resources in Chromium, and the probe aborts any file://
+# request it sees). Other loopback clients cannot use the origin: it answers only to its
+# own random host name.
+
+_LOCAL_MIME_OVERRIDES = {
+    ".mjs": "text/javascript",
+    ".js": "text/javascript",
+    ".css": "text/css",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".svg": "image/svg+xml",
+    ".json": "application/json",
+    ".wasm": "application/wasm",
+}
+FILE_URL_REFUSED = "file:// is refused: local pages are served from the run's workspaces"
+OUTSIDE_SCOPE_REFUSED = "outside this run's workspaces"
+
+
+class _LocalOrigin:
+    """Loopback HTTP origin serving only readable files (child side, one per probe)."""
+
+    def __init__(self, scope: Optional[Dict[str, Any]]) -> None:
+        import http.server
+        import secrets
+        import socketserver
+
+        self._spec = None
+        if scope is not None:
+            from .sandbox import SandboxSpec
+
+            self._spec = SandboxSpec.from_stamp(scope)
+        self.refused: List[str] = []
+        self._lock = threading.Lock()
+        self.host = f"probe-{secrets.token_hex(8)}.localhost"
+        origin = self
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args: Any) -> None:  # silence stderr (the parent reads it)
+                return
+
+            def _answer(self, code: int, body: bytes = b"", ctype: str = "text/plain; charset=utf-8") -> None:
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                if self.command != "HEAD" and body:
+                    self.wfile.write(body)
+
+            def do_HEAD(self) -> None:  # noqa: N802 - http.server API
+                self.do_GET()
+
+            def do_GET(self) -> None:  # noqa: N802 - http.server API
+                if (self.headers.get("Host") or "").split(":", 1)[0].lower() != origin.host:
+                    return self._answer(404)
+                raw = unquote(urlparse(self.path).path or "/")
+                real = os.path.realpath(raw)
+                if not origin.readable(real):
+                    origin.note_refused(f"{raw} ({OUTSIDE_SCOPE_REFUSED})")
+                    return self._answer(403, b"Refused: outside this run's workspaces")
+                if not os.path.isfile(real):
+                    return self._answer(404)
+                try:
+                    with open(real, "rb") as fh:
+                        data = fh.read()
+                except OSError:
+                    return self._answer(404)
+                import mimetypes
+
+                ext = os.path.splitext(real)[1].lower()
+                ctype = _LOCAL_MIME_OVERRIDES.get(ext) or mimetypes.guess_type(real)[0] or "application/octet-stream"
+                if ctype.startswith("text/") or ctype in ("application/json", "image/svg+xml"):
+                    ctype += "; charset=utf-8"
+                self._answer(200, data, ctype)
+
+        class _Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
+            daemon_threads = True
+            allow_reuse_address = True
+
+        self._server = _Server(("127.0.0.1", 0), _Handler)
+        self.port = int(self._server.server_address[1])
+        self.base = f"http://{self.host}:{self.port}"
+        self._thread = threading.Thread(target=self._server.serve_forever, name="probe-local-origin", daemon=True)
+        self._thread.start()
+
+    def readable(self, real: str) -> bool:
+        if self._spec is None:
+            return True  # library use without a host scope: what this process can read
+        from .sandbox import path_readable
+
+        try:
+            return path_readable(self._spec, real)
+        except Exception:
+            return False
+
+    def note_refused(self, entry: str) -> None:
+        with self._lock:
+            if entry not in self.refused and len(self.refused) < 50:
+                self.refused.append(entry)
+
+    def url_for(self, path: str) -> str:
+        from urllib.parse import quote
+
+        return self.base + quote(path)
+
+    def owns(self, url: str) -> bool:
+        return url.startswith(self.base + "/") or url == self.base
+
+    def close(self) -> None:
+        try:
+            self._server.shutdown()
+            self._server.server_close()
+        except Exception:
+            pass
+
+
+# Elements whose URL attribute names a file:// resource the page tried to load (read from
+# the DOM after load: Chromium refuses these before any request exists, so no route sees them).
+_FILE_REFS_JS = """() => {
+  const out = [];
+  const attrs = ['src', 'href', 'data', 'poster', 'srcset'];
+  for (const el of document.querySelectorAll('[src],[href],[data],[poster],[srcset]')) {
+    if (el.tagName === 'A') continue;
+    for (const a of attrs) {
+      const v = el.getAttribute(a);
+      if (v && /^\\s*file:/i.test(v)) out.push(v.trim());
+    }
+  }
+  return out.slice(0, 50);
+}"""
+
+
 # The rendered DOM crosses a subprocess pipe as JSON, so it is bounded. Chosen
 # well above any real article (the largest fixture in the corpus is 668 KB of
 # raw HTML) and well below a size that would stall the pipe.
@@ -266,6 +413,7 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     url: str = cfg["url"]
     is_local: bool = cfg["is_local"]
+    serve: Optional[Dict[str, Any]] = cfg.get("serve") if is_local else None
     timeout_s: float = cfg["timeout_s"]
     proc_started = time.monotonic()
     # `deadline` is set AFTER launch (below): timeout_s is the page-behavior
@@ -285,6 +433,11 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "console_errors": [],
         "page_errors": [],
         "blocked_requests": [],
+        # Local pages (R14.1): the loopback origin they were served from, and every local
+        # file the page tried to load that was refused (file:// URLs, files outside the
+        # run's workspaces). None for remote targets.
+        "served_from": None,
+        "blocked_local": None,
         "nav": {"timed_out": False, "elapsed_s": None, "error": None},
         "http_status": None,
         "ready_state": None,
@@ -427,6 +580,7 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
             result["browser_launch_notes"] = launch_notes[:4]
         # Start the page-behavior budget clock now that the browser is up.
         deadline = time.monotonic() + timeout_s
+        local_origin_holder: List[_LocalOrigin] = []
         try:
             if cfg.get("guard_destinations"):
                 try:
@@ -471,13 +625,31 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
             page.on("console", _on_console)
             page.on("pageerror", _on_pageerror)
 
-            if is_local and not cfg["allow_network"]:
-                # Local pages must not phone home: allow only file/data/blob/
-                # about; abort (and report) everything else.
+            origin: Optional[_LocalOrigin] = None
+            nav_url = url
+            if serve is not None:
+                origin = _LocalOrigin(serve.get("scope"))
+                local_origin_holder.append(origin)
+                nav_url = origin.url_for(str(serve["path"]))
+                result["served_from"] = origin.base
+                result["blocked_local"] = origin.refused
+
+            if is_local:
+                # Local pages must not phone home: allow only the page's own loopback
+                # origin and data/blob/about; abort (and report) everything else. A
+                # file:// request is never continued, network allowed or not.
+                allow_network = bool(cfg["allow_network"])
+
                 def _route(route: Any) -> None:
                     try:
                         r_url = route.request.url
-                        if r_url.startswith(("file://", "data:", "about:", "blob:")):
+                        if r_url.lower().startswith("file:"):
+                            if origin is not None:
+                                origin.note_refused(f"{r_url[:300]} ({FILE_URL_REFUSED})")
+                            route.abort("blockedbyclient")
+                        elif r_url.startswith(("data:", "about:", "blob:")) or (origin is not None and origin.owns(r_url)):
+                            route.continue_()
+                        elif allow_network:
                             route.continue_()
                         else:
                             if len(blocked) < 50:
@@ -485,7 +657,7 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
                             route.abort("blockedbyclient")
                     except Exception:
                         try:
-                            route.continue_()
+                            route.abort("blockedbyclient")
                         except Exception:
                             pass
 
@@ -494,7 +666,7 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
             nav_started = time.monotonic()
             response = None
             try:
-                response = page.goto(url, wait_until=cfg["wait_until"], timeout=remaining_ms())
+                response = page.goto(nav_url, wait_until=cfg["wait_until"], timeout=remaining_ms())
             except PWTimeout:
                 # readyState fallback (codex #14755): report what DID render;
                 # the requested checks decide the verdict.
@@ -688,6 +860,12 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 )
             except Exception:
                 pass
+            if origin is not None:
+                try:
+                    for ref in page.evaluate(_FILE_REFS_JS) or []:
+                        origin.note_refused(f"{str(ref)[:300]} ({FILE_URL_REFUSED})")
+                except Exception:
+                    pass
             try:
                 # >1 frame ⇒ the page hosts iframe(s); the nonblank predicate
                 # and all checks see the TOP frame only, so a blank verdict on
@@ -723,6 +901,8 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
                         closeable.close()
                 except Exception:
                     pass
+            for local_origin in local_origin_holder:
+                local_origin.close()
 
     result["total_s"] = round(time.monotonic() - proc_started, 2)
     return result
@@ -1189,6 +1369,15 @@ def _format_report(res: Dict[str, Any], *, timeout_s: float) -> str:
         else:
             net_note = "; network blocked (no outbound attempts)"
     lines.append(f"Target: {res.get('url')} ({kind}{net_note})")
+    if is_local and res.get("served_from"):
+        lines.append(
+            "Served from a private loopback origin limited to this run's workspaces (never file://)"
+        )
+    blocked_local = res.get("blocked_local") or []
+    if blocked_local:
+        shown = "; ".join(str(b) for b in blocked_local[:_MAX_BLOCKED_SHOWN])
+        more = f" (+{len(blocked_local) - _MAX_BLOCKED_SHOWN} more)" if len(blocked_local) > _MAX_BLOCKED_SHOWN else ""
+        lines.append(f"Local files BLOCKED — {len(blocked_local)} refused: {shown}{more}")
 
     # P1-4: disclose where navigation actually LANDED — a silent 3xx to a
     # login/setup/error page renders + PASSes on the wrong page otherwise.
@@ -1296,6 +1485,32 @@ def _format_report(res: Dict[str, Any], *, timeout_s: float) -> str:
     return "\n".join(lines)
 
 
+def _local_serve_config(file_url: str, stamp: Any) -> "tuple[Optional[Dict[str, Any]], Optional[str]]":
+    """({path, scope}, None) for a local target, or (None, refusal sentence).
+
+    With the run's sandbox stamp the loopback origin serves only what that scope can read
+    (and the page itself must be readable). Without one, on a host that configured the
+    command sandbox (a gateway), a local page is refused: the probe never serves files
+    with no scope. Library use without a host policy serves what this process can read."""
+    from . import sandbox as sb
+
+    path = os.path.realpath(unquote(urlparse(file_url).path))
+    if stamp is None:
+        if sb.host_policy().get("configured"):
+            return None, (
+                "Local pages are not probed without this run's workspace scope on this host "
+                "(the probe serves local files only from the run's workspaces)."
+            )
+        return {"path": path, "scope": None}, None
+    try:
+        spec = sb.SandboxSpec.from_stamp(stamp)
+    except sb.SandboxError as exc:
+        return None, f"Local page refused: {exc}"
+    if not sb.path_readable(spec, path):
+        return None, f"Local page refused: {path} is outside this run's workspaces."
+    return {"path": path, "scope": spec.to_stamp()}, None
+
+
 @tool(
     description="Render a URL or local HTML file in a headless browser and verify it actually displays (non-blank, selector/text present); reports console errors.",
     when_to_use="Use after writing/serving a web page to verify it truly renders (blank-page bugs pass read_file review). Needs browser extra. capture_screenshot declares the shot as media, so a vision-capable model sees it (else use analyze_media).",
@@ -1305,6 +1520,8 @@ def _format_report(res: Dict[str, Any], *, timeout_s: float) -> str:
     # execution catches what an LLM-read review blesses — the blank-page class
     # this tool exists for). Misdeclaration fails safe both directions.
     tags=["write", "remote_write", "browser", "executor"],
+    # Host-stamped run scope (R14.1): never part of the model-facing schema.
+    hide_args=["_sandbox"],
     examples=[
         {
             "description": "Verify a just-written game page renders non-blank",
@@ -1330,6 +1547,7 @@ def browser_probe(
     allow_network: bool = False,
     capture_screenshot: bool = False,
     viewport: str = "1280x720",
+    _sandbox: Any = None,
 ) -> Union[str, Dict[str, Any]]:
     """Render a page in a headless browser and verify it displays correctly.
 
@@ -1363,6 +1581,10 @@ def browser_probe(
         viewport: Browser viewport, width then height (default '1280x720').
             Any two-integer form is accepted: '1280x720', '1280,720',
             '1280 720', or [1280, 720]. Each side must be 64..4096.
+        _sandbox: Host-stamped (never model-supplied) workspace scope of the
+            run (AbstractCore's sandbox stamp). A local page is served from a
+            private loopback origin that answers only for files this scope can
+            read; never as file://.
 
     Returns:
         A PASS/FAIL report: navigation outcome, HTTP status, readyState,
@@ -1399,6 +1621,12 @@ def browser_probe(
             "each between 64 and 4096. Any separator works ('1280x720', '1280,720', '1280 720')."
         )
 
+    serve: Optional[Dict[str, Any]] = None
+    if resolved["is_local"]:
+        serve, refusal = _local_serve_config(resolved["url"], _sandbox)
+        if refusal:
+            return f"❌ {refusal}"
+
     if not _ensure_playwright():
         return _install_message("package_missing")
 
@@ -1422,6 +1650,7 @@ def browser_probe(
         "viewport": vp,
         "screenshot_dir": screenshot_dir,
         "screenshot_name": screenshot_name,
+        "serve": serve,
     }
 
     res = _spawn_probe(cfg, hard_budget_s=budget + _LAUNCH_GRACE_S)

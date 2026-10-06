@@ -409,20 +409,19 @@ def test_local_cors_detector_keys_on_browser_error_not_fixtures():
 
 
 @needs_browser
-def test_esm_module_local_file_flags_cors_not_broken_code(tmp_path):
-    """P0: a local ES-module app renders empty under file:// CORS. The report
-    must attribute the blank to the file:// limitation (serve over http), not
-    let an agent conclude its working code is broken."""
+def test_esm_module_local_file_renders_over_the_loopback_origin(tmp_path):
+    """R14.1: a local page is served from a loopback http origin, never file://, so the
+    ES-module app that used to render EMPTY as a file (file:// CORS, P0) now renders."""
     (tmp_path / "esm.html").write_text(
         '<html><body><div id="root"></div>'
         '<script type="module" src="./app.js"></script></body></html>'
     )
     (tmp_path / "app.js").write_text('document.getElementById("root").innerHTML="<h1>Loaded</h1>";')
     out = browser_probe(str(tmp_path / "esm.html"), timeout_s=5)
-    assert out.startswith("Browser probe: FAIL")
-    assert "file:// CORS" in out and "not your code" in out
-    assert "python -m http.server" in out  # the actionable next step
-    assert "blocked by CORS policy" in out  # the raw browser error is shown too
+    assert out.startswith("Browser probe: PASS"), out
+    assert "Loaded" in out
+    assert "blocked by CORS policy" not in out
+    assert "Served from a private loopback origin" in out
 
 
 @needs_browser
@@ -705,3 +704,116 @@ def test_never_responding_server_reports_no_commit_not_infinite_loop(tmp_path):
         assert elapsed < 4 + browser_tools._LAUNCH_GRACE_S, f"took {elapsed:.1f}s"
     finally:
         srv.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# R14.1 (backlog 1002 item 3): local pages never reach outside the run's scope
+# ---------------------------------------------------------------------------
+
+_PNG_1PX = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000d4944415478da63fcff9f010005fe02fea7d6a4770000000049454e44ae426082"
+)
+
+
+def _scoped_tree(tmp_path):
+    from abstractcore.tools.sandbox import SandboxRow, SandboxSpec
+
+    root = Path(os.path.realpath(tmp_path))
+    for d in ("allowed", "refused", "priv", "outside"):
+        (root / d).mkdir()
+    (root / "refused/marker.png").write_bytes(_PNG_1PX)
+    (root / "outside/marker.png").write_bytes(_PNG_1PX)
+    (root / "allowed/ok.png").write_bytes(_PNG_1PX)
+    (root / "allowed/escape.png").symlink_to(root / "refused/marker.png")
+    loaded = "this.parentNode.querySelector('b').textContent='{tag}-LOADED'"
+    failed = "this.parentNode.querySelector('b').textContent='{tag}-BLOCKED'"
+    imgs = [
+        ("FILEURL", f"file://{root}/refused/marker.png"),
+        ("OK", "ok.png"),
+        ("UP", "../refused/marker.png"),
+        ("ROOTREL", f"{root}/outside/marker.png"),
+        ("SYMLINK", "escape.png"),
+    ]
+    body = "".join(
+        f'<p><img src="{src}" onload="{loaded.format(tag=tag)}" onerror="{failed.format(tag=tag)}"><b>{tag}-PENDING</b></p>'
+        for tag, src in imgs
+    )
+    (root / "allowed/page.html").write_text(f"<html><body><h1>scoped</h1>{body}</body></html>")
+    stamp = SandboxSpec(
+        private_workspace=str(root / "priv"),
+        posture="allowed_only",
+        allowed=(SandboxRow(str(root / "allowed"), "ro"),),
+        refused=(str(root / "refused"),),
+    ).to_stamp()
+    return root, stamp
+
+
+@needs_browser
+def test_local_page_cannot_load_refused_files_but_loads_its_own(tmp_path):
+    """A page in an allowed workspace: `<img src="file:///<refused>/marker.png">` does not
+    load and is reported as blocked; `../refused`, a root-relative path outside the scope
+    and a symlink pointing into the refused folder are refused (403, reported); the
+    relative `ok.png` in the same allowed folder loads."""
+    root, stamp = _scoped_tree(tmp_path)
+    out = browser_probe(str(root / "allowed/page.html"), _sandbox=stamp, expect_text="OK-LOADED", timeout_s=10)
+    assert out.startswith("Browser probe: PASS"), out
+    for tag in ("FILEURL", "UP", "ROOTREL", "SYMLINK"):
+        assert f"{tag}-LOADED" not in out, (tag, out)
+        assert f"{tag}-BLOCKED" in out, (tag, out)
+    assert "OK-LOADED" in out
+    assert "Local files BLOCKED" in out
+    assert f"file://{root}/refused/marker.png (file:// is refused" in out
+    assert f"{root}/refused/marker.png (outside this run's workspaces)" in out
+    assert f"{root}/outside/marker.png (outside this run's workspaces)" in out
+    assert "Served from a private loopback origin limited to this run's workspaces" in out
+
+
+@needs_browser
+def test_local_page_outside_the_scope_is_refused_before_any_browser(tmp_path):
+    root, stamp = _scoped_tree(tmp_path)
+    (root / "refused/page.html").write_text("<html><body>secret</body></html>")
+    out = browser_probe(str(root / "refused/page.html"), _sandbox=stamp)
+    assert out.startswith("❌ Local page refused") and "outside this run's workspaces" in out
+
+
+def test_gateway_host_without_a_scope_refuses_local_pages(tmp_path, monkeypatch):
+    """On a host that configured the command sandbox, a local page with no run scope is
+    refused (fail closed) — the probe never serves local files without a scope."""
+    from abstractcore.tools import sandbox as sb
+
+    page = tmp_path / "p.html"
+    page.write_text("<html><body>x</body></html>")
+    monkeypatch.setattr(sb, "host_policy", lambda: {"configured": True})
+    out = browser_probe(str(page))
+    assert out.startswith("❌ Local pages are not probed without this run's workspace scope")
+
+
+def test_sandbox_arg_is_hidden_from_the_model_schema():
+    spec = browser_probe._tool_definition.to_dict() if hasattr(browser_probe, "_tool_definition") else None
+    assert spec is not None
+    assert "_sandbox" not in str(spec)
+
+
+def test_path_readable_follows_the_nesting_rule(tmp_path):
+    from abstractcore.tools.sandbox import SandboxRow, SandboxSpec, path_readable
+
+    root = Path(os.path.realpath(tmp_path))
+    for d in ("home/parent/child/deny", "priv", "else"):
+        (root / d).mkdir(parents=True)
+    spec = SandboxSpec(
+        private_workspace=str(root / "priv"),
+        posture="allowed_only",
+        allowed=(SandboxRow(str(root / "home/parent/child"), "ro"),),
+        refused=(str(root / "home/parent"), str(root / "home/parent/child/deny")),
+        builtin_refused=(str(root / "home/parent/child/.ssh"),),
+    )
+    assert path_readable(spec, str(root / "home/parent/child/x.html"))
+    assert not path_readable(spec, str(root / "home/parent/x.html"))
+    assert not path_readable(spec, str(root / "home/parent/child/deny/x"))
+    assert not path_readable(spec, str(root / "home/parent/child/.ssh/id"))
+    assert path_readable(spec, str(root / "priv/a"))
+    assert not path_readable(spec, str(root / "else/a"))
+    from dataclasses import replace
+
+    assert path_readable(replace(spec, posture="any_except_denied"), str(root / "else/a"))

@@ -372,6 +372,31 @@ def _ordered_rules(spec: SandboxSpec, *, user_roots: Sequence[str]) -> Tuple[Lis
     return floor + rows, builtin
 
 
+def path_readable(spec: SandboxSpec, path: str) -> bool:
+    """True when ``path`` (resolved through symlinks) is readable under ``spec``, by the same
+    nesting rule the profiles enforce: built-in refusals are absolute (unless under a
+    built-in exception); otherwise the LONGEST row prefixing the path decides (the private
+    workspace and the allowed rows, ro or rw, allow; a refused row refuses; a refusal wins a
+    tie); with no row, "any_except_denied" allows and "allowed_only" refuses.
+
+    Used by the browser probe's loopback origin (``browser_tools``): a local page may only
+    pull files a command of the same run could read."""
+    spec = normalize_spec(spec)
+    real = os.path.realpath(str(path))
+    if any(_under(real, b) for b in spec.builtin_refused) and not any(_under(real, a) for a in spec.builtin_allowed):
+        return False
+    best: Optional[Tuple[int, int]] = None  # (prefix length, 1 = refused wins a tie)
+    allows = [spec.private_workspace, private_tmpdir(spec)] + [r.path for r in spec.allowed]
+    for prefix, refused in [(a, 0) for a in allows] + [(r, 1) for r in spec.refused]:
+        if _under(real, prefix):
+            key = (len(prefix.rstrip("/")), refused)
+            if best is None or key > best:
+                best = key
+    if best is None:
+        return spec.posture == "any_except_denied"
+    return best[1] == 0
+
+
 # --------------------------------------------------------------------------------------
 # macOS: sandbox-exec + SBPL
 # --------------------------------------------------------------------------------------
@@ -805,6 +830,7 @@ __all__ = [
     "landlock_rules",
     "macos_profile",
     "normalize_spec",
+    "path_readable",
     "private_tmpdir",
     "refusal_result",
     "sandbox_for_tool_call",
