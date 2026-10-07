@@ -15807,6 +15807,41 @@ An **artifact** names the exact weights to fetch, quantization included:
 | `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit`, `supertonic-3` | Image starter (Apple silicon only), video starter (Apple silicon, only where its measured memory fits) and voice starter (every OS). |
 | `diffusers` | `black-forest-labs/FLUX.2-klein-4B` | A Diffusers repo, fetched whole. The image starter on an NVIDIA GPU. |
 
+## Are the weights here? (`probe`)
+
+`model_materializer.probe(provider, model)` answers, for one route's provider and model, whether
+the weights are on this computer: `installed` (with `location`, the snapshot or file),
+`absent` (with an `instruction`), `not_applicable` (remote providers) or `unknown` (the engine
+could not be asked). Every answer also carries `summary`, ONE short sentence a grid prints under
+the state ("In the Hugging Face cache.", "Not in Piper's voice folder."); the longer `detail`,
+`instruction` and `location` are for a tooltip or a detail line. It never downloads, opens a
+socket or imports an inference framework.
+
+A route stores the id the ENGINE accepts, so each engine's id is mapped to its storage with that
+engine's own table:
+
+| Route provider | Model id on the route | Where the probe looks |
+|---|---|---|
+| `faster-whisper` (also `whisper`) | `large-v3`, `base`, ... or a repo id | AbstractVoice's aliases (`large` -> `large-v3`), then faster-whisper's own `_MODELS` table, read from its source without importing it: `large-v3` is `Systran/faster-whisper-large-v3` in the Hugging Face cache |
+| `transformers-asr` | `whisper-large-v3-turbo`, ... or a repo id | AbstractVoice's Transformers ASR aliases, then the Hugging Face cache |
+| `audiodit`, `omnivoice`, `qwen3-tts` | a repo id or a local checkpoint | the Hugging Face cache, or the folder |
+| `piper` | `en_US-amy-medium` (or a language: `en`) | AbstractVoice's Piper voice folder (`~/.piper/models`); fetch with `abstractvoice-prefetch --piper en` |
+| `f5_tts`, `chroma` | any | AbstractVoice's cloning folders (`~/.cache/abstractvoice/openf5`, `.../chroma`); fetch with `abstractvoice-prefetch --openf5` / `--chroma` |
+| `supertonic` | `supertonic-3` | AbstractVoice's Supertonic cache |
+| `stable-audio-3`, `stable-audio`, `acestep`, `diffusers` | a repo id | the Hugging Face cache (`acemusic` and `elevenlabs-music` are remote) |
+| `mlx-gen`, `mflux`, `sdcpp` | a repo id, or an AbstractVision preset name (`klein-4b`, `FLUX.2-dev`) | the preset's repository in the Hugging Face cache; `sdcpp` also takes a local GGUF file |
+| `triposr`, `trellis2`, `step1x`, `hunyuan3d` (and their `abstract3d:` ids) | a repo id | the Hugging Face cache |
+| `mlx`, `mlx-vlm`, `huggingface`, `transformers` | a repo id (`:QUANT` for GGUF) | the Hugging Face cache (MLX also checks its MTP companion) |
+| `lmstudio`, `ollama` | the engine's model id | the engine's own listing (`lms ls`, `GET /api/tags`) |
+
+The engines that resolve to a Hugging Face repo are downloaded the same way
+(`abstractcore models download faster-whisper large-v3` fetches `Systran/faster-whisper-large-v3`).
+Only a provider no route offers keeps `unknown` with evidence `no materializer`; its `detail`
+names the provider and its `instruction` says what to do (check the provider's own model list, or
+add a remote service as an endpoint so the route counts as remote). Helper companions some engines
+load besides the model (Stable Audio 3's T5Gemma encoder, AudioDiT's tokenizer, TRELLIS.2's DINOv3
+and RMBG, a sdcpp preset's VAE and text encoder) are not part of the answer.
+
 ## The host profile
 
 `abstractcore host profile --json` (`host_profile_v1`) reports:

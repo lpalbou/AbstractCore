@@ -173,11 +173,15 @@ def test_cloud_and_relay_providers_are_not_applicable(provider):
     assert outcome.ok is False
 
 
-def test_unsupported_provider_is_unknown_with_the_supported_list():
-    presence = mm.probe("stable-audio", "stabilityai/stable-audio-open-small")
+def test_an_unknown_provider_is_unknown_and_says_what_to_do():
+    """Only an id no route offers ends here (stable-audio has its probe now:
+    tests/config/test_engine_weight_probes.py)."""
+
+    presence = mm.probe("mystery-engine", "acme/some-model")
     assert presence.status == mm.PRESENCE_UNKNOWN
-    assert "no local-weights probe" in presence.detail
-    assert "ollama" in (presence.instruction or "")
+    assert presence.evidence == "no materializer"
+    assert "mystery-engine" in presence.detail
+    assert "Check mystery-engine's own model list" in (presence.instruction or "")
 
 
 def test_probe_never_raises_and_never_returns_a_bogus_state(monkeypatch):

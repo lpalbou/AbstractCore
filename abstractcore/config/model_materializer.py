@@ -221,6 +221,20 @@ class ModelPresence:
     instruction: Optional[str] = None
     #: True when this provider has a working download verb here.
     downloadable: bool = False
+    #: ONE short sentence a grid cell prints under the state ("In the Hugging
+    #: Face cache.", "Not downloaded."). Every surface prints this verbatim --
+    #: the gateway console's Weights cell, both console-TUIs -- and keeps
+    #: `detail`/`instruction`/`location` for a tooltip or a detail line, so a
+    #: long probe explanation never becomes a ten-line table cell. Empty means
+    #: "the status says it all": `to_dict` fills the status's own sentence.
+    summary: str = ""
+
+    def summary_text(self) -> str:
+        """`summary`, or the plain sentence of the status when no probe set one."""
+
+        if self.summary:
+            return self.summary
+        return _DEFAULT_SUMMARIES.get(self.status, "")
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -228,12 +242,22 @@ class ModelPresence:
             "artifact": self.artifact,
             "status": self.status,
             "downloadable": bool(self.downloadable),
+            "summary": self.summary_text(),
         }
         for name in ("evidence", "detail", "location", "instruction"):
             value = getattr(self, name)
             if value:
                 out[name] = value
         return out
+
+
+# The sentence of each state when a probe has nothing more specific to say.
+_DEFAULT_SUMMARIES: Dict[str, str] = {
+    PRESENCE_INSTALLED: "On this computer.",
+    PRESENCE_ABSENT: "Not on this computer.",
+    PRESENCE_UNKNOWN: "Could not be checked.",
+    PRESENCE_NOT_APPLICABLE: "Served remotely.",
+}
 
 
 @dataclass
@@ -358,6 +382,27 @@ def supported_providers() -> Dict[str, Dict[str, Any]]:
         "huggingface": {"probe": True, "download": True, "tool": "huggingface_hub"},
         "mlx-vlm": {"probe": True, "download": True, "tool": "huggingface_hub"},
         "diffusers": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "mflux": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "transformers": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        # Engines that resolve their own model ids (see `_probe_engine`):
+        # Hugging Face storage is fetched with huggingface_hub, the others
+        # with AbstractVoice's prefetch.
+        "faster-whisper": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "transformers-asr": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "audiodit": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "omnivoice": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "qwen3-tts": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "piper": {"probe": True, "download": False, "tool": "abstractvoice-prefetch"},
+        "f5-tts": {"probe": True, "download": False, "tool": "abstractvoice-prefetch"},
+        "chroma": {"probe": True, "download": False, "tool": "abstractvoice-prefetch"},
+        "stable-audio-3": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "stable-audio": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "acestep": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "sdcpp": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "triposr": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "trellis2": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "step1x": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "hunyuan3d21": {"probe": True, "download": True, "tool": "huggingface_hub"},
     }
 
 
@@ -655,14 +700,14 @@ def probe(provider: Any, model: Any, *, base_url: Optional[str] = None) -> Model
     localhost HTTP GET with a 3s timeout, or one directory listing.
     """
 
-    pid = _provider_id(provider)
+    pid = _engine_provider_id(_provider_id(provider))
     artifact = str(model or "").strip()
     if not pid:
         return ModelPresence("", artifact, PRESENCE_UNKNOWN, evidence="no provider", detail="no provider named")
     if not artifact:
         return ModelPresence(pid, "", PRESENCE_UNKNOWN, evidence="no model", detail="no model named")
 
-    if _is_relay(pid):
+    if _is_relay(pid) or _engine_is_relay(pid):
         return ModelPresence(
             pid,
             artifact,
@@ -678,8 +723,13 @@ def probe(provider: Any, model: Any, *, base_url: Optional[str] = None) -> Model
             return _probe_ollama(artifact, base_url)
         if pid == "supertonic":
             return _probe_supertonic(artifact)
-        if pid in _HF_BACKED:
+        # An image/video PRESET alias (no "/") resolves through AbstractVision
+        # first; a repo id is a plain Hugging Face reference.
+        if pid in _HF_BACKED and not (pid in ("mlx-gen", "mflux") and "/" not in artifact):
             return _with_companion_presence(pid, artifact, _probe_huggingface(pid, artifact))
+        engine = _probe_engine(pid, artifact)
+        if engine is not None:
+            return engine
     except Exception as exc:  # pragma: no cover - a probe must never raise
         return ModelPresence(
             pid,
@@ -687,18 +737,23 @@ def probe(provider: Any, model: Any, *, base_url: Optional[str] = None) -> Model
             PRESENCE_UNKNOWN,
             evidence="probe error",
             detail=str(exc),
+            summary="The check failed.",
         )
 
+    # Only an id no capability route offers ends here (a typed custom
+    # provider, a plugin AbstractCore does not know): said with the provider's
+    # name and what to do, in words an operator can act on.
     return ModelPresence(
         pid,
         artifact,
         PRESENCE_UNKNOWN,
         evidence="no materializer",
-        detail=f"AbstractCore has no local-weights probe for provider {pid!r}",
+        detail=f"AbstractCore does not know where provider {pid!r} keeps its models, so it cannot check whether {artifact} is on this computer",
         instruction=(
-            "Supported providers: " + ", ".join(sorted(supported_providers())) + ". "
-            "Install this model with the provider's own tool."
+            f"Check {pid}'s own model list. If {pid} is a remote service, add it as an endpoint "
+            "(Providers page) so the route is treated as remote."
         ),
+        summary=f"{pid} is not checked.",
     )
 
 
@@ -1031,6 +1086,7 @@ def _probe_supertonic(artifact: str) -> ModelPresence:
             evidence="abstractvoice supertonic cache",
             location=str(cache_dir),
             downloadable=True,
+            summary="In AbstractVoice's cache.",
         )
     return ModelPresence(
         "supertonic",
@@ -1040,7 +1096,360 @@ def _probe_supertonic(artifact: str) -> ModelPresence:
         detail=f"no Supertonic 3 ONNX assets under {cache_dir}",
         instruction="abstractcore models download supertonic supertonic-3",
         downloadable=True,
+        summary="Not in AbstractVoice's cache.",
     )
+
+
+# --- engines that resolve their own model ids --------------------------------
+#
+# EVERY PROVIDER A CAPABILITY ROUTE CAN NAME GETS AN ANSWER (operator review
+# 2026-10-07: the Voice Input row said "not checked -- AbstractCore has no
+# local-weights probe for provider 'faster-whisper'" on a machine that had
+# faster-whisper large-v3 in its Hugging Face cache). The route stores the id
+# the ENGINE accepts (`large-v3`, `en_US-amy-medium`, `triposr`), not the files;
+# each engine below maps that id to its storage with ITS OWN table, imported
+# here, never re-typed:
+#
+#   provider            id -> storage, owned by                       storage
+#   faster-whisper      AbstractVoice's alias table, then faster-whisper's
+#                       own `_MODELS` (read from its source, see below)  HF cache
+#   transformers-asr    AbstractVoice's TransformersASRAdapter aliases   HF cache
+#   audiodit, omnivoice,
+#   qwen3-tts           the id IS the repo (abstractvoice.local_models)  HF cache
+#   piper               AbstractVoice's PIPER_MODELS + its voice folder  ~/.piper/models
+#   f5-tts, chroma      AbstractVoice's cloning engines' own predicate   ~/.cache/abstractvoice/...
+#   stable-audio(-3),
+#   acestep             the id IS the repo (abstractmusic requires one)  HF cache
+#   sdcpp               AbstractVision's GGUF presets, or a local file   HF cache / file
+#   mlx-gen, mflux      AbstractVision's presets for a non-repo alias    HF cache
+#   triposr, trellis2,
+#   step1x, hunyuan3d   core's scene3d selectors; the id IS the repo     HF cache
+#
+# Hugging Face storage is then judged by `_probe_huggingface` -- the SAME
+# reader every other HF-backed route uses (interrupted downloads, links to
+# missing blobs, ...), so a faster-whisper row and an mlx row can never
+# disagree about what "installed" means. Nothing here downloads, opens a
+# socket, or imports an inference framework: alias tables are plain class
+# attributes on modules that import numpy at most.
+
+# Speech-input ids AbstractVoice's plugin accepts besides its engine ids
+# (route_engines._STT_PROVIDER_ALIASES, the ones that are unambiguous
+# without the route key: `local` / `hf` / `transformers` mean other things
+# on other routes).
+_ENGINE_PROVIDER_ALIASES: Dict[str, str] = {
+    "whisper": "faster-whisper",
+    "transformers-asr": "transformers-asr",
+    "hf-asr": "transformers-asr",
+    "f5tts": "f5-tts",
+    "openf5": "f5-tts",
+    "open-f5": "f5-tts",
+}
+
+# Remote music services (abstractmusic backends that run elsewhere).
+_REMOTE_MUSIC_BACKENDS = frozenset({"acemusic", "elevenlabs-music"})
+
+# Speech engines whose model id is a Hugging Face repo id (or a local
+# checkpoint directory): abstractvoice.local_models._HF_REPO_TTS_ENGINES.
+_HF_REPO_VOICE_ENGINES = frozenset({"audiodit", "omnivoice", "qwen3-tts"})
+
+
+def _engine_provider_id(pid: str) -> str:
+    return _ENGINE_PROVIDER_ALIASES.get(pid, pid)
+
+
+def _music_backend(pid: str) -> Optional[str]:
+    """The abstractmusic backend name `pid` selects (core's music selectors), or None."""
+
+    from ..capabilities.music_selectors import resolve_music_backend_id
+
+    backend = resolve_music_backend_id(pid)
+    return backend.split(":", 1)[-1] if backend else None
+
+
+def _scene3d_backend(pid: str) -> Optional[str]:
+    """The abstract3d backend id `pid` selects (core's scene3d selectors), or None."""
+
+    from ..capabilities.scene3d_selectors import resolve_scene3d_backend_id
+
+    return resolve_scene3d_backend_id(pid)
+
+
+def _looks_like_path(ref: str) -> bool:
+    return ref.startswith(("~", ".", os.sep)) or Path(ref).is_absolute()
+
+
+def _faster_whisper_models() -> Tuple[Optional[Dict[str, str]], str]:
+    """faster-whisper's OWN short-name table (`faster_whisper.utils._MODELS`).
+
+    Read from the installed package's source with `ast`, not imported:
+    `import faster_whisper.utils` runs the package `__init__`, which loads
+    CTranslate2 and torch (about 1.5 s and hundreds of MB) -- a cost a weights
+    probe on every console render must never pay. The literal is the engine's
+    own data; nothing here re-types it.
+    """
+
+    cached = _FW_TABLE.get("table")
+    if cached is not None:
+        return cached
+    import ast
+    import importlib.util
+
+    try:
+        spec = importlib.util.find_spec("faster_whisper")
+    except (ImportError, ValueError):
+        spec = None
+    if spec is None or not spec.submodule_search_locations:
+        return None, "faster-whisper is not installed in this Python environment, so its model names cannot be resolved"
+    source = Path(list(spec.submodule_search_locations)[0]) / "utils.py"
+    try:
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        for node in tree.body:
+            targets = node.targets if isinstance(node, ast.Assign) else ([node.target] if isinstance(node, ast.AnnAssign) else [])
+            if any(isinstance(t, ast.Name) and t.id == "_MODELS" for t in targets) and node.value is not None:
+                table = ast.literal_eval(node.value)
+                if isinstance(table, dict) and table:
+                    out = ({str(k).lower(): str(v) for k, v in table.items()}, str(source))
+                    _FW_TABLE["table"] = out
+                    return out
+    except Exception as exc:
+        return None, f"faster-whisper's model table could not be read from {source} ({exc})"
+    return None, f"faster-whisper's model table (_MODELS) was not found in {source}"
+
+
+_FW_TABLE: Dict[str, Tuple[Optional[Dict[str, str]], str]] = {}
+
+
+def _resolve_faster_whisper(ref: str) -> Tuple[Optional[str], str]:
+    """`large-v3` -> `Systran/faster-whisper-large-v3`, as the engine resolves it.
+
+    AbstractVoice's adapter first maps its own aliases (`large` -> `large-v3`,
+    `FasterWhisperAdapter._MODEL_ALIASES`) and keeps any other id as given;
+    faster-whisper then treats an id containing "/" as a repo id and a short
+    name through `_MODELS`.
+    """
+
+    key = ref.strip().lower()
+    try:
+        from abstractvoice.adapters.stt_faster_whisper import FasterWhisperAdapter  # type: ignore
+
+        aliases = {str(k).lower(): str(v) for k, v in dict(FasterWhisperAdapter._MODEL_ALIASES).items()}
+        key = aliases.get(key, key)
+    except Exception:
+        # AbstractVoice missing is reported by the route's engine check
+        # (route_engines); faster-whisper's own table still names the repo
+        # (it maps `large` itself).
+        pass
+    if "/" in ref:
+        return ref.strip(), "repo id"
+    table, where = _faster_whisper_models()
+    if table is None:
+        return None, where
+    repo = table.get(key)
+    if not repo:
+        return None, f"faster-whisper has no model named {ref!r} (its names: {', '.join(sorted(table))})"
+    return repo, "faster-whisper's own model table"
+
+
+def _resolve_transformers_asr(ref: str) -> Tuple[Optional[str], str]:
+    """AbstractVoice's Transformers ASR aliases (`whisper-large-v3` -> `openai/whisper-large-v3`)."""
+
+    try:
+        from abstractvoice.adapters.stt_transformers_asr import TransformersASRAdapter  # type: ignore
+
+        aliases = {str(k).lower(): str(v) for k, v in dict(TransformersASRAdapter._MODEL_ALIASES).items()}
+    except Exception as exc:
+        aliases = {}
+        if "/" not in ref:
+            return None, f"AbstractVoice is not importable, so the Transformers ASR alias {ref!r} cannot be resolved ({exc})"
+    repo = aliases.get(ref.strip().lower()) or ref.strip()
+    if "/" not in repo:
+        return None, f"{ref!r} is neither a Transformers ASR alias nor an <org>/<repo> Hugging Face id"
+    return repo, "AbstractVoice Transformers ASR aliases" if repo != ref.strip() else "repo id"
+
+
+def _resolve_vision_preset(pid: str, ref: str) -> Tuple[Optional[str], str]:
+    """A non-repo image/video id is an AbstractVision preset alias: its `repo_id`."""
+
+    if "/" in ref:
+        return ref.strip(), "repo id"
+    engine, target = {
+        "mlx-gen": ("mlx-gen", "mlx"),
+        "mflux": ("mflux", "mlx"),
+        "sdcpp": ("stable-diffusion.cpp", "gguf"),
+    }[pid]
+    try:
+        from abstractvision.model_downloads import find_model_preset  # type: ignore
+    except Exception as exc:
+        return None, f"AbstractVision is not importable, so the {pid} preset {ref!r} cannot be resolved ({exc})"
+    try:
+        preset = find_model_preset(ref, target=target, engine=engine, require_8bit=False)
+    except Exception as exc:
+        return None, f"AbstractVision has no {pid} preset named {ref!r} ({exc})"
+    repo = str(getattr(preset, "repo_id", "") or "").strip()
+    if not repo:
+        return None, f"AbstractVision's {pid} preset {ref!r} names no repository"
+    return repo, f"AbstractVision preset {ref!r}"
+
+
+def _hf_repo_for(pid: str, ref: str) -> Optional[Tuple[Optional[str], str]]:
+    """`(repo_id or None, how/why)` for an engine whose weights are a Hugging
+    Face repo; None when `pid` is not such an engine."""
+
+    if pid == "faster-whisper":
+        return _resolve_faster_whisper(ref)
+    if pid == "transformers-asr":
+        return _resolve_transformers_asr(ref)
+    if pid in ("sdcpp", "mlx-gen", "mflux"):
+        return _resolve_vision_preset(pid, ref)
+    music = _music_backend(pid)
+    if pid in _HF_REPO_VOICE_ENGINES or (music and music not in _REMOTE_MUSIC_BACKENDS) or _scene3d_backend(pid):
+        repo = ref.strip()
+        if "/" not in repo:
+            return None, f"{pid} takes a Hugging Face <org>/<repo> model id; {ref!r} is not one"
+        return repo, "repo id"
+    return None
+
+
+def _engine_is_relay(pid: str) -> bool:
+    music = _music_backend(pid)
+    return bool(music and music in _REMOTE_MUSIC_BACKENDS)
+
+
+def _probe_local_checkpoint(pid: str, artifact: str) -> ModelPresence:
+    """An engine pointed at a checkpoint on disk: a folder holding weights, or one weights file."""
+
+    path = Path(artifact).expanduser()
+    if path.is_file():
+        return ModelPresence(pid, artifact, PRESENCE_INSTALLED, evidence="local checkpoint", location=str(path), summary="Local file.")
+    if path.is_dir():
+        from ..capabilities.vision_catalog import _hf_snapshot_has_weight_files  # type: ignore
+
+        if _hf_snapshot_has_weight_files(path) or any(p.suffix == ".onnx" for p in path.rglob("*.onnx")):
+            return ModelPresence(pid, artifact, PRESENCE_INSTALLED, evidence="local checkpoint", location=str(path), summary="Local folder.")
+        return ModelPresence(
+            pid, artifact, PRESENCE_ABSENT, evidence="local checkpoint",
+            detail=f"{path} holds no weights file (.safetensors, .bin, .gguf, .onnx)",
+            location=str(path), summary="Folder has no weights.",
+        )
+    return ModelPresence(
+        pid, artifact, PRESENCE_ABSENT, evidence="local checkpoint",
+        detail=f"{path} does not exist on this computer",
+        instruction=f"Point the route at an existing checkpoint, or at a model id {pid} can download.",
+        summary="Path not found.",
+    )
+
+
+def _probe_engine_hf(pid: str, artifact: str, resolved: Tuple[Optional[str], str]) -> ModelPresence:
+    repo, how = resolved
+    if repo is None:
+        return ModelPresence(
+            pid, artifact, PRESENCE_UNKNOWN, evidence="model id not resolved", detail=how,
+            instruction=f"Pick one of {pid}'s models on the route (Multimodal page in the gateway console, Routes in the core console).",
+            summary="Unknown model id.",
+        )
+    base = _probe_huggingface(pid, repo)
+    instruction = base.instruction
+    if instruction:
+        instruction = instruction.replace(f"download {pid} {repo}", f"download {pid} {artifact}")
+    detail = base.detail
+    if repo != artifact:
+        lead = f"{artifact} is the Hugging Face repo {repo} ({how})"
+        detail = f"{lead}; {detail}" if detail else lead
+    return ModelPresence(
+        pid, artifact, base.status, evidence=base.evidence, detail=detail, location=base.location,
+        instruction=instruction, downloadable=base.downloadable, summary=base.summary,
+    )
+
+
+def _probe_piper(artifact: str) -> ModelPresence:
+    """AbstractVoice's Piper voices: its voice table and its own presence check."""
+
+    try:
+        from abstractvoice.adapters.tts_piper import (  # type: ignore
+            PiperTTSAdapter,
+            cached_piper_model_ids,
+            default_piper_model_dir,
+        )
+    except Exception as exc:
+        return ModelPresence(
+            "piper", artifact, PRESENCE_UNKNOWN, evidence="abstractvoice not importable", detail=str(exc),
+            instruction=LIGHT_INSTALL, summary="AbstractVoice is missing.",
+        )
+    voices = {lang: filename for lang, (_hf, filename) in dict(PiperTTSAdapter.PIPER_MODELS).items()}
+    ref = artifact.strip()
+    lang = next((k for k, v in voices.items() if v.lower() == ref.lower()), None) or (ref.lower() if ref.lower() in voices else None)
+    if lang is None:
+        return ModelPresence(
+            "piper", artifact, PRESENCE_UNKNOWN, evidence="abstractvoice piper voices",
+            detail=f"Piper has no voice named {ref!r} (its voices: {', '.join(sorted(voices.values()))})",
+            instruction="Pick one of Piper's voices on the route.", summary="Unknown voice.",
+        )
+    folder = default_piper_model_dir()
+    filename = voices[lang]
+    if filename in cached_piper_model_ids():
+        return ModelPresence(
+            "piper", artifact, PRESENCE_INSTALLED, evidence="abstractvoice piper voice folder",
+            location=str(folder / f"{filename}.onnx"), summary="In Piper's voice folder.",
+        )
+    return ModelPresence(
+        "piper", artifact, PRESENCE_ABSENT, evidence="abstractvoice piper voice folder",
+        detail=f"{filename}.onnx and its .onnx.json are not both in {folder}",
+        instruction=f"abstractvoice-prefetch --piper {lang}", summary="Not in Piper's voice folder.",
+    )
+
+
+def _probe_cloning_engine(pid: str, artifact: str) -> ModelPresence:
+    """OpenF5 and Chroma keep one artifact folder each; their engine says whether it is whole.
+
+    The engine's predicate is an instance method that needs no constructor
+    state, so it is called on a bare instance: the constructor would import
+    the inference stack, which a presence check must not.
+    """
+
+    module, cls_name, method, flag = {
+        "f5-tts": ("abstractvoice.cloning.engine_f5", "F5TTSVoiceCloningEngine", "are_openf5_artifacts_available", "--openf5"),
+        "chroma": ("abstractvoice.cloning.engine_chroma", "ChromaVoiceCloningEngine", "are_chroma_artifacts_available", "--chroma"),
+    }[pid]
+    try:
+        import importlib
+
+        cls = getattr(importlib.import_module(module), cls_name)
+        engine = object.__new__(cls)
+        root = engine._artifact_root()
+        present = bool(getattr(engine, method)())
+    except Exception as exc:
+        return ModelPresence(
+            pid, artifact, PRESENCE_UNKNOWN, evidence="abstractvoice cloning engine", detail=str(exc),
+            instruction=LIGHT_INSTALL, summary="Could not be checked.",
+        )
+    if present:
+        return ModelPresence(
+            pid, artifact, PRESENCE_INSTALLED, evidence="abstractvoice cloning artifacts",
+            location=str(root), summary="In AbstractVoice's cache.",
+        )
+    return ModelPresence(
+        pid, artifact, PRESENCE_ABSENT, evidence="abstractvoice cloning artifacts",
+        detail=f"the {pid} artifacts are not complete under {root}",
+        instruction=f"abstractvoice-prefetch {flag}", summary="Not in AbstractVoice's cache.",
+    )
+
+
+def _probe_engine(pid: str, artifact: str) -> Optional[ModelPresence]:
+    """The engine-owned probes above, or None when `pid` is none of them."""
+
+    if pid == "piper":
+        return _probe_piper(artifact)
+    if pid in ("f5-tts", "chroma"):
+        return _probe_cloning_engine(pid, artifact)
+    # Engines that also accept a checkpoint on disk in place of a model id
+    # (abstractmusic and abstract3d take repo ids only).
+    takes_paths = pid in _HF_REPO_VOICE_ENGINES or pid in ("faster-whisper", "transformers-asr", "sdcpp")
+    if takes_paths and _looks_like_path(artifact):
+        return _probe_local_checkpoint(pid, artifact)
+    resolved = _hf_repo_for(pid, artifact)
+    if resolved is None:
+        return None
+    return _probe_engine_hf(pid, artifact, resolved)
 
 
 # --- huggingface-backed (mlx-gen, mlx, huggingface, ...) ---------------------
@@ -1140,6 +1549,7 @@ def _interrupted_presence(provider: str, artifact: str, repo_id: str, count: int
             + (f" (or delete the stale .incomplete files under {where} if they are from an abandoned revision)" if where else "")
         ),
         downloadable=True,
+        summary="Download interrupted.",
     )
 
 
@@ -1198,6 +1608,7 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
             evidence="hf cache scan",
             detail=f"{artifact!r} is not an <org>/<repo> Hugging Face reference",
             downloadable=False,
+            summary="Not a Hugging Face model id.",
         )
     interrupted, interrupted_bytes, blobs_dir = _hf_interrupted_downloads(repo_id)
     snapshot = _hf_cached_snapshot(repo_id)
@@ -1223,6 +1634,7 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
                 location=str(snapshot),
                 instruction=f"abstractcore models download {provider} {artifact}",
                 downloadable=True,
+                summary="Partly on this computer.",
             )
         if patterns and not _snapshot_has_matching_file(snapshot, patterns):
             # A multi-quant GGUF repo is cached, but not THIS quant: the
@@ -1236,6 +1648,7 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
                 location=str(snapshot),
                 instruction=f"abstractcore models download {provider} {artifact}",
                 downloadable=True,
+                summary=f"{quant} file not downloaded.",
             )
         return ModelPresence(
             provider,
@@ -1244,6 +1657,7 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
             evidence="hf cache scan",
             location=str(snapshot),
             downloadable=True,
+            summary="In the Hugging Face cache.",
         )
     if interrupted:
         return _interrupted_presence(provider, artifact, repo_id, interrupted, interrupted_bytes, blobs_dir)
@@ -1262,6 +1676,7 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
             location=str(repo_dir) if repo_dir else None,
             instruction=f"abstractcore models download {provider} {artifact}",
             downloadable=True,
+            summary="Partly on this computer.",
         )
     dirs = _hf_cache_dirs()
     if not dirs:
@@ -1273,6 +1688,7 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
             detail=f"{repo_id} is not downloaded yet: no Hugging Face cache exists on this computer",
             instruction=f"abstractcore models download {provider} {repo_id}",
             downloadable=True,
+            summary="Not in the Hugging Face cache.",
         )
     return ModelPresence(
         provider,
@@ -1282,6 +1698,7 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
         detail=f"no complete snapshot of {repo_id} in {len(dirs)} cache dir(s)",
         instruction=f"abstractcore models download {provider} {repo_id}",
         downloadable=True,
+        summary="Not in the Hugging Face cache.",
     )
 
 
@@ -1311,7 +1728,7 @@ def download(
     recommended journey can be demonstrated on a machine that must not fill up.
     """
 
-    pid = _provider_id(provider)
+    pid = _engine_provider_id(_provider_id(provider))
     ref = str(artifact or "").strip()
     emit = progress_cb or (lambda _p: None)
 
@@ -1348,6 +1765,17 @@ def _download(
         )
 
     handler = _DOWNLOADERS.get(pid) or (_download_huggingface if pid in _HF_BACKED else None)
+    plan_pid, plan_ref = pid, ref
+    if pid not in _DOWNLOADERS and not (pid in _HF_BACKED and "/" in ref):
+        # An engine that resolves its own ids to a Hugging Face repo
+        # (faster-whisper `large-v3`, a sdcpp preset, ...): fetch THAT repo.
+        resolved = None if _looks_like_path(ref) else _hf_repo_for(pid, ref)
+        if resolved is not None:
+            repo, how = resolved
+            if repo is None:
+                return DownloadOutcome(pid, ref, False, "failed", message=how)
+            handler = lambda _ref, emit_, base_url_, _repo=repo: _download_huggingface(_repo, emit_, base_url_)  # noqa: E731
+            plan_pid, plan_ref = "huggingface", repo
     if handler is None:
         return DownloadOutcome(
             pid,
@@ -1375,7 +1803,7 @@ def _download(
             location=presence.location,
         )
 
-    disk_problem = _disk_shortfall(pid, expected_bytes)
+    disk_problem = _disk_shortfall(plan_pid, expected_bytes)
 
     if dry_run:
         return DownloadOutcome(
@@ -1384,7 +1812,7 @@ def _download(
             True,
             "planned",
             message=f"would download {ref} with {pid}" + (f" -- WARNING: {disk_problem}" if disk_problem else ""),
-            command=_planned_command(pid, ref),
+            command=_planned_command(plan_pid, plan_ref),
         )
 
     if disk_problem:
@@ -1395,7 +1823,7 @@ def _download(
             False,
             "failed",
             message=disk_problem,
-            command=_planned_command(pid, ref),
+            command=_planned_command(plan_pid, plan_ref),
             instruction="Free disk space (abstractcore models list shows what is installed), then retry.",
         )
 
@@ -1459,6 +1887,7 @@ def _with_companion_presence(pid: str, artifact: str, base: ModelPresence) -> Mo
         location=base.location,
         instruction=f"abstractcore models download {pid} {artifact}",
         downloadable=True,
+        summary="MTP companion not downloaded.",
     )
 
 

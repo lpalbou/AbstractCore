@@ -38,6 +38,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a refused parent; a test now proves it. Tests: `tests/tools/test_sandbox_spec.py`
   (argv order) and `tests/tools/test_sandbox_linux.py` (real bwrap and Landlock runs, CI job
   `linux-sandbox`).
+- **Every provider a capability route can name has a local-weights answer.** The gateway console's
+  Voice Input row (faster-whisper / `large-v3`) read "not checked: AbstractCore has no local-weights
+  probe for provider 'faster-whisper'" on a machine that had `Systran/faster-whisper-large-v3`
+  cached, and output sound and music (stable-audio-3) said the same. `model_materializer.probe` now
+  maps each engine's own model id to its storage with that engine's table: faster-whisper
+  (AbstractVoice's aliases, then faster-whisper's `_MODELS`, read from its source so CTranslate2
+  and torch are never imported), transformers-asr, audiodit, omnivoice, qwen3-tts, piper, f5_tts,
+  chroma, stable-audio-3, stable-audio, acestep, sdcpp and mlx-gen / mflux presets, triposr,
+  trellis2, step1x and hunyuan3d. Hugging Face storage is judged by the same reader as every other
+  HF route; `acemusic` and `elevenlabs-music` are remote. The engines that resolve to a Hugging Face
+  repo download it (`abstractcore models download faster-whisper large-v3`). `supported_providers()`
+  lists them. Only an id no route offers still answers `unknown` (`no materializer`), now naming
+  the provider and what to do. Tests: `tests/config/test_engine_weight_probes.py` (cache layouts
+  per provider, no network or subprocess allowed, every route provider covered).
+- **`ModelPresence.summary`**: one short sentence per answer ("In the Hugging Face cache.", "Not in
+  Piper's voice folder.") that grids print under the state; the long `detail` stays for tooltips.
+  Always present in `to_dict()`.
 
 ## [2.25.0] - 2026-10-05
 
