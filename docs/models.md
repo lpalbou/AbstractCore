@@ -58,8 +58,8 @@ engine's own table:
 
 | Route provider | Model id on the route | Where the probe looks |
 |---|---|---|
-| `faster-whisper` (also `whisper`) | `large-v3`, `base`, ... or a repo id | AbstractVoice's aliases (`large` -> `large-v3`), then faster-whisper's own `_MODELS` table, read from its source without importing it: `large-v3` is `Systran/faster-whisper-large-v3` in the Hugging Face cache |
-| `transformers-asr` | `whisper-large-v3-turbo`, ... or a repo id | AbstractVoice's Transformers ASR aliases, then the Hugging Face cache |
+| `faster-whisper` (also `whisper`; `local` on `input.voice`) | `large-v3`, `base`, ... or a repo id | AbstractVoice's aliases (`large` -> `large-v3`), then faster-whisper's own `_MODELS` table, read from its source without importing it: `large-v3` is `Systran/faster-whisper-large-v3` in the Hugging Face cache |
+| `transformers-asr` (`hf` on `input.voice`) | `whisper-large-v3-turbo`, ... or a repo id | AbstractVoice's Transformers ASR aliases, then the Hugging Face cache |
 | `audiodit`, `omnivoice`, `qwen3-tts` | a repo id or a local checkpoint | the Hugging Face cache, or the folder |
 | `piper` | `en_US-amy-medium` (or a language: `en`) | AbstractVoice's Piper voice folder (`~/.piper/models`); fetch with `abstractvoice-prefetch --piper en` |
 | `f5_tts`, `chroma` | any | AbstractVoice's cloning folders (`~/.cache/abstractvoice/openf5`, `.../chroma`); fetch with `abstractvoice-prefetch --openf5` / `--chroma` |
@@ -69,6 +69,10 @@ engine's own table:
 | `triposr`, `trellis2`, `step1x`, `hunyuan3d` (and their `abstract3d:` ids) | a repo id | the Hugging Face cache |
 | `mlx`, `mlx-vlm`, `huggingface`, `transformers` | a repo id (`:QUANT` for GGUF) | the Hugging Face cache (MLX also checks its MTP companion) |
 | `lmstudio`, `ollama` | the engine's model id | the engine's own listing (`lms ls`, `GET /api/tags`) |
+
+On a voice route the provider is first resolved the way the route runs it (core's
+`route_engines.voice_engine_id`, then AbstractVoice's own aliases: `remote`, `compatible` and
+`proxy` are `openai-compatible`, so they read as remote).
 
 The engines that resolve to a Hugging Face repo are downloaded the same way
 (`abstractcore models download faster-whisper large-v3` fetches `Systran/faster-whisper-large-v3`).

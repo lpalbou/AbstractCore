@@ -47,7 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and torch are never imported), transformers-asr, audiodit, omnivoice, qwen3-tts, piper, f5_tts,
   chroma, stable-audio-3, stable-audio, acestep, sdcpp and mlx-gen / mflux presets, triposr,
   trellis2, step1x and hunyuan3d. Hugging Face storage is judged by the same reader as every other
-  HF route; `acemusic` and `elevenlabs-music` are remote. The engines that resolve to a Hugging Face
+  HF route; `acemusic` and `elevenlabs-music` are remote. A voice route's provider is resolved the way the
+  route runs it before the probe (`local` / `hf` on input.voice, AbstractVoice's `remote` / `compatible` /
+  `proxy` aliases are remote). The engines that resolve to a Hugging Face
   repo download it (`abstractcore models download faster-whisper large-v3`). `supported_providers()`
   lists them. Only an id no route offers still answers `unknown` (`no materializer`), now naming
   the provider and what to do. Tests: `tests/config/test_engine_weight_probes.py` (cache layouts

@@ -4113,6 +4113,33 @@ def mark_recommended_route_gaps(plan: Dict[str, Any], routes: Iterable[Any]) -> 
 # ---------------------------------------------------------------------------
 
 
+def _route_probe_provider(provider: str, key: str) -> str:
+    """The engine a route's provider names, resolved the way the route RUNS it.
+
+    A voice route accepts more ids than engine ids: AbstractVoice's plugin
+    takes `local` / `hf` on `input.voice` (core's key-aware
+    `route_engines.voice_engine_id`, the same resolution the engine check
+    uses) and its own aliases on every voice route (`remote` / `compatible` /
+    `proxy` -> `openai-compatible`, `f5-tts` -> `f5_tts`:
+    `abstractvoice.engine_runtime.normalize_engine_id`). The weights are
+    probed for the engine the route will run, never for the alias.
+    """
+
+    route_key = str(key or "").strip().lower()
+    if route_key not in ("input.voice", "output.voice"):
+        return provider
+    from .route_engines import voice_engine_id
+
+    pid = voice_engine_id(provider, route_key)
+    try:
+        from abstractvoice.engine_runtime import normalize_engine_id  # type: ignore
+    except Exception:
+        # No AbstractVoice: the route's engine check already reports it as
+        # the missing engine; the key-aware ids above still resolve.
+        return pid
+    return normalize_engine_id(pid)
+
+
 def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
     """Annotate capability-default rows with weight availability.
 
@@ -4181,6 +4208,8 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
                 inherited = covering_artifact.get(covered_by)
                 if inherited and _matches_installed_id(model, inherited):
                     artifact = inherited
+            if probe_provider == provider and provider:
+                probe_provider = _route_probe_provider(provider, key)
 
             if not provider or not artifact:
                 row["availability"] = ModelPresence(

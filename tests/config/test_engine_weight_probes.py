@@ -277,3 +277,48 @@ def test_downloading_an_engine_id_fetches_the_engines_repo(offline):
     outcome = mm.download("faster-whisper", "large-v3", dry_run=True)
     assert outcome.status == "planned", outcome
     assert outcome.command[:2] == ["huggingface_hub.snapshot_download", "Systran/faster-whisper-large-v3"]
+
+
+# ---------------------------------------------------------------------------
+# Route aliases: the ids a voice route accepts besides engine ids
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "key,provider,model,repo",
+    [
+        pytest.param("input.voice", "local", "large-v3", "Systran/faster-whisper-large-v3", marks=_needs("faster_whisper"), id="local"),
+        pytest.param("input.voice", "hf", "whisper-large-v3-turbo", "openai/whisper-large-v3-turbo", marks=_needs("abstractvoice"), id="hf"),
+        pytest.param("input.voice", "faster_whisper", "base", "Systran/faster-whisper-base", marks=_needs("faster_whisper"), id="faster_whisper"),
+    ],
+)
+def test_a_voice_route_alias_is_probed_as_the_engine_it_runs(offline, key, provider, model, repo):
+    """`local` / `hf` on input.voice are faster-whisper / transformers-asr (core's
+    route_engines.voice_engine_id): the weights are those of the engine the route runs."""
+
+    (row,) = mm.annotate_route_availability([{"key": key, "provider": provider, "model": model}])
+    assert row["availability"]["status"] == mm.PRESENCE_ABSENT, row
+    assert row["availability"]["evidence"] != "no materializer"
+    _hf_repo(offline["cache"], repo, files=("model.bin",))
+    (row,) = mm.annotate_route_availability([{"key": key, "provider": provider, "model": model}])
+    assert row["availability"]["status"] == mm.PRESENCE_INSTALLED, row
+    assert ("models--" + repo.replace("/", "--")) in row["availability"]["location"]
+
+
+@_needs("abstractvoice")
+@pytest.mark.parametrize("provider", ["remote", "compatible", "proxy"])
+def test_abstractvoices_relay_aliases_are_remote_on_a_voice_route(offline, provider):
+    """AbstractVoice's own alias table (engine_runtime.normalize_engine_id) names these
+    openai-compatible: a relay, so the weights are 'served remotely'."""
+
+    for key in ("output.voice", "input.voice"):
+        (row,) = mm.annotate_route_availability([{"key": key, "provider": provider, "model": "tts-1"}])
+        assert row["availability"]["status"] == mm.PRESENCE_NOT_APPLICABLE, (key, row)
+        assert row["availability"]["summary"] == "Served remotely."
+
+
+def test_route_aliases_only_apply_on_voice_routes(offline):
+    """`local` on a text route is not faster-whisper."""
+
+    (row,) = mm.annotate_route_availability([{"key": "input.text", "provider": "local", "model": "large-v3"}])
+    assert row["availability"]["evidence"] == "no materializer"
