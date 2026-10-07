@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ModelPresence.summary`**: one short sentence per answer ("In the Hugging Face cache.", "Not in
   Piper's voice folder.") that grids print under the state; the long `detail` stays for tooltips.
   Always present in `to_dict()`.
+- **Web console Email: no "Advanced" disclosure.** Your own sign-in client is the visible section
+  **Sign-in app** and the recipient rules, send limits and watched folder are **Recipients and
+  limits** (the operator's rule: no "Advanced" anywhere; the names the consoles share). The sign-in
+  refusal says "add your own client id under Sign-in app". Tests: `tests/test_console_email_tab.py`.
 
 ## [2.25.0] - 2026-10-05
 

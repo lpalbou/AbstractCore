@@ -8283,7 +8283,7 @@ it prints the sign-in prompt to stderr as one JSON line, which the terminal cons
 ```
 
 The web console and the terminal console (the Google and Microsoft tabs of the Email page's
-Mailbox card) offer the same sign-in with the same fields: address, and under Advanced your own
+Mailbox card) offer the same sign-in with the same fields: address, and your own
 client id, client secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
 AbstractCore, so open its sign-in page in a browser on that machine; the device-code flow works
 from any browser.
@@ -8393,16 +8393,16 @@ Errors are classified from protocol reply codes and exception types, never from 
     over a field you edited; one line says where the values came from. The link **My provider
     uses a different login name** shows a Login field, and **Custom certificate** shows the CA
     file. **Connect** tests reading and sending, then stores; an error names the step that
-    failed. Google and Microsoft sign in with the provider (your own client under Advanced).
+    failed. Google and Microsoft sign in with the provider (your own client under **Sign-in app**).
     Once connected: the status line ("Connected as ... · Password · checked 2 min ago"), the
     **Active** switch (off pauses watching and sending; your settings are kept), **Test**, and
     **Disconnect** with an inline confirmation.
   - **Agent email tools**: a switch (off by default; unavailable until a mailbox is connected).
-  - **Advanced**, three sentences saved as you edit: "Your agents may send to" (Only these
+  - **Recipients and limits**, three sentences saved as you edit: "Your agents may send to" (Only these
     recipients / Everyone except these, with the entries as chips), "At most N per hour and N
     per day" (with this hour's and today's count), and "Watch folder".
 
-  Switches and Advanced fields apply at once; the Email address is the only field with a Save
+  Switches and those fields apply at once; the Email address is the only field with a Save
   button. A connection stores no display name you did not give: it keeps the stored one, else
   uses the address's local part. The tab uses the `/acore/email` routes ([Server](docs/server.md)).
 - **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) has the same cards
@@ -27368,7 +27368,7 @@ fresh one. The server landing page (`/`) links to the console as well.
 | **Overview** | This machine: OS, architecture, accelerator, RAM or unified memory, the usable model-memory ceiling and its source, free memory now, free disk for each model cache, Python version. An engines summary and server health (version, whether a bearer token is required). | Jump to Models or Engines. | `abstractcore host profile --json`, `abstractcore engines status --probe` |
 | **Models** | The model catalog, one row per downloadable artifact (provider, artifact id, quantization, download size, weights status, fit badge), the models already installed with their sizes, and any running jobs with progress bars. | Search, filter, Download, Delete, Cancel a job. | `abstractcore models search <q> --engine <id> --fits`, `abstractcore models download`, `abstractcore models delete`, `abstractcore models list` |
 | **Engines** | Each engine (Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face): supported on this host, installed and version, running and reachable, base URL, model count. | Install (with confirmation), Open download page, Refresh (live probe). | `abstractcore engines status --probe`, `abstractcore engines install <id>`, `abstractcore engines open <id>` |
-| **Email** | Your email address, the mailbox (connected address, sign-in method, last check), the recipient rules and the send limits with their usage. | Save the email address; connect a mailbox (tabs IMAP / Google / Microsoft; IMAP shows the address, password and server fields, pre-filled from the address), Test, Disconnect (inline confirmation); the mailbox's **Active** switch and the **Agent email tools** switch; recipient rules, send limits and folder under Advanced (applied at once). See [Email](docs/email.md). | `abstractcore email status`, `abstractcore email connect ... --password-stdin`, `abstractcore email policy set`, `abstractcore email limits set`, `abstractcore email folder`, `abstractcore email agent-tools on\|off` |
+| **Email** | Your email address, the mailbox (connected address, sign-in method, last check), the recipient rules and the send limits with their usage. | Save the email address; connect a mailbox (tabs IMAP / Google / Microsoft; IMAP shows the address, password and server fields, pre-filled from the address), Test, Disconnect (inline confirmation); the mailbox's **Active** switch and the **Agent email tools** switch; recipient rules, send limits and folder under **Recipients and limits** (applied at once). See [Email](docs/email.md). | `abstractcore email status`, `abstractcore email connect ... --password-stdin`, `abstractcore email policy set`, `abstractcore email limits set`, `abstractcore email folder`, `abstractcore email agent-tools on\|off` |
 | **Providers** | Read-only list of providers (`GET /providers`) and the configured capability defaults (`GET /v1/config/capability-defaults`). | Nothing to edit here. | `abstractcore config providers --probe`, `abstractcore config defaults` |
 
 API keys and default models are configured on the host with `abstractcore --config`; the console

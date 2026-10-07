@@ -172,7 +172,7 @@ it prints the sign-in prompt to stderr as one JSON line, which the terminal cons
 ```
 
 The web console and the terminal console (the Google and Microsoft tabs of the Email page's
-Mailbox card) offer the same sign-in with the same fields: address, and under Advanced your own
+Mailbox card) offer the same sign-in with the same fields: address, and your own
 client id, client secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
 AbstractCore, so open its sign-in page in a browser on that machine; the device-code flow works
 from any browser.
@@ -282,16 +282,16 @@ Errors are classified from protocol reply codes and exception types, never from 
     over a field you edited; one line says where the values came from. The link **My provider
     uses a different login name** shows a Login field, and **Custom certificate** shows the CA
     file. **Connect** tests reading and sending, then stores; an error names the step that
-    failed. Google and Microsoft sign in with the provider (your own client under Advanced).
+    failed. Google and Microsoft sign in with the provider (your own client under **Sign-in app**).
     Once connected: the status line ("Connected as ... · Password · checked 2 min ago"), the
     **Active** switch (off pauses watching and sending; your settings are kept), **Test**, and
     **Disconnect** with an inline confirmation.
   - **Agent email tools**: a switch (off by default; unavailable until a mailbox is connected).
-  - **Advanced**, three sentences saved as you edit: "Your agents may send to" (Only these
+  - **Recipients and limits**, three sentences saved as you edit: "Your agents may send to" (Only these
     recipients / Everyone except these, with the entries as chips), "At most N per hour and N
     per day" (with this hour's and today's count), and "Watch folder".
 
-  Switches and Advanced fields apply at once; the Email address is the only field with a Save
+  Switches and those fields apply at once; the Email address is the only field with a Save
   button. A connection stores no display name you did not give: it keeps the stored one, else
   uses the address's local part. The tab uses the `/acore/email` routes ([Server](server.md)).
 - **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) has the same cards
