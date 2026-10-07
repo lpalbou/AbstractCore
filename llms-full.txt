@@ -6783,6 +6783,8 @@ Common levers:
 - **Local execution (optional)**: tool execution is local (never executed by the provider); by default tool calls are returned for your host/runtime to execute
 - **Event prevention**: Stop dangerous tools before execution
 - **Input validation**: Validate tool parameters
+- **Command sandbox**: `execute_command` and `shell_exec` run inside the OS sandbox built from the run's workspace set (`abstractcore.tools.sandbox`: macOS `sandbox-exec`, Linux bubblewrap or Landlock). The most specific workspace wins on every platform: an allowed folder inside a refused one is reachable (bubblewrap binds it after masking the refused parent), a refused folder inside an allowed one refuses its subtree. See [Tool Calling](docs/tool-calling.md) (*Command sandbox*).
+- **Browser probe scope**: `browser_probe` serves a local page from a private loopback origin that answers only for files the run's sandbox can read; `file://` and out-of-scope loads are refused and listed in its report.
 
 ### 2. API Key Management
 - **Environment variables**: Secure key storage
