@@ -275,12 +275,12 @@ _EMAIL_CSS = """
 .acc-email .acc-status-line .acc-status-error { color: var(--error, #e74c3c); }
 .acc-email .acc-confirm { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; border: 1px solid var(--error-border, rgba(231,76,60,.35)); background: var(--error-subtle, rgba(231,76,60,.12)); border-radius: var(--radius-md, 8px); font-size: var(--font-size-base, 14px); }
 .acc-email .acc-confirm[hidden] { display: none; }
-.acc-email details.acc-advanced > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; list-style: none; cursor: pointer; }
-.acc-email details.acc-advanced > summary::-webkit-details-marker { display: none; }
-.acc-email details.acc-advanced > summary::before { content: "\\25B8"; color: var(--text-secondary, #aaa); font-size: var(--font-size-lg, 16px); }
-.acc-email details.acc-advanced[open] > summary::before { content: "\\25BE"; }
+/* No "Advanced" disclosure (operator ruling, R15): visible sections named for their content. */
+.acc-email .acc-advanced-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.acc-email .acc-named { margin-top: var(--space-4, 16px); display: flex; flex-direction: column; gap: var(--space-3, 12px); }
+.acc-email .acc-named__title { margin: 0; font-size: var(--font-size-base, 14px); font-weight: 650; }
 .acc-email .acc-advanced-body { display: flex; flex-direction: column; gap: var(--space-4, 16px); margin-top: var(--space-3, 12px); }
-/* Advanced: compact sentences with the controls inline (DESIGN v2 §3.5). */
+/* Recipients and limits: compact sentences with the controls inline (DESIGN v2 §3.5). */
 .acc-email .acc-sentence-block { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--ui-border-1, rgba(255,255,255,.1)); padding-top: var(--space-4, 16px); min-width: 0; }
 .acc-email .acc-sentence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0; font-size: var(--font-size-base, 14px); line-height: 1.5; }
 .acc-email .acc-sentence label { font-weight: 500; }
@@ -490,8 +490,8 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
         <p class="af-form__help" id="acc-email-oauth-reason" data-acc="email-oauth-reason" hidden></p>
         <p class="af-form__error" data-acc="email-oauth-error" role="alert" hidden></p>
         <div class="acc-message" data-acc="email-oauth-prompt" role="status" aria-live="polite"></div>
-        <details class="acc-disclosure" data-acc="email-oauth-advanced">
-          <summary>Advanced: your own sign-in client</summary>
+        <section class="acc-named" data-acc="email-oauth-advanced" aria-labelledby="acc-email-oauth-app-title">
+          <h4 class="acc-named__title" id="acc-email-oauth-app-title">Sign-in app</h4>
           <div class="af-form__grid-2">
             <div class="af-form__field"><label class="af-form__label" for="acc-email-oauth-client-id">Client ID</label><input type="text" id="acc-email-oauth-client-id" data-acc="email-oauth-client-id" autocomplete="off"></div>
             <div class="af-form__field"><label class="af-form__label" for="acc-email-oauth-client-secret">Client secret</label><input type="password" id="acc-email-oauth-client-secret" data-acc="email-oauth-client-secret" autocomplete="new-password"></div>
@@ -501,7 +501,7 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
             <div class="af-form__field"><label class="af-form__label" for="acc-email-oauth-flow">Sign-in flow</label><select id="acc-email-oauth-flow" data-acc="email-oauth-flow"><option value="">Provider default</option><option value="device">Device code (any browser)</option><option value="loopback">Browser on this machine</option></select></div>
           </div>
           <p class="af-form__help">A client you registered with the provider for the mail scopes. Without one, the built-in AbstractFramework client signs in when this version has one. Tokens are stored encrypted.</p>
-        </details>
+        </section>
       </div>
     </div>
     <div data-acc="email-connected" hidden>
@@ -536,8 +536,8 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
       <span id="acc-email-agent-tools-reason" class="af-switch__reason" hidden></span>
     </span>
   </section>
-  <details class="af-card acc-advanced" data-acc="email-advanced">
-    <summary><h3 class="af-card__title">Advanced</h3><span class="af-card__desc">Who your agents may write to, send limits, the folder they watch</span></summary>
+  <section class="af-card acc-advanced" data-acc="email-advanced" aria-labelledby="acc-email-limits-title">
+    <div class="acc-advanced-head"><h3 class="af-card__title" id="acc-email-limits-title">Recipients and limits</h3><span class="af-card__desc">Who your agents may write to, send limits, the folder they watch</span></div>
     <div class="acc-advanced-body">
       <div class="acc-sentence-block" data-acc="email-policy-card">
         <p class="acc-sentence"><label for="acc-email-policy-mode">Your agents may send to</label> <select id="acc-email-policy-mode" data-acc="email-policy-mode" aria-describedby="acc-email-policy-help"><option value="allowlist">Only the Allowed list</option><option value="denylist">Anyone not on the Denied list</option></select> <span class="acc-saved" data-acc="email-policy-saved" role="status" aria-live="polite"></span></p>
@@ -558,7 +558,7 @@ _EMAIL_HTML = """<div class="acc-root acc-email af-form" data-acc-kind="email" i
         <p class="af-form__help" id="acc-email-folder-help" data-acc="email-folder-help">The folder your agents read. Empty = INBOX.</p>
       </div>
     </div>
-  </details>
+  </section>
   <p class="af-form__help" data-acc="email-scope">These are the email settings of this AbstractCore install. A gateway keeps its own per user: each user sets theirs in the gateway console (My account).</p>
   <div class="acc-cli-line">CLI equivalent: <code>abstractcore email status</code>, <code>abstractcore email registered-address &lt;email address&gt;</code>, <code>printf '%s\\n' "$PASSWORD" | abstractcore email connect --address &lt;email address&gt; --password-stdin</code>, <code>abstractcore email connect --address &lt;email address&gt; --oauth google|microsoft</code>, <code>abstractcore email agent-tools on|off</code>, <code>abstractcore email policy set --mode allowlist --always-allow &lt;address or domain&gt; --always-deny &lt;address or domain&gt;</code>, <code>abstractcore email limits set --per-hour 100 --per-day 1000</code>, <code>abstractcore email folder &lt;name&gt;</code>, <code>abstractcore email enable|disable</code> (Active)</div>
 </div>"""
@@ -1496,7 +1496,7 @@ _JS_TEMPLATE = r"""
   // DESIGN v2 §3 (round 2), in this order: Email address (one field + its own
   // inline Save) -> Mailbox (tabs IMAP | Google | Microsoft, IMAP first and
   // the default; or the connected status with the Active switch) -> Agent
-  // email tools (switch) -> Advanced (compact sentences: who agents may write
+  // email tools (switch) -> Recipients and limits (compact sentences: who agents may write
   // to, send limits, the watched folder). The IMAP pane shows every server
   // field, pre-filled with the standard imap./smtp.<domain> values as soon as
   // the address has a domain, then with discovery's `defaults`
@@ -1684,7 +1684,7 @@ _JS_TEMPLATE = r"""
       if (!val("email-oauth-client-id")) {
         try {
           const p = oauthProvider(tab);
-          if (!p.available) reason = p.reason || `No built-in ${label} sign-in client in this version: add your own client ID under Advanced.`;
+          if (!p.available) reason = p.reason || `No built-in ${label} sign-in client in this version: add your own client ID under Sign-in app.`;
         } catch (err) { reason = errorText(err); }
       }
       const reasonEl = el("email-oauth-reason");

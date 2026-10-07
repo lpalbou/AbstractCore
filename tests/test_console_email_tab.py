@@ -290,7 +290,7 @@ def test_type_scale_and_layout_at_desktop_and_phone(served) -> None:
     try:
         page.wait_for_selector('#acc-email-tab-imap[aria-selected="true"]')  # IMAP is the default tab
         page.wait_for_function("document.querySelector('[data-acc=\"email-servers-source\"]').textContent.startsWith('Standard settings for small-isp.net')")
-        page.evaluate("document.querySelector('[data-acc=\"email-advanced\"]').open = true")
+        pass  # R15: "Recipients and limits" is always visible (no disclosure to open)
         root = page.locator("#acc-email")
         assert page.evaluate(LABEL_SCALE_JS, root.element_handle()) == []
         assert root.bounding_box()["width"] <= 720.5
@@ -423,7 +423,7 @@ def test_connected_state_switches_apply_at_once_and_revert_on_failure(served) ->
         page.wait_for_function("document.querySelector('#acc-email [data-acc=\"message\"]').textContent.includes('stays as it was')")
         assert sw.get_attribute("aria-checked") == "true"  # reverted
         # Advanced: limits and folder save on change, "Saved" inline; no Save buttons.
-        page.evaluate("document.querySelector('[data-acc=\"email-advanced\"]').open = true")
+        pass  # R15: "Recipients and limits" is always visible (no disclosure to open)
         page.fill("#acc-email-per-hour", "5")
         page.press("#acc-email-per-hour", "Tab")
         page.wait_for_function("document.querySelector('[data-acc=\"email-limits-saved\"]').textContent === 'Saved'")
@@ -578,7 +578,7 @@ def test_recipient_rules_show_both_lists_fix_the_own_address_and_auto_save(serve
     fake = FakeEmail(CONNECTED)
     ctx, page = _open(served, fake)
     try:
-        page.evaluate("document.querySelector('[data-acc=\"email-advanced\"]').open = true")
+        pass  # R15: "Recipients and limits" is always visible (no disclosure to open)
         card = page.locator('[data-acc="email-policy-card"]')
         text = card.inner_text()
         for words in ("Your agents may send to", "Always allowed", "Always denied",

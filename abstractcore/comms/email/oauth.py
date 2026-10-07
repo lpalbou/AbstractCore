@@ -113,7 +113,7 @@ def oauth_providers_public(configured: Optional[Dict[str, Any]] = None) -> List[
             {
                 "id": prov,
                 "available": available,
-                "reason": None if available else f"No built-in {label} sign-in client in this version: add your own client id under Advanced.",
+                "reason": None if available else f"No built-in {label} sign-in client in this version: add your own client id under Sign-in app.",
             }
         )
     return out
