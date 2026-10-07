@@ -278,3 +278,38 @@ def test_no_policy_library_use_is_unchanged(t):
     # No host configured and no stamp: the historical behaviour (no sandbox field, no line).
     res = execute_command("echo plain", working_directory=str(t / "priv"))
     assert res["success"] and "sandbox" not in res and "Sandbox:" not in res["rendered"]
+
+
+def test_allow_list_denies_unlisted_files_in_the_shared_temp_roots(t):
+    """macOS "Deny everything, allow listed workspaces": an UNLISTED file under /private/tmp
+    or the per-user temp root (/private/var/folders) is unreadable, like /Users; system
+    roots stay readable, writes there are denied; the xcrun-shimmed tools (git,
+    /usr/bin/python3) run without "couldn't create cache file"; the private TMPDIR works."""
+    import tempfile
+    import uuid
+
+    marker = f"R14-TMP-MARKER-{uuid.uuid4().hex[:8]}"
+    shared = Path("/private/tmp") / f"r14-unlisted-{uuid.uuid4().hex[:8]}.txt"
+    shared.write_text(marker)
+    vf_dir = Path(tempfile.mkdtemp(prefix="r14-unlisted-", dir=sb._darwin_user_temp_dir() or "/private/var/folders"))
+    (vf_dir / "f.txt").write_text(marker)
+    try:
+        stamp = SandboxSpec(private_workspace=str(t / "priv"), posture="allowed_only").to_stamp()
+        for cmd in (f"cat {shared}", f"cat {vf_dir}/f.txt", "ls /private/tmp", "ls /private/var/folders"):
+            res = execute_command(cmd, working_directory=str(t / "priv"), _sandbox=stamp)
+            assert marker not in (res.get("stdout") or "") and res.get("return_code") != 0, (cmd, res)
+        res = execute_command("ls /usr/local /Applications >/dev/null && echo SYSREAD; touch /usr/local/r14-x; git --version; /usr/bin/python3 -c 'print(42)'; echo t > $TMPDIR/t && cat $TMPDIR/t",
+                              working_directory=str(t / "priv"), _sandbox=stamp)
+        out = res.get("stdout") or ""
+        assert "SYSREAD" in out and "git version" in out and "42" in out, res
+        assert "couldn't create cache file" not in (res.get("stderr") or ""), res
+        assert not Path("/usr/local/r14-x").exists()
+        # Positive control: the same read works without the sandbox's allow-list posture.
+        res = execute_command(f"cat {shared}", working_directory=str(t / "priv"),
+                              _sandbox=SandboxSpec(private_workspace=str(t / "priv"), posture="any_except_denied").to_stamp())
+        assert marker in (res.get("stdout") or "")
+    finally:
+        shared.unlink(missing_ok=True)
+        import shutil
+
+        shutil.rmtree(vf_dir, ignore_errors=True)

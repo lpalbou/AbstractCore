@@ -82,7 +82,13 @@ STAMP_ARG = "_sandbox"  # the hidden tool argument the runtime stamps (paths onl
 TMPDIR_NAME = ".tmp"
 
 # User-data roots denied under "Deny everything, allow listed workspaces" (plus $HOME).
-_USER_DATA_ROOTS_DARWIN = ("/Users", "/Volumes", "/private/var/root")
+# "Deny everything, allow listed workspaces" on macOS denies these roots (read and write):
+# user data, mounted volumes, root's home, and the shared temp roots (/private/tmp and the
+# per-user temp root /private/var/folders), where other processes leave files. System
+# roots (/usr, /bin, /System, /Library, /opt, /usr/local, /Applications, ...) stay READABLE
+# (commands need their binaries, libraries and frameworks); under this posture every write
+# outside the listed workspaces is denied anyway.
+_USER_DATA_ROOTS_DARWIN = ("/Users", "/Volumes", "/private/var/root", "/private/tmp", "/private/var/folders")
 _USER_DATA_ROOTS_LINUX = ("/home", "/root", "/mnt", "/media", "/srv", "/run/user")
 # System roots readable under the allow-list posture on Linux (bwrap/Landlock bind only these).
 _SYSTEM_ROOTS_LINUX = ("/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc", "/opt", "/nix", "/var/lib", "/run/systemd/resolve")
@@ -463,11 +469,15 @@ def macos_profile(spec: SandboxSpec) -> str:
     if not writes_default_rw:
         lines.append('(deny file-write* (subpath "/"))')
         lines.append("(allow file-write* " + " ".join(_DEV_WRITABLE) + ")")
-        xcrun_tmp = _darwin_user_temp_dir()
-        if xcrun_tmp:
-            # xcrun's own cache files only (never the folder): without them every shimmed
-            # tool prints "couldn't create cache file" on each call.
-            lines.append('(allow file-write* (regex #"^' + _sbpl_regex(xcrun_tmp.rstrip("/")) + '/xcrun_db"))')
+    xcrun_tmp = _darwin_user_temp_dir()
+    # xcrun's own cache files only (never the folder): without them every shimmed tool
+    # (/usr/bin/python3, git, ...) prints "couldn't create cache file" on each call. Emitted
+    # AFTER the rows (last match wins), because the per-user temp root is denied under
+    # "Deny everything, allow listed workspaces".
+    xcrun_rule = ('(allow file-read* file-write* (regex #"^' + _sbpl_regex(xcrun_tmp.rstrip("/")) + '/xcrun_db"))') if xcrun_tmp else None
+    if not writes_default_rw:
+        if xcrun_rule:
+            lines.append(xcrun_rule)
 
     def _emit(rule: _Rule) -> None:
         s = _sbpl_str(rule.path)
@@ -485,6 +495,8 @@ def macos_profile(spec: SandboxSpec) -> str:
         _emit(rule)
     for rule in builtin:
         _emit(rule)
+    if xcrun_rule and (spec.posture == "allowed_only" or not writes_default_rw):
+        lines.append(xcrun_rule)
     # Path lookup (`cd`, getcwd, realpath) into an allowed folder stats its ancestors:
     # metadata only (existence/attributes), never their contents.
     ancestors: List[str] = []
@@ -492,6 +504,14 @@ def macos_profile(spec: SandboxSpec) -> str:
         if rule.action == "deny":
             continue
         parent = os.path.dirname(rule.path)
+        while parent and parent != "/":
+            if parent not in ancestors:
+                ancestors.append(parent)
+            parent = os.path.dirname(parent)
+    if xcrun_rule and xcrun_tmp:
+        # Creating the cache file looks up its folder: metadata of the folder and its
+        # ancestors only (never a listing or a read of anything else in the temp root).
+        parent = xcrun_tmp.rstrip("/")
         while parent and parent != "/":
             if parent not in ancestors:
                 ancestors.append(parent)

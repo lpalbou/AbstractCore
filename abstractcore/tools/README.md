@@ -673,7 +673,13 @@ sandbox built from the run's effective workspace set. The command string is neve
 - **"Deny everything, allow listed workspaces"** (`allowed_only`): user data (`/Users`, `/Volumes`,
   `/home`, `$HOME`, …) is unreadable except the allowed rows and the run's private workspace; only
   the read & write rows, the private workspace and its private TMPDIR are writable. System roots
-  and the host's own Python stay readable.
+  and the host's own Python stay readable. On macOS the denied roots are `/Users`, `/Volumes`,
+  `/private/var/root`, `$HOME` and the shared temp roots `/private/tmp` and `/private/var/folders`
+  (where other processes leave files); system folders such as `/usr`, `/System`, `/Library`, `/opt`,
+  `/usr/local` and `/Applications` stay readable because commands need their binaries, libraries and
+  frameworks, and every write outside the listed workspaces is denied. Only xcrun's own cache files
+  in the per-user temp folder stay usable, so git and `/usr/bin/python3` run quietly. A refused row
+  is denied wherever it sits.
 - **"Allow everything, refuse listed workspaces"** (`any_except_denied`): everything is readable
   except the refused rows; with a read-only default only the read & write rows, the private
   workspace and its TMPDIR are writable.

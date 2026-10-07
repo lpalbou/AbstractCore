@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **macOS command sandbox, "Deny everything, allow listed workspaces": the shared temp folders are
+  denied too.** The profile denied only user data (`/Users`, `/Volumes`, `/private/var/root`,
+  `$HOME`), so an unlisted file under `/private/tmp` or `/private/var/folders` stayed readable. Both
+  are now denied (read and write); system folders (`/usr`, `/System`, `/Library`, `/opt`,
+  `/usr/local`, `/Applications`) stay readable and unwritable; xcrun's cache files and the run's
+  private TMPDIR keep working. Test: `tests/tools/test_sandbox_macos.py`.
 - **`browser_probe` serves local pages from a scoped loopback origin, never `file://`.** A page in
   an allowed workspace could embed `file://` subresources (img, iframe, stylesheet) from a refused
   folder, and Chromium loaded them. Local targets are now served from a private
