@@ -683,9 +683,12 @@ sandbox built from the run's effective workspace set. The command string is neve
 - **Backends:** macOS `/usr/bin/sandbox-exec` with a generated SBPL profile (last matching rule
   wins, so rules are emitted from the least to the most specific; network and process execution
   allowed; Apple Events and LaunchServices denied, since they would run code outside the sandbox);
-  Linux `bwrap` (bind mounts, tmpfs over refused folders); Linux Landlock for the allow-list
-  posture when bwrap is absent (kernel ≥ 5.13; a refused row inside an allowed one cannot be
-  expressed and refuses).
+  Linux `bwrap` (bind mounts, tmpfs over refused folders; an allowed folder inside a refused one
+  is bound after the mask, and the masks are made read-only once every folder is bound, so the
+  nesting rule holds on Linux too); Linux Landlock for the allow-list posture when bwrap is absent
+  (kernel ≥ 5.13; grants each allowed folder, including one inside a refused folder; a refused row
+  inside an allowed one cannot be expressed and refuses). CI proves both on Ubuntu (job
+  `linux-sandbox`).
 - **Fail closed:** with no sandbox available the tool returns `success: false` with one sentence
   ("Commands are not sandboxed on this gateway host, so they are refused: …") and the run continues,
   unless the host allowed unsandboxed commands (`configure_host(unsandboxed_commands_allowed=True)`,
@@ -698,8 +701,14 @@ sandbox built from the run's effective workspace set. The command string is neve
   allowed, refused, builtin_refused: <count>}` and the rendered text a line such as
   `Sandbox: macOS sandbox-exec` or `Sandbox: none — commands refused on this host`.
 - Library use with no host policy and no stamp keeps the historical behaviour (no sandbox).
-- Not covered: `browser_probe` runs a fixed browser worker (its `target` is walled by the runtime's
-  file policy; Chromium cannot run nested inside sandbox-exec without disabling its own sandbox).
+- `browser_probe` runs a fixed browser worker outside the OS sandbox (Chromium cannot run nested
+  inside sandbox-exec without disabling its own sandbox). Its local pages are scoped instead: with
+  the run's `_sandbox` stamp, the page is served from a private loopback origin
+  (`http://<random name>.localhost:<port>`) that answers only for files the stamp can read
+  (`sandbox.path_readable`, the same nesting rule), never as `file://`; `file://` URLs and files
+  outside the scope are refused and listed in the report ("Local files BLOCKED"). A page outside
+  the scope is refused before the browser starts; on a configured host a local page without a
+  stamp is refused.
 
 **Rich Metadata**:
 All built-in tools include:

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`browser_probe` serves local pages from a scoped loopback origin, never `file://`.** A page in
+  an allowed workspace could embed `file://` subresources (img, iframe, stylesheet) from a refused
+  folder, and Chromium loaded them. Local targets are now served from a private
+  `http://<random name>.localhost:<port>` origin that answers only for files the run's `_sandbox`
+  stamp can read (new `sandbox.path_readable`, the most-specific-row rule; symlinks resolved);
+  `file://` URLs and out-of-scope files are refused and listed in the report ("Local files
+  BLOCKED"). A page outside the scope is refused before the browser starts; on a host that called
+  `configure_host` a local page without a stamp is refused; library use without a host policy serves
+  what the process can read. `browser_probe` accepts the hidden `_sandbox` argument (not in the
+  model-facing schema). Side effect: ES-module and `fetch()` pages render as they do over http (the
+  `file://` CORS blank no longer happens). Tests: `tests/tools/test_browser_probe.py`.
+
 ### Fixed
 
 - **Linux command sandbox: an allowed folder inside a refused one is reachable under bubblewrap.**

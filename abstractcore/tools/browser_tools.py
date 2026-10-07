@@ -1552,12 +1552,11 @@ def browser_probe(
     """Render a page in a headless browser and verify it displays correctly.
 
     Args:
-        target: http(s):// URL, file:// URL, or local HTML file path. NOTE: a
-            local file:// origin CANNOT load ES modules (`<script
-            type="module">`) or `fetch()` (browser CORS) — a modern
-            module/fetch app renders EMPTY as a file though it works over
-            http. Serve those (e.g. `python -m http.server`) and probe the
-            http:// URL; the report flags this case when it detects it.
+        target: http(s):// URL, file:// URL, or local HTML file path. A
+            local page is served to the browser from a private loopback
+            http origin (never opened as file://) that answers only for
+            files this run may read; anything else it tries to load is
+            refused and listed in the report.
         require_nonblank: Fail if no visible text AND no visual elements
             (canvas/svg/img/video) appear within the budget (default: True).
             Sees the TOP frame only — iframe-hosted content is not inspected.
