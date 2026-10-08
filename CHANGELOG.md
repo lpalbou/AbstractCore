@@ -5,6 +5,21 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Speech input (`input.voice`) recommends Whisper `large-v3` on every host (was `base`). On Apple silicon with the apple setting the pick is AbstractVoice's `mlx-whisper` engine, which runs it on the Apple GPU (about 1.4 s for a 17-second clip on an M5 Max, against about 20 s on the processor); the light install and every other host keep `faster-whisper` (CUDA on an NVIDIA GPU). Stored routes are never changed; fresh installs and `apply-recommended` follow the new pick. On a processor, the recommendation notes that `large-v3-turbo` is faster (about 6 s for that clip).
+
+### Added
+
+- `mlx-whisper` speech-input provider: route alias, weights probe and download (`abstractcore models download mlx-whisper large-v3`), catalog rows `whisper-large-v3` and `whisper-large-v3-turbo` (both Whisper engines).
+- `recommendations.voice_input_hint(route, host)`: the served one-line hint for a configured speech-input route (on Apple silicon, a faster-whisper route runs on the processor while mlx-whisper runs the same model on the GPU). The capability-defaults grid carries it on the `input.voice` row as `route_hint` `{code, sentence, route}`.
+
+### Fixed
+
+- The Hugging Face weights probe counts `.npz` weight files (MLX checkpoints such as `mlx-community/whisper-large-v3-mlx`), which it reported as not downloaded.
+
 ## [2.25.1] - 2026-10-08
 
 ### Security
