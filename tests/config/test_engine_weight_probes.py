@@ -183,12 +183,26 @@ def test_piper_voice_in_its_voice_folder(offline):
     assert mm.probe("piper", "xx_XX-nobody-low").status == mm.PRESENCE_UNKNOWN
 
 
-@_needs("abstractvoice")
+def _importable(module: str) -> bool:
+    """True when `module` imports here (its own dependencies included)."""
+    try:
+        importlib.import_module(module)
+    except Exception:
+        return False
+    return True
+
+
+def _needs_import(module: str):
+    return pytest.mark.skipif(not _importable(module), reason=f"{module} does not import here")
+
+
 @pytest.mark.parametrize(
     "provider,folder,files,flag",
     [
-        ("f5_tts", "openf5", ("cfg/model.yaml", "model.pt", "vocab.txt"), "--openf5"),
-        ("chroma", "chroma", ("config.json", "model.safetensors.index.json"), "--chroma"),
+        pytest.param("f5_tts", "openf5", ("cfg/model.yaml", "model.pt", "vocab.txt"), "--openf5",
+                     marks=_needs_import("abstractvoice.cloning.engine_f5"), id="f5_tts"),
+        pytest.param("chroma", "chroma", ("config.json", "model.safetensors.index.json"), "--chroma",
+                     marks=_needs_import("abstractvoice.cloning.engine_chroma"), id="chroma"),
     ],
 )
 def test_cloning_engines_answer_from_their_own_folder(offline, provider, folder, files, flag):

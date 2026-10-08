@@ -414,7 +414,7 @@ def test_http_status_lists_oauth_providers_and_the_stored_email_address(http) ->
     doc = http.get("/acore/email").json()
     assert [p["id"] for p in doc["oauth_providers"]] == ["google", "microsoft"]
     for p in doc["oauth_providers"]:
-        assert p["available"] is False and "Advanced" in p["reason"]
+        assert p["available"] is False and "Sign-in app" in p["reason"]
     r = http.put("/acore/email/registered-address", json={"address": "me@example.test"})
     assert r.status_code == 200 and r.json()["registered_address"] == "me@example.test"
     assert r.json()["registered_address_stored"] == "me@example.test"
