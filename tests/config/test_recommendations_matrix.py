@@ -135,14 +135,14 @@ def test_the_starter_set_the_writers_use_is_unchanged():
         "output.voice": ("supertonic", "supertonic-3"),
         "output.image": ("mlx-gen", "AbstractFramework/flux.2-klein-4b-8bit"),
         "output.video": ("mlx-gen", "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
-        "input.voice": ("faster-whisper", "base"),
+        "input.voice": ("faster-whisper", "large-v3"),
     }
     assert cd.RECOMMENDED_MODEL_DOWNLOADS == {
         "input.text": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@q4_k_m"},
         "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
         "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
         "output.video": {"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},
-        "input.voice": {"provider": "huggingface", "artifact": "Systran/faster-whisper-base"},
+        "input.voice": {"provider": "huggingface", "artifact": "Systran/faster-whisper-large-v3"},
     }
     # ...and they are views of the one table, never a second copy.
     assert {k for k, r in cd.RECOMMENDED_MODELS.items() if r.starter} == set(cd.RECOMMENDED_MODEL_DOWNLOADS)
@@ -272,9 +272,19 @@ def test_speech_input_follows_the_ctranslate2_builds():
     assert "transformers-asr" in win_arm["reason"]
     for host in (cpu, synthetic_host("cuda24"), synthetic_host("metal16"), dict(cpu, os="darwin", arch="x86_64")):
         e = rec.recommended_models(host)["speech_input"]
-        assert (e["status"], e["provider"], e["model"], e["starter"]) == ("recommended", "faster-whisper", "base", True)
+        e = rec.recommended_models(host)["speech_input"]
+        expected = ("mlx-whisper" if host.get("accelerator") == "metal" else "faster-whisper", "large-v3")
+        assert (e["status"], e["provider"], e["model"], e["starter"]) == ("recommended", *expected, True)
     assert rec.recommended_models(synthetic_host("cuda24"))["speech_input"]["device"] == "NVIDIA GPU (CUDA)"
-    assert rec.recommended_models(synthetic_host("metal16"))["speech_input"]["device"] == "processor"
+    # Round 16: Apple silicon transcribes on its GPU with mlx-whisper...
+    assert rec.recommended_models(synthetic_host("metal16"))["speech_input"]["device"] == "Apple GPU (Metal)"
+    # ...where the apple/gpu setting installed it; the light profile keeps faster-whisper.
+    light_mac = dict(synthetic_host("metal16"), engines_installed={"mlx-whisper": False})
+    e = rec.recommended_models(light_mac)["speech_input"]
+    assert (e["provider"], e["model"], e["device"]) == ("faster-whisper", "large-v3", "processor")
+    # A processor runs large-v3 slowly: the served sentence offers large-v3-turbo.
+    assert rec.FASTER_WHISPER_CPU_NOTE in rec.recommended_models(cpu)["speech_input"]["notes"]
+    assert rec.FASTER_WHISPER_CPU_NOTE not in rec.recommended_models(synthetic_host("cuda24"))["speech_input"]["notes"]
 
 
 def test_music_follows_the_pytorch_builds_and_the_memory_gate(matrix):

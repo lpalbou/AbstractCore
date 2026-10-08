@@ -1,7 +1,7 @@
 {
  "$schema": "./model_downloads_catalog.schema.json",
  "schema": "model_downloads_catalog_v1",
- "version": "2026-09-29",
+ "version": "2026-10-08",
  "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer. upstream={method, checked, revision?} records an id verified to exist upstream on that date (hf_api: HfApi.model_info(files_metadata=True), download_bytes = the weight files; ollama_registry: the registry manifest, download_bytes = the sum of its layers); such an artifact must carry its verified size. options carries route options the recommendation copies (the MTP builds: speculation). resident={bytes, source} (optional, per artifact) is the MEASURED memory the engine needs while it runs, for models whose working memory is not their file size (video generation): the fit verdict uses it instead of download_bytes, and `source` says where and at which profile it was measured. route={key, provider, model} (optional, per artifact) names the capability route that runs the artifact when its engine is not the download provider (AbstractVoice's faster-whisper runs `base`, fetched as a Hugging Face repo): what a surface shows and writes for that route, and how a route stored with the download pair is repaired (capability_defaults.repair_download_pair_routes).",
  "companion_sizes": {
   "mlx-community/Qwen3.5-4B-MTP-4bit": {
@@ -4336,7 +4336,7 @@
     "voice",
     "speech-to-text"
    ],
-   "starter": true,
+   "starter": false,
    "artifacts": [
     {
      "provider": "huggingface",
@@ -4363,7 +4363,130 @@
     "audio": true,
     "speech_recognition": true
    },
-   "notes": "The AbstractFramework recommended speech input model (input.voice), run by AbstractVoice's faster-whisper engine (CTranslate2): CUDA on an NVIDIA GPU, the processor elsewhere."
+   "notes": "Whisper base on AbstractVoice's faster-whisper engine (CTranslate2): CUDA on an NVIDIA GPU, the processor elsewhere. The recommended speech input model until round 16 (now whisper-large-v3); kept for small machines and as the download pair that `repair_download_pair_routes` maps back to its route."
+  },
+  {
+   "id": "whisper-large-v3",
+   "family": "whisper",
+   "display_name": "Whisper large-v3 (speech to text)",
+   "vendor": "OpenAI",
+   "params_total": 1550000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": null,
+   "tags": [
+    "voice",
+    "speech-to-text",
+    "recommended"
+   ],
+   "starter": true,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "Systran/faster-whisper-large-v3",
+     "quant": "f16",
+     "download_bytes": 3090839273,
+     "size_source": "catalog",
+     "verified": true,
+     "route": {
+      "key": "input.voice",
+      "provider": "faster-whisper",
+      "model": "large-v3"
+     },
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-08",
+      "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478"
+     },
+     "note": "3,090,839,273 bytes: the whole repo (7 files) at revision edaa852e, read with the Hugging Face model API on 2026-10-08 (model.bin 3,087,284,237). CTranslate2 conversion by Systran; run by AbstractVoice's faster-whisper engine: CUDA on an NVIDIA GPU, the processor elsewhere."
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "mlx-community/whisper-large-v3-mlx",
+     "quant": "f16",
+     "download_bytes": 3083522487,
+     "size_source": "catalog",
+     "verified": true,
+     "route": {
+      "key": "input.voice",
+      "provider": "mlx-whisper",
+      "model": "large-v3"
+     },
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-08",
+      "revision": "49e6aa286ad60c14352c404340ded53710378a11"
+     },
+     "note": "3,083,522,487 bytes: the whole repo (4 files) at revision 49e6aa28, read with the Hugging Face model API on 2026-10-08 (weights.npz 3,083,520,416). MLX fp16 conversion by mlx-community; run by AbstractVoice's mlx-whisper engine on the Apple GPU (Apple silicon only)."
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "audio": true,
+    "speech_recognition": true
+   },
+   "notes": "The AbstractFramework recommended speech input model (input.voice) on every host (operator ruling, round 16). Apple silicon with the apple/gpu setting: mlx-whisper on the Apple GPU (~1.4 s for a 17 s clip on an M5 Max); elsewhere faster-whisper: CUDA on an NVIDIA GPU, the processor otherwise (~20 s for that clip on an M5 Max processor)."
+  },
+  {
+   "id": "whisper-large-v3-turbo",
+   "family": "whisper",
+   "display_name": "Whisper large-v3-turbo (speech to text)",
+   "vendor": "OpenAI",
+   "params_total": 809000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": null,
+   "tags": [
+    "voice",
+    "speech-to-text"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+     "quant": "f16",
+     "download_bytes": 1621668947,
+     "size_source": "catalog",
+     "verified": true,
+     "route": {
+      "key": "input.voice",
+      "provider": "faster-whisper",
+      "model": "large-v3-turbo"
+     },
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-08",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
+     },
+     "note": "1,621,668,947 bytes: the whole repo (7 files) at revision 0a363e91, read with the Hugging Face model API on 2026-10-08 (model.bin 1,617,884,929). The repo faster-whisper's own model table names for large-v3-turbo."
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "mlx-community/whisper-large-v3-turbo",
+     "quant": "f16",
+     "download_bytes": 1613979758,
+     "size_source": "catalog",
+     "verified": true,
+     "route": {
+      "key": "input.voice",
+      "provider": "mlx-whisper",
+      "model": "large-v3-turbo"
+     },
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-08",
+      "revision": "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
+     },
+     "note": "1,613,979,758 bytes: the whole repo (4 files) at revision a4aaeec0, read with the Hugging Face model API on 2026-10-08 (weights.safetensors 1,613,977,612). MLX fp16 conversion by mlx-community; AbstractVoice's mlx-whisper engine, Apple GPU."
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "audio": true,
+    "speech_recognition": true
+   },
+   "notes": "Whisper large-v3 with a 4-layer decoder: offered on both Whisper engines, never the default (operator ruling, round 16). The faster choice on a processor; ~0.25 s for a 17 s clip with mlx-whisper on an M5 Max."
   },
   {
    "id": "acestep-v15-xl-turbo",

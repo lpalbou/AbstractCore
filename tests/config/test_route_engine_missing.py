@@ -79,8 +79,8 @@ def voice_api(monkeypatch):
 
         def engine_runtime_status(engine, *, kind=None):
             calls.append(engine)
-            if engine not in {"supertonic", "faster-whisper", "piper", "transformers-asr"}:
-                raise ValueError(f"unknown AbstractVoice engine {engine!r}; known engines: supertonic, faster-whisper, piper, transformers-asr")
+            if engine not in {"supertonic", "faster-whisper", "mlx-whisper", "piper", "transformers-asr"}:
+                raise ValueError(f"unknown AbstractVoice engine {engine!r}; known engines: supertonic, faster-whisper, mlx-whisper, piper, transformers-asr")
             ok = engine in installed
             cmd = {"supertonic": 'pip install "abstractvoice[supertonic]"', "faster-whisper": 'pip install "abstractvoice[stt]"'}.get(
                 engine, f'pip install "abstractvoice[{engine}]"'
@@ -91,12 +91,14 @@ def voice_api(monkeypatch):
                 installed=ok,
                 install_command=cmd,
                 reason=None if ok else f"{engine} is not installed. Install it with: {cmd}",
-                missing_modules=() if ok else ({"supertonic": ("onnxruntime",), "faster-whisper": ("faster_whisper",)}.get(engine, (engine,))),
+                missing_modules=() if ok else (
+                    {"supertonic": ("onnxruntime",), "faster-whisper": ("faster_whisper",), "mlx-whisper": ("mlx_whisper",)}.get(engine, (engine,))
+                ),
             )
 
         def known_engines(kind=None):
-            table = {"tts": ("openai", "supertonic", "piper"), "stt": ("openai", "faster-whisper", "transformers-asr")}
-            return table[kind] if kind else ("openai", "supertonic", "piper", "faster-whisper", "transformers-asr")
+            table = {"tts": ("openai", "supertonic", "piper"), "stt": ("openai", "faster-whisper", "mlx-whisper", "transformers-asr")}
+            return table[kind] if kind else ("openai", "supertonic", "piper", "faster-whisper", "mlx-whisper", "transformers-asr")
 
         pkg = types.ModuleType("abstractvoice")
         mod = types.ModuleType("abstractvoice.engine_runtime")
@@ -353,12 +355,12 @@ def test_the_recommended_plan_rows_carry_it(pin_host, packages, voice_api, monke
     assert "engine_missing" not in by_route["output.voice"]
     assert by_route["output.image"]["engine_missing"]["engine"] == "mlx-gen"
     # Speech input: the download is the Hugging Face repo, the ENGINE is the
-    # route's (faster-whisper), never AbstractVoice asked for "huggingface".
+    # route's (round 16 on Apple silicon: mlx-whisper), never AbstractVoice asked for "huggingface".
     voice = by_route["input.voice"]
-    assert (voice["provider"], voice["artifact"]) == ("huggingface", "Systran/faster-whisper-base")
-    assert (voice["route_provider"], voice["route_model"]) == ("faster-whisper", "base")
-    assert voice["engine_missing"]["engine"] == "faster-whisper"
-    assert "faster_whisper missing" in voice["engine_missing"]["reason"]
+    assert (voice["provider"], voice["artifact"]) == ("huggingface", "mlx-community/whisper-large-v3-mlx")
+    assert (voice["route_provider"], voice["route_model"]) == ("mlx-whisper", "large-v3")
+    assert voice["engine_missing"]["engine"] == "mlx-whisper"
+    assert "mlx_whisper missing" in voice["engine_missing"]["reason"]
 
 
 def test_the_recommended_plan_judges_the_routes_engine_not_the_download_provider(pin_host, packages, voice_api, monkeypatch, tmp_path):
@@ -371,7 +373,7 @@ def test_the_recommended_plan_judges_the_routes_engine_not_the_download_provider
     isolate_host(tmp_path, monkeypatch)
     pin_host(MAC)
     packages(dists={"abstractvoice"})
-    calls = voice_api(installed={"supertonic", "faster-whisper"})
+    calls = voice_api(installed={"supertonic", "faster-whisper", "mlx-whisper"})
     by_route = {row["route"]: row for row in mm.recommended_plan()["recommended"]}
     assert "engine_missing" not in by_route["input.voice"]
     assert "huggingface" not in calls
@@ -397,7 +399,7 @@ def test_a_download_source_on_the_transcription_route_says_what_to_do(packages, 
     flag = re_mod.route_engine_missing("huggingface", "Systran/faster-whisper-base", "input.voice")
     assert flag["install"] is None and flag["engine"] == "huggingface"
     assert flag["reason"] == (
-        "'huggingface' is not a transcription engine AbstractVoice has (it has: openai, faster-whisper, "
+        "'huggingface' is not a transcription engine AbstractVoice has (it has: openai, faster-whisper, mlx-whisper, "
         "transformers-asr). Pick a transcription engine for speech input (Multimodal page in the gateway console, "
         "Routes in the core console)."
     )
@@ -498,9 +500,9 @@ def test_the_cli_grid_and_models_status_print_it(tmp_path, pin_host, packages, c
 
 
 def test_the_transcription_routes_weights_are_probed_where_the_download_puts_them(pin_host, monkeypatch, tmp_path):
-    """faster-whisper `base` is the Hugging Face repo Systran/faster-whisper-base
-    (catalog `route`): the grid probes that repo, not a provider named
-    faster-whisper that has no materializer."""
+    """mlx-whisper `large-v3` (the Apple silicon recommendation since round 16) is the
+    Hugging Face repo mlx-community/whisper-large-v3-mlx (catalog `route`): the grid
+    probes that repo, not a provider named mlx-whisper that has no materializer."""
 
     from abstractcore.config import model_materializer as mm
     from tests.models_engines_fakes import isolate_host
@@ -514,7 +516,8 @@ def test_the_transcription_routes_weights_are_probed_where_the_download_puts_the
         return mm.ModelPresence(provider, artifact, mm.PRESENCE_INSTALLED, evidence="test")
 
     monkeypatch.setattr(mm, "probe", fake_probe)
-    rows = mm.annotate_route_availability([{"key": "input.voice", "provider": "faster-whisper", "model": "base"}])
-    assert probed == [("huggingface", "Systran/faster-whisper-base")]
+    rows = mm.annotate_route_availability([{"key": "input.voice", "provider": "mlx-whisper", "model": "large-v3"}])
+    assert probed == [("huggingface", "mlx-community/whisper-large-v3-mlx")]
     assert rows[0]["availability"]["status"] == mm.PRESENCE_INSTALLED
-    assert rows[0]["download_provider"] == "huggingface" and rows[0]["download_artifact"] == "Systran/faster-whisper-base"
+    assert rows[0]["download_provider"] == "huggingface"
+    assert rows[0]["download_artifact"] == "mlx-community/whisper-large-v3-mlx"

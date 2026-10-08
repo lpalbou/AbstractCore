@@ -236,7 +236,7 @@ def test_recommended_plan_would_download_only_absent_artifacts(monkeypatch, linu
     states = {
         "qwen/qwen3.5-9b@q4_k_m": mm.PRESENCE_ABSENT,
         "supertonic-3": mm.PRESENCE_UNKNOWN,
-        "Systran/faster-whisper-base": mm.PRESENCE_INSTALLED,
+        "Systran/faster-whisper-large-v3": mm.PRESENCE_INSTALLED,
     }
     monkeypatch.setattr(
         mm,

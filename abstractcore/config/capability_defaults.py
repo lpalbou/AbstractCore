@@ -340,10 +340,18 @@ RECOMMENDED_SEED_ADDITIONS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
 # the one place its recommendation lives.
 @dataclass(frozen=True)
 class AcceleratorPick:
-    """The route and download that replace a row's portable pick on one accelerator."""
+    """The route and download that replace a row's portable pick on one accelerator.
+
+    `only_if_installed`: the pick applies only where its provider's engine is installed (the
+    host profile's `engines_installed`); elsewhere the row keeps its portable pick, which runs
+    there too. Speech input on Apple silicon: mlx-whisper (Apple GPU) where the apple/gpu
+    setting installed it, faster-whisper (processor) on the light profile -- never an
+    unavailable row for want of an optional faster engine.
+    """
 
     route: CapabilityRouteDefault
     download: Mapping[str, str]
+    only_if_installed: bool = False
 
 
 @dataclass(frozen=True)
@@ -359,6 +367,10 @@ class RecommendedModel:
         """`(route, download)` for `host`: its accelerator's pick, else the portable one."""
 
         pick = self.by_accelerator.get(str(host.get("accelerator") or ""))
+        if pick is not None and pick.only_if_installed:
+            installed = host.get("engines_installed")
+            if isinstance(installed, Mapping) and installed.get(str(pick.route.provider or "")) is False:
+                pick = None
         return (pick.route, pick.download) if pick is not None else (self.route, self.download)
 
 
@@ -418,18 +430,34 @@ RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
         download={"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},
         starter=True,
     ),
-    # Speech input: AbstractVoice's faster-whisper engine (CTranslate2: CUDA on
-    # an NVIDIA GPU, the processor elsewhere -- it has no Metal backend) with
-    # AbstractVoice's own default model, `base`. faster-whisper resolves
-    # `base` to the Hugging Face repo below in the standard Hugging Face cache,
-    # which is where `models download huggingface <repo>` puts it. A STARTER
-    # row (2.19.2, framework rehearsal 0.6.3): without it a fresh install's
-    # speech-to-text fell through to OpenAI and failed for want of an API key,
-    # although the installer ships faster-whisper (`abstractvoice[stt]`).
+    # Speech input: Whisper large-v3 everywhere (operator ruling, round 16:
+    # large-v3 is THE default model; large-v3-turbo is offered, never the
+    # default). The engine follows the host:
+    #   - Apple silicon (`metal`): AbstractVoice's mlx-whisper, Whisper on the
+    #     Apple GPU (MLX) -- ~1.4 s for a 17 s clip on an M5 Max against ~20 s
+    #     on the processor. CTranslate2, faster-whisper's engine, has no Apple
+    #     GPU backend. Only where mlx-whisper is installed (the apple/gpu
+    #     setting); the light profile keeps faster-whisper (`only_if_installed`).
+    #   - every other host: faster-whisper (CTranslate2): CUDA on an NVIDIA GPU
+    #     (abstractvoice `resolve_faster_whisper_device`), the processor
+    #     elsewhere -- where large-v3-turbo is the faster choice
+    #     (`recommendations._device_notes` says so).
+    # Both engines take the same model id and resolve it to their own Hugging
+    # Face repo (below), in the standard Hugging Face cache. A STARTER row
+    # (2.19.2, framework rehearsal 0.6.3): without it a fresh install's
+    # speech-to-text fell through to OpenAI and failed for want of an API key.
+    # Until round 16 the row was faster-whisper `base` (148 MB).
     "input.voice": RecommendedModel(
-        route=CapabilityRouteDefault(provider="faster-whisper", model="base"),
-        download={"provider": "huggingface", "artifact": "Systran/faster-whisper-base"},
+        route=CapabilityRouteDefault(provider="faster-whisper", model="large-v3"),
+        download={"provider": "huggingface", "artifact": "Systran/faster-whisper-large-v3"},
         starter=True,
+        by_accelerator={
+            "metal": AcceleratorPick(
+                route=CapabilityRouteDefault(provider="mlx-whisper", model="large-v3"),
+                download={"provider": "huggingface", "artifact": "mlx-community/whisper-large-v3-mlx"},
+                only_if_installed=True,
+            ),
+        },
     ),
     # Music: AbstractMusic's `acestep` backend (Diffusers AceStepPipeline on
     # PyTorch: CUDA, Apple MPS in bfloat16, or the processor in float32) with
@@ -496,6 +524,8 @@ RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
 #   faster-whisper  abstractvoice's speech input runs on CTranslate2
 #               (abstractvoice/adapters/stt_faster_whisper.py): macOS,
 #               x86_64/arm64 Linux, x86_64 Windows.
+#   mlx-whisper abstractvoice's Apple GPU speech input runs on MLX
+#               (abstractvoice/adapters/stt_mlx_whisper.py): Apple silicon only.
 #   acestep     abstractmusic's ACE-Step backend is a Diffusers pipeline on
 #               PyTorch (abstractmusic/backends/acestep.py): Apple-silicon
 #               macOS, x86_64/arm64 Linux, x86_64 Windows.
@@ -510,6 +540,7 @@ _RECOMMENDED_PROVIDER_ENGINE = {
     "ollama": "ollama",
     "supertonic": "onnxruntime",
     "faster-whisper": "ctranslate2",
+    "mlx-whisper": "mlx",
     "acestep": "torch",
     "diffusers": "torch",
 }
@@ -517,6 +548,7 @@ _RECOMMENDED_PROVIDER_ENGINE = {
 _ENGINE_VIA = {
     "supertonic": "Supertonic voice runs on ONNX Runtime (CPU), and ",
     "faster-whisper": "faster-whisper speech input runs on CTranslate2, and ",
+    "mlx-whisper": "mlx-whisper speech input runs on MLX, and ",
     "acestep": "ACE-Step music generation runs on PyTorch, and ",
     "diffusers": "Diffusers image generation runs on PyTorch, and ",
 }

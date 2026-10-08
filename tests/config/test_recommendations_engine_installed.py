@@ -86,7 +86,7 @@ def test_every_host_profile_carries_the_installed_engines() -> None:
 
     for profile in (_build_light_profile(), host_profile(refresh=True)):
         installed = profile["engines_installed"]
-        assert set(installed) == {"mlx", "mlx-gen", "diffusers", "acestep"}
+        assert set(installed) == {"mlx", "mlx-gen", "diffusers", "acestep", "mlx-whisper"}
         assert installed["mlx"] is provider_engine_installed("mlx")
     assert provider_engine_installed("lmstudio") is None  # a server route is never judged
 

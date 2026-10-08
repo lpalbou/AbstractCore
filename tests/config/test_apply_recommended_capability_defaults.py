@@ -52,6 +52,17 @@ def _portable_host(monkeypatch):
     monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("cpu16"))
 
 
+def _expected_voice():
+    """Speech input's recommendation on THIS machine (round 16): Whisper large-v3 on
+    mlx-whisper on an Apple silicon Mac that has it installed, else on faster-whisper."""
+    from abstractcore.utils.host_profile import host_profile
+
+    host = host_profile(light=True)
+    if host.get("accelerator") == "metal" and (host.get("engines_installed") or {}).get("mlx-whisper"):
+        return ("mlx-whisper", "large-v3"), "mlx-community/whisper-large-v3-mlx"
+    return ("faster-whisper", "large-v3"), "Systran/faster-whisper-large-v3"
+
+
 def _manager(tmp_path) -> ConfigurationManager:
     return ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
 
@@ -114,9 +125,10 @@ def test_speech_input_is_set_to_local_faster_whisper(tmp_path) -> None:
 
     row = _row(report, "input.voice")
     assert (row["action"], row["selector"]) == ("apply", "stt")
-    assert row["download"] == {"provider": "huggingface", "artifact": "Systran/faster-whisper-base"}
+    route, artifact = _expected_voice()
+    assert row["download"] == {"provider": "huggingface", "artifact": artifact}
     stored = _routes_on_disk(tmp_path)["input.voice"]
-    assert (stored["provider"], stored["model"]) == ("faster-whisper", "base")
+    assert (stored["provider"], stored["model"]) == route
 
 
 def test_a_speech_input_route_the_operator_set_is_kept(tmp_path) -> None:
@@ -132,7 +144,7 @@ def test_a_speech_input_route_the_operator_set_is_kept(tmp_path) -> None:
 
 def test_a_fresh_install_seeds_speech_input(tmp_path) -> None:
     routes = _manager(tmp_path).config.capability_defaults.routes
-    assert (routes["input.voice"].provider, routes["input.voice"].model) == ("faster-whisper", "base")
+    assert (routes["input.voice"].provider, routes["input.voice"].model) == _expected_voice()[0]
 
 
 def test_a_store_an_earlier_seed_wrote_gains_speech_input_once(tmp_path) -> None:
@@ -146,12 +158,12 @@ def test_a_store_an_earlier_seed_wrote_gains_speech_input_once(tmp_path) -> None
 
     manager = _manager(tmp_path)
     voice = manager.config.capability_defaults.routes["input.voice"]
-    assert (voice.provider, voice.model) == ("faster-whisper", "base")
+    assert (voice.provider, voice.model) == _expected_voice()[0]
     assert manager.config.capability_defaults.seeded == "recommended-v2"
     # Persisted by the next save, like the seed; apply writes it at once.
     report = manager.apply_recommended_capability_defaults(only=["stt"])
     assert _row(report, "input.voice")["action"] == "apply"
-    assert _routes_on_disk(tmp_path)["input.voice"]["provider"] == "faster-whisper"
+    assert _routes_on_disk(tmp_path)["input.voice"]["provider"] == _expected_voice()[0][0]
     stored = json.loads(path.read_text())["capability_defaults"]
     assert stored["seeded"] == "recommended-v2"
     # Cleared after the upgrade, it stays cleared (the marker is current now).
@@ -336,7 +348,7 @@ def test_the_seed_upgrade_never_overwrites_a_route_another_process_saved(tmp_pat
     alone = _manager(tmp_path)
     alone.config.timeouts.default_timeout = 45.0
     alone._save_config()
-    assert _routes_on_disk(tmp_path)["input.voice"] == {"provider": "faster-whisper", "model": "base"}
+    assert _routes_on_disk(tmp_path)["input.voice"] == dict(zip(("provider", "model"), _expected_voice()[0]))
 
     # A change this process made to the upgraded row is an ordinary edit and wins.
     path.write_text(json.dumps({"capability_defaults": {"version": 1, "routes": v1, "seeded": "recommended-v1"}}))
@@ -360,4 +372,4 @@ def test_apply_always_saves_even_when_no_route_changes(tmp_path) -> None:
     assert path.exists(), "apply must save even when no row changed"
     stored = json.loads(path.read_text())["capability_defaults"]
     assert stored["seeded"] == "recommended-v2"
-    assert stored["routes"]["input.voice"] == {"provider": "faster-whisper", "model": "base"}
+    assert stored["routes"]["input.voice"] == dict(zip(("provider", "model"), _expected_voice()[0]))

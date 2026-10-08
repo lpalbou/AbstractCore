@@ -20,6 +20,8 @@ installed here decides whether they work.
     huggingface   llamacpp      `llama_cpp` is importable           AbstractCore's GGUF lane
                   huggingface   `transformers` and `torch`          AbstractCore's Transformers lane
     mlx-gen       mlx-gen       `abstractvision` and `mlx-gen`      AbstractVision's MLX-Gen backend
+    mlx-whisper   mlx-whisper   `mlx_whisper` is importable         AbstractVoice's Apple GPU Whisper
+                                (recommendation pick only; its route is judged as a voice route)
 
 Every install command is one of the three settings (light repair, `abstractcore[apple]`,
 `abstractcore[gpu]`); a host with no local-engine setting gets no command and a plain
@@ -79,6 +81,7 @@ _STT_PROVIDER_ALIASES = {
     "whisper": "faster-whisper",
     "local": "faster-whisper",
     "faster_whisper": "faster-whisper",
+    "mlx_whisper": "mlx-whisper",
     "transformers": "transformers-asr",
     "transformers_asr": "transformers-asr",
     "hf": "transformers-asr",
@@ -278,14 +281,18 @@ def _dist_version(dist: str) -> str:
 # environment (the host profile's `engines_installed`, read by the recommendation so the light
 # install profile is never handed an engine it does not have). Voice engines are AbstractVoice's
 # own answer (`route_engine_missing(..., key=)`), not judged here: they ship with the light
-# profile and asking needs AbstractVoice imported.
+# profile and asking needs AbstractVoice imported. The one exception is `mlx-whisper` (Whisper
+# on the Apple GPU): the light profile does NOT carry it (abstractvoice[supertonic,stt]), so
+# the Apple speech-input pick names it only where `mlx_whisper` is importable (round 16).
 def provider_engine_installed(provider: Any) -> Optional[bool]:
     """True / False for an in-process provider a recommendation can name (mlx, mlx-gen,
-    diffusers, acestep), None for any other provider (not judged). Lookups only."""
+    diffusers, acestep, mlx-whisper), None for any other provider (not judged). Lookups only."""
 
     pid = str(provider or "").strip().lower()
     if pid == "mlx":
         return _importable("mlx_lm")
+    if pid == "mlx-whisper":
+        return _importable("mlx_whisper")
     if pid == "mlx-gen":
         return _distributed("abstractvision") and _distributed("mlx-gen")
     if pid in ("diffusers", "acestep"):
@@ -297,7 +304,7 @@ def provider_engines_installed() -> Dict[str, bool]:
     """`{provider: installed}` for every provider `provider_engine_installed` judges."""
 
     out: Dict[str, bool] = {}
-    for pid in ("mlx", "mlx-gen", "diffusers", "acestep"):
+    for pid in ("mlx", "mlx-gen", "diffusers", "acestep", "mlx-whisper"):
         value = provider_engine_installed(pid)
         if value is not None:
             out[pid] = bool(value)

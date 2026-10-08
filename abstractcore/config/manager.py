@@ -2046,6 +2046,16 @@ class ConfigurationManager:
             engine = missing.get(row["key"]) or (missing.get(source_key) if source_key else None)
             if engine:
                 row["engine_missing"] = dict(engine)
+            if row["key"] == "input.voice" and row["configured"] and not flag and not engine:
+                # THE served one-line hint (`recommendations.voice_input_hint`, round 16): a
+                # faster-whisper route on Apple silicon runs on the processor while mlx-whisper
+                # would run the same model on the GPU. Shown next to the row; never applied by
+                # itself (a stored route is never migrated). `route` is what applying writes.
+                from .recommendations import voice_input_hint
+
+                hint = voice_input_hint(row)
+                if hint:
+                    row["route_hint"] = hint
         return self._decorate_route_hierarchy(rows)
 
     @staticmethod

@@ -216,7 +216,9 @@ def _hf_snapshot_has_weight_files(snapshot_dir: Path) -> bool:
             return False
         if any(path.name.endswith(".incomplete") for path in snapshot_dir.rglob("*")):
             return False
-        return any(path.name.endswith((".safetensors", ".gguf", ".bin")) for path in snapshot_dir.rglob("*"))
+        # `.npz`: MLX checkpoints saved with numpy (mlx-community/whisper-large-v3-mlx, the
+        # Apple silicon speech-input recommendation, ships one weights.npz; round 16).
+        return any(path.name.endswith((".safetensors", ".gguf", ".bin", ".npz")) for path in snapshot_dir.rglob("*"))
     except Exception:
         return False
 

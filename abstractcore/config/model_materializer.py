@@ -388,6 +388,7 @@ def supported_providers() -> Dict[str, Dict[str, Any]]:
         # Hugging Face storage is fetched with huggingface_hub, the others
         # with AbstractVoice's prefetch.
         "faster-whisper": {"probe": True, "download": True, "tool": "huggingface_hub"},
+        "mlx-whisper": {"probe": True, "download": True, "tool": "huggingface_hub"},
         "transformers-asr": {"probe": True, "download": True, "tool": "huggingface_hub"},
         "audiodit": {"probe": True, "download": True, "tool": "huggingface_hub"},
         "omnivoice": {"probe": True, "download": True, "tool": "huggingface_hub"},
@@ -1113,6 +1114,8 @@ def _probe_supertonic(artifact: str) -> ModelPresence:
 #   provider            id -> storage, owned by                       storage
 #   faster-whisper      AbstractVoice's alias table, then faster-whisper's
 #                       own `_MODELS` (read from its source, see below)  HF cache
+#   mlx-whisper         AbstractVoice's MLXWhisperAdapter.MODEL_REPOS    HF cache
+#                       (same ids as faster-whisper, mlx-community repos)
 #   transformers-asr    AbstractVoice's TransformersASRAdapter aliases   HF cache
 #   audiodit, omnivoice,
 #   qwen3-tts           the id IS the repo (abstractvoice.local_models)  HF cache
@@ -1250,6 +1253,25 @@ def _resolve_faster_whisper(ref: str) -> Tuple[Optional[str], str]:
     return repo, "faster-whisper's own model table"
 
 
+def _resolve_mlx_whisper(ref: str) -> Tuple[Optional[str], str]:
+    """`large-v3` -> `mlx-community/whisper-large-v3-mlx`, by AbstractVoice's own table.
+
+    `MLXWhisperAdapter.resolve_repo` (abstractvoice >= 0.15): the engine's short ids
+    (faster-whisper's names) map to mlx-community repos; a repo id stays as given. The adapter
+    module imports numpy only (no MLX)."""
+
+    if "/" in ref:
+        return ref.strip(), "repo id"
+    try:
+        from abstractvoice.adapters.stt_mlx_whisper import MLXWhisperAdapter  # type: ignore
+    except Exception as exc:
+        return None, f"AbstractVoice has no mlx-whisper engine here, so {ref!r} cannot be resolved ({exc})"
+    repo = str(MLXWhisperAdapter.resolve_repo(ref))
+    if "/" not in repo:
+        return None, f"mlx-whisper has no model named {ref!r} (its names: {', '.join(MLXWhisperAdapter.selectable_model_ids())})"
+    return repo, "AbstractVoice's mlx-whisper model table"
+
+
 def _resolve_transformers_asr(ref: str) -> Tuple[Optional[str], str]:
     """AbstractVoice's Transformers ASR aliases (`whisper-large-v3` -> `openai/whisper-large-v3`)."""
 
@@ -1297,6 +1319,8 @@ def _hf_repo_for(pid: str, ref: str) -> Optional[Tuple[Optional[str], str]]:
 
     if pid == "faster-whisper":
         return _resolve_faster_whisper(ref)
+    if pid == "mlx-whisper":
+        return _resolve_mlx_whisper(ref)
     if pid == "transformers-asr":
         return _resolve_transformers_asr(ref)
     if pid in ("sdcpp", "mlx-gen", "mflux"):
@@ -1443,7 +1467,7 @@ def _probe_engine(pid: str, artifact: str) -> Optional[ModelPresence]:
         return _probe_cloning_engine(pid, artifact)
     # Engines that also accept a checkpoint on disk in place of a model id
     # (abstractmusic and abstract3d take repo ids only).
-    takes_paths = pid in _HF_REPO_VOICE_ENGINES or pid in ("faster-whisper", "transformers-asr", "sdcpp")
+    takes_paths = pid in _HF_REPO_VOICE_ENGINES or pid in ("faster-whisper", "mlx-whisper", "transformers-asr", "sdcpp")
     if takes_paths and _looks_like_path(artifact):
         return _probe_local_checkpoint(pid, artifact)
     resolved = _hf_repo_for(pid, artifact)
@@ -4000,8 +4024,9 @@ def recommended_plan(*, base_urls: Optional[Dict[str, str]] = None) -> Dict[str,
     urls = {k.lower(): v for k, v in (base_urls or {}).items()}
     # The ROUTE each download serves (`route_provider` / `route_model`): the
     # engine that runs it, which is not always the download provider
-    # (speech input: AbstractVoice's faster-whisper runs `base`, fetched as the
-    # Hugging Face repo Systran/faster-whisper-base).
+    # (speech input: AbstractVoice's faster-whisper runs `large-v3`, fetched as the
+    # Hugging Face repo Systran/faster-whisper-large-v3; mlx-whisper on Apple silicon
+    # runs it from mlx-community/whisper-large-v3-mlx).
     routes = recommended_capability_default_routes()
     # The text row says WHY it is the pick and whether it fits this host
     # (`recommended_text_model`): a tier the fit estimate doubts stays the

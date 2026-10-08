@@ -561,6 +561,13 @@ def test_every_upstream_artifact_is_eight_bit_or_a_tier_or_a_reverified_id():
     reverified = {"mlx-community/Qwen3.5-9B-4bit", "mlx-community/Qwen3.8-27B-4bit"}
     reverified |= {r.download["artifact"] for r in RECOMMENDED_MODELS.values()}
     reverified |= {p.download["artifact"] for r in RECOMMENDED_MODELS.values() for p in r.by_accelerator.values()}
+    # Speech input models offered next to the recommended large-v3 (round 16): Whisper base
+    # (the recommendation until then) and large-v3-turbo on both Whisper engines (f16 builds).
+    reverified |= {
+        "Systran/faster-whisper-base",
+        "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+        "mlx-community/whisper-large-v3-turbo",
+    }
     for r in mc.load_seed()["rows"]:
         for a in r["artifacts"]:
             if "upstream" not in a:

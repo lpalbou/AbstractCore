@@ -43,6 +43,7 @@ __all__ = [
     "recommendation_matrix",
     "recommended_models",
     "render_markdown",
+    "voice_input_hint",
 ]
 
 RECOMMENDATIONS_SCHEMA = "model_recommendations_v1"
@@ -111,6 +112,7 @@ _ENGINE_LABEL = {
     "supertonic": "Supertonic on ONNX Runtime (AbstractVoice)",
     "mlx-gen": "MLX-Gen (AbstractVision)",
     "faster-whisper": "faster-whisper on CTranslate2 (AbstractVoice)",
+    "mlx-whisper": "mlx-whisper on MLX (AbstractVoice)",
     "acestep": "ACE-Step on Diffusers and PyTorch (AbstractMusic)",
     "diffusers": "Diffusers on PyTorch (AbstractVision)",
 }
@@ -135,8 +137,10 @@ def _device(provider: str, accelerator: str) -> str:
         # abstractvoice runs Supertonic on ONNX Runtime's CPUExecutionProvider.
         return "processor"
     if provider == "faster-whisper":
-        # abstractvoice `best_faster_whisper_device()`: CUDA or CPU, never MPS.
+        # abstractvoice `resolve_faster_whisper_device()`: CUDA or CPU; CTranslate2 has no Apple GPU backend.
         return "NVIDIA GPU (CUDA)" if accelerator == "cuda" else "processor"
+    if provider == "mlx-whisper":
+        return "Apple GPU (Metal)"
     if provider == "acestep":
         # abstractmusic acestep: CUDA, then MPS (bfloat16), then CPU (float32).
         return {"metal": "Apple GPU (MPS, bfloat16)", "cuda": "NVIDIA GPU (CUDA)"}.get(accelerator, "processor (float32)")
@@ -146,9 +150,25 @@ def _device(provider: str, accelerator: str) -> str:
     raise ValueError(f"recommended provider {provider!r} has no device rule")
 
 
+# The served sentence for Whisper large-v3 on a processor (operator ruling, round 16: large-v3
+# stays the default, turbo is offered with this sentence). Measured on an M5 Max processor
+# (faster-whisper int8, beam 5, a 17 s clip): large-v3 ~20 s, large-v3-turbo ~6 s.
+FASTER_WHISPER_CPU_NOTE = (
+    "On the processor large-v3 takes about as long as the speech itself (about 20 s for a 17 s clip on an "
+    "M5 Max); large-v3-turbo is faster on the processor (about 6 s), with slightly lower accuracy."
+)
+
+
 def _device_notes(provider: str, accelerator: str) -> List[str]:
     """Facts about running there that the numbers alone do not say."""
 
+    if provider == "faster-whisper" and accelerator != "cuda":
+        return [FASTER_WHISPER_CPU_NOTE]
+    if provider == "mlx-whisper":
+        return [
+            "mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with "
+            "faster-whisper on the processor instead."
+        ]
     if provider == "acestep" and accelerator not in ("metal", "cuda"):
         return ["On the processor AbstractMusic runs it in float32: about twice the memory shown."]
     if provider == "diffusers" and accelerator == "cuda":
@@ -159,6 +179,83 @@ def _device_notes(provider: str, accelerator: str) -> List[str]:
             "(measured) and about 15 GiB of system RAM holds the idle weights. A GPU with room loads it whole."
         ]
     return []
+
+
+# Measured on an M5 Max, Whisper large-v3, a 17 s clip (round 16): faster-whisper on the
+# processor (int8, beam 5) ~20 s; mlx-whisper on the Apple GPU ~1.4 s.
+_APPLE_GPU_WHISPER_SPEEDUP = "about 15 times faster: about 1.4 s instead of about 20 s for a 17 s clip on an M5 Max"
+
+
+def voice_input_hint(route: Any, host: Optional[Mapping[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """The served one-line hint for a CONFIGURED speech-input route, or None.
+
+    THE sentence clients show next to the Voice input row (console Models/Multimodal, the
+    Assistant and Code Voice tabs): computed here, from the host and the installed engines,
+    never in a client. It never changes the route (stored routes are never migrated): `route`
+    in the answer is what "Apply recommended" / the route editor would write, when there is
+    one. Cases:
+
+    - Apple silicon, the route is faster-whisper: CTranslate2 has no Apple GPU backend, so
+      it runs on the processor. With mlx-whisper installed the hint offers the same model on
+      mlx-whisper (`code` "apple_gpu_engine"); without it, the setting that installs it
+      (`code` "apple_gpu_engine_not_installed", no route).
+    - any other host without CUDA, faster-whisper on large-v3: the processor note
+      (large-v3-turbo is faster there; `code` "processor_turbo_faster", no route).
+
+    `route`: a `{provider, model}` mapping (or a CapabilityRouteDefault). `host`: a
+    `host_profile_v1` dict; default: this machine's light profile (no engine loaded).
+    """
+
+    from .route_engines import provider_engine_installed, voice_engine_id
+
+    provider = getattr(route, "provider", None) if not isinstance(route, Mapping) else route.get("provider")
+    model = getattr(route, "model", None) if not isinstance(route, Mapping) else route.get("model")
+    engine = voice_engine_id(provider, "input.voice")
+    model_id = str(model or "").strip()
+    if engine != "faster-whisper" or not model_id:
+        return None
+    if host is None:
+        from ..utils.host_profile import host_profile
+
+        host = host_profile(light=True)
+    accelerator = str(host.get("accelerator") or "")
+    if accelerator == "metal":
+        installed = host.get("engines_installed")
+        has_mlx = (
+            installed.get("mlx-whisper") if isinstance(installed, Mapping) and "mlx-whisper" in installed
+            else provider_engine_installed("mlx-whisper")
+        )
+        if not has_mlx:
+            from ..utils.install_settings import local_engines_setting
+
+            setting = local_engines_setting() or "apple"
+            return {
+                "code": "apple_gpu_engine_not_installed",
+                "sentence": (
+                    f"Runs on the processor: faster-whisper has no Apple GPU backend. mlx-whisper runs Whisper on "
+                    f"this Mac's GPU ({_APPLE_GPU_WHISPER_SPEEDUP}); it comes with the abstractcore[{setting}] setting."
+                ),
+                "route": None,
+            }
+        try:
+            from abstractvoice.adapters.stt_mlx_whisper import MLXWhisperAdapter  # type: ignore
+
+            runs_there = "/" in str(MLXWhisperAdapter.resolve_repo(model_id))
+        except Exception:
+            runs_there = False
+        if not runs_there:
+            return None
+        return {
+            "code": "apple_gpu_engine",
+            "sentence": (
+                f"Runs on the processor: faster-whisper has no Apple GPU backend. mlx-whisper runs {model_id} on "
+                f"this Mac's GPU, {_APPLE_GPU_WHISPER_SPEEDUP}."
+            ),
+            "route": {"key": "input.voice", "provider": "mlx-whisper", "model": model_id},
+        }
+    if accelerator != "cuda" and model_id.lower() in ("large-v3", "large"):
+        return {"code": "processor_turbo_faster", "sentence": FASTER_WHISPER_CPU_NOTE, "route": None}
+    return None
 
 
 def _artifact_facts(

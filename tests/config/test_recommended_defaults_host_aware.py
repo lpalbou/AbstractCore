@@ -63,8 +63,11 @@ NO_IMAGE_ENGINE = [name for name in NON_APPLE if name != "linux_x86_64_cuda"]
 # Speech input (faster-whisper on CTranslate2) runs on every host here but
 # Windows on arm64, where CTranslate2 publishes no build.
 NO_STT_ENGINE = {"windows_arm64"}
-FASTER_WHISPER = ("faster-whisper", "base")
-FASTER_WHISPER_DOWNLOAD = {"provider": "huggingface", "artifact": "Systran/faster-whisper-base"}
+# Round 16: Whisper large-v3 everywhere; mlx-whisper (Apple GPU) on Apple silicon.
+FASTER_WHISPER = ("faster-whisper", "large-v3")
+FASTER_WHISPER_DOWNLOAD = {"provider": "huggingface", "artifact": "Systran/faster-whisper-large-v3"}
+MLX_WHISPER = {"provider": "mlx-whisper", "model": "large-v3"}
+MLX_WHISPER_DOWNLOAD = {"provider": "huggingface", "artifact": "mlx-community/whisper-large-v3-mlx"}
 
 
 def _starter_keys(name: str) -> set:
@@ -371,9 +374,9 @@ def _golden_apple_seed(text_model: str, video: bool = False) -> str:
         "output.image": {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"},
         "output.voice": {"provider": "supertonic", "model": "supertonic-3"},
     }
-    # 2.19.2: speech input joins the seed (faster-whisper on the processor:
-    # CTranslate2 has no Metal backend), stamped recommended-v2.
-    routes = dict(sorted({**routes, "input.voice": {"provider": "faster-whisper", "model": "base"}}.items()))
+    # 2.19.2: speech input joins the seed, stamped recommended-v2. Round 16: Whisper large-v3
+    # on mlx-whisper, the Apple GPU (CTranslate2, faster-whisper's engine, has no Metal backend).
+    routes = dict(sorted({**routes, "input.voice": dict(MLX_WHISPER)}.items()))
     if video:
         routes = dict(sorted({**routes, "output.video": dict(VIDEO)}.items()))
     return json.dumps({"version": 1, "routes": routes, "seeded": "recommended-v2"}, sort_keys=False)
@@ -408,14 +411,14 @@ def test_apple_silicon_routes_downloads_and_plan_are_unchanged(kind, monkeypatch
         "output.voice": {"provider": "supertonic", "model": "supertonic-3"},
         "output.image": {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"},
         **({"output.video": dict(VIDEO)} if video else {}),
-        "input.voice": {"provider": "faster-whisper", "model": "base"},
+        "input.voice": dict(MLX_WHISPER),
     }
     assert cd.recommended_model_downloads(host) == {
         "input.text": {"provider": "mlx", "artifact": text},
         "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
         "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
         **({"output.video": {"provider": VIDEO["provider"], "artifact": VIDEO["model"]}} if video else {}),
-        "input.voice": dict(FASTER_WHISPER_DOWNLOAD),
+        "input.voice": dict(MLX_WHISPER_DOWNLOAD),
     }
     plan = cd.plan_recommended_capability_defaults({}, host=host)
     assert [p["key"] for p in plan] == ["input.text", "output.voice", "output.image", "output.video", "input.voice"]
