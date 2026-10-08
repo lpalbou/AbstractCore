@@ -59,6 +59,7 @@ engine's own table:
 | Route provider | Model id on the route | Where the probe looks |
 |---|---|---|
 | `faster-whisper` (also `whisper`; `local` on `input.voice`) | `large-v3`, `base`, ... or a repo id | AbstractVoice's aliases (`large` -> `large-v3`), then faster-whisper's own `_MODELS` table, read from its source without importing it: `large-v3` is `Systran/faster-whisper-large-v3` in the Hugging Face cache |
+| `mlx-whisper` (Apple silicon, Apple GPU) | the same ids (`large-v3`, `large-v3-turbo`, ...) or a repo id | AbstractVoice's `MLXWhisperAdapter.MODEL_REPOS`: `large-v3` is `mlx-community/whisper-large-v3-mlx` in the Hugging Face cache |
 | `transformers-asr` (`hf` on `input.voice`) | `whisper-large-v3-turbo`, ... or a repo id | AbstractVoice's Transformers ASR aliases, then the Hugging Face cache |
 | `audiodit`, `omnivoice`, `qwen3-tts` | a repo id or a local checkpoint | the Hugging Face cache, or the folder |
 | `piper` | `en_US-amy-medium` (or a language: `en`) | AbstractVoice's Piper voice folder (`~/.piper/models`); fetch with `abstractvoice-prefetch --piper en` |
