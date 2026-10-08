@@ -16503,16 +16503,26 @@ Route `input.voice` (speech to text).
 
 | Machine | Recommended model | Engine, device | Download | Memory need | Fit |
 |---|---|---|---|---|---|
-| Apple silicon Mac, 8 GB | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 141 MiB | 653 MiB | fits |
-| Apple silicon Mac, 16 GB | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 141 MiB | 653 MiB | fits |
-| Apple silicon Mac, 18 GB | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 141 MiB | 653 MiB | fits |
-| Apple silicon Mac, 24 GB | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 141 MiB | 653 MiB | fits |
-| Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 141 MiB | 653 MiB | fits |
-| Apple silicon Mac, 128 GB | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 141 MiB | 653 MiB | fits |
-| Apple silicon Mac, 192 GB, 256 GB or 512 GB | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 141 MiB | 653 MiB | fits |
-| Linux or Windows with an NVIDIA GPU | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), NVIDIA GPU (CUDA) | 141 MiB | 653 MiB | fits |
-| Linux or Windows, processor only | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 141 MiB | 653 MiB | fits |
-| Intel Mac | `base` (download `Systran/faster-whisper-base`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 141 MiB | 653 MiB | fits |
+| Apple silicon Mac, 8 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits, tightly |
+| Apple silicon Mac, 16 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits |
+| Apple silicon Mac, 18 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits |
+| Apple silicon Mac, 24 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits |
+| Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits |
+| Apple silicon Mac, 128 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits |
+| Apple silicon Mac, 192 GB, 256 GB or 512 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits |
+| Linux or Windows with an NVIDIA GPU | `large-v3` (download `Systran/faster-whisper-large-v3`) | faster-whisper on CTranslate2 (AbstractVoice), NVIDIA GPU (CUDA) | 2.9 GiB | 3.4 GiB | fits |
+| Linux or Windows, processor only | `large-v3` (download `Systran/faster-whisper-large-v3`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 2.9 GiB | 3.4 GiB | fits |
+| Intel Mac | `large-v3` (download `Systran/faster-whisper-large-v3`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 2.9 GiB | 3.4 GiB | fits |
+
+- Apple silicon Mac, 8 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.
+- Apple silicon Mac, 16 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.
+- Apple silicon Mac, 18 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.
+- Apple silicon Mac, 24 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.
+- Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.
+- Apple silicon Mac, 128 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.
+- Apple silicon Mac, 192 GB, 256 GB or 512 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.
+- Linux or Windows, processor only: On the processor large-v3 takes about as long as the speech itself (about 20 s for a 17 s clip on an M5 Max); large-v3-turbo is faster on the processor (about 6 s), with slightly lower accuracy.
+- Intel Mac: On the processor large-v3 takes about as long as the speech itself (about 20 s for a 17 s clip on an M5 Max); large-v3-turbo is faster on the processor (about 6 s), with slightly lower accuracy.
 
 ### Image generation
 
