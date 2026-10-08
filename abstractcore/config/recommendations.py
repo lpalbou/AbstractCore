@@ -181,26 +181,61 @@ def _device_notes(provider: str, accelerator: str) -> List[str]:
     return []
 
 
-# Measured on an M5 Max, Whisper large-v3, a 17 s clip (round 16): faster-whisper on the
-# processor (int8, beam 5) ~20 s; mlx-whisper on the Apple GPU ~1.4 s.
-_APPLE_GPU_WHISPER_SPEEDUP = "about 15 times faster: about 1.4 s instead of about 20 s for a 17 s clip on an M5 Max"
+# The served hint states a DIRECTION, never a timing: speed depends on the machine and its load
+# (measured figures live in the docs, with their hardware). Where to act is part of the sentence,
+# in core's own wording for the two consoles, so every surface shows the same served string.
+_WHERE_ROUTES = "Multimodal page in the gateway console, Routes in the core console"
+PROCESSOR_TURBO_HINT = (
+    "On the processor Whisper large-v3 is slow; large-v3-turbo is faster, with slightly lower accuracy. "
+    f"Change the model of Voice input ({_WHERE_ROUTES})."
+)
+
+
+def _first_use_download(provider: str, model_id: str) -> str:
+    """" The first use downloads about N GB." when the engine's weights for `model_id` are not in
+    the cache (the catalog's verified size; no size when the catalog has none), else ""."""
+
+    from .model_materializer import PRESENCE_INSTALLED, _hf_repo_for, probe
+
+    try:
+        if probe(provider, model_id).status == PRESENCE_INSTALLED:
+            return ""
+    except Exception:
+        return ""
+    repo = (_hf_repo_for(provider, model_id) or (None, ""))[0]
+    size = None
+    try:
+        from .model_catalog import load_seed
+
+        for row in load_seed().get("rows") or []:
+            for art in row.get("artifacts") or []:
+                if art.get("artifact") == repo and isinstance(art.get("download_bytes"), int):
+                    size = art["download_bytes"]
+    except Exception:
+        size = None
+    if size:
+        return f" The first use downloads its weights (about {size / 1e9:.1f} GB)."
+    return " The first use downloads its weights."
 
 
 def voice_input_hint(route: Any, host: Optional[Mapping[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """The served one-line hint for a CONFIGURED speech-input route, or None.
 
-    THE sentence clients show next to the Voice input row (console Models/Multimodal, the
-    Assistant and Code Voice tabs): computed here, from the host and the installed engines,
-    never in a client. It never changes the route (stored routes are never migrated): `route`
-    in the answer is what "Apply recommended" / the route editor would write, when there is
-    one. Cases:
+    THE sentence clients show next to the Voice input row (console Multimodal grid, the
+    Assistant and Code Voice tabs), verbatim: computed here, from the host and the installed
+    engines, never in a client, and it already says where to act. It never changes the route
+    (stored routes are never migrated): `route` in the answer is what applying writes, when
+    there is one. No timings: the hint gives the direction, the docs give measured figures.
+    Cases:
 
     - Apple silicon, the route is faster-whisper: CTranslate2 has no Apple GPU backend, so
       it runs on the processor. With mlx-whisper installed the hint offers the same model on
-      mlx-whisper (`code` "apple_gpu_engine"); without it, the setting that installs it
+      mlx-whisper (`code` "apple_gpu_engine"; "Apply recommended" when the model is the
+      recommended one, else changing Voice input's provider), plus the first-use download when
+      its weights are not cached; without it, the setting that installs it
       (`code` "apple_gpu_engine_not_installed", no route).
-    - any other host without CUDA, faster-whisper on large-v3: the processor note
-      (large-v3-turbo is faster there; `code` "processor_turbo_faster", no route).
+    - any other host without CUDA, faster-whisper on large-v3: large-v3-turbo is faster on the
+      processor (`code` "processor_turbo_faster", no route).
 
     `route`: a `{provider, model}` mapping (or a CapabilityRouteDefault). `host`: a
     `host_profile_v1` dict; default: this machine's light profile (no engine loaded).
@@ -232,8 +267,8 @@ def voice_input_hint(route: Any, host: Optional[Mapping[str, Any]] = None) -> Op
             return {
                 "code": "apple_gpu_engine_not_installed",
                 "sentence": (
-                    f"Runs on the processor: faster-whisper has no Apple GPU backend. mlx-whisper runs Whisper on "
-                    f"this Mac's GPU ({_APPLE_GPU_WHISPER_SPEEDUP}); it comes with the abstractcore[{setting}] setting."
+                    "Runs on the processor: faster-whisper has no Apple GPU backend. mlx-whisper runs Whisper on "
+                    f"this Mac's GPU, many times faster; it comes with the abstractcore[{setting}] setting."
                 ),
                 "route": None,
             }
@@ -245,16 +280,28 @@ def voice_input_hint(route: Any, host: Optional[Mapping[str, Any]] = None) -> Op
             runs_there = False
         if not runs_there:
             return None
+        from .capability_defaults import RECOMMENDED_MODELS
+
+        recommended = RECOMMENDED_MODELS["input.voice"].pick_for(host)[0]
+        same_as_recommended = (
+            str(recommended.provider) == "mlx-whisper"
+            and MLXWhisperAdapter.resolve_repo(model_id) == MLXWhisperAdapter.resolve_repo(recommended.model)
+        )
+        act = (
+            f"Apply recommended ({_WHERE_ROUTES}) switches it."
+            if same_as_recommended
+            else f"To switch, set Voice input's provider to mlx-whisper ({_WHERE_ROUTES})."
+        )
         return {
             "code": "apple_gpu_engine",
             "sentence": (
                 f"Runs on the processor: faster-whisper has no Apple GPU backend. mlx-whisper runs {model_id} on "
-                f"this Mac's GPU, {_APPLE_GPU_WHISPER_SPEEDUP}."
+                f"this Mac's GPU, many times faster. {act}{_first_use_download('mlx-whisper', model_id)}"
             ),
             "route": {"key": "input.voice", "provider": "mlx-whisper", "model": model_id},
         }
     if accelerator != "cuda" and model_id.lower() in ("large-v3", "large"):
-        return {"code": "processor_turbo_faster", "sentence": FASTER_WHISPER_CPU_NOTE, "route": None}
+        return {"code": "processor_turbo_faster", "sentence": PROCESSOR_TURBO_HINT, "route": None}
     return None
 
 

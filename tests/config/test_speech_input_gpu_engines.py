@@ -120,16 +120,54 @@ def test_the_engine_capabilities_table_probes_and_downloads_mlx_whisper() -> Non
 # --- the served hint for a stored route -------------------------------------------------------
 
 
-def test_apple_mac_with_mlx_whisper_gets_the_switch_hint_keeping_the_model(mlx_table) -> None:
+def _cached(monkeypatch, installed: bool):
+    status = mm.PRESENCE_INSTALLED if installed else mm.PRESENCE_ABSENT
+    monkeypatch.setattr(mm, "probe", lambda provider, artifact, **_k: mm.ModelPresence(provider, artifact, status))
+
+
+WHERE = "Multimodal page in the gateway console, Routes in the core console"
+
+
+def test_apple_mac_with_mlx_whisper_gets_the_switch_hint_keeping_the_model(mlx_table, monkeypatch) -> None:
+    _cached(monkeypatch, True)
     hint = rec.voice_input_hint({"provider": "faster-whisper", "model": "large-v3"}, host=_mac(**{"mlx-whisper": True}))
     assert hint["code"] == "apple_gpu_engine"
     assert hint["route"] == {"key": "input.voice", "provider": "mlx-whisper", "model": "large-v3"}
     assert hint["sentence"] == (
         "Runs on the processor: faster-whisper has no Apple GPU backend. mlx-whisper runs large-v3 on this Mac's "
-        "GPU, about 15 times faster: about 1.4 s instead of about 20 s for a 17 s clip on an M5 Max."
+        f"GPU, many times faster. Apply recommended ({WHERE}) switches it."
     )
-    # The aliases of the route's provider are the same engine.
-    assert rec.voice_input_hint({"provider": "whisper", "model": "large"}, host=_mac(**{"mlx-whisper": True}))["route"]["model"] == "large"
+    # The aliases of the route's provider are the same engine; `large` IS the recommended model.
+    alias = rec.voice_input_hint({"provider": "whisper", "model": "large"}, host=_mac(**{"mlx-whisper": True}))
+    assert alias["route"]["model"] == "large" and "Apply recommended" in alias["sentence"]
+
+
+def test_a_model_other_than_the_recommended_one_says_to_change_the_provider(mlx_table, monkeypatch) -> None:
+    # "Apply recommended" would write large-v3, not the operator's turbo: the sentence must not send them there.
+    _cached(monkeypatch, True)
+    hint = rec.voice_input_hint({"provider": "faster-whisper", "model": "large-v3-turbo"}, host=_mac(**{"mlx-whisper": True}))
+    assert hint["sentence"].endswith(f"To switch, set Voice input's provider to mlx-whisper ({WHERE}).")
+    assert "Apply recommended" not in hint["sentence"]
+
+
+def test_the_first_use_download_is_named_when_the_weights_are_not_cached(mlx_table, monkeypatch) -> None:
+    _cached(monkeypatch, False)
+    hint = rec.voice_input_hint({"provider": "faster-whisper", "model": "large-v3"}, host=_mac(**{"mlx-whisper": True}))
+    assert hint["sentence"].endswith("switches it. The first use downloads its weights (about 3.1 GB).")
+
+
+def test_no_served_sentence_carries_a_timing(mlx_table, monkeypatch) -> None:
+    import re
+
+    sentences = []
+    for cached in (True, False):
+        _cached(monkeypatch, cached)
+        for model in ("large-v3", "large-v3-turbo"):
+            sentences.append(rec.voice_input_hint({"provider": "faster-whisper", "model": model}, host=_mac(**{"mlx-whisper": True}))["sentence"])
+    sentences.append(rec.voice_input_hint({"provider": "faster-whisper", "model": "large-v3"}, host=_mac(**{"mlx-whisper": False}))["sentence"])
+    sentences.append(rec.voice_input_hint({"provider": "faster-whisper", "model": "large-v3"}, host=synthetic_host("cpu16"))["sentence"])
+    for sentence in sentences:
+        assert not re.search(r"\d+(\.\d+)?\s*(s|ms|sec|seconds?)\b|\d+\s*(x|times)\b|M\d Max", sentence), sentence
 
 
 def test_apple_mac_without_mlx_whisper_gets_the_setting_not_a_route() -> None:
@@ -140,7 +178,8 @@ def test_apple_mac_without_mlx_whisper_gets_the_setting_not_a_route() -> None:
 
 def test_processor_only_host_on_large_v3_gets_the_turbo_sentence() -> None:
     hint = rec.voice_input_hint({"provider": "faster-whisper", "model": "large-v3"}, host=synthetic_host("cpu16"))
-    assert hint == {"code": "processor_turbo_faster", "sentence": rec.FASTER_WHISPER_CPU_NOTE, "route": None}
+    assert hint == {"code": "processor_turbo_faster", "sentence": rec.PROCESSOR_TURBO_HINT, "route": None}
+    assert "large-v3-turbo is faster" in hint["sentence"] and WHERE in hint["sentence"]
 
 
 @pytest.mark.parametrize(
