@@ -96,7 +96,7 @@ dependencies = [
     # the OS keychain. cryptography already arrives with unstructured; keyring is ~0.4 MB.
     "cryptography>=41.0.0",
     "keyring>=24.0.0",
-    "abstractvoice>=0.13.2",
+    "abstractvoice>=0.15.0",
     "abstractvision>=0.3.33",
     "abstractmusic>=0.1.16; python_version >= '3.10'",
     "abstract3d>=0.1.0; python_version >= '3.10'",
