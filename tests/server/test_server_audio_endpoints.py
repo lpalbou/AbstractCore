@@ -142,7 +142,7 @@ def test_audio_endpoints_happy_path_with_stubbed_plugin(client, monkeypatch):
     files = {"file": ("audio.wav", b"abc", "audio/wav")}
     resp_stt = client.post("/v1/audio/transcriptions", files=files, data={"language": "en"})
     assert resp_stt.status_code == 200
-    assert resp_stt.json() == {"text": "transcript"}
+    assert resp_stt.json() == {"text": "transcript", "language": "en", "detected_language": None}
 
 
 def test_audio_speech_stream_returns_jsonl_with_stubbed_plugin(client, monkeypatch):
@@ -195,7 +195,7 @@ def test_audio_endpoints_accept_local_abstractvoice_model_alias(client, monkeypa
         data={"model": "abstractvoice/default", "language": "en"},
     )
     assert resp_stt.status_code == 200
-    assert resp_stt.json() == {"text": "transcript"}
+    assert resp_stt.json() == {"text": "transcript", "language": "en", "detected_language": None}
 
 
 def test_audio_speech_routes_to_openai_when_model_is_supplied(client, monkeypatch):
@@ -523,7 +523,7 @@ def test_provider_scoped_audio_transcriptions_routes_local_engine_to_capability_
     )
 
     assert resp.status_code == 200
-    assert resp.json() == {"text": "provider scoped transcript"}
+    assert resp.json() == {"text": "provider scoped transcript", "language": "en", "detected_language": None}
     assert captured["transcribe"]["language"] == "en"
     assert captured["transcribe"]["provider"] == "faster-whisper"
     assert captured["transcribe"]["model"] == "large-v3"
@@ -780,3 +780,52 @@ def test_blocking_audio_handlers_are_sync_def():
                     "would wedge the event loop as async"
                 )
     assert seen == must_be_sync, f"pin drift: expected handlers missing from routers: {must_be_sync - seen}"
+
+
+def test_audio_transcriptions_serves_the_language_facts_from_a_detailed_backend(client, monkeypatch):
+    """Round 18: a backend answering `transcribe_detailed` reports the language the engine was told
+    (null = it detected it) and the one it detected; the server serves both beside the text.
+    Deleting the `transcribe_detailed` call in providers/base.py turns this red."""
+    captured = {}
+
+    def register(registry):
+        class _Voice:
+            backend_id = "fake-voice"
+
+            def tts(self, text: str, **kwargs):
+                _ = text, kwargs
+                return b"wav-bytes"
+
+            def stt(self, audio, **kwargs):
+                _ = audio, kwargs
+                return "transcript"
+
+        class _Audio:
+            backend_id = "fake-audio"
+
+            def transcribe(self, audio, **kwargs):
+                raise AssertionError("generate() must use transcribe_detailed when the backend has it")
+
+            def transcribe_detailed(self, audio, **kwargs):
+                captured["kwargs"] = dict(kwargs)
+                return {"text": " bonjour ", "language": kwargs.get("language"), "detected_language": "FR"}
+
+        registry.register_voice_backend(backend_id="fake-voice", factory=lambda _owner: _Voice(), priority=0)
+        registry.register_audio_backend(backend_id="fake-audio", factory=lambda _owner: _Audio(), priority=0)
+
+    monkeypatch.setattr(
+        importlib.metadata,
+        "entry_points",
+        lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_voice_audio:register", obj=register)]),
+    )
+    _reset_audio_core(monkeypatch)
+
+    auto = client.post("/v1/audio/transcriptions", files={"file": ("speech.wav", b"abc", "audio/wav")})
+    assert auto.status_code == 200, auto.text
+    assert auto.json() == {"text": "bonjour", "language": None, "detected_language": "fr"}
+    assert "language" not in captured["kwargs"], "auto reaches the backend as no language at all"
+
+    fixed = client.post("/v1/audio/transcriptions", files={"file": ("speech.wav", b"abc", "audio/wav")}, data={"language": "en"})
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json() == {"text": "bonjour", "language": "en", "detected_language": "fr"}
+    assert captured["kwargs"]["language"] == "en"

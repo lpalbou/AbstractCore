@@ -1137,12 +1137,20 @@ async def audio_transcriptions(
             },
         )
         text = getattr(getattr(result, "text", None), "content", None)
+        text_meta = getattr(getattr(result, "text", None), "metadata", None)
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=_plugin_exception_status(e), detail=f"Audio transcription failed: {e}") from e
 
-    return {"text": str(text or "").strip()}
+    # Round 18: the spoken-language facts beside the text — `language` is what the engine was told
+    # (null = it detected the language), `detected_language` what it reported (null when none).
+    detected = text_meta.get("detected_language") if isinstance(text_meta, dict) else None
+    return {
+        "text": str(text or "").strip(),
+        "language": language,
+        "detected_language": str(detected).strip().lower() if isinstance(detected, str) and detected.strip() else None,
+    }
 
 
 @provider_router.post("/{provider}/v1/audio/transcriptions")

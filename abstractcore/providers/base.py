@@ -3303,11 +3303,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
             kwargs["model"] = spec.get("model")
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
-        transcript = self.audio.transcribe(self._media_payload(audio_items[0]), **kwargs)
+        # Round 18 (the spoken-language setting): the audio facade's `transcribe_detailed` answers
+        # {"text", "language", "detected_language"} — the language the engine was told (None = it
+        # detected the language) and the one it reported (AbstractVoice's plugin reports it; a
+        # backend with `transcribe` only reports neither).
+        answer = self.audio.transcribe_detailed(self._media_payload(audio_items[0]), **kwargs)
+        transcript = answer.get("text")
+        requested_language = kwargs.get("language")
+        detected_language = answer.get("detected_language")
         result.text = GenerateResponse(
-            content=str(transcript),
+            content=str(transcript or ""),
             model=self.model,
-            metadata={"task": "transcription", "modality": "text"},
+            metadata={
+                "task": "transcription",
+                "modality": "text",
+                "language": requested_language,
+                "detected_language": detected_language,
+            },
         )
 
     def _run_scene3d_output(

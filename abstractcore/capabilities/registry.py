@@ -1454,6 +1454,23 @@ class _AudioFacade:
     def transcribe(self, audio: Any, **kwargs: Any) -> Any:
         return self._registry.get_audio().transcribe(audio, **kwargs)
 
+    def transcribe_detailed(self, audio: Any, **kwargs: Any) -> Dict[str, Any]:
+        """``{"text", "language", "detected_language"}`` (round 18): the backend's own
+        ``transcribe_detailed`` when it has one (AbstractVoice reports the language the engine was
+        told and the one it detected); a backend with ``transcribe`` only reports neither."""
+        backend = self._registry.get_audio()
+        detailed = getattr(backend, "transcribe_detailed", None)
+        if callable(detailed):
+            answer = detailed(audio, **kwargs)
+            if isinstance(answer, Mapping):
+                return {
+                    "text": str(answer.get("text") or ""),
+                    "language": answer.get("language"),
+                    "detected_language": answer.get("detected_language"),
+                }
+            return {"text": str(answer or ""), "language": kwargs.get("language"), "detected_language": None}
+        return {"text": str(backend.transcribe(audio, **kwargs) or ""), "language": kwargs.get("language"), "detected_language": None}
+
     def load_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
         return _call_residency_mapping_method(
             self._registry.get_audio(),
