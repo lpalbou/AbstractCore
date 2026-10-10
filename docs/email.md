@@ -12,11 +12,20 @@ What you can rely on:
   direct parameters (`--password <value>`), or on stdin from scripts (`--password-stdin`), and
   stored encrypted.
 - **Encrypted credentials.** The password (or OAuth2 tokens) is sealed with AES-256-GCM in
-  `<config dir>/email/secret.enc`. The key is kept in the OS keychain (macOS Keychain, Windows
-  Credential Manager, Linux Secret Service). On a host without a keychain the key is written to a
-  0600 file next to the sealed credentials, and `abstractcore email status` says so: a copy of that
-  whole folder carries both, so protect it like a password. No command, page, tool result or error
-  ever shows a password or token.
+  `<config dir>/email/secret.enc`, under ONE key file, `<config dir>/secrets/sealing.key` (0600 in
+  a 0700 folder, 32 random bytes, made on first use). No OS keychain is used, on any OS (2.26.0):
+  the same file and the same guarantees on macOS, Linux and Windows (on Windows the modes are best
+  effort; the folder's NTFS permissions protect it). The key file protects copies of the config
+  folder taken without `secrets/`; code running as your OS user can read it (as it could read your
+  keychain before), and a copy of the whole folder carries it, so protect the folder like a
+  password and include `secrets/` in backups. No command, page, tool result or error ever shows a
+  password or token.
+- **Upgrading from 2.25 or older.** Credentials sealed with the old keychain key are never opened
+  (no keychain call, no password prompt): `abstractcore email status` says "sealed with the old OS
+  keychain key (never read): connect the account again", and connecting again seals them under the
+  new key. Credentials sealed with the old per-store key file are re-sealed automatically. The old
+  keychain items (service `abstractcore-email`) can be deleted on macOS with
+  `while security delete-generic-password -s abstractcore-email >/dev/null 2>&1; do :; done`.
 - **Verified TLS on every connection.** IMAP and SMTP use SSL (implicit TLS) or STARTTLS; the
   certificate chain and the host name are always checked, and a failure is refused before any
   password is sent. There is no plaintext mode. A self-hosted server signed by a private CA is
@@ -82,7 +91,7 @@ the password this way. Useful options:
 | `--ca-file <pem>` | Trust a private CA (also `--imap-ca-file`, `--smtp-ca-file`) |
 | `--registered-address <address>` | Your own address, the default allowlist entry (default: the stored one, else `--address`) |
 | `--no-test` | Store without the connection test |
-| `--key-storage auto\|keyring\|file` | Where the encryption key goes (before the verb: `abstractcore email --key-storage file connect ...`) |
+| `--key-storage auto\|file` | Kept for compatibility (before the verb): credentials are always sealed with `<config dir>/secrets/sealing.key`; `keyring` is no longer accepted |
 
 Many providers require an **app password** when two-step verification is on (Gmail, iCloud,
 Fastmail, Yahoo).

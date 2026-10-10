@@ -1820,7 +1820,8 @@ _JS_TEMPLATE = r"""
       el("email-folder-help").textContent = connected && d.imap
         ? `The folder your agents read on ${d.imap.host}. Empty = INBOX.`
         : "Connect a mailbox first: the folder is read on its IMAP server.";
-      el("email-storage").textContent = d.secret_storage === "os-keychain" ? "The password or tokens are encrypted; the key is in the OS keychain."
+      el("email-storage").textContent = d.secret_storage === "sealing-key" ? "The password or tokens are encrypted; the key is a file in the config folder (secrets/sealing.key)."
+        : d.secret_storage === "old-keychain" ? (d.secret_warning || "Sealed with the old keychain key: connect the account again.")
         : d.secret_storage === "key-file" ? "The password or tokens are encrypted; the key is in a 0600 file." : "";
       if (d.config_file) el("email-scope").textContent = `These are the email settings of this AbstractCore install (${d.config_file}). A gateway keeps its own per user: each user sets theirs in the gateway console (My account).`;
     }

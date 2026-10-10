@@ -1004,7 +1004,7 @@ graph TD
     subgraph EMAIL[abstractcore.comms.email]
         STORE["store.EmailAccountStore: account, connect, folder, email address"]
         DISC["discovery: discover_servers, server_defaults"]
-        VAULT["vault.SecretVault: AES-256-GCM secret.enc, key in the OS keychain"]
+        VAULT["vault.SecretVault: AES-256-GCM secret.enc, key file secrets/sealing.key (no keychain)"]
         CTX["context.EmailContext: guarded_send"]
         POL["policy: allowlist / denylist"]
         LIM["limits: per hour / per day, sends.json"]

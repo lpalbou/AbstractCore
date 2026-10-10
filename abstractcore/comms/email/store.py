@@ -5,7 +5,8 @@ Where things live (for a config file `<dir>/abstractcore.json`):
     <dir>/abstractcore.json   section `email`: enabled, agent_tools, account, policy, limits,
                               registered_address
     <dir>/email/secret.enc    the password or OAuth tokens, AES-256-GCM (vault.py)
-    <dir>/email/secret.key    only when no OS keychain is available (0600)
+    <dir>/secrets/sealing.key the sealing key (0600 in a 0700 folder, made on first use; a host
+                              may pass its own `key_file`); never an OS keychain
     <dir>/email/status.json   last test time, result, typed error
     <dir>/email/sends.json    send timestamps of the last 24 h (the limits' counter)
 
@@ -52,7 +53,7 @@ from .models import (
 )
 from .oauth import OAuthTokenProvider
 from .policy import RecipientPolicy, normalize_address
-from .vault import KEY_FILE_WARNING, SecretVault
+from .vault import SecretVault
 
 SCHEMA = "email_settings_v1"
 
@@ -169,12 +170,20 @@ class EmailAccountStore:
         config_dir: Optional[Union[str, Path]] = None,
         key_backend: str = "auto",
         environ: Optional[Dict[str, str]] = None,
+        key_file: Optional[Union[str, Path]] = None,
+        vault: Optional[SecretVault] = None,
     ) -> None:
+        """`key_file`: the sealing key (default `<config dir>/secrets/sealing.key`); `vault`: a
+        host's own `SecretVault` for this store (its legacy sentence, its key). `key_backend` is
+        accepted for compatibility ("auto" / "file"; no OS keychain is ever used)."""
+
         from abstractcore.config.manager import resolve_config_file
 
         self.config_file = resolve_config_file(config_dir, config_file)
         self.email_dir = self.config_file.parent / "email"
-        self.vault = SecretVault(self.email_dir, key_backend=key_backend)
+        self.vault = vault if vault is not None else SecretVault(
+            self.email_dir, key_backend=key_backend, key_file=Path(key_file) if key_file is not None else None
+        )
         self._environ = environ
 
     def __repr__(self) -> str:
@@ -666,8 +675,11 @@ class EmailAccountStore:
             "can_read": bool(acct and acct.can_read),
             "can_send": bool(acct and acct.can_send),
             "secret_set": bool(location),
-            "secret_storage": {"keyring": "os-keychain", "file": "key-file"}.get(location, ""),
-            "secret_warning": KEY_FILE_WARNING if location == "file" else "",
+            # "sealing-key": the sealing key file (2.26+); "old-keychain": sealed by an older version
+            # with the key in an OS keychain, never read now (connect again); "key-file": an older
+            # per-store key file, re-sealed on its next read.
+            "secret_storage": {"sealing-key": "sealing-key", "keyring": "old-keychain", "file": "key-file"}.get(location, ""),
+            "secret_warning": self.vault.legacy_cause if location == "keyring" else "",
             "policy": (
                 {**st.policy.to_dict(), "default": st.policy_is_default, "self_addresses": _normalized_selves(st)}
                 if st

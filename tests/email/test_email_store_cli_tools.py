@@ -46,7 +46,7 @@ def test_cli_connect_tests_then_stores_with_default_policy_and_limits(imap, smtp
     assert _connect_cli(imap, smtp, ca, "--json") == 0
     doc = json.loads(capsys.readouterr().out)
     assert doc["configured"] and doc["address"] == ME and doc["secret_set"]
-    assert doc["secret_storage"] == "os-keychain"
+    assert doc["secret_storage"] == "sealing-key" and doc["secret_warning"] == ""
     assert doc["policy"] == {"mode": "allowlist", "entries": [ME], "always_allow": [ME], "always_deny": [], "default": False, "self_addresses": [ME]}
     assert doc["limits"]["per_hour"] == 100 and doc["limits"]["per_day"] == 1000
     assert doc["limits"]["source"] == "default"
@@ -122,7 +122,9 @@ def test_key_file_storage_when_no_keychain(imap, smtp, ca, config_file, capsys) 
     assert handle_email(["--key-storage", "file", "connect", "--address", ME, "--password", PASSWORD,
                          "--imap-host", "localhost", "--imap-port", str(imap.port), "--ca-file", str(ca.ca_pem), "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
-    assert doc["secret_storage"] == "key-file" and "0600 file" in doc["secret_warning"]
+    # --key-storage is kept for compatibility: the sealing key file either way.
+    assert doc["secret_storage"] == "sealing-key" and doc["secret_warning"] == ""
+    assert (config_file.parent / "secrets" / "sealing.key").exists()
     assert PASSWORD not in _all_files_text(config_file)
 
 

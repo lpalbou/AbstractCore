@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import stat
@@ -175,41 +176,90 @@ def test_limits_validation() -> None:
 # ------------------------------------------------------------------ vault
 
 
-def test_vault_file_backend_seals_and_never_stores_plaintext(tmp_path: Path) -> None:
-    vault = SecretVault(tmp_path / "email", key_backend="file")
+def test_vault_seals_with_the_key_file_and_never_stores_plaintext(tmp_path: Path) -> None:
+    vault = SecretVault(tmp_path / "email")
+    assert vault.key_file == tmp_path / "secrets" / "sealing.key"
+    assert not vault.key_file.exists()
     secret = EmailSecret("sentinel-Pa55word-7f3a9c")
-    assert vault.store(secret.sealed_payload()) == "file"
-    for path in (vault.sealed_path, vault.key_path):
+    assert vault.store(secret.sealed_payload()) == "sealing-key"
+    for path in (vault.sealed_path, vault.key_file):
         assert b"sentinel-Pa55word-7f3a9c" not in path.read_bytes()
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert stat.S_IMODE((tmp_path / "email").stat().st_mode) == 0o700
+    assert stat.S_IMODE((tmp_path / "secrets").stat().st_mode) == 0o700
+    assert len(base64.b64decode(vault.key_file.read_bytes().strip())) == 32
+    assert not vault.key_path.exists() and vault.key_warning == ""
     assert EmailSecret.from_sealed_payload(vault.load()).password == "sentinel-Pa55word-7f3a9c"
-    assert vault.permissions_ok()
+    assert vault.permissions_ok() and vault.location() == "sealing-key"
 
 
-def test_vault_keyring_backend_keeps_the_key_out_of_the_folder(tmp_path: Path, memory_keyring) -> None:
-    vault = SecretVault(tmp_path / "email", key_backend="auto")
-    assert vault.store({"password": "pw-1"}) == "keyring"
-    assert not vault.key_path.exists()
-    assert len(memory_keyring.items) == 1
-    assert vault.load()["password"] == "pw-1"
-    vault.delete()
-    assert not vault.sealed_path.exists() and memory_keyring.items == {}
+def test_one_key_file_serves_every_store_and_a_moved_folder(tmp_path: Path) -> None:
+    import shutil
 
-
-def test_vault_falls_back_to_a_key_file_when_no_keychain(tmp_path: Path, monkeypatch) -> None:
-    import keyring
-    from keyring.backends import fail
-
-    keyring.set_keyring(fail.Keyring())
-    vault = SecretVault(tmp_path / "email")
-    assert vault.store({"password": "x"}) == "file"
-    assert "0600 file" in vault.key_warning
+    key = tmp_path / "data" / "secrets" / "sealing.key"
+    a = SecretVault(tmp_path / "data" / "a", key_file=key)
+    b = SecretVault(tmp_path / "data" / "x" / "b", key_file=key)
+    a.store({"password": "pa"})
+    b.store({"password": "pb"})
+    assert json.loads(a.sealed_path.read_text())["kid"] == json.loads(b.sealed_path.read_text())["kid"]
+    # A sealed file copied into another store does not open (its place is the associated data).
+    shutil.copy(a.sealed_path, b.sealed_path)
     with pytest.raises(EmailSecretUnavailable):
-        SecretVault(tmp_path / "other", key_backend="keyring").store({"password": "x"})
+        b.load()
+    # The folder moved with its secrets/: still opens. Without secrets/: a typed sentence.
+    shutil.copytree(tmp_path / "data", tmp_path / "moved")
+    moved = SecretVault(tmp_path / "moved" / "a", key_file=tmp_path / "moved" / "secrets" / "sealing.key")
+    assert moved.load() == {"password": "pa"}
+    shutil.rmtree(tmp_path / "moved" / "secrets")
+    with pytest.raises(EmailSecretUnavailable) as info:
+        moved.load()
+    assert "sealing key" in info.value.cause
 
 
-def test_vault_tampering_and_missing_key_are_typed_errors(tmp_path: Path, memory_keyring) -> None:
+def test_the_keychain_is_gone(tmp_path: Path, memory_keyring) -> None:
+    with pytest.raises(EmailInvalidSettings):
+        SecretVault(tmp_path / "email", key_backend="keyring")
+    assert SecretVault(tmp_path / "email", key_backend="file").store({"password": "x"}) == "sealing-key"
+    # A store sealed by an older version with the key in a keychain is NEVER opened.
+    old = SecretVault(tmp_path / "old")
+    old.directory.mkdir()
+    old.sealed_path.write_text(json.dumps({"v": 1, "alg": "AES-256-GCM", "key": "keyring", "key_id": "0" * 24,
+                                           "nonce": "AAAAAAAAAAAAAAAA", "ct": "AAAA"}))
+    assert old.legacy_keychain() and old.location() == "keyring"
+    with pytest.raises(EmailSecretUnavailable) as info:
+        old.load()
+    assert info.value.code == "email_secret_sealed_with_keychain" and "connect the account again" in info.value.cause
+    assert old.retire_legacy_keychain() and not old.exists() and (old.directory / "secret.keychain-old.enc").exists()
+    assert memory_keyring.attempts == []
+    import abstractcore.comms.email.vault as vault_module
+
+    assert "import keyring" not in Path(vault_module.__file__).read_text()
+
+
+def test_an_older_key_file_store_is_resealed_under_the_sealing_key(tmp_path: Path) -> None:
+    import secrets as _secrets
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    # Exactly what AbstractCore < 2.26 wrote without a keychain: secret.key beside secret.enc.
+    d = tmp_path / "email"
+    d.mkdir()
+    key = AESGCM.generate_key(bit_length=256)
+    (d / "secret.key").write_bytes(base64.b64encode(key))
+    nonce = _secrets.token_bytes(12)
+    key_id = "f" * 24
+    ct = AESGCM(key).encrypt(nonce, json.dumps({"password": "old-pw"}).encode(), b"abstractcore-email-secret-v1|" + key_id.encode())
+    (d / "secret.enc").write_text(json.dumps({"v": 1, "alg": "AES-256-GCM", "key": "file", "key_id": key_id,
+                                              "nonce": base64.b64encode(nonce).decode(), "ct": base64.b64encode(ct).decode()}))
+    readonly = SecretVault(d, reseal_legacy=False)
+    assert readonly.load() == {"password": "old-pw"} and readonly.location() == "file"
+    vault = SecretVault(d)
+    assert vault.load() == {"password": "old-pw"}
+    assert vault.location() == "sealing-key" and not (d / "secret.key").exists()
+    assert vault.load() == {"password": "old-pw"}
+
+
+def test_vault_tampering_and_missing_key_are_typed_errors(tmp_path: Path) -> None:
     vault = SecretVault(tmp_path / "email")
     vault.store({"password": "x"})
     doc = json.loads(vault.sealed_path.read_text())
@@ -218,10 +268,10 @@ def test_vault_tampering_and_missing_key_are_typed_errors(tmp_path: Path, memory
     with pytest.raises(EmailSecretUnavailable):
         vault.load()
     vault.store({"password": "y"})
-    memory_keyring.items.clear()  # keychain entry gone (moved folder, other machine)
+    vault.key_file.unlink()  # the folder copied without secrets/
     with pytest.raises(EmailSecretUnavailable) as info:
         vault.load()
-    assert "keychain" in info.value.cause
+    assert "sealing key" in info.value.cause
 
 
 def test_secret_repr_and_str_redact() -> None:

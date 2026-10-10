@@ -115,7 +115,11 @@ def _print_status(doc: Dict[str, Any], notices: List[str]) -> None:
         smtp = doc.get("smtp")
         print(f"  IMAP (read): {imap['host']}:{imap['port']} {imap['security']}, folder {imap['folder']}" if imap else "  IMAP (read): not configured")
         print(f"  SMTP (send): {smtp['host']}:{smtp['port']} {smtp['security']}" if smtp else "  SMTP (send): not configured")
-        storage = {"os-keychain": "encrypted, key in the OS keychain", "key-file": "encrypted, key in a 0600 file"}.get(doc.get("secret_storage", ""), "not stored")
+        storage = {
+            "sealing-key": "encrypted, key in the config folder (secrets/sealing.key)",
+            "old-keychain": "sealed with the old OS keychain key (never read): connect the account again",
+            "key-file": "encrypted, older key file beside it (re-sealed on next use)",
+        }.get(doc.get("secret_storage", ""), "not stored")
         print(f"  Credentials: {storage}")
         if doc.get("secret_warning"):
             print(f"  Warning: {doc['secret_warning']}")
@@ -620,9 +624,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="abstractcore email", description="Configure the email account (IMAP read-only + SMTP).")
     parser.add_argument(
         "--key-storage",
-        choices=("auto", "keyring", "file"),
+        choices=("auto", "file"),
         default="auto",
-        help="Where the encryption key of new credentials goes: the OS keychain (auto, when available) or a 0600 key file",
+        help="Kept for compatibility: credentials are always sealed with the key file <config dir>/secrets/sealing.key (no OS keychain)",
     )
     sub = parser.add_subparsers(dest="cmd")
 

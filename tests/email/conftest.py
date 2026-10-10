@@ -1,9 +1,10 @@
-"""Hermetic email fixtures: a throwaway CA, local IMAP / SMTP / OAuth servers, an in-memory
-keychain and a scratch AbstractCore config file.
+"""Hermetic email fixtures: a throwaway CA, local IMAP / SMTP / OAuth servers, a keychain
+guard and a scratch AbstractCore config file.
 
-Nothing here reaches a real mail service or the OS keychain: servers bind 127.0.0.1 on free
-ports, every address is under example.test, and `keyring` is pointed at an in-memory backend
-for every test (the macOS Keychain does not depend on HOME, so moving HOME is not enough).
+Nothing here reaches a real mail service or an OS keychain: servers bind 127.0.0.1 on free
+ports, every address is under example.test, and `keyring` cannot even be imported during a test
+(the `memory_keyring` guard fails the test if anything tries; credentials are sealed with the
+key file `<config dir>/secrets/sealing.key`).
 """
 
 from __future__ import annotations
@@ -28,52 +29,36 @@ sys.path.insert(0, str(Path(__file__).parent))
 from email_fixtures import ME, PASSWORD  # noqa: E402
 
 
-class MemoryKeyring:
-    """A keyring backend kept in memory (priority 1 so the vault accepts it)."""
-
-    priority = 1
+class KeychainImportGuard:
+    """Refuses `keyring` and records who asked: AbstractCore never uses an OS keychain (2.26)."""
 
     def __init__(self) -> None:
-        self.items: Dict[tuple, str] = {}
+        self.attempts: list = []
 
-    def get_password(self, service: str, username: str):
-        return self.items.get((service, username))
-
-    def set_password(self, service: str, username: str, password: str) -> None:
-        self.items[(service, username)] = password
-
-    def delete_password(self, service: str, username: str) -> None:
-        self.items.pop((service, username), None)
+    def find_spec(self, name, path=None, target=None):
+        if name == "keyring" or name.startswith("keyring."):
+            self.attempts.append(name)
+            raise ImportError(f"{name}: AbstractCore must never import keyring (tests/email/conftest.py guard)")
+        return None
 
 
 @pytest.fixture(autouse=True)
-def memory_keyring(monkeypatch: pytest.MonkeyPatch) -> Iterator[MemoryKeyring]:
-    import keyring
-    from keyring.backend import KeyringBackend
+def memory_keyring() -> Iterator[KeychainImportGuard]:
+    """Historic name: there is no keychain at all now. A test during which anything imports
+    `keyring` fails."""
 
-    class _Backend(KeyringBackend):
-        priority = 1
-
-        def __init__(self, store: MemoryKeyring) -> None:
-            super().__init__()
-            self._store = store
-
-        def get_password(self, service, username):
-            return self._store.get_password(service, username)
-
-        def set_password(self, service, username, password):
-            self._store.set_password(service, username, password)
-
-        def delete_password(self, service, username):
-            self._store.delete_password(service, username)
-
-    mem = MemoryKeyring()
-    previous = keyring.get_keyring()
-    keyring.set_keyring(_Backend(mem))
+    guard = KeychainImportGuard()
+    stashed = {k: sys.modules.pop(k) for k in list(sys.modules) if k == "keyring" or k.startswith("keyring.")}
+    sys.meta_path.insert(0, guard)
     try:
-        yield mem
+        yield guard
     finally:
-        keyring.set_keyring(previous)
+        try:
+            sys.meta_path.remove(guard)
+        except ValueError:
+            pass
+        sys.modules.update(stashed)
+    assert not guard.attempts, f"keyring was imported during the test: {guard.attempts}"
 
 
 @pytest.fixture(autouse=True)

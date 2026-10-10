@@ -94,7 +94,7 @@ from .oauth import (
 from .policy import PolicyDecision, RecipientPolicy, evaluate, normalize_address, normalize_domain, parse_recipients
 from .search import SearchCriteria
 from .store import EmailAccountStore, EmailSettings
-from .vault import SecretVault
+from .vault import SecretVault, ensure_key_file, key_fingerprint, read_key_file
 
 __all__ = [
     "AUTO_SUBMITTED_GENERATED",
@@ -176,4 +176,7 @@ __all__ = [
     "resolve_oauth_client",
     "tls_context",
     "xoauth2_string",
+    "ensure_key_file",
+    "key_fingerprint",
+    "read_key_file",
 ]
