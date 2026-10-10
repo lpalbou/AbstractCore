@@ -21,7 +21,8 @@ What the encryption protects against, plainly: copies of the folder taken WITHOU
 Code running as the same OS user can read the key file, exactly as it could read that user's
 keychain items before; a copy of the whole folder carries the key. Backups must include
 `secrets/`. On Windows the 0600/0700 modes are best effort (Python maps them to the read-only
-flag); the folder's NTFS permissions protect the key file there.
+flag), so the key folder and file also get an owner-only ACL (`icacls /inheritance:r /grant:r`);
+when that cannot be applied, the folder's NTFS permissions protect the key file there.
 
 Older stores (AbstractCore < 2.26):
 
@@ -92,6 +93,43 @@ def _chmod(path: Path, mode: int) -> None:
         pass
 
 
+def _restrict_windows(path: Path, *, folder: bool) -> bool:
+    """Windows, best effort: `icacls` removes inherited entries and grants the current user
+    alone full control (Python's chmod only toggles the read-only flag there). False when it
+    could not be applied; the folder's NTFS permissions then protect the file."""
+
+    user = os.environ.get("USERNAME") or ""
+    if not user:
+        try:
+            import getpass
+
+            user = getpass.getuser()
+        except Exception:
+            return False
+    grant = f"{user}:(OI)(CI)F" if folder else f"{user}:F"
+    try:
+        import subprocess
+
+        done = subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", grant],
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    except Exception:
+        return False
+    return done.returncode == 0
+
+
+def _make_private(path: Path, *, folder: bool) -> None:
+    """Owner-only access: 0700 folder / 0600 file on macOS and Linux; on Windows the modes are
+    best effort, so the owner-only ACL is applied as well (`_restrict_windows`)."""
+
+    _chmod(path, 0o700 if folder else 0o600)
+    if os.name == "nt":
+        _restrict_windows(path, folder=folder)
+
+
 def _write_private(path: Path, data: bytes) -> None:
     tmp = path.with_name(path.name + f".{os.getpid()}-{secrets.token_hex(4)}.tmp")
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -141,7 +179,7 @@ def ensure_key_file(path: Path) -> bytes:
     folder = path.parent
     with _KEY_LOCK:
         folder.mkdir(parents=True, exist_ok=True)
-        _chmod(folder, 0o700)
+        _make_private(folder, folder=True)
         try:
             return _decode_key(path.read_bytes(), path)
         except FileNotFoundError:
@@ -162,7 +200,7 @@ def ensure_key_file(path: Path) -> bytes:
             except OSError:
                 pass
             raise
-        _chmod(path, 0o600)
+        _make_private(path, folder=False)
         return _decode_key(encoded, path)
 
 

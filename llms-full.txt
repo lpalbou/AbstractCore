@@ -8126,7 +8126,8 @@ What you can rely on:
   `<config dir>/email/secret.enc`, under ONE key file, `<config dir>/secrets/sealing.key` (0600 in
   a 0700 folder, 32 random bytes, made on first use). No OS keychain is used, on any OS (2.26.0):
   the same file and the same guarantees on macOS, Linux and Windows (on Windows the modes are best
-  effort; the folder's NTFS permissions protect it). The key file protects copies of the config
+  effort, so the folder and the key also get an owner-only ACL through `icacls`; when that
+  cannot be applied, the folder's NTFS permissions protect it). The key file protects copies of the config
   folder taken without `secrets/`; code running as your OS user can read it (as it could read your
   keychain before), and a copy of the whole folder carries it, so protect the folder like a
   password and include `secrets/` in backups. No command, page, tool result or error ever shows a
