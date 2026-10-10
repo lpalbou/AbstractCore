@@ -331,7 +331,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Vision Jobs | POST | `/v1/vision/jobs/videos/edits` | Async image-to-video with polling and progress events | same form fields as `/v1/videos/edits` |
 | Vision Jobs | GET | `/v1/vision/jobs/{job_id}` | Poll/consume async job state | path `job_id`, query `consume` |
 | Vision Models | GET | `/v1/vision/models` | Available AbstractVision model catalog | optional `task`, `provider`, `base_url`, `api_key` |
-| Audio | POST | `/v1/audio/transcriptions` | Speech-to-text multipart endpoint | `file`, optional `provider`, `model`, `language`, `prompt`, `response_format`, `temperature`, `format`, `base_url` |
+| Audio | POST | `/v1/audio/transcriptions` | Speech-to-text multipart endpoint. Local engines answer `{text, language, detected_language}`: `language` is what the engine was told (`null` = it detected the language), `detected_language` the ISO 639-1 code it reported (`null` when it reports none). | `file`, optional `provider`, `model`, `language` (ISO 639-1; absent = detected), `prompt`, `response_format`, `temperature`, `format`, `base_url` |
 | Audio | POST | `/{provider}/v1/audio/transcriptions` | Provider-scoped speech-to-text route where body model is unprefixed | path `provider`, optional `base_url`, STT form fields |
 | Audio | POST | `/v1/audio/speech` | Text-to-speech endpoint | `input`/`text`, optional `provider`, `model`, `voice`, `response_format`/`format`, `speed`, `instructions`, `profile`, `quality_preset`, `quality`, `base_url` |
 | Audio | POST | `/{provider}/v1/audio/speech` | Provider-scoped text-to-speech route where body model is unprefixed | path `provider`, optional `base_url`, TTS body fields |

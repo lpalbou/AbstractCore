@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Transcription language facts: `generate(..., output={"task": "transcription"})` records `language` (what the engine was told; `None` = it detected the language) and `detected_language` (what it reported) in the transcript's metadata, through the audio facade's `transcribe_detailed` (`AudioCapability` may implement it — AbstractVoice does; a backend with `transcribe` only reports neither). `POST /v1/audio/transcriptions` on a local engine answers `{text, language, detected_language}`.
 - `mlx-whisper` speech-input provider: route alias, weights probe and download (`abstractcore models download mlx-whisper large-v3`), catalog rows `whisper-large-v3` and `whisper-large-v3-turbo` (both Whisper engines).
 - `recommendations.voice_input_hint(route, host)`: the served one-line hint for a configured speech-input route (on Apple silicon, a faster-whisper route runs on the processor while mlx-whisper runs the same model on the GPU). The capability-defaults grid carries it on the `input.voice` row as `route_hint` `{code, sentence, route}`.
 
