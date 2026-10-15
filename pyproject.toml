@@ -164,7 +164,7 @@ apple = [
     "numpy>=2.1.0,<3.0.0",
     "Pillow>=12.1.1,<13.0.0",
     # Local voice (TTS/STT), image/video and music engines.
-    "abstractvoice[all-apple]>=0.13.2",
+    "abstractvoice[all-apple]>=0.15.0",
     "omnivoice>=0.1.5",
     "abstractvision[all-apple]>=0.3.33",
     "abstractmusic[all-apple]>=0.1.16",
@@ -194,7 +194,7 @@ gpu = [
     "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     # Local voice (TTS/STT), image/video and music engines.
-    "abstractvoice[all-gpu]>=0.13.2",
+    "abstractvoice[all-gpu]>=0.15.0",
     "omnivoice>=0.1.5",
     "abstractvision[all-gpu]>=0.3.33",  # 0.3.32: no MLX-Gen; stable-diffusion.cpp marked out on Windows; 0.3.33: sequential CPU offload when model offload does not fit
     "abstractmusic[all-gpu]>=0.1.16",

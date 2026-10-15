@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Requires AbstractVoice 0.15.0 or newer in the base install and in the `[apple]` and `[gpu]` extras (`abstractvoice[all-apple]`, `abstractvoice[all-gpu]`), the version whose engine runtime carries the mlx-whisper engine; the route engine check's floor moves with it.
 - Speech input (`input.voice`) recommends Whisper `large-v3` on every host (was `base`). On Apple silicon with the apple setting the pick is AbstractVoice's `mlx-whisper` engine, which runs it on the Apple GPU (about 1.4 s for a 17-second clip on an M5 Max, against about 20 s on the processor); the light install and every other host keep `faster-whisper` (CUDA on an NVIDIA GPU). Stored routes are never changed; fresh installs and `apply-recommended` follow the new pick. On a processor, the recommendation notes that `large-v3-turbo` is faster (about 6 s for that clip).
 
 ### Added
