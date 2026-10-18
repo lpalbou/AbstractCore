@@ -348,6 +348,9 @@ def print_report(report, format_type: str) -> None:
 
 def main():
     """Main CLI function"""
+    from abstractcore.utils.stdio import safe_stdio
+
+    safe_stdio()
     parser = argparse.ArgumentParser(
         description="AbstractCore Deep Search - Autonomous research agent",
         formatter_class=argparse.RawDescriptionHelpFormatter,

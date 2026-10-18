@@ -5,6 +5,31 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.26.1] - 2026-10-17
+
+Windows fixes.
+
+### Fixed
+
+- **Console output**: `abstractcore` (`--status`, `--config`), `abstractcore-chat`,
+  `abstractcore-endpoint` and the apps (`summarizer`, `extractor`, `judge`, `intent`,
+  `deepsearch`) no longer stop with `UnicodeEncodeError` when their output is piped or redirected
+  on Windows; a character the code page lacks is written as `?`
+  (`abstractcore.utils.stdio.safe_stdio`).
+- **Process trees on Windows**: a command or browser tool that is stopped (`hard_kill_tree`) ends
+  every process it started (`taskkill /T /F`), not only its own process.
+- **LM Studio models** in `~/.lmstudio/models` are found by the vision catalog on every OS.
+- **Model downloads into a cache without symbolic links** (Windows without Developer Mode, where
+  huggingface_hub stores each file as a copy in `snapshots/<revision>/`): `abstractcore models
+  download huggingface <repo>` reports the download as complete instead of "planned file(s) are not
+  whole", and an interrupted-download marker counts those copies as finished.
+- **Hugging Face downloads on Windows** run to the end. The download process stops when the
+  process that started it exits; on Windows it now watches that process through a process handle,
+  because a virtual environment's `python.exe` is a launcher and the parent process id is the
+  launcher's. Downloads from the gateway console (for example the default speech-to-text model,
+  faster-whisper `large-v3`) previously stopped after a second with "the Hugging Face download
+  process exited 75".
+
 ## [2.26.0] - 2026-10-15
 
 ### Security

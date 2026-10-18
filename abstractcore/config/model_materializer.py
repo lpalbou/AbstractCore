@@ -3170,8 +3170,11 @@ def _hf_marker_unfinished(repo_dir: Path) -> Optional[int]:
         etag = entry.get("etag") if isinstance(entry, dict) else None
         size = entry.get("size") if isinstance(entry, dict) else None
         blob = repo_dir / "blobs" / str(etag or "")
+        name = entry.get("name") if isinstance(entry, dict) else None
         try:
             whole = bool(etag) and blob.is_file() and (not isinstance(size, int) or blob.stat().st_size == size)
+            if not whole and etag and isinstance(name, str):
+                whole = _hf_snapshot_copy_size(repo_dir, name, size if isinstance(size, int) else None) is not None
         except Exception:
             whole = False
         if not whole:
@@ -3389,8 +3392,37 @@ def repair_hf_refs(*, apply: bool = False, cache_dirs: Optional[Iterable[Path]] 
     return {"apply": bool(apply), "cache_dirs": [str(d) for d in dirs], "rows": rows, "counts": counts}
 
 
+def _hf_snapshot_copy_size(repo_dir: Path, name: str, size: Optional[int]) -> Optional[int]:
+    """The size of a whole COPY of `name` in a snapshot folder, else None.
+
+    Where the cache cannot hold symbolic links (Windows without Developer Mode),
+    huggingface_hub downloads into `blobs/<etag>.incomplete` and then MOVES the
+    file into `snapshots/<rev>/<name>`: no blob is left behind, and the snapshot
+    entry is a regular file, not a link to a blob. A copy of the planned size
+    (any size when the plan has none) is that file, whole."""
+
+    if not name:
+        return None
+    try:
+        snaps = [d for d in (repo_dir / "snapshots").iterdir() if d.is_dir()]
+    except Exception:
+        return None
+    for snap in snaps:
+        path = snap / name
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            found = path.stat().st_size
+        except Exception:
+            continue
+        if not isinstance(size, int) or found == size:
+            return found
+    return None
+
+
 class _HfBlobWatcher:
-    """Per-file progress from `blobs/<etag>(.incomplete)` sizes."""
+    """Per-file progress from `blobs/<etag>(.incomplete)` sizes, or from the
+    snapshot copy when the cache holds no links (`_hf_snapshot_copy_size`)."""
 
     def __init__(self, repo_dir: Path, plan: Optional[List[Dict[str, Any]]], emit: ProgressCallback, repo_id: str):
         self.repo_dir = repo_dir
@@ -3433,6 +3465,11 @@ class _HfBlobWatcher:
             try:
                 if whole.is_file():
                     row["bytes_done"] = whole.stat().st_size
+                    row["state"] = "done"
+                    continue
+                copied = _hf_snapshot_copy_size(self.repo_dir, str(row.get("name") or ""), row.get("bytes_total"))
+                if copied is not None and not _hf_partials(self.blobs, str(etag)):
+                    row["bytes_done"] = copied
                     row["state"] = "done"
                     continue
                 partial = _hf_partial_size(self.blobs, str(etag))
@@ -3560,10 +3597,26 @@ import json, os, sys, threading, time
 # The owner passes its pid (argv[2]): reading getppid() here could already
 # see the re-parented value if the owner died during this interpreter's start.
 _owner = int(sys.argv[2]) if len(sys.argv) > 2 else os.getppid()
+def _owner_gone_check():
+    if os.name != "nt":
+        return lambda: os.getppid() != _owner
+    # Windows: a venv's python.exe is a launcher that starts the real
+    # interpreter as ITS child, so getppid() is the launcher, never the owner.
+    # Hold a handle on the owner instead (a handle pins the identity, unlike a
+    # pid number) and ask whether that process has exited.
+    import ctypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.OpenProcess.restype = ctypes.c_void_p
+    k32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    handle = k32.OpenProcess(0x00100000, False, _owner)  # SYNCHRONIZE
+    if not handle:
+        return lambda: True
+    return lambda: k32.WaitForSingleObject(handle, 0) == 0  # WAIT_OBJECT_0: exited
+_owner_gone = _owner_gone_check()
 def _watch_owner():
     while True:
         time.sleep(1.0)
-        if os.getppid() != _owner:
+        if _owner_gone():
             os._exit(75)  # no goodbye line: the owner's end of the pipe is gone
 threading.Thread(target=_watch_owner, daemon=True).start()
 from huggingface_hub import snapshot_download

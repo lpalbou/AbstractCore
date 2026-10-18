@@ -2671,6 +2671,9 @@ class SimpleCLI:
 
 
 def main():
+    from abstractcore.utils.stdio import safe_stdio
+
+    safe_stdio()
     parser = argparse.ArgumentParser(
         description="Simplified CLI REPL for AbstractCore",
         formatter_class=argparse.RawDescriptionHelpFormatter,

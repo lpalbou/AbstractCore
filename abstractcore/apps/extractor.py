@@ -145,6 +145,9 @@ def parse_extraction_length(length_str: Optional[str]) -> str:
 
 def main():
     """Main CLI function"""
+    from abstractcore.utils.stdio import safe_stdio
+
+    safe_stdio()
     parser = argparse.ArgumentParser(
         description="AbstractCore Entity & Relationship Extractor - Default: qwen3:4b-instruct-2507-q4_K_M (requires Ollama)",
         formatter_class=argparse.RawDescriptionHelpFormatter,

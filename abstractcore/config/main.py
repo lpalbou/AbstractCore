@@ -3122,6 +3122,9 @@ _CONFIG_SUBCOMMANDS = {
 
 def main(argv: List[str] = None):
     """Main CLI entry point."""
+    from abstractcore.utils.stdio import safe_stdio
+
+    safe_stdio()
     if argv is None:
         argv = sys.argv[1:]
 

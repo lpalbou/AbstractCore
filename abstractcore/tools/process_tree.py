@@ -71,13 +71,23 @@ def hard_kill_tree(proc: "subprocess.Popen") -> None:
     POSIX: enumerate descendants first (while the tree is intact), kill the
     worker's own group, then SIGKILL each descendant's process group and the
     descendant itself — so a `setsid()`'d grandchild's group and its children
-    die too. Windows: `proc.kill()` (no group-escape there; best-effort).
+    die too. Windows: `taskkill /T /F` ends the worker and every process it started
+    (a browser driver's Chrome, a shell's children), then `proc.kill()` as the backstop.
 
     Guarded throughout: a descendant reaped between enumeration and kill (or a
     `getpgid` on a dead pid) must never raise — the point is to leave nothing
     alive, not to account for every pid.
     """
     if os.name != "posix":
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except Exception:
+                pass
         try:
             proc.kill()
         except Exception:

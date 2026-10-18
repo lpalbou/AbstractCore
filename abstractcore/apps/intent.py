@@ -344,6 +344,9 @@ def _format_single_analysis_plain(analysis, analysis_time: float = None) -> list
 
 def main():
     """Main CLI function"""
+    from abstractcore.utils.stdio import safe_stdio
+
+    safe_stdio()
     parser = argparse.ArgumentParser(
         description="AbstractCore Intent Analyzer - Identify and analyze intents behind text",
         formatter_class=argparse.RawDescriptionHelpFormatter,

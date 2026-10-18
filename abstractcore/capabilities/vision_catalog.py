@@ -308,6 +308,8 @@ def _default_lmstudio_model_dirs() -> list[Path]:
 
     sysname = platform.system().lower()
     home = Path.home()
+    # LM Studio 0.3+ keeps its models in ~/.lmstudio/models on every OS (as utils/model_cache).
+    dirs.append(str(home / ".lmstudio" / "models"))
     if sysname == "darwin":
         dirs.append(str(home / "Library" / "Application Support" / "LM Studio" / "models"))
     elif sysname == "linux":

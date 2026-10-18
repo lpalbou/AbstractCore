@@ -1172,6 +1172,9 @@ def _parse_args(argv: Optional[List[str]] = None) -> EndpointConfig:
 
 
 def main(argv: Optional[List[str]] = None) -> None:
+    from abstractcore.utils.stdio import safe_stdio
+
+    safe_stdio()
     cfg = _parse_args(argv)
     app = create_app(provider_name=cfg.provider, model=cfg.model)
     import uvicorn

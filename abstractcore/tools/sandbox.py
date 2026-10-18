@@ -507,7 +507,10 @@ def macos_profile(spec: SandboxSpec) -> str:
         while parent and parent != "/":
             if parent not in ancestors:
                 ancestors.append(parent)
-            parent = os.path.dirname(parent)
+            up = os.path.dirname(parent)
+            if up == parent:  # a filesystem root that is not "/" (C:\ on Windows)
+                break
+            parent = up
     if xcrun_rule and xcrun_tmp:
         # Creating the cache file looks up its folder: metadata of the folder and its
         # ancestors only (never a listing or a read of anything else in the temp root).
@@ -515,7 +518,10 @@ def macos_profile(spec: SandboxSpec) -> str:
         while parent and parent != "/":
             if parent not in ancestors:
                 ancestors.append(parent)
-            parent = os.path.dirname(parent)
+            up = os.path.dirname(parent)
+            if up == parent:
+                break
+            parent = up
     if ancestors:
         lines.append("(allow file-read-metadata " + " ".join(f"(literal {_sbpl_str(a)})" for a in ancestors) + ")")
     return "\n".join(lines) + "\n"

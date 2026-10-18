@@ -283,6 +283,9 @@ def format_assessment_plain(assessment: dict) -> str:
 
 def main():
     """Main CLI function"""
+    from abstractcore.utils.stdio import safe_stdio
+
+    safe_stdio()
     parser = argparse.ArgumentParser(
         description="AbstractCore Basic Judge - LLM-as-a-judge for objective evaluation (Default: qwen3:4b-instruct-2507-q4_K_M)",
         formatter_class=argparse.RawDescriptionHelpFormatter,

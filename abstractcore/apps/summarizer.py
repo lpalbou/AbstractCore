@@ -207,6 +207,9 @@ def format_summary_output(result) -> str:
 
 def main():
     """Main CLI function"""
+    from abstractcore.utils.stdio import safe_stdio
+
+    safe_stdio()
     parser = argparse.ArgumentParser(
         description="AbstractCore Document Summarizer - Default: gemma3:1b-it-qat (requires Ollama)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
