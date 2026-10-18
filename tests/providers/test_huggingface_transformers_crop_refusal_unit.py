@@ -39,8 +39,12 @@ class _FullAttentionLayer:
         self.seq_len = int(seq_len)
 
     def crop(self, max_length: int) -> None:
-        if self.seq_len > int(max_length):
-            self.seq_len = int(max_length)
+        # transformers' semantics: a negative value removes that many tokens (the only
+        # form transformers >= 5.20 accepts); a positive one is the legacy final length.
+        n = int(max_length)
+        target = self.seq_len + n if n < 0 else n
+        if self.seq_len > target:
+            self.seq_len = max(0, target)
 
     def get_seq_length(self) -> int:
         return self.seq_len
