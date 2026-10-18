@@ -4531,8 +4531,19 @@ class HuggingFaceProvider(BaseProvider):
                 )
             return False
 
+        # `crop(n)` with a positive `n` (keep n tokens) was deprecated and is gone in
+        # transformers 5.20; a negative `n` (drop |n| tokens) works on every version.
+        keep = int(keep_tokens)
         try:
-            crop(int(keep_tokens))
+            lengths = self._transformers_layer_seq_lengths(cache)
+        except Exception:
+            lengths = []
+        current = max(lengths) if lengths else None
+        try:
+            if current is None:
+                crop(keep)  # length unknown: the legacy form is the only one available
+            elif current > keep:
+                crop(keep - current)
         except Exception:
             return False
 

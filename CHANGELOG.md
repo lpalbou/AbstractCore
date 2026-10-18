@@ -5,6 +5,18 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.26.2] - 2026-10-18
+
+2.26.1 was not published on PyPI; its Windows fixes ship in this release.
+
+### Fixed
+
+- **Hugging Face (transformers) prompt cache with transformers 5.20 or newer**: a warm call
+  feeds only the new part of the conversation again. transformers 5.20 removed `Cache.crop`
+  with a positive length; the cache is now cropped with the negative form (drop that many
+  tokens), which every supported transformers version accepts. With 5.20, every warm call
+  re-read the whole conversation (correct output, no prefill savings).
+
 ## [2.26.1] - 2026-10-17
 
 Windows fixes.

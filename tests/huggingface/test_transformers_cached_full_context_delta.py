@@ -236,7 +236,10 @@ def test_crop_verify_refuses_no_op_crops():
         def __init__(self, length):
             self._len = length
         def crop(self, n):
-            self._len = min(self._len, int(n))
+            # transformers' semantics: a negative n drops |n| tokens (the only form
+            # transformers >= 5.20 accepts); a positive n keeps n tokens (older ones).
+            n = int(n)
+            self._len = max(0, self._len + n) if n < 0 else min(self._len, n)
         def get_seq_length(self):
             return self._len
 
