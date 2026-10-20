@@ -33,8 +33,10 @@
 # Duckets/Hy-Memory-30B-A3B-MLX-4bit (community hy_v3.py) and the PR #1211 head
 # (router matmul in fp32, router + correction bias kept unquantized).
 
-from __future__ import annotations
-
+# NO `from __future__ import annotations`: mlx-lm loads a bundled model_file with
+# importlib.util.module_from_spec WITHOUT registering it in sys.modules, and
+# dataclasses resolves string annotations through sys.modules[cls.__module__]
+# (AttributeError: 'NoneType' object has no attribute '__dict__').
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
@@ -367,7 +369,9 @@ def register_with_mlx_lm() -> bool:
     import importlib.util
     import sys
 
-    this = sys.modules[__name__]
+    this = sys.modules.get(__name__)
+    if this is None:  # loaded as a bundled model_file: nothing to register
+        return False
     current = sys.modules.get(_UPSTREAM_MODULE)
     if current is this:
         return True

@@ -313,6 +313,39 @@ def _artifact_logger():
 # torch, and it defeated the fused decode kernel (materialising a [B,H,q,kv]
 # score matrix plus a repeat_interleave of K/V on every decode step). All that
 # remains is a one-time warning on the exact affected configuration.
+_GROUPED_MM_PROBES: Dict[str, bool] = {}
+
+
+def _torch_grouped_mm_runs_on(device: str) -> bool:
+    """True when `torch._grouped_mm` actually executes on `device` (probed once).
+
+    transformers >= 5 defaults MoE experts to its `grouped_mm` kernel whenever
+    `torch._grouped_mm` merely EXISTS; torch 2.8 ships the attribute but no CPU
+    or MPS kernel, so every MoE forward (Hy-Memory/HY V3, Qwen3-MoE, ...) dies
+    with NotImplementedError on a Mac. Measured on torch 2.8.0 + transformers
+    5.8.0 (2026-10-21): both 'cpu' and 'mps' raise.
+    """
+    key = str(device or "cpu")
+    if key in _GROUPED_MM_PROBES:
+        return _GROUPED_MM_PROBES[key]
+    ok = True
+    try:
+        import torch  # type: ignore
+
+        fn = getattr(torch.nn.functional, "grouped_mm", None) or getattr(torch, "_grouped_mm", None)
+        if fn is not None:
+            x = torch.ones(4, 16, device=key, dtype=torch.bfloat16)
+            w = torch.ones(2, 16, 8, device=key, dtype=torch.bfloat16)
+            offs = torch.tensor([2, 4], device=key, dtype=torch.int32)
+            fn(x, w, offs=offs)
+    except NotImplementedError:
+        ok = False
+    except Exception:
+        ok = True  # not the missing-kernel defect; leave transformers' choice alone
+    _GROUPED_MM_PROBES[key] = ok
+    return ok
+
+
 _MPS_SDPA_DEFECT_WARNED = False
 
 
@@ -6472,6 +6505,19 @@ class HuggingFaceProvider(BaseProvider):
                 model_kwargs["output_loading_info"] = True
             if config_fixed and "config" not in model_kwargs:
                 model_kwargs["config"] = config
+            # MoE experts: transformers' default `grouped_mm` kernel is chosen when
+            # torch merely exposes the op; where torch has no kernel for this
+            # device the first forward raises. Use transformers' own "eager"
+            # experts loop there (exact, slower). Ignored by dense models.
+            if (
+                "experts_implementation" not in model_kwargs
+                and importlib.util.find_spec("transformers.integrations.moe") is not None
+                and not _torch_grouped_mm_runs_on(self.device if self.device in ("cpu", "mps", "cuda") else "cpu")
+            ):
+                model_kwargs["experts_implementation"] = "eager"
+                self.logger.info(
+                    f"transformers MoE experts: experts_implementation='eager' (torch has no grouped_mm kernel on {self.device})"
+                )
 
             # Caller-requested quantization (quantization_config=, or the legacy
             # load_in_4bit/8bit spelling translated in __init__). Validated on

@@ -236,3 +236,26 @@ def test_register_shim_defers_to_an_upstream_module(monkeypatch) -> None:
     from mlx_lm.utils import _get_classes
 
     assert _get_classes({"model_type": "hy_v3"}) == (hy.Model, hy.ModelArgs)
+
+
+def test_bundled_copy_loads_the_way_mlx_lm_loads_a_model_file(tmp_path) -> None:
+    """`mlx_lm.utils.load_model` honours config `model_file` with
+    spec_from_file_location + module_from_spec and NEVER registers the module in
+    sys.modules; the published quants ship this exact file as hy_v3.py."""
+    import shutil
+
+    import abstractcore.providers.mlx_hy_v3 as hy
+
+    bundled = tmp_path / "hy_v3.py"
+    shutil.copyfile(hy.__file__, bundled)
+    spec = importlib.util.spec_from_file_location("custom_model", bundled)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert "custom_model" not in sys.modules
+    args = module.ModelArgs.from_dict({"model_type": "hy_v3", "hidden_size": 64, "num_hidden_layers": 2,
+                                       "num_attention_heads": 4, "num_key_value_heads": 2, "head_dim": 16,
+                                       "intermediate_size": 32, "num_experts": 4, "num_experts_per_tok": 2,
+                                       "moe_intermediate_size": 16, "vocab_size": 32})
+    model = module.Model(args)
+    assert model.layers[1].mlp.experts.gate_proj.weight.shape == (4, 16, 64)
+    assert module.register_with_mlx_lm() is False  # a bundled copy never shims mlx_lm
