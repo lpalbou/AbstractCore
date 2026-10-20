@@ -1,0 +1,413 @@
+"""Tencent Hy-Memory-30B-A3B (HY V3, model_type `hy_v3`) support.
+
+Covers the registry (every artifact spelling must resolve to `hy_v3`, never to the
+295B Hy3 `hunyuan3` entry whose `hy3` pattern is a substring of the GGUF file stem
+`hy3a3b-...`), the template tokens, thinking separation, the `<tool_calls>` /
+`<tool_sep>` tool-call encoding on the parse, clean and streaming lanes, and the
+`effort_disable_value` thinking surface (one `reasoning_effort` variable that is
+also the on/off switch: `no_think | low | high`).
+
+Template-backed checks live in test_hy_memory_chat_template_unit.py (real_home).
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+import pytest
+
+from abstractcore.architectures import detect_architecture, get_architecture_format, get_model_capabilities
+from abstractcore.architectures.detection import format_messages
+from abstractcore.architectures.response_postprocessing import normalize_assistant_text
+from abstractcore.architectures.thinking_controls import (
+    effort_switch_value,
+    resolve_thinking_control_surfaces,
+)
+from abstractcore.providers.streaming import IncrementalToolDetector
+from abstractcore.tools.parser import clean_tool_syntax, parse_tool_calls
+
+MODEL = "tencent/Hy-Memory-30B-A3B"
+BOS = "<｜hy_begin▁of▁sentence｜>"
+USER = "<｜hy_User｜>"
+ASSISTANT = "<｜hy_Assistant｜>"
+EOS = "<eos:6124c78e>"
+
+# Exactly what the chat template renders for an assistant tool-call turn
+# (chat_template.jinja @ tencent/Hy-Memory-30B-A3B 64a460a9), minus the eos.
+TEMPLATE_TOOL_CALLS = (
+    "<tool_calls>\n"
+    "<tool_call>search<tool_sep>\n"
+    "<arg_key>query</arg_key>\n"
+    "<arg_value>moe routing</arg_value>\n"
+    "<arg_key>limit</arg_key>\n"
+    "<arg_value>5</arg_value>\n"
+    "<arg_key>strict</arg_key>\n"
+    "<arg_value>true</arg_value>\n"
+    "</tool_call>\n"
+    "</tool_calls>"
+)
+
+
+# ------------------------------------------------------------------ registry
+
+ALIASES_AND_SPELLINGS = [
+    "tencent/Hy-Memory-30B-A3B",
+    "Hy-Memory-30B-A3B",
+    "hy-memory-30b-a3b",
+    "models--tencent--Hy-Memory-30B-A3B",
+    "tencent/Hy-Memory-30B-A3B-FP8",
+    "tencent/Hy-Memory-30B-A3B-GGUF",
+    "tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M",
+    "huggingface/tencent/Hy-Memory-30B-A3B",
+    "hy3a3b-memrl1009-step250-Q4_K_M-imat.gguf",
+    "hy3a3b-memrl1009-step250-Q6_K-imat.gguf",
+    "Hy-Memory-Step250-Q8_0.gguf",
+    "/models/gguf/hy3a3b-memrl1009-step250-Q4_K_M-imat.gguf",
+    "hy3a3b-memrl1009-step250-Q5_K_M.gguf",
+    "mlx-community/Hy-Memory-30B-A3B-4bit",
+    "mlx-community/Hy-Memory-30B-A3B-8bit",
+    "/tmp/out/Hy-Memory-30B-A3B-4bit",
+    "/tmp/out/Hy-Memory-30B-A3B-8bit",
+    "hermitdave/Hy-Memory-30B-A3B-MLX-8bit",
+    "lmstudio/tencent/hy-memory-30b-a3b",
+]
+
+
+@pytest.mark.parametrize("model", ALIASES_AND_SPELLINGS)
+def test_every_hy_memory_spelling_resolves_to_hy_v3_and_its_model_entry(model: str) -> None:
+    assert detect_architecture(model) == "hy_v3", model
+    caps = get_model_capabilities(model)
+    assert caps.get("architecture") == "hy_v3", model
+    assert caps.get("max_tokens") == 262144, model
+    assert caps.get("tool_support") == "native", model
+    assert caps.get("thinking_support") is True, model
+    # Never the 295B Hy3 entry (its ':opensource' think tags would mis-split output).
+    assert caps.get("thinking_tags") == ["<think>", "</think>"], model
+
+
+def test_hy3_295b_is_untouched_by_the_hy_v3_patterns() -> None:
+    for model in ("tencent/Hy3", "tencent/Hy3-FP8", "hy3"):
+        assert detect_architecture(model) == "hunyuan3", model
+        assert get_model_capabilities(model)["thinking_tags"] == ["<think:opensource>", "</think:opensource>"]
+
+
+def test_model_entry_carries_the_specialty_and_checkpoint_facts() -> None:
+    caps = get_model_capabilities(MODEL)
+    notes = caps["notes"].lower()
+    assert "specialty seems to be a long-term memory writer" in notes
+    assert "expert_hidden_dim" in notes  # the 768-vs-1536 checkpoint quirk is documented
+    assert caps["experts"] == 128 and caps["experts_activated"] == 8 and caps["shared_experts"] == 1
+    assert caps["license"] == "Apache-2.0"
+    assert caps["release_date"] == "2026-10-15"
+    assert "2026-10-21" in caps["source"]
+    assert caps["reasoning_levels"] == ["low", "high"]
+
+
+def test_transcript_matches_chat_template_tokens() -> None:
+    rendered = format_messages(
+        [
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": "U"},
+            {"role": "assistant", "content": "A"},
+        ],
+        "hy_v3",
+    )
+    assert rendered == f"{BOS}S{USER}U{ASSISTANT}A{EOS}"
+    arch_fmt = get_architecture_format("hy_v3")
+    assert arch_fmt["output_wrappers"]["end"] == EOS
+
+
+# ------------------------------------------------------------------ thinking output
+
+def test_think_block_is_split_into_reasoning() -> None:
+    arch_fmt = get_architecture_format(detect_architecture(MODEL))
+    caps = get_model_capabilities(MODEL)
+    cleaned, reasoning = normalize_assistant_text(
+        "<think>weighing what to retain</think>{\"memories\": [\"Alex lives in Seattle\"]}",
+        architecture_format=arch_fmt,
+        model_capabilities=caps,
+    )
+    assert cleaned == '{"memories": ["Alex lives in Seattle"]}'
+    assert reasoning == "weighing what to retain"
+
+
+def test_prompt_opened_think_block_is_split_into_reasoning() -> None:
+    # reasoning_effort=low|high ends the generation prompt with `<think>`, so the
+    # model's output carries only the closing tag.
+    arch_fmt = get_architecture_format("hy_v3")
+    cleaned, reasoning = normalize_assistant_text(
+        "the user stated a preference</think>Noted.",
+        architecture_format=arch_fmt,
+        model_capabilities=get_model_capabilities(MODEL),
+        thinking_opened_by_prompt=True,
+    )
+    assert cleaned == "Noted."
+    assert reasoning == "the user stated a preference"
+
+
+# ------------------------------------------------------------------ tool calls (parse)
+
+def test_template_shaped_tool_call_is_parsed() -> None:
+    calls = parse_tool_calls(TEMPLATE_TOOL_CALLS, MODEL)
+    assert [(c.name, c.arguments) for c in calls] == [
+        ("search", {"query": "moe routing", "limit": 5, "strict": True})
+    ]
+
+
+def test_tool_name_never_contains_the_separator() -> None:
+    calls = parse_tool_calls("<tool_calls><tool_call>get_time<tool_sep><arg_key>tz</arg_key><arg_value>UTC</arg_value></tool_call></tool_calls>", MODEL)
+    assert [c.name for c in calls] == ["get_time"]
+    assert all("<tool_sep>" not in c.name for c in calls)
+
+
+def test_argument_less_call_with_separator_is_a_call() -> None:
+    calls = parse_tool_calls("<tool_calls>\n<tool_call>list_memories<tool_sep>\n</tool_call>\n</tool_calls>", MODEL)
+    assert [(c.name, c.arguments) for c in calls] == [("list_memories", {})]
+
+
+def test_parallel_calls_inside_one_wrapper_are_all_parsed() -> None:
+    calls = parse_tool_calls(
+        "<tool_calls>\n"
+        "<tool_call>a<tool_sep>\n<arg_key>x</arg_key>\n<arg_value>1</arg_value>\n</tool_call>\n"
+        "<tool_call>b<tool_sep>\n<arg_key>y</arg_key>\n<arg_value>hi</arg_value>\n</tool_call>\n"
+        "</tool_calls>",
+        MODEL,
+    )
+    assert [(c.name, c.arguments) for c in calls] == [("a", {"x": 1}), ("b", {"y": "hi"})]
+
+
+def test_missing_separator_never_returns_preamble_as_the_name() -> None:
+    # mlx-lm PR #1211 review: with <tool_sep> omitted, a parser returned the whole
+    # preamble as the tool name. A garbled name must be rejected, not returned.
+    for text in (
+        "<tool_calls><tool_call>I will now look this up for you, calling search</arg_value></tool_call></tool_calls>",
+        "<tool_calls><tool_call>Let me check the memory bank first.\nsearch<arg_key>q</arg_key><arg_value>x</arg_value></tool_call></tool_calls>",
+        "<tool_calls><tool_call>Sure! search<tool_sep><arg_key>q</arg_key><arg_value>x</arg_value></tool_call></tool_calls>",
+    ):
+        for call in parse_tool_calls(text, MODEL):
+            assert call.name.isidentifier(), (text, call.name)
+
+
+def test_call_cut_inside_a_value_is_not_executed_with_a_missing_argument() -> None:
+    calls = parse_tool_calls(
+        "<tool_calls>\n<tool_call>write_memory<tool_sep>\n"
+        "<arg_key>key</arg_key>\n<arg_value>diet</arg_value>\n"
+        "<arg_key>value</arg_key>\n<arg_value>vegetar",
+        MODEL,
+    )
+    assert calls == []
+
+
+def test_tool_markup_does_not_leak_into_cleaned_content() -> None:
+    calls = parse_tool_calls("Checking the bank.\n" + TEMPLATE_TOOL_CALLS, MODEL)
+    cleaned = clean_tool_syntax("Checking the bank.\n" + TEMPLATE_TOOL_CALLS, calls)
+    assert cleaned == "Checking the bank."
+
+
+def test_calls_recovered_when_server_returns_empty_tool_calls() -> None:
+    from abstractcore.core.interface import GenerateResponse
+    from abstractcore.providers.base import BaseProvider
+    from abstractcore.tools.handler import create_handler
+
+    class _Probe(BaseProvider):
+        def _generate_internal(self, *args, **kwargs):
+            raise NotImplementedError
+
+        def get_capabilities(self):
+            return {}
+
+        def list_available_models(self):
+            return []
+
+        def unload_model(self):
+            return None
+
+    provider = _Probe(model=MODEL)
+    provider.tool_handler = create_handler(MODEL)
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "Search memories",
+            "parameters": {"type": "object", "properties": {
+                "query": {"type": "string"}, "limit": {"type": "integer"}, "strict": {"type": "boolean"}}},
+        },
+    }]
+    normalized = provider._normalize_tool_calls_passthrough(
+        response=GenerateResponse(
+            content="Looking it up.\n" + TEMPLATE_TOOL_CALLS, model=MODEL, finish_reason="stop", tool_calls=[]
+        ),
+        tools=tools,
+    )
+    recovered = normalized.tool_calls or []
+    assert [(c["name"], c["arguments"]) for c in recovered] == [
+        ("search", {"query": "moe routing", "limit": 5, "strict": True})
+    ]
+    for marker in ("<tool_calls>", "</tool_calls>", "<tool_call>", "<tool_sep>", "<arg_key>"):
+        assert marker not in (normalized.content or ""), marker
+
+
+# ------------------------------------------------------------------ tool calls (streaming)
+
+def _stream(text: str, chunk_size: int):
+    detector = IncrementalToolDetector(model_name=MODEL)
+    streamed, calls = "", []
+    for index in range(0, len(text), chunk_size):
+        content, tool_calls = detector.process_chunk(text[index:index + chunk_size])
+        streamed += content
+        calls.extend(tool_calls)
+    owed, tail_calls, unparsed = detector.drain()
+    streamed += owed
+    calls.extend(tail_calls)
+    return streamed, calls, unparsed
+
+
+@pytest.mark.parametrize("chunk_size", [1, 3, 7, 64])
+def test_streaming_extracts_wrapped_call_and_keeps_only_prose(chunk_size: int) -> None:
+    streamed, calls, unparsed = _stream("Checking the bank." + TEMPLATE_TOOL_CALLS + "\nDone.", chunk_size)
+    assert [(c.name, c.arguments) for c in calls] == [
+        ("search", {"query": "moe routing", "limit": 5, "strict": True})
+    ]
+    assert unparsed is None
+    assert "<tool_calls>" not in streamed and "</tool_calls>" not in streamed
+    assert streamed.startswith("Checking the bank.")
+    assert streamed.rstrip().endswith("Done.")
+
+
+def test_streaming_recovers_truncated_wrapped_call() -> None:
+    _, calls, _ = _stream("<tool_calls>\n<tool_call>search<tool_sep>\n<arg_key>q</arg_key>\n<arg_value>moe</arg_value>\n", 5)
+    assert [(c.name, c.arguments) for c in calls] == [("search", {"q": "moe"})]
+
+
+def test_streaming_parallel_calls_in_one_wrapper() -> None:
+    _, calls, _ = _stream(
+        "<tool_calls>\n<tool_call>a<tool_sep>\n<arg_key>x</arg_key>\n<arg_value>1</arg_value>\n</tool_call>\n"
+        "<tool_call>b<tool_sep>\n</tool_call>\n</tool_calls>",
+        4,
+    )
+    assert [(c.name, c.arguments) for c in calls] == [("a", {"x": 1}), ("b", {})]
+
+
+# ------------------------------------------------------------------ effort switch surface
+
+def _surfaces():
+    return resolve_thinking_control_surfaces(
+        model_capabilities=get_model_capabilities(MODEL),
+        architecture_format=get_architecture_format("hy_v3"),
+    )
+
+
+def test_registry_declares_an_effort_switch() -> None:
+    s = _surfaces()
+    assert s.effort_is_switch()
+    assert s.effort_template_kwarg == "reasoning_effort"
+    assert s.effort_disable_value == "no_think"
+    assert s.template_kwarg is None  # the template has NO boolean switch
+
+
+@pytest.mark.parametrize(
+    "enabled,level,expected",
+    [(False, None, "no_think"), (True, None, "high"), (True, "low", "low"), (True, "high", "high"), (True, "medium", None)],
+)
+def test_effort_switch_values(enabled, level, expected) -> None:
+    assert effort_switch_value(_surfaces(), enabled=enabled, level=level, declared_levels=["low", "high"]) == expected
+
+
+def _mlx_provider():
+    from abstractcore.providers.mlx_provider import MLXProvider
+
+    p = MLXProvider.__new__(MLXProvider)
+    p.model = MODEL
+    p.architecture = "hy_v3"
+    p.architecture_config = get_architecture_format("hy_v3")
+    p.model_capabilities = get_model_capabilities(MODEL)
+    return p
+
+
+def _hf_provider(model_type: str):
+    from abstractcore.providers.huggingface_provider import HuggingFaceProvider
+
+    p = HuggingFaceProvider.__new__(HuggingFaceProvider)
+    p.model = MODEL
+    p.model_type = model_type
+    p.architecture = "hy_v3"
+    p.architecture_config = get_architecture_format("hy_v3")
+    p.model_capabilities = get_model_capabilities(MODEL)
+    return p
+
+
+@pytest.mark.parametrize("thinking,expected", [(False, "no_think"), (True, "high"), ("low", "low")])
+def test_mlx_hook_sends_the_effort_value_not_a_boolean(thinking, expected) -> None:
+    p = _mlx_provider()
+    enabled, level = p._normalize_thinking_request(thinking)
+    kwargs, handling = p._apply_provider_thinking_kwargs(enabled=enabled, level=level, kwargs={})
+    assert kwargs.get("_acore_mlx_reasoning_effort") == expected
+    assert "_acore_mlx_enable_thinking" not in kwargs
+    assert handling.handled_enable_disable is True
+
+
+def test_mlx_hook_declines_when_the_system_bloc_is_prefilled() -> None:
+    p = _mlx_provider()
+    kwargs, handling = p._apply_provider_thinking_kwargs(
+        enabled=True, level="high", kwargs={"prompt_cache_prefilled_modules": ["system"]}
+    )
+    assert "_acore_mlx_reasoning_effort" not in kwargs
+    assert not handling.handled_enable_disable and not handling.handled_level
+
+
+@pytest.mark.parametrize("thinking,expected", [(False, "no_think"), (True, "high"), ("high", "high")])
+def test_hf_transformers_hook_sends_the_effort_value(thinking, expected) -> None:
+    p = _hf_provider("transformers")
+    enabled, level = p._normalize_thinking_request(thinking)
+    kwargs, handling = p._apply_provider_thinking_kwargs(enabled=enabled, level=level, kwargs={})
+    assert kwargs.get("_acore_hf_transformers_reasoning_effort") == expected
+    assert "_acore_hf_transformers_enable_thinking" not in kwargs
+    assert handling.handled_enable_disable is True
+    assert p._hf_thinking_template_kwargs(kwargs) == {"reasoning_effort": expected}
+
+
+def test_hf_transformers_cached_lane_declines() -> None:
+    p = _hf_provider("transformers")
+    kwargs, handling = p._apply_provider_thinking_kwargs(
+        enabled=False, level=None, kwargs={"prompt_cache_key": "k"}
+    )
+    assert "_acore_hf_transformers_reasoning_effort" not in kwargs
+    assert not handling.handled_enable_disable
+
+
+def test_openai_compatible_sends_no_think_for_off(monkeypatch) -> None:
+    from abstractcore.core.types import GenerateResponse
+    from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None, raising=False)
+    provider = OpenAICompatibleProvider(model=MODEL, base_url="http://127.0.0.1:9/v1")
+    captured: Dict[str, Any] = {}
+
+    def _cap(payload):
+        captured["payload"] = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _cap)
+    with _no_warning_named("cannot be fully disabled"):
+        resp = provider.generate("hi", thinking="off", temperature=0)
+    assert captured["payload"].get("reasoning_effort") == "no_think"
+    assert resp.metadata.get("thinking_effective") == "off"
+
+
+class _no_warning_named:
+    def __init__(self, fragment: str) -> None:
+        self.fragment = fragment
+
+    def __enter__(self):
+        import warnings
+
+        self._cm = warnings.catch_warnings(record=True)
+        self._records = self._cm.__enter__()
+        warnings.simplefilter("always")
+        return self
+
+    def __exit__(self, *exc):
+        self._cm.__exit__(*exc)
+        bad = [str(r.message) for r in self._records if self.fragment in str(r.message)]
+        assert not bad, bad
+        return False
