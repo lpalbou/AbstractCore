@@ -773,31 +773,73 @@ def _iter_xml_tool_call_bodies(response: str):
         pos = body_end
 
 
+_ARG_KV_TOOL_SEP_RE = re.compile(r"<tool_sep\s*>", re.IGNORECASE)
+
+
+def _has_unterminated_arg_kv(region: str) -> bool:
+    """True when an <arg_key>/<arg_value> pair was opened but never completed.
+
+    A generation cut inside a value (length cap, abort) leaves the call
+    incomplete; running it with that argument silently missing is worse than
+    reporting it unparsed (same rule as the <parameter=...> lane).
+    """
+    keys = len(re.findall(r"<arg_key\s*>", region or "", re.IGNORECASE))
+    values = len(re.findall(r"<arg_value\s*>", region or "", re.IGNORECASE))
+    closed = len(re.findall(r"</arg_value\s*>", region or "", re.IGNORECASE))
+    return keys != values or values != closed
+
+
 def _parse_arg_kv_tool_call(body: str) -> List[ToolCall]:
-    """Parse the GLM/Laguna payload that pairs <arg_key> with <arg_value> tags.
+    """Parse the GLM/Laguna/HY V3 payload that pairs <arg_key> with <arg_value> tags.
 
     The tool name is bare leading text, not a tag:
 
         <tool_call>get_weather<arg_key>city</arg_key><arg_value>Paris</arg_value></tool_call>
 
+    HY V3 (Tencent Hy-Memory / Hy3) ends the name with a `<tool_sep>` token and may
+    carry no arguments at all (wrapped in `<tool_calls>`, which the body iterator
+    never mistakes for `<tool_call>`):
+
+        <tool_call>get_weather<tool_sep>
+        <arg_key>city</arg_key>
+        <arg_value>Paris</arg_value>
+        </tool_call>
+
+    The name is ONLY the text before `<tool_sep>` (or before the first <arg_key>
+    when the separator is absent) and must be a bare identifier: a malformed call
+    whose "name" would be preamble prose is rejected, never returned garbled
+    (mlx-lm PR #1211 review: a missing `<tool_sep>` made a parser return the whole
+    preamble as the tool name).
+
     Emitters render string arguments verbatim and JSON-encode everything else, so
     each value is decoded as JSON when possible and kept as raw text otherwise.
     """
-    if not isinstance(body, str) or "<arg_key>" not in body.lower():
+    if not isinstance(body, str):
+        return []
+    sep = _ARG_KV_TOOL_SEP_RE.search(body)
+    if sep is None and "<arg_key" not in body.lower():
         return []
 
-    first_key = re.search(r"<arg_key\s*>", body, re.IGNORECASE)
-    if not first_key:
-        return []
+    if sep is not None:
+        raw_name = body[:sep.start()]
+        region = body[sep.end():]
+    else:
+        first_key = re.search(r"<arg_key\s*>", body, re.IGNORECASE)
+        if not first_key:
+            return []
+        raw_name = body[:first_key.start()]
+        region = body[first_key.start():]
 
-    name = body[:first_key.start()].strip().strip("\"'")
+    name = raw_name.strip().strip("\"'")
     if not re.fullmatch(_XML_TOOL_NAME_PATTERN, name or ""):
+        return []
+    if _has_unterminated_arg_kv(region):
         return []
 
     arguments: Dict[str, Any] = {}
     for pair in re.finditer(
         r"<arg_key\s*>(.*?)</arg_key\s*>\s*<arg_value\s*>(.*?)</arg_value\s*>",
-        body,
+        region,
         re.DOTALL | re.IGNORECASE,
     ):
         key = (pair.group(1) or "").strip()
@@ -810,7 +852,9 @@ def _parse_arg_kv_tool_call(body: str) -> List[ToolCall]:
         except (json.JSONDecodeError, ValueError):
             arguments[key] = raw_value
 
-    if not arguments:
+    # Without the HY separator, a body with no complete pair is not this format.
+    # With it, an argument-less call (`name<tool_sep>`) is a real call.
+    if not arguments and sep is None:
         return []
 
     return [ToolCall(name=name, arguments=arguments, call_id=None)]
@@ -908,8 +952,9 @@ def _parse_xml_wrapped(response: str) -> List[ToolCall]:
                 logger.warning(f"Failed to parse XML tool call JSON: {body_stripped} - {e}")
                 continue
 
-        # Case 2: GLM/Laguna <arg_key>/<arg_value> encoding, whose tool name is bare
-        # leading text rather than a tag, so it must be tried before the tag scans below.
+        # Case 2: GLM/Laguna/HY V3 <arg_key>/<arg_value> (and HY `name<tool_sep>`)
+        # encoding, whose tool name is bare leading text rather than a tag, so it must
+        # be tried before the tag scans below.
         arg_kv_calls = _parse_arg_kv_tool_call(body)
         if arg_kv_calls:
             tool_calls.extend(arg_kv_calls)
@@ -1974,6 +2019,8 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
         r'<tool_call\b[^>]*>\s*<[a-zA-Z_][a-zA-Z0-9_-]*\s*>.*?</function\s*>\s*(?:</tool_call\s*>)?',
         r'<tool_call\b[^>]*>\s*<([a-zA-Z_][a-zA-Z0-9_-]*)\s*>.*?</\1\s*>\s*(?:</tool_call\s*>)?',
         r'<tool_call>.*?</tool_call>',
+        # HY V3 outer wrapper left empty once its <tool_call> blocks are removed.
+        r'<tool_calls\s*>\s*</tool_calls\s*>',
         r'```tool_code.*?```',
         r'```tool_call.*?```'
         ,
@@ -1991,6 +2038,7 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
         r'(?im)^\s*<tool_call\|>\s*$',
         r'(?im)^\s*<tool_call>\s*$',
         r'(?im)^\s*</tool_call>\s*$',
+        r'(?im)^\s*</?tool_calls>\s*$',
         r'(?im)^\s*<\|channel\|>\s*$',
         r'(?im)^\s*<\|message\|>\s*$',
     ]

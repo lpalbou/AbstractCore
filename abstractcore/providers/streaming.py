@@ -85,6 +85,13 @@ class IncrementalToolDetector:
                 "start": r"<tool_call>",
                 "end": r"</tool_call>",
             },
+            # HY V3 (Tencent Hy-Memory) outer wrapper around one or more <tool_call>
+            # blocks (`name<tool_sep><arg_key>..`). Scanned BEFORE "xml" so the wrapper
+            # tags never leak into streamed prose.
+            "hy_tool_calls": {
+                "start": r"<tool_calls>",
+                "end": r"</tool_calls>",
+            },
             "gemma": {
                 "start": r"```tool_code",
                 "end": r"```",
@@ -164,6 +171,13 @@ class IncrementalToolDetector:
 
         # XML-wrapped tools.
         if tool_format in {"xml", "glm_xml"}:
+            if tool_format == "glm_xml":
+                return [
+                    self.patterns["hy_tool_calls"],
+                    self.patterns["xml"],
+                    self.patterns["llama"],
+                    self.patterns["qwen"],
+                ]
             return [self.patterns["xml"], self.patterns["llama"], self.patterns["qwen"]]
 
         # LLaMA-style prompted tools.
@@ -631,6 +645,17 @@ class IncrementalToolDetector:
             return []
         cleaned = content.strip()
         low = cleaned.lower()
+        if "<tool_call" in low:
+            # A wrapper envelope (HY V3 `<tool_calls>`) holding one or more complete
+            # or truncated <tool_call> blocks: every block is a call.
+            try:
+                from ..tools.parser import _parse_xml_wrapped
+
+                wrapped_calls = _parse_xml_wrapped(cleaned)
+            except Exception:
+                wrapped_calls = []
+            if wrapped_calls:
+                return list(wrapped_calls)
         if "<arg_key" not in low and ("<function" in low or "<parameter" in low):
             # qwen3_coder / Nemotron XML-ish payload:
             #   <function=name><parameter=k>v</parameter>...</function> (repeatable)
@@ -752,6 +777,18 @@ class IncrementalToolDetector:
         if self.state == ToolDetectionState.IN_TOOL_CALL:
             # Try to parse any remaining content as incomplete tool
             if self.current_tool_content:
+                if "<tool_call" in self.current_tool_content.lower():
+                    # Truncated wrapper envelope (HY V3 `<tool_calls>`): the body
+                    # iterator accepts a missing final </tool_call>.
+                    try:
+                        from ..tools.parser import _parse_xml_wrapped
+
+                        completed_tools.extend(_parse_xml_wrapped(self.current_tool_content))
+                    except Exception:
+                        pass
+                    if completed_tools:
+                        self.accumulated_content = ""
+                        return completed_tools
                 if "<arg_key" in self.current_tool_content.lower():
                     try:
                         from ..tools.parser import _parse_arg_kv_tool_call
