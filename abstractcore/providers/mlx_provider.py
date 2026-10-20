@@ -4255,12 +4255,30 @@ class MLXProvider(BaseProvider):
                     )
                 return
 
+            # HY V3 (Tencent Hy-Memory-30B-A3B, Hy3): mlx-lm <= 0.32.2 ships no
+            # `mlx_lm.models.hy_v3`. AbstractCore's vetted port (mlx_hy_v3.py,
+            # parity-tested against transformers' HYV3ForCausalLM) is registered
+            # under that name ONLY when mlx-lm has none, so an upstream module
+            # always wins. A checkpoint's bundled `model_file` (arbitrary code in
+            # a downloaded repo) is never executed for this model type: mlx-lm
+            # is told to resolve the class by model_type instead.
+            load_kwargs: Dict[str, Any] = {}
+            if str(getattr(self, "_native_model_type", "") or "").strip().lower() == "hy_v3":
+                from .mlx_hy_v3 import register_with_mlx_lm
+
+                shim = register_with_mlx_lm()
+                load_kwargs["model_config"] = {"model_file": None}
+                self.logger.info(
+                    "mlx: hy_v3 checkpoint; model class = "
+                    + ("abstractcore.providers.mlx_hy_v3 (mlx-lm ships no hy_v3)" if shim else "mlx_lm.models.hy_v3 (upstream)")
+                )
+
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
             with open(os.devnull, "w") as devnull:
                 with redirect_stdout(devnull), redirect_stderr(devnull):
                     try:
                         self.llm, self.tokenizer = self._load_or_adopt_shared_model(
-                            str(load_target), lambda: load(load_target)
+                            str(load_target), lambda: load(load_target, **load_kwargs)
                         )
                     except ValueError as e:
                         msg = str(e)
