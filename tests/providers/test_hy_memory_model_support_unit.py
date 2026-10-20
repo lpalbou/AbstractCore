@@ -204,6 +204,19 @@ def test_tool_markup_does_not_leak_into_cleaned_content() -> None:
     assert cleaned == "Checking the bank."
 
 
+def test_unclosed_trailing_call_payload_does_not_stay_as_content() -> None:
+    # Live (Q4_K_M GGUF, abstractcore's JSON tool prompt): the model wrote
+    # `<tool_call>\n{json}` and then its EOS, never `</tool_call>`. The parser
+    # accepts that call, so the cleaner must remove the same span.
+    text = 'Saving it.\n<tool_call>\n{"name": "save_memory", "arguments": {"fact": "Allergic to peanuts", "importance": 5}}'
+    calls = parse_tool_calls(text, MODEL)
+    assert [(c.name, c.arguments) for c in calls] == [("save_memory", {"fact": "Allergic to peanuts", "importance": 5})]
+    assert clean_tool_syntax(text, calls) == "Saving it."
+    # A closed call followed by prose keeps the prose.
+    closed = '<tool_call>\n{"name": "a", "arguments": {}}\n</tool_call>\nDone.'
+    assert clean_tool_syntax(closed, parse_tool_calls(closed, MODEL)) == "Done."
+
+
 def test_calls_recovered_when_server_returns_empty_tool_calls() -> None:
     from abstractcore.core.interface import GenerateResponse
     from abstractcore.providers.base import BaseProvider
@@ -411,3 +424,61 @@ class _no_warning_named:
         bad = [str(r.message) for r in self._records if self.fragment in str(r.message)]
         assert not bad, bad
         return False
+
+
+# ------------------------------------------------------------------ provider load/lane fixes
+
+def test_transformers_config_fix_sizes_experts_from_expert_hidden_dim() -> None:
+    from types import SimpleNamespace
+
+    p = _hf_provider("transformers")
+    import logging
+
+    p.logger = logging.getLogger("test")
+    cfg = SimpleNamespace(model_type="hy_v3", moe_intermediate_size=1536, expert_hidden_dim=768, num_shared_experts=1)
+    assert p._fix_transformers_checkpoint_config(cfg) is True
+    assert cfg.moe_intermediate_size == 768
+    assert p._fix_transformers_checkpoint_config(cfg) is False  # already consistent
+    other = SimpleNamespace(model_type="qwen3_moe", moe_intermediate_size=1536, expert_hidden_dim=768)
+    assert p._fix_transformers_checkpoint_config(other) is False and other.moe_intermediate_size == 1536
+    assert p._fix_transformers_checkpoint_config(None) is False
+
+
+@pytest.mark.parametrize(
+    "rendered,expected",
+    [
+        (f"{BOS}PROBE-SYSTEM{USER}PROBE-USER{ASSISTANT}<think></think>PROBE-ASSISTANT{EOS}{USER}PROBE-FOLLOWUP{ASSISTANT}<think></think>", True),
+        # role tokens the registry does not declare: stays off the control plane
+        ("<|im_start|>system\nPROBE-SYSTEM<|im_end|>\n<|im_start|>user\nPROBE-FOLLOWUP<|im_end|>\n<|im_start|>assistant\n", False),
+        # no generation prompt after the last user turn
+        (f"{BOS}PROBE-SYSTEM{USER}PROBE-FOLLOWUP", False),
+    ],
+)
+def test_gguf_control_plane_admits_the_embedded_template_by_declared_role_tokens(monkeypatch, rendered, expected) -> None:
+    p = _hf_provider("gguf")
+    monkeypatch.setattr(p, "_gguf_render_llama_cpp_chat_template_prompt", lambda **kw: rendered)
+    assert p._gguf_embedded_template_probe_renders_declared_turns("TEMPLATE-" + rendered[:8]) is expected
+
+
+@pytest.mark.parametrize("thinking,expected", [(False, "no_think"), ("high", "high")])
+def test_gguf_hook_sends_the_effort_value_on_the_embedded_template_lane(monkeypatch, thinking, expected) -> None:
+    p = _hf_provider("gguf")
+    monkeypatch.setattr(p, "_gguf_prompt_cache_supports_local_control_plane", lambda: True)
+    monkeypatch.setattr(p, "_gguf_prompt_cache_control_plane_chat_format", lambda: "llama-cpp-chat-template")
+    enabled, level = p._normalize_thinking_request(thinking)
+    kwargs, handling = p._apply_provider_thinking_kwargs(
+        enabled=enabled, level=level, kwargs={}, request_shape={"messages": [{"role": "user", "content": "hi"}]}
+    )
+    assert kwargs.get("_acore_gguf_reasoning_effort") == expected
+    assert "_acore_gguf_enable_thinking" not in kwargs
+    assert handling.handled_enable_disable is True
+
+
+def test_gguf_hook_declines_off_the_embedded_template_lane(monkeypatch) -> None:
+    p = _hf_provider("gguf")
+    monkeypatch.setattr(p, "_gguf_prompt_cache_supports_local_control_plane", lambda: True)
+    monkeypatch.setattr(p, "_gguf_prompt_cache_control_plane_chat_format", lambda: "")
+    monkeypatch.setattr(p, "_gguf_prompt_cache_chat_format", lambda: "chat_template.default")
+    kwargs, handling = p._apply_provider_thinking_kwargs(enabled=False, level=None, kwargs={}, request_shape={})
+    assert "_acore_gguf_reasoning_effort" not in kwargs
+    assert not handling.handled_enable_disable

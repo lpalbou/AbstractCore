@@ -1496,7 +1496,66 @@ class HuggingFaceProvider(BaseProvider):
             if "<|im_start|>" in template and "<|im_end|>" in template:
                 if self._gguf_embedded_template_probe_renders(template):
                     return "llama-cpp-chat-template"
+            # Role-token templates whose thinking control is an effort SWITCH
+            # (HY V3 / Hy-Memory `reasoning_effort=no_think|low|high`): the
+            # embedded template is the only renderer that places both the
+            # system-region marker and the `<think></think>` / `<think>`
+            # generation prompt, so it serves this lane — admitted only when a
+            # probe render puts the turns exactly where the registry's declared
+            # role tokens say (fail-safe: anything else stays "keyed").
+            if (
+                self._gguf_architecture_message_format() == "special_tokens"
+                and self._thinking_control_surfaces().effort_is_switch()
+                and self._gguf_embedded_template_probe_renders_declared_turns(template)
+            ):
+                return "llama-cpp-chat-template"
         return ""
+
+    def _gguf_embedded_template_probe_renders_declared_turns(self, template: str) -> bool:
+        """True when the embedded template renders the registry's role tokens.
+
+        The last user turn's content must sit directly after the architecture's
+        `user_prefix`, and the generation prompt must open with its
+        `assistant_prefix` after that content. Cached per template identity.
+        """
+        cfg = getattr(self, "architecture_config", None)
+        user_prefix = str((cfg or {}).get("user_prefix") or "") if isinstance(cfg, dict) else ""
+        assistant_prefix = str((cfg or {}).get("assistant_prefix") or "") if isinstance(cfg, dict) else ""
+        if not user_prefix.strip() or not assistant_prefix.strip():
+            return False
+        probe_cache = getattr(self, "_gguf_embedded_template_probe_cache", None)
+        if probe_cache is None:
+            probe_cache = {}
+            self._gguf_embedded_template_probe_cache = probe_cache
+        key = "turns:" + hashlib.sha256(
+            (template + "\x00" + user_prefix + "\x00" + assistant_prefix).encode("utf-8", errors="replace")
+        ).hexdigest()[:16]
+        cached = probe_cache.get(key)
+        if cached is not None:
+            return bool(cached)
+        ok = False
+        try:
+            rendered = self._gguf_render_llama_cpp_chat_template_prompt(
+                messages=[
+                    {"role": "system", "content": "PROBE-SYSTEM"},
+                    {"role": "user", "content": "PROBE-USER"},
+                    {"role": "assistant", "content": "PROBE-ASSISTANT"},
+                    {"role": "user", "content": "PROBE-FOLLOWUP"},
+                ],
+                add_generation_prompt=True,
+            )
+            text = str(rendered or "")
+            followup = text.rfind("PROBE-FOLLOWUP")
+            ok = (
+                followup > 0
+                and "PROBE-SYSTEM" in text
+                and text[:followup].endswith(user_prefix)
+                and text.find(assistant_prefix, followup) >= 0
+            )
+        except Exception:
+            ok = False
+        probe_cache[key] = ok
+        return ok
 
     def _gguf_embedded_template_probe_renders(self, template: str) -> bool:
         """True when the embedded Jinja template renders a minimal ChatML
@@ -6330,6 +6389,30 @@ class HuggingFaceProvider(BaseProvider):
             + "; ".join(details)
         )
 
+    def _fix_transformers_checkpoint_config(self, config: Any) -> bool:
+        """Correct a config that contradicts its own released tensors. True when changed.
+
+        HY V3 / Tencent Hy-Memory-30B-A3B: config.json says
+        `moe_intermediate_size: 1536` but ships every routed AND shared expert
+        768 wide, recorded as `expert_hidden_dim: 768`. transformers' hy_v3
+        (5.8) sizes both from `moe_intermediate_size`, so a plain load fails on
+        a shape mismatch. The tensors are the truth: size experts from
+        `expert_hidden_dim` (the shared expert follows, being
+        moe_intermediate_size * num_shared_experts). Logged, never silent.
+        """
+        if config is None or str(getattr(config, "model_type", "") or "") != "hy_v3":
+            return False
+        expert_dim = getattr(config, "expert_hidden_dim", None)
+        current = getattr(config, "moe_intermediate_size", None)
+        if not isinstance(expert_dim, int) or expert_dim <= 0 or expert_dim == current:
+            return False
+        config.moe_intermediate_size = expert_dim
+        self.logger.info(
+            f"hy_v3 checkpoint config fix: moe_intermediate_size {current} -> {expert_dim} "
+            "(config expert_hidden_dim; the released expert tensors are that wide)"
+        )
+        return True
+
     def _load_transformers_model(self):
         """Load standard HuggingFace transformers model"""
         try:
@@ -6364,6 +6447,7 @@ class HuggingFaceProvider(BaseProvider):
             if config is not None:
                 quantization_config = self._extract_quantization_config(config)
                 self._validate_transformers_quantization_runtime(quantization_config)
+            config_fixed = self._fix_transformers_checkpoint_config(config)
 
             # Load tokenizer with transformers-specific parameters
             tokenizer_kwargs = self._transformers_config_kwargs()
@@ -6386,6 +6470,8 @@ class HuggingFaceProvider(BaseProvider):
                 model_kwargs['local_files_only'] = True
             if quantization_config:
                 model_kwargs["output_loading_info"] = True
+            if config_fixed and "config" not in model_kwargs:
+                model_kwargs["config"] = config
 
             # Caller-requested quantization (quantization_config=, or the legacy
             # load_in_4bit/8bit spelling translated in __init__). Validated on

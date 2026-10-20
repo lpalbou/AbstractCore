@@ -2019,6 +2019,10 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
         r'<tool_call\b[^>]*>\s*<[a-zA-Z_][a-zA-Z0-9_-]*\s*>.*?</function\s*>\s*(?:</tool_call\s*>)?',
         r'<tool_call\b[^>]*>\s*<([a-zA-Z_][a-zA-Z0-9_-]*)\s*>.*?</\1\s*>\s*(?:</tool_call\s*>)?',
         r'<tool_call>.*?</tool_call>',
+        # An UNCLOSED trailing <tool_call> block: the parser accepts a missing final
+        # </tool_call> (`_iter_xml_tool_call_bodies`), so its payload must not stay
+        # behind as content (live: Hy-Memory GGUF ends `<tool_call>\n{json}` + EOS).
+        r'<tool_call>(?:(?!</tool_call>).)*\Z',
         # HY V3 outer wrapper left empty once its <tool_call> blocks are removed.
         r'<tool_calls\s*>\s*</tool_calls\s*>',
         r'```tool_code.*?```',
