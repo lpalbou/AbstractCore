@@ -1248,6 +1248,52 @@
         "tencent/hy3"
       ]
     },
+    "hy_v3": {
+      "description": "Tencent HY V3 compact MoE (HYV3ForCausalLM; model_type 'hy_v3', GGUF general.architecture 'hy_v3'): Tencent Hy-Memory-30B-A3B long-term-memory writer (~30B total / ~3B active, 128 routed + 1 shared experts; October 2026). BOS then bare system text, <｜hy_User｜>/<｜hy_Assistant｜> role tokens, plain <think> tags, ONE reasoning_effort template variable (high|low|no_think; unset or unknown = no_think, so thinking is OFF by default) and <tool_calls><tool_call>name<tool_sep><arg_key>/<arg_value> tool blocks. Distinct from the 295B Hy3 (hunyuan3), which uses ':opensource'-suffixed tokens",
+      "message_format": "special_tokens",
+      "system_prefix": "<｜hy_begin▁of▁sentence｜>",
+      "system_suffix": "",
+      "user_prefix": "<｜hy_User｜>",
+      "user_suffix": "",
+      "assistant_prefix": "<｜hy_Assistant｜>",
+      "assistant_suffix": "<eos:6124c78e>",
+      "output_wrappers": {
+        "end": "<eos:6124c78e>"
+      },
+      "tool_format": "glm_xml",
+      "tool_prefix": "<tool_calls>",
+      "tool_calling_format": "<tool_calls>\n<tool_call>function_name<tool_sep>\n<arg_key>key</arg_key>\n<arg_value>value</arg_value>\n</tool_call>\n</tool_calls>",
+      "default_tool_support": "native",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "effort_template_kwarg": "reasoning_effort",
+        "effort_disable_value": "no_think",
+        "request_param": "reasoning_effort"
+      },
+      "reasoning_support": true,
+      "reasoning_levels": [
+        "low",
+        "high"
+      ],
+      "inference_parameters": {
+        "temperature": 0.7,
+        "top_p": 1.0
+      },
+      "patterns": [
+        "hy-memory",
+        "hy_memory",
+        "hymemory",
+        "tencent/hy-memory",
+        "hy-memory-30b-a3b",
+        "hy-memory-step250",
+        "hy3a3b",
+        "hy3a3b-memrl1009-step250"
+      ]
+    },
     "longcat": {
       "description": "Meituan LongCat 2.0 large-scale MoE with LongCat Sparse Attention (July 2026; dedicated <longcat_*> role/thinking/tool special tokens — serve via OpenAI-compatible stacks)",
       "message_format": "openai_chat",

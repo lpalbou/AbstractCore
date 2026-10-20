@@ -9549,6 +9549,71 @@
         ]
       }
     },
+    "hy-memory-30b-a3b": {
+      "max_output_tokens": 16384,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "effort_template_kwarg": "reasoning_effort",
+        "effort_disable_value": "no_think",
+        "request_param": "reasoning_effort"
+      },
+      "reasoning_levels": [
+        "low",
+        "high"
+      ],
+      "architecture": "hy_v3",
+      "total_parameters": "30B",
+      "active_parameters": "3B",
+      "experts": 128,
+      "shared_experts": 1,
+      "experts_activated": 8,
+      "license": "Apache-2.0",
+      "release_date": "2026-10-15",
+      "notes": "Specialty seems to be a long-term memory writer: Tencent Hunyuan trained it to execute the WRITE path inside external memory frameworks (drop-in writer LLM for Mem0, MemOS and Hy-Memory; transfers to EverMemOS) — deciding what to retain, how precisely to represent it and how new evidence updates the memory bank. HYV3ForCausalLM (model_type 'hy_v3'): 48 layers, hidden 2048, GQA 32 heads / 4 KV heads (head_dim 128, QK-norm), layer 0 dense (intermediate 6912), layers 1-47 MoE with 128 routed experts (8 activated) + 1 shared expert, sigmoid router with selection-only expert bias, route_norm and router_scaling_factor 2.826; no MTP layers; 120,832-token vocab; default RoPE (theta 11,158,840); config max_position_embeddings 262,144. CHECKPOINT QUIRK: routed and shared expert tensors are 768 wide (config 'expert_hidden_dim': 768) while config 'moe_intermediate_size' says 1536, which is what transformers' hy_v3 (5.8) reads — loaders must size experts from expert_hidden_dim. Chat template: BOS then bare system text, <｜hy_User｜>/<｜hy_Assistant｜>, eos <eos:6124c78e>; ONE 'reasoning_effort' template variable (high | low | no_think; unset or unknown renders no_think, so thinking is OFF by default; no_think pre-closes an empty <think></think> after the assistant token, low/high open <think>). Tool calls: <tool_calls><tool_call>name<tool_sep><arg_key>k</arg_key><arg_value>v</arg_value></tool_call></tool_calls> (non-string values JSON-encoded); tool results in <tool_responses><tool_response>. Card quickstart: vLLM (tested v0.31.0), chat_template_kwargs {\"reasoning_effort\": \"no_think\"}, temperature 0.0 and max_tokens 512 for memory extraction; the GGUF card's llama-server defaults are --temp 0.7 --top-k 0 --top-p 1.0 --repeat-penalty 1.0 --jinja with reasoning_effort no_think (inference_parameters mirror temp/top_p; top_k 0 = disabled is left to the backend). No output cap is published: max_output_tokens 16,384 leaves room for a reasoning_effort=high trace plus the memory payload while bounding runaway local generations — raise per deployment. Artifacts: tencent BF16 safetensors (51 shards, 60.1 GB), tencent FP8 (F8_E4M3, vLLM/SGLang only — no Apple-silicon path), tencent GGUF (Q4_K_M-imat 18.2 GB, Q6_K-imat 24.7 GB, Q8_0 32 GB; llama.cpp arch hy_v3), and mlx-community 4-bit / 8-bit MLX conversions that bundle the model class (hy_v3.py via config 'model_file') because mlx-lm ships no hy_v3 module. Paper arXiv 2610.22196; code github.com/Tencent-Hunyuan/Hy-Memory.",
+      "source": "Hugging Face model cards, config.json, tokenizer.json, chat_template.jinja and safetensors index (tencent/Hy-Memory-30B-A3B @64a460a9, tencent/Hy-Memory-30B-A3B-FP8, tencent/Hy-Memory-30B-A3B-GGUF; HF API createdAt 2026-10-15), accessed 2026-10-21",
+      "canonical_name": "hy-memory-30b-a3b",
+      "aliases": [
+        "tencent/Hy-Memory-30B-A3B",
+        "tencent/Hy-Memory-30B-A3B-FP8",
+        "tencent/Hy-Memory-30B-A3B-GGUF",
+        "mlx-community/Hy-Memory-30B-A3B-4bit",
+        "mlx-community/Hy-Memory-30B-A3B-8bit",
+        "hy3a3b-memrl1009-step250-Q4_K_M-imat.gguf",
+        "hy3a3b-memrl1009-step250-Q6_K-imat.gguf",
+        "Hy-Memory-Step250-Q8_0.gguf",
+        "hy3a3b-memrl1009-step250",
+        "hy-memory-step250",
+        "hy-memory",
+        "hy-memory-30b-a3b-fp8",
+        "hy-memory-30b-a3b-gguf"
+      ],
+      "max_tokens": 262144,
+      "inference_parameters": {
+        "temperature": 0.7,
+        "top_p": 1.0
+      },
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "minimax-m3": {
       "max_output_tokens": 8192,
       "tool_support": "native",
