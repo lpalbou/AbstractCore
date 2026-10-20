@@ -17,6 +17,7 @@ text. The typed object form makes the surface kind explicit:
   "low_effort_template_kwarg": "low_effort",
   "request_param": "reasoning_effort",
   "effort_template_kwarg": "reasoning_effort",
+  "effort_disable_value": "no_think",
   "effort_system_lines": {"xhigh": "…", "medium": "", "low": "…"}
 }
 ```
@@ -41,6 +42,13 @@ Semantics:
 - ``effort_template_kwarg``: string chat-template variable selecting a reasoning-effort
   level (Qwen3.8 ``reasoning_effort``), sent via ``chat_template_kwargs`` by providers whose
   backend renders the template.
+- ``effort_disable_value``: the value of ``effort_template_kwarg`` that turns reasoning OFF,
+  for templates whose ONE effort variable is also the on/off switch and that have no
+  boolean ``template_kwarg`` (HY V3 / Hy-Memory: ``reasoning_effort`` in
+  ``high | low | no_think``). Providers that render the template send this value for
+  ``thinking="off"`` and, for a bare ``thinking="on"``, the model's preferred declared
+  ``reasoning_levels`` entry (``medium``, then ``high``, then ``low``) — never a boolean
+  ``enable_thinking`` the template would silently ignore. Not a level name.
 - ``effort_system_lines``: level -> exact instruction sentence the model's own chat template
   prepends to the system block for that effort level. Lets locally-serializing providers
   (MLX) reproduce the template's effort control byte-for-byte. An EMPTY string value means
@@ -62,6 +70,7 @@ _SURFACE_KEYS = (
     "low_effort_template_kwarg",
     "request_param",
     "effort_template_kwarg",
+    "effort_disable_value",
 )
 
 _MAPPING_SURFACE_KEYS = ("effort_system_lines",)
@@ -78,10 +87,20 @@ class ThinkingControlSurfaces:
     low_effort_template_kwarg: Optional[str] = None
     request_param: Optional[str] = None
     effort_template_kwarg: Optional[str] = None
+    effort_disable_value: Optional[str] = None
     effort_system_lines: Optional[Mapping[str, str]] = None
 
     def any_declared(self) -> bool:
         return any(getattr(self, f.name) is not None for f in fields(self))
+
+    def effort_is_switch(self) -> bool:
+        """True when the effort template variable is ALSO the on/off switch.
+
+        Declared by ``effort_disable_value`` together with ``effort_template_kwarg`` and
+        no boolean ``template_kwarg``: thinking off/on are both expressed as values of
+        the one effort variable (HY V3 ``reasoning_effort=no_think`` / ``low`` / ``high``).
+        """
+        return bool(self.effort_template_kwarg and self.effort_disable_value and not self.template_kwarg)
 
 
 def _coerce_surface_value(value: Any) -> Optional[str]:
@@ -168,7 +187,38 @@ def resolve_thinking_control_surfaces(
     return ThinkingControlSurfaces(**merged)
 
 
+_EFFORT_ON_PREFERENCE = ("medium", "high", "low")
+
+
+def effort_switch_value(
+    surfaces: ThinkingControlSurfaces,
+    *,
+    enabled: Optional[bool],
+    level: Optional[str],
+    declared_levels: Optional[list] = None,
+) -> Optional[str]:
+    """Value for an effort-switch template variable (see ``effort_is_switch``).
+
+    - ``enabled is False`` -> ``effort_disable_value``;
+    - an explicit ``level`` -> that level when declared (or when no levels are declared);
+    - a bare on -> the first of medium/high/low present in ``declared_levels``.
+    Returns None when the surface is not an effort switch or no honest value exists
+    (callers must then decline the claim, never guess).
+    """
+    if not surfaces.effort_is_switch():
+        return None
+    declared = [str(x).strip().lower() for x in (declared_levels or []) if isinstance(x, str) and x.strip()]
+    if enabled is False:
+        return surfaces.effort_disable_value
+    if isinstance(level, str) and level:
+        return level if (not declared or level in declared) else None
+    if enabled is True:
+        return next((x for x in _EFFORT_ON_PREFERENCE if x in declared), None)
+    return None
+
+
 __all__ = [
     "ThinkingControlSurfaces",
+    "effort_switch_value",
     "resolve_thinking_control_surfaces",
 ]

@@ -1220,6 +1220,30 @@ class HuggingFaceProvider(BaseProvider):
                         handled_level = True
                 return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
 
+        # Effort SWITCH (`thinking_control.effort_disable_value`, HY V3 / Hy-Memory): no
+        # boolean template switch exists; off and on are both values of the one effort
+        # variable, which the REAL chat template consumes on the uncached lane. The
+        # cached lane renders by hand without that variable, so it declines (the base
+        # ladder warns) instead of claiming a control it cannot apply.
+        if model_type == "transformers" and surfaces.effort_is_switch():
+            from ..architectures.thinking_controls import effort_switch_value
+
+            if enabled is None and level is None:
+                return kwargs, ThinkingControlHandling()
+            cache_key = new_kwargs.get("prompt_cache_key")
+            if system_prefilled or (isinstance(cache_key, str) and cache_key.strip()):
+                return kwargs, ThinkingControlHandling()
+            value = effort_switch_value(
+                surfaces, enabled=enabled, level=level, declared_levels=self._model_reasoning_levels()
+            )
+            if value is None:
+                return kwargs, ThinkingControlHandling()
+            new_kwargs["_acore_hf_transformers_reasoning_effort"] = value
+            return new_kwargs, ThinkingControlHandling(
+                handled_enable_disable=True,
+                handled_level=enabled is not False and isinstance(level, str) and bool(level),
+            )
+
         # (helper for the transformers/vision lanes lives below: _hf_thinking_template_kwargs)
         # llama-cpp-python (GGUF) does not currently expose chat-template kwargs such as
         # `enable_thinking` / `thinking_budget`. For exact local control-plane renders we can still
@@ -1230,7 +1254,7 @@ class HuggingFaceProvider(BaseProvider):
         # chat handler / Jinja template renderer. Once available, map our unified `thinking=...`
         # directly to `enable_thinking` instead of relying on the `<think>\n\n</think>\n\n` marker.
         # See: `docs/backlog/planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md`.
-        if model_type == "gguf" and surfaces.assistant_prefill_disable:
+        if model_type == "gguf" and (surfaces.assistant_prefill_disable or surfaces.effort_is_switch()):
             # Requests that cannot ride the local-render lane: native structured output
             # (response_format) and multimodal payloads go through llama-cpp-python's
             # create_chat_completion, whose Jinja formatter renders a trailing assistant
@@ -1274,6 +1298,27 @@ class HuggingFaceProvider(BaseProvider):
             chat_format = (
                 self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
             )
+            if surfaces.effort_is_switch():
+                # Effort SWITCH (HY V3 / Hy-Memory `reasoning_effort=no_think|low|high`):
+                # only the embedded-template render carries the variable (the model's
+                # own template places the system marker AND the `<think></think>` /
+                # `<think>` generation prompt from it). No other lane has a transport.
+                from ..architectures.thinking_controls import effort_switch_value
+
+                if enabled is None and level is None:
+                    return kwargs, ThinkingControlHandling()
+                if chat_format != "llama-cpp-chat-template" or system_prefilled:
+                    return kwargs, ThinkingControlHandling()
+                value = effort_switch_value(
+                    surfaces, enabled=enabled, level=level, declared_levels=self._model_reasoning_levels()
+                )
+                if value is None:
+                    return kwargs, ThinkingControlHandling()
+                new_kwargs["_acore_gguf_reasoning_effort"] = value
+                return new_kwargs, ThinkingControlHandling(
+                    handled_enable_disable=True,
+                    handled_level=enabled is not False and isinstance(level, str) and bool(level),
+                )
             if enabled is False:
                 new_kwargs["_acore_gguf_enable_thinking"] = False
                 return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)

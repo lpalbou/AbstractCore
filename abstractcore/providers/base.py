@@ -2042,7 +2042,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         effort = kwargs.get("reasoning_effort")
         if isinstance(effort, str) and effort.strip():
             effort_norm = effort.strip().lower()
-            if effort_norm == "none":
+            # A declared effort OFF value (`thinking_control.effort_disable_value`,
+            # HY V3 `no_think`) is "off", not a level named "no_think".
+            effort_off = str(thinking_surfaces.effort_disable_value or "").strip().lower()
+            if effort_norm == "none" or (effort_off and effort_norm == effort_off):
                 effective_enabled = False
                 effective_level_meta = None
             else:

@@ -689,6 +689,36 @@ class MLXProvider(BaseProvider):
         """
         new_kwargs = dict(kwargs or {})
         surfaces = self._thinking_control_surfaces()
+        # Effort SWITCH (`thinking_control.effort_disable_value`, HY V3 / Hy-Memory): the
+        # template has no boolean switch — off and on are both values of the one effort
+        # variable (`reasoning_effort=no_think|low|high`), and that variable decides BOTH
+        # the system-region marker and the generation prompt (`<think></think>` vs
+        # `<think>`). So the value travels as the template kwarg and nothing else; an
+        # `enable_thinking` boolean would be silently ignored by such a template.
+        if surfaces.effort_is_switch():
+            from ..architectures.thinking_controls import effort_switch_value
+
+            if enabled is None and level is None:
+                return new_kwargs, ThinkingControlHandling()
+            prefilled = new_kwargs.get("prompt_cache_prefilled_modules")
+            if isinstance(prefilled, str):
+                prefilled = [prefilled]
+            if isinstance(prefilled, (list, tuple)) and any(
+                str(item or "").strip().lower() == "system" for item in prefilled
+            ):
+                # The marker lives in the system region of a bloc rendered earlier:
+                # no artifact can be applied now, so decline (base ladder warns).
+                return new_kwargs, ThinkingControlHandling()
+            value = effort_switch_value(
+                surfaces, enabled=enabled, level=level, declared_levels=self._model_reasoning_levels()
+            )
+            if value is None:
+                return new_kwargs, ThinkingControlHandling()
+            new_kwargs["_acore_mlx_reasoning_effort"] = value
+            return new_kwargs, ThinkingControlHandling(
+                handled_enable_disable=True,
+                handled_level=enabled is not False and isinstance(level, str) and bool(level),
+            )
         # Asset-driven: MLX serializes prompts locally, so the robust disable control is the
         # assistant-prefill marker declared as `thinking_control.assistant_prefill_disable`.
         if surfaces.assistant_prefill_disable:

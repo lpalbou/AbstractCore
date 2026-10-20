@@ -449,6 +449,30 @@ class OpenAICompatibleProvider(BaseProvider):
         # strict third-party server never receives a field its model never advertised.
         if not surfaces.template_kwarg and not surfaces.budget_template_kwarg:
             reasoning_levels = self._model_reasoning_levels()
+            if surfaces.effort_is_switch():
+                # Effort SWITCH (HY V3 / Hy-Memory): `reasoning_effort` has a real OFF
+                # value (`no_think`), so thinking="off" must send it instead of the
+                # lowest level below. Sent top-level (llama-server forwards it into the
+                # template, per the model's GGUF card) and, where the backend accepts
+                # them, as chat_template_kwargs (vLLM's documented transport).
+                from ..architectures.thinking_controls import effort_switch_value
+
+                value = effort_switch_value(
+                    surfaces, enabled=enabled, level=level, declared_levels=reasoning_levels
+                )
+                if value is None:
+                    return kwargs, ThinkingControlHandling()
+                new_kwargs = dict(kwargs)
+                new_kwargs["reasoning_effort"] = value
+                if template_kwargs_supported and surfaces.effort_template_kwarg:
+                    ctk = new_kwargs.get("chat_template_kwargs")
+                    ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
+                    ctk_dict[surfaces.effort_template_kwarg] = value
+                    new_kwargs["chat_template_kwargs"] = ctk_dict
+                return new_kwargs, ThinkingControlHandling(
+                    handled_enable_disable=True,
+                    handled_level=enabled is not False and isinstance(level, str) and bool(level),
+                )
             if reasoning_levels:
                 effort: Optional[str] = None
                 if level is not None:

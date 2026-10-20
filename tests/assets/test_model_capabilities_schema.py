@@ -67,6 +67,7 @@ THINKING_CONTROL_SURFACE_KEYS = {
     "low_effort_template_kwarg",
     "request_param",
     "effort_template_kwarg",
+    "effort_disable_value",
 }
 
 # Mapping-valued surfaces: level -> template instruction text (empty string allowed:
