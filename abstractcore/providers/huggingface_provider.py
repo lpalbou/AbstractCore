@@ -8807,7 +8807,13 @@ class HuggingFaceProvider(BaseProvider):
                     chat_messages=chat_messages,
                     cache_obj=cache_obj,
                     max_output_tokens=int(max_output_tokens),
-                    temperature=float(generation_kwargs.get("temperature") or 0.2),
+                    # `or 0.2` turned an explicit temperature=0.0 (greedy; the
+                    # Hy-Memory card's extraction setting) into 0.2 on this lane.
+                    temperature=(
+                        float(generation_kwargs["temperature"])
+                        if generation_kwargs.get("temperature") is not None
+                        else 0.2
+                    ),
                     top_p=float(generation_kwargs.get("top_p") or 0.95),
                     top_k=int(generation_kwargs.get("top_k", 40) or 40),
                     min_p=float(kwargs.get("min_p", 0.05) or 0.05),
