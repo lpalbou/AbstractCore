@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quantizing. The same file can ship next to converted weights as `hy_v3.py`. Its weight names
   follow the mlx-lm MoE convention (`mlp.switch_mlp.*`, `mlp.router.expert_bias`), so
   `mlx-community/Hy3-preview-*` quants load too.
+- Published MLX quants of Hy-Memory-30B-A3B, made with that class:
+  `mlx-community/Hy-Memory-30B-A3B-4bit` (4.5 bits per weight, 16.9 GB) and
+  `mlx-community/Hy-Memory-30B-A3B-8bit` (8.5 bits per weight, 32.0 GB), affine group 64 with the
+  router and its correction bias in full precision. They bundle the class as `hy_v3.py`, so plain
+  mlx-lm loads them too. Both, with the tencent GGUF Q4_K_M, are in the model download catalog
+  (row `hy-memory-30b-a3b`).
 - `thinking_control.effort_disable_value`: for templates whose one effort variable is also the
   on/off switch (Hy-Memory `reasoning_effort`: `high`, `low`, `no_think`). The MLX, transformers,
   GGUF, vLLM and OpenAI-compatible providers send `no_think` for `thinking=False` and a declared

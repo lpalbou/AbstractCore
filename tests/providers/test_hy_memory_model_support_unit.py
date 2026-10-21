@@ -621,3 +621,26 @@ def test_transformers_experts_fallback_kwarg(monkeypatch, kernel, given, expecte
     kwargs = dict(given)
     p._apply_transformers_experts_fallback(kwargs)
     assert kwargs.get("experts_implementation") == expected
+
+
+# ------------------------------------------------------------------ download catalog (published artifacts)
+
+def test_download_catalog_lists_the_published_artifacts_with_verified_sizes() -> None:
+    from abstractcore.config.model_catalog import catalog_id_for, load_seed, validate_catalog
+
+    seed = load_seed()
+    assert validate_catalog(seed) == []
+    row = next(r for r in seed["rows"] if r["id"] == "hy-memory-30b-a3b")
+    assert get_model_capabilities(row["capabilities_key"])["architecture"] == "hy_v3"
+    by_artifact = {a["artifact"]: a for a in row["artifacts"]}
+    assert set(by_artifact) == {
+        "mlx-community/Hy-Memory-30B-A3B-4bit",
+        "mlx-community/Hy-Memory-30B-A3B-8bit",
+        "tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M",
+    }
+    for art in row["artifacts"]:
+        # hf_api-verified ids must carry the verified size (sum of weight files)
+        assert art["upstream"]["method"] == "hf_api" and art["upstream"]["revision"]
+        assert isinstance(art["download_bytes"], int) and art["download_bytes"] > 10**9
+        assert catalog_id_for(art["provider"], art["artifact"]) == "hy-memory-30b-a3b"
+    assert row["kv_geometry"] == {**row["kv_geometry"], "n_layers": 48, "n_kv_heads": 4, "head_dim": 128}

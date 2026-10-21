@@ -103,7 +103,7 @@ all three local stacks:
 |---|---|---|
 | `huggingface` (transformers) | `tencent/Hy-Memory-30B-A3B` (BF16, 60 GB) | needs a Transformers build with `model_type=hy_v3` (5.8.0 measured) |
 | `huggingface` (llama.cpp) | `tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M` (also `Q6_K`, `Q8_0`) | llama.cpp arch `hy_v3`; llama-cpp-python 0.3.35 measured |
-| `mlx` | a local MLX conversion (see below) | mlx-lm ships no `hy_v3` module; AbstractCore provides one |
+| `mlx` | `mlx-community/Hy-Memory-30B-A3B-4bit` (16.9 GB) or `-8bit` (32.0 GB) | mlx-lm ships no `hy_v3` module; AbstractCore provides one, and the repos bundle it |
 
 `tencent/Hy-Memory-30B-A3B-FP8` (F8_E4M3) is a vLLM/SGLang artifact and has no Apple path.
 

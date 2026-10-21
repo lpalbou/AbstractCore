@@ -3163,6 +3163,71 @@
    ]
   },
   {
+   "id": "hy-memory-30b-a3b",
+   "family": "hy-memory",
+   "display_name": "Hy-Memory 30B-A3B",
+   "vendor": "Tencent",
+   "params_total": 30064725888,
+   "params_active": 3000000000,
+   "license": "apache-2.0",
+   "capabilities_key": "hy-memory-30b-a3b",
+   "tags": [
+    "chat",
+    "thinking",
+    "tools",
+    "moe"
+   ],
+   "starter": false,
+   "kv_geometry": {
+    "n_layers": 48,
+    "n_kv_heads": 4,
+    "head_dim": 128,
+    "source": "config.json of tencent/Hy-Memory-30B-A3B@64a460a94d54: 48 full-attention layers, GQA 32 query / 4 KV heads"
+   },
+   "artifacts": [
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Hy-Memory-30B-A3B-4bit",
+     "quant": "4bit",
+     "download_bytes": 16929648349,
+     "size_source": "catalog",
+     "verified": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-21",
+      "revision": "65eb23e40d0d61fab54c887f432718491cd51858"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Hy-Memory-30B-A3B-8bit",
+     "quant": "8bit",
+     "download_bytes": 31955742589,
+     "size_source": "catalog",
+     "verified": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-21",
+      "revision": "fe36f0ba3190ae05283429fe69e29b13eedec98f"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 18236702464,
+     "size_source": "catalog",
+     "verified": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-21",
+      "revision": "7778309f5109ec6e86820c687e638b9589b541a9"
+     }
+    }
+   ],
+   "notes": "Long-term memory writer (the write path of Mem0, MemOS and Hy-Memory). Thinking is off by default (reasoning_effort no_think). The MLX repos bundle the hy_v3 model class (config model_file) because mlx-lm ships none; AbstractCore uses its own copy."
+  },
+  {
    "id": "nomic-embed-text-v1.5",
    "family": "nomic-embed",
    "display_name": "Nomic Embed Text v1.5",
