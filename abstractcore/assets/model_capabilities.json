@@ -9601,7 +9601,8 @@
       "max_tokens": 262144,
       "inference_parameters": {
         "temperature": 0.7,
-        "top_p": 1.0
+        "top_p": 1.0,
+        "repeat_penalty": 1.0
       },
       "max_tools": -1,
       "video_input_mode": "none",

@@ -8909,24 +8909,7 @@ class HuggingFaceProvider(BaseProvider):
                     chat_messages=chat_messages,
                     cache_obj=cache_obj,
                     max_output_tokens=int(max_output_tokens),
-                    # `or 0.2` turned an explicit temperature=0.0 (greedy; the
-                    # Hy-Memory card's extraction setting) into 0.2 on this lane.
-                    temperature=(
-                        float(generation_kwargs["temperature"])
-                        if generation_kwargs.get("temperature") is not None
-                        else 0.2
-                    ),
-                    top_p=float(generation_kwargs.get("top_p") or 0.95),
-                    top_k=int(generation_kwargs.get("top_k", 40) or 40),
-                    min_p=float(kwargs.get("min_p", 0.05) or 0.05),
-                    typical_p=float(kwargs.get("typical_p", 1.0) or 1.0),
-                    repeat_penalty=float(kwargs.get("repeat_penalty", 1.1) or 1.1),
-                    presence_penalty=float(kwargs.get("presence_penalty", 0.0) or 0.0),
-                    frequency_penalty=float(kwargs.get("frequency_penalty", 0.0) or 0.0),
-                    tfs_z=float(kwargs.get("tfs_z", 1.0) or 1.0),
-                    mirostat_mode=int(kwargs.get("mirostat_mode", 0) or 0),
-                    mirostat_tau=float(kwargs.get("mirostat_tau", 5.0) or 5.0),
-                    mirostat_eta=float(kwargs.get("mirostat_eta", 0.1) or 0.1),
+                    **self._gguf_control_plane_sampler(kwargs, generation_kwargs),
                     seed=seed_value,
                     stream=bool(stream),
                     enable_thinking=gguf_enable_thinking,
@@ -9482,6 +9465,45 @@ class HuggingFaceProvider(BaseProvider):
                 **prompt_cache_meta,
             },
         )
+
+    def _gguf_control_plane_sampler(
+        self, kwargs: Dict[str, Any], generation_kwargs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Sampler settings for the GGUF control-plane lane.
+
+        An explicit 0 is a value, not "unset": temperature 0.0 is greedy and
+        top_k 0 / min_p 0.0 disable those filters in llama.cpp (the Hy-Memory GGUF
+        card runs --top-k 0 --repeat-penalty 1.0). The old `x or default`
+        coercions turned every one of them into this lane's default. Per-call
+        kwargs win, then the provider's own setting (top_k), then the registry's
+        `inference_parameters` (min_p, typical_p, repeat_penalty), then the
+        lane default.
+        """
+
+        def pick(name: str, default: float, *, provider_attr: bool = False) -> Any:
+            value = kwargs.get(name)
+            if value is None and provider_attr:
+                value = getattr(self, name, None)
+            if value is None:
+                value = self._metadata_generation_default(name, None)
+            return default if value is None else value
+
+        temperature = generation_kwargs.get("temperature")
+        top_p = generation_kwargs.get("top_p")
+        return {
+            "temperature": float(temperature) if temperature is not None else 0.2,
+            "top_p": float(top_p) if top_p is not None else 0.95,
+            "top_k": int(pick("top_k", 40, provider_attr=True)),
+            "min_p": float(pick("min_p", 0.05)),
+            "typical_p": float(pick("typical_p", 1.0)),
+            "repeat_penalty": float(pick("repeat_penalty", 1.1)),
+            "presence_penalty": float(pick("presence_penalty", 0.0)),
+            "frequency_penalty": float(pick("frequency_penalty", 0.0)),
+            "tfs_z": float(pick("tfs_z", 1.0)),
+            "mirostat_mode": int(pick("mirostat_mode", 0)),
+            "mirostat_tau": float(pick("mirostat_tau", 5.0)),
+            "mirostat_eta": float(pick("mirostat_eta", 0.1)),
+        }
 
     def _gguf_control_plane_generate(
         self,

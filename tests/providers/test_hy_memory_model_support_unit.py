@@ -566,3 +566,19 @@ def test_hf_cache_snapshot_paths_resolve_to_the_model_entry(path: str) -> None:
     assert caps["architecture"] == "hy_v3"
     assert caps["max_tokens"] == 262144
     assert caps["thinking_control"]["effort_disable_value"] == "no_think"
+
+
+# ------------------------------------------------------------------ GGUF control-plane sampler (review N3/S8)
+
+def test_gguf_sampler_keeps_explicit_zeros_and_registry_defaults() -> None:
+    p = _hf_provider("gguf")
+    p.top_k = None
+    explicit = p._gguf_control_plane_sampler({"top_k": 0, "min_p": 0.0, "repeat_penalty": 1.0}, {"temperature": 0.0, "top_p": 1.0})
+    assert explicit["temperature"] == 0.0  # greedy, not the lane default 0.2 (04957608)
+    assert explicit["top_k"] == 0 and explicit["min_p"] == 0.0 and explicit["repeat_penalty"] == 1.0
+    defaults = p._gguf_control_plane_sampler({}, {"temperature": None, "top_p": None})
+    assert defaults["temperature"] == 0.2 and defaults["top_p"] == 0.95 and defaults["top_k"] == 40
+    assert defaults["repeat_penalty"] == 1.0  # hy_v3 registry inference_parameters (GGUF card)
+    assert defaults["min_p"] == 0.05
+    p.top_k = 0  # provider-level setting (e.g. create_llm(..., top_k=0))
+    assert p._gguf_control_plane_sampler({}, {})["top_k"] == 0

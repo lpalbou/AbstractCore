@@ -1281,7 +1281,8 @@
       ],
       "inference_parameters": {
         "temperature": 0.7,
-        "top_p": 1.0
+        "top_p": 1.0,
+        "repeat_penalty": 1.0
       },
       "patterns": [
         "hy-memory",
