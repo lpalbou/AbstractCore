@@ -10,10 +10,13 @@ Use this file as the entry point for planning status, recommended next work, and
 ## Counts
 
 - Planned: 30
-- Proposed: 27
+- Proposed: 28
 - Completed: 30
 - Deprecated: 3
 - Recurrent: 0
+
+2026-10-21: added proposed `0855` (`detect_tool_calls` disagrees with `parse_tool_calls` for
+every format-specific family; pre-existing, surfaced by the Hy-Memory-30B-A3B review).
 
 2026-09-23: added 0854 (models & engines backend follow-ups).
 
@@ -176,6 +179,7 @@ completed/ in a hygiene pass.)
 | `proposed/0815_system_message_handling_followups.md` | Promote per item: Opus 4.8 native mid-stream `system` when registry-gated placement validation is worth it; developer-role position awareness only with parity tests (current hoist is load-bearing); CachedSession replay verification opportunistically. |
 | `proposed/0816_retry_collapse_cancellable_backoff_and_herd_budgets.md` | IMPLEMENTED 2026-07-10 per item status (16 tests green); move to completed/ with a completion report in the next hygiene pass. |
 | `proposed/0818_bloc_composability_framework_contract.md` | Promote when the private composability branch lands (defines the link/repair step) AND the 0817 audit closes; the designed contract lives in agora commons fs `research/cache-composability.md`. |
+| `proposed/0855_detect_tool_calls_disagrees_with_parse_tool_calls.md` | Promote when a public-API caller gates on `detect_tool_calls` (it answers False for raw-JSON / `<|tool_call|>` / `<function_call>` / Gemma4 payloads the parser extracts, and for Qwen3's `<tool_call>{json}`); self-contained repro and RED-first test spec in the item. |
 ## Completed ledger
 
 | Original path | Final path | Completed | Outcome | Comment | Key validation |
