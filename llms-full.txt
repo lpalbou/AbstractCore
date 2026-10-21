@@ -14731,6 +14731,79 @@ Dense Gemma4 E4B-it was validated on Apple/MPS in an isolated Transformers 5.9.0
 Durable bloc cache support depends on preserving dynamic sliding-window cache sequence lengths
 across save/load; AbstractCore records that in the transformers cache artifact metadata.
 
+### Tencent Hy-Memory-30B-A3B (`hy_v3`)
+
+`tencent/Hy-Memory-30B-A3B` is a 30B-total / 3B-active MoE whose specialty seems to be a
+long-term memory writer (the write path of Mem0, MemOS and Hy-Memory). AbstractCore runs it on
+all three local stacks:
+
+| Stack | Target | Notes |
+|---|---|---|
+| `huggingface` (transformers) | `tencent/Hy-Memory-30B-A3B` (BF16, 60 GB) | needs a Transformers build with `model_type=hy_v3` (5.8.0 measured) |
+| `huggingface` (llama.cpp) | `tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M` (also `Q6_K`, `Q8_0`) | llama.cpp arch `hy_v3`; llama-cpp-python 0.3.35 measured |
+| `mlx` | a local MLX conversion (see below) | mlx-lm ships no `hy_v3` module; AbstractCore provides one |
+
+`tencent/Hy-Memory-30B-A3B-FP8` (F8_E4M3) is a vLLM/SGLang artifact and has no Apple path.
+
+Things AbstractCore handles for this model:
+
+- **Expert width.** `config.json` says `moe_intermediate_size: 1536`, but every routed and shared
+  expert tensor is 768 wide (`expert_hidden_dim: 768`). Transformers 5.8 sizes experts from
+  `moe_intermediate_size`, so a plain `from_pretrained` fails on a shape mismatch. The
+  transformers loader sizes them from `expert_hidden_dim` and logs the change.
+- **MoE kernels.** Transformers 5 runs MoE experts with `grouped_mm` whenever torch exposes the
+  op; torch 2.8 has no CPU or MPS kernel for it. The loader probes the device once and uses
+  Transformers' `eager` experts loop where the kernel is missing.
+- **Thinking.** The chat template has one variable, `reasoning_effort` (`high`, `low` or
+  `no_think`), and no `enable_thinking` switch. Unset, it renders `no_think`: thinking is off by
+  default. `thinking=False` sends `no_think`, `thinking=True` sends `high`, and
+  `thinking="low"` / `"high"` send that level (registry `thinking_control.effort_disable_value`).
+  On GGUF the embedded template renders the request; requests that leave that lane (tool-result
+  history, structured output) keep the template's default and say so in a warning.
+- **Tool calls.** `<tool_calls><tool_call>name<tool_sep><arg_key>k</arg_key><arg_value>v</arg_value></tool_call></tool_calls>`
+  is parsed on the plain, streaming and passthrough lanes.
+
+For memory extraction the model card uses `temperature=0.0`, `max_tokens=512` and no thinking:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("huggingface", model="tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M")
+resp = llm.generate(
+    "My name is Alex. I live in Seattle and I'm vegetarian.",
+    system_prompt='Extract explicit user facts. Return only a JSON object with a "memories" list of strings.',
+    thinking=False,
+    temperature=0.0,
+    max_tokens=512,
+)
+```
+
+On Apple/MPS with torch 2.8, `scaled_dot_product_attention(is_causal=True)` in bfloat16 or
+float16 returns wrong values once a prompt is longer than about 20 tokens (measured against a
+float64 reference: maximum error 3.5 on unit-scale inputs; float32 and an explicit mask are
+exact). Every half-precision transformers model on that stack is affected; for
+Hy-Memory-30B-A3B the BF16 checkpoint produced unusable text. AbstractCore warns at load on
+torch 2.8.x; run with `ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager`, or upgrade torch.
+
+MLX conversions are made with mlx-lm's own `convert`, with AbstractCore's class registered as
+`mlx_lm.models.hy_v3`:
+
+```python
+import abstractcore.providers.mlx_hy_v3 as hy
+
+hy.register_with_mlx_lm()  # only when the installed mlx-lm has no hy_v3 module
+from mlx_lm.convert import convert
+
+convert(hf_path="tencent/Hy-Memory-30B-A3B", mlx_path="Hy-Memory-30B-A3B-4bit",
+        quantize=True, q_group_size=64, q_bits=4)
+```
+
+The class keeps the MoE router and its correction bias in full precision when quantizing
+(`Model.quant_predicate`). Copy `abstractcore/providers/mlx_hy_v3.py` into the output as
+`hy_v3.py` and add `"model_file": "hy_v3.py"` to its `config.json` so plain mlx-lm can load it.
+`create_llm("mlx", ...)` ignores a bundled `model_file` for `hy_v3` checkpoints and uses
+AbstractCore's class, or mlx-lm's own module once mlx-lm ships one.
+
 ## Which provider lists a local repository
 
 `mlx` and `huggingface` scan the same directories — the HuggingFace hub cache and the

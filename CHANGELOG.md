@@ -5,6 +5,43 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Tencent Hy-Memory-30B-A3B** (`hy_v3`, 30B total / 3B active MoE; specialty seems to be a
+  long-term memory writer): registry architecture `hy_v3` and model `hy-memory-30b-a3b`, with
+  aliases for the BF16, FP8 and GGUF repositories and the three GGUF file names. Runs through
+  `huggingface` (transformers and GGUF) and `mlx`.
+- **MLX `hy_v3` model class** (`abstractcore/providers/mlx_hy_v3.py`). mlx-lm ships none; the
+  class is registered as `mlx_lm.models.hy_v3` only when mlx-lm has no module of that name. It
+  matches transformers' `HYV3ForCausalLM` (float32 router, correction bias that chooses experts
+  without weighting them, float32 shared-expert sum) and keeps the router in full precision when
+  quantizing. The same file can ship next to converted weights as `hy_v3.py`.
+- `thinking_control.effort_disable_value`: for templates whose one effort variable is also the
+  on/off switch (Hy-Memory `reasoning_effort`: `high`, `low`, `no_think`). The MLX, transformers,
+  GGUF and OpenAI-compatible providers send `no_think` for `thinking=False` and a declared level
+  for `thinking=True`, instead of an `enable_thinking` flag the template ignores. Metadata reports
+  `no_think` as `off`.
+
+### Fixed
+
+- Tool calls in the `<tool_calls><tool_call>name<tool_sep><arg_key>…` form are parsed, including
+  calls without arguments, and the wrapper no longer leaks into streamed or cleaned content.
+  A call whose name would be prose (no `<tool_sep>`) is rejected instead of returned with a
+  garbled name, and a call cut inside an argument value is not executed.
+- An unclosed trailing `<tool_call>` payload is removed from content once it is parsed as a call.
+- Transformers: Hy-Memory's experts are sized from `expert_hidden_dim` (the checkpoint's
+  `moe_intermediate_size` does not match its tensors), and MoE models use Transformers' `eager`
+  experts loop when torch has no `grouped_mm` kernel on the device (torch 2.8: CPU and MPS).
+- GGUF: an explicit `temperature=0.0` is greedy on the local control-plane lane (it was replaced
+  by 0.2).
+- A Hugging Face cache snapshot path (`.../models--org--name/snapshots/<revision>`) resolves to
+  the repository's registry entry; it used to fall back to architecture defaults.
+- Transformers on Apple/MPS: torch 2.8.x gets a load-time warning. Its causal
+  `scaled_dot_product_attention` in float16/bfloat16 is wrong past about 20 prompt tokens
+  (`ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager` avoids it).
+
 ## [2.26.3] - 2026-10-18
 
 2.26.1 and 2.26.2 were not published on PyPI; their Windows fixes ship in this release.
