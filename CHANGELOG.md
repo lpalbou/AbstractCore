@@ -17,30 +17,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   class is registered as `mlx_lm.models.hy_v3` only when mlx-lm has no module of that name. It
   matches transformers' `HYV3ForCausalLM` (float32 router, correction bias that chooses experts
   without weighting them, float32 shared-expert sum) and keeps the router in full precision when
-  quantizing. The same file can ship next to converted weights as `hy_v3.py`.
+  quantizing. The same file can ship next to converted weights as `hy_v3.py`. Its weight names
+  follow the mlx-lm MoE convention (`mlp.switch_mlp.*`, `mlp.router.expert_bias`), so
+  `mlx-community/Hy3-preview-*` quants load too.
 - `thinking_control.effort_disable_value`: for templates whose one effort variable is also the
   on/off switch (Hy-Memory `reasoning_effort`: `high`, `low`, `no_think`). The MLX, transformers,
-  GGUF and OpenAI-compatible providers send `no_think` for `thinking=False` and a declared level
-  for `thinking=True`, instead of an `enable_thinking` flag the template ignores. Metadata reports
-  `no_think` as `off`.
+  GGUF, vLLM and OpenAI-compatible providers send `no_think` for `thinking=False` and a declared
+  level for `thinking=True` (`high` for Hy-Memory), instead of an `enable_thinking` flag the
+  template ignores. OpenAI-compatible servers get `no_think` only inside `chat_template_kwargs`,
+  never as the top-level `reasoning_effort`. Metadata reports `no_think` as `off`.
 
 ### Fixed
 
 - Tool calls in the `<tool_calls><tool_call>name<tool_sep><arg_key>…` form are parsed, including
   calls without arguments, and the wrapper no longer leaks into streamed or cleaned content.
   A call whose name would be prose (no `<tool_sep>`) is rejected instead of returned with a
-  garbled name, and a call cut inside an argument value is not executed.
-- An unclosed trailing `<tool_call>` payload is removed from content once it is parsed as a call.
+  garbled name, and a call cut inside an argument value is not executed. A generation cut right
+  after `name<tool_sep>` (for example at `max_tokens`) is not executed as an argument-less call:
+  an argument-less call counts only when its `</tool_call>` arrived.
+- Tool parsing (GLM / Laguna / HY V3 `<arg_key>` lane): a call whose argument value mentions
+  `<tool_sep>` or `<arg_key>…</arg_key>` (for example a file being written about this format) is
+  parsed; `<tool_sep>` is recognised only where it ends the tool name.
+- `clean_tool_syntax`: an unclosed trailing `<tool_call>` is removed once parsed as a call, but
+  only when its body starts like a call (JSON object, `<function=`, `name<tool_sep>` or
+  `name<arg_key>`); prose after a call that mentions `<tool_call>` is kept.
+- Streaming: a closed tool envelope whose body no parser accepts is reported in
+  `metadata["unparsed_tool_call"]` with `reason: "unparseable"` instead of disappearing (all
+  families). The HY V3 `<tool_calls>` wrapper is scanned only for the `hy_v3` architecture, so
+  Laguna, GLM and unnamed streams keep prose that mentions `<tool_calls>`.
+- Transformers: assistant `tool_calls` from the OpenAI wire (arguments as a JSON string) reach
+  the chat template as objects. Templates that iterate the arguments (Hy-Memory, GLM, Laguna)
+  used to raise, and the lane fell back to a plain prompt without the model's format or its
+  thinking control. A request with an empty prompt after a tool result no longer adds an empty
+  user turn.
+- GGUF control plane: explicit sampler zeros are values (`temperature=0.0` is greedy, `top_k=0`
+  and `min_p=0.0` disable those filters) and `top_k`, `min_p`, `typical_p` and `repeat_penalty`
+  follow the request, the provider and the registry before the lane defaults. This changes
+  `temperature=0.0` and `top_k` for every GGUF model on that lane.
 - Transformers: Hy-Memory's experts are sized from `expert_hidden_dim` (the checkpoint's
   `moe_intermediate_size` does not match its tensors), and MoE models use Transformers' `eager`
   experts loop when torch has no `grouped_mm` kernel on the device (torch 2.8: CPU and MPS).
-- GGUF: an explicit `temperature=0.0` is greedy on the local control-plane lane (it was replaced
-  by 0.2).
 - A Hugging Face cache snapshot path (`.../models--org--name/snapshots/<revision>`) resolves to
   the repository's registry entry; it used to fall back to architecture defaults.
 - Transformers on Apple/MPS: torch 2.8.x gets a load-time warning. Its causal
   `scaled_dot_product_attention` in float16/bfloat16 is wrong past about 20 prompt tokens
   (`ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager` avoids it).
+
+### Changed
+
+- GLM / Laguna `<arg_key>` tool calls cut inside an argument value (with or without a closing
+  `</tool_call>`) are no longer executed with that argument missing; they are reported as
+  unparsed. Before the HY V3 work they ran with the truncated argument silently dropped.
 
 ## [2.26.3] - 2026-10-18
 

@@ -118,10 +118,18 @@ Things AbstractCore handles for this model:
   Transformers' `eager` experts loop where the kernel is missing.
 - **Thinking.** The chat template has one variable, `reasoning_effort` (`high`, `low` or
   `no_think`), and no `enable_thinking` switch. Unset, it renders `no_think`: thinking is off by
-  default. `thinking=False` sends `no_think`, `thinking=True` sends `high`, and
-  `thinking="low"` / `"high"` send that level (registry `thinking_control.effort_disable_value`).
-  On GGUF the embedded template renders the request; requests that leave that lane (tool-result
-  history, structured output) keep the template's default and say so in a warning.
+  default. `thinking=False` sends `no_think`, and `thinking="low"` / `"high"` send that level
+  (registry `thinking_control.effort_disable_value`). A bare `thinking=True` picks the first of
+  medium, high, low that the model declares, which is `high` here: the most expensive level.
+  For a memory writer, ask for `thinking="low"` when you want reasoning at a lower cost.
+  vLLM receives the value as `chat_template_kwargs.reasoning_effort`; OpenAI-compatible servers
+  receive `low`/`high` as the top-level `reasoning_effort`, and `no_think` only inside
+  `chat_template_kwargs` (a validating server rejects it top-level).
+- **GGUF lanes.** The embedded template renders text requests, so all three values reach it.
+  Requests that leave that lane (tool-result history in `messages`, structured output, media)
+  go through llama-cpp-python's chat completion, which has no transport for the variable: there,
+  `thinking="off"` still holds because the template's default is `no_think`, but
+  `thinking="low"` or `"high"` cannot be applied, and a warning says so.
 - **Tool calls.** `<tool_calls><tool_call>name<tool_sep><arg_key>k</arg_key><arg_value>v</arg_value></tool_call></tool_calls>`
   is parsed on the plain, streaming and passthrough lanes.
 
@@ -163,8 +171,20 @@ convert(hf_path="tencent/Hy-Memory-30B-A3B", mlx_path="Hy-Memory-30B-A3B-4bit",
 The class keeps the MoE router and its correction bias in full precision when quantizing
 (`Model.quant_predicate`). Copy `abstractcore/providers/mlx_hy_v3.py` into the output as
 `hy_v3.py` and add `"model_file": "hy_v3.py"` to its `config.json` so plain mlx-lm can load it.
-`create_llm("mlx", ...)` ignores a bundled `model_file` for `hy_v3` checkpoints and uses
-AbstractCore's class, or mlx-lm's own module once mlx-lm ships one.
+For checkpoints whose `config.json` says `model_type: hy_v3`, `create_llm("mlx", ...)` does not
+run a bundled `model_file`: it uses AbstractCore's class, or mlx-lm's own module once mlx-lm
+ships one. (A checkpoint that declares another `model_type` plus a `model_file` still runs that
+file through mlx-lm, as before.) Weights use the mlx-lm MoE names (`mlp.switch_mlp.*`,
+`mlp.router.gate`, `mlp.router.expert_bias`), as in `mlx-community/Hy3-preview-*`; the tencent,
+transformers and earlier community layouts are mapped onto them at load. A layout the selected
+class cannot load fails with an error that names the layout found.
+
+The MLX class follows transformers' `HYV3ForCausalLM` except in two places, both more precise:
+it sums the routed experts in float32 (transformers accumulates them in the model dtype), and it
+computes an unquantized `lm_head` in float32 when `enable_lm_head_fp32` is set (transformers
+ignores the flag). Small bf16 differences against transformers are therefore expected. Measured
+on the BF16 weights and a 100-token prompt: the same top-5 next tokens in the same order, logit
+correlation 0.9965 at the last position, the same most likely token at 96 of 100 positions.
 
 ## Which provider lists a local repository
 
