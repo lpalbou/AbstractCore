@@ -51,6 +51,10 @@ class IncrementalToolDetector:
         """
         self.model_name = model_name
         self.rewrite_tags = rewrite_tags
+        # A CLOSED envelope whose body no parser accepted (first one wins). Survives
+        # the per-envelope reset() and is handed out once by drain(), so a call the
+        # model meant to make never vanishes without a trace.
+        self._closed_unparsed: Optional[Dict[str, Any]] = None
         self.reset()
 
         # Define patterns for different tool call formats
@@ -133,7 +137,10 @@ class IncrementalToolDetector:
     def _get_patterns_for_model(self, model_name: str) -> List[Dict]:
         """Get relevant patterns for a model."""
         if not model_name:
-            return list(self.patterns.values())
+            # Unknown model: every common envelope EXCEPT the HY V3 `<tool_calls>`
+            # wrapper, which is only meaningful for that architecture (scanning it
+            # elsewhere swallows prose that merely mentions the tag).
+            return [p for name, p in self.patterns.items() if name != "hy_tool_calls"]
 
         # Centralized model capability/syntax lookup.
         # Use `architecture_formats.json` as the source of truth instead of string heuristics.
@@ -171,7 +178,10 @@ class IncrementalToolDetector:
 
         # XML-wrapped tools.
         if tool_format in {"xml", "glm_xml"}:
-            if tool_format == "glm_xml":
+            # The `<tool_calls>` outer wrapper is HY V3's alone: other glm_xml families
+            # (GLM-4.5V, GLM-5.x, Laguna) never emit it, and scanning it for them would
+            # swallow prose that mentions the tag.
+            if tool_format == "glm_xml" and str(architecture) == "hy_v3":
                 return [
                     self.patterns["hy_tool_calls"],
                     self.patterns["xml"],
@@ -237,6 +247,7 @@ class IncrementalToolDetector:
 
                 # Start collecting tool content
                 self.current_tool_content = self.accumulated_content[match.end() :]
+                self._current_start_tag = match.group(0)
 
                 logger.debug(
                     f"Tool call start detected: {start_pattern} for model {self.model_name}"
@@ -290,6 +301,16 @@ class IncrementalToolDetector:
             for tool_call in self._parse_tool_payload(tool_json_content):
                 completed_tools.append(tool_call)
                 logger.debug(f"Complete tool call parsed: {tool_call.name}")
+            if not completed_tools and self._closed_unparsed is None:
+                # Closed around a body no parser accepts (e.g. a call cut inside a
+                # value, then closed): not content, but never silently dropped --
+                # drain() reports it (see its docstring).
+                pattern = self.current_pattern or {}
+                self._closed_unparsed = {
+                    "format": self._pattern_name(pattern),
+                    "text": getattr(self, "_current_start_tag", "") + self.current_tool_content[: end_match.end()],
+                    "reason": "unparseable",
+                }
 
             if self.rewrite_tags:
                 # When rewriting, stream the complete accumulated content including tool call
@@ -678,11 +699,12 @@ class IncrementalToolDetector:
 
         cleaned = json_content.strip()
 
-        if "<arg_key" in cleaned.lower():
+        if "<arg_key" in cleaned.lower() or "<tool_sep" in cleaned.lower():
             try:
                 from ..tools.parser import _parse_arg_kv_tool_call
 
-                arg_kv_calls = _parse_arg_kv_tool_call(cleaned)
+                # A closed envelope body (the end tag matched).
+                arg_kv_calls = _parse_arg_kv_tool_call(cleaned, closed=True)
             except Exception:
                 arg_kv_calls = []
             if arg_kv_calls:
@@ -793,7 +815,11 @@ class IncrementalToolDetector:
                     try:
                         from ..tools.parser import _parse_arg_kv_tool_call
 
-                        completed_tools.extend(_parse_arg_kv_tool_call(self.current_tool_content))
+                        # The envelope never closed: an argument-less HY call here is
+                        # a generation cut before its arguments, not a call.
+                        completed_tools.extend(
+                            _parse_arg_kv_tool_call(self.current_tool_content, closed=False)
+                        )
                     except Exception:
                         pass
                     if completed_tools:
@@ -835,6 +861,7 @@ class IncrementalToolDetector:
         detector.
         """
         unparsed: Optional[Dict[str, Any]] = None
+        closed_unparsed, self._closed_unparsed = self._closed_unparsed, None
         if self.state == ToolDetectionState.IN_TOOL_CALL:
             start = self.tool_start_pos or 0
             # Normal mode already streamed the text before the envelope;
@@ -858,7 +885,7 @@ class IncrementalToolDetector:
                 ):
                     owed = self.accumulated_content if self.rewrite_tags else envelope
                     self.reset()
-                    return owed, [], None
+                    return owed, [], closed_unparsed
             else:
                 tools = self.finalize()
             if not tools:
@@ -868,11 +895,11 @@ class IncrementalToolDetector:
                     "reason": "unclosed" if pattern.get("kind") != "harmony" else "incomplete",
                 }
             self.reset()
-            return owed, tools, unparsed
+            return owed, tools, unparsed or closed_unparsed
 
         owed = self.accumulated_content
         self.reset()
-        return owed, [], None
+        return owed, [], closed_unparsed
 
     def _pattern_name(self, pattern: Dict[str, Any]) -> str:
         if pattern is self.json_fence_pattern:

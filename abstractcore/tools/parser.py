@@ -750,8 +750,9 @@ def _has_unterminated_xmlish_parameter(block: str) -> bool:
     return not closers or closers[-1].start() < openers[-1].start()
 
 
-def _iter_xml_tool_call_bodies(response: str):
-    """Yield bodies after <tool_call>, accepting a missing final </tool_call>."""
+def _iter_xml_tool_call_bodies_with_closure(response: str):
+    """Yield (body, closed) after each <tool_call>; `closed` is False for a body
+    whose </tool_call> never came (a missing final close tag is accepted)."""
     open_re = re.compile(r"<tool_call\b[^>]*>", re.IGNORECASE)
     close_re = re.compile(r"</tool_call\s*>", re.IGNORECASE)
     pos = 0
@@ -763,17 +764,30 @@ def _iter_xml_tool_call_bodies(response: str):
 
         close_match = close_re.search(response, open_match.end())
         if close_match:
-            yield response[open_match.end():close_match.start()]
+            yield response[open_match.end():close_match.start()], True
             pos = close_match.end()
             continue
 
         next_open = open_re.search(response, open_match.end())
         body_end = next_open.start() if next_open else len(response)
-        yield response[open_match.end():body_end]
+        yield response[open_match.end():body_end], False
         pos = body_end
 
 
+def _iter_xml_tool_call_bodies(response: str):
+    """Yield bodies after <tool_call>, accepting a missing final </tool_call>."""
+    for body, _closed in _iter_xml_tool_call_bodies_with_closure(response):
+        yield body
+
+
 _ARG_KV_TOOL_SEP_RE = re.compile(r"<tool_sep\s*>", re.IGNORECASE)
+
+
+_ARG_KV_PAIR_RE = re.compile(
+    r"<arg_key\s*>(.*?)</arg_key\s*>\s*<arg_value\s*>(.*?)</arg_value\s*>",
+    re.DOTALL | re.IGNORECASE,
+)
+_ARG_KV_OPENER_RE = re.compile(r"<arg_(?:key|value)\b", re.IGNORECASE)
 
 
 def _has_unterminated_arg_kv(region: str) -> bool:
@@ -782,14 +796,15 @@ def _has_unterminated_arg_kv(region: str) -> bool:
     A generation cut inside a value (length cap, abort) leaves the call
     incomplete; running it with that argument silently missing is worse than
     reporting it unparsed (same rule as the <parameter=...> lane).
+
+    Structural, not a tag count: once every COMPLETE pair is removed, nothing may
+    open another pair. A value that merely MENTIONS `<arg_key>k</arg_key>` (a file
+    being written about this very format) sits inside a complete pair and is fine.
     """
-    keys = len(re.findall(r"<arg_key\s*>", region or "", re.IGNORECASE))
-    values = len(re.findall(r"<arg_value\s*>", region or "", re.IGNORECASE))
-    closed = len(re.findall(r"</arg_value\s*>", region or "", re.IGNORECASE))
-    return keys != values or values != closed
+    return bool(_ARG_KV_OPENER_RE.search(_ARG_KV_PAIR_RE.sub("", region or "")))
 
 
-def _parse_arg_kv_tool_call(body: str) -> List[ToolCall]:
+def _parse_arg_kv_tool_call(body: str, closed: bool = True) -> List[ToolCall]:
     """Parse the GLM/Laguna/HY V3 payload that pairs <arg_key> with <arg_value> tags.
 
     The tool name is bare leading text, not a tag:
@@ -811,22 +826,28 @@ def _parse_arg_kv_tool_call(body: str) -> List[ToolCall]:
     (mlx-lm PR #1211 review: a missing `<tool_sep>` made a parser return the whole
     preamble as the tool name).
 
+    The separator can only END THE NAME, so it is looked for before the first
+    <arg_key> only: an argument value that mentions `<tool_sep>` (GLM/Laguna writing
+    a file about this format) never splits the call.
+
+    `closed=False` marks a body whose </tool_call> never arrived. An argument-less
+    HY call is accepted only when closed: `name<tool_sep>` followed by the end of
+    the output is a generation cut before its arguments, not a call to run.
+
     Emitters render string arguments verbatim and JSON-encode everything else, so
     each value is decoded as JSON when possible and kept as raw text otherwise.
     """
     if not isinstance(body, str):
         return []
-    sep = _ARG_KV_TOOL_SEP_RE.search(body)
-    if sep is None and "<arg_key" not in body.lower():
+    first_key = re.search(r"<arg_key\s*>", body, re.IGNORECASE)
+    sep = _ARG_KV_TOOL_SEP_RE.search(body, 0, first_key.start() if first_key else len(body))
+    if sep is None and first_key is None:
         return []
 
     if sep is not None:
         raw_name = body[:sep.start()]
         region = body[sep.end():]
     else:
-        first_key = re.search(r"<arg_key\s*>", body, re.IGNORECASE)
-        if not first_key:
-            return []
         raw_name = body[:first_key.start()]
         region = body[first_key.start():]
 
@@ -837,11 +858,7 @@ def _parse_arg_kv_tool_call(body: str) -> List[ToolCall]:
         return []
 
     arguments: Dict[str, Any] = {}
-    for pair in re.finditer(
-        r"<arg_key\s*>(.*?)</arg_key\s*>\s*<arg_value\s*>(.*?)</arg_value\s*>",
-        region,
-        re.DOTALL | re.IGNORECASE,
-    ):
+    for pair in _ARG_KV_PAIR_RE.finditer(region):
         key = (pair.group(1) or "").strip()
         if not key:
             continue
@@ -853,8 +870,9 @@ def _parse_arg_kv_tool_call(body: str) -> List[ToolCall]:
             arguments[key] = raw_value
 
     # Without the HY separator, a body with no complete pair is not this format.
-    # With it, an argument-less call (`name<tool_sep>`) is a real call.
-    if not arguments and sep is None:
+    # With it, an argument-less call (`name<tool_sep>`) is a real call -- but only
+    # when its </tool_call> arrived (otherwise it is a cut before the arguments).
+    if not arguments and (sep is None or not closed):
         return []
 
     return [ToolCall(name=name, arguments=arguments, call_id=None)]
@@ -929,7 +947,7 @@ def _parse_xml_wrapped(response: str) -> List[ToolCall]:
     #        <parameter=content>...</parameter>
     #      </function>
     #    </tool_call>
-    for body in _iter_xml_tool_call_bodies(response):
+    for body, closed in _iter_xml_tool_call_bodies_with_closure(response):
         if not isinstance(body, str):
             continue
 
@@ -955,7 +973,7 @@ def _parse_xml_wrapped(response: str) -> List[ToolCall]:
         # Case 2: GLM/Laguna/HY V3 <arg_key>/<arg_value> (and HY `name<tool_sep>`)
         # encoding, whose tool name is bare leading text rather than a tag, so it must
         # be tried before the tag scans below.
-        arg_kv_calls = _parse_arg_kv_tool_call(body)
+        arg_kv_calls = _parse_arg_kv_tool_call(body, closed=closed)
         if arg_kv_calls:
             tool_calls.extend(arg_kv_calls)
             continue
@@ -2022,7 +2040,10 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
         # An UNCLOSED trailing <tool_call> block: the parser accepts a missing final
         # </tool_call> (`_iter_xml_tool_call_bodies`), so its payload must not stay
         # behind as content (live: Hy-Memory GGUF ends `<tool_call>\n{json}` + EOS).
-        r'<tool_call>(?:(?!</tool_call>).)*\Z',
+        # Only a body that STARTS like a call (JSON object, <function=, or
+        # `name<tool_sep>` / `name<arg_key>`): prose that merely mentions
+        # "<tool_call>" after a real call must survive.
+        r'<tool_call>\s*(?:\{|<function\s*=|[A-Za-z_][\w.\-]*\s*(?:<tool_sep\s*>|<arg_key\s*>))(?:(?!</tool_call>).)*\Z',
         # HY V3 outer wrapper left empty once its <tool_call> blocks are removed.
         r'<tool_calls\s*>\s*</tool_calls\s*>',
         r'```tool_code.*?```',
