@@ -582,3 +582,8 @@ def test_gguf_sampler_keeps_explicit_zeros_and_registry_defaults() -> None:
     assert defaults["min_p"] == 0.05
     p.top_k = 0  # provider-level setting (e.g. create_llm(..., top_k=0))
     assert p._gguf_control_plane_sampler({}, {})["top_k"] == 0
+
+
+@pytest.mark.parametrize("name", ["healthy-memory-7b", "why-memory-test", "rhymemory-1b", "empathy-memory", "acme/healthy-memory-7b-gguf"])
+def test_unrelated_memory_names_do_not_detect_as_hy_v3(name: str) -> None:
+    assert detect_architecture(name) != "hy_v3"

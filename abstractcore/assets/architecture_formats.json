@@ -1285,12 +1285,10 @@
         "repeat_penalty": 1.0
       },
       "patterns": [
-        "hy-memory",
-        "hy_memory",
-        "hymemory",
         "tencent/hy-memory",
-        "hy-memory-30b-a3b",
-        "hy-memory-step250",
+        "/hy-memory",
+        "hy-memory-30b",
+        "hy-memory-step",
         "hy3a3b",
         "hy3a3b-memrl1009-step250"
       ]

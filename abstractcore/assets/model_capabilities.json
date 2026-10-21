@@ -9594,7 +9594,6 @@
         "Hy-Memory-Step250-Q8_0.gguf",
         "hy3a3b-memrl1009-step250",
         "hy-memory-step250",
-        "hy-memory",
         "hy-memory-30b-a3b-fp8",
         "hy-memory-30b-a3b-gguf"
       ],
