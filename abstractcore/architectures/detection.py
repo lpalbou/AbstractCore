@@ -280,6 +280,9 @@ def _partial_match_is_prefix_aligned(name_lower: str, key_lower: str) -> bool:
     return longer[len(shorter)] in _MODEL_NAME_BOUNDARY_CHARS
 
 
+_HF_CACHE_SNAPSHOT_RE = re.compile(r"models--([^/]+?)--([^/]+)/snapshots/[^/]+(?:/(?:.*/)?([^/]+))?/?$")
+
+
 def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     """
     Resolve a model name to its canonical name by checking aliases.
@@ -310,6 +313,21 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     if model_name in models:
         _resolved_aliases_cache[model_name] = model_name
         return model_name
+
+    # A Hugging Face cache snapshot PATH (`.../models--org--name/snapshots/<rev>[/file]`)
+    # names its repo only in the `models--` segment; the tail is a revision hash (or a
+    # file). Resolve it as the repo id (then the file name), so a request made through
+    # the local path gets the same registry entry as one made through the repo id.
+    snapshot = _HF_CACHE_SNAPSHOT_RE.search(str(model_name or "").replace("\\", "/"))
+    if snapshot:
+        repo_id = f"{snapshot.group(1)}/{snapshot.group(2)}"
+        for candidate in (repo_id, snapshot.group(3)):
+            if not candidate:
+                continue
+            resolved = resolve_model_alias(candidate, models)
+            if resolved in models:
+                _resolved_aliases_cache[model_name] = resolved
+                return resolved
     direct_lower_match = canonical_lower_map.get(str(model_name or "").strip().lower())
     if direct_lower_match is not None:
         _resolved_aliases_cache[model_name] = direct_lower_match

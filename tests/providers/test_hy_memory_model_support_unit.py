@@ -482,3 +482,21 @@ def test_gguf_hook_declines_off_the_embedded_template_lane(monkeypatch) -> None:
     kwargs, handling = p._apply_provider_thinking_kwargs(enabled=False, level=None, kwargs={}, request_shape={})
     assert "_acore_gguf_reasoning_effort" not in kwargs
     assert not handling.handled_enable_disable
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/Users/u/.cache/huggingface/hub/models--tencent--Hy-Memory-30B-A3B/snapshots/64a460a94d5498b7316fb02395c72d01c47a7347",
+        "/Users/u/.cache/huggingface/hub/models--tencent--Hy-Memory-30B-A3B/snapshots/64a460a94d5498b7316fb02395c72d01c47a7347/",
+        "/Users/u/.cache/huggingface/hub/models--tencent--Hy-Memory-30B-A3B-GGUF/snapshots/7778309f/hy3a3b-memrl1009-step250-Q4_K_M-imat.gguf",
+    ],
+)
+def test_hf_cache_snapshot_paths_resolve_to_the_model_entry(path: str) -> None:
+    # The tail of a snapshot path is a revision hash; without resolving the
+    # `models--org--name` segment a request through the local path fell back to
+    # architecture defaults (16384 context, no effort switch).
+    caps = get_model_capabilities(path)
+    assert caps["architecture"] == "hy_v3"
+    assert caps["max_tokens"] == 262144
+    assert caps["thinking_control"]["effort_disable_value"] == "no_think"
