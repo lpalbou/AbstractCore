@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.26.4] - 2026-10-21
+
 ### Added
 
-- **Tencent Hy-Memory-30B-A3B** (`hy_v3`, 30B total / 3B active MoE; specialty seems to be a
-  long-term memory writer): registry architecture `hy_v3` and model `hy-memory-30b-a3b`, with
+- **AI agent skill** at `skills/abstractcore/SKILL.md`, with portable Python integration and
+  operating recipes for provider selection, bounded generation, sessions, streaming, typed
+  extraction, host-controlled tools, embeddings, model management and HTTP serving. See
+  [Integrating and operating AbstractCore](docs/agent-usage.md) for the canonical guide.
+- **Tencent Hy-Memory-30B-A3B** (`hy_v3`, 30B total / 3B active MoE, for long-term memory
+  extraction): registry architecture `hy_v3` and model `hy-memory-30b-a3b`, with
   aliases for the BF16, FP8 and GGUF repositories and the three GGUF file names. Runs through
   `huggingface` (transformers and GGUF) and `mlx`.
 - **MLX `hy_v3` model class** (`abstractcore/providers/mlx_hy_v3.py`). mlx-lm ships none; the
@@ -65,12 +71,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   experts loop when torch has no `grouped_mm` kernel on the device (torch 2.8: CPU and MPS).
 - A Hugging Face cache snapshot path (`.../models--org--name/snapshots/<revision>`) resolves to
   the repository's registry entry; it used to fall back to architecture defaults.
-- Transformers on Apple/MPS: torch 2.8.x gets a load-time warning. Its causal
+- Transformers on Apple/MPS: torch 2.8.x and 2.10.x get a load-time warning. Their causal
   `scaled_dot_product_attention` in float16/bfloat16 is wrong past about 20 prompt tokens
   (`ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager` avoids it).
 
 ### Changed
 
+- Documentation includes agent-skill registration, explicit credential handling, retry and
+  timeout defaults, and matching AI-readable indexes for version 2.26.4.
 - GLM / Laguna `<arg_key>` tool calls cut inside an argument value (with or without a closing
   `</tool_call>`) are no longer executed with that argument missing; they are reported as
   unparsed. Before the HY V3 work they ran with the truncated argument silently dropped.

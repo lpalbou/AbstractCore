@@ -28,7 +28,7 @@ Providers that don't support certain parameters:
 ```python
 AbstractCoreInterface (interface.py)
 ├── temperature: float = 0.7        # Interface-level default
-├── seed: Optional[int] = None       # Interface-level default
+├── seed: Optional[int] = -1         # Random; no seed forwarded
 ├── thinking: Optional[bool|str] = None  # Unified thinking/reasoning control (best-effort)
 └── _validate_parameters()           # Validation logic
 
@@ -46,6 +46,12 @@ Individual Providers
 ```
 
 ## Parameter Hierarchy
+
+Token budgets use `max_tokens` for input plus output, and `max_output_tokens` for generation.
+Set the output cap explicitly: an omitted cap can use a provider's full output capability.
+Ollama's thinking path raises a smaller cap to a minimum output budget: 1024 for `minimal`,
+2048 for `low` or boolean on, 4096 for `medium`, 8192 for `high`. Use `thinking=False` when
+enforcing a small output cap. See [bounded integration recipes](agent-usage.md).
 
 Parameters follow a clear precedence order:
 
@@ -75,7 +81,7 @@ Parameters follow a clear precedence order:
 
 5. **Interface defaults** (lowest priority)
    ```python
-   # temperature=0.7, seed=None (from AbstractCoreInterface)
+   # temperature=0.7, seed=-1 (random; no seed forwarded)
    ```
 
 ### Override Guarantee
@@ -219,33 +225,6 @@ session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_c
 session.generate("Hello")
 ```
 
-## Code Quality Benefits
-
-### Before (Duplicated Code)
-```python
-# In each provider:
-self.temperature = kwargs.get("temperature", 0.7)
-self.seed = kwargs.get("seed", None)
-# ... parameter extraction logic in each provider
-```
-
-### After (Centralized)
-```python
-# In AbstractCoreInterface:
-def __init__(self, ..., temperature: float = 0.7, seed: Optional[int] = None):
-    self.temperature = temperature
-    self.seed = seed
-
-# In BaseProvider:
-def _extract_generation_params(self, **kwargs) -> Dict[str, Any]:
-    return {
-        "temperature": kwargs.get("temperature", self.temperature),
-        "top_p": kwargs.get("top_p", getattr(self, "top_p", None)),
-        "top_k": kwargs.get("top_k", getattr(self, "top_k", None)),
-        "seed": kwargs.get("seed", self.seed) if self.seed is not None else None
-    }
-```
-
 ## Future Extensibility
 
 Adding new common parameters requires:
@@ -255,14 +234,6 @@ Adding new common parameters requires:
 4. Provider-specific mapping where supported
 
 Provider constructors should only keep provider-specific state. Common defaults should flow through the base fallback hierarchy.
-
-## Testing Strategy
-
-Parameters are tested at multiple levels:
-- **Interface level**: Parameter inheritance and defaults
-- **Provider level**: Native API integration and fallback behavior
-- **Session level**: Parameter persistence and override behavior
-- **Integration level**: End-to-end parameter flow
 
 ## Performance Considerations
 
@@ -283,11 +254,9 @@ Determinism across LLM providers is **not guaranteed**. When supported, Abstract
 controls to providers/backends and recommends `temperature=0` to reduce randomness, but results can
 still vary with backend settings, hardware, and model/server updates.
 
-To verify determinism for your exact provider/model/backend, run:
-
-```bash
-python tests/manual_seed_verification.py
-```
+To compare repeatability, keep the prompt, exact weights, backend, seed and generation budgets
+fixed, then compare complete outputs from repeated calls. A matching seed is not a guarantee
+of identical output across machines or backends.
 
 **Provider-Specific Implementations**:
 - **OpenAI**: Native `seed` parameter in API

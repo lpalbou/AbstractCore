@@ -6,6 +6,11 @@ AI assistants and documentation indexers can use the repository-level
 `llms.txt` and `llms-full.txt` files. MCP clients such as Context7 can also
 query the public documentation directly.
 
+For agents writing integrations or operating an installation, load the
+[`abstractcore` skill](../skills/abstractcore/SKILL.md) with its `references/` folder.
+The [integration and operations guide](agent-usage.md) is the canonical documentation for
+its bounded generation, tool-loop, configuration and lifecycle recipes.
+
 ## AbstractFramework ecosystem
 
 AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
@@ -27,6 +32,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 
 ## Core guides
 
+- **[Integrating and operating AbstractCore](agent-usage.md)** — version verification, explicit endpoints, bounded Python recipes, host-controlled tools, model lifecycle, serving and troubleshooting; companion to the package agent skill
 - **[Tool Calling](tool-calling.md)** — native + prompted tools; passthrough vs execution
 - **[Tool Syntax Rewriting](tool-syntax-rewriting.md)** — normalize tool-call markup for different runtimes/clients
 - **[Email](email.md)** — connect one IMAP/SMTP account (password or OAuth2), encrypted credentials, recipient policy (allowlist / denylist), send limits, read-only mailbox, email tools, `abstractcore email ...`, the consoles' Email pages and the `abstractcore.comms.email` library

@@ -708,11 +708,12 @@ class RetryConfig:
     use_jitter: bool = True
     failure_threshold: int = 5
     recovery_timeout: float = 60.0
-    half_open_max_calls: int = 2
+    half_open_max_calls: int = 3
+    max_total_wall_clock_s: Optional[float] = None
 ```
 
 **Parameters:**
-- `max_attempts` (int): Maximum retry attempts
+- `max_attempts` (int): Maximum attempts including the initial call
 - `initial_delay` (float): Initial delay in seconds
 - `max_delay` (float): Maximum delay in seconds
 - `exponential_base` (float): Base for exponential backoff
@@ -720,6 +721,11 @@ class RetryConfig:
 - `failure_threshold` (int): Circuit breaker failure threshold
 - `recovery_timeout` (float): Circuit breaker recovery timeout
 - `half_open_max_calls` (int): Max calls in half-open state
+- `max_total_wall_clock_s` (float or None): Budget for starting further retries; does not interrupt an in-flight attempt. Constructor shorthand: `retry_wall_clock_budget_s`.
+
+`RetryConfig.single_attempt()` sets `max_attempts=1` for hosts that already own retries.
+Structured-output `FeedbackRetry` is a separate validation budget; see the
+[bounded integration recipes](agent-usage.md).
 
 **Example:**
 ```python

@@ -64,6 +64,20 @@ For AI assistants and doc-indexing tools, this repository also publishes
 [`llms.txt`](llms.txt) and [`llms-full.txt`](llms-full.txt). MCP clients such as
 Context7 can query the public documentation directly as well.
 
+## For AI agents
+
+Register and use the [`abstractcore` agent skill](https://github.com/lpalbou/AbstractCore/tree/main/skills/abstractcore)
+to write integrations and operate the Python API, CLI and HTTP server. Start by reading
+[`skills/abstractcore/SKILL.md`](https://raw.githubusercontent.com/lpalbou/AbstractCore/main/skills/abstractcore/SKILL.md);
+keep its `references/` folder alongside it when copying the skill into your agent's skill directory.
+In a source checkout, tell another agent: **Read `skills/abstractcore/SKILL.md` and use its
+references for this task.**
+
+The skill covers provider and artifact selection, token/time/cost limits, host-controlled
+tools, sessions, typed output, media and diagnostics. The canonical
+[integration and operations guide](docs/agent-usage.md) contains the same supported workflows;
+source contributors should also read [Contributing](CONTRIBUTING.md).
+
 ## Why AbstractCore
 
 Many libraries can call an LLM. AbstractCore is for the messy middle of real

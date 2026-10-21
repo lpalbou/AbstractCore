@@ -437,7 +437,7 @@ the next turn replaces, so the forward-only restore had nothing to extend. The b
 described in [Which turn reuse starts on](#which-turn-reuse-starts-on) excludes that scaffolding, and
 a CPU reproduction with the real tokenizer and renderer turns this sequence into
 `rebuilt, hit_restore, hit_restore, hit_restore`. Hardware confirmation is
-[pending measurement 1](#pending-measurements). Read the hybrid column as the shape of the failure
+[measurement coverage](#measurement-coverage). Read the hybrid column as the shape of the failure
 mode to watch for in your own ledger, not as a cost to plan around.
 
 † **Hybrid-architecture note (Qwen3.5-class on MLX).**
@@ -507,7 +507,7 @@ Read `outcome` per turn from `metadata.prompt_cache` on your own workload rather
 turn number: `hit_restore` means the boundary was reused, `rebuilt` means it was not. Recorded
 per-turn results for specific models are in
 [Which models have been measured](#mlx-mlxprovider); the hybrid turn-2 outcome under the current
-boundary selection is a [pending measurement](#pending-measurements).
+boundary selection is a [measurement coverage](#measurement-coverage).
 
 ### End-to-end sessions through a client
 
@@ -681,7 +681,7 @@ architectures take the snapshot/restore path instead.
 | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | dense, full attention | Four-turn agent loop at 10k, one key | `cold`, then `hit_extend` on every later turn; no rebuild |
 | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | dense, full attention | Four-turn client session through the gateway at ~13k tokens | `hit_extend` on all 96 model calls; 86–90% of prompt tokens reused per turn (reuse only — no valid uncached control in that run) |
 | `Qwen3.5-4B-MLX-4bit` | hybrid | Prefill probe at 10k and 30k, 7 and 3 reps | ×50 and ×113 vs no cache; 99.52% / 99.84% reused; the 10k gate passes, the 30k gate is UNTESTED |
-| `Qwen3.5-4B-MLX-4bit` | hybrid | Four-turn agent loop at 10k, one key | Turn 2 `rebuilt`, turns 3–4 `hit_restore` — boundary-scoped, see [pending measurement 1](#pending-measurements) |
+| `Qwen3.5-4B-MLX-4bit` | hybrid | Four-turn agent loop at 10k, one key | Turn 2 `rebuilt`, turns 3–4 `hit_restore` — boundary-scoped, see [measurement coverage](#measurement-coverage) |
 | `Ornith-1.0-9B-4bit` | hybrid | Prefill probe at 10k and 30k, 7 reps | ×233 and ×147 vs no cache; 99.52% / 99.84% reused; the 10k gate passes, the 30k gate is UNTESTED |
 | `Qwen3.6-27B-4bit` | hybrid | Prefill probe at 10k and 30k, 7 reps | ×46 and ×162 vs no cache; 99.52% / 99.84% reused; **both gates pass** |
 | `Qwen3.6-35B-A3B-4bit` | hybrid | Prefill probe at 10k and 30k, 7 reps | ×17 and ×101 vs no cache; 99.52% / 99.84% reused; gates pass |
@@ -916,29 +916,20 @@ and it does not report which. Note that `torch.nn.attention.sdpa_kernel(...)` ca
 a backend on MPS — the selection op is not implemented there, so all backends produce identical
 results.
 
-## Pending measurements
+## Measurement coverage
 
-These cells are named so that the absence of a number is explicit rather than implied. Each one
-states the model, the context tier, and the quantity to be measured, so a result can be dropped in
-without renegotiating the method. Until a cell is filled, treat it as UNTESTED and do not infer it
-from a related model.
+Treat an absent measurement as **untested**; do not infer it from a related model or a
+successful cache restore. The published matrix does not establish:
 
-| # | Lane | Model | Context | Quantity to measure | Result |
-|---|---|---|---|---|---|
-| 1 | MLX | `Qwen3.5-4B-MLX-4bit` (hybrid) | 10k | Per-turn `outcome` over a four-turn agent loop under the current boundary selection — specifically whether turn 2 reports `hit_restore` with `cached ≈ turn 1 length − 7`, or still `rebuilt` | _pending_ |
-| 2 | MLX | `Qwen3.5-4B-MLX-4bit`, `Ornith-1.0-9B-4bit` (hybrid) | 30k | Correctness gate (three planted-fact depths, both controls) for the 30k timing rows | _pending_ |
-| 3 | MLX | any hybrid | 100k | Prefill probe at the 100k tier — only the dense `Qwen3-4B-Instruct-2507-4bit` has one | _pending_ |
-| 4 | transformers | `Qwen/Qwen3.6-27B` (bf16) | 30k | A cold arm tight enough to publish as a point estimate rather than the ×101–×1,200 range in [the matrix](#the-measured-matrix); the constraint is a genuinely idle host, not headroom | _pending_ |
-| 5 | GGUF / llama.cpp | `Qwen3.6-35B-A3B-GGUF` | 10k | A cell that passes its own warm-arm checks — the existing one does not, so no number is published for it | _pending_ |
-| 6 | transformers | Qwen3-Next, Jamba, LFM2 (bf16) | 10k | Snapshot-lane warm vs cold prefill and the correctness gate on hybrid families other than Qwen3.5/Qwen3.6/Ornith | _pending_ |
-| 7 | MLX, GGUF | `Ornith-1.0-9B` unquantized | 10k, 30k | The other halves of the quantization control — only the transformers lane has both a bf16 and a 4-bit row of one model | _pending_ |
-| 8 | GGUF / llama.cpp | the three cells published as ranges | 30k | Cold arms tight enough to publish those rows as point estimates rather than ranges | _pending_ |
-| 9 | MLX | any hybrid above 4B | 10k | End-to-end bloc gate (`ABSTRACTCORE_RUN_BLOC_GATE=1`): determinism control, context-dependence control, planted-fact recall at three depths, prefix-reuse telemetry | _pending_ |
+- turn-2 `hit_restore` for the four-turn, 10k-token `Qwen3.5-4B-MLX-4bit` hybrid loop;
+- three-depth planted-fact correctness for the hybrid MLX 30k timing rows, or 100k hybrid prefill;
+- snapshot-lane cold/warm behavior for Transformers Qwen3-Next, Jamba and LFM2;
+- matched unquantized MLX/GGUF `Ornith-1.0-9B` controls at 10k and 30k;
+- an end-to-end 10k+ bloc-reuse result for an MLX hybrid larger than 4B.
 
-Cell 7 needs unquantized MLX and GGUF builds of that model, which do not exist on the measurement
-host. The GGUF lane has no uncached baseline inside a live process, so its cold arm resets per
-repetition and is validated against a fresh-process cold prefill. Every transformers cell needs a
-bounded output budget.
+The `Qwen/Qwen3.6-27B` Transformers 30k cold result and three GGUF 30k cold results are
+ranges, not point estimates. The `Qwen3.6-35B-A3B-GGUF` 10k row has no accepted warm result.
+Keep those qualifications when comparing ratios in [the matrix](#the-measured-matrix).
 
 ## Verifying that a cache is helping
 
@@ -1002,7 +993,7 @@ Five checks, in order. Each one rules out a different way a cache can look healt
 
 ## Watching the cache split live
 
-`metadata.prompt_cache` is a post-mortem: it arrives with the answer. A caller
+`metadata.prompt_cache` is a completion summary: it arrives with the answer. A caller
 that needs to SHOW what the cache did while the call is running subscribes to
 phase events instead (MLX lanes only today — see
 [native MLX runtime](native-mlx-runtime.md#live-phase-feedback-prefill-vs-generation)):
@@ -1456,31 +1447,11 @@ degrades loudly rather than pretending:
    falls. Changing them changes every bloc's bytes under unchanged keys. Treat
    them as part of the cache format: bump `version` if you must touch them.
 
-### Proofs
+### Renderer validation coverage
 
-- `tests/test_prompt_cache_bloc_composition.py` — token-level composition for
-  N = 1, 2, 3 across four real local tokenizers (Qwen3-4B, gemma-4-31b,
-  Ornith-9B, Qwen3.5-4B — loaded the same way the runtime loads them, so the
-  fixture cannot validate a token stream production never emits) plus
-  deterministic toy tokenizers whose merges straddle seams and whose
-  post-processor injects a BOS on every encode; successor independence;
-  whitespace canonicalization; exactly-one sequence-start token across the whole
-  chain; the `#FALLBACK` collapse; and the composition-position verdicts. A hard
-  module-level assert requires ≥3 real tokenizers, so the suite cannot go green
-  on a box that has none.
-  **Not covered by a real tokenizer:** the `llama3_header` family — no Llama 4B+
-  model is installed locally and substituting a smaller sibling is inadmissible.
-  Its hazard (post-processor BOS on every encode) is reproduced deterministically
-  by `ToyAutoBosTokenizer`; the family itself is UNTESTED against real weights.
-- `tests/test_bloc_kv.py` — the composition gate refusing a shifted offset and a
-  changed prefix chain **at load**, and abstaining with a `#FALLBACK` for
-  pre-axis artifacts.
-- `tests/test_prompt_cache_bloc_e2e_gate.py` — the end-to-end gate at 10k+
-  tokens (opt-in: `ABSTRACTCORE_RUN_BLOC_GATE=1`), with a determinism control, a
-  context-dependence control, planted-fact recall at ~5%/50%/95% depth, and a
-  prefix-reuse telemetry gate.
-- `tests/providers/test_mlx_single_system_block_unit.py` — pins the standalone
-  per-module render **as a defect**, so the chain can never be reconnected to it.
+The composition coverage includes Qwen3-4B, Gemma-4-31B, Ornith-9B and Qwen3.5-4B tokenizer
+families. The `llama3_header` family is untested against real weights in this coverage; a
+synthetic tokenizer check is not a model-level guarantee.
 
 ## File attachments as cache “boxes”
 
@@ -1619,8 +1590,3 @@ allocation drops by the freed amount even when RSS does not move (see
 - GGUF / llama.cpp: if you see crashes with Metal/MPS acceleration, force CPU for stability:
   - per-call/provider init: `create_llm("huggingface", ..., device="cpu", n_gpu_layers=0, ...)`
   - env override: `ABSTRACTCORE_HF_DEVICE=cpu`
-
-## Next steps (unification ideas)
-
-- Add retry-based fallbacks for OpenAI-compatible servers that reject cache-related fields.
-- Extend exact cached-prompt renderers to additional GGUF chat formats without weakening the control-plane contract.

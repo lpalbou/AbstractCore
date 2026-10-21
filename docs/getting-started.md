@@ -59,15 +59,24 @@ Open-source-first: start with local providers (Ollama, LMStudio, MLX, HuggingFac
 Gateway providers (OpenRouter, Portkey) examples:
 
 ```python
+import os
 from abstractcore import create_llm
 
 llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")
-llm_portkey = create_llm("portkey", model="gpt-5-mini", api_key="PORTKEY_API_KEY", config_id="pcfg_...")
+llm_portkey = create_llm(
+    "portkey", model="gpt-5-mini",
+    api_key=os.environ["PORTKEY_API_KEY"], config_id=os.environ["PORTKEY_CONFIG"],
+)
 ```
 
 Note: gateway providers only forward optional generation params (e.g. `temperature`, `top_p`, `max_output_tokens`) when you explicitly set them.
 
 ## Your first call
+
+For explicit timeouts, token budgets, complete-result checks and a host-controlled tool loop,
+see [Integrating and operating AbstractCore](agent-usage.md). AI agents can load the portable
+[`abstractcore` skill](../skills/abstractcore/SKILL.md) and its references before writing code
+or operating an installation.
 
 OpenAI example (works with the light install; set `OPENAI_API_KEY`):
 
@@ -267,7 +276,7 @@ Audio and video attachments are also supported, but they are **policy-driven** (
 - audio: `audio_policy` (`native_only|speech_to_text|auto|caption`)
 - video: `video_policy` (`native_only|frames_caption|auto`)
 
-Speech-to-text fallback (`audio_policy="speech_to_text"`) typically requires installing `abstractvoice` (capability plugin).
+Speech-to-text fallback (`audio_policy="speech_to_text"`) uses the AbstractVoice plugin included in the light install; local speech engines require the `apple` or `gpu` setting.
 
 What you need (quick checklist):
 - **Images**: either a vision-capable model (VLM/VL) **or** configured vision fallback (`abstractcore --set-vision-provider PROVIDER MODEL`).

@@ -4,6 +4,7 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 
 ## Table of Contents
 
+- [Agent Integration Failures](#agent-integration-failures)
 - [Common Mistakes to Avoid](#common-mistakes-to-avoid)
 - [Quick Diagnosis](#quick-diagnosis)
 - [Installation Issues](#installation-issues)
@@ -16,6 +17,23 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 - [Debug Techniques](#debug-techniques)
 
 ---
+
+## Agent integration failures
+
+For a version/import check, explicit endpoint discovery, bounded generation and complete-result
+checks, use [Integrating and operating AbstractCore](agent-usage.md). The portable
+[`abstractcore` skill](../skills/abstractcore/SKILL.md) contains the same procedures.
+
+- **Code and installed version differ:** run the verification recipe in that guide and reinstall
+  in the same Python environment; check for a source checkout shadowing another installation.
+- **401/403:** stop and check the selected endpoint's credential. With server authentication,
+  the bearer token authenticates to AbstractCore; `X-AbstractCore-Provider-API-Key` selects an
+  upstream override. Do not interchange them or retry a login automatically.
+- **No text or `finish_reason="length"`:** inspect tool calls and reasoning, reject cutoff
+  output, then adjust the output budget or prompt. Never execute incomplete/unparsed tools.
+- **Known issue (2.26.4), `TypeError` decoding a native structured response:** a provider can
+  return `content=None`. Catch `TypeError` at the extraction boundary and report failed
+  extraction; do not substitute default field values. See the guide's typed-extraction recipe.
 
 ## Common Mistakes to Avoid
 
@@ -160,17 +178,18 @@ def generate_with_fallback(prompt):
 
 **Solution:**
 ```python
-# Optimize memory and performance
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini", timeout=30, max_tokens=4096)
 response = llm.generate(
     "Complex task",
-    max_tokens=1000,  # Limit response length
-    timeout=30,       # Set reasonable timeout
-    temperature=0.7   # Control creativity/randomness
+    max_output_tokens=1000,  # Output cap; max_tokens is the input + output budget
+    temperature=0.7,
 )
 ```
 
 **Prevention:**
-- Always set `max_tokens`
+- Set total context (`max_tokens`) and generation (`max_output_tokens`) budgets explicitly
 - Use streaming for long responses
 - Monitor memory usage in production
 - See: [Performance Issues](#performance-issues)
@@ -951,7 +970,7 @@ Follow these best practices to avoid issues:
 - Monitor error rates in production
 
 ### Performance
-- Always set `max_tokens`
+- Set total context (`max_tokens`) and generation (`max_output_tokens`) budgets explicitly
 - Use streaming for long responses
 - Batch similar requests when possible
 - Monitor memory usage

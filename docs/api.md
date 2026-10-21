@@ -4,6 +4,10 @@ This page is a user-facing map of the **public Python API** exposed from `abstra
 
 New to AbstractCore? Start with **[Getting Started](getting-started.md)**.
 
+For bounded, complete integration recipes and operating procedures, see
+[Integrating and operating AbstractCore](agent-usage.md) and the
+[`abstractcore` agent skill](../skills/abstractcore/SKILL.md).
+
 Implementation pointers (source of truth):
 - `create_llm`: `abstractcore/core/factory.py` → `abstractcore/providers/registry.py`
 - `BasicSession`: `abstractcore/core/session.py`
@@ -45,10 +49,14 @@ does not itself enable MTP execution in HuggingFace or GGUF providers.
 ### Gateway providers (OpenRouter, Portkey)
 
 ```python
+import os
 from abstractcore import create_llm
 
 llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")
-llm_portkey = create_llm("portkey", model="gpt-5-mini", api_key="PORTKEY_API_KEY", config_id="pcfg_...")
+llm_portkey = create_llm(
+    "portkey", model="gpt-5-mini",
+    api_key=os.environ["PORTKEY_API_KEY"], config_id=os.environ["PORTKEY_CONFIG"],
+)
 ```
 
 Gateway notes:
@@ -139,6 +147,30 @@ Most calls return a `GenerateResponse` object (or an iterator of them for stream
 - `tool_calls`: structured tool calls (pass-through by default)
 - `usage`: token usage (provider-dependent)
 - `metadata`: provider/model specific fields (for example extracted reasoning text when configured)
+
+`finish_reason="length"` marks an incomplete answer. Tool-only or reasoning-only responses
+can have empty `content`; inspect those channels before treating a turn as an empty failure.
+`usage=None` means usage is unavailable, not zero. A call with `response_model=` returns a
+validated Pydantic instance instead of `GenerateResponse`. With `output=`, the result is a
+`MultimodalGenerateResponse` (see [Request and Output](request-output.md)).
+
+### Errors and retry boundaries
+
+Catch `abstractcore.exceptions.AbstractCoreError` at your application boundary. Its subclasses
+distinguish authentication, model/artifact selection, provider/API/rate-limit failures,
+unsupported features, media processing and cancellation. Authentication failures require a
+configuration fix before another request; `GenerationCancelledError` is never retried.
+Invalid arguments can raise `ValueError`, missing engines `ImportError`, exhausted schema
+validation `pydantic.ValidationError`, and backend/transport paths can raise `RuntimeError`
+or `httpx.HTTPError`. Structured cache-operation errors derive from `RuntimeError` and carry
+`operation`, `code` and `capabilities`; see [Prompt Caching](prompt-caching.md).
+
+Provider retries and structured-output validation retries are separate. Use
+`RetryConfig.single_attempt()` when your host owns retries, and `FeedbackRetry(max_attempts=1)`
+when limiting schema attempts. OpenAI and Anthropic SDK clients also default to 2 retries;
+AbstractCore's `RetryConfig` does not change the SDK layer. Defaults, bounded examples and
+failure handling are in
+[Integrating and operating AbstractCore](agent-usage.md).
 
 ## Stopping a generation and progress events
 

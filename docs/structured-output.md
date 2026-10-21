@@ -78,9 +78,9 @@ AbstractCore implements two distinct strategies for structured output generation
 
 **Characteristics**:
 - Server-side schema validation
-- Zero client-side validation retries required
-- Deterministic schema compliance
-- Optimal performance for production workloads
+- Backend schema constraints where supported
+- Client-side validation, with fallback/retry for invalid native results
+- Success and latency depend on backend, model and schema
 
 **Validation**:
 - Structured output behavior is covered by automated tests in this repo (see `tests/structured/`).
@@ -744,38 +744,23 @@ Historical benchmark notes (non-authoritative) may exist under `docs/reports/`.
 
 ### Error Categories
 
-#### 1. Infrastructure Errors (Retriable)
+#### 1. Infrastructure errors and retry ownership
 
-Network failures, timeouts, server unavailability—retry with exponential backoff:
+Provider-level retry and structured-output validation retry are separate budgets. Handle
+`AbstractCoreError` and transport/backend errors at the application boundary as described in
+[API error handling](api.md#errors-and-retry-boundaries). Authentication errors require fixing
+configuration before another call. Do not add an unconditional outer retry around a provider
+that already retries.
 
-```python
-import time
-from requests.exceptions import ConnectionError, Timeout
+Use `RetryConfig.single_attempt()` when your host owns infrastructure retries, and
+`FeedbackRetry(max_attempts=1)` when it also needs one schema attempt. The default
+`FeedbackRetry` permits 3 attempts including the first. A length-cutoff response is rejected by
+default even if its JSON validates; the handler may retry with a larger output budget.
+See [bounded typed extraction](agent-usage.md#typed-extraction) for a complete example.
 
-def generate_with_retry(llm, prompt, response_model, max_retries=3):
-    """Retry infrastructure errors with exponential backoff"""
-    for attempt in range(max_retries):
-        try:
-            return llm.generate(
-                prompt,
-                response_model=response_model,
-                temperature=0
-            )
-        except (ConnectionError, Timeout) as e:
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
-                time.sleep(wait_time)
-                continue
-            raise
-
-result = generate_with_retry(llm, "Extract data...", DataModel)
-```
-
-**Retriable errors**:
-- `ConnectionError`: Network connectivity issues
-- `TimeoutError`: Request timeout
-- HTTP 5xx: Server errors
-- Token limit exceeded (retry with simplified schema or chunking)
+Known issue (2.26.4): a native response with `content=None` can raise `TypeError` while decoding
+JSON. Catch it at the extraction boundary and treat the extraction as failed. Do not replace
+missing model output with an empty object or invented fields.
 
 #### 2. Validation Errors (Non-Retriable)
 

@@ -144,16 +144,15 @@ resp = llm.generate(
     system_prompt='Extract explicit user facts. Return only a JSON object with a "memories" list of strings.',
     thinking=False,
     temperature=0.0,
-    max_tokens=512,
+    max_output_tokens=512,
 )
 ```
 
-On Apple/MPS with torch 2.8, `scaled_dot_product_attention(is_causal=True)` in bfloat16 or
-float16 returns wrong values once a prompt is longer than about 20 tokens (measured against a
-float64 reference: maximum error 3.5 on unit-scale inputs; float32 and an explicit mask are
-exact). Every half-precision transformers model on that stack is affected; for
-Hy-Memory-30B-A3B the BF16 checkpoint produced unusable text. AbstractCore warns at load on
-torch 2.8.x; run with `ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager`, or upgrade torch.
+On Apple/MPS with torch 2.8.x or 2.10.x, causal `scaled_dot_product_attention` in bfloat16 or
+float16 can return numerically incorrect values beyond about 20 prompt tokens. torch 2.10.x
+also has a decode-with-KV-cache correctness issue (see [Prompt Caching](prompt-caching.md)).
+AbstractCore warns at load on these versions. Set `ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager`
+or upgrade torch; the documented prompt-cache lane requires torch >= 2.11 on Apple silicon.
 
 MLX conversions are made with mlx-lm's own `convert`, with AbstractCore's class registered as
 `mlx_lm.models.hy_v3`:

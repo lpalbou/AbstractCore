@@ -30,6 +30,11 @@ pip install -e ".[gpu,dev,test]"     # NVIDIA / AMD: vLLM, HuggingFace/GGUF, loc
 
 ## Repository conventions
 
+AI contributors can read the [`abstractcore` package skill](skills/abstractcore/SKILL.md)
+and [integration and operations guide](docs/agent-usage.md) to learn the supported API and CLI
+before editing a provider or host integration. Use this contribution guide for source changes,
+and keep the skill, canonical docs and LLM indexes aligned with public behavior.
+
 ### Dependency and import-safety policy (important)
 
 AbstractCore has exactly three install settings (see [Installation](docs/installation.md)):
