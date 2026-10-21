@@ -452,9 +452,14 @@ class OpenAICompatibleProvider(BaseProvider):
             if surfaces.effort_is_switch():
                 # Effort SWITCH (HY V3 / Hy-Memory): `reasoning_effort` has a real OFF
                 # value (`no_think`), so thinking="off" must send it instead of the
-                # lowest level below. Sent top-level (llama-server forwards it into the
-                # template, per the model's GGUF card) and, where the backend accepts
-                # them, as chat_template_kwargs (vLLM's documented transport).
+                # lowest level below. Transports:
+                # - chat_template_kwargs (vLLM's documented one; llama-server too) carry
+                #   every value, including `no_think`, where the backend accepts them;
+                # - the top-level OpenAI `reasoning_effort` carries ONLY the OpenAI enum
+                #   (low/medium/high): a validating server answers 400 to `no_think`.
+                #   llama-server forwards the top-level field into the template.
+                # Off with no template-kwargs transport is declined (the template's own
+                # default is no_think, and the base ladder says no control was sent).
                 from ..architectures.thinking_controls import effort_switch_value
 
                 value = effort_switch_value(
@@ -462,13 +467,26 @@ class OpenAICompatibleProvider(BaseProvider):
                 )
                 if value is None:
                     return kwargs, ThinkingControlHandling()
+                openai_enum = value in {"low", "medium", "high"}
+                can_template = bool(template_kwargs_supported and surfaces.effort_template_kwarg)
+                if not openai_enum and not can_template:
+                    return kwargs, ThinkingControlHandling()
                 new_kwargs = dict(kwargs)
-                new_kwargs["reasoning_effort"] = value
-                if template_kwargs_supported and surfaces.effort_template_kwarg:
+                if openai_enum:
+                    new_kwargs["reasoning_effort"] = value
+                if can_template:
                     ctk = new_kwargs.get("chat_template_kwargs")
                     ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
                     ctk_dict[surfaces.effort_template_kwarg] = value
                     new_kwargs["chat_template_kwargs"] = ctk_dict
+                    if provider_id == "lmstudio":
+                        eb = new_kwargs.get("extra_body")
+                        eb_dict: Dict[str, Any] = dict(eb) if isinstance(eb, dict) else {}
+                        eb_ctk = eb_dict.get("chat_template_kwargs")
+                        eb_ctk_dict: Dict[str, Any] = dict(eb_ctk) if isinstance(eb_ctk, dict) else {}
+                        eb_ctk_dict.update(ctk_dict)
+                        eb_dict["chat_template_kwargs"] = eb_ctk_dict
+                        new_kwargs["extra_body"] = eb_dict
                 return new_kwargs, ThinkingControlHandling(
                     handled_enable_disable=True,
                     handled_level=enabled is not False and isinstance(level, str) and bool(level),

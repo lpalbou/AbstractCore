@@ -92,6 +92,33 @@ class VLLMProvider(OpenAICompatibleProvider):
         if enabled is None and level is None:
             return kwargs, ThinkingControlHandling()
 
+        # Effort SWITCH (`thinking_control.effort_disable_value`, HY V3 / Hy-Memory
+        # `reasoning_effort=no_think|low|high`): the template has no `enable_thinking`,
+        # and an unset effort renders no_think, so a boolean would leave thinking OFF
+        # while reporting it handled. Send only the effort value; decline when there
+        # is no honest value (an undeclared level).
+        switch = self._thinking_control_surfaces()
+        if switch.effort_is_switch():
+            from ..architectures.thinking_controls import effort_switch_value
+
+            value = effort_switch_value(
+                switch, enabled=enabled, level=level, declared_levels=self._model_reasoning_levels()
+            )
+            if value is None:
+                return kwargs, ThinkingControlHandling()
+            new_kwargs = dict(kwargs)
+            extra_body = new_kwargs.get("extra_body")
+            extra_body_dict: Dict[str, Any] = dict(extra_body) if isinstance(extra_body, dict) else {}
+            ctk = extra_body_dict.get("chat_template_kwargs")
+            ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
+            ctk_dict[switch.effort_template_kwarg] = value
+            extra_body_dict["chat_template_kwargs"] = ctk_dict
+            new_kwargs["extra_body"] = extra_body_dict
+            return new_kwargs, ThinkingControlHandling(
+                handled_enable_disable=True,
+                handled_level=enabled is not False and isinstance(level, str) and bool(level),
+            )
+
         new_kwargs = dict(kwargs)
         extra_body = new_kwargs.get("extra_body")
         extra_body_dict: Dict[str, Any] = dict(extra_body) if isinstance(extra_body, dict) else {}

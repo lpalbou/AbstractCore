@@ -388,12 +388,50 @@ def test_hf_transformers_cached_lane_declines() -> None:
     assert not handling.handled_enable_disable
 
 
-def test_openai_compatible_sends_no_think_for_off(monkeypatch) -> None:
-    from abstractcore.core.types import GenerateResponse
+def _openai_compatible(monkeypatch, *, template_kwargs: bool, provider_id: str = "openai-compatible"):
     from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
 
     monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None, raising=False)
     provider = OpenAICompatibleProvider(model=MODEL, base_url="http://127.0.0.1:9/v1")
+    provider.provider = provider_id
+    provider._supports_chat_template_kwargs = template_kwargs
+    return provider
+
+
+@pytest.mark.parametrize(
+    "template_kwargs,thinking,top_level,ctk,handled",
+    [
+        # no_think is not an OpenAI enum value: never top-level (a validating server 400s)
+        (True, False, None, "no_think", True),
+        (False, False, None, None, False),  # no transport for off: decline honestly
+        (True, "high", "high", "high", True),
+        (False, "high", "high", None, True),
+        (False, True, "high", None, True),  # bare on -> preferred declared level
+        (True, "low", "low", "low", True),
+    ],
+)
+def test_openai_compatible_effort_switch_transport(monkeypatch, template_kwargs, thinking, top_level, ctk, handled) -> None:
+    provider = _openai_compatible(monkeypatch, template_kwargs=template_kwargs)
+    enabled, level = provider._normalize_thinking_request(thinking)
+    kwargs, handling = provider._apply_provider_thinking_kwargs(enabled=enabled, level=level, kwargs={})
+    assert kwargs.get("reasoning_effort") == top_level
+    assert (kwargs.get("chat_template_kwargs") or {}).get("reasoning_effort") == ctk
+    assert "enable_thinking" not in (kwargs.get("chat_template_kwargs") or {})
+    assert handling.handled_enable_disable is handled
+
+
+def test_lmstudio_effort_switch_mirrors_chat_template_kwargs(monkeypatch) -> None:
+    provider = _openai_compatible(monkeypatch, template_kwargs=True, provider_id="lmstudio")
+    kwargs, handling = provider._apply_provider_thinking_kwargs(enabled=False, level=None, kwargs={})
+    assert kwargs["chat_template_kwargs"] == {"reasoning_effort": "no_think"}
+    assert kwargs["extra_body"]["chat_template_kwargs"] == {"reasoning_effort": "no_think"}
+    assert "reasoning_effort" not in kwargs
+
+
+def test_openai_compatible_high_reaches_the_wire_and_off_is_not_misreported(monkeypatch) -> None:
+    from abstractcore.core.types import GenerateResponse
+
+    provider = _openai_compatible(monkeypatch, template_kwargs=False)
     captured: Dict[str, Any] = {}
 
     def _cap(payload):
@@ -402,9 +440,37 @@ def test_openai_compatible_sends_no_think_for_off(monkeypatch) -> None:
 
     monkeypatch.setattr(provider, "_single_generate", _cap)
     with _no_warning_named("cannot be fully disabled"):
-        resp = provider.generate("hi", thinking="off", temperature=0)
-    assert captured["payload"].get("reasoning_effort") == "no_think"
-    assert resp.metadata.get("thinking_effective") == "off"
+        resp = provider.generate("hi", thinking="high", temperature=0)
+    assert captured["payload"].get("reasoning_effort") == "high"
+    assert resp.metadata.get("thinking_effective") == "high"
+    resp = provider.generate("hi", thinking="off", temperature=0)
+    assert "reasoning_effort" not in captured["payload"]
+    assert resp.metadata.get("thinking_effective") is None  # no control sent: not claimed
+
+
+@pytest.mark.parametrize("thinking,expected", [(False, "no_think"), (True, "high"), ("low", "low"), ("high", "high")])
+def test_vllm_effort_switch_sends_only_the_effort_value(thinking, expected) -> None:
+    from abstractcore.providers.vllm_provider import VLLMProvider
+
+    p = VLLMProvider.__new__(VLLMProvider)
+    p.model, p.provider, p.architecture = MODEL, "vllm", "hy_v3"
+    p.architecture_config = get_architecture_format("hy_v3")
+    p.model_capabilities = get_model_capabilities(MODEL)
+    enabled, level = p._normalize_thinking_request(thinking)
+    kwargs, handling = p._apply_provider_thinking_kwargs(enabled=enabled, level=level, kwargs={})
+    assert kwargs["extra_body"]["chat_template_kwargs"] == {"reasoning_effort": expected}
+    assert handling.handled_enable_disable is True
+
+
+def test_vllm_effort_switch_declines_an_undeclared_level() -> None:
+    from abstractcore.providers.vllm_provider import VLLMProvider
+
+    p = VLLMProvider.__new__(VLLMProvider)
+    p.model, p.provider, p.architecture = MODEL, "vllm", "hy_v3"
+    p.architecture_config = get_architecture_format("hy_v3")
+    p.model_capabilities = get_model_capabilities(MODEL)
+    kwargs, handling = p._apply_provider_thinking_kwargs(enabled=True, level="medium", kwargs={})
+    assert kwargs == {} and not handling.handled_enable_disable
 
 
 class _no_warning_named:
