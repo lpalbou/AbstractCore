@@ -120,7 +120,45 @@ def _mlx_cpu_stream():
         mx.set_default_device(previous)
 
 
-@pytest.mark.parametrize("layout", ["transformers", "checkpoint"])
+def _mlx_convention_layout(state: dict) -> dict:
+    """mlx-lm PR #1211 / mlx-community Hy3-preview names: switch_mlp + router.expert_bias."""
+    out = {}
+    for key, value in _transformers_to_stacked(state).items():
+        key = key.replace(".mlp.experts.", ".mlp.switch_mlp.")
+        key = key.replace(".mlp.gate.weight", ".mlp.router.gate.weight")
+        key = key.replace(".mlp.e_score_correction_bias", ".mlp.router.expert_bias")
+        key = key.replace(".mlp.shared_experts.", ".mlp.shared_mlp.")
+        out[key] = value
+    return out
+
+
+def _interim_layout(state: dict) -> dict:
+    """This module's own pre-convention names (mlp.experts.{proj}.weight, mlp.expert_bias)."""
+    out = {}
+    for key, value in _transformers_to_stacked(state).items():
+        key = key.replace(".mlp.gate.weight", ".mlp.router.gate.weight")
+        key = key.replace(".mlp.e_score_correction_bias", ".mlp.expert_bias")
+        key = key.replace(".mlp.shared_experts.", ".mlp.shared_mlp.")
+        out[key] = value
+    return out
+
+
+def _transformers_to_stacked(state: dict) -> dict:
+    out = {}
+    for key, value in state.items():
+        if key.endswith("mlp.experts.gate_up_proj"):
+            prefix = key[: -len("gate_up_proj")]
+            half = value.shape[1] // 2
+            out[prefix + "gate_proj.weight"] = value[:, :half]
+            out[prefix + "up_proj.weight"] = value[:, half:]
+        elif key.endswith("mlp.experts.down_proj"):
+            out[key + ".weight"] = value
+        else:
+            out[key] = value
+    return out
+
+
+@pytest.mark.parametrize("layout", ["transformers", "checkpoint", "mlx_convention", "interim"])
 def test_logits_match_the_transformers_reference(layout: str) -> None:
     import mlx.core as mx
     import torch
@@ -129,6 +167,10 @@ def test_logits_match_the_transformers_reference(layout: str) -> None:
     state = dict(ref.state_dict())
     if layout == "checkpoint":
         state = _per_expert_layout(state)
+    elif layout == "mlx_convention":
+        state = _mlx_convention_layout(state)
+    elif layout == "interim":
+        state = _interim_layout(state)
     model = _mlx_model(config, state)
 
     with torch.no_grad():
@@ -179,7 +221,7 @@ def test_expert_hidden_dim_sizes_routed_and_shared_experts() -> None:
          "num_experts_per_tok": 2, "moe_intermediate_size": 64, "expert_hidden_dim": 24, "vocab_size": 32}
     )
     moe = Model(args).model.layers[1].mlp
-    assert moe.experts.gate_proj.weight.shape == (4, 24, 64)
+    assert moe.switch_mlp.gate_proj.weight.shape == (4, 24, 64)
     assert moe.shared_mlp.gate_proj.weight.shape == (24, 64)
 
 
@@ -198,7 +240,7 @@ def test_quant_predicate_keeps_the_router_full_precision() -> None:
     assert type(moe.router.gate) is nn.Linear
     assert isinstance(moe.shared_mlp.gate_proj, nn.QuantizedLinear)
     assert isinstance(model.model.layers[0].self_attn.q_proj, nn.QuantizedLinear)
-    assert str(moe.expert_bias.dtype) == "mlx.core.float32"
+    assert str(moe.router.expert_bias.dtype) == "mlx.core.float32"
 
 
 def test_mtp_and_rotary_tensors_are_dropped() -> None:
@@ -257,5 +299,85 @@ def test_bundled_copy_loads_the_way_mlx_lm_loads_a_model_file(tmp_path) -> None:
                                        "intermediate_size": 32, "num_experts": 4, "num_experts_per_tok": 2,
                                        "moe_intermediate_size": 16, "vocab_size": 32})
     model = module.Model(args)
-    assert model.layers[1].mlp.experts.gate_proj.weight.shape == (4, 16, 64)
+    assert model.layers[1].mlp.switch_mlp.gate_proj.weight.shape == (4, 16, 64)
     assert module.register_with_mlx_lm() is False  # a bundled copy never shims mlx_lm
+
+
+def test_parameter_names_follow_the_mlx_lm_moe_convention() -> None:
+    """mlx-community/Hy3-preview-* and mlx-lm PR #1211 store mlp.switch_mlp.* and
+    mlp.router.expert_bias; a strict load of that layout must work (review B1), and the
+    model's own parameter tree must use exactly those names (what convert saves)."""
+    import mlx.core as mx
+    from mlx.utils import tree_flatten
+
+    from abstractcore.providers.mlx_hy_v3 import Model, ModelArgs
+
+    cfg = {"model_type": "hy_v3", "hidden_size": 64, "num_hidden_layers": 2, "num_attention_heads": 4,
+           "num_key_value_heads": 2, "head_dim": 16, "intermediate_size": 96, "num_experts": 4,
+           "num_experts_per_tok": 2, "moe_intermediate_size": 32, "vocab_size": 32}
+    names = {k for k, _ in tree_flatten(Model(ModelArgs.from_dict(cfg)).parameters())}
+    assert "model.layers.1.mlp.switch_mlp.gate_proj.weight" in names
+    assert "model.layers.1.mlp.router.expert_bias" in names
+    assert "model.layers.1.mlp.router.gate.weight" in names
+    assert not any(".mlp.experts." in n or n.endswith(".mlp.expert_bias") for n in names)
+    pr1211 = {k: mx.zeros(v.shape, dtype=v.dtype) for k, v in tree_flatten(Model(ModelArgs.from_dict(cfg)).parameters())}
+    m = Model(ModelArgs.from_dict(cfg))
+    m.load_weights(list(m.sanitize(pr1211).items()), strict=True)
+
+
+def test_dense_layers_without_mlp_layer_types_follow_first_k_dense_replace() -> None:
+    from abstractcore.providers.mlx_hy_v3 import MLP, Model, ModelArgs, MoE
+
+    base = {"model_type": "hy_v3", "hidden_size": 64, "num_hidden_layers": 3, "num_attention_heads": 4,
+            "num_key_value_heads": 2, "head_dim": 16, "intermediate_size": 96, "num_experts": 4,
+            "num_experts_per_tok": 2, "moe_intermediate_size": 32, "vocab_size": 32}
+    layers = Model(ModelArgs.from_dict({**base, "first_k_dense_replace": 1})).layers
+    assert [type(layer.mlp) for layer in layers] == [MLP, MoE, MoE]
+    explicit = Model(ModelArgs.from_dict({**base, "mlp_layer_types": ["dense", "dense", "sparse"]})).layers
+    assert [type(layer.mlp) for layer in explicit] == [MLP, MLP, MoE]
+
+
+def test_register_shim_defers_to_an_installed_but_unimported_upstream(monkeypatch) -> None:
+    import abstractcore.providers.mlx_hy_v3 as hy
+
+    monkeypatch.delitem(sys.modules, "mlx_lm.models.hy_v3", raising=False)
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *a, **k: object() if name == "mlx_lm.models.hy_v3" else real(name, *a, **k))
+    assert hy.register_with_mlx_lm() is False
+    assert "mlx_lm.models.hy_v3" not in sys.modules
+
+
+def test_mlx_provider_never_runs_the_bundled_model_file_and_installs_the_shim(monkeypatch) -> None:
+    import logging
+
+    import abstractcore.providers.mlx_hy_v3 as hy
+    from abstractcore.providers.mlx_provider import MLXProvider
+
+    monkeypatch.delitem(sys.modules, "mlx_lm.models.hy_v3", raising=False)
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *a, **k: None if name == "mlx_lm.models.hy_v3" else real(name, *a, **k))
+    p = MLXProvider.__new__(MLXProvider)
+    p.logger = logging.getLogger("test")
+    assert p._hy_v3_load_kwargs() == {"model_config": {"model_file": None}}
+    assert sys.modules["mlx_lm.models.hy_v3"] is hy
+    assert p._hy_v3_class_source == "abstractcore.providers.mlx_hy_v3"
+
+
+@pytest.mark.parametrize(
+    "names,expected",
+    [
+        (["model.layers.1.mlp.switch_mlp.gate_proj.weight", "model.layers.1.mlp.router.expert_bias"], "mlx-lm convention"),
+        (["model.layers.1.mlp.experts.0.gate_proj.weight", "model.layers.1.mlp.expert_bias"], "tencent per-expert"),
+        (["model.layers.1.mlp.experts.gate_up_proj"], "transformers stacked"),
+        (["model.layers.1.mlp.experts.gate_proj.weight", "model.layers.1.mlp.expert_bias"], "early abstractcore"),
+    ],
+)
+def test_weight_layout_is_named_for_the_load_error(tmp_path, names, expected) -> None:
+    import json
+
+    from abstractcore.providers.mlx_hy_v3 import describe_weight_layout
+
+    (tmp_path / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {n: "m.safetensors" for n in names}}))
+    assert describe_weight_layout(str(tmp_path)).startswith(expected)

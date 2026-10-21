@@ -3938,6 +3938,26 @@ class MLXProvider(BaseProvider):
             drafter=getattr(self, "_mtp_drafter_id", None),
         )
 
+    def _hy_v3_load_kwargs(self) -> Dict[str, Any]:
+        """mlx_lm.load kwargs for an HY V3 (`model_type: hy_v3`) checkpoint.
+
+        mlx-lm <= 0.32.2 ships no `mlx_lm.models.hy_v3`. AbstractCore's port
+        (mlx_hy_v3.py, parity-tested against transformers' HYV3ForCausalLM) is
+        registered under that name ONLY when mlx-lm has none, so an upstream
+        module always wins. For hy_v3 checkpoints the checkpoint's own
+        `model_file` is not executed by this provider: mlx-lm resolves the
+        class by model_type instead (a checkpoint declaring another model_type
+        plus a model_file still runs its file through mlx-lm, as before).
+        """
+        from .mlx_hy_v3 import register_with_mlx_lm
+
+        shim = register_with_mlx_lm()
+        self._hy_v3_class_source = (
+            "abstractcore.providers.mlx_hy_v3" if shim else "upstream mlx_lm.models.hy_v3"
+        )
+        self.logger.info(f"mlx: hy_v3 checkpoint; model class = {self._hy_v3_class_source}")
+        return {"model_config": {"model_file": None}}
+
     def _load_model(self):
         """Load MLX model and tokenizer"""
         # Only THESE two imports mean "the MLX provider is not installed". They
@@ -4262,16 +4282,8 @@ class MLXProvider(BaseProvider):
             # always wins. A checkpoint's bundled `model_file` (arbitrary code in
             # a downloaded repo) is never executed for this model type: mlx-lm
             # is told to resolve the class by model_type instead.
-            load_kwargs: Dict[str, Any] = {}
-            if str(getattr(self, "_native_model_type", "") or "").strip().lower() == "hy_v3":
-                from .mlx_hy_v3 import register_with_mlx_lm
-
-                shim = register_with_mlx_lm()
-                load_kwargs["model_config"] = {"model_file": None}
-                self.logger.info(
-                    "mlx: hy_v3 checkpoint; model class = "
-                    + ("abstractcore.providers.mlx_hy_v3 (mlx-lm ships no hy_v3)" if shim else "mlx_lm.models.hy_v3 (upstream)")
-                )
+            is_hy_v3 = str(getattr(self, "_native_model_type", "") or "").strip().lower() == "hy_v3"
+            load_kwargs: Dict[str, Any] = self._hy_v3_load_kwargs() if is_hy_v3 else {}
 
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
             with open(os.devnull, "w") as devnull:
@@ -4283,6 +4295,18 @@ class MLXProvider(BaseProvider):
                     except ValueError as e:
                         msg = str(e)
                         low = msg.lower()
+                        if is_hy_v3 and (
+                            "parameters not in model" in low
+                            or _re.search(r"missing \d+ parameters", low)
+                            or "expected shape" in low
+                        ):
+                            from .mlx_hy_v3 import describe_weight_layout
+
+                            raise ProviderAPIError(
+                                f"MLX model '{clean_model_name}': the hy_v3 weights in '{load_target}' "
+                                f"use the {describe_weight_layout(load_target)} layout, which the selected "
+                                f"model class ({getattr(self, '_hy_v3_class_source', 'unknown')}) cannot load: {msg}"
+                            ) from e
                         if "model type" in low and "not supported" in low:
                             model_type = None
                             try:

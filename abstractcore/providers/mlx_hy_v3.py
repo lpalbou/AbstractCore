@@ -29,6 +29,21 @@
 #   * Hy-Memory-30B-A3B ships routed AND shared experts 768 wide
 #     (config "expert_hidden_dim") while "moe_intermediate_size" says 1536; the
 #     tensors are the truth, so expert_hidden_dim wins when present.
+# Two deliberate deviations from transformers, both toward MORE precision (so a
+# small bf16 parity drift against transformers is expected, not a regression):
+#   * the routed experts are summed in float32 (transformers accumulates them in
+#     the model dtype with index_add_ and uses float32 only for routed + shared);
+#   * enable_lm_head_fp32 is honoured for an unquantized lm_head (transformers
+#     ignores the flag).
+# Dense layers when config has no mlp_layer_types: the first
+# `first_k_dense_replace` layers (the checkpoint's own field, as in mlx-lm PR
+# #1211); transformers' HYV3Config builds exactly one. Equal for every released
+# config (Hy-Memory-30B-A3B, Hy3, Hy3-preview: 1).
+# Parameter names follow the mlx-lm MoE convention used by
+# mlx-community/Hy3-preview-* and the PR #1211 head: `mlp.switch_mlp.*`,
+# `mlp.router.gate`, `mlp.router.expert_bias`, `mlp.shared_mlp.*`. `sanitize`
+# maps the tencent per-expert layout, the transformers stacked layout and this
+# module's own earlier names (`mlp.experts.*`, `mlp.expert_bias`) onto them.
 # Cross-checked against hermitdave/Hy-Memory-30B-A3B-MLX-8bit and
 # Duckets/Hy-Memory-30B-A3B-MLX-4bit (community hy_v3.py) and the PR #1211 head
 # (router matmul in fp32, router + correction bias kept unquantized).
@@ -165,11 +180,13 @@ class MLP(nn.Module):
 
 
 class Router(nn.Module):
-    """Checkpoint key `mlp.router.gate.weight`; logits computed in float32 (reference)."""
+    """`mlp.router.gate.weight` + `mlp.router.expert_bias` (mlx-lm MoE convention, as in
+    mlx-community/Hy3-preview-* and mlx-lm PR #1211). Logits in float32 (reference)."""
 
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.gate = nn.Linear(args.hidden_size, int(args.num_experts), bias=False)
+        self.expert_bias = mx.zeros((int(args.num_experts),), dtype=mx.float32)
 
     def __call__(self, x: mx.array) -> mx.array:
         gate = self.gate
@@ -208,13 +225,12 @@ class MoE(nn.Module):
         self.route_norm = bool(args.route_norm)
         self.fp32_combine = bool(args.enable_moe_fp32_combine)
         self.router = Router(args)
-        self.expert_bias = mx.zeros((int(args.num_experts),), dtype=mx.float32)
-        self.experts = SwitchGLU(args.hidden_size, args.expert_dim, int(args.num_experts), bias=args.mlp_bias)
+        self.switch_mlp = SwitchGLU(args.hidden_size, args.expert_dim, int(args.num_experts), bias=args.mlp_bias)
         self.shared_mlp = MLP(args.hidden_size, args.expert_dim * int(args.num_shared_experts), bias=args.mlp_bias)
 
     def __call__(self, x: mx.array) -> mx.array:
-        inds, weights = route(self.router(x), self.expert_bias, self.top_k, self.scaling_factor, self.route_norm)
-        routed = self.experts(x, inds)
+        inds, weights = route(self.router(x), self.router.expert_bias, self.top_k, self.scaling_factor, self.route_norm)
+        routed = self.switch_mlp(x, inds)
         shared = self.shared_mlp(x)
         if self.fp32_combine:
             y = (routed.astype(mx.float32) * weights[..., None]).sum(axis=-2)
@@ -261,13 +277,16 @@ _EXPERT_KEY_RE = re.compile(
 # transformers-layout renames (HYV3 conversion mapping) -> checkpoint layout used here.
 _RENAMES = (
     (re.compile(r"\.mlp\.gate\.weight$"), ".mlp.router.gate.weight"),
-    (re.compile(r"\.mlp\.e_score_correction_bias$"), ".mlp.expert_bias"),
+    (re.compile(r"\.mlp\.e_score_correction_bias$"), ".mlp.router.expert_bias"),
+    (re.compile(r"\.mlp\.expert_bias$"), ".mlp.router.expert_bias"),
     (re.compile(r"\.mlp\.shared_experts\."), ".mlp.shared_mlp."),
+    # stacked experts written by this module before it adopted the convention
+    (re.compile(r"\.mlp\.experts\.(gate_proj|up_proj|down_proj)\.(weight|scales|biases)$"), r".mlp.switch_mlp.\1.\2"),
 )
 
 
 def _is_router_or_bias(path: str) -> bool:
-    return path.endswith("mlp.router.gate") or path.endswith("mlp.expert_bias")
+    return path.endswith("mlp.router.gate") or path.endswith("expert_bias")
 
 
 def quant_predicate(path: str, module: Any = None, config: Any = None) -> Union[bool, Dict[str, Any]]:
@@ -334,15 +353,15 @@ class Model(nn.Module):
                 continue
             if key.endswith(".mlp.experts.gate_up_proj"):
                 # transformers layout: [E, 2*I, H] -> SwitchGLU gate/up
-                prefix = key[: -len("gate_up_proj")]
+                prefix = key[: -len("experts.gate_up_proj")] + "switch_mlp."
                 gate, up = mx.split(value, 2, axis=-2)
                 out[prefix + "gate_proj.weight"] = gate
                 out[prefix + "up_proj.weight"] = up
                 continue
             if key.endswith(".mlp.experts.down_proj"):
-                out[key + ".weight"] = value
+                out[key[: -len("experts.down_proj")] + "switch_mlp.down_proj.weight"] = value
                 continue
-            if key.endswith(".mlp.expert_bias"):
+            if key.endswith(".mlp.router.expert_bias"):
                 value = value.astype(mx.float32)
             out[key] = value
         n_experts = int(self.args.num_experts)
@@ -352,12 +371,43 @@ class Model(nn.Module):
                     f"hy_v3: layer {layer_idx} {proj}.{suffix} has experts {sorted(by_index)[:4]}... "
                     f"({len(by_index)}), expected 0..{n_experts - 1}"
                 )
-            out[f"model.layers.{layer_idx}.mlp.experts.{proj}.{suffix}"] = mx.stack(
+            out[f"model.layers.{layer_idx}.mlp.switch_mlp.{proj}.{suffix}"] = mx.stack(
                 [by_index[i] for i in range(n_experts)], axis=0
             )
         if self.args.tie_word_embeddings:
             out.pop("lm_head.weight", None)
         return out
+
+
+def describe_weight_layout(path: str) -> str:
+    """Name the HY V3 weight layout of a local checkpoint from its tensor names."""
+    import json
+    import struct
+    from pathlib import Path
+
+    root = Path(path)
+    names: List[str] = []
+    index = root / "model.safetensors.index.json"
+    try:
+        if index.is_file():
+            names = list(json.loads(index.read_text()).get("weight_map", {}))
+        else:
+            for shard in sorted(root.glob("*.safetensors")):
+                with open(shard, "rb") as fh:
+                    size = struct.unpack("<Q", fh.read(8))[0]
+                    names.extend(k for k in json.loads(fh.read(size)) if k != "__metadata__")
+    except Exception as exc:  # the description must never mask the real error
+        return f"unreadable ({type(exc).__name__}: {exc})"
+    joined = "\n".join(names)
+    if ".mlp.switch_mlp." in joined:
+        return "mlx-lm convention (mlp.switch_mlp.*, mlp.router.expert_bias)"
+    if re.search(r"\.mlp\.experts\.\d+\.", joined):
+        return "tencent per-expert (mlp.experts.N.*, mlp.expert_bias)"
+    if ".mlp.experts.gate_up_proj" in joined:
+        return "transformers stacked (mlp.experts.gate_up_proj, mlp.e_score_correction_bias)"
+    if ".mlp.experts." in joined:
+        return "early abstractcore/community stacked (mlp.experts.{gate,up,down}_proj, mlp.expert_bias)"
+    return "unrecognised"
 
 
 def register_with_mlx_lm() -> bool:
@@ -387,4 +437,4 @@ def register_with_mlx_lm() -> bool:
     return True
 
 
-__all__ = ["Model", "ModelArgs", "quant_predicate", "register_with_mlx_lm", "route"]
+__all__ = ["Model", "ModelArgs", "describe_weight_layout", "quant_predicate", "register_with_mlx_lm", "route"]
