@@ -313,6 +313,43 @@ def _artifact_logger():
 # torch, and it defeated the fused decode kernel (materialising a [B,H,q,kv]
 # score matrix plus a repeat_interleave of K/V on every decode step). All that
 # remains is a one-time warning on the exact affected configuration.
+def _template_safe_tool_calls(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Messages whose assistant `tool_calls` carry DICT arguments, as chat templates expect.
+
+    The OpenAI wire carries `function.arguments` as a JSON string; templates that
+    iterate `arguments.items()` (HY V3 / Hy-Memory, GLM, Laguna) raise on a string,
+    and the transformers lane then falls back to a plain render without the
+    model's own format or its thinking controls (live: Hy-Memory tool round trip,
+    2026-10-21). Non-JSON-object arguments are kept as `{"raw_arguments": text}`.
+    """
+    out: List[Dict[str, Any]] = []
+    for msg in messages or []:
+        calls = msg.get("tool_calls") if isinstance(msg, dict) else None
+        if not isinstance(calls, list) or not calls:
+            out.append(msg)
+            continue
+        fixed_calls = []
+        for call in calls:
+            if not isinstance(call, dict):
+                fixed_calls.append(call)
+                continue
+            fn = call.get("function") if isinstance(call.get("function"), dict) else None
+            args = (fn or call).get("arguments")
+            if isinstance(args, str):
+                try:
+                    parsed = json.loads(args) if args.strip() else {}
+                except Exception:
+                    parsed = None
+                args = parsed if isinstance(parsed, dict) else {"raw_arguments": args}
+                if fn is not None:
+                    call = {**call, "function": {**fn, "arguments": args}}
+                else:
+                    call = {**call, "arguments": args}
+            fixed_calls.append(call)
+        out.append({**msg, "tool_calls": fixed_calls})
+    return out
+
+
 _GROUPED_MM_PROBES: Dict[str, bool] = {}
 
 
@@ -10416,9 +10453,13 @@ class HuggingFaceProvider(BaseProvider):
                 chat_messages.append({"role": "system", "content": final_system_prompt})
 
             if messages:
-                chat_messages.extend(messages)
+                chat_messages.extend(_template_safe_tool_calls(messages))
 
-            chat_messages.append({"role": "user", "content": prompt})
+            # An empty prompt after a conversation (an agent's turn after a tool
+            # result) is not a user turn: rendering one inserts an empty user
+            # message the model never saw in training.
+            if prompt or not messages:
+                chat_messages.append({"role": "user", "content": prompt})
 
             try:
                 template_kwargs: Dict[str, Any] = {}
