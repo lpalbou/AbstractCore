@@ -350,7 +350,7 @@ _MPS_SDPA_DEFECT_WARNED = False
 
 
 def _warn_if_mps_sdpa_defective(device, model) -> bool:
-    """Warn once if this torch build carries the MPS SDPA defect (2.10.x only)."""
+    """Warn once if this torch build carries a known MPS SDPA defect (2.8.x, 2.10.x)."""
     global _MPS_SDPA_DEFECT_WARNED
     if _MPS_SDPA_DEFECT_WARNED or str(device) != "mps":
         return False
@@ -360,13 +360,32 @@ def _warn_if_mps_sdpa_defective(device, model) -> bool:
         dtype = next(model.parameters()).dtype
     except Exception:
         return False
-    # Version gate is STRICT: 2.10.x only. 2.10.0 measured broken, >= 2.11.0
-    # measured clean, <= 2.9 never measured (so no claim, and no slow path).
+    # Version gate is STRICT: 2.8.x and 2.10.x. 2.10.0 measured broken (long-KV
+    # decode), 2.8.0 measured broken (causal prefill, below), >= 2.11.0 measured
+    # clean, 2.9 and <= 2.7 never measured (so no claim, and no slow path).
     # Deliberately NOT narrowed by head_dim: the fault was characterised at
     # head_dim 128, and this is only a warning about a known-bad torch build —
     # under-warning costs silently wrong generations, over-warning costs a line
     # of stderr on a torch release the user should be off anyway.
-    if ver != (2, 10) or dtype not in (torch.float16, torch.bfloat16):
+    if dtype not in (torch.float16, torch.bfloat16):
+        return False
+    if ver == (2, 8):
+        # A DIFFERENT, worse fault, measured 2026-10-21 on torch 2.8.0 (M5 Max):
+        # F.scaled_dot_product_attention(is_causal=True) in bf16/fp16 is wrong for
+        # any prompt longer than ~20 tokens (max error 3.5 vs a float64 reference on
+        # unit-scale inputs; fp32 and an explicit boolean mask are exact). Measured
+        # end to end: tencent/Hy-Memory-30B-A3B bf16 produced unusable text.
+        _MPS_SDPA_DEFECT_WARNED = True
+        import warnings
+
+        warnings.warn(
+            f"abstractcore: torch {torch.__version__} on the MPS backend returns wrong "
+            "scaled_dot_product_attention(is_causal=True) in float16/bfloat16 for prompts "
+            "longer than ~20 tokens, so generations are unreliable. Set "
+            "ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager (slower, exact) or upgrade torch."
+        )
+        return True
+    if ver != (2, 10):
         return False
     _MPS_SDPA_DEFECT_WARNED = True
     import warnings
