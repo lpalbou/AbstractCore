@@ -2,7 +2,8 @@
 
 torch 2.8.0: scaled_dot_product_attention(is_causal=True) in bf16/fp16 is wrong for
 prompts longer than ~20 tokens (measured 2026-10-21, Hy-Memory-30B-A3B bf16 unusable).
-torch 2.10.x: long-KV decode fault (pytorch#163597). Other versions: no claim.
+torch 2.10.x: the same causal prefill fault (re-measured 2026-10-21 on 2.10.0) plus the
+long-KV decode fault (pytorch#163597). Other versions: no claim.
 """
 
 import warnings
@@ -41,5 +42,8 @@ def test_warning_gate(monkeypatch, version, dtype, device, expected) -> None:
         warnings.simplefilter("always")
         assert hf._warn_if_mps_sdpa_defective(device, _Model(dtype)) is expected
     assert bool(caught) is expected
-    if expected and version.startswith("2.8"):
-        assert "ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager" in str(caught[0].message)
+    if expected:
+        message = str(caught[0].message)
+        assert "ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager" in message
+        # Both broken builds must name the causal-prefill fault, not only 2.8.
+        assert "~20 tokens" in message

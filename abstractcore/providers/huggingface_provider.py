@@ -424,13 +424,17 @@ def _warn_if_mps_sdpa_defective(device, model) -> bool:
         return True
     if ver != (2, 10):
         return False
+    # 2.10.0 carries BOTH faults: the long-KV decode fault below AND the 2.8 causal
+    # prefill fault (re-measured 2026-10-21 with the same probe: bf16 max error 3.55
+    # at L=24, identical to 2.8.0; 2.13.0 measured clean at 0.014).
     _MPS_SDPA_DEFECT_WARNED = True
     import warnings
     warnings.warn(
         f"abstractcore: torch {torch.__version__} on the MPS backend returns "
-        "non-deterministic, numerically wrong scaled_dot_product_attention for "
-        "short queries over a long KV cache (pytorch#163597) — i.e. every token "
-        "generated past ~1024 tokens of context in float16/bfloat16. UPGRADE to "
+        "numerically wrong scaled_dot_product_attention in float16/bfloat16: "
+        "causal prefill is wrong for prompts longer than ~20 tokens, and short "
+        "queries over a long KV cache are wrong and non-deterministic "
+        "(pytorch#163597, every token past ~1024 tokens of context). UPGRADE to "
         "torch >= 2.11 (measured clean); as a stopgap set "
         "ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager, which is slower but exact."
     )
