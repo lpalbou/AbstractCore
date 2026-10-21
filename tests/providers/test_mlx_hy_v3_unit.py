@@ -381,3 +381,69 @@ def test_weight_layout_is_named_for_the_load_error(tmp_path, names, expected) ->
 
     (tmp_path / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {n: "m.safetensors" for n in names}}))
     assert describe_weight_layout(str(tmp_path)).startswith(expected)
+
+
+def test_router_logits_are_float32_and_resolve_a_bf16_tie() -> None:
+    """Reference: F.linear(hidden.float(), weight.float()). Two experts whose logits
+    differ by less than one bf16 step at 1.0 must stay ordered (review S8 Y5)."""
+    import mlx.core as mx
+
+    from abstractcore.providers.mlx_hy_v3 import ModelArgs, Router
+
+    r = Router(ModelArgs.from_dict({"model_type": "hy_v3", "hidden_size": 2, "num_experts": 2}))
+    r.gate.weight = mx.array([[1.0, 0.0], [1.0, 0.00390625]], dtype=mx.bfloat16)
+    x = mx.array([[[1.0, 1.0]]], dtype=mx.bfloat16)
+    logits = r(x)
+    assert logits.dtype == mx.float32
+    assert float(logits[0, 0, 1]) > float(logits[0, 0, 0])
+    bf16 = (x @ r.gate.weight.T)
+    assert float(bf16[0, 0, 1]) == float(bf16[0, 0, 0])  # the tie the fp32 path avoids
+
+
+@pytest.mark.parametrize("flag,expected", [(True, "float32"), (False, "bfloat16")])
+def test_lm_head_fp32_flag_is_honoured(flag, expected) -> None:
+    import mlx.core as mx
+    from mlx.utils import tree_map
+
+    from abstractcore.providers.mlx_hy_v3 import Model, ModelArgs
+
+    m = Model(ModelArgs.from_dict({"model_type": "hy_v3", "hidden_size": 64, "num_hidden_layers": 1,
+                                   "num_attention_heads": 4, "num_key_value_heads": 2, "head_dim": 16,
+                                   "intermediate_size": 32, "vocab_size": 16, "enable_lm_head_fp32": flag}))
+    m.update(tree_map(lambda v: v.astype(mx.bfloat16), m.parameters()))
+    assert str(m(mx.array([[1, 2, 3]])).dtype) == f"mlx.core.{expected}"
+
+
+def test_moe_combine_runs_in_float32_and_returns_the_model_dtype() -> None:
+    import mlx.core as mx
+    from mlx.utils import tree_map
+
+    from abstractcore.providers.mlx_hy_v3 import ModelArgs, MoE
+
+    mx.set_default_device(mx.gpu)  # GatherMM has no bf16 CPU kernel; the fixture restores the device
+    mx.random.seed(0)
+    args = ModelArgs.from_dict({"model_type": "hy_v3", "hidden_size": 64, "num_experts": 4, "num_experts_per_tok": 2,
+                                "moe_intermediate_size": 32, "enable_moe_fp32_combine": True})
+    moe = MoE(args)
+    moe.update(tree_map(lambda v: v.astype(mx.bfloat16), moe.parameters()))
+    x = mx.random.normal((1, 3, 64)).astype(mx.bfloat16)
+    y = moe(x)
+    assert y.dtype == mx.bfloat16
+    inds, w = __import__("abstractcore.providers.mlx_hy_v3", fromlist=["route"]).route(
+        moe.router(x), moe.router.expert_bias, 2, args.router_scaling_factor)
+    ref = ((moe.switch_mlp(x, inds).astype(mx.float32) * w[..., None]).sum(-2) + moe.shared_mlp(x).astype(mx.float32)).astype(mx.bfloat16)
+    assert mx.array_equal(y, ref)
+
+
+def test_sanitize_and_convert_keep_the_correction_bias_float32() -> None:
+    import mlx.core as mx
+
+    from abstractcore.providers.mlx_hy_v3 import Model, ModelArgs
+
+    m = Model(ModelArgs.from_dict({"model_type": "hy_v3", "hidden_size": 64, "num_hidden_layers": 2,
+                                   "num_attention_heads": 4, "num_key_value_heads": 2, "head_dim": 16,
+                                   "intermediate_size": 32, "num_experts": 4, "moe_intermediate_size": 16, "vocab_size": 16}))
+    out = m.sanitize({"model.layers.1.mlp.expert_bias": mx.zeros((4,), dtype=mx.bfloat16)})
+    assert out["model.layers.1.mlp.router.expert_bias"].dtype == mx.float32
+    assert m.cast_predicate("model.layers.1.mlp.router.expert_bias") is False
+    assert m.cast_predicate("model.layers.1.mlp.switch_mlp.gate_proj.weight") is True

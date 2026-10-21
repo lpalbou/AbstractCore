@@ -587,3 +587,37 @@ def test_gguf_sampler_keeps_explicit_zeros_and_registry_defaults() -> None:
 @pytest.mark.parametrize("name", ["healthy-memory-7b", "why-memory-test", "rhymemory-1b", "empathy-memory", "acme/healthy-memory-7b-gguf"])
 def test_unrelated_memory_names_do_not_detect_as_hy_v3(name: str) -> None:
     assert detect_architecture(name) != "hy_v3"
+
+
+# ------------------------------------------------------------------ MoE experts fallback (review S8 H5/H6)
+
+def test_grouped_mm_probe_detects_a_missing_kernel(monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    import abstractcore.providers.huggingface_provider as hf
+
+    monkeypatch.setattr(hf, "_GROUPED_MM_PROBES", {})
+    monkeypatch.setattr(torch.nn.functional, "grouped_mm", None, raising=False)
+
+    def _missing(*a, **k):
+        raise NotImplementedError("no kernel")
+
+    monkeypatch.setattr(torch, "_grouped_mm", _missing, raising=False)
+    assert hf._torch_grouped_mm_runs_on("cpu") is False
+    assert hf._GROUPED_MM_PROBES["cpu"] is False  # probed once per device
+    monkeypatch.setattr(hf, "_GROUPED_MM_PROBES", {})
+    monkeypatch.setattr(torch, "_grouped_mm", lambda *a, **k: None, raising=False)
+    assert hf._torch_grouped_mm_runs_on("cpu") is True
+
+
+@pytest.mark.parametrize("kernel,given,expected", [(False, {}, "eager"), (True, {}, None), (False, {"experts_implementation": "grouped_mm"}, "grouped_mm")])
+def test_transformers_experts_fallback_kwarg(monkeypatch, kernel, given, expected) -> None:
+    import logging
+
+    import abstractcore.providers.huggingface_provider as hf
+
+    monkeypatch.setattr(hf, "_torch_grouped_mm_runs_on", lambda device: kernel)
+    p = _hf_provider("transformers")
+    p.device, p.logger = "mps", logging.getLogger("test")
+    kwargs = dict(given)
+    p._apply_transformers_experts_fallback(kwargs)
+    assert kwargs.get("experts_implementation") == expected

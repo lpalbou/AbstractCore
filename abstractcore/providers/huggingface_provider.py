@@ -6502,6 +6502,26 @@ class HuggingFaceProvider(BaseProvider):
         )
         return True
 
+    def _apply_transformers_experts_fallback(self, model_kwargs: Dict[str, Any]) -> bool:
+        """Use transformers' "eager" MoE experts where torch has no grouped_mm kernel.
+
+        transformers >= 5 picks `grouped_mm` whenever torch exposes the op; torch 2.8
+        has no CPU or MPS kernel for it, so every MoE forward raised. Dense models
+        ignore the kwarg. A caller's explicit choice always wins. True when applied.
+        """
+        if "experts_implementation" in model_kwargs:
+            return False
+        if importlib.util.find_spec("transformers.integrations.moe") is None:
+            return False
+        device = self.device if self.device in ("cpu", "mps", "cuda") else "cpu"
+        if _torch_grouped_mm_runs_on(device):
+            return False
+        model_kwargs["experts_implementation"] = "eager"
+        self.logger.info(
+            f"transformers MoE experts: experts_implementation='eager' (torch has no grouped_mm kernel on {self.device})"
+        )
+        return True
+
     def _load_transformers_model(self):
         """Load standard HuggingFace transformers model"""
         try:
@@ -6565,15 +6585,7 @@ class HuggingFaceProvider(BaseProvider):
             # torch merely exposes the op; where torch has no kernel for this
             # device the first forward raises. Use transformers' own "eager"
             # experts loop there (exact, slower). Ignored by dense models.
-            if (
-                "experts_implementation" not in model_kwargs
-                and importlib.util.find_spec("transformers.integrations.moe") is not None
-                and not _torch_grouped_mm_runs_on(self.device if self.device in ("cpu", "mps", "cuda") else "cpu")
-            ):
-                model_kwargs["experts_implementation"] = "eager"
-                self.logger.info(
-                    f"transformers MoE experts: experts_implementation='eager' (torch has no grouped_mm kernel on {self.device})"
-                )
+            self._apply_transformers_experts_fallback(model_kwargs)
 
             # Caller-requested quantization (quantization_config=, or the legacy
             # load_in_4bit/8bit spelling translated in __init__). Validated on
