@@ -9,11 +9,13 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 30
+- Planned: 32
 - Proposed: 28
 - Completed: 30
 - Deprecated: 3
 - Recurrent: 0
+
+2026-10-22: added planned `0856` (streaming MCP wire-alias restoration). Planned count reconciled: disk held 31 before this addition; overview said 30.
 
 2026-10-21: added proposed `0855` (`detect_tool_calls` disagrees with `parse_tool_calls` for
 every format-specific family; pre-existing, surfaced by the Hy-Memory-30B-A3B review).
@@ -127,6 +129,8 @@ completed/ in a hygiene pass.)
 7. `planned/2026-05-18_mlx-provider-continuous-batching.md`
    Improve local text throughput and latency via continuous batching/scheduler safety for MLX.
 ## Planned ledger
+
+P1: [0856 — streaming MCP wire-alias restoration](planned/0856_streaming_mcp_wire_alias_restoration.md); includes incident, code paths, reproduction and validation requirements.
 
 | Native inference item | Scope |
 | --- | --- |
