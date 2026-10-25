@@ -360,7 +360,9 @@ present) and the priority headers as typed values: `importance` (`low` | `normal
 outside those sets is `None`. Two more fields mark automatic mail: `auto_submitted` (RFC 3834
 `Auto-Submitted`, the lower-cased keyword such as `auto-generated`, `auto-replied` or `no`;
 `None` when the header is absent) and `framework_marker` (the `X-AbstractFramework-Automation`
-header AbstractFramework puts on the mail it sends automatically; `""` when absent).
+header AbstractFramework puts on the mail it sends automatically; `""` when absent). On a Gmail
+server (it advertises `X-GM-EXT-1`) summaries also carry `labels`, the message's Gmail labels; elsewhere
+`labels` is empty and IMAP keywords are in `flags`.
 
 ### Automatic mail
 

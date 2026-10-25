@@ -867,6 +867,7 @@ class EmailClient:
             list_unsubscribe=bool(_header(msg, "List-Unsubscribe")),
             auto_submitted=auto_submitted_value(_header(msg, AUTO_SUBMITTED_HEADER)),
             framework_marker=automation_marker_value(_header(msg, AUTOMATION_MARKER_HEADER)),
+            labels=tuple(str(x) for x in attrs.get("X-GM-LABELS") or () if str(x)) if isinstance(attrs.get("X-GM-LABELS"), (list, tuple)) else (),
         )
 
     def _cap(self, max_message_bytes: Optional[int]) -> int:
@@ -991,7 +992,7 @@ class EmailClient:
             done = False
             for start in range(0, len(uids), page):
                 batch = uids[start : start + page]
-                fetched = self._fetch(conn, batch, _SUMMARY_ITEMS)
+                fetched = self._fetch(conn, batch, self._items(conn, _SUMMARY_ITEMS))
                 for uid in batch:
                     examined += 1
                     last_examined = uid
@@ -1059,7 +1060,7 @@ class EmailClient:
         cap = self._cap(max_message_bytes)
         with self._imap() as conn:
             state = self._examine(conn, folder)
-            attrs = self._fetch(conn, [uid_i], _DETAIL_ITEMS).get(uid_i)
+            attrs = self._fetch(conn, [uid_i], self._items(conn, _DETAIL_ITEMS)).get(uid_i)
             if not attrs or not _has_section(attrs, "HEADER"):
                 raise EmailMessageNotFound(
                     f"No message with uid {uid_i} in {state['folder']!r}.",
@@ -1167,7 +1168,7 @@ class EmailClient:
             state = self._examine(conn, folder)
             for start in range(0, len(wanted), MAX_LIST_LIMIT):
                 batch = wanted[start : start + MAX_LIST_LIMIT]
-                fetched = self._fetch(conn, batch, _DETAIL_ITEMS)
+                fetched = self._fetch(conn, batch, self._items(conn, _DETAIL_ITEMS))
                 plan: Dict[int, tuple] = {}
                 by_section: Dict[str, List[int]] = {}
                 for uid_i in batch:
@@ -1244,6 +1245,12 @@ class EmailClient:
         typ, data = conn.uid(sub, *args)
         if typ != "OK":
             raise classify_imap_failure(f"UID {sub}", data, host=s.host, port=s.port)
+
+    def _items(self, conn: imaplib.IMAP4, items: str) -> str:
+        """`items` plus Gmail's X-GM-LABELS when the server advertises X-GM-EXT-1."""
+        if "X-GM-EXT-1" in self._caps(conn) and items.endswith(")"):
+            return items[:-1] + " X-GM-LABELS)"
+        return items
 
     @staticmethod
     def _caps(conn: imaplib.IMAP4) -> set:
@@ -1393,7 +1400,7 @@ class EmailClient:
             raise EmailInvalidMessage("The message UID must be a positive number.", "Use a uid from list/search results.")
         with self._imap() as conn:
             state = self._examine(conn, folder)
-            attrs = self._fetch(conn, [uid_i], _DETAIL_ITEMS).get(uid_i)
+            attrs = self._fetch(conn, [uid_i], self._items(conn, _DETAIL_ITEMS)).get(uid_i)
             if not attrs or not _has_section(attrs, "HEADER"):
                 raise EmailMessageNotFound(f"No message with uid {uid_i} in {state['folder']!r}.",
                                            "List or search the folder again.", details={"uid": uid_i, "folder": state["folder"]})
@@ -1409,7 +1416,7 @@ class EmailClient:
             for anchor in dict.fromkeys(i for i in (root, own) if i):
                 found.update(self._uid_search(conn, ["HEADER", "References", imap_codec.quote(anchor)]))
                 found.update(self._uid_search(conn, ["HEADER", "In-Reply-To", imap_codec.quote(anchor)]))
-            fetched = self._fetch(conn, sorted(found), _SUMMARY_ITEMS)
+            fetched = self._fetch(conn, sorted(found), self._items(conn, _SUMMARY_ITEMS))
         summaries = [self._summary(u, fetched[u], state["folder"], state["uidvalidity"]) for u in sorted(found) if u in fetched]
         return sorted(summaries, key=lambda m: (m.internaldate or "", m.uid))
 
@@ -1653,7 +1660,7 @@ class EmailClient:
             uids.sort()
             if limit:
                 uids = uids[: int(limit)]
-            fetched = self._fetch(conn, uids, _SUMMARY_ITEMS)
+            fetched = self._fetch(conn, uids, self._items(conn, _SUMMARY_ITEMS))
         messages = [self._summary(u, fetched[u], state["folder"], uv) for u in uids if u in fetched]
         if reset and not messages:
             # Nothing to resynchronise: a new baseline in the new epoch (never a UID-0 cursor).

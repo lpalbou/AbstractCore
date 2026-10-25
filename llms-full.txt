@@ -2,7 +2,7 @@
 
 > Canonical user documentation in one file. The linked source pages remain authoritative; source code determines behavior.
 
-Package version: 2.28.0
+Package version: 2.29.0
 
 Start with the [agent skill](skills/abstractcore/SKILL.md) for a portable operating procedure,
 or [llms.txt](llms.txt) for a short index. Register the complete skill folder with its references.
@@ -755,7 +755,7 @@ except (ImportError, PackageNotFoundError, AssertionError) as exc:
 print(f"AbstractCore code={abstractcore.__version__}; distribution={installed}")
 if abstractcore.__version__ != installed:
     raise SystemExit("Code/metadata mismatch: reinstall in this Python environment.")
-if installed != "2.28.0":
+if installed != "2.29.0":
     raise SystemExit("Version differs from this guide; use the installed version's docs/skill.")
 ```
 
@@ -8222,7 +8222,9 @@ present) and the priority headers as typed values: `importance` (`low` | `normal
 outside those sets is `None`. Two more fields mark automatic mail: `auto_submitted` (RFC 3834
 `Auto-Submitted`, the lower-cased keyword such as `auto-generated`, `auto-replied` or `no`;
 `None` when the header is absent) and `framework_marker` (the `X-AbstractFramework-Automation`
-header AbstractFramework puts on the mail it sends automatically; `""` when absent).
+header AbstractFramework puts on the mail it sends automatically; `""` when absent). On a Gmail
+server (it advertises `X-GM-EXT-1`) summaries also carry `labels`, the message's Gmail labels; elsewhere
+`labels` is empty and IMAP keywords are in `flags`.
 
 ### Automatic mail
 

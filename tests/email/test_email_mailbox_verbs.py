@@ -187,3 +187,20 @@ def test_reply_and_forward_go_through_the_recipient_policy(box, smtp, ca, tmp_pa
     with pytest.raises(EmailPolicyRefused):
         ctx.forward(u, "outsider@elsewhere.test")
     assert "\\Seen" not in box.flags_of("INBOX", u)  # reading to reply/forward never marks it read
+
+
+def test_gmail_labels_are_read_with_the_message_and_keywords_stay_in_flags(ca, tokens, smtp, box) -> None:
+    gmail = _server(ca, tokens, gmail=True)
+    try:
+        c = client(gmail, smtp, ca)
+        u = gmail.add_message("INBOX", _mail("x"), flags={"\\Flagged"}, labels={"Work", "Needs reply"})
+        detail = c.get(u)
+        assert set(detail.summary.labels) == {"Work", "Needs reply"} and detail.to_dict()["labels"] in (["Needs reply", "Work"], ["Work", "Needs reply"])
+        assert set(c.get_many([u])[u].summary.labels) == {"Work", "Needs reply"}
+        assert set(c.search()["messages"][0].labels) == {"Work", "Needs reply"}
+    finally:
+        gmail.close()
+    v = box.add_message("INBOX", _mail("y"), flags={"Invoices"})
+    plain = client(box, smtp, ca).get(v)
+    assert plain.summary.labels == () and "Invoices" in plain.summary.flags
+    assert not any("X-GM-LABELS" in f for f in box.fetches)  # never asked of a non-Gmail server

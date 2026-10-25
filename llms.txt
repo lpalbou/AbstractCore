@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud and local LLMs: generation, streaming, host-controlled tools, typed output, sessions, media, embeddings and OpenAI-compatible HTTP serving.
 
-Package version: 2.28.0
+Package version: 2.29.0
 Supported Python: 3.9+; CI tests Python 3.9–3.13.
 
 Use an explicit provider, exact model and endpoint. Local model loads are offline/cache-first;

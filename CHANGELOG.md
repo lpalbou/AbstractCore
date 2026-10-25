@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.29.0] - 2026-10-25
+
+### Added
+
+- `MessageSummary.labels`: the message's Gmail labels (`X-GM-LABELS`), read with every summary and detail
+  (`get`, `get_many`, `search`, `fetch_new`, `thread`) when the server advertises `X-GM-EXT-1`, never asked of
+  another server; `()` elsewhere (IMAP keywords stay in `flags`). In `to_dict()` as `labels`.
+- The fake IMAP server's `add_message(..., labels=...)`.
+
 ## [2.28.0] - 2026-10-25
 
 ### Added

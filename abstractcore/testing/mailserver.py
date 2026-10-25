@@ -465,13 +465,15 @@ class FakeImapServer:
         *,
         flags: Iterable[str] = (),
         internaldate: Optional[_dt.datetime] = None,
+        labels: Iterable[str] = (),
     ) -> int:
         with self._lock:
             f = self.folders.setdefault(folder, FakeFolder(name=folder, uidvalidity=2000 + len(self.folders)))
             uid = f.uidnext
             f.uidnext += 1
             f.messages.append(
-                FakeMessage(uid=uid, raw=raw, flags=set(flags), internaldate=internaldate or _dt.datetime.now(_dt.timezone.utc))
+                FakeMessage(uid=uid, raw=raw, flags=set(flags), internaldate=internaldate or _dt.datetime.now(_dt.timezone.utc),
+                            labels=set(labels))
             )
             return uid
 

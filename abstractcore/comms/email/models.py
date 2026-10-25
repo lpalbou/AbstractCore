@@ -612,6 +612,9 @@ class MessageSummary:
     auto_submitted: Optional[str] = None
     # The framework marker header's value (`X-AbstractFramework-Automation`); "" when absent.
     framework_marker: str = ""
+    # Gmail labels (X-GM-LABELS), read when the server advertises X-GM-EXT-1; () elsewhere (IMAP
+    # keywords are in `flags`).
+    labels: Tuple[str, ...] = ()
 
     @property
     def seen(self) -> bool:
@@ -642,6 +645,7 @@ class MessageSummary:
             "list_unsubscribe": self.list_unsubscribe,
             "auto_submitted": self.auto_submitted,
             "framework_marker": self.framework_marker,
+            "labels": list(self.labels),
         }
 
 

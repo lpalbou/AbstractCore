@@ -4,7 +4,7 @@ description: Write Python integrations and operate AbstractCore through create_l
 license: MIT
 compatibility: Python 3.9+. Remote inference needs a reachable endpoint and its credentials. MLX needs Apple silicon; local engines require the apple or gpu install setting. Models must be downloaded explicitly.
 metadata:
-  package-version: "2.28.0"
+  package-version: "2.29.0"
 ---
 
 # AbstractCore
@@ -43,7 +43,7 @@ except (ImportError, PackageNotFoundError, AssertionError) as exc:
 print(f"AbstractCore code={abstractcore.__version__}; distribution={installed}")
 if abstractcore.__version__ != installed:
     raise SystemExit("Code/metadata mismatch: reinstall in this Python environment.")
-if installed != "2.28.0":
+if installed != "2.29.0":
     raise SystemExit("Version differs from this skill; use the installed version's docs/skill.")
 ```
 
