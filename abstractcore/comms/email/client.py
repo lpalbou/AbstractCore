@@ -48,6 +48,8 @@ from .errors import (
     EmailError,
     EmailInvalidMessage,
     EmailInvalidSettings,
+    EmailMailboxMissing,
+    EmailMailboxReadOnly,
     EmailMessageNotFound,
     EmailMessageTooLarge,
     EmailNotConfigured,
@@ -195,6 +197,49 @@ class ReadOnlyIMAP4(_ReadOnlyGuard, imaplib.IMAP4):
 
 class ReadOnlyIMAP4_SSL(_ReadOnlyGuard, imaplib.IMAP4_SSL):
     pass
+
+
+# The mailbox-changing verbs (mark, label, move, delete) run on a connection that allows exactly
+# the commands they need; a body FETCH is still PEEK-only (reading never marks a message read).
+MAILBOX_COMMANDS = READ_ONLY_COMMANDS | frozenset({"SELECT", "STORE", "COPY", "MOVE", "EXPUNGE", "CLOSE"})
+_MAILBOX_UID_SUBCOMMANDS = frozenset({"SEARCH", "FETCH", "STORE", "COPY", "MOVE", "EXPUNGE"})
+
+
+class _MailboxGuard:
+    """Allows the mailbox changes the client's verbs make, refuses anything else (APPEND,
+    CREATE, DELETE of a folder, RENAME, ...) and a FETCH that would set \\Seen."""
+
+    def _command(self, name, *args):  # type: ignore[override]
+        cmd = str(name or "").upper()
+        if cmd not in MAILBOX_COMMANDS:
+            raise EmailReadOnlyViolation(
+                f"The IMAP command {cmd} is not one this client sends; refused.",
+                "Use the client's verbs: mark, label, move, delete.",
+            )
+        if cmd == "UID":
+            sub = str(args[0] if args else "").upper()
+            if sub not in _MAILBOX_UID_SUBCOMMANDS:
+                raise EmailReadOnlyViolation(f"The IMAP command UID {sub} is not one this client sends; refused.",
+                                             "Use the client's verbs: mark, label, move, delete.")
+            if sub == "FETCH":
+                check_read_only_fetch(" ".join(str(a) for a in args[2:]))
+        elif cmd == "FETCH":
+            check_read_only_fetch(" ".join(str(a) for a in args[1:]))
+        return super()._command(name, *args)  # type: ignore[misc]
+
+
+class MailboxIMAP4(_MailboxGuard, imaplib.IMAP4):
+    pass
+
+
+class MailboxIMAP4_SSL(_MailboxGuard, imaplib.IMAP4_SSL):
+    pass
+
+
+# IMAP keyword (a label on a server without Gmail labels): an atom, never a system flag.
+_KEYWORD_FORBIDDEN = set('(){ %*"\\]') | {chr(c) for c in range(0, 32)} | {chr(127)}
+# Folder names a server without RFC 6154 special-use commonly gives its trash, in order.
+TRASH_FOLDER_NAMES = ("Trash", "[Gmail]/Trash", "[Google Mail]/Trash", "Deleted Items", "Deleted Messages", "INBOX.Trash")
 
 
 # ---------------------------------------------------------------------------------------
@@ -427,6 +472,7 @@ class EmailClient:
         # The connection `session()` holds (None outside a session). A client is used by one
         # thread at a time (a mail watcher's poll, an agent's tool call).
         self._held: Optional[imaplib.IMAP4] = None
+        self._held_write = False
         self._ssl_context = _require_verifying(ssl_context) if ssl_context is not None else None
         if account.auth_kind == "oauth2":
             if token_provider is None:
@@ -478,23 +524,31 @@ class EmailClient:
         return self.account.smtp
 
     @contextmanager
-    def session(self) -> Iterator["EmailClient"]:
-        """Hold ONE read-only IMAP connection: every read inside (`fetch_new`, `get`, `get_many`,
-        `search`, ...) reuses it, so a poll that lists new mail and then reads it signs in once.
-        Nested sessions reuse the outer one. Errors are the same typed EmailErrors."""
+    def session(self, *, write: bool = False) -> Iterator["EmailClient"]:
+        """Hold ONE IMAP connection: every operation inside (`fetch_new`, `get`, `get_many`,
+        `search`, `thread` and, with `write=True`, `mark`, `label`, `move`, `delete`) reuses it, so
+        a batch of work signs in once. Read-only by default (a mailbox change inside a read-only
+        session opens its own connection). Nested sessions reuse the outer one. Errors are the
+        same typed EmailErrors; an error of the caller's own raised in the block passes as is."""
         if self._held is not None:
             yield self
             return
-        # Connect and sign in here (typed errors); the reads inside translate their own errors
-        # (`_imap`), and anything else raised in the block (the caller's own storage) passes as is.
-        conn = self._connect()
-        self._held = conn
+        if write:
+            self._require_write()
+        conn = self._connect(write=write)
+        self._held, self._held_write = conn, bool(write)
         try:
             yield self
         finally:
-            self._held = None
+            self._held, self._held_write = None, False
             self._close_imap(conn)
 
+    def _require_write(self) -> None:
+        if not self.account.can_write:
+            raise EmailMailboxReadOnly(
+                f"The mailbox {self.account.address} is read-only (it has no outgoing server): it can be read, not changed.",
+                "Connect it again with its outgoing server (SMTP) to mark, label, move or delete messages.",
+            )
     def _translate_imap_error(self, exc: BaseException, s) -> EmailError:
         if isinstance(exc, imaplib.IMAP4.abort):
             return classify_connection_error(exc, protocol="imap", host=s.host, port=s.port)
@@ -509,8 +563,8 @@ class EmailClient:
         return classify_connection_error(exc, protocol="imap", host=s.host, port=s.port)
 
     @contextmanager
-    def _imap(self) -> Iterator[imaplib.IMAP4]:
-        if self._held is not None:
+    def _imap(self, *, write: bool = False) -> Iterator[imaplib.IMAP4]:
+        if self._held is not None and (self._held_write or not write):
             # Inside `session()`: the held connection, the same error translation.
             s = self._imap_settings()
             try:
@@ -520,18 +574,20 @@ class EmailClient:
             except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError, ssl.SSLError) as exc:
                 raise self._translate_imap_error(exc, s) from None
             return
-        with self._open_imap() as conn:
+        with self._open_imap(write=write) as conn:
             yield conn
 
-    def _connect(self) -> imaplib.IMAP4:
-        """A connected, signed-in read-only IMAP connection (typed EmailErrors on failure)."""
+    def _connect(self, *, write: bool = False) -> imaplib.IMAP4:
+        """A connected, signed-in IMAP connection (typed EmailErrors on failure): read-only, or
+        (`write=True`) limited to the mailbox changes of the client's verbs."""
         s = self._imap_settings()
         conn: Optional[imaplib.IMAP4] = None
+        ssl_cls, plain_cls = (MailboxIMAP4_SSL, MailboxIMAP4) if write else (ReadOnlyIMAP4_SSL, ReadOnlyIMAP4)
         try:
             if s.security == "ssl":
-                conn = ReadOnlyIMAP4_SSL(s.host, s.port, ssl_context=self._tls(s), timeout=self._timeout)
+                conn = ssl_cls(s.host, s.port, ssl_context=self._tls(s), timeout=self._timeout)
             else:
-                conn = ReadOnlyIMAP4(s.host, s.port, timeout=self._timeout)
+                conn = plain_cls(s.host, s.port, timeout=self._timeout)
                 try:
                     conn.starttls(ssl_context=self._tls(s))
                 except imaplib.IMAP4.abort as exc:
@@ -559,9 +615,9 @@ class EmailClient:
         return conn
 
     @contextmanager
-    def _open_imap(self) -> Iterator[imaplib.IMAP4]:
+    def _open_imap(self, *, write: bool = False) -> Iterator[imaplib.IMAP4]:
         s = self._imap_settings()
-        conn = self._connect()
+        conn = self._connect(write=write)
         try:
             yield conn
         except EmailError:
@@ -887,8 +943,22 @@ class EmailClient:
         folder: Optional[str] = None,
         limit: Optional[int] = None,
         before_uid: Optional[int] = None,
+        from_: Any = None,
+        to: Any = None,
+        subject: Any = None,
+        text: Any = None,
+        since: Any = None,
+        until: Any = None,
+        unseen: Optional[bool] = None,
+        flagged: Optional[bool] = None,
+        labels: Any = None,
     ) -> Dict[str, Any]:
         """Matching messages, newest first.
+
+        The query is `criteria` (a `SearchCriteria`) or the typed keywords: `from_` (an address or
+        a domain), `to`, `subject` (a substring), `text` (anywhere in the message, the server
+        decides), `since` / `until` (days, `until` exclusive), `unseen`, `flagged`, `labels` (all
+        of them: Gmail labels on a Gmail server, IMAP keywords elsewhere).
 
         Returns `{folder, uidvalidity, candidates, messages, has_more, next_before_uid}`.
         `before_uid` continues a previous call: only messages with a smaller UID are examined.
@@ -896,10 +966,20 @@ class EmailClient:
         pass `next_before_uid` as `before_uid` to continue (nothing is dropped silently).
         """
 
-        crit = criteria or SearchCriteria()
+        query = {k: v for k, v in (("from_", from_), ("to", to), ("subject", subject), ("text", text), ("since", since),
+                                    ("until", until), ("unseen", unseen), ("flagged", flagged), ("labels", labels)) if v is not None}
+        if criteria is not None and query:
+            raise EmailInvalidSettings("Give either a SearchCriteria or query keywords, not both.", "Use one of the two forms.")
+        crit = criteria or SearchCriteria.build(**query)
         with self._imap() as conn:
+            gmail = "X-GM-EXT-1" in self._caps(conn)
+            if not gmail:
+                for lab in crit.labels:
+                    if lab.startswith("\\") or any(c in _KEYWORD_FORBIDDEN for c in lab):
+                        raise EmailInvalidSettings(f"The label {lab!r} cannot be an IMAP keyword on this server.",
+                                                   "Search for a one-word label (no spaces or IMAP specials).")
             state = self._examine(conn, folder)
-            uids = self._uid_search(conn, crit.imap_keys())
+            uids = self._uid_search(conn, crit.imap_keys(gmail=gmail))
             if before_uid is not None:
                 uids = [u for u in uids if u < int(before_uid)]
             uids.sort(reverse=True)
@@ -926,6 +1006,8 @@ class EmailClient:
                         subject=summary.subject,
                         seen=summary.seen,
                         has_attachments=summary.has_attachments,
+                    ) and (crit.flagged is None or (("\\Flagged" in summary.flags) == crit.flagged)) and (
+                        gmail or all(lab in summary.flags for lab in crit.labels)
                     ):
                         matched.append(summary)
                         if limit and len(matched) >= limit:
@@ -1132,6 +1214,260 @@ class EmailClient:
                     out[uid_i] = self._assemble_detail(uid_i, attrs, state, header=header, root=root, texts=texts,
                                                        htmls=htmls, skipped=skipped)
         return out
+
+    # -- mailbox changes (mark, label, move, delete) -----------------------------------------
+
+    @staticmethod
+    def _uid_list(uids: Any) -> List[int]:
+        items = [uids] if isinstance(uids, (int, str)) else list(uids or [])
+        out: List[int] = []
+        for uid in items:
+            uid_i = _int_or_none(uid)
+            if uid_i is None or uid_i <= 0:
+                raise EmailInvalidMessage("A message UID must be a positive number.", "Use uids from list/search results.")
+            out.append(uid_i)
+        if not out:
+            raise EmailInvalidMessage("No message was given.", "Give at least one uid.")
+        return sorted(set(out))
+
+    def _select(self, conn: imaplib.IMAP4, folder: Optional[str]) -> Dict[str, Any]:
+        """SELECT (read-write) `folder` for a mailbox change; the folder state like `_examine`."""
+        s = self._imap_settings()
+        name = str(folder or "").strip() or s.folder or "INBOX"
+        typ, data = conn.select(imap_codec.quote(imap_codec.encode_mailbox(name)), readonly=False)
+        if typ != "OK":
+            raise classify_imap_failure("SELECT", data, host=s.host, port=s.port, folder=name)
+        return {"folder": name}
+
+    def _uid_command(self, conn: imaplib.IMAP4, sub: str, *args: str) -> None:
+        s = self._imap_settings()
+        typ, data = conn.uid(sub, *args)
+        if typ != "OK":
+            raise classify_imap_failure(f"UID {sub}", data, host=s.host, port=s.port)
+
+    @staticmethod
+    def _caps(conn: imaplib.IMAP4) -> set:
+        return {str(c).upper() for c in (getattr(conn, "capabilities", None) or ())}
+
+    def mark(self, uids: Any, *, seen: Optional[bool] = None, flagged: Optional[bool] = None, folder: Optional[str] = None) -> Dict[str, Any]:
+        """Set or clear \\Seen (`seen`) and \\Flagged (`flagged`) on messages of `folder`; None
+        leaves a flag as it is. Returns `{folder, uids, seen, flagged}`."""
+        ids = self._uid_list(uids)
+        if seen is None and flagged is None:
+            raise EmailInvalidMessage("Nothing to mark.", "Give seen=True/False and/or flagged=True/False.")
+        self._require_write()
+        add = [f for f, v in (("\\Seen", seen), ("\\Flagged", flagged)) if v is True]
+        remove = [f for f, v in (("\\Seen", seen), ("\\Flagged", flagged)) if v is False]
+        uid_set = ",".join(str(u) for u in ids)
+        with self._imap(write=True) as conn:
+            state = self._select(conn, folder)
+            if add:
+                self._uid_command(conn, "STORE", uid_set, "+FLAGS.SILENT", "(" + " ".join(add) + ")")
+            if remove:
+                self._uid_command(conn, "STORE", uid_set, "-FLAGS.SILENT", "(" + " ".join(remove) + ")")
+        return {"folder": state["folder"], "uids": ids, "seen": seen, "flagged": flagged}
+
+    def label(self, uids: Any, *, add: Sequence[str] = (), remove: Sequence[str] = (), folder: Optional[str] = None) -> Dict[str, Any]:
+        """Add / remove labels on messages. On a server that advertises Gmail's X-GM-EXT-1 the
+        labels are Gmail labels (`X-GM-LABELS`, any text); elsewhere they are IMAP keywords (one
+        word without spaces or IMAP specials, never a \\system flag). Returns `{folder, uids,
+        added, removed, mode: "gmail_labels" | "keywords"}`."""
+        ids = self._uid_list(uids)
+        adds = [str(x).strip() for x in (add or ()) if str(x).strip()]
+        removes = [str(x).strip() for x in (remove or ()) if str(x).strip()]
+        if not adds and not removes:
+            raise EmailInvalidMessage("No label to add or remove.", "Give add=[...] and/or remove=[...].")
+        for lab in adds + removes:
+            if any(c in lab for c in "\r\n") or len(lab) > 200:
+                raise EmailInvalidMessage(f"The label {lab!r} is not one line of at most 200 characters.", "Shorten the label.")
+        self._require_write()
+        uid_set = ",".join(str(u) for u in ids)
+        with self._imap(write=True) as conn:
+            gmail = "X-GM-EXT-1" in self._caps(conn)
+            if not gmail:
+                for lab in adds + removes:
+                    if lab.startswith("\\") or any(c in _KEYWORD_FORBIDDEN for c in lab):
+                        raise EmailInvalidMessage(
+                            f"The label {lab!r} cannot be an IMAP keyword on this server (one word, no spaces or ( ) {{ % * \" \\ ]).",
+                            "Use one word such as Invoices or to-review.",
+                        )
+            state = self._select(conn, folder)
+            item = "X-GM-LABELS" if gmail else "FLAGS.SILENT"
+
+            def values(labels: List[str]) -> str:
+                return "(" + " ".join(imap_codec.quote(x) if gmail else x for x in labels) + ")"
+
+            if adds:
+                self._uid_command(conn, "STORE", uid_set, f"+{item}", values(adds))
+            if removes:
+                self._uid_command(conn, "STORE", uid_set, f"-{item}", values(removes))
+        return {"folder": state["folder"], "uids": ids, "added": adds, "removed": removes, "mode": "gmail_labels" if gmail else "keywords"}
+
+    def _expunge(self, conn: imaplib.IMAP4, uid_set: str) -> None:
+        s = self._imap_settings()
+        if "UIDPLUS" in self._caps(conn):
+            self._uid_command(conn, "EXPUNGE", uid_set)  # only these messages
+        else:
+            typ, data = conn.expunge()
+            if typ != "OK":
+                raise classify_imap_failure("EXPUNGE", data, host=s.host, port=s.port)
+
+    def _move_on(self, conn: imaplib.IMAP4, uid_set: str, dest: str) -> str:
+        target = imap_codec.quote(imap_codec.encode_mailbox(dest))
+        if "MOVE" in self._caps(conn):
+            self._uid_command(conn, "MOVE", uid_set, target)
+            return "move"
+        self._uid_command(conn, "COPY", uid_set, target)
+        self._uid_command(conn, "STORE", uid_set, "+FLAGS.SILENT", "(\\Deleted)")
+        self._expunge(conn, uid_set)
+        return "copy_expunge"
+
+    def move(self, uids: Any, to_folder: str, *, folder: Optional[str] = None) -> Dict[str, Any]:
+        """Move messages of `folder` to `to_folder`: `UID MOVE` when the server supports it, else
+        `UID COPY` + `\\Deleted` + expunge of exactly those messages (`UID EXPUNGE` with UIDPLUS).
+        Returns `{folder, to, uids, method: "move" | "copy_expunge"}`."""
+        ids = self._uid_list(uids)
+        dest = str(to_folder or "").strip()
+        if not dest or any(c in dest for c in "\r\n"):
+            raise EmailInvalidMessage("The destination folder is missing.", "Give the folder name, e.g. Archive.")
+        self._require_write()
+        uid_set = ",".join(str(u) for u in ids)
+        with self._imap(write=True) as conn:
+            state = self._select(conn, folder)
+            method = self._move_on(conn, uid_set, dest)
+        return {"folder": state["folder"], "to": dest, "uids": ids, "method": method}
+
+    def _trash_folder(self, conn: imaplib.IMAP4) -> Optional[str]:
+        """The trash folder: RFC 6154 special-use `\\Trash` from LIST, else a usual name."""
+        typ, data = conn.list()
+        names: List[str] = []
+        if typ == "OK":
+            for group in imap_codec.segments_from_response(data):
+                try:
+                    row = imap_codec.parse_list_line(group)
+                except ValueError:
+                    row = None
+                if not row:
+                    continue
+                if any(str(f).lower() == "\\trash" for f in row.get("flags") or ()):
+                    return str(row["name"])
+                names.append(str(row["name"]))
+        lowered = {n.lower(): n for n in names}
+        for candidate in TRASH_FOLDER_NAMES:
+            if candidate.lower() in lowered:
+                return lowered[candidate.lower()]
+        return None
+
+    def delete(self, uids: Any, *, permanent: bool = False, folder: Optional[str] = None) -> Dict[str, Any]:
+        """Delete messages of `folder`: moved to the trash folder (special-use \\Trash, else a usual
+        name) by default; `permanent=True` (or messages already in the trash) sets \\Deleted and
+        expunges them. Returns `{folder, uids, to (the trash or None), permanent}`. No trash
+        folder found -> `EmailMailboxMissing` (use permanent=True)."""
+        ids = self._uid_list(uids)
+        self._require_write()
+        uid_set = ",".join(str(u) for u in ids)
+        with self._imap(write=True) as conn:
+            trash = None if permanent else self._trash_folder(conn)
+            state = self._select(conn, folder)
+            if not permanent and trash is None:
+                raise EmailMailboxMissing(
+                    "This mailbox has no trash folder.",
+                    "Delete permanently (permanent=True), or move the messages to a folder of your choice.",
+                    details={"folder": state["folder"]},
+                )
+            if permanent or trash == state["folder"]:
+                self._uid_command(conn, "STORE", uid_set, "+FLAGS.SILENT", "(\\Deleted)")
+                self._expunge(conn, uid_set)
+                return {"folder": state["folder"], "uids": ids, "to": None, "permanent": True}
+            self._move_on(conn, uid_set, str(trash))
+        return {"folder": state["folder"], "uids": ids, "to": trash, "permanent": False}
+
+    # -- conversations -------------------------------------------------------------------------
+
+    def thread(self, uid: Any, *, folder: Optional[str] = None) -> List[MessageSummary]:
+        """The conversation of message `uid` in `folder`, oldest first: the messages its
+        References / In-Reply-To name, and the messages that reference it or the conversation's
+        first message (headers only, read-only)."""
+        uid_i = _int_or_none(uid)
+        if uid_i is None or uid_i <= 0:
+            raise EmailInvalidMessage("The message UID must be a positive number.", "Use a uid from list/search results.")
+        with self._imap() as conn:
+            state = self._examine(conn, folder)
+            attrs = self._fetch(conn, [uid_i], _DETAIL_ITEMS).get(uid_i)
+            if not attrs or not _has_section(attrs, "HEADER"):
+                raise EmailMessageNotFound(f"No message with uid {uid_i} in {state['folder']!r}.",
+                                           "List or search the folder again.", details={"uid": uid_i, "folder": state["folder"]})
+            msg = email.message_from_bytes(_section_bytes(attrs, "HEADER"), policy=email.policy.default)
+            own = _header(msg, "Message-ID")
+            refs = _split_ids(_header(msg, "References"))
+            parent = _header(msg, "In-Reply-To")
+            ids = [i for i in [*refs, parent, own] if i]
+            root = refs[0] if refs else (parent or own)
+            found = {uid_i}
+            for mid in dict.fromkeys(ids):
+                found.update(self._uid_search(conn, ["HEADER", "Message-ID", imap_codec.quote(mid)]))
+            for anchor in dict.fromkeys(i for i in (root, own) if i):
+                found.update(self._uid_search(conn, ["HEADER", "References", imap_codec.quote(anchor)]))
+                found.update(self._uid_search(conn, ["HEADER", "In-Reply-To", imap_codec.quote(anchor)]))
+            fetched = self._fetch(conn, sorted(found), _SUMMARY_ITEMS)
+        summaries = [self._summary(u, fetched[u], state["folder"], state["uidvalidity"]) for u in sorted(found) if u in fetched]
+        return sorted(summaries, key=lambda m: (m.internaldate or "", m.uid))
+
+    # -- forwarding ----------------------------------------------------------------------------
+
+    def build_forward(
+        self,
+        uid: Any,
+        *,
+        to: Sequence[str],
+        note: str = "",
+        include_attachments: bool = True,
+        folder: Optional[str] = None,
+    ) -> Tuple[OutgoingMessage, MessageDetail]:
+        """The forward of message `uid` to `to`: `note`, then the original's headers and text
+        (its HTML too when it has one), "Fwd: <subject>", and its attachments when
+        `include_attachments` (read within the reading limit; over it -> EmailMessageTooLarge)."""
+        recipients = tuple(str(a).strip() for a in ([to] if isinstance(to, str) else list(to or ())) if str(a).strip())
+        if not recipients:
+            raise EmailInvalidMessage("The forward has no recipient.", "Give at least one address in to.")
+        original = self.get(uid, folder=folder)
+        sm = original.summary
+        block = "\n".join(
+            ["---------- Forwarded message ----------", f"From: {sm.from_}", f"Date: {sm.date}", f"Subject: {sm.subject}", f"To: {sm.to}"]
+            + ([f"Cc: {sm.cc}"] if sm.cc else [])
+        )
+        lead = (str(note or "").rstrip() + "\n\n") if str(note or "").strip() else ""
+        text = f"{lead}{block}\n\n{original.text or ''}".rstrip() + "\n"
+        html = ""
+        if original.html:
+            from html import escape
+
+            html = (f"<p>{escape(str(note or '').strip())}</p>" if str(note or "").strip() else "") + \
+                f"<pre>{escape(block)}</pre>" + original.html
+        attachments: List[Attachment] = []
+        if include_attachments and original.attachments:
+            cap = self.max_message_bytes
+            size = sm.size or 0
+            if size > cap:
+                raise EmailMessageTooLarge(
+                    f"Message {sm.uid} is {size} bytes, over the {cap}-byte reading limit: its attachments cannot be forwarded.",
+                    "Forward it without attachments (include_attachments=False).",
+                    details={"uid": sm.uid, "size": size, "limit": cap},
+                )
+            with self._imap() as conn:
+                self._examine(conn, folder)
+                raw = self._fetch_raw(conn, int(sm.uid))
+            parsed = email.message_from_bytes(raw, policy=email.policy.default)
+            for part in _attachment_parts(parsed):
+                attachments.append(Attachment(
+                    filename=str(part.get_filename() or "attachment"),
+                    content_type=part.get_content_type(),
+                    data=part.get_payload(decode=True) or b"",
+                ))
+        subject = sm.subject or ""
+        if not subject[:4].lower() == "fwd:":
+            subject = f"Fwd: {subject}" if subject else "Fwd:"
+        return OutgoingMessage(to=recipients, subject=subject, text=text, html=html, attachments=tuple(attachments)), original
 
     def _fetch_raw(self, conn: imaplib.IMAP4, uid: int) -> bytes:
         got = self._fetch(conn, [uid], "(UID BODY.PEEK[])").get(uid) or {}

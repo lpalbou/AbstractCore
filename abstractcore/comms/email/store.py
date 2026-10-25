@@ -674,6 +674,7 @@ class EmailAccountStore:
             ),
             "can_read": bool(acct and acct.can_read),
             "can_send": bool(acct and acct.can_send),
+            "can_write": bool(acct and acct.can_write),
             "secret_set": bool(location),
             # "sealing-key": the sealing key file (2.26+); "old-keychain": sealed by an older version
             # with the key in an OS keychain, never read now (connect again); "key-file": an older

@@ -193,6 +193,7 @@ class FakeMessage:
     raw: bytes
     flags: Set[str] = field(default_factory=set)
     internaldate: _dt.datetime = field(default_factory=lambda: _dt.datetime.now(_dt.timezone.utc))
+    labels: Set[str] = field(default_factory=set)  # Gmail labels (X-GM-LABELS), when the server is `gmail`
 
 
 @dataclass
@@ -201,6 +202,10 @@ class FakeFolder:
     uidvalidity: int
     uidnext: int = 1
     messages: List[FakeMessage] = field(default_factory=list)
+
+
+def _quote_gm(label: str) -> str:
+    return '"' + label.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -409,6 +414,9 @@ class FakeImapServer:
         overquota: bool = False,
         search_tz: _dt.tzinfo = _dt.timezone.utc,
         broken_bodystructure: bool = False,
+        move: bool = True,
+        gmail: bool = False,
+        trash: Optional[str] = None,
     ) -> None:
         assert security in {"ssl", "starttls"}
         # SEARCH SINCE/BEFORE compare dates in the server's own time zone (RFC 3501 leaves the
@@ -425,6 +433,12 @@ class FakeImapServer:
         self.fetches: List[str] = []
         # Answer BODYSTRUCTURE with something unparsable (a server whose structure is unusable).
         self.broken_bodystructure = broken_bodystructure
+        # Mailbox changes (STORE / COPY / MOVE / EXPUNGE on a SELECTed folder): `move` advertises
+        # RFC 6851 MOVE (else a client must COPY + \\Deleted + EXPUNGE), `gmail` advertises
+        # X-GM-EXT-1 and keeps labels per message, `trash` names the special-use \\Trash folder.
+        self.move = move
+        self.gmail = gmail
+        self.trash = trash
         self.logins: List[Tuple[str, str]] = []  # (user, secret) of each SUCCESSFUL sign-in
         self.handshake_errors: List[str] = []
         self._lock = threading.Lock()
@@ -470,6 +484,18 @@ class FakeImapServer:
             for i, m in enumerate(f.messages, start=1):
                 m.uid = i
             f.uidnext = len(f.messages) + 1
+
+    def uids_in(self, folder: str) -> List[int]:
+        with self._lock:
+            f = self.folders.get(folder)
+            return [m.uid for m in f.messages] if f else []
+
+    def labels_of(self, folder: str, uid: int) -> Set[str]:
+        with self._lock:
+            for m in self.folders[folder].messages:
+                if m.uid == uid:
+                    return set(m.labels)
+        return set()
 
     def flags_of(self, folder: str, uid: int) -> Set[str]:
         with self._lock:
@@ -530,7 +556,11 @@ class _ImapSession:
         self.f.flush()
 
     def caps(self) -> str:
-        caps = ["IMAP4rev1", "UIDPLUS"]
+        caps = ["IMAP4rev1", "UIDPLUS", "SPECIAL-USE"]
+        if self.s.move:
+            caps.append("MOVE")
+        if self.s.gmail:
+            caps.append("X-GM-EXT-1")
         if not self.tls and self.s.advertise_starttls:
             caps.append("STARTTLS")
         if self.tls:
@@ -654,6 +684,8 @@ class _ImapSession:
             flag = "\\HasNoChildren"
             if name == "Sent":
                 flag += " \\Sent"
+            if self.s.trash and name == self.s.trash:
+                flag += " \\Trash"
             self.send(f'* LIST ({flag}) "/" "{encode_mailbox(name)}"')
         self.send(f"{tag} OK LIST completed")
 
@@ -695,11 +727,100 @@ class _ImapSession:
         self.send(f'* STATUS "{folder.name}" (MESSAGES {len(folder.messages)} UIDNEXT {folder.uidnext} UIDVALIDITY {folder.uidvalidity})')
         self.send(f"{tag} OK STATUS completed")
 
-    def cmd_STORE(self, tag: str, args: str) -> None:
+    def _targets(self, spec: str, uid: bool) -> List[FakeMessage]:
+        return [m for seq, m in enumerate(self.folder.messages, start=1) if (self._in_set(m.uid, spec) if uid else self._in_seq(seq, spec))]
+
+    def cmd_STORE(self, tag: str, args: str, uid: bool = False) -> None:
         if self.readonly:
             self.send(f"{tag} NO [READ-ONLY] mailbox opened with EXAMINE")
             return
+        toks = _tokenize(args)
+        if len(toks) < 3:
+            self.send(f"{tag} BAD STORE needs a set, an item and values")
+            return
+        spec, item = toks[0], toks[1].upper()
+        values = " ".join(toks[2:]).strip()
+        if values.startswith("(") and values.endswith(")"):
+            values = values[1:-1]
+        vals = [_unq(v) for v in _tokenize(values) if v]
+        silent = item.endswith(".SILENT")
+        base = item[: -len(".SILENT")] if silent else item
+        with self.s._lock:
+            for m in self._targets(spec, uid):
+                if base.lstrip("+-") == "X-GM-LABELS":
+                    if not self.s.gmail:
+                        self.send(f"{tag} BAD X-GM-LABELS not supported")
+                        return
+                    if base.startswith("+"):
+                        m.labels |= set(vals)
+                    elif base.startswith("-"):
+                        m.labels -= set(vals)
+                    else:
+                        m.labels = set(vals)
+                    continue
+                if base.startswith("+"):
+                    m.flags |= set(vals)
+                elif base.startswith("-"):
+                    m.flags -= set(vals)
+                else:
+                    m.flags = set(vals)
+                if not silent:
+                    seq = self.folder.messages.index(m) + 1
+                    self.send(f"* {seq} FETCH (UID {m.uid} FLAGS ({' '.join(sorted(m.flags))}))")
         self.send(f"{tag} OK STORE completed")
+
+    def _copy(self, tag: str, args: str, *, uid: bool, move: bool) -> None:
+        from abstractcore.comms.email.imap_codec import decode_mailbox
+
+        if self.readonly:
+            self.send(f"{tag} NO [READ-ONLY] mailbox opened with EXAMINE")
+            return
+        toks = _tokenize(args)
+        if len(toks) != 2:
+            self.send(f"{tag} BAD needs a set and a mailbox")
+            return
+        dest = self.s.folders.get(decode_mailbox(_unq(toks[1])))
+        if dest is None:
+            self.send(f"{tag} NO [TRYCREATE] Unknown mailbox")
+            return
+        with self.s._lock:
+            moved = self._targets(toks[0], uid)
+            for m in moved:
+                dest.messages.append(FakeMessage(uid=dest.uidnext, raw=m.raw, flags=set(m.flags) - {"\\Deleted"},
+                                                 internaldate=m.internaldate, labels=set(m.labels)))
+                dest.uidnext += 1
+            if move:
+                for m in moved:
+                    seq = self.folder.messages.index(m) + 1
+                    self.folder.messages.remove(m)
+                    self.send(f"* {seq} EXPUNGE")
+        self.send(f"{tag} OK {'MOVE' if move else 'COPY'} completed")
+
+    def cmd_COPY(self, tag: str, args: str) -> None:
+        self._copy(tag, args, uid=False, move=False)
+
+    def cmd_MOVE(self, tag: str, args: str) -> None:
+        if not self.s.move:
+            self.send(f"{tag} BAD unknown command")
+            return
+        self._copy(tag, args, uid=False, move=True)
+
+    def _expunge(self, tag: str, spec: Optional[str]) -> None:
+        if self.readonly:
+            self.send(f"{tag} NO [READ-ONLY] mailbox opened with EXAMINE")
+            return
+        with self.s._lock:
+            for m in list(self.folder.messages):
+                if "\\Deleted" in m.flags and (spec is None or self._in_set(m.uid, spec)):
+                    seq = self.folder.messages.index(m) + 1
+                    self.folder.messages.remove(m)
+                    self.send(f"* {seq} EXPUNGE")
+        self.send(f"{tag} OK EXPUNGE completed")
+
+    def cmd_EXPUNGE(self, tag: str, args: str) -> None:
+        if self._need_auth(tag):
+            return
+        self._expunge(tag, None)
 
     def cmd_UID(self, tag: str, args: str) -> None:
         if self._need_auth(tag):
@@ -714,7 +835,13 @@ class _ImapSession:
         elif sub == "FETCH":
             self._fetch(tag, rest, uid=True)
         elif sub == "STORE":
-            self.cmd_STORE(tag, rest)
+            self.cmd_STORE(tag, rest, uid=True)
+        elif sub == "COPY":
+            self._copy(tag, rest, uid=True, move=False)
+        elif sub == "MOVE" and self.s.move:
+            self._copy(tag, rest, uid=True, move=True)
+        elif sub == "EXPUNGE":
+            self._expunge(tag, _unq(rest.strip()))
         else:
             self.send(f"{tag} BAD unsupported UID command")
 
@@ -750,6 +877,20 @@ class _ImapSession:
         if key == "UID":
             spec = _unq(toks[i + 1])
             return self._in_set(msg.uid, spec), i + 2
+        if key in {"FLAGGED", "UNFLAGGED", "DELETED", "UNDELETED"}:
+            has = ("\\Flagged" if "FLAGGED" in key else "\\Deleted") in msg.flags
+            return (not has) if key.startswith("UN") else has, i + 1
+        if key in {"KEYWORD", "UNKEYWORD"}:
+            has = _unq(toks[i + 1]) in msg.flags
+            return (not has) if key == "UNKEYWORD" else has, i + 2
+        if key == "X-GM-LABELS":
+            return _unq(toks[i + 1]) in msg.labels, i + 2
+        if key in {"TEXT", "BODY"}:
+            needle = _unq(toks[i + 1]).casefold()
+            return needle in msg.raw.decode("utf-8", errors="replace").casefold(), i + 2
+        if key == "HEADER":
+            name, needle = _unq(toks[i + 1]), _unq(toks[i + 2]).casefold()
+            return needle in hdr(name).casefold(), i + 3
         if key == "OR":
             a, j = self._matches(msg, toks, i + 1)
             b, k = self._matches(msg, toks, j)
@@ -819,6 +960,8 @@ class _ImapSession:
                     continue
                 if upper == "FLAGS":
                     parts.append(f" FLAGS ({' '.join(sorted(msg.flags))})".encode())
+                elif upper == "X-GM-LABELS" and self.s.gmail:
+                    parts.append(f" X-GM-LABELS ({' '.join(_quote_gm(l) for l in sorted(msg.labels))})".encode())
                 elif upper == "RFC822.SIZE":
                     parts.append(f" RFC822.SIZE {len(msg.raw)}".encode())
                 elif upper == "INTERNALDATE":

@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.utils import getaddresses
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 from .errors import EmailInvalidSettings
 from .imap_codec import quote
@@ -80,6 +80,11 @@ class SearchCriteria:
     before: Optional[date] = None
     unseen: Optional[bool] = None
     has_attachment: Optional[bool] = None
+    # Typed query additions (2.28): text anywhere in the message (the server decides), the
+    # \\Flagged state, and labels (IMAP keywords, or Gmail labels on a Gmail server).
+    text: str = ""
+    flagged: Optional[bool] = None
+    labels: Tuple[str, ...] = ()
 
     @classmethod
     def build(
@@ -93,7 +98,31 @@ class SearchCriteria:
         before: Any = None,
         unseen: Optional[bool] = None,
         has_attachment: Optional[bool] = None,
+        text: Any = "",
+        flagged: Optional[bool] = None,
+        labels: Any = (),
+        from_: Any = "",
+        to: Any = "",
+        subject: Any = "",
+        until: Any = None,
     ) -> "SearchCriteria":
+        """The typed query. `from_` is an address (name@example.test) or a domain (example.test);
+        `to`, `subject`, `until` are the short names of `to_address`, `subject_contains`, `before`
+        (`until` is exclusive, like `before`)."""
+        if str(from_ or "").strip():
+            if "@" in str(from_):
+                from_address = from_address or from_
+            else:
+                from_domain = from_domain or from_
+        to_address = to_address or to
+        subject_contains = subject_contains or subject
+        before = before if before is not None else until
+        tx = str(text or "")
+        if any(c in tx for c in "\r\n"):
+            raise EmailInvalidSettings("The search text contains a line break.", "Give the text on one line.")
+        labs = tuple(str(x).strip() for x in ([labels] if isinstance(labels, str) else list(labels or ())) if str(x).strip())
+        if any(any(c in x for c in "\r\n") for x in labs):
+            raise EmailInvalidSettings("A label contains a line break.", "Give each label on one line.")
         fa = str(from_address or "").strip()
         fd = str(from_domain or "").strip()
         ta = str(to_address or "").strip()
@@ -127,10 +156,22 @@ class SearchCriteria:
             before=parse_day(before, label="before"),
             unseen=unseen if unseen in (True, False) else None,
             has_attachment=has_attachment if has_attachment in (True, False) else None,
+            text=tx.strip(),
+            flagged=flagged if flagged in (True, False) else None,
+            labels=labs,
         )
 
-    def imap_keys(self) -> List[str]:
+    def imap_keys(self, *, gmail: bool = False) -> List[str]:
+        """IMAP SEARCH keys; `gmail` turns labels into X-GM-LABELS (else KEYWORD)."""
         keys: List[str] = []
+        if self.text and _ascii(self.text):
+            keys += ["TEXT", quote(self.text)]
+        if self.flagged is True:
+            keys.append("FLAGGED")
+        elif self.flagged is False:
+            keys.append("UNFLAGGED")
+        for lab in self.labels:
+            keys += (["X-GM-LABELS", quote(lab)] if gmail else ["KEYWORD", lab])
         if self.from_address and _ascii(self.from_address):
             keys += ["FROM", quote(self.from_address)]
         elif self.from_domain:

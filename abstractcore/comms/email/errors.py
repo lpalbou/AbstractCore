@@ -183,6 +183,13 @@ class EmailReadOnlyViolation(EmailError):
     code = "email_read_only"
 
 
+class EmailMailboxReadOnly(EmailError):
+    """A mailbox change (mark, label, move, delete) on an account that may only be read
+    (`EmailAccount.can_write` is False: IMAP without SMTP); refused before connecting."""
+
+    code = "email_mailbox_read_only"
+
+
 # ---------------------------------------------------------------------------------------
 # Classification helpers
 # ---------------------------------------------------------------------------------------

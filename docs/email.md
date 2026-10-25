@@ -404,6 +404,49 @@ a sanitized name and never overwrites a file (above the reading limit it raises
 `EmailMessageTooLarge`). `client.build_reply(uid, text=...)` prepares a reply with
 `In-Reply-To` / `References` set and the recipient taken from `Reply-To` (else `From`).
 
+### Searching, conversations and changing the mailbox
+
+`client.search(...)` also takes a typed query: `from_` (an address, or a domain such as
+`acme.test`), `to`, `subject` (a substring), `text` (anywhere in the message, the server decides),
+`since` / `until` (days; `until` is exclusive), `unseen`, `flagged` and `labels` (all of them),
+plus `folder` and `limit`; results are newest first. `client.thread(uid)` returns the
+conversation of a message in its folder, oldest first: the messages its `References` /
+`In-Reply-To` name and the ones that reference it.
+
+```python
+hits = client.search(from_="acme.test", subject="invoice", unseen=True, limit=50)["messages"]
+uids = [m.uid for m in hits]
+with client.session(write=True):                 # one connection for every change below
+    client.label(uids, add=["Invoices"])         # Gmail labels on Gmail, IMAP keywords elsewhere
+    client.mark(uids, seen=True, flagged=False)  # \Seen / \Flagged; None leaves a flag unchanged
+    client.move(uids, "Archive")                 # UID MOVE, else COPY + \Deleted + UID EXPUNGE
+client.delete([old_uid])                         # to the trash folder; permanent=True expunges
+```
+
+- `mark(uids, *, seen=None, flagged=None, folder=None)` -> `{folder, uids, seen, flagged}`.
+- `label(uids, *, add=(), remove=(), folder=None)` -> `{folder, uids, added, removed, mode}`: on a
+  server that advertises Gmail's `X-GM-EXT-1` the labels are Gmail labels (`mode:
+  "gmail_labels"`, any text); elsewhere IMAP keywords (`mode: "keywords"`: one word without spaces
+  or IMAP specials, never a `\system` flag; otherwise `EmailInvalidMessage`).
+- `move(uids, to_folder, *, folder=None)` -> `{folder, to, uids, method: "move" | "copy_expunge"}`;
+  without MOVE, only those messages are expunged (`UID EXPUNGE`, UIDPLUS).
+- `delete(uids, *, permanent=False, folder=None)` -> `{folder, uids, to, permanent}`: the trash is
+  the RFC 6154 special-use `\Trash` folder, else a usual name (`Trash`, `[Gmail]/Trash`,
+  `Deleted Items`, ...); none found -> `EmailMailboxMissing` (delete with `permanent=True`).
+  Messages already in the trash are deleted permanently.
+
+Every change runs on a connection limited to the commands these verbs send (a body FETCH is still
+PEEK-only: reading never marks a message read). A read-only mailbox, an account with IMAP but no
+SMTP (`account.can_write` is false), refuses every change before connecting with
+`EmailMailboxReadOnly` (`email_mailbox_read_only`). `session(write=True)` holds one connection for
+reads and changes; inside a read-only `session()` a change opens its own connection.
+
+To answer or pass on a message, use the context, so the recipient policy and the send limits apply
+exactly as for `ctx.send`: `ctx.reply(uid, text, *, html="", reply_all=False, folder=None)` (reply
+headers and recipients from `client.build_reply`) and `ctx.forward(uid, to, *, note="",
+include_attachments=True, folder=None)` ("Fwd:", the note, the original's headers and text, its
+attachments read within the reading limit; `client.build_forward` builds it without sending).
+
 A host that serves several users (the gateway) keeps one `EmailAccountStore(config_file=...)` per
 user and gives the tools the account of the run they execute for, with
 `abstractcore.tools.comms_tools.use_email_context(ctx)` or `set_email_account_resolver(fn)`. While a

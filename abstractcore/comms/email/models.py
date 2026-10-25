@@ -315,6 +315,13 @@ class EmailAccount:
     def can_send(self) -> bool:
         return self.smtp is not None
 
+    @property
+    def can_write(self) -> bool:
+        """May the mailbox be changed (mark, label, move, delete)? An account with IMAP only is a
+        read-only mailbox (a host connects it to be watched, never changed), so changes need both
+        IMAP and SMTP: a full account."""
+        return self.imap is not None and self.smtp is not None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "address": self.address,

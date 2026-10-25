@@ -99,6 +99,19 @@ class EmailContext:
     def send(self, message: OutgoingMessage) -> SendResult:
         return guarded_send(self, message)
 
+    def reply(self, uid: Any, text: str = "", *, html: str = "", reply_all: bool = False, folder: Optional[str] = None) -> SendResult:
+        """Reply to message `uid` (`EmailClient.build_reply`: Reply-To else From; `reply_all` adds
+        To and Cc; threading headers set), sent through `guarded_send` (policy, limits)."""
+        message, _original = self.client().build_reply(uid, text=text, html=html, reply_all=reply_all, folder=folder)
+        return guarded_send(self, message)
+
+    def forward(self, uid: Any, to: Any, *, note: str = "", include_attachments: bool = True, folder: Optional[str] = None) -> SendResult:
+        """Forward message `uid` to `to` (`EmailClient.build_forward`), sent through `guarded_send`
+        (the recipient policy decides who it may go to; limits apply)."""
+        message, _original = self.client().build_forward(uid, to=[to] if isinstance(to, str) else list(to or ()), note=note,
+                                                          include_attachments=include_attachments, folder=folder)
+        return guarded_send(self, message)
+
 
 def mark_automatic(message: OutgoingMessage, marker: str) -> OutgoingMessage:
     """`message` with the framework marker and RFC 3834 `Auto-Submitted` (kept when set).

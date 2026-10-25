@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.28.0] - 2026-10-25
+
+### Added
+
+- Mailbox verbs on `EmailClient`, each on a list of UIDs and inside `session(write=True)`:
+  `mark(uids, seen=, flagged=)` (\\Seen, \\Flagged), `label(uids, add=, remove=)` (Gmail labels through
+  `X-GM-LABELS` when the server advertises `X-GM-EXT-1`, IMAP keywords elsewhere), `move(uids, to_folder)`
+  (`UID MOVE`, else COPY + \\Deleted + `UID EXPUNGE` of exactly those messages) and `delete(uids,
+  permanent=False)` (to the special-use \\Trash folder, else a usual trash name; `permanent=True` expunges).
+  They run on a connection limited to those commands (`MailboxIMAP4`; a body FETCH stays PEEK-only).
+- `EmailAccount.can_write` (IMAP and SMTP; `can_write` in `EmailAccountStore.public()`): an account with IMAP
+  only is a read-only mailbox and every change refuses before connecting with `EmailMailboxReadOnly`
+  (`email_mailbox_read_only`).
+- `client.search(...)` takes a typed query: `from_` (address or domain), `to`, `subject`, `text`, `since`,
+  `until`, `unseen`, `flagged`, `labels`, with `folder` and `limit`; newest first. `SearchCriteria` gains
+  `text`, `flagged` and `labels`.
+- `client.thread(uid)`: the conversation of a message (References / In-Reply-To both ways), oldest first.
+- `client.build_forward(uid, to=, note=, include_attachments=)` and, through the recipient policy and send
+  limits, `EmailContext.reply(uid, text, reply_all=)` and `EmailContext.forward(uid, to, note=,
+  include_attachments=)`.
+- `session(write=True)`: one connection for reads and changes.
+- Test servers: the fake IMAP server applies STORE (flags, keywords, Gmail labels), COPY, MOVE (optional),
+  EXPUNGE / UID EXPUNGE, lists a special-use \\Trash, and searches TEXT, FLAGGED, KEYWORD, X-GM-LABELS and
+  HEADER.
+
 ## [2.27.0] - 2026-10-25
 
 ### Added
