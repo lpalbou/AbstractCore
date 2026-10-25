@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `EmailClient.session()`: one read-only IMAP connection (one sign-in) for every read inside it
+  (`fetch_new`, `get`, `get_many`, `search`...); an error of the caller's own raised inside the block
+  passes unchanged.
+- `EmailClient.get_many(uids, folder=..., max_message_bytes=...)`: several messages, each exactly as
+  `get(uid)` reads it (whole text/HTML bodies up to the reading limit, `skipped` over it, attachments as
+  metadata), on one connection with one header/structure FETCH per 100 UIDs and one PEEK FETCH per
+  distinct text section; a UID the folder does not hold is a typed `EmailMessageNotFound` value. A mail
+  watcher reading 50 new messages now signs in once and sends at most four FETCHes (it opened one
+  connection per message before).
+
 ## [2.26.4] - 2026-10-21
 
 ### Added

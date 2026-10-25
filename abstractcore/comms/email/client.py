@@ -39,7 +39,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage, Message
 from email.utils import format_datetime, formataddr, getaddresses, make_msgid, parsedate_to_datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 from . import imap_codec
 from .bodystructure import MimePart, attachment_parts, body_parts, decode_text, decode_transfer, parse_bodystructure
@@ -398,7 +398,8 @@ def _has_section(attrs: dict, section: str) -> bool:
 
 
 class EmailClient:
-    """One account's mail operations. Cheap to build; each operation opens its own connection."""
+    """One account's mail operations. Cheap to build; each operation opens its own connection,
+    unless it runs inside `session()` (one connection, one login, for every read inside)."""
 
     def __init__(
         self,
@@ -423,6 +424,9 @@ class EmailClient:
                 f"Give a positive number of bytes (the default is {DEFAULT_MAX_MESSAGE_BYTES}).",
             )
         self.max_message_bytes = cap
+        # The connection `session()` holds (None outside a session). A client is used by one
+        # thread at a time (a mail watcher's poll, an agent's tool call).
+        self._held: Optional[imaplib.IMAP4] = None
         self._ssl_context = _require_verifying(ssl_context) if ssl_context is not None else None
         if account.auth_kind == "oauth2":
             if token_provider is None:
@@ -474,7 +478,53 @@ class EmailClient:
         return self.account.smtp
 
     @contextmanager
+    def session(self) -> Iterator["EmailClient"]:
+        """Hold ONE read-only IMAP connection: every read inside (`fetch_new`, `get`, `get_many`,
+        `search`, ...) reuses it, so a poll that lists new mail and then reads it signs in once.
+        Nested sessions reuse the outer one. Errors are the same typed EmailErrors."""
+        if self._held is not None:
+            yield self
+            return
+        # Connect and sign in here (typed errors); the reads inside translate their own errors
+        # (`_imap`), and anything else raised in the block (the caller's own storage) passes as is.
+        conn = self._connect()
+        self._held = conn
+        try:
+            yield self
+        finally:
+            self._held = None
+            self._close_imap(conn)
+
+    def _translate_imap_error(self, exc: BaseException, s) -> EmailError:
+        if isinstance(exc, imaplib.IMAP4.abort):
+            return classify_connection_error(exc, protocol="imap", host=s.host, port=s.port)
+        if isinstance(exc, imaplib.IMAP4.error):
+            err = EmailProtocolError(
+                "The IMAP server sent an answer this client could not use.",
+                "Retry; if it persists, check that the server supports IMAP4rev1.",
+                details={"protocol": "imap", "host": s.host, "port": s.port},
+            )
+            err.__cause__ = exc
+            return err
+        return classify_connection_error(exc, protocol="imap", host=s.host, port=s.port)
+
+    @contextmanager
     def _imap(self) -> Iterator[imaplib.IMAP4]:
+        if self._held is not None:
+            # Inside `session()`: the held connection, the same error translation.
+            s = self._imap_settings()
+            try:
+                yield self._held
+            except EmailError:
+                raise
+            except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError, ssl.SSLError) as exc:
+                raise self._translate_imap_error(exc, s) from None
+            return
+        with self._open_imap() as conn:
+            yield conn
+
+    def _connect(self) -> imaplib.IMAP4:
+        """A connected, signed-in read-only IMAP connection (typed EmailErrors on failure)."""
         s = self._imap_settings()
         conn: Optional[imaplib.IMAP4] = None
         try:
@@ -500,19 +550,24 @@ class EmailClient:
             raise classify_connection_error(exc, protocol="imap", host=s.host, port=s.port) from None
         try:
             self._imap_login(conn, s)
+        except EmailError:
+            self._close_imap(conn)
+            raise
+        except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError, ssl.SSLError) as exc:
+            self._close_imap(conn)
+            raise self._translate_imap_error(exc, s) from None
+        return conn
+
+    @contextmanager
+    def _open_imap(self) -> Iterator[imaplib.IMAP4]:
+        s = self._imap_settings()
+        conn = self._connect()
+        try:
             yield conn
         except EmailError:
             raise
-        except imaplib.IMAP4.abort as exc:
-            raise classify_connection_error(exc, protocol="imap", host=s.host, port=s.port) from None
-        except imaplib.IMAP4.error as exc:
-            raise EmailProtocolError(
-                "The IMAP server sent an answer this client could not use.",
-                "Retry; if it persists, check that the server supports IMAP4rev1.",
-                details={"protocol": "imap", "host": s.host, "port": s.port},
-            ) from exc
-        except (OSError, ssl.SSLError) as exc:
-            raise classify_connection_error(exc, protocol="imap", host=s.host, port=s.port) from None
+        except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError, ssl.SSLError) as exc:
+            raise self._translate_imap_error(exc, s) from None
         finally:
             self._close_imap(conn)
 
@@ -965,7 +1020,12 @@ class EmailClient:
                     if not text.strip():
                         continue
                     (texts if p.content_type == "text/plain" else htmls).append(text.strip("\r\n"))
-        summary = self._summary(uid_i, attrs, state["folder"], state["uidvalidity"], header=header, root=root)
+        return self._assemble_detail(uid_i, attrs, state, header=header, root=root, texts=texts, htmls=htmls, skipped=skipped,
+                                     raw=raw, include_raw=include_raw)
+
+    def _assemble_detail(self, uid: int, attrs: dict, state: dict, *, header: bytes, root: MimePart, texts: List[str],
+                         htmls: List[str], skipped: Optional[Dict[str, Any]], raw: bytes = b"", include_raw: bool = False) -> MessageDetail:
+        summary = self._summary(uid, attrs, state["folder"], state["uidvalidity"], header=header, root=root)
         msg = email.message_from_bytes(header, policy=email.policy.default)
         infos = [
             AttachmentInfo(
@@ -990,6 +1050,88 @@ class EmailClient:
             raw=raw if include_raw else b"",
             skipped=skipped,
         )
+
+    def get_many(
+        self,
+        uids: Sequence[Any],
+        *,
+        folder: Optional[str] = None,
+        max_message_bytes: Optional[int] = None,
+    ) -> Dict[int, Union[MessageDetail, EmailError]]:
+        """Several messages, each exactly as `get(uid)` reads it (headers, whole text/html bodies,
+        the attachment list, `skipped` over the reading limit), on ONE connection:
+
+        1. one `UID FETCH` of the structure and headers per 100 UIDs;
+        2. one `UID FETCH ... BODY.PEEK[<section>]` per distinct text section among them (a batch
+           of plain-text mails: one; of multipart/alternative mails: two);
+        3. a message whose structure the server cannot describe is read whole, alone (as `get`).
+
+        Read-only (EXAMINE, PEEK): nothing is marked read. Returns `{uid: MessageDetail}`, with a
+        typed `EmailMessageNotFound` as the value of a UID the folder does not hold (one missing
+        message never fails the others). A connection or sign-in failure raises."""
+
+        cap = self._cap(max_message_bytes)
+        wanted: List[int] = []
+        for uid in uids:
+            uid_i = _int_or_none(uid)
+            if uid_i is None or uid_i <= 0:
+                raise EmailInvalidMessage("The message UID must be a positive number.", "Use a uid from list/search results.")
+            wanted.append(uid_i)
+        wanted = sorted(set(wanted))
+        out: Dict[int, Union[MessageDetail, EmailError]] = {}
+        if not wanted:
+            return out
+        with self._imap() as conn:
+            state = self._examine(conn, folder)
+            for start in range(0, len(wanted), MAX_LIST_LIMIT):
+                batch = wanted[start : start + MAX_LIST_LIMIT]
+                fetched = self._fetch(conn, batch, _DETAIL_ITEMS)
+                plan: Dict[int, tuple] = {}
+                by_section: Dict[str, List[int]] = {}
+                for uid_i in batch:
+                    attrs = fetched.get(uid_i)
+                    if not attrs or not _has_section(attrs, "HEADER"):
+                        out[uid_i] = EmailMessageNotFound(
+                            f"No message with uid {uid_i} in {state['folder']!r}.",
+                            "List or search the folder again; UIDs change when the server resets the folder.",
+                            details={"uid": uid_i, "folder": state["folder"]},
+                        )
+                        continue
+                    header = _section_bytes(attrs, "HEADER")
+                    root = _structure(attrs)
+                    if root is None:
+                        size = _int_or_none(attrs.get("RFC822.SIZE"))
+                        if size is not None and size > cap:
+                            summary = self._summary(uid_i, attrs, state["folder"], state["uidvalidity"], header=header)
+                            out[uid_i] = self._skipped_detail(summary, header, self._too_large(uid_i, state["folder"], size, cap, "size"))
+                        else:
+                            out[uid_i] = self._detail(uid_i, attrs, self._fetch_raw(conn, uid_i), state, include_raw=False)
+                        continue
+                    parts = body_parts(root)
+                    total = sum(p.size for p in parts)
+                    skipped = self._too_large(uid_i, state["folder"], total, cap, "text and HTML bodies") if total > cap else None
+                    if skipped is None:
+                        for p in parts:
+                            by_section.setdefault(p.section, []).append(uid_i)
+                    plan[uid_i] = (attrs, header, root, parts, skipped)
+                bodies: Dict[int, dict] = {}
+                for section, members in by_section.items():
+                    got = self._fetch(conn, members, f"(UID BODY.PEEK[{section}])")
+                    for uid_i in members:
+                        bodies.setdefault(uid_i, {}).update(got.get(uid_i) or {})
+                for uid_i, (attrs, header, root, parts, skipped) in plan.items():
+                    texts: List[str] = []
+                    htmls: List[str] = []
+                    if skipped is None:
+                        got = bodies.get(uid_i) or {}
+                        for p in parts:
+                            text = decode_text(_section_bytes(got, p.section), p)
+                            if not text.strip():
+                                continue
+                            (texts if p.content_type == "text/plain" else htmls).append(text.strip("\r\n"))
+                    out[uid_i] = self._assemble_detail(uid_i, attrs, state, header=header, root=root, texts=texts,
+                                                       htmls=htmls, skipped=skipped)
+        return out
 
     def _fetch_raw(self, conn: imaplib.IMAP4, uid: int) -> bytes:
         got = self._fetch(conn, [uid], "(UID BODY.PEEK[])").get(uid) or {}
