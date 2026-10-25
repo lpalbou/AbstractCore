@@ -58,6 +58,8 @@ from .errors import (
 from .discovery import EmailDiscoveryFailed, discover_servers, require_servers, server_defaults
 from .limits import SendRateLimiter
 from .models import (
+    ACCESS_LEVELS,
+    ACCESS_TEXT,
     AUTO_SUBMITTED_GENERATED,
     AUTO_SUBMITTED_HEADER,
     AUTO_SUBMITTED_REPLIED,
@@ -113,6 +115,8 @@ __all__ = [
     "AttachmentInfo",
     "DeviceAuthorization",
     "EmailAccount",
+    "ACCESS_LEVELS",
+    "ACCESS_TEXT",
     "EmailAccountStore",
     "EmailAgentToolsOff",
     "EmailAttachmentNotFound",

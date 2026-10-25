@@ -20,6 +20,9 @@ from .policy import normalize_address
 
 SECURITY_MODES = ("ssl", "starttls")
 AUTH_KINDS = ("password", "oauth2")
+# What automations may do with a mailbox: "read" (read only: never changed, never sent from) or
+# "write" (read and write: mark, label, move, delete, and send when an outgoing server is set).
+ACCESS_LEVELS = ("read", "write")
 OAUTH_PROVIDERS = ("google", "microsoft", "custom")
 
 DEFAULT_PORTS = {
@@ -264,6 +267,19 @@ class EmailAccount:
     display_name: str = ""
     auth_kind: str = "password"
     oauth: Optional[OAuthSettings] = None
+    # "read" | "write" — the person's explicit choice. "" (not chosen: an account stored before
+    # 2.29, or built without it) resolves to the rule those accounts followed: "write" when an
+    # outgoing server (SMTP) is set, else "read" (`default_access`).
+    access: str = ""
+
+    def __post_init__(self) -> None:
+        level = str(self.access or "").strip().lower() or default_access(self.imap, self.smtp)
+        if level not in ACCESS_LEVELS:
+            raise _invalid(
+                f"The access {self.access!r} is not one of: read, write.",
+                "Use read (automations only read the mailbox) or write (they may also change it and send from it).",
+            )
+        object.__setattr__(self, "access", level)
 
     @classmethod
     def build(
@@ -276,6 +292,7 @@ class EmailAccount:
         display_name: str = "",
         auth_kind: str = "password",
         oauth: Optional[OAuthSettings] = None,
+        access: str = "",
     ) -> "EmailAccount":
         addr = _check_address(address, "sender address")
         user = str(username or "").strip() or addr
@@ -305,6 +322,7 @@ class EmailAccount:
             display_name=name,
             auth_kind=kind,
             oauth=oauth if kind == "oauth2" else None,
+            access=str(access or ""),
         )
 
     @property
@@ -312,15 +330,20 @@ class EmailAccount:
         return self.imap is not None
 
     @property
-    def can_send(self) -> bool:
-        return self.smtp is not None
+    def can_write(self) -> bool:
+        """May automations change the mailbox (mark, label, move, delete) and send from it? The
+        person's explicit choice (`access == "write"`), never derived from the servers."""
+        return self.access == "write"
 
     @property
-    def can_write(self) -> bool:
-        """May the mailbox be changed (mark, label, move, delete)? An account with IMAP only is a
-        read-only mailbox (a host connects it to be watched, never changed), so changes need both
-        IMAP and SMTP: a full account."""
-        return self.imap is not None and self.smtp is not None
+    def can_send(self) -> bool:
+        """May mail be sent from it? Read and write, and an outgoing server (SMTP) set."""
+        return self.can_write and self.smtp is not None
+
+    @property
+    def access_text(self) -> str:
+        """The access in words, as every surface shows it: "Read only" or "Read and write"."""
+        return ACCESS_TEXT[self.access]
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -331,6 +354,7 @@ class EmailAccount:
             "imap": self.imap.to_dict() if self.imap else {},
             "smtp": self.smtp.to_dict() if self.smtp else {},
             "oauth": self.oauth.to_dict() if self.oauth else {},
+            "access": self.access,
         }
 
     @classmethod
@@ -345,7 +369,18 @@ class EmailAccount:
             display_name=str(raw.get("display_name") or ""),
             auth_kind=str(raw.get("auth_kind") or "password"),
             oauth=OAuthSettings.from_dict(raw.get("oauth")),
+            access=str(raw.get("access") or ""),
         )
+
+
+ACCESS_TEXT = {"read": "Read only", "write": "Read and write"}
+
+
+def default_access(imap: Optional[ImapSettings], smtp: Optional[SmtpSettings]) -> str:
+    """The access of an account stored without an explicit choice (before 2.29): what it could do
+    then. IMAP and SMTP (a full account, e.g. the person's own mailbox) and SMTP alone: "write";
+    IMAP alone (a mailbox connected to be watched): "read"."""
+    return "write" if smtp is not None else "read"
 
 
 class EmailSecret:

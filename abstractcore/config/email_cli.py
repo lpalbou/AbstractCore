@@ -111,6 +111,8 @@ def _print_status(doc: Dict[str, Any], notices: List[str]) -> None:
             print(f"  Display name: {doc['display_name']}")
         print(f"  User name: {doc.get('username')}")
         print(f"  Sign-in: {doc.get('auth_kind')}" + (f" ({doc['oauth']['provider']})" if doc.get("oauth") else ""))
+        if doc.get("access_text"):
+            print(f"  Access: {doc['access_text']}")
         imap = doc.get("imap")
         smtp = doc.get("smtp")
         print(f"  IMAP (read): {imap['host']}:{imap['port']} {imap['security']}, folder {imap['folder']}" if imap else "  IMAP (read): not configured")

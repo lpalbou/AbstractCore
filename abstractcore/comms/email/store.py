@@ -43,6 +43,7 @@ from .errors import (
 )
 from .limits import SendRateLimiter
 from .models import (
+    ACCESS_LEVELS,
     DEFAULT_PER_DAY,
     DEFAULT_PER_HOUR,
     EmailAccount,
@@ -457,6 +458,46 @@ class EmailAccountStore:
         self._update(account=EmailAccount.from_dict(raw).to_dict())
         return self.public()
 
+    def set_access(
+        self,
+        access: str,
+        *,
+        smtp: Optional[SmtpSettings] = None,
+        test: bool = True,
+        ssl_context: Optional[ssl.SSLContext] = None,
+    ) -> Dict[str, Any]:
+        """Read only ("read") or read and write ("write") for the stored account, without
+        connecting it again (the sign-in is kept).
+
+        `smtp`, with "write", is the outgoing server to store when the account has none (so it can
+        send); with `test` it is signed in to with the stored password or token first, and a
+        refusal raises that leg's typed error and stores nothing. Turning "read" keeps a stored
+        outgoing server (unused: `can_send` is False) so turning "write" again needs no new one.
+        """
+
+        st = self.settings()
+        acct = st.account
+        if acct is None:
+            raise EmailNotConfigured(
+                "No mailbox is connected, so there is no access to set.",
+                "Connect a mailbox first (`abstractcore email connect --address <a> --password-stdin`).",
+            )
+        level = str(access or "").strip().lower()
+        if level not in ACCESS_LEVELS:
+            raise EmailInvalidSettings(
+                f"The access {access!r} is not one of: read, write.",
+                "Use read (automations only read the mailbox) or write (they may also change it and send from it).",
+            )
+        new_smtp = acct.smtp
+        if level == "write" and smtp is not None and acct.smtp is None:
+            new_smtp = smtp
+        updated = replace(acct, access=level, smtp=new_smtp)
+        if test and new_smtp is not None and new_smtp != acct.smtp:
+            ctx = self.context(ssl_context=ssl_context, require_enabled=False)
+            EmailClient(updated, ctx.secret, token_provider=ctx.token_provider, ssl_context=ssl_context).test_smtp()
+        self._update(account=updated.to_dict())
+        return self.public()
+
     def set_agent_tools(self, enabled: bool) -> Dict[str, Any]:
         """The "Agent email tools" toggle (default off). Turning it on without a connected,
         turned-on account is allowed and changes nothing until the account is usable."""
@@ -675,6 +716,9 @@ class EmailAccountStore:
             "can_read": bool(acct and acct.can_read),
             "can_send": bool(acct and acct.can_send),
             "can_write": bool(acct and acct.can_write),
+            # "read" | "write" (None without an account): the person's choice; `access_text` in words.
+            "access": acct.access if acct else None,
+            "access_text": acct.access_text if acct else "",
             "secret_set": bool(location),
             # "sealing-key": the sealing key file (2.26+); "old-keychain": sealed by an older version
             # with the key in an OS keychain, never read now (connect again); "key-file": an older

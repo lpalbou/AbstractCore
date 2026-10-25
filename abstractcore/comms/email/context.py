@@ -22,7 +22,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, Optional
 
 from .client import DEFAULT_MAX_MESSAGE_BYTES, EmailClient
-from .errors import EmailDisabled, EmailInvalidMessage, EmailNotConfigured
+from .errors import EmailDisabled, EmailInvalidMessage, EmailMailboxReadOnly, EmailNotConfigured
 from .limits import SendRateLimiter
 from .models import (
     AUTO_SUBMITTED_GENERATED,
@@ -134,6 +134,11 @@ def guarded_send(ctx: EmailContext, message: OutgoingMessage) -> SendResult:
     ctx.require_enabled()
     if ctx.automation_marker:
         message = mark_automatic(message, ctx.automation_marker)
+    if not ctx.account.can_write:
+        raise EmailMailboxReadOnly(
+            f"The mailbox {ctx.account.address} is read-only: automations only read it.",
+            f"Turn on Read and write for {ctx.account.address} to change it or send from it.",
+        )
     if not ctx.account.can_send:
         raise EmailNotConfigured(
             "This account has no SMTP (send) settings.",

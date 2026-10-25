@@ -546,8 +546,8 @@ class EmailClient:
     def _require_write(self) -> None:
         if not self.account.can_write:
             raise EmailMailboxReadOnly(
-                f"The mailbox {self.account.address} is read-only (it has no outgoing server): it can be read, not changed.",
-                "Connect it again with its outgoing server (SMTP) to mark, label, move or delete messages.",
+                f"The mailbox {self.account.address} is read-only: automations only read it.",
+                f"Turn on Read and write for {self.account.address} to change it or send from it.",
             )
     def _translate_imap_error(self, exc: BaseException, s) -> EmailError:
         if isinstance(exc, imaplib.IMAP4.abort):

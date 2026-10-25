@@ -184,8 +184,8 @@ class EmailReadOnlyViolation(EmailError):
 
 
 class EmailMailboxReadOnly(EmailError):
-    """A mailbox change (mark, label, move, delete) on an account that may only be read
-    (`EmailAccount.can_write` is False: IMAP without SMTP); refused before connecting."""
+    """A mailbox change (mark, label, move, delete) or a send on an account the person chose to
+    keep read only (`EmailAccount.access == "read"`, `can_write` False); refused before connecting."""
 
     code = "email_mailbox_read_only"
 

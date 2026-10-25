@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Mailbox access is an explicit choice**: `EmailAccount.access`, `"read"` (Read only) or `"write"`
+  (Read and write), stored in `to_dict()` / `from_dict()`; `access_text` says it in words.
+  `can_write` is the choice (it was "IMAP and SMTP"); `can_send` is `can_write` and an outgoing
+  server set. An account stored without it keeps what it could do: `"write"` with an outgoing
+  server, else `"read"`. `EmailAccountStore.set_access(access, *, smtp=None, test=True)` changes it
+  without connecting again (a new outgoing server is signed in to first with the stored sign-in);
+  `public()` has `access` / `access_text`; `abstractcore email status` and the terminal console's
+  Email line say "Read only" / "Read and write".
+
+### Changed
+
+- A read-only mailbox refuses changes and sends in plain words: "The mailbox <address> is
+  read-only: automations only read it." / "Turn on Read and write for <address> to change it or
+  send from it." (`email_mailbox_read_only`). `guarded_send` on a read-only account with an
+  outgoing server now refuses with `EmailMailboxReadOnly` before connecting.
+
 ## [2.29.0] - 2026-10-25
 
 ### Added

@@ -438,10 +438,21 @@ client.delete([old_uid])                         # to the trash folder; permanen
   Messages already in the trash are deleted permanently.
 
 Every change runs on a connection limited to the commands these verbs send (a body FETCH is still
-PEEK-only: reading never marks a message read). A read-only mailbox, an account with IMAP but no
-SMTP (`account.can_write` is false), refuses every change before connecting with
-`EmailMailboxReadOnly` (`email_mailbox_read_only`). `session(write=True)` holds one connection for
+PEEK-only: reading never marks a message read). `session(write=True)` holds one connection for
 reads and changes; inside a read-only `session()` a change opens its own connection.
+
+**Access: Read only or Read and write.** `EmailAccount.access` is the person's explicit choice,
+`"read"` or `"write"` (`build(..., access=...)`, stored in `to_dict()` as `access`; `access_text`
+says it in words: "Read only" / "Read and write"). `can_write` is `access == "write"`: changes
+(`mark`, `label`, `move`, `delete`) and sends need it, otherwise they are refused before connecting
+with `EmailMailboxReadOnly` (`email_mailbox_read_only`). `can_send` is `can_write` and an outgoing
+server (SMTP) set; read and write without one can change the mailbox but `guarded_send` refuses
+with `EmailNotConfigured`. An account stored without a choice (before 2.29) keeps what it could do:
+`"write"` when it has an outgoing server, else `"read"`. `EmailAccountStore.set_access(access, *,
+smtp=None, test=True)` changes it without connecting again: with `"write"` and `smtp`, an account
+without an outgoing server gets that one, signed in to first with the stored password or token (a
+refusal raises and stores nothing); `"read"` keeps a stored outgoing server, unused. `public()` and
+`abstractcore email status` show it (`access`, `access_text`; "Access: Read and write").
 
 To answer or pass on a message, use the context, so the recipient policy and the send limits apply
 exactly as for `ctx.send`: `ctx.reply(uid, text, *, html="", reply_all=False, folder=None)` (reply

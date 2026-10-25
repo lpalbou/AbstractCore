@@ -501,7 +501,17 @@ pub fn connected_line(doc: &Value, now: i64) -> String {
         Some(a) => format!("checked {a}"),
         None => "not checked yet".into(),
     };
-    format!("Connected as {} · {method} · {checked}", s(doc, "address"))
+    // "Read only" | "Read and write" (AbstractCore 2.29 `access_text`), when the doc says it.
+    let access = s(doc, "access_text");
+    let access = if access.is_empty() {
+        String::new()
+    } else {
+        format!(" · {access}")
+    };
+    format!(
+        "Connected as {} · {method}{access} · {checked}",
+        s(doc, "address")
+    )
 }
 
 /// One line for the Overview's Email row.
@@ -2805,6 +2815,12 @@ mod tests {
         assert_eq!(
             connected_line(&doc, t + 120),
             "Connected as me@x.test · Google · checked 2 min ago"
+        );
+        let mut doc_rw = doc.clone();
+        doc_rw["access_text"] = json!("Read and write");
+        assert_eq!(
+            connected_line(&doc_rw, t + 120),
+            "Connected as me@x.test · Google · Read and write · checked 2 min ago"
         );
         assert!(plausible_address("me@fastmail.com"));
         for bad in [
