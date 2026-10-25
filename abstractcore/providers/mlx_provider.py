@@ -6145,11 +6145,26 @@ class MLXProvider(BaseProvider):
             return None
 
     def _calculate_usage(self, prompt: str, response: str) -> Dict[str, int]:
-        """Calculate token usage using centralized token utilities."""
+        """Token usage of one reply: EXACT counts from the loaded tokenizer when it can give
+        them, the centralized estimate only when it cannot.
+
+        The prompt is counted with `_encode_prompt_token_ids`, i.e. tokenized exactly as
+        mlx_lm tokenizes the rendered prompt it generates from (same BOS inference). This
+        used to be `TokenUtils.estimate_tokens(prompt)` even with the tokenizer loaded:
+        measured 2026-10-25 on a Qwen3.6 prompt, 7,755 tokens reported for 4,899 real
+        ones (+58%) — every context meter and cost figure downstream inherited the error.
+        """
         from ..utils.token_utils import TokenUtils
 
-        input_tokens = TokenUtils.estimate_tokens(prompt, self.model)
-        output_tokens = TokenUtils.estimate_tokens(response, self.model)
+        prompt_ids = self._encode_prompt_token_ids(prompt) if isinstance(prompt, str) and prompt else None
+        if isinstance(prompt, str) and not prompt:
+            input_tokens = 0
+        elif prompt_ids is not None:
+            input_tokens = len(prompt_ids)
+        else:
+            input_tokens = TokenUtils.estimate_tokens(prompt, self.model)
+        exact_out = self._count_tokens(response) if isinstance(response, str) else None
+        output_tokens = exact_out if exact_out is not None else TokenUtils.estimate_tokens(response, self.model)
         total_tokens = input_tokens + output_tokens
 
         return {

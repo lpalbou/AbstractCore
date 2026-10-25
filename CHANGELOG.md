@@ -50,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenRouter ignored `thinking=`**: it is now sent as OpenRouter's `reasoning` object
   (`effort` / `enabled`), with the lowest declared effort (warned) for models whose reasoning
   cannot be disabled.
+- **MLX text-lane usage counted the prompt with a character estimate** although the tokenizer
+  was loaded (7,755 reported vs 4,899 real on a Qwen3.6 prompt). The prompt is now counted with
+  the loaded tokenizer exactly as mlx_lm tokenizes it (live: 5,585 reported = 5,585 chat-template
+  tokens on Qwen3.5-4B, where the estimate said 3,524); the estimate is used only when no
+  tokenizer can count.
 
 ## [2.29.0] - 2026-10-25
 
