@@ -14,6 +14,7 @@ TODO(vllm): Add an opt-in integration test that exercises streaming + LoRA manag
 once a reachable vLLM server is available in the test environment.
 """
 
+import warnings
 from typing import Any, Dict, List, Optional
 
 from .openai_compatible_provider import OpenAICompatibleProvider
@@ -39,6 +40,26 @@ class VLLMProvider(OpenAICompatibleProvider):
         super().__init__(model=model, base_url=base_url, api_key=api_key, **kwargs)
 
     def _mutate_payload(self, payload: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        """vLLM request extensions, sent as TOP-LEVEL request fields.
+
+        WHY FLATTEN (2026-10-25). `extra_body` is an OpenAI-Python-SDK convention: the SDK
+        merges its keys into the top level of the JSON body. This provider posts the JSON
+        itself (httpx), so a nested `"extra_body": {...}` key reached vLLM literally — and
+        vLLM's `OpenAIBaseModel` (`model_config = ConfigDict(extra="allow")` plus a
+        validator that only *logs* unknown keys at debug level) silently IGNORES it.
+        Every thinking control this provider sent (`chat_template_kwargs.enable_thinking`,
+        the effort template variable, `thinking_token_budget`) therefore never reached the
+        template while metadata reported it applied. vLLM's `ChatCompletionRequest` reads
+        `chat_template_kwargs`, `reasoning_effort` and `thinking_token_budget` as
+        top-level fields (vllm/entrypoints/openai/chat_completion/protocol.py, main,
+        read 2026-10-25). Unverified live (no vLLM server on this machine).
+
+        The superclass hook runs first, so a caller-provided `reasoning_effort=` /
+        `chat_template_kwargs=` / `extra_body=` is forwarded too (it was dropped before:
+        this override never called super).
+        """
+        payload = super()._mutate_payload(payload, **kwargs)
+
         extra_body_updates: Dict[str, Any] = {}
 
         guided_regex = kwargs.get("guided_regex")
@@ -60,17 +81,16 @@ class VLLMProvider(OpenAICompatibleProvider):
             if best_of is not None:
                 extra_body_updates["best_of"] = best_of
 
-        # Allow callers to pass raw extra_body (merge with our computed updates).
-        caller_extra_body = kwargs.get("extra_body")
-        if isinstance(caller_extra_body, dict) and caller_extra_body:
-            extra_body_updates = {**caller_extra_body, **extra_body_updates}
-
-        if extra_body_updates:
-            existing = payload.get("extra_body")
-            if isinstance(existing, dict) and existing:
-                payload["extra_body"] = {**existing, **extra_body_updates}
+        extra_body = payload.pop("extra_body", None)
+        merged: Dict[str, Any] = dict(extra_body) if isinstance(extra_body, dict) else {}
+        merged.update(extra_body_updates)
+        for key, value in merged.items():
+            if key == "chat_template_kwargs" and isinstance(value, dict):
+                # A caller's top-level chat_template_kwargs= wins per key.
+                top = payload.get("chat_template_kwargs")
+                payload["chat_template_kwargs"] = {**value, **(top if isinstance(top, dict) else {})}
             else:
-                payload["extra_body"] = extra_body_updates
+                payload.setdefault(key, value)
 
         return payload
 
@@ -81,88 +101,133 @@ class VLLMProvider(OpenAICompatibleProvider):
         level: Optional[str],
         kwargs: Dict[str, Any],
     ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
-        # vLLM exposes reasoning controls via request extensions under `payload["extra_body"]`.
-        #
-        # - Template switch: `extra_body.chat_template_kwargs.enable_thinking` (commonly used by Qwen3/Qwen3.5,
-        #   Nemotron and other reasoning templates).
-        # - Token budget (when server has a reasoning parser enabled): `extra_body.thinking_token_budget`
-        #
-        # References:
-        # - https://docs.vllm.ai/en/latest/features/reasoning_outputs/
+        """Map the unified `thinking=` control to vLLM request fields (asset-driven).
+
+        vLLM renders the model's own chat template server-side
+        (https://docs.vllm.ai/en/latest/features/reasoning_outputs/):
+        - `chat_template_kwargs` reach the template; request-level kwargs win over server
+          defaults. The boolean switch is sent under the name the model DECLARES
+          (`thinking_control.template_kwarg`) — never a guessed `enable_thinking` for a
+          template that has no such variable (that was a claim with no effect);
+        - `reasoning_effort` (top level; none|minimal|low|medium|high|xhigh|max) is passed
+          to the template AND mapped by vLLM to `enable_thinking` (none -> false) when the
+          request carries no explicit `enable_thinking`; used for models that declare
+          `reasoning_levels` but no template switch (DeepSeek V4, Mistral Small 4, GPT-OSS);
+        - `thinking_token_budget` (top level) caps reasoning tokens ONLY when the server
+          runs with `--reasoning-parser`; it is sent as a best-effort cap for levels and is
+          never by itself the basis of a level claim (a budget is not the model's effort).
+
+        The fields are stashed under `extra_body` here and flattened to the top level by
+        `_mutate_payload`.
+        """
         if enabled is None and level is None:
             return kwargs, ThinkingControlHandling()
 
-        # Effort SWITCH (`thinking_control.effort_disable_value`, HY V3 / Hy-Memory
-        # `reasoning_effort=no_think|low|high`): the template has no `enable_thinking`,
-        # and an unset effort renders no_think, so a boolean would leave thinking OFF
-        # while reporting it handled. Send only the effort value; decline when there
-        # is no honest value (an undeclared level).
-        switch = self._thinking_control_surfaces()
-        if switch.effort_is_switch():
-            from ..architectures.thinking_controls import effort_switch_value
-
-            value = effort_switch_value(
-                switch, enabled=enabled, level=level, declared_levels=self._model_reasoning_levels()
-            )
-            if value is None:
-                return kwargs, ThinkingControlHandling()
-            new_kwargs = dict(kwargs)
-            extra_body = new_kwargs.get("extra_body")
-            extra_body_dict: Dict[str, Any] = dict(extra_body) if isinstance(extra_body, dict) else {}
-            ctk = extra_body_dict.get("chat_template_kwargs")
-            ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
-            ctk_dict[switch.effort_template_kwarg] = value
-            extra_body_dict["chat_template_kwargs"] = ctk_dict
-            new_kwargs["extra_body"] = extra_body_dict
-            return new_kwargs, ThinkingControlHandling(
-                handled_enable_disable=True,
-                handled_level=enabled is not False and isinstance(level, str) and bool(level),
-            )
-
+        surfaces = self._thinking_control_surfaces()
+        declared = self._model_reasoning_levels()
         new_kwargs = dict(kwargs)
         extra_body = new_kwargs.get("extra_body")
         extra_body_dict: Dict[str, Any] = dict(extra_body) if isinstance(extra_body, dict) else {}
         ctk = extra_body_dict.get("chat_template_kwargs")
         ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
-        if enabled is not None:
-            ctk_dict["enable_thinking"] = bool(enabled)
 
-        # String effort template variable (Qwen3.8 `reasoning_effort`): vLLM renders the
-        # model's own chat template server-side, so forwarding the declared kwarg engages
-        # the model's native effort control directly (the token budget below is a cap,
-        # not the template's mechanism). Gated on the level being one the model
-        # advertises so a template that raises on unknown efforts never sees one.
-        surfaces = self._thinking_control_surfaces()
-        if (
-            surfaces.effort_template_kwarg
-            and enabled is not False
-            and isinstance(level, str)
-            and level
-        ):
-            supported = self._model_reasoning_levels()
-            if not supported or level in supported:
-                ctk_dict[surfaces.effort_template_kwarg] = level
-        extra_body_dict["chat_template_kwargs"] = ctk_dict
+        def _done(handled_ed: bool, handled_lvl: bool) -> tuple[Dict[str, Any], ThinkingControlHandling]:
+            if ctk_dict:
+                extra_body_dict["chat_template_kwargs"] = ctk_dict
+            if extra_body_dict:
+                new_kwargs["extra_body"] = extra_body_dict
+            return new_kwargs, ThinkingControlHandling(
+                handled_enable_disable=handled_ed, handled_level=handled_lvl
+            )
 
-        # Best-effort per-request reasoning token budget.
-        #
-        # vLLM applies this budget inside the reasoning block (as defined by the selected reasoning parser),
-        # which is a clean way to get "low/medium/high" reasoning *without* prompt hacks.
+        # Harmony (GPT-OSS): vLLM builds the harmony SYSTEM message itself from the
+        # request's `reasoning_effort`; the `Reasoning:` line BaseProvider injects lands
+        # in a developer/system turn instead. Send the effort natively too.
+        arch = self.architecture_config if isinstance(self.architecture_config, dict) else {}
+        caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
+        msg_fmt = str(arch.get("message_format") or "").strip().lower()
+        resp_fmt = str(caps.get("response_format") or "").strip().lower()
+        if msg_fmt == "harmony" or resp_fmt == "harmony":
+            effort = level if isinstance(level, str) and level else ("low" if enabled is False else "medium")
+            if "reasoning_effort" not in kwargs:
+                new_kwargs["reasoning_effort"] = effort
+            return _done(True, True)
+
+        # Effort SWITCH (`thinking_control.effort_disable_value`, HY V3 / Hy-Memory
+        # `reasoning_effort=no_think|low|high`): the template has no `enable_thinking`,
+        # and an unset effort renders no_think. Send only the effort value; decline when
+        # there is no honest value (an undeclared level).
+        if surfaces.effort_is_switch():
+            from ..architectures.thinking_controls import effort_switch_value
+
+            value = effort_switch_value(surfaces, enabled=enabled, level=level, declared_levels=declared)
+            if value is None:
+                return kwargs, ThinkingControlHandling()
+            ctk_dict[surfaces.effort_template_kwarg] = value
+            return _done(True, enabled is not False and isinstance(level, str) and bool(level))
+
+        handled_ed = False
+        handled_lvl = False
+        if surfaces.template_kwarg:
+            ctk_dict[surfaces.template_kwarg] = bool(enabled) if enabled is not None else True
+            handled_ed = True
+            if enabled is not False and isinstance(level, str) and level:
+                # Nemotron-style "low effort" boolean (thinking stays on, fewer tokens).
+                if surfaces.low_effort_template_kwarg and level in {"minimal", "low"}:
+                    ctk_dict[surfaces.low_effort_template_kwarg] = True
+                    handled_lvl = True
+                # String effort template variable (Qwen3.8 `reasoning_effort`), gated on a
+                # declared level so a template that raises on unknown efforts never sees one.
+                if surfaces.effort_template_kwarg and (not declared or level in declared):
+                    ctk_dict[surfaces.effort_template_kwarg] = level
+                    handled_lvl = True
+        elif surfaces.budget_template_kwarg:
+            # Checked BEFORE declared levels: the budget variable is what the template reads
+            # (Seed-OSS declares levels too, but its template ignores reasoning_effort).
+            # Integer budget template variable (Seed-OSS `thinking_budget`).
+            budget_map = {"minimal": 256, "low": 512, "medium": 1024, "high": 4096, "xhigh": 8192}
+            if enabled is False:
+                ctk_dict[surfaces.budget_template_kwarg] = 0
+            else:
+                ctk_dict[surfaces.budget_template_kwarg] = int(budget_map.get(str(level or ""), 1024))
+                handled_lvl = isinstance(level, str) and level in budget_map
+            handled_ed = True
+        elif declared:
+            # Levels without a template switch: the OpenAI-standard top-level field.
+            effort: Optional[str] = None
+            if enabled is False:
+                if "none" in declared:
+                    effort = "none"
+                else:
+                    effort = next((x for x in ("minimal", "low", "medium", "high", "xhigh") if x in declared), None)
+                    if effort:
+                        warnings.warn(
+                            f"thinking='off' requested for model '{self.model}', but reasoning_effort cannot "
+                            f"be fully disabled (supported: {declared}); using reasoning_effort={effort!r}.",
+                            RuntimeWarning,
+                            stacklevel=3,
+                        )
+            elif isinstance(level, str) and level:
+                effort = level
+            else:
+                effort = next((x for x in ("medium", "high", "low") if x in declared), None)
+            if effort:
+                if "reasoning_effort" not in kwargs:
+                    new_kwargs["reasoning_effort"] = effort
+                handled_ed = True
+                handled_lvl = True
+        else:
+            # No declared surface (or a prompt-token-only one, which BaseProvider applies):
+            # nothing honest to send.
+            return kwargs, ThinkingControlHandling()
+
+        # Best-effort per-request reasoning token cap (needs --reasoning-parser server-side).
         if enabled is not False and isinstance(level, str) and level:
-            budget_map = {
-                "minimal": 256,
-                "low": 512,
-                "medium": 1024,
-                "high": 4096,
-                "xhigh": 8192,
-            }
-            budget = budget_map.get(level)
-            if budget is not None:
+            budget = {"minimal": 256, "low": 512, "medium": 1024, "high": 4096, "xhigh": 8192}.get(level)
+            if budget is not None and not surfaces.budget_template_kwarg:
                 extra_body_dict["thinking_token_budget"] = int(budget)
 
-        new_kwargs["extra_body"] = extra_body_dict
-        handled_level = bool(enabled is not False and isinstance(level, str) and level in {"minimal", "low", "medium", "high", "xhigh"})
-        return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
+        return _done(handled_ed, handled_lvl)
 
     # vLLM-specific methods
 

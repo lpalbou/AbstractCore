@@ -9,8 +9,10 @@ This provider subclasses `OpenAICompatibleProvider` and adds:
 
 import base64
 import os
+import warnings
 from typing import Any, Optional, Dict, Tuple
 
+from .base import THINKING_EFFECTIVE_EFFORT_KWARG, ThinkingControlHandling
 from .openai_compatible_provider import OpenAICompatibleProvider
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 
@@ -65,6 +67,77 @@ class OpenRouterProvider(OpenAICompatibleProvider):
         if not self._has_api_key():
             return
         return super()._validate_model()
+
+    # Internal request kwarg carrying the unified thinking control as OpenRouter's
+    # `reasoning` object; copied to the payload by `_mutate_payload`.
+    OPENROUTER_REASONING_KWARG = "_acore_openrouter_reasoning"
+
+    def _apply_provider_thinking_kwargs(
+        self,
+        *,
+        enabled: Optional[bool],
+        level: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
+        """Map the unified `thinking=` control to OpenRouter's normalized `reasoning` object.
+
+        OpenRouter documents ONE cross-provider reasoning control, a top-level object
+        (https://openrouter.ai/docs/use-cases/reasoning-tokens, read 2026-10-25):
+        `reasoning: {"effort": "xhigh"|"high"|"medium"|"low"|"minimal"|"none"}` (OpenRouter
+        converts effort into a token budget for budget-style backends), or
+        `{"enabled": true}` for default-effort reasoning; `"effort": "none"` disables
+        reasoning, and models whose reasoning is mandatory reject it. It does not document
+        a top-level `reasoning_effort`. Before 2026-10-25 the inherited OpenAI-compatible
+        hook declined every OpenRouter request, so `thinking=` never reached the router.
+
+        Off on a model whose declared `reasoning_levels` lack "none" (mandatory
+        reasoning, e.g. GPT-5) degrades to the lowest declared effort with a warning, as
+        the OpenAI provider does. Unverified live (paid API).
+        """
+        if enabled is None and level is None:
+            return kwargs, ThinkingControlHandling()
+        declared = self._model_reasoning_levels()
+        reasoning: Dict[str, Any]
+        handled_level = False
+        if enabled is False:
+            if declared and "none" not in declared:
+                floor = next((x for x in ("minimal", "low", "medium", "high", "xhigh") if x in declared), None)
+                if floor is None:
+                    return kwargs, ThinkingControlHandling()
+                warnings.warn(
+                    f"thinking='off' requested for model '{self.model}', but its reasoning cannot be "
+                    f"disabled (supported: {declared}); using reasoning effort {floor!r}.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                reasoning = {"effort": floor}
+                handled_level = True
+            else:
+                reasoning = {"effort": "none"}
+        elif isinstance(level, str) and level:
+            reasoning = {"effort": level}
+            handled_level = True
+        else:
+            reasoning = {"enabled": True}
+        new_kwargs = dict(kwargs)
+        new_kwargs[self.OPENROUTER_REASONING_KWARG] = reasoning
+        effort = reasoning.get("effort")
+        if isinstance(effort, str) and effort:
+            # Metadata reports what was sent ("none" reads as off; a floor as its level).
+            new_kwargs[THINKING_EFFECTIVE_EFFORT_KWARG] = effort
+        return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
+
+    def _mutate_payload(self, payload: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        payload = super()._mutate_payload(payload, **kwargs)
+        # An explicit caller `reasoning={...}` object wins over the unified mapping.
+        explicit = kwargs.get("reasoning")
+        if isinstance(explicit, dict) and explicit:
+            payload["reasoning"] = dict(explicit)
+            return payload
+        mapped = kwargs.get(self.OPENROUTER_REASONING_KWARG)
+        if isinstance(mapped, dict) and mapped and "reasoning" not in payload:
+            payload["reasoning"] = dict(mapped)
+        return payload
 
     def _get_headers(self) -> Dict[str, str]:
         headers = super()._get_headers()

@@ -47,7 +47,9 @@ def test_vllm_thinking_sets_chat_template_kwargs_enable_thinking(monkeypatch):
     assert resp.metadata.get("thinking_effective") == "off"
 
     payload = captured["payload"]
-    assert payload["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+    # Top-level on the wire: vLLM ignores a literal nested `extra_body` key.
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+    assert "extra_body" not in payload
 
 
 def test_thinking_none_is_alias_for_off(monkeypatch):
@@ -68,7 +70,9 @@ def test_thinking_none_is_alias_for_off(monkeypatch):
     assert resp.metadata.get("thinking_effective") == "off"
 
     payload = captured["payload"]
-    assert payload["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+    # Top-level on the wire: vLLM ignores a literal nested `extra_body` key.
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+    assert "extra_body" not in payload
 
 
 def test_thinking_xhigh_is_accepted(monkeypatch):
@@ -83,10 +87,15 @@ def test_thinking_xhigh_is_accepted(monkeypatch):
 
     monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
 
-    provider.generate("hi", thinking="xhigh", temperature=0)
+    resp = provider.generate("hi", thinking="xhigh", temperature=0)
 
     payload = captured["payload"]
-    assert payload["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+    # gpt-5.2 declares levels and no template switch: the top-level OpenAI field carries
+    # the effort (vLLM maps it to enable_thinking itself); no guessed enable_thinking.
+    assert payload["reasoning_effort"] == "xhigh"
+    assert "chat_template_kwargs" not in payload
+    assert "extra_body" not in payload
+    assert resp.metadata.get("thinking_effective") == "xhigh"
 
 
 def test_openai_thinking_maps_to_reasoning_effort_without_network(monkeypatch):
@@ -630,17 +639,20 @@ def test_mlx_qwen38_level_merges_into_leading_system_message() -> None:
 def test_lmstudio_qwen38_thinking_level_sets_top_level_reasoning_effort(monkeypatch) -> None:
     # The top-level OpenAI-standard `reasoning_effort` param is the only transport
     # LM Studio maps into the chat template on EVERY request shape (live-verified
-    # 2026-08-19: low and xhigh rendered their template sentences on plain and on
-    # messages+tools requests, while chat_template_kwargs was ignored and the
-    # native REST enum rejected xhigh). A validating server that rejects the param
-    # is handled by the 400 drop-and-retry net in OpenAICompatibleProvider.
+    # 2026-08-19 and again 2026-10-25 on qwen/qwen3.8-27b: low/medium/xhigh rendered
+    # their template sentences on plain and on messages+tools requests, while
+    # chat_template_kwargs was ignored and the native REST enum rejected xhigh). A
+    # validating server that rejects the param is handled by the 400 drop-and-retry
+    # net in OpenAICompatibleProvider.
     monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
     provider = LMStudioProvider(model="qwen3.8-27b", base_url="http://localhost:1234/v1")
+    key = LMStudioProvider.LMSTUDIO_REASONING_EFFORT_KWARG
 
     for lvl in ("low", "medium", "xhigh"):
         new_kwargs, handling = provider._apply_provider_thinking_kwargs(enabled=True, level=lvl, kwargs={})
-        assert new_kwargs["reasoning_effort"] == lvl
-        assert "reasoning" not in new_kwargs  # native REST field not used for effort models
+        assert new_kwargs[key] == lvl
+        assert "reasoning_effort" not in new_kwargs  # public kwarg is the caller's only
+        assert "reasoning" not in new_kwargs  # native REST field not used
         ctk = new_kwargs["chat_template_kwargs"]
         assert ctk["enable_thinking"] is True
         assert ctk["reasoning_effort"] == lvl  # best-effort belt for builds that honor ctk
@@ -648,18 +660,33 @@ def test_lmstudio_qwen38_thinking_level_sets_top_level_reasoning_effort(monkeypa
         assert "reasoning_effort" not in tv  # template vars spread to top level; no dup key
         assert handling.handled_enable_disable is True
         assert handling.handled_level is True
+        payload = provider._mutate_payload({"model": "m", "messages": []}, **new_kwargs)
+        assert payload["reasoning_effort"] == lvl
+        assert key not in payload
+
+    # Bare on: the preferred declared level (medium = the template default), NOT claimed
+    # as a level (metadata says "on"). Before 2026-10-25 this sent ctk only (ignored).
+    new_kwargs, handling = provider._apply_provider_thinking_kwargs(enabled=True, level=None, kwargs={})
+    assert new_kwargs[key] == "medium"
+    assert handling.handled_enable_disable is True and handling.handled_level is False
+
+    # Off: "none" (LM Studio renders the template's own empty think block).
+    new_kwargs, handling = provider._apply_provider_thinking_kwargs(enabled=False, level=None, kwargs={})
+    assert new_kwargs[key] == "none"
+    assert handling.handled_enable_disable is True
 
     # An explicit caller-provided reasoning_effort= wins over the mapped level.
     new_kwargs, _handling = provider._apply_provider_thinking_kwargs(
         enabled=True, level="low", kwargs={"reasoning_effort": "medium"}
     )
-    assert new_kwargs["reasoning_effort"] == "medium"
+    payload = provider._mutate_payload({"model": "m", "messages": []}, **new_kwargs)
+    assert payload["reasoning_effort"] == "medium"
 
     # After a 400 rejection latched, the claim is declined and the param not re-sent.
     provider._reasoning_effort_unsupported = True
     new_kwargs, handling = provider._apply_provider_thinking_kwargs(enabled=True, level="low", kwargs={})
-    assert "reasoning_effort" not in new_kwargs
-    assert handling.handled_level is False
+    assert key not in new_kwargs and "reasoning_effort" not in new_kwargs
+    assert handling.handled_level is False and handling.handled_enable_disable is False
 
 
 def test_openai_compatible_reasoning_effort_400_rejection_detector(monkeypatch) -> None:

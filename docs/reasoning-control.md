@@ -43,14 +43,60 @@ Two things are controlled separately: whether the model reasons at all, and how 
 |---|---|---|
 | OpenAI | `reasoning_effort` (`"none"` when the model accepts it) | `reasoning_effort` |
 | Anthropic | `thinking` block | `output_config.effort` (adaptive models) or a thinking budget |
-| LM Studio | `chat_template_kwargs.enable_thinking` plus an assistant no-think prefill | `reasoning_effort` request field, which LM Studio maps into the model's chat template on every request shape |
-| OpenAI-compatible servers | `chat_template_kwargs.enable_thinking` when the server accepts template kwargs; otherwise `reasoning_effort` | `chat_template_kwargs.<effort kwarg>`, or `reasoning_effort` for models with no template surface |
-| vLLM | `extra_body.chat_template_kwargs.enable_thinking` | `extra_body.chat_template_kwargs.<effort kwarg>` plus `thinking_token_budget` |
+| LM Studio | top-level `reasoning_effort`: `"none"` for off, a non-`"none"` value for on | top-level `reasoning_effort` with the model's declared level |
+| OpenAI-compatible servers | `chat_template_kwargs.<template switch>` when the server accepts template kwargs; otherwise `reasoning_effort` for models that declare levels | `chat_template_kwargs.<effort kwarg>`, or `reasoning_effort` for models with no template surface |
+| vLLM | top-level `chat_template_kwargs.<template switch>`, or `reasoning_effort` for models that declare levels and no switch | `chat_template_kwargs.<effort kwarg>` or `reasoning_effort`; `thinking_token_budget` as a best-effort cap |
+| OpenRouter | `reasoning: {"effort": "none"}` / `reasoning: {"enabled": true}` | `reasoning: {"effort": <level>}` |
+| Portkey | not mapped: the backend behind a config is unknown, so no control is sent and a warning says so | not mapped |
 | MLX | no-think prefill placed at the generation boundary of the rendered prompt | the template's own effort instruction rendered into the system block |
 | HuggingFace (transformers) | `enable_thinking` passed to `apply_chat_template` | the effort kwarg passed to `apply_chat_template`; the cached renderer writes the effort instruction into the system block |
 | HuggingFace (GGUF) | no-think prefill placed by the local renderer at the generation boundary | the model's embedded template rendered with the effort kwarg, or the effort instruction written into the system block for plain ChatML builds |
 | Ollama | `think` | `think` level for GPT-OSS; other models run with reasoning enabled |
 | GPT-OSS (Harmony) | `Reasoning:` system line (traces cannot be fully disabled) | `Reasoning: low \| medium \| high` |
+
+### Per model family
+
+The registry decides which surface a model has; the provider decides how it travels. The
+table shows what reaches the server for `thinking="on"` / `"off"` / `"high"`.
+
+| Model family (registry) | LM Studio | vLLM | MLX / HF transformers |
+|---|---|---|---|
+| Qwen3.5 / 3.6, Laguna, Qwen3 (`template_kwarg`, assistant prefill; no levels) | `reasoning_effort` `medium` / `none` / `medium` (reported as `on`) | `chat_template_kwargs.enable_thinking` true / false / true, plus `thinking_token_budget` for a level (reported as `on`) | template switch; MLX also the no-think prefill |
+| Qwen3.8 (`template_kwarg`, `effort_template_kwarg`, levels `low\|medium\|xhigh`) | `reasoning_effort` `medium` / `none` / `medium` (nearest level, warned) | `enable_thinking` plus `reasoning_effort` template kwarg | switch plus the template's effort sentence |
+| HY V3 / Hy-Memory (effort switch, levels `low\|high`) | `reasoning_effort` `high` / `none` / `high` | `chat_template_kwargs.reasoning_effort` `high` / `no_think` / `high` | the effort variable `no_think\|low\|high` |
+| Gemma 4, Nemotron, GLM-5, LongCat (`template_kwarg` only) | `reasoning_effort` `medium` / `none` / `medium` (reported as `on`) | `chat_template_kwargs.enable_thinking`; Nemotron `low_effort` for `low`/`minimal` | HF: template switch; MLX: not mapped (warns) |
+| DeepSeek V4, Mistral Small 4 (levels incl. `none`, no template surface) | `reasoning_effort` `high` / `none` / `high` | `reasoning_effort` | not mapped (warns) |
+| GPT-OSS (Harmony, levels `low\|medium\|high`) | `Reasoning:` system line plus `reasoning_effort` | `reasoning_effort` (vLLM builds the Harmony system message from it) plus the system line | `Reasoning:` system line |
+| GLM-4.6V (`prompt_disable_token` only) | `/nothink` appended for off; on not mapped (warns) | `/nothink` for off; on not mapped | `/nothink` for off |
+| Kimi K2.6 (`request_param: thinking`), surface-less reasoning models | not mapped (warns) | not mapped (warns) | not mapped (warns) |
+
+"Not mapped" means no control artifact is sent, `thinking_effective` is absent, and a
+`RuntimeWarning` states that the model or server default stays in effect.
+
+### LM Studio facts
+
+LM Studio's OpenAI-compatible endpoint behaves differently from vLLM, so its lane is pinned
+by live evidence (2026-10-25, `qwen/qwen3.6-35b-a3b` MLX and `qwen/qwen3.8-27b`, rendered
+prompts read back with `lms log stream -s model --filter input`):
+
+- `chat_template_kwargs`, at the top level or under `extra_body`, and top-level template
+  variables such as `enable_thinking` are ignored. AbstractCore still sends them, but never
+  counts them as an applied control.
+- The top-level `reasoning_effort` field reaches the chat template on every request shape:
+  plain prompts, message histories, and tool calls with tool-result history, on both the
+  sync and async paths. `"none"` renders the template's own empty think block. For an on/off
+  model such as Qwen3.6, every other value turns thinking on and produces the same
+  reasoning. For Qwen3.8, LM Studio applies the level, mapping `minimal` to `low` and
+  `high` to `xhigh` on its side.
+- LM Studio's default for both models was thinking off. Before this fix, `thinking="on"`
+  silently stayed off while the metadata reported `on`.
+- The assistant no-think prefill is not needed once `reasoning_effort: "none"` is sent.
+  Sending both renders the empty think block twice. AbstractCore uses the prefill only as
+  the off switch of last resort, when the server has rejected `reasoning_effort` earlier
+  in the session.
+- The native REST endpoint (`POST /api/v1/chat`, field `reasoning`) cannot carry message
+  history, custom tools, or structured output. `thinking=` no longer routes there. Pass
+  `reasoning=` explicitly to use that endpoint for a plain prompt.
 
 Local providers serialize prompts themselves, so their controls are prompt artifacts rather
 than API fields. AbstractCore reproduces the artifact the model's own chat template would
@@ -106,7 +152,9 @@ declines the claim for these rather than reporting an unenforced level:
   when `ABSTRACTCORE_GGUF_CONTROL_PLANE=0` disables the local renderer. These requests are
   served by `llama-cpp-python`'s chat-completion path, which renders no control artifact.
 - **Servers that reject `reasoning_effort`.** AbstractCore drops the field, retries the
-  request once so it still succeeds, and warns that the level was not applied.
+  request once so it still succeeds, and warns that the level was not applied. On LM Studio
+  the rejection is remembered for the session: later requests decline the claim, and
+  `thinking="off"` falls back to the assistant no-think prefill when the model declares one.
 
 ## Reasoning control and prompt caching
 

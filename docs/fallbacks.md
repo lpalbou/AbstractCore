@@ -99,19 +99,23 @@ AbstractCore implements a layered approach for `thinking=...` on Qwen3/Qwen3.5:
      the control, thinking-controlled GGUF requests are routed through it whether or not a
      `prompt_cache_key` is in play.
 
-3) **Robust fallback for `thinking="off"/"none"` (LM Studio)**
-   Some LM Studio builds ignore `chat_template_kwargs` for certain model formats. For that
-   path AbstractCore also uses Qwen’s **stateless hard switch**, appending a final assistant
-   “prefill” message containing the empty think block:
+3) **LM Studio: `reasoning_effort`, with the prefill as the last resort**
+   LM Studio's OpenAI-compatible endpoint ignores `chat_template_kwargs`. The top-level
+   `reasoning_effort` field reaches the chat template on every request shape, so the LM Studio
+   provider sends `reasoning_effort: "none"` for `thinking="off"` (the template then renders its
+   own empty think block). The Qwen **stateless hard switch** — a final assistant "prefill"
+   message containing the empty think block — is used only when the server has rejected
+   `reasoning_effort` earlier in the session. Sending both rendered the empty block twice. See
+   [Reasoning Control](reasoning-control.md#lm-studio-facts) for the live evidence.
 
-   - Implemented in `abstractcore/providers/base.py` (Qwen hard-switch marker injection).
-   - Both artifacts express the same off state, so sending the template kwarg and the prefill
-     together is consistent.
+   - The marker injection lives in `abstractcore/providers/base.py`; a provider opts in through
+     `_wants_assistant_prefill_disable(...)` (LM Studio: only when its hook did not handle the
+     disable).
    - Providers that render prompts locally (MLX, HuggingFace transformers and GGUF) place the
      marker themselves at the generation boundary, which is where the model's own chat template
      puts it; they do not use this message-level fallback.
 
-   Note: this fallback adds an extra assistant turn **in the outbound request only**. Callers should not persist that marker message as part of the canonical chat history.
+   Note: the fallback adds an extra assistant turn **in the outbound request only**. Callers should not persist that marker message as part of the canonical chat history.
 
 4) **Why we do not rely on `/no_think` as the primary switch**
 

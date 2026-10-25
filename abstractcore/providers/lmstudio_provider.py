@@ -187,6 +187,12 @@ class LMStudioProvider(OpenAICompatibleProvider):
         Jinja2 (has ``safe``) and keep the untouched shared wire.
         """
         payload = super()._mutate_payload(payload, **kwargs)
+        # Unified thinking control (see `_apply_provider_thinking_kwargs`): the top-level
+        # `reasoning_effort` is the transport LM Studio maps into the chat template. A
+        # caller-provided `reasoning_effort=` (already copied by the superclass) wins.
+        effort = kwargs.get(self.LMSTUDIO_REASONING_EFFORT_KWARG)
+        if isinstance(effort, str) and effort and "reasoning_effort" not in payload:
+            payload["reasoning_effort"] = effort
         if getattr(self, "_lmstudio_minja_arg_stringify_needed", False):
             messages = payload.get("messages")
             if isinstance(messages, list) and messages:
@@ -324,6 +330,19 @@ class LMStudioProvider(OpenAICompatibleProvider):
         """Derive LM Studio native REST base URL from the OpenAI-compatible base_url."""
         return self._native_rest_root_url(str(getattr(self, "base_url", "") or "").strip() or None)
 
+    # Internal request kwarg carrying the LM Studio thinking transport. It is copied to
+    # the TOP-LEVEL `reasoning_effort` field by `_mutate_payload` (a caller-provided
+    # `reasoning_effort=` wins). It is deliberately NOT the public `reasoning_effort`
+    # kwarg: BaseProvider reads that one as the *effective level* for metadata, and for
+    # an on/off-only model (Qwen3.6) the effort value that switches thinking on ("medium")
+    # is not a level the model has.
+    LMSTUDIO_REASONING_EFFORT_KWARG = "_acore_lmstudio_reasoning_effort"
+
+    # Value sent for a bare thinking="on" when the model declares no effort levels (or
+    # none of these): LM Studio maps every non-"none" value to "thinking on" for an
+    # on/off model (live-verified 2026-10-25, see `_apply_provider_thinking_kwargs`).
+    _LMSTUDIO_ON_EFFORT_PREFERENCE = ("medium", "high", "low", "xhigh", "minimal")
+
     def _apply_provider_thinking_kwargs(
         self,
         *,
@@ -331,25 +350,64 @@ class LMStudioProvider(OpenAICompatibleProvider):
         level: Optional[str],
         kwargs: Dict[str, Any],
     ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
-        """Map the unified `thinking=` control to LM Studio's native REST `reasoning` field.
+        """Map the unified `thinking=` control to LM Studio's top-level `reasoning_effort`.
 
-        LM Studio's native REST endpoint (`POST /api/v1/chat`) is the only LM Studio surface
-        that *documents* per-request reasoning control (`off|low|medium|high|on`; the accepted
-        subset is model-specific). The OpenAI-compatible endpoint does not document
-        `chat_template_kwargs` and ignores it for some models (verified for Gemma 4), so for
-        models whose only declared surface is a chat-template kwarg — or that declare no
-        surface at all — the native `reasoning` field is the authoritative control.
+        THE TRANSPORT LM STUDIO HONOURS (live-verified 2026-10-25, LM Studio on
+        localhost:1234, render read back with `lms log stream -s model --filter input`;
+        evidence under untracked/thinking-translation/):
 
-        Template-level semantics (assistant prefill, prompt disable tokens, budget kwargs)
-        keep priority when declared: those transports are pinned by existing model behavior
-        (Qwen3 family, GLM, Seed-OSS) and remain unchanged.
+        - `chat_template_kwargs` (top level or under `extra_body`) and top-level
+          template variables (`enable_thinking`, `enableThinking`) are IGNORED by the
+          OpenAI-compatible endpoint. qwen/qwen3.6-35b-a3b (MLX 4-bit) with
+          `chat_template_kwargs.enable_thinking=true` rendered the template's OFF
+          generation prompt `<think>\n\n</think>\n\n` and returned 0 reasoning tokens.
+          The same was seen earlier on a qwen3-0.6b GGUF and on Gemma 4. A claim resting
+          on them alone is therefore never made here.
+        - The TOP-LEVEL OpenAI `reasoning_effort` IS mapped into the chat template, on
+          every request shape (plain prompt AND messages + tools + tool-call history):
+          * qwen/qwen3.6-35b-a3b (on/off only): `none` rendered `<think>\n\n</think>\n\n`
+            (0 reasoning tokens); `minimal`, `low`, `medium`, `high`, `xhigh` all rendered
+            `<think>\n` and produced the SAME reasoning (590 tokens, plain shape; 51 on
+            the tool-history shape) — LM Studio treats every non-`none` value as "on".
+          * qwen/qwen3.8-27b (levels low|medium|xhigh): `none` -> off; `minimal`/`low`
+            -> the template's low sentence; `medium` -> no sentence (template default);
+            `high`/`xhigh` -> the xhigh sentence (LM Studio nearest-maps on its side).
+          * Both models' LM Studio default was thinking OFF: without a transport,
+            thinking="on" silently stayed off (the 2026-10-25 defect: metadata said
+            "on", 0 reasoning tokens).
+        - The native REST `reasoning` field (`POST /api/v1/chat`) cannot carry
+          conversation history, custom tools or response_format, and the async path
+          never used it, so it is no longer chosen by this hook. It stays available to
+          callers that pass `reasoning=` explicitly (sync, plain shapes only).
+        - The assistant-prefill marker (`<think>\n\n</think>\n\n` as a trailing
+          assistant message) is NOT needed for "off" once `reasoning_effort: "none"` is
+          sent, and sending both renders the empty think block TWICE
+          (`...assistant\n<think>\n\n</think>\n\n<think>\n\n</think>\n\n`, 4 extra
+          prompt tokens; measured on both models). BaseProvider therefore applies the
+          prefill on LM Studio only when this hook did NOT handle the disable (e.g. the
+          server 400-rejected `reasoning_effort` earlier in the session).
+
+        Mapping (levels are already nearest-mapped into the model's declared
+        `reasoning_levels` by BaseProvider, with a warning):
+        - off -> `none`;
+        - a declared level -> that level (handled_level=True);
+        - on, or a level the model does not declare (on/off-only models) -> the model's
+          preferred declared level (medium, high, low, ...) or `medium`; handled_level
+          stays False so BaseProvider warns and reports thinking_effective="on".
+
+        Scope: models with a thinking surface LM Studio can drive through its reasoning
+        setting — a chat-template switch (`template_kwarg`), an effort template variable
+        (`effort_template_kwarg`), declared `reasoning_levels`, or a declared
+        `request_param: reasoning_effort`. Prompt-token-only models (GLM-4.6V `/nothink`)
+        keep BaseProvider's prompt-token disable; budget-only, `thinking`-param-only and
+        surface-less reasoning models are declined (no transport on this endpoint), and
+        BaseProvider warns that the server default stays in effect. Harmony models
+        (GPT-OSS) keep the `Reasoning:` system line handled in BaseProvider.
         """
         new_kwargs, handling = super()._apply_provider_thinking_kwargs(enabled=enabled, level=level, kwargs=kwargs)
         if enabled is None and level is None:
             return new_kwargs, handling
 
-        # Harmony models (GPT-OSS) control reasoning via a system-prompt line handled in
-        # BaseProvider; never reroute them to the native REST endpoint.
         arch = self.architecture_config if isinstance(self.architecture_config, dict) else {}
         caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
         msg_fmt = str(arch.get("message_format") or "").strip().lower()
@@ -357,81 +415,54 @@ class LMStudioProvider(OpenAICompatibleProvider):
         if msg_fmt == "harmony" or resp_fmt == "harmony":
             return new_kwargs, handling
 
-        # Only reasoning-capable models expose LM Studio's reasoning toggle; for anything else
-        # the request would be rejected and the base warning ladder already reports the no-op.
+        # The superclass's LM Studio claims rest on chat_template_kwargs (ignored by this
+        # endpoint, see above) — or on a top-level reasoning_effort we recompute below.
+        # Never pass them through as-is.
         if not self._model_supports_reasoning_output():
-            return new_kwargs, handling
+            return new_kwargs, ThinkingControlHandling()
 
         surfaces = self._thinking_control_surfaces()
-        if surfaces.prompt_disable_token or surfaces.assistant_prefill_disable or surfaces.budget_template_kwarg:
-            # Template-level disable/budget semantics keep priority (prefill hard-switch,
-            # /no_think, thinking_budget) — EXCEPT for effort LEVELS on models declaring
-            # an effort surface. LM Studio's OpenAI-compat endpoint ignores
-            # chat_template_kwargs.reasoning_effort (live-verified 2026-08-19 on
-            # qwen/qwen3.8-27b: the rendered prompt kept the template's default xhigh
-            # sentence while the request asked for low), so the superclass's ctk-based
-            # level claim is not a real artifact here. The TOP-LEVEL OpenAI-standard
-            # `reasoning_effort` request param IS mapped into the chat template by
-            # LM Studio, on every request shape (live-verified 2026-08-19: low and
-            # xhigh both rendered their template sentences on plain AND on
-            # messages+tools+tool_call-history requests — unlike the native REST
-            # `reasoning` field, which rejects xhigh with HTTP 400 and cannot carry
-            # conversation history at all). A build that validates the param and
-            # rejects an extended value is caught by the 400 retry net in
-            # `OpenAICompatibleProvider._single_generate`, which strips the param,
-            # retries once, and warns.
-            if not (
-                surfaces.effort_template_kwarg
-                and enabled is not False
-                and isinstance(level, str)
-                and level.strip()
-            ):
-                return new_kwargs, handling
+        declared = [x for x in self._model_reasoning_levels() if x]
+        request_param = str(surfaces.request_param or "").strip().lower()
+        has_effort_route = bool(
+            surfaces.template_kwarg
+            or surfaces.effort_template_kwarg
+            or declared
+            or request_param == "reasoning_effort"
+        )
+        out_kwargs = dict(new_kwargs)
+        if "reasoning_effort" not in (kwargs or {}):
+            # Only a CALLER-provided reasoning_effort= may reach the payload directly.
+            out_kwargs.pop("reasoning_effort", None)
+        if not has_effort_route:
+            return out_kwargs, ThinkingControlHandling()
+        if getattr(self, "_reasoning_effort_unsupported", False):
+            # This server 400-rejected `reasoning_effort` earlier in the session: no
+            # transport is left on this endpoint. Decline, so BaseProvider falls back to
+            # the assistant prefill / prompt token for "off" where the model declares
+            # one, and warns otherwise.
+            return out_kwargs, ThinkingControlHandling()
 
-            lvl = level.strip().lower()
-            declared = self._model_reasoning_levels()
-            level_ok = not declared or lvl in declared
-            # A build that 400-rejected the param earlier this session will reject it
-            # again: honor the latch, decline the claim (base warns), and skip the
-            # reject+retry round-trip on every subsequent call.
-            if getattr(self, "_reasoning_effort_unsupported", False):
-                level_ok = False
-            out_kwargs = dict(new_kwargs)
-            if level_ok:
-                # setdefault: an explicit caller-provided reasoning_effort= wins.
-                out_kwargs.setdefault("reasoning_effort", lvl)
-            return out_kwargs, ThinkingControlHandling(
-                handled_enable_disable=True,
-                handled_level=level_ok,
-            )
-
-        levels = self._model_reasoning_levels()
-        handled_level = False
         value: Optional[str] = None
+        handled_level = False
         if enabled is False:
-            value = "off"
-        elif isinstance(level, str) and level.strip():
-            lvl = level.strip().lower()
-            if levels and lvl in levels:
+            value = "none"
+        else:
+            lvl = level.strip().lower() if isinstance(level, str) and level.strip() else None
+            if lvl is not None and lvl in declared and lvl != "none":
                 value = lvl
                 handled_level = True
             else:
-                # Clamp undeclared effort levels to plain "on" (LM Studio rejects unsupported
-                # settings with HTTP 400); BaseProvider warns that effort scaling is degraded.
-                value = "on"
-        elif enabled is True:
-            value = "on"
+                value = next((x for x in self._LMSTUDIO_ON_EFFORT_PREFERENCE if x in declared), "medium")
 
-        if value is None:
-            return new_kwargs, handling
+        out_kwargs[self.LMSTUDIO_REASONING_EFFORT_KWARG] = value
+        return out_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
 
-        out_kwargs = dict(new_kwargs)
-        # An explicit caller-provided `reasoning=` kwarg always wins.
-        out_kwargs.setdefault("reasoning", value)
-        return out_kwargs, ThinkingControlHandling(
-            handled_enable_disable=True,
-            handled_level=handled_level or handling.handled_level,
-        )
+    def _wants_assistant_prefill_disable(self, provider_handling: ThinkingControlHandling) -> bool:
+        """Apply the assistant-prefill "off" marker only when this hook did not handle the
+        disable (see `_apply_provider_thinking_kwargs`: with `reasoning_effort: "none"`
+        the template renders its own empty think block and the prefill would double it)."""
+        return not provider_handling.handled_enable_disable
 
     @staticmethod
     def _native_rest_image_parts(media: Optional[List[Any]]) -> Optional[List[Dict[str, str]]]:
@@ -1060,10 +1091,11 @@ class LMStudioProvider(OpenAICompatibleProvider):
         tool_call_tags: Optional[str] = None,
         **kwargs: Any,
     ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
-        # `LMStudioProvider._apply_provider_thinking_kwargs` maps the unified `thinking=` control
-        # to the native REST `reasoning` kwarg (callers may also pass `reasoning=` explicitly).
-        # The native REST endpoint is the only LM Studio surface that documents this control.
-        # It supports streaming (typed SSE events) and text+image input parts, but rejects
+        # The native REST lane serves an explicit caller-provided `reasoning=` kwarg only.
+        # The unified `thinking=` control no longer routes here (2026-10-25): it rides the
+        # top-level `reasoning_effort` on the OpenAI-compatible endpoint, which LM Studio
+        # maps into the chat template on every request shape and on the async path (see
+        # `_apply_provider_thinking_kwargs`). The native endpoint supports streaming (typed SSE events) and text+image input parts, but rejects
         # custom `tools`, assistant-history messages, and `response_format` with HTTP 400
         # (verified live 2026-07-07; matches the official /api/v1/chat feature table).
         _ = (execute_tools, tool_call_tags)

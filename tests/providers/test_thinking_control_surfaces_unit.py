@@ -3,8 +3,9 @@
 These tests pin the fix for the untyped `thinking_control` conflation:
 - template-variable names (e.g. `enable_thinking`) must NEVER be appended as prompt text;
 - `thinking_handled_enable_disable` / `thinking_effective` must be honest (ADR-0001);
-- LM Studio maps `thinking=` to its documented native REST `reasoning` control for models
-  whose only declared surface is a chat-template kwarg (e.g. Gemma 4);
+- LM Studio maps `thinking=` to the top-level `reasoning_effort` request field (the transport
+  its OpenAI-compatible endpoint maps into the chat template on every request shape); the
+  native REST `reasoning` lane serves only an explicit caller `reasoning=`;
 - unterminated thinking blocks are auto-closed into reasoning (#TRUNCATION) instead of
   leaking into visible content;
 - OpenAI-compatible usage extraction preserves `completion_tokens_details`
@@ -97,6 +98,9 @@ def _make_lmstudio(monkeypatch, model: str) -> LMStudioProvider:
         return LMStudioProvider(model=model, base_url="http://localhost:1234/v1")
 
 
+EFFORT_KWARG = LMStudioProvider.LMSTUDIO_REASONING_EFFORT_KWARG
+
+
 def test_gemma4_thinking_off_no_longer_pollutes_prompt(monkeypatch) -> None:
     provider = _make_lmstudio(monkeypatch, "google/gemma-4-26b-a4b")
 
@@ -110,89 +114,108 @@ def test_gemma4_thinking_off_no_longer_pollutes_prompt(monkeypatch) -> None:
 
     assert prompt == "Hello"  # previously: "Hello\nenable_thinking"
     assert "enable_thinking" not in str(prompt)
-    assert kwargs.get("reasoning") == "off"  # LM Studio native REST control
-    assert kwargs.get("chat_template_kwargs", {}).get("enable_thinking") is False
+    # The transport LM Studio honours: top-level reasoning_effort "none" (via the
+    # provider's internal kwarg, copied to the payload by _mutate_payload).
+    assert kwargs.get(EFFORT_KWARG) == "none"
+    assert "reasoning" not in kwargs  # the native REST lane is no longer chosen by thinking=
     assert meta is not None
     assert meta["thinking_effective"] == "off"
     assert meta["thinking_handled_enable_disable"] is True
 
 
-def test_gemma4_lmstudio_thinking_routes_to_native_rest(monkeypatch) -> None:
-    provider = _make_lmstudio(monkeypatch, "google/gemma-4-26b-a4b")
-
+def _capture_openai_payload(monkeypatch, provider):
     captured = {}
 
-    def _fake_native(*, prompt, system_prompt, stream, **kwargs):
-        captured["reasoning"] = kwargs.get("reasoning")
-        return GenerateResponse(
-            content="final",
-            model=provider.model,
-            finish_reason="stop",
-            metadata={"reasoning": "native reasoning text"},
-        )
+    def _fail_native(**_kwargs):
+        raise AssertionError("thinking= must not route to the native REST endpoint")
 
-    monkeypatch.setattr(provider, "_native_rest_chat_generate", _fake_native)
+    def _capture_single_generate(payload, **_kw):
+        captured["payload"] = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_native_rest_chat_generate", _fail_native)
+    monkeypatch.setattr(provider, "_native_rest_chat_stream", _fail_native)
+    monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
+    return captured
+
+
+def test_gemma4_lmstudio_thinking_on_rides_top_level_reasoning_effort(monkeypatch) -> None:
+    provider = _make_lmstudio(monkeypatch, "google/gemma-4-26b-a4b")
+    captured = _capture_openai_payload(monkeypatch, provider)
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         resp = provider.generate("hi", thinking="on", temperature=0)
 
-    assert captured["reasoning"] == "on"
-    assert resp.content == "final"
-    assert resp.metadata.get("reasoning") == "native reasoning text"
+    payload = captured["payload"]
+    assert payload["reasoning_effort"] == "medium"  # any non-"none" value = on for an on/off model
+    assert EFFORT_KWARG not in payload
     assert resp.metadata.get("thinking_effective") == "on"
-    # The old "does not implement a thinking control mapping" warning must be gone.
     mapping_warnings = [w for w in caught if "does not implement a thinking control" in str(w.message)]
     assert not mapping_warnings
 
 
 def test_gemma4_lmstudio_thinking_level_clamps_to_on_with_warning(monkeypatch) -> None:
     provider = _make_lmstudio(monkeypatch, "google/gemma-4-26b-a4b")
-
-    captured = {}
-
-    def _fake_native(*, prompt, system_prompt, stream, **kwargs):
-        captured["reasoning"] = kwargs.get("reasoning")
-        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
-
-    monkeypatch.setattr(provider, "_native_rest_chat_generate", _fake_native)
+    captured = _capture_openai_payload(monkeypatch, provider)
 
     with pytest.warns(RuntimeWarning, match="cannot enforce effort scaling"):
-        provider.generate("hi", thinking="high", temperature=0)
+        resp = provider.generate("hi", thinking="high", temperature=0)
 
-    # Gemma supports only on/off on LM Studio native REST; clamping avoids HTTP 400.
-    assert captured["reasoning"] == "on"
+    # Gemma 4 declares no effort levels: on/off only, reported as "on" (never "high").
+    assert captured["payload"]["reasoning_effort"] == "medium"
+    assert resp.metadata.get("thinking_effective") == "on"
+    assert resp.metadata.get("thinking_handled_level") is False
 
 
-def test_gemma4_lmstudio_native_route_ineligible_warns_and_falls_back(monkeypatch) -> None:
+def test_gemma4_lmstudio_tools_request_keeps_the_thinking_control(monkeypatch) -> None:
+    # Before 2026-10-25 the control rode the native REST `reasoning` field, which cannot
+    # carry tools/history: it was DROPPED for such requests while metadata still claimed it.
     provider = _make_lmstudio(monkeypatch, "google/gemma-4-26b-a4b")
-
-    def _fail_native(**_kwargs):  # must not be called for tool requests
-        raise AssertionError("native REST must not be used when tools are present")
-
-    monkeypatch.setattr(provider, "_native_rest_chat_generate", _fail_native)
-
-    captured = {}
-
-    def _capture_single_generate(payload):
-        captured["payload"] = payload
-        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
-
-    monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
+    captured = _capture_openai_payload(monkeypatch, provider)
 
     tools = [{"type": "function", "function": {"name": "noop", "parameters": {"type": "object", "properties": {}}}}]
-    with pytest.warns(RuntimeWarning, match="does not accept custom tools"):
-        provider.generate("hi", thinking="off", tools=tools, temperature=0)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        resp = provider.generate(
+            "hi",
+            thinking="off",
+            tools=tools,
+            messages=[{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "ok"}],
+            temperature=0,
+        )
 
     payload = captured["payload"]
-    # The native reasoning control was dropped, but the best-effort template artifact rides along.
+    assert payload["reasoning_effort"] == "none"
     assert "reasoning" not in payload
-    assert payload.get("chat_template_kwargs", {}).get("enable_thinking") is False
+    assert not [w for w in caught if "cannot be applied" in str(w.message)]
+    assert resp.metadata.get("thinking_effective") == "off"
 
 
-def test_gemma4_lmstudio_streaming_routes_native_with_separated_reasoning(monkeypatch) -> None:
+def test_gemma4_lmstudio_streaming_thinking_rides_reasoning_effort(monkeypatch) -> None:
+    provider = _make_lmstudio(monkeypatch, "google/gemma-4-26b-a4b")
+    captured = {}
+
+    def _fail_native(**_kwargs):
+        raise AssertionError("thinking= must not route to the native REST endpoint")
+
+    def _fake_stream(payload, **_kw):
+        captured["payload"] = payload
+        yield GenerateResponse(content="Hel", model=provider.model)
+        yield GenerateResponse(content="lo", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_native_rest_chat_stream", _fail_native)
+    monkeypatch.setattr(provider, "_stream_generate", _fake_stream)
+
+    chunks = list(provider.generate("hi", thinking="on", stream=True, temperature=0))
+    assert "".join(c.content or "" for c in chunks) == "Hello"
+    assert captured["payload"]["reasoning_effort"] == "medium"
+
+
+def test_lmstudio_explicit_reasoning_kwarg_still_streams_native_with_separated_reasoning(monkeypatch) -> None:
     # Native REST streams typed SSE events: message deltas -> content, reasoning deltas ->
-    # metadata["reasoning"], chat.end -> usage (incl. reasoning token details).
+    # metadata["reasoning"], chat.end -> usage (incl. reasoning token details). The lane
+    # serves an explicit caller `reasoning=` kwarg.
     provider = _make_lmstudio(monkeypatch, "google/gemma-4-26b-a4b")
 
     def _fake_stream(*, prompt, system_prompt, media=None, **kwargs):
@@ -216,7 +239,7 @@ def test_gemma4_lmstudio_streaming_routes_native_with_separated_reasoning(monkey
 
     monkeypatch.setattr(provider, "_native_rest_chat_stream", _fake_stream)
 
-    chunks = list(provider.generate("hi", thinking="on", stream=True, temperature=0))
+    chunks = list(provider.generate("hi", reasoning="on", stream=True, temperature=0))
 
     text = "".join(c.content or "" for c in chunks)
     assert text == "Hello"
@@ -227,6 +250,17 @@ def test_gemma4_lmstudio_streaming_routes_native_with_separated_reasoning(monkey
     assert "because" in reasoning_deltas
     usage_chunks = [c.usage for c in chunks if c.usage]
     assert usage_chunks and usage_chunks[-1]["completion_tokens_details"] == {"reasoning_tokens": 20}
+
+
+def test_lmstudio_explicit_reasoning_kwarg_ineligible_shape_warns_and_falls_back(monkeypatch) -> None:
+    provider = _make_lmstudio(monkeypatch, "google/gemma-4-26b-a4b")
+    captured = _capture_openai_payload(monkeypatch, provider)
+
+    tools = [{"type": "function", "function": {"name": "noop", "parameters": {"type": "object", "properties": {}}}}]
+    with pytest.warns(RuntimeWarning, match="does not accept custom tools"):
+        provider.generate("hi", reasoning="off", tools=tools, temperature=0)
+
+    assert "reasoning" not in captured["payload"]
 
 
 def test_lmstudio_native_sse_event_parsing() -> None:

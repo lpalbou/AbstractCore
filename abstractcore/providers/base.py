@@ -286,6 +286,12 @@ class PromptCacheStore:
             return entry.ttl_s if entry is not None else None
 
 
+# Internal request kwarg a provider hook may set to report the reasoning effort it really
+# sent when its transport is not the public `reasoning_effort` kwarg (read by
+# `_apply_thinking_request` for metadata only; payload builders never forward it).
+THINKING_EFFECTIVE_EFFORT_KWARG = "_acore_thinking_effective_effort"
+
+
 @dataclass(frozen=True)
 class ThinkingControlHandling:
     """Provider/model prompt thinking control handling details.
@@ -1839,14 +1845,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # final assistant message containing only the empty think block and clear `prompt` so
         # OpenAI-compatible providers don't append an extra user turn after it.
         thinking_surfaces = self._thinking_control_surfaces()
-        provider_id = str(getattr(self, "provider", "") or "").strip().lower()
-        # LM Studio: apply the prefill hard switch even when the provider hook already
-        # claimed the disable via `chat_template_kwargs.enable_thinking` — LM Studio's
-        # OpenAI-compatible endpoint does not document that field and IGNORES it for
-        # some model formats (live-verified: qwen3-0.6b GGUF kept reasoning while the
-        # kwarg-only path reported thinking_effective=off). Both artifacts express the
-        # same off state, so sending both is consistent; skipping the prefill turned
-        # the report dishonest.
+        # LM Studio history: its OpenAI-compatible endpoint IGNORES
+        # `chat_template_kwargs.enable_thinking` (live-verified: qwen3-0.6b GGUF kept
+        # reasoning while the kwarg-only path reported thinking_effective=off), so the
+        # prefill used to be applied even when the hook claimed the disable.
         #
         # HF-GGUF is deliberately NOT in this branch (removed 2026-08-20): its
         # control-plane renderer places the marker itself at the true generation
@@ -1855,10 +1857,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # CLOSED assistant turn and does not disable thinking (live-verified on
         # three Qwen GGUFs). Re-adding it here would convert an honest decline
         # back into a false "off" claim.
+        #
+        # 2026-10-25: LM Studio's provider hook now handles "off" through the top-level
+        # `reasoning_effort: "none"`, which the server maps into the chat template (the
+        # template then renders its OWN empty think block). Adding the prefill on top
+        # rendered the block twice, so the prefill is applied only where the provider
+        # says it wants it (`_wants_assistant_prefill_disable`): on LM Studio, when its
+        # hook did NOT handle the disable (e.g. reasoning_effort was 400-rejected).
         if (
             enabled is False
-            and provider_id == "lmstudio"
             and thinking_surfaces.assistant_prefill_disable
+            and self._wants_assistant_prefill_disable(provider_handling)
         ):
             marker = thinking_surfaces.assistant_prefill_disable
             new_messages: List[Dict[str, Any]] = []
@@ -2040,6 +2049,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Best-effort infer the effective control after provider hooks.
         # Prefer explicit provider-native knobs over our internal request vars.
         effort = kwargs.get("reasoning_effort")
+        # A provider whose transport is not the public `reasoning_effort` kwarg (OpenRouter's
+        # `reasoning` object) reports the effort it actually sent under this internal key.
+        reported_effort = kwargs.get(THINKING_EFFECTIVE_EFFORT_KWARG)
+        if isinstance(reported_effort, str) and reported_effort.strip():
+            effort = reported_effort
         if isinstance(effort, str) and effort.strip():
             effort_norm = effort.strip().lower()
             # A declared effort OFF value (`thinking_control.effort_disable_value`,
@@ -2126,6 +2140,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """Provider-specific thinking knob hook (default: unsupported)."""
         _ = (enabled, level)
         return kwargs, False
+
+    def _wants_assistant_prefill_disable(self, provider_handling: ThinkingControlHandling) -> bool:
+        """Whether BaseProvider should append the asset-declared assistant-prefill "off"
+        marker as a trailing assistant MESSAGE for thinking="off".
+
+        Default False: providers that serialize prompts themselves (MLX, HF) place the
+        marker at the true generation boundary in their own renderers, and servers that
+        render a trailing assistant message as a CLOSED turn would not be disabled by it.
+        LM Studio overrides this (it continues a trailing assistant message as a prefill).
+        """
+        _ = provider_handling
+        return False
 
     def _supports_developer_messages(self) -> bool:
         """Return True when the provider API can accept OpenAI `developer` messages directly."""

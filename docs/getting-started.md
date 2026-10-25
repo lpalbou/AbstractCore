@@ -165,7 +165,7 @@ print(resp.metadata.get("reasoning"))  # when the backend exposes it
 ```
 
 Notes:
-- For **Qwen3 / Qwen3.5 on LM Studio**, AbstractCore uses LM Studio’s model template variables (`enable_thinking` / `enableThinking`) and a Qwen template “hard switch” for `thinking="none"` (empty `<think></think>`), rather than injecting “Reasoning effort …” text into the system prompt.
+- On **LM Studio**, `thinking=` travels as the top-level `reasoning_effort` field, which LM Studio maps into the model's chat template (`"none"` turns thinking off), rather than injecting “Reasoning effort …” text into the system prompt. See [Reasoning Control](reasoning-control.md#lm-studio-facts).
 - For **Qwen3 / Qwen3.5 GGUF via HuggingFaceProvider (llama-cpp-python)**, there is no template-kwargs knob exposed by llama-cpp-python today, so `thinking="none"` also uses the Qwen hard-switch marker. If GGUF loading fails due to huge advertised context windows, AbstractCore will retry with smaller `n_ctx` values (best-effort); you can also pass `max_tokens=...` when constructing `HuggingFaceProvider()` to explicitly control llama.cpp `n_ctx`.
 - For **Ollama**, enabling thinking may consume a lot of output tokens in the thinking channel; consider using a larger `max_output_tokens` when `thinking` is enabled.
 

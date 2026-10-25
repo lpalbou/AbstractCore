@@ -25,6 +25,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   send from it." (`email_mailbox_read_only`). `guarded_send` on a read-only account with an
   outgoing server now refuses with `EmailMailboxReadOnly` before connecting.
 
+### Fixed
+
+- **LM Studio `thinking=` reached the model only for "off"**: the control rode
+  `chat_template_kwargs`, which LM Studio's OpenAI-compatible endpoint ignores, while metadata
+  reported `thinking_effective="on"` (live: `qwen/qwen3.6-35b-a3b`, 0 reasoning tokens for
+  `thinking=True` and `"high"`). The unified control now travels as the top-level
+  `reasoning_effort` (`"none"` = off, the declared level, or `"medium"` for on), which LM Studio
+  maps into the chat template on plain, message-history and tool-history requests, sync and
+  async (live-verified on Qwen3.6 and Qwen3.8). `thinking="off"` no longer appends the assistant
+  no-think prefill on top (it rendered the empty think block twice); the prefill remains the
+  off switch only after the server rejected `reasoning_effort`. Models without a surface LM
+  Studio can drive (Kimi `thinking` param, budget-only, surface-less) are no longer claimed.
+  `thinking=` no longer routes to the native `/api/v1/chat` endpoint, which dropped the control
+  for history/tool/async requests while still claiming it; `reasoning=` keeps that lane.
+- **vLLM thinking controls never reached the server**: they were posted inside a literal
+  `extra_body` JSON field, which vLLM ignores. `chat_template_kwargs`, `reasoning_effort`,
+  `thinking_token_budget` and the other vLLM extensions are now sent at the top level, and a
+  caller's `reasoning_effort=` / `chat_template_kwargs=` are forwarded. The template switch is
+  sent under the name the model declares (no guessed `enable_thinking` claimed for models that
+  have none); models with levels and no switch (DeepSeek V4, Mistral Small 4) get
+  `reasoning_effort`; GPT-OSS gets `reasoning_effort`; Seed-OSS gets `thinking_budget`;
+  Nemotron `low_effort` is sent; a token budget alone is no longer reported as an applied level.
+- **OpenRouter ignored `thinking=`**: it is now sent as OpenRouter's `reasoning` object
+  (`effort` / `enabled`), with the lowest declared effort (warned) for models whose reasoning
+  cannot be disabled.
+
 ## [2.29.0] - 2026-10-25
 
 ### Added

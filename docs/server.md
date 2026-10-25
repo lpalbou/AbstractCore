@@ -514,7 +514,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 ```
 
 Notes:
-- For **Qwen3 / Qwen3.5 on LM Studio**, `thinking="none"` maps to LM Studio’s template variables (`enable_thinking` / `enableThinking`) plus a Qwen template “hard switch” fallback (empty `<think></think>`) when needed. This avoids injecting “reasoning effort” instructions into the system prompt.
+- On **LM Studio**, `thinking="none"` maps to the top-level `reasoning_effort: "none"`, which LM Studio maps into the model's chat template; the Qwen empty-think-block prefill is used only if the server rejects that field. This avoids injecting “reasoning effort” instructions into the system prompt.
 - Not every backend supports per-effort budgets for `low|medium|high`; when unavailable, levels degrade to “thinking enabled”.
 
 **Example with streaming:**
