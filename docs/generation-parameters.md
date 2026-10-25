@@ -49,6 +49,10 @@ Individual Providers
 
 Token budgets use `max_tokens` for input plus output, and `max_output_tokens` for generation.
 Set the output cap explicitly: an omitted cap can use a provider's full output capability.
+A per-call cap above the model's registered output ceiling is reduced to that ceiling, with a
+`RuntimeWarning`. For a model that `model_capabilities.json` does not know, the ceiling is only a
+guessed default (4096), so a per-call cap is sent as given and the server enforces its real
+limit. A cap set on the constructor still bounds every per-call value.
 Ollama's thinking path raises a smaller cap to a minimum output budget: 1024 for `minimal`,
 2048 for `low` or boolean on, 4096 for `medium`, 8192 for `high`. Use `thinking=False` when
 enforcing a small output cap. See [bounded integration recipes](agent-usage.md).

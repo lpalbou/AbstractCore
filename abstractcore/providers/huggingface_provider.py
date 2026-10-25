@@ -7452,6 +7452,10 @@ class HuggingFaceProvider(BaseProvider):
                         )
                     )
                     self.max_output_tokens = int(self.max_tokens)
+                    # The loaded runtime window is a measured limit, so the per-call
+                    # clamp in BaseProvider._prepare_generation_kwargs keeps applying
+                    # it even when the model has no registry entry.
+                    self._output_ceiling_source = "GGUF n_ctx of the loaded model"
             except Exception:
                 pass
 

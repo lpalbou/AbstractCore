@@ -142,3 +142,73 @@ def test_no_alias_is_claimed_by_two_registry_entries():
             collisions.append(f"{name!r}: top-level entry shadows alias of {owner[name]}")
 
     assert not collisions, "ambiguous registry names: " + "; ".join(collisions)
+
+
+UNREGISTERED = "acme-unregistered-chat-x1"  # never in model_capabilities.json
+
+
+def _compat_send(monkeypatch, model, **gen_kwargs):
+    """generate() through the real OpenAI-compatible payload builder; return (body, warnings)."""
+    import warnings
+
+    from abstractcore.core.types import GenerateResponse
+    from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None, raising=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        provider = OpenAICompatibleProvider(model=model, base_url="http://relay.test/v1", api_key="k")
+    captured = {}
+
+    def _single(payload, **_kw):
+        captured["body"] = payload
+        return GenerateResponse(content="{}", model=model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _single)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        provider.generate("Return JSON.", **gen_kwargs)
+    return provider, captured["body"], [str(w.message) for w in caught]
+
+
+def test_an_unregistered_models_guessed_ceiling_never_cuts_an_explicit_budget(monkeypatch):
+    """Live defect 2026-10-25: max_tokens=12000 on an unregistered model (claude-haiku-5-5 /
+    gpt-6-luna through an OpenAI-compatible proxy) went out as 4096 — the
+    `default_capabilities` guess — and the JSON answer came back truncated.
+
+    For a model the registry does not know, 4096 is not a fact about the model; the
+    caller's budget is sent as given and the server enforces its real limit.
+    """
+    from abstractcore.architectures.detection import lookup_registry_model_capabilities
+
+    assert lookup_registry_model_capabilities(UNREGISTERED) is None
+    provider, body, caught = _compat_send(monkeypatch, UNREGISTERED, max_tokens=12000)
+
+    assert int(provider.max_output_tokens) < 12000  # the guessed default is still smaller
+    sent = body.get("max_tokens", body.get("max_completion_tokens"))
+    assert sent == 12000
+    assert not any("Clamping caller-requested" in w for w in caught), caught
+
+
+def test_a_registered_models_ceiling_still_clamps_with_a_warning(monkeypatch):
+    provider, body, caught = _compat_send(monkeypatch, "gpt-5.6-luna", max_tokens=10_000_000)
+    sent = body.get("max_tokens", body.get("max_completion_tokens"))
+    assert sent == int(provider.max_output_tokens) == 128000
+    assert any(
+        "Clamping caller-requested" in w and "model_capabilities.json" in w for w in caught
+    ), caught
+
+
+def test_a_constructor_cap_still_bounds_per_call_requests_on_an_unregistered_model(monkeypatch):
+    import warnings
+
+    from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None, raising=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        provider = OpenAICompatibleProvider(
+            model=UNREGISTERED, base_url="http://relay.test/v1", api_key="k", max_output_tokens=3000
+        )
+        kwargs = provider._prepare_generation_kwargs(max_output_tokens=12000)
+    assert kwargs["max_output_tokens"] == 3000

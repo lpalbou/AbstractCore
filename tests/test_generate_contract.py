@@ -53,7 +53,31 @@ def test_generate_request_keyword_is_supported_for_text_generate() -> None:
     assert resolved["request"]["text"] == "hello from request"
     assert resolved["outputs"] == [{"modality": "text", "task": "text_generation", "provider": "openai", "model": "gpt-5"}]
     assert resolved["text_route"]["model"] == "gpt-5"
+    # The row was configured for openai/gpt-5; this instance is route-provider/route-model,
+    # so the row's reasoning level is not adopted (docs/reasoning-control.md, precedence).
+    # Before 2026-10-25 it was, and a machine-wide `reasoning: minimal` reached every model.
+    assert resolved["reasoning"] is None
+    assert resolved["reasoning_source"] == "not_applied:route_provider_differs"
+
+
+def test_generate_adopts_the_configured_reasoning_of_its_own_route() -> None:
+    llm = _RouteProvider()
+    llm._abstractcore_capability_defaults = {  # type: ignore[attr-defined]
+        "input.text": {
+            "key": "input.text",
+            "provider": "route-provider",
+            "model": "route-model",
+            "reasoning": "medium",
+            "source": "abstractcore.capability_defaults",
+        }
+    }
+
+    resp = llm.generate(request={"text": "hello from request"})
+
+    resolved = resp.metadata.get("_resolved_generate_route")
     assert resolved["reasoning"] == "medium"
+    assert resolved["reasoning_source"] == "abstractcore.capability_defaults"
+    assert resp.metadata["thinking_source"] == "configured_default"
 
 
 def test_resolve_generate_route_applies_task_specific_defaults_and_reasoning() -> None:

@@ -154,6 +154,9 @@ class OpenAICompatibleProvider(BaseProvider):
     """
 
     PROVIDER_ID = "openai-compatible"
+    # A caller's `reasoning_effort=` is copied to the top-level payload field as given
+    # (`_mutate_payload`), on the sync and streaming builders alike.
+    FORWARDS_RAW_REASONING_EFFORT = True
     PROVIDER_DISPLAY_NAME = "OpenAI-compatible server"
     BASE_URL_ENV_VAR = "OPENAI_BASE_URL"
     API_KEY_ENV_VAR = "OPENAI_API_KEY"

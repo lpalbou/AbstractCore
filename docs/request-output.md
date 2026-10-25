@@ -96,10 +96,17 @@ It is the execution host's default reasoning effort, and it follows the same pre
 provider and the model:
 
 1. **an explicit `thinking=` on the call**, including `thinking=False`, which turns reasoning off
-   for that call;
-2. **the effort configured on the text route**, applied whenever the call names none;
-3. **nothing** — with no configured effort, no reasoning parameter is sent and the model behaves as
-   it does without one.
+   for that call, and `thinking="auto"`, which asks for no control at all;
+2. **a provider-native reasoning field on the call** (`reasoning_effort=`, `reasoning=`, `think=`),
+   sent as given;
+3. **the effort configured on the text route**, applied when the call names none of the above and
+   the route describes the instance serving the call: same provider (or endpoint profile) and same
+   model. A route that names only a reasoning effort applies to every instance. A route configured
+   for another provider or model does not set this instance's reasoning;
+4. **nothing** — no reasoning parameter is sent and the model behaves as it does without one.
+
+The full rule, with the metadata that reports which one applied, is in
+[Reasoning Control](reasoning-control.md#precedence).
 
 ```bash
 abstractcore config set-default output.text --provider lmstudio --model qwen3-30b --reasoning high
@@ -188,7 +195,9 @@ route = resp.metadata.get("_resolved_generate_route")
 
 That summary is meant for inspection and integration, not for ordinary application logic. It
 records the normalized request, normalized outputs, resolved text/input/output routes, and the
-effective reasoning default when one applied.
+effective reasoning default when one applied. When a configured effort was not applied,
+`reasoning` is `None` and `reasoning_source` says why (`not_applied:explicit_reasoning_effort`,
+`not_applied:route_provider_differs`, `not_applied:route_model_differs`).
 
 ## Related
 

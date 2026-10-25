@@ -35,6 +35,42 @@ nearest supported one and the substitution is reported as a `RuntimeWarning`. Re
 Reasoning text, when the model emits it, is available as `response.reasoning`, and
 `response.content` stays clean.
 
+## Precedence
+
+Several things can set the reasoning of one call. The first that applies wins:
+
+1. **`thinking=` on the call.** `thinking="auto"` (or `None` passed through an API that
+   distinguishes it) means "no control": nothing is sent and no configured default is added.
+2. **A provider-native reasoning field on the call**: `reasoning_effort=`, `reasoning=`
+   (LM Studio's native endpoint, OpenRouter's object), or `think=` (Ollama). It is sent as
+   given, without level mapping.
+3. **The reasoning effort configured on the text route** (`abstractcore config set-default
+   input.text --reasoning <level>`, or the gateway console). It applies only when the route
+   describes the instance serving the call: the same provider, or the same endpoint profile
+   (`endpoint:<id>`), and the same model. A route that sets only a reasoning effort, with no
+   provider or model, applies to every instance. An effort configured for another backend is
+   not a fact about this one, so it is not applied.
+4. **Nothing.** The model or server default stays in effect.
+
+Before 2026-10-25, step 3 applied to every call that did not pass `thinking=`. A machine
+configured with `reasoning: minimal` for one route therefore sent `reasoning_effort: "low"`
+for `generate(..., reasoning_effort="high")` and on unrelated models.
+
+`response.metadata["thinking_source"]` records which step applied: `"thinking"`,
+`"reasoning_effort"` (a raw field), or `"configured_default"`. For a raw `reasoning_effort=`,
+`thinking_requested` is the value you passed (`"none"` reads as `"off"`). `thinking_effective`
+repeats it only on providers that forward the field verbatim (OpenAI and the OpenAI-compatible
+family, LM Studio and vLLM included). OpenRouter is excluded, because it documents a
+`reasoning` object rather than a top-level `reasoning_effort`. The route summary in
+`response.metadata["_resolved_generate_route"]` reports a configured effort that was not applied
+as `reasoning: None`, with `reasoning_source` set to `not_applied:<reason>`.
+
+When a call passes both `thinking=` and `reasoning_effort=`, providers differ. OpenAI and
+generic OpenAI-compatible servers send the `thinking=` mapping in place of your field. LM Studio
+sends your field. vLLM and OpenRouter send your top-level field next to their own mapping
+(`chat_template_kwargs`, or the `reasoning` object), so the server decides between them. Pass
+one or the other.
+
 ## What each provider sends
 
 Two things are controlled separately: whether the model reasons at all, and how deeply.

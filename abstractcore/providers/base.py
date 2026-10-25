@@ -291,6 +291,17 @@ class PromptCacheStore:
 # `_apply_thinking_request` for metadata only; payload builders never forward it).
 THINKING_EFFECTIVE_EFFORT_KWARG = "_acore_thinking_effective_effort"
 
+# Per-call provider-native reasoning fields: OpenAI-style `reasoning_effort`, the
+# `reasoning` field/object (LM Studio native REST, OpenRouter) and Ollama's `think`. A
+# caller who sets one has chosen the reasoning for that call, so a CONFIGURED reasoning
+# default is never layered on top of it (see `BaseProvider._scope_configured_reasoning`).
+EXPLICIT_REASONING_KWARGS = ("reasoning_effort", "reasoning", "think")
+
+# `response.metadata["thinking_source"]`: where the call's reasoning request came from.
+THINKING_SOURCE_EXPLICIT = "thinking"  # the caller's `thinking=`
+THINKING_SOURCE_CONFIGURED = "configured_default"  # the text route's configured effort
+THINKING_SOURCE_REASONING_EFFORT = "reasoning_effort"  # the caller's raw `reasoning_effort=`
+
 
 @dataclass(frozen=True)
 class ThinkingControlHandling:
@@ -1686,6 +1697,42 @@ class BaseProvider(AbstractCoreInterface, ABC):
             return ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
         return ThinkingControlHandling()
 
+    # True on providers whose payload builder sends a caller's `reasoning_effort=` kwarg to
+    # the server verbatim as the top-level `reasoning_effort` field (OpenAI, and the
+    # OpenAI-compatible family except where a subclass says otherwise). Only then may
+    # metadata report that value as the effective reasoning.
+    FORWARDS_RAW_REASONING_EFFORT: bool = False
+
+    def _raw_reasoning_effort_meta(self, kwargs: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Metadata for a call that set `reasoning_effort=` directly and no `thinking=`.
+
+        The field is sent as given (no level mapping, no configured default), so
+        `thinking_requested` is the caller's value ("none" reads as "off"), and
+        `thinking_effective` is reported only where the provider forwards the field
+        verbatim and the server has not rejected it earlier in this session.
+        """
+        effort = (kwargs or {}).get("reasoning_effort")
+        if not isinstance(effort, str) or not effort.strip():
+            return None
+        value = effort.strip().lower()
+        shown = "off" if value == "none" else value
+        meta: Dict[str, Any] = {
+            "thinking_requested": shown,
+            "thinking_source": THINKING_SOURCE_REASONING_EFFORT,
+        }
+        if self.FORWARDS_RAW_REASONING_EFFORT and not getattr(self, "_reasoning_effort_unsupported", False):
+            meta["thinking_effective"] = shown
+        return meta
+
+    @staticmethod
+    def _with_thinking_source(
+        thinking_meta: Optional[Dict[str, Any]], source: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Stamp where the call's reasoning request came from, without overwriting."""
+        if isinstance(thinking_meta, dict) and source and "thinking_source" not in thinking_meta:
+            thinking_meta["thinking_source"] = source
+        return thinking_meta
+
     def _apply_thinking_request(
         self,
         *,
@@ -1709,7 +1756,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         enabled, requested_level = self._normalize_thinking_request(thinking)
         requested_enabled = enabled
         if enabled is None and requested_level is None:
-            return prompt, messages, system_prompt, kwargs, None
+            return prompt, messages, system_prompt, kwargs, self._raw_reasoning_effort_meta(kwargs)
 
         reasoning_levels = self._model_reasoning_levels()
         effective_level = requested_level
@@ -2356,7 +2403,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if any(value is not None for value in voice_override.values()):
             explicit_input_routes["input.voice"] = voice_override
 
-        return resolve_generate_route(
+        route = resolve_generate_route(
             request=request,
             output=output,
             scoped_routes=self._route_defaults_scope(),
@@ -2366,6 +2413,74 @@ class BaseProvider(AbstractCoreInterface, ABC):
             explicit_input_routes=explicit_input_routes,
             explicit_reasoning=thinking,
         )
+        return self._scope_configured_reasoning(route, kwargs)
+
+    def _scope_configured_reasoning(self, route: Any, kwargs: Dict[str, Any]) -> Any:
+        """Keep a CONFIGURED reasoning default on the route only when this call adopts it.
+
+        The precedence for one call's reasoning, highest first:
+
+        1. `thinking=` passed by the caller (including "auto", which means "no control").
+        2. A provider-native reasoning field passed by the caller
+           (`EXPLICIT_REASONING_KWARGS`, e.g. `reasoning_effort="high"`), sent as given.
+        3. The reasoning effort configured on the text route (capability defaults),
+           only when that route row describes THIS instance: a row naming another
+           provider or another model was configured for that backend, and its level is
+           not a fact about this one. A reasoning-only row (no provider, no model)
+           applies to every instance.
+        4. Nothing: the model/server default.
+
+        Defect fixed 2026-10-25: a machine configured `reasoning: minimal` on the
+        `endpoint:airelay / gpt-5.6-luna` text route turned every call that named no
+        `thinking=` into thinking="minimal" — including `generate(reasoning_effort="high")`
+        (the unified mapping then overwrote the caller's field and sent "low") and calls
+        on instances for entirely different providers and models.
+
+        A route whose default is not adopted keeps `reasoning=None` and records why in
+        `reasoning_source` (`not_applied:<reason>`), so the route summary carried in
+        response metadata stays truthful.
+        """
+        reasoning = getattr(route, "reasoning", None)
+        source = getattr(route, "reasoning_source", None)
+        if reasoning is None or source == "explicit":
+            return route
+        kw = kwargs if isinstance(kwargs, dict) else {}
+        native = next((k for k in EXPLICIT_REASONING_KWARGS if kw.get(k) is not None), None)
+        if native is not None:
+            return dataclasses_replace(route, reasoning=None, reasoning_source=f"not_applied:explicit_{native}")
+        mismatch = self._route_identity_mismatch(getattr(route, "text_route", None))
+        if mismatch is not None:
+            return dataclasses_replace(route, reasoning=None, reasoning_source=f"not_applied:route_{mismatch}_differs")
+        return route
+
+    def _route_identity_mismatch(self, text_route: Any) -> Optional[str]:
+        """"provider" / "model" when the resolved text route names another backend, else None.
+
+        Provider names compare case-insensitively against every name this instance
+        answers to: its provider id, and for an endpoint profile its virtual provider id
+        (`endpoint:<id>`) and provider family. An instance that does not know its own
+        provider or model cannot contradict the row on that field.
+        """
+        if text_route is None:
+            return None
+        route_provider = str(getattr(text_route, "provider", None) or "").strip().lower()
+        if route_provider:
+            names = {
+                str(v).strip().lower()
+                for v in (
+                    getattr(self, "provider", None),
+                    getattr(self, "_abstractcore_virtual_provider", None),
+                    getattr(self, "_abstractcore_provider_family", None),
+                )
+                if isinstance(v, str) and v.strip()
+            }
+            if names and route_provider not in names:
+                return "provider"
+        route_model = str(getattr(text_route, "model", None) or "").strip().lower()
+        own_model = str(getattr(self, "model", None) or "").strip().lower()
+        if route_model and own_model and route_model != own_model:
+            return "model"
+        return None
 
     @staticmethod
     def _media_role(item: Any) -> Optional[str]:
@@ -3535,8 +3650,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
             kwargs=kwargs,
         )
         resolved_generate_route_summary = resolved_generate_route.to_summary()
+        # Where the reasoning request of this call comes from (metadata `thinking_source`).
+        thinking_source = THINKING_SOURCE_EXPLICIT if thinking is not None else None
         if thinking is None and resolved_generate_route.reasoning is not None:
             thinking = resolved_generate_route.reasoning
+            thinking_source = THINKING_SOURCE_CONFIGURED
 
         if is_acore_output:
             maybe_specs = list(resolved_generate_route.output_specs)
@@ -3631,6 +3749,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         )
         if thinking_meta is None and carried_thinking_meta is not None:
             thinking_meta = carried_thinking_meta
+        thinking_meta = self._with_thinking_source(thinking_meta, thinking_source)
 
         # Handle structured output request
         if response_model is not None:
@@ -5827,6 +5946,34 @@ class BaseProvider(AbstractCoreInterface, ABC):
         )
         return max_tokens
 
+    def _verified_output_ceiling_source(self) -> Optional[str]:
+        """Where this instance's output ceiling comes from, when it is a FACT; else None.
+
+        A fact is a model_capabilities.json entry for the model (its own row, an alias,
+        or the registry's partial-match ladder — never the architecture defaults
+        `get_model_capabilities` falls back to for unknown models), or a runtime limit a
+        provider measured itself and recorded in `_output_ceiling_source` (e.g. a GGUF
+        n_ctx). Cached per model name.
+        """
+        own = getattr(self, "_output_ceiling_source", None)
+        if isinstance(own, str) and own.strip():
+            return own.strip()
+        model = str(getattr(self, "model", "") or "")
+        cache = getattr(self, "_registry_ceiling_cache", None)
+        if isinstance(cache, tuple) and len(cache) == 2 and cache[0] == model:
+            return cache[1]
+        source: Optional[str] = None
+        try:
+            from ..architectures.detection import lookup_registry_model_capabilities
+
+            row = lookup_registry_model_capabilities(model) if model else None
+            if isinstance(row, dict) and row:
+                source = "model_capabilities.json:max_output_tokens"
+        except Exception:
+            source = None
+        self._registry_ceiling_cache = (model, source)
+        return source
+
     def _prepare_generation_kwargs(self, **kwargs) -> Dict[str, Any]:
         """
         Prepare generation kwargs by translating unified token parameters
@@ -5863,7 +6010,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 effective_max_output_i = int(max_output_tokens)
             if effective_max_output_i <= 0:
                 effective_max_output_i = int(max_output_tokens)
-            if effective_max_output_i > int(max_output_tokens):
+            # An UNREGISTERED model's ceiling is a guessed default (4096 out of
+            # `default_capabilities`), not a fact about the model, so it never cuts
+            # a budget the caller asked for: the request goes out as given and the
+            # server enforces its own limit (it rejects an invalid value loudly).
+            # Live defect 2026-10-25: max_tokens=12000 on the then-unregistered
+            # claude-haiku-5-5 / gpt-6-luna (OpenAI-compatible proxy) was cut to 4096
+            # and the JSON answer came back truncated. A constructor cap is the
+            # caller's own choice and still bounds per-call requests as before.
+            ceiling_source = (
+                "max_output_tokens set on this instance"
+                if getattr(self, "_max_output_tokens_explicit", False)
+                else self._verified_output_ceiling_source()
+            )
+            if effective_max_output_i > int(max_output_tokens) and ceiling_source is not None:
                 # ADR-0026 §1: this reduction is a budget the caller explicitly
                 # asked for and will not get. It must never happen quietly —
                 # the overwhelmingly common cause is an UNDERSTATED
@@ -5875,9 +6035,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     f"Clamping caller-requested max_output_tokens for {self.model}: "
                     f"requested={effective_max_output_i} "
                     f"clamped_to={int(max_output_tokens)} "
-                    "(source: model_capabilities.json max_output_tokens for this "
-                    "model). If the model really supports more, widen the "
-                    "registry entry."
+                    f"(source: {ceiling_source} for this model). If the model "
+                    "really supports more, widen the registry entry."
                 )
                 # The comment above says "it must never happen quietly" and then
                 # this happened quietly for every caller: importing abstractcore
@@ -5893,7 +6052,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 self._last_output_budget_clamp = {
                     "requested": effective_max_output_i,
                     "granted": int(max_output_tokens),
-                    "source": "model_capabilities.json:max_output_tokens",
+                    "source": ceiling_source,
                     "model": self.model,
                 }
                 effective_max_output_i = int(max_output_tokens)
@@ -9304,8 +9463,10 @@ Please provide a structured response."""
             kwargs=kwargs,
         )
         resolved_generate_route_summary = resolved_generate_route.to_summary()
+        thinking_source = THINKING_SOURCE_EXPLICIT if thinking is not None else None
         if thinking is None and resolved_generate_route.reasoning is not None:
             kwargs["thinking"] = resolved_generate_route.reasoning
+            thinking_source = THINKING_SOURCE_CONFIGURED
 
         if is_acore_output:
             maybe_specs = list(resolved_generate_route.output_specs)
@@ -9386,6 +9547,8 @@ Please provide a structured response."""
                 "messages": messages,
             },
         )
+
+        thinking_meta = self._with_thinking_source(thinking_meta, thinking_source)
 
         response = await self._agenerate_internal(
             prompt, messages, system_prompt, tools, media, stream, **kwargs

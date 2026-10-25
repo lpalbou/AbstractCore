@@ -21,6 +21,10 @@ class OpenRouterProvider(OpenAICompatibleProvider):
     """OpenRouter provider using OpenAI-compatible API."""
 
     PROVIDER_ID = "openrouter"
+    # The inherited payload builder still copies a caller's `reasoning_effort=` to the top
+    # level, but OpenRouter documents its `reasoning` object, not that field, so metadata
+    # never reports it as the effective reasoning.
+    FORWARDS_RAW_REASONING_EFFORT = False
     PROVIDER_DISPLAY_NAME = "OpenRouter"
     BASE_URL_ENV_VAR = "OPENROUTER_BASE_URL"
     API_KEY_ENV_VAR = "OPENROUTER_API_KEY"

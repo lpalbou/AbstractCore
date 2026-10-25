@@ -1086,6 +1086,44 @@
         ]
       }
     },
+    "claude-haiku-5-5": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Anthropic Haiku tier, 5th generation (released 2026-10-07), for high-volume, latency-sensitive work (classification, routing, extraction, subagents). Official docs: text and image input, text output, 1M context, 128K max output (300K on the Message Batches API with the output-300k-2026-03-24 beta header), adaptive thinking on by default, effort parameter with all five levels low|medium|high|xhigh|max (default medium; max is not in the unified thinking vocabulary, see max_effort_supported). thinking:{type:disabled} is accepted at effort high or below and returns 400 at xhigh/max. Omit temperature, top_p and top_k. Newer tokenizer (about 30% more tokens than Haiku 4.5 for the same text); 512-token prompt-cache minimum. Observed via OpenAI-compatible proxy 2026-10-25: /v1/chat/completions rejects reasoning_effort 'none' and accepts low|medium|high|xhigh|max.",
+      "source": "Anthropic docs: platform.claude.com/docs/en/models/haiku-5-5/overview, /docs/en/about-claude/models/overview and /docs/en/build-with-claude/effort (accessed 2026-10-25); reasoning_effort acceptance observed via OpenAI-compatible proxy 2026-10-25",
+      "canonical_name": "claude-haiku-5-5",
+      "aliases": [
+        "anthropic/claude-haiku-5-5"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "cogito:3b": {
       "max_output_tokens": 4096,
       "tool_support": "native",
@@ -5631,6 +5669,41 @@
       "canonical_name": "gpt-5.6-luna",
       "aliases": [],
       "max_tokens": 400000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gpt-6-luna": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "max_effort_supported": true,
+      "notes": "GPT-6 family efficient model for focused, high-volume tasks (successor of gpt-5.6-luna). Official model page: 1,050,000-token context window, 922,000 max input, 128,000 max output; reasoning token support; reasoning.effort none|low|medium|high|xhigh|max, default medium (max is not in the unified thinking vocabulary, see max_effort_supported); knowledge cutoff 2026-05-18; text+image input, text output; streaming, structured outputs, function calling, prompt caching; Chat Completions, Responses and Batch endpoints. The page notes Chat Completions supports function calling only with reasoning_effort none and recommends the Responses API for tools. max_tokens records the published 1,050,000 window: the 400,000-token Codex-backend session ceiling wire-verified for gpt-5.6-sol is NOT verified for GPT-6. Observed via OpenAI-compatible proxy 2026-10-25: accepts reasoning_effort none|low|medium|high and rejects 'minimal'.",
+      "source": "OpenAI model page developers.openai.com/api/docs/models/gpt-6-luna (accessed 2026-10-25); reasoning_effort acceptance observed via OpenAI-compatible proxy 2026-10-25",
+      "canonical_name": "gpt-6-luna",
+      "aliases": [],
+      "max_tokens": 1050000,
       "video_support": false,
       "video_input_mode": "frames",
       "capability_routes": {

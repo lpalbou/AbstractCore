@@ -9788,10 +9788,17 @@ It is the execution host's default reasoning effort, and it follows the same pre
 provider and the model:
 
 1. **an explicit `thinking=` on the call**, including `thinking=False`, which turns reasoning off
-   for that call;
-2. **the effort configured on the text route**, applied whenever the call names none;
-3. **nothing** — with no configured effort, no reasoning parameter is sent and the model behaves as
-   it does without one.
+   for that call, and `thinking="auto"`, which asks for no control at all;
+2. **a provider-native reasoning field on the call** (`reasoning_effort=`, `reasoning=`, `think=`),
+   sent as given;
+3. **the effort configured on the text route**, applied when the call names none of the above and
+   the route describes the instance serving the call: same provider (or endpoint profile) and same
+   model. A route that names only a reasoning effort applies to every instance. A route configured
+   for another provider or model does not set this instance's reasoning;
+4. **nothing** — no reasoning parameter is sent and the model behaves as it does without one.
+
+The full rule, with the metadata that reports which one applied, is in
+[Reasoning Control](docs/reasoning-control.md#precedence).
 
 ```bash
 abstractcore config set-default output.text --provider lmstudio --model qwen3-30b --reasoning high
@@ -9880,7 +9887,9 @@ route = resp.metadata.get("_resolved_generate_route")
 
 That summary is meant for inspection and integration, not for ordinary application logic. It
 records the normalized request, normalized outputs, resolved text/input/output routes, and the
-effective reasoning default when one applied.
+effective reasoning default when one applied. When a configured effort was not applied,
+`reasoning` is `None` and `reasoning_source` says why (`not_applied:explicit_reasoning_effort`,
+`not_applied:route_provider_differs`, `not_applied:route_model_differs`).
 
 ## Related
 
@@ -13026,6 +13035,10 @@ Individual Providers
 
 Token budgets use `max_tokens` for input plus output, and `max_output_tokens` for generation.
 Set the output cap explicitly: an omitted cap can use a provider's full output capability.
+A per-call cap above the model's registered output ceiling is reduced to that ceiling, with a
+`RuntimeWarning`. For a model that `model_capabilities.json` does not know, the ceiling is only a
+guessed default (4096), so a per-call cap is sent as given and the server enforces its real
+limit. A cap set on the constructor still bounds every per-call value.
 Ollama's thinking path raises a smaller cap to a minimum output budget: 1024 for `minimal`,
 2048 for `low` or boolean on, 4096 for `medium`, 8192 for `high`. Use `thinking=False` when
 enforcing a small output cap. See [bounded integration recipes](docs/agent-usage.md).
@@ -14286,6 +14299,42 @@ nearest supported one and the substitution is reported as a `RuntimeWarning`. Re
 
 Reasoning text, when the model emits it, is available as `response.reasoning`, and
 `response.content` stays clean.
+
+## Precedence
+
+Several things can set the reasoning of one call. The first that applies wins:
+
+1. **`thinking=` on the call.** `thinking="auto"` (or `None` passed through an API that
+   distinguishes it) means "no control": nothing is sent and no configured default is added.
+2. **A provider-native reasoning field on the call**: `reasoning_effort=`, `reasoning=`
+   (LM Studio's native endpoint, OpenRouter's object), or `think=` (Ollama). It is sent as
+   given, without level mapping.
+3. **The reasoning effort configured on the text route** (`abstractcore config set-default
+   input.text --reasoning <level>`, or the gateway console). It applies only when the route
+   describes the instance serving the call: the same provider, or the same endpoint profile
+   (`endpoint:<id>`), and the same model. A route that sets only a reasoning effort, with no
+   provider or model, applies to every instance. An effort configured for another backend is
+   not a fact about this one, so it is not applied.
+4. **Nothing.** The model or server default stays in effect.
+
+Before 2026-10-25, step 3 applied to every call that did not pass `thinking=`. A machine
+configured with `reasoning: minimal` for one route therefore sent `reasoning_effort: "low"`
+for `generate(..., reasoning_effort="high")` and on unrelated models.
+
+`response.metadata["thinking_source"]` records which step applied: `"thinking"`,
+`"reasoning_effort"` (a raw field), or `"configured_default"`. For a raw `reasoning_effort=`,
+`thinking_requested` is the value you passed (`"none"` reads as `"off"`). `thinking_effective`
+repeats it only on providers that forward the field verbatim (OpenAI and the OpenAI-compatible
+family, LM Studio and vLLM included). OpenRouter is excluded, because it documents a
+`reasoning` object rather than a top-level `reasoning_effort`. The route summary in
+`response.metadata["_resolved_generate_route"]` reports a configured effort that was not applied
+as `reasoning: None`, with `reasoning_source` set to `not_applied:<reason>`.
+
+When a call passes both `thinking=` and `reasoning_effort=`, providers differ. OpenAI and
+generic OpenAI-compatible servers send the `thinking=` mapping in place of your field. LM Studio
+sends your field. vLLM and OpenRouter send your top-level field next to their own mapping
+(`chat_template_kwargs`, or the `reasoning` object), so the server decides between them. Pass
+one or the other.
 
 ## What each provider sends
 

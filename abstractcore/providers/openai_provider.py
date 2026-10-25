@@ -40,6 +40,9 @@ except ImportError:
 class OpenAIProvider(BaseProvider):
     """OpenAI API provider with full integration"""
 
+    # A caller's `reasoning_effort=` reaches `call_params["reasoning_effort"]` as given.
+    FORWARDS_RAW_REASONING_EFFORT = True
+
     def __init__(
         self,
         model: str = "gpt-3.5-turbo",

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Registry entries**: `claude-haiku-5-5` (1M context, 128K output, adaptive thinking, effort
+  low..xhigh plus `max`) and `gpt-6-luna` (1,050,000 context, 128,000 output,
+  `reasoning_effort` none..xhigh plus `max`), from the vendors' model pages (2026-10-25).
 - **Mailbox access is an explicit choice**: `EmailAccount.access`, `"read"` (Read only) or `"write"`
   (Read and write), stored in `to_dict()` / `from_dict()`; `access_text` says it in words.
   `can_write` is the choice (it was "IMAP and SMTP"); `can_send` is `can_write` and an outgoing
@@ -27,6 +30,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A configured reasoning default overrode the caller's `reasoning_effort=`**: with
+  `reasoning: minimal` on the text route, `generate(..., reasoning_effort="high")` (or `"none"`)
+  ran as `thinking="minimal"`, mapped to the model's `"low"`, and sent `reasoning_effort: "low"`
+  (live: `gpt-5.6-luna` through an OpenAI-compatible endpoint). Precedence is now `thinking=` >
+  a provider-native field on the call (`reasoning_effort=`, `reasoning=`, `think=`, sent as
+  given) > the configured effort > nothing. The configured effort also applies only to an
+  instance the route describes (same provider or endpoint profile, same model; a reasoning-only
+  route applies everywhere): it used to reach every model on the machine. The planner behind
+  `prompt_cache_prepare_modules(thinking=None)` follows the same rule. Metadata gains
+  `thinking_source` (`thinking` | `reasoning_effort` | `configured_default`); a raw
+  `reasoning_effort=` is reported as `thinking_requested`, and as `thinking_effective` on
+  providers that forward it verbatim; the route summary reports an unapplied default as
+  `reasoning: None`, `reasoning_source: not_applied:<reason>`.
+- **An explicit output budget was cut to a guessed ceiling on unregistered models**:
+  `max_tokens=12000` on a model missing from `model_capabilities.json` was clamped to the
+  4096 `default_capabilities` guess, truncating JSON output (live: `claude-haiku-5-5`,
+  `gpt-6-luna` through an OpenAI-compatible proxy). For an unregistered model the per-call
+  budget is now sent as given and the server enforces its real limit; registered models and
+  constructor caps still clamp, with the warning naming the actual source. A GGUF n_ctx clamp
+  stays in force for unregistered local models.
 - **LM Studio `thinking=` reached the model only for "off"**: the control rode
   `chat_template_kwargs`, which LM Studio's OpenAI-compatible endpoint ignores, while metadata
   reported `thinking_effective="on"` (live: `qwen/qwen3.6-35b-a3b`, 0 reasoning tokens for
