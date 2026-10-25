@@ -384,6 +384,21 @@ fix, uid, folder, size, limit}` and no bodies (`body_text` / `body_html` are `No
 `{uidvalidity, last_uid}` cursor, and reports `reset=True` when the server rebuilt the folder;
 when nothing is left to resynchronise it returns a new baseline (`reset=True, baseline=True`, the
 cursor at the newest message), so a rebuilt folder is never replayed.
+To read many messages, `client.get_many(uids)` returns `{uid: detail}`, each detail exactly what
+`get(uid)` returns, read on one connection: one FETCH of headers and structure per 100 UIDs, then
+one FETCH per distinct body section (usually one or two), all with `PEEK` (nothing is marked
+read). A UID the folder no longer holds is an `EmailMessageNotFound` value in the result; a server
+that refuses the batch raises a typed error (a message-level code such as `email_protocol_error`:
+read those UIDs one by one with `get` to find the one it refuses). Wrap reads in
+`with client.session():` to sign in once for all of them:
+
+```python
+with client.session():                       # one connection, one sign-in
+    new = client.fetch_new(cursor)
+    details = client.get_many([m.uid for m in new.messages])
+```
+
+An exception of your own raised inside the block (storing the mail fails) passes through as is.
 `client.download_attachment(uid, index, folder_path)` fetches only that attachment, saves it under
 a sanitized name and never overwrites a file (above the reading limit it raises
 `EmailMessageTooLarge`). `client.build_reply(uid, text=...)` prepares a reply with

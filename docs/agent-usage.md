@@ -40,7 +40,7 @@ except (ImportError, PackageNotFoundError, AssertionError) as exc:
 print(f"AbstractCore code={abstractcore.__version__}; distribution={installed}")
 if abstractcore.__version__ != installed:
     raise SystemExit("Code/metadata mismatch: reinstall in this Python environment.")
-if installed != "2.26.4":
+if installed != "2.27.0":
     raise SystemExit("Version differs from this guide; use the installed version's docs/skill.")
 ```
 

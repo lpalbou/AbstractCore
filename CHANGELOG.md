@@ -7,17 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.0] - 2026-10-25
+
 ### Added
 
 - `EmailClient.session()`: one read-only IMAP connection (one sign-in) for every read inside it
-  (`fetch_new`, `get`, `get_many`, `search`...); an error of the caller's own raised inside the block
-  passes unchanged.
+  (`fetch_new`, `get`, `get_many`, `search`...); nested sessions reuse the outer one.
 - `EmailClient.get_many(uids, folder=..., max_message_bytes=...)`: several messages, each exactly as
   `get(uid)` reads it (whole text/HTML bodies up to the reading limit, `skipped` over it, attachments as
   metadata), on one connection with one header/structure FETCH per 100 UIDs and one PEEK FETCH per
-  distinct text section; a UID the folder does not hold is a typed `EmailMessageNotFound` value. A mail
-  watcher reading 50 new messages now signs in once and sends at most four FETCHes (it opened one
-  connection per message before).
+  distinct text section; a UID the folder does not hold is a typed `EmailMessageNotFound` value, never a
+  failure of the others. A mail watcher reading 50 new messages now signs in once and sends at most four
+  FETCHes (it opened one connection per message before, about 10 s each on a remote server).
+
+### Fixed
+
+- `session()` types only its own connection and sign-in failures: an error of the caller's own raised
+  inside the block (a full disk while storing what was read) passes unchanged instead of reading as a
+  mail connection error.
+- A message a server refuses to FETCH no longer blocks a mailbox read with `get_many`: the refusal is a
+  message-level error (`email_protocol_error`, `email_server_error`, `email_message_not_found`), so a
+  caller can read the batch one by one and pass only that message (AbstractRuntime's mail watcher does,
+  from its release that requires 2.27.0).
 
 ## [2.26.4] - 2026-10-21
 
