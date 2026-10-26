@@ -72,7 +72,7 @@ executes calls. For durable agent orchestration, use [AbstractRuntime](https://g
 - [Events](docs/events.md): observability hooks.
 - [Logging](docs/structured-logging.md): log configuration.
 - [Tracing](docs/interaction-tracing.md): opt-in prompt/response/usage capture.
-- [Email](docs/email.md): account configuration, recipient policy and read/send tools.
+- [Email](docs/email.md): account configuration, Read only or Read and write access (`EmailAccount.access`, `set_access`), mailbox verbs, recipient policy and read/send tools.
 
 ## Contributing and Project Information
 

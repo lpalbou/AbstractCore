@@ -285,7 +285,7 @@ You can also persist settings (including API keys) via the config CLI:
 - Embeddings and semantic search → [Embeddings](docs/embeddings.md)
 - Observability: global event bus + interaction traces → [Architecture](docs/architecture.md), [API Reference (Events)](docs/api-reference.md#eventtype), [Interaction Tracing](docs/interaction-tracing.md)
 - MCP (Model Context Protocol): discover tools from MCP servers (HTTP/stdio) → [MCP](docs/mcp.md)
-- Email: one IMAP/SMTP account (password or OAuth2; servers found from the address), encrypted credentials, recipient policy, send limits, read-only mailbox and email tools → [Email](docs/email.md)
+- Email: one IMAP/SMTP account (password or OAuth2; servers found from the address), encrypted credentials, recipient policy, send limits, Read only or Read and write access, and email tools → [Email](docs/email.md)
 - OpenAI-compatible server: one `/v1` gateway for chat + optional `/v1/images/*` and `/v1/audio/*` endpoints → [Server](docs/server.md)
 
 ## Tool calling (passthrough by default)

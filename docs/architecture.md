@@ -1008,7 +1008,7 @@ graph TD
         CTX["context.EmailContext: guarded_send"]
         POL["policy: allowlist / denylist"]
         LIM["limits: per hour / per day, sends.json"]
-        CLIENT["client.EmailClient: IMAP read-only, SMTP, verified TLS"]
+        CLIENT["client.EmailClient: IMAP reads (PEEK), changes and SMTP with Read and write access, verified TLS"]
     end
 
     CLI --> DISC
