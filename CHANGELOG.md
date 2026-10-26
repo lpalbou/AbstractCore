@@ -54,13 +54,15 @@ plugins are pinned to their latest releases.
 
 ### Changed
 
-- **Plugin floors**: `abstractvoice>=0.18.1`, `abstractvision>=0.3.34`, `abstractmusic>=0.1.17`,
+- **Plugin floors**: `abstractvoice>=0.18.2`, `abstractvision>=0.3.34`, `abstractmusic>=0.1.17`,
   `abstract3d>=0.3.2` (base install and the `apple`, `gpu`, `all-apple`, `all-gpu` and `vision-*`
   extras).
 - `POST /v1/voice/clone` returns the stored record of a local clone under `voice` (name, engine,
   reference text, meta).
 - A `one_shot` TTS request the voice backend refuses (too long, unsupported engine) answers `422`
   with the backend's reason.
+- A voice request for an engine missing from this install (AbstractVoice names the extra to
+  install) answers `501` with the install command instead of `500`.
 - A read-only mailbox refuses changes and sends in plain words: "The mailbox <address> is
   read-only: automations only read it." / "Turn on Read and write for <address> to change it or
   send from it." (`email_mailbox_read_only`). `guarded_send` on a read-only account with an

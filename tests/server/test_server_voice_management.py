@@ -325,3 +325,20 @@ def test_clone_response_survives_a_failed_record_lookup(client, monkeypatch):
     _install(monkeypatch, _Flaky())
     resp = client.post("/v1/voice/clone", files={"file": ("ref.wav", b"RIFF", "audio/wav")}, data={"provider": "qwen3-tts"})
     assert resp.status_code == 200 and resp.json()["voice_id"] == "new" and resp.json()["voice"] == {}
+
+
+def test_an_engine_missing_from_this_install_is_501_with_the_install_command(client, monkeypatch):
+    class _NoQwen(_ManagedVoice):
+        def clone(self, audio, **kwargs):
+            raise RuntimeError(
+                "Creating a voice with Qwen3-TTS needs its runtime. Qwen3-TTS is not installed: the Python "
+                'packages torch are missing. Install it with: pip install "abstractvoice[qwen3-tts]"'
+            )
+
+        def design_voice(self, description, **kwargs):
+            return self.clone(b"")
+
+    _install(monkeypatch, _NoQwen())
+    resp = client.post("/v1/voice/clone", files={"file": ("ref.wav", b"RIFF", "audio/wav")}, data={"provider": "qwen3-tts"})
+    assert resp.status_code == 501 and "abstractvoice[qwen3-tts]" in resp.json()["error"]["message"]
+    assert client.post("/v1/voice/design", json={"description": "a voice"}).status_code == 501

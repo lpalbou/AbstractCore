@@ -879,6 +879,9 @@ def _plugin_exception_status(exc: Exception) -> int:
         return 429
     if any(needle in text for needle in _PLUGIN_SERVICE_UNAVAILABLE_NEEDLES):
         return 503
+    if "is not installed" in text and "install it with" in text:
+        # AbstractVoice's engine-runtime refusal: the engine is not part of this install.
+        return 501
     if "api key" in text or "authentication" in text or "unauthorized" in text or "http 401" in text or "http 403" in text:
         return 401
     return 500
