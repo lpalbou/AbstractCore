@@ -70,6 +70,8 @@ plugins are pinned to their latest releases.
 
 ### Fixed
 
+- The HuggingFace provider's MoE experts fallback no longer raises `ModuleNotFoundError` when
+  `transformers` is not installed; it answers "not applicable" as intended.
 - **A configured reasoning default overrode the caller's `reasoning_effort=`**: with
   `reasoning: minimal` on the text route, `generate(..., reasoning_effort="high")` (or `"none"`)
   ran as `thinking="minimal"`, mapped to the model's `"low"`, and sent `reasoning_effort: "low"`. Precedence is now `thinking=` >
