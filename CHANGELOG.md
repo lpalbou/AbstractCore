@@ -54,7 +54,7 @@ plugins are pinned to their latest releases.
 
 ### Changed
 
-- **Plugin floors**: `abstractvoice>=0.18.0`, `abstractvision>=0.3.34`, `abstractmusic>=0.1.17`,
+- **Plugin floors**: `abstractvoice>=0.18.1`, `abstractvision>=0.3.34`, `abstractmusic>=0.1.17`,
   `abstract3d>=0.3.2` (base install and the `apple`, `gpu`, `all-apple`, `all-gpu` and `vision-*`
   extras).
 - `POST /v1/voice/clone` returns the stored record of a local clone under `voice` (name, engine,
