@@ -7,7 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.30.0] - 2026-10-26
+
+First published release since 2.26.3: it also ships the changes listed under 2.26.4
+through 2.29.0 below. The AbstractVoice, AbstractVision, AbstractMusic and Abstract3D
+plugins are pinned to their latest releases.
+
 ### Added
+
+- **Voice navigation by engine and language**: `llm.voice.list_voices(provider=..., model=...,
+  language=...)`, `list_cloned_voices(...)` and `voice_catalog(language=...)`; `GET /v1/audio/voices`
+  and the new `GET /v1/voice/clones` take `language`. Every voice record carries `voice_id` (the
+  value for `voice=`), `name`, `kind` (`profile` | `clone`), `provider`, `model`, `languages` and the native
+  `language` when known; native speakers of the requested language come first.
+- **Languages per engine**: `llm.voice.list_languages(kind=..., provider=...)` and
+  `GET /v1/audio/languages` list the languages of every TTS, STT and cloning engine without loading
+  a model.
+- **Cloned-voice management**: `llm.voice.get_cloned_voice`, `rename_cloned_voice`,
+  `set_cloned_voice_reference_text`, `delete_cloned_voice`, and `GET|PATCH|DELETE
+  /v1/voice/clones/{voice_id}`. Built-in voices are read-only (`422`); an unknown id is `404`.
+  `PATCH`, `DELETE` and `POST /v1/voice/design` need server authentication (or
+  `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`); a provider key does not authorize them.
+- **Voice design**: `llm.voice.design_voice(description, name=..., language=..., text=...)` and
+  `POST /v1/voice/design` create a reusable voice from a written description (Qwen3-TTS
+  VoiceDesign, then cloned; needs the `qwen3-tts` and `stt` extras of AbstractVoice, included in
+  `abstractcore[apple]` and `abstractcore[gpu]`).
+- **`one_shot` on `/v1/audio/speech`**: the whole text as one generation, so the take keeps one
+  voice (Qwen3-TTS voices, up to 1000 characters). The stream route and remote models answer `422`.
+- `llm.voice.compatibility_catalog()`: feature support per provider and model.
 
 - **Guide: [choosing a model for knowledge-graph extraction](docs/knowledge-graph-extraction-models.md)**:
   a measured comparison of local and hosted models on ontology-constrained entity and relationship
@@ -27,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Plugin floors**: `abstractvoice>=0.18.2`, `abstractvision>=0.3.34`, `abstractmusic>=0.1.17`,
+  `abstract3d>=0.3.2` (base install and the `apple`, `gpu`, `all-apple`, `all-gpu` and `vision-*`
+  extras).
+- `POST /v1/voice/clone` returns the stored record of a local clone under `voice` (name, engine,
+  reference text, meta).
+- A `one_shot` TTS request the voice backend refuses (too long, unsupported engine) answers `422`
+  with the backend's reason.
+- A voice request for an engine missing from this install (AbstractVoice names the extra to
+  install) answers `501` with the install command instead of `500`.
 - A read-only mailbox refuses changes and sends in plain words: "The mailbox <address> is
   read-only: automations only read it." / "Turn on Read and write for <address> to change it or
   send from it." (`email_mailbox_read_only`). `guarded_send` on a read-only account with an
@@ -34,6 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The HuggingFace provider's MoE experts fallback no longer raises `ModuleNotFoundError` when
+  `transformers` is not installed; it answers "not applicable" as intended.
 - **A configured reasoning default overrode the caller's `reasoning_effort=`**: with
   `reasoning: minimal` on the text route, `generate(..., reasoning_effort="high")` (or `"none"`)
   ran as `thinking="minimal"`, mapped to the model's `"low"`, and sent `reasoning_effort: "low"`. Precedence is now `thinking=` >

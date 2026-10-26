@@ -214,6 +214,28 @@ If you run the optional HTTP server, you can also use OpenAI-compatible endpoint
 
 See: [Server](server.md) and [Capabilities](capabilities.md).
 
+## How do I find a voice, clone one, or create one from a description?
+
+Every voice record carries `voice_id` (pass it as `voice=`), `kind` (`profile` or `clone`),
+`provider`, `model`, the `languages` it can speak and its native `language` when known:
+
+```python
+french = llm.voice.list_voices(language="fr")          # native French voices first
+qwen = llm.voice.list_voices(provider="qwen3-tts")     # one engine's voices
+print(llm.voice.list_languages(kind="tts"))            # languages per engine, no model loaded
+
+mine = llm.voice.clone(open("reference.wav", "rb").read(), provider="qwen3-tts",
+                       name="Mine", reference_text="What the recording says.")
+mira = llm.voice.design_voice("A calm, warm female voice in her thirties.", name="Mira")
+wav = llm.voice.tts("Good morning.", voice=mira["voice_id"], one_shot=True)
+```
+
+Cloning and design need the engine installed (`abstractcore[apple]` or `abstractcore[gpu]`
+include Qwen3-TTS); without it the call names the install command. On the server, the same
+operations are `GET /v1/audio/voices?language=fr`, `GET /v1/audio/languages`,
+`POST /v1/voice/clone`, `POST /v1/voice/design` and `GET|PATCH|DELETE /v1/voice/clones/{voice_id}`;
+see [Server](server.md).
+
 ## How do I generate or edit images?
 
 The light install includes the AbstractVision plugin, and AbstractCore Server can proxy

@@ -1,7 +1,8 @@
 # Email
 
-AbstractCore connects one email account per install: it reads the mailbox over IMAP (read-only)
-and sends over SMTP. The same account is used by the `abstractcore email` CLI, the Email page of
+AbstractCore connects one email account per install: it reads the mailbox over IMAP and sends
+over SMTP. Its access is your choice: **Read only**, or **Read and write** (changes to the mailbox
+and sends; see [Access](#searching-conversations-and-changing-the-mailbox)). The same account is used by the `abstractcore email` CLI, the Email page of
 the [web console](console.md), the Email screen of the [terminal console](console-tui.md), the
 email tools ([Tool Calling](tool-calling.md)) and the Python library `abstractcore.comms.email`.
 
@@ -31,8 +32,10 @@ What you can rely on:
   certificate chain and the host name are always checked, and a failure is refused before any
   password is sent. There is no plaintext mode. A self-hosted server signed by a private CA is
   trusted by giving that CA's PEM file (`--ca-file`).
-- **A read-only mailbox.** Folders are opened with EXAMINE and messages fetched with BODY.PEEK:
-  nothing is marked read, moved or deleted.
+- **Reading never changes the mailbox.** Reads open folders with EXAMINE and fetch messages with
+  BODY.PEEK: nothing is marked read, moved or deleted by reading. Changes (mark, label, move,
+  delete) and sends happen only on an account set to **Read and write**; a **Read only** account
+  refuses them before connecting (`email_mailbox_read_only`).
 - **A recipient policy** decides who can receive mail at all, and **send limits** cap how much is
   sent, for every sender (the CLI, the consoles, tools, and hosts such as the gateway).
 - **Whole messages.** Bodies are returned in full, never cut. Reading a message fetches its
@@ -307,7 +310,8 @@ Errors are classified from protocol reply codes and exception types, never from 
 - **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) has the same cards
   with the same words: the email address with its own Save, the Mailbox card (tabs IMAP, Google,
   Microsoft; the IMAP tab with the address, password and server fields pre-filled from the
-  address, one Connect; connected: the **Active** switch, Test and Disconnect), the **Agent email
+  address, one Connect; connected: "Connected as … · method · Read only (or Read and write) ·
+  checked … ago", the **Active** switch, Test and Disconnect), the **Agent email
   tools** switch, and Advanced (who your agents may send to, the send limits, the watched
   folder). Switches read `[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space`
   switches ([Terminal console](console-tui.md#email-keys)).

@@ -12,6 +12,7 @@ Template-backed checks live in test_hy_memory_chat_template_unit.py (real_home).
 
 from __future__ import annotations
 
+import importlib.util
 from typing import Any, Dict
 
 import pytest
@@ -615,12 +616,37 @@ def test_transformers_experts_fallback_kwarg(monkeypatch, kernel, given, expecte
 
     import abstractcore.providers.huggingface_provider as hf
 
+    # Hermetic: the MoE integration counts as present whether or not transformers is installed.
+    monkeypatch.setattr(hf, "_module_available", lambda name: True)
     monkeypatch.setattr(hf, "_torch_grouped_mm_runs_on", lambda device: kernel)
     p = _hf_provider("transformers")
     p.device, p.logger = "mps", logging.getLogger("test")
     kwargs = dict(given)
     p._apply_transformers_experts_fallback(kwargs)
     assert kwargs.get("experts_implementation") == expected
+
+
+def test_transformers_experts_fallback_without_transformers_is_a_no_op(monkeypatch) -> None:
+    import logging
+
+    import abstractcore.providers.huggingface_provider as hf
+
+    real_find_spec = importlib.util.find_spec
+
+    def find_spec_without_transformers(name, *args, **kwargs):
+        if name == "transformers" or name.startswith("transformers."):
+            if "." in name:
+                raise ModuleNotFoundError("No module named 'transformers'")  # what find_spec does for a dotted name
+            return None
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec_without_transformers)
+    monkeypatch.setattr(hf, "_torch_grouped_mm_runs_on", lambda device: False)
+    p = _hf_provider("transformers")
+    p.device, p.logger = "mps", logging.getLogger("test")
+    kwargs: dict = {}
+    assert p._apply_transformers_experts_fallback(kwargs) is False
+    assert kwargs == {}
 
 
 # ------------------------------------------------------------------ download catalog (published artifacts)

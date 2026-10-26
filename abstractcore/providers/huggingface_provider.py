@@ -6515,7 +6515,9 @@ class HuggingFaceProvider(BaseProvider):
         """
         if "experts_implementation" in model_kwargs:
             return False
-        if importlib.util.find_spec("transformers.integrations.moe") is None:
+        # `_module_available`, not a bare find_spec: for a dotted name find_spec imports
+        # the parent package, so a missing `transformers` raised instead of answering False.
+        if not _module_available("transformers.integrations.moe"):
             return False
         device = self.device if self.device in ("cpu", "mps", "cuda") else "cpu"
         if _torch_grouped_mm_runs_on(device):

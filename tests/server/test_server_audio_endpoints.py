@@ -767,6 +767,12 @@ def test_blocking_audio_handlers_are_sync_def():
         "audio_speech_stream",
         "provider_audio_speech",
         "provider_audio_speech_stream",
+        "voice_design",
+        "voice_clones",
+        "voice_clone_get",
+        "voice_clone_update",
+        "voice_clone_delete",
+        "audio_languages",
     }
     seen = set()
     for router in (audio_endpoints.router, audio_endpoints.provider_router):

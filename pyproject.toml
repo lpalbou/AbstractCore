@@ -95,10 +95,10 @@ dependencies = [
     # Email (abstractcore.comms.email): credentials encrypted at rest (AES-256-GCM) under one
     # sealing-key file (<config dir>/secrets/sealing.key) — no OS keychain on any OS (2.26.0).
     "cryptography>=41.0.0",
-    "abstractvoice>=0.15.0",
-    "abstractvision>=0.3.33",
-    "abstractmusic>=0.1.16; python_version >= '3.10'",
-    "abstract3d>=0.1.0; python_version >= '3.10'",
+    "abstractvoice>=0.18.2",
+    "abstractvision>=0.3.34",
+    "abstractmusic>=0.1.17; python_version >= '3.10'",
+    "abstract3d>=0.3.2; python_version >= '3.10'",
 ]
 
 [project.urls]
@@ -164,10 +164,10 @@ apple = [
     "numpy>=2.1.0,<3.0.0",
     "Pillow>=12.1.1,<13.0.0",
     # Local voice (TTS/STT), image/video and music engines.
-    "abstractvoice[all-apple]>=0.15.0",
+    "abstractvoice[all-apple]>=0.18.2",
     "omnivoice>=0.1.5",
-    "abstractvision[all-apple]>=0.3.33",
-    "abstractmusic[all-apple]>=0.1.16",
+    "abstractvision[all-apple]>=0.3.34",
+    "abstractmusic[all-apple]>=0.1.17",
     # Headless-browser rendering (`browser_probe`, JS rendering in fetch_url). Kept out of light
     # (a browser is never a base-install cost); the browser binary is a one-time step:
     # python -m playwright install --only-shell chromium
@@ -194,10 +194,10 @@ gpu = [
     "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     # Local voice (TTS/STT), image/video and music engines.
-    "abstractvoice[all-gpu]>=0.15.0",
+    "abstractvoice[all-gpu]>=0.18.2",
     "omnivoice>=0.1.5",
-    "abstractvision[all-gpu]>=0.3.33",  # 0.3.32: no MLX-Gen; stable-diffusion.cpp marked out on Windows; 0.3.33: sequential CPU offload when model offload does not fit
-    "abstractmusic[all-gpu]>=0.1.16",
+    "abstractvision[all-gpu]>=0.3.34",  # 0.3.32: no MLX-Gen; stable-diffusion.cpp marked out on Windows; 0.3.33: sequential CPU offload when model offload does not fit
+    "abstractmusic[all-gpu]>=0.1.17",
     # Headless-browser rendering (`browser_probe`, JS rendering in fetch_url). Kept out of light
     # (a browser is never a base-install cost); the browser binary is a one-time step:
     # python -m playwright install --only-shell chromium
@@ -258,9 +258,9 @@ embeddings = [
     "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
 ]
-vision-diffusers = ["abstractvision[huggingface]>=0.3.31"]
-vision-sdcpp = ["abstractvision[sdcpp]>=0.3.31"]
-vision-local = ["abstractvision[local]>=0.3.31"]
+vision-diffusers = ["abstractvision[huggingface]>=0.3.34"]
+vision-sdcpp = ["abstractvision[sdcpp]>=0.3.34"]
+vision-local = ["abstractvision[local]>=0.3.34"]
 browser = ["playwright>=1.49.0,<2.0.0"]
 # PyMuPDF-family PDF extraction is an explicit licence opt-in (AGPL / commercial).
 pdf-pymupdf-commercial = [

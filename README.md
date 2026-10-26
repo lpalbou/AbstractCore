@@ -285,7 +285,7 @@ You can also persist settings (including API keys) via the config CLI:
 - Embeddings and semantic search → [Embeddings](docs/embeddings.md)
 - Observability: global event bus + interaction traces → [Architecture](docs/architecture.md), [API Reference (Events)](docs/api-reference.md#eventtype), [Interaction Tracing](docs/interaction-tracing.md)
 - MCP (Model Context Protocol): discover tools from MCP servers (HTTP/stdio) → [MCP](docs/mcp.md)
-- Email: one IMAP/SMTP account (password or OAuth2; servers found from the address), encrypted credentials, recipient policy, send limits, read-only mailbox and email tools → [Email](docs/email.md)
+- Email: one IMAP/SMTP account (password or OAuth2; servers found from the address), encrypted credentials, recipient policy, send limits, Read only or Read and write access, and email tools → [Email](docs/email.md)
 - OpenAI-compatible server: one `/v1` gateway for chat + optional `/v1/images/*` and `/v1/audio/*` endpoints → [Server](docs/server.md)
 
 ## Tool calling (passthrough by default)
@@ -342,7 +342,7 @@ Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
 - **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` for speech-to-text through AbstractVoice (part of the light install).
-  `abstractvoice` 0.11.0+ can install its base plugin path on Python 3.9 without OmniVoice, torch, or torchaudio. Local voice engines and clone backends are part of explicit local aggregate profiles.
+  `abstractvoice` installs its base plugin path on Python 3.9 without OmniVoice, torch, or torchaudio. Local voice engines and clone backends are part of explicit local aggregate profiles.
 
 Configure defaults (optional):
 
@@ -475,11 +475,30 @@ stt_models = llm.voice.list_stt_models()
 music_models = llm.capabilities.list_models("music", task="text_to_music")
 ```
 
+Voices are navigable by engine and by language, and you can create your own:
+
+```python
+french = llm.voice.list_voices(language="fr")      # native French voices first
+piper = llm.voice.list_voices(provider="piper")    # one engine's voices
+languages = llm.voice.list_languages(kind="tts")   # languages per engine, no model loaded
+# Each record: voice_id (pass as voice=), name, kind (profile|clone), provider, model, languages, language
+
+mira = llm.voice.design_voice("A calm, warm female voice in her thirties.", name="Mira")
+wav = llm.voice.tts("Good morning.", voice=mira["voice_id"], one_shot=True)
+llm.voice.rename_cloned_voice(mira["voice_id"], "Mira (narrator)")
+llm.voice.delete_cloned_voice(mira["voice_id"])
+```
+
+`one_shot=True` synthesizes the whole text as one generation, so the take keeps one
+voice from start to end (Qwen3-TTS voices, up to 1000 characters).
+
 The HTTP server exposes equivalent discovery at
-`/v1/vision/providers/`, `/v1/vision/models`, `/v1/audio/voices`,
-`/v1/audio/speech/models`, `/v1/audio/transcriptions/models`, and
-`/v1/voice/clone/providers`, plus `/v1/audio/music/providers` and
-`/v1/audio/music/models`.
+`/v1/vision/providers/`, `/v1/vision/models`, `/v1/audio/voices` (with `language`),
+`/v1/audio/languages`, `/v1/audio/speech/models`, `/v1/audio/transcriptions/models`,
+`/v1/voice/clone/providers` and `/v1/voice/clones`, plus `/v1/audio/music/providers`
+and `/v1/audio/music/models`. Voices are created and managed with
+`POST /v1/voice/clone`, `POST /v1/voice/design` and
+`GET|PATCH|DELETE /v1/voice/clones/{voice_id}`; see [Server](docs/server.md).
 Generated media HTTP routes include `/v1/images/generations`,
 `/v1/images/edits`, `/v1/videos/generations`, `/v1/videos/edits`, and
 async polling routes under `/v1/vision/jobs/images/*` and

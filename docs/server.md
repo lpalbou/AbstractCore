@@ -304,12 +304,14 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Discovery | GET | `/providers` | Provider status/capabilities | `include_models` |
 | Discovery | GET | `/v1/vision/providers/` | AbstractVision provider catalog for image/video generation models | optional `task`, `provider`, `include_models`, `base_url`, `api_key` |
 | Discovery | GET | `/v1/vision/adapters` | Installed compatible AbstractVision adapter catalog for one provider/model/task route | optional `provider`, `model`, `task`, `base_url`, `api_key` |
-| Discovery | GET | `/v1/audio/voices` | AbstractVoice voice/profile catalog for TTS | optional `provider`, `model`, `providers_only`, `base_url`, `api_key` |
+| Discovery | GET | `/v1/audio/voices` | AbstractVoice voice/profile catalog for TTS | optional `provider`, `model`, `language`, `providers_only`, `base_url`, `api_key` |
+| Discovery | GET | `/v1/audio/languages` | Languages each TTS, STT and cloning engine accepts (no model loaded) | optional `kind` (`tts`/`stt`/`cloning`), `provider` |
 | Discovery | GET | `/v1/audio/speech/models` | AbstractVoice TTS model/provider catalog | optional `provider`, `base_url`, `api_key` |
 | Discovery | GET | `/v1/audio/speech/providers` | AbstractVoice TTS provider catalog | optional `base_url` |
 | Discovery | GET | `/v1/audio/transcriptions/models` | AbstractVoice STT model/provider catalog | optional `provider`, `base_url`, `api_key` |
 | Discovery | GET | `/v1/audio/transcriptions/providers` | AbstractVoice STT provider catalog | optional `base_url` |
 | Discovery | GET | `/v1/voice/clone/providers` | AbstractVoice voice clone provider catalog | optional `base_url` |
+| Discovery | GET | `/v1/voice/clones` | Cloned voices: your own, designed and built-in | optional `provider`, `model`, `language` |
 | Chat | POST | `/v1/chat/completions` | OpenAI-compatible chat, streaming, tools, media | `model`, `messages`, `stream`, `tools`, `tool_choice`, `temperature`, `max_tokens`, `base_url`, `agent_format`, `thinking` |
 | Chat | POST | `/{provider}/v1/chat/completions` | Provider-scoped chat route where body model is unprefixed | path `provider`, body `model`, `messages`, chat parameters |
 | Responses | POST | `/v1/responses` | OpenAI Responses API (`object:"response"`) + legacy chat fallback | `model`, `input` or `messages`, `stream`, generation parameters, `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_binding` |
@@ -333,12 +335,16 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Vision Models | GET | `/v1/vision/models` | Available AbstractVision model catalog | optional `task`, `provider`, `base_url`, `api_key` |
 | Audio | POST | `/v1/audio/transcriptions` | Speech-to-text multipart endpoint | `file`, optional `provider`, `model`, `language`, `prompt`, `response_format`, `temperature`, `format`, `base_url` |
 | Audio | POST | `/{provider}/v1/audio/transcriptions` | Provider-scoped speech-to-text route where body model is unprefixed | path `provider`, optional `base_url`, STT form fields |
-| Audio | POST | `/v1/audio/speech` | Text-to-speech endpoint | `input`/`text`, optional `provider`, `model`, `voice`, `response_format`/`format`, `speed`, `instructions`, `profile`, `quality_preset`, `quality`, `base_url` |
+| Audio | POST | `/v1/audio/speech` | Text-to-speech endpoint | `input`/`text`, optional `provider`, `model`, `voice`, `response_format`/`format`, `speed`, `instructions`, `profile`, `quality_preset`, `quality`, `one_shot`, `base_url` |
 | Audio | POST | `/{provider}/v1/audio/speech` | Provider-scoped text-to-speech route where body model is unprefixed | path `provider`, optional `base_url`, TTS body fields |
 | Audio | POST | `/v1/audio/speech/stream` | Text-to-speech JSON Lines stream endpoint | Local/plugin TTS stream events; currently `wav` segment chunks only |
 | Audio | POST | `/{provider}/v1/audio/speech/stream` | Provider-scoped text-to-speech stream route | path `provider`; currently local/plugin `wav` segment chunks only |
 | Audio | POST | `/v1/voice/clone` | AbstractVoice-compatible voice-clone/custom-voice extension | `file`, optional `provider`, `model`, `tts_model`, `cloning_engine`, `base_url`, `name`, `reference_text`, `validate` |
 | Audio | POST | `/{provider}/v1/voice/clone` | Provider-scoped voice-clone route where body model is unprefixed | path `provider`, optional `base_url`, voice-clone form fields |
+| Audio | GET | `/v1/voice/clones/{voice_id}` | One cloned voice's stored record | path `voice_id` |
+| Audio | PATCH | `/v1/voice/clones/{voice_id}` | Rename a cloned voice and/or replace its reference transcript | path `voice_id`; body `name` and/or `reference_text` |
+| Audio | DELETE | `/v1/voice/clones/{voice_id}` | Delete a cloned voice (built-in voices are read-only) | path `voice_id` |
+| Audio | POST | `/v1/voice/design` | Create a reusable voice from a written description | body `description`, optional `name`, `language`, `text` |
 | Audio | POST | `/v1/audio/translations` | Reserved OpenAI-compatible translation route | `file`, `model`; returns `501` in this version |
 | Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music and sound-effect plugins | `prompt`/`input`/`text`, optional `task`, `provider`, `model`, `lyrics`, `seconds`/`duration_s`, `seed`, `num_inference_steps`, `guidance_scale`, `format`; requires a music capability plugin |
 | Audio | POST | `/{provider}/v1/audio/music` | Backend-scoped text-to-music route | path `provider`, music body fields |
@@ -702,7 +708,8 @@ Thin clients can preflight the configured media surface without importing
 | Endpoint | Purpose | Notes |
 |---|---|---|
 | `GET /v1/vision/providers/` | Lists provider image/video catalog entries through the selected AbstractVision backend. | Optional `task`, `provider`, `include_models`, `base_url`, `api_key`. Set `include_models=true` to include full provider model catalogs (slower). |
-| `GET /v1/audio/voices` | Lists TTS profiles/voices, active profile, active model, and bounded catalog data through AbstractVoice. | Optional `provider`, `model`, `providers_only`, `base_url`, `api_key`. |
+| `GET /v1/audio/voices` | Lists TTS profiles/voices, active profile, active model, and bounded catalog data through AbstractVoice. | Optional `provider`, `model`, `language`, `providers_only`, `base_url`, `api_key`. Every voice record carries `voice_id`, `name`, `kind`, `provider`, `model`, `languages` and `language`. |
+| `GET /v1/audio/languages` | Languages per engine for `tts`, `stt` and `cloning`. | Optional `kind`, `provider`. Answered from static tables; no engine is built. |
 | `GET /v1/audio/speech/models` | TTS model id projection with provider/model route strings. | Includes `models_by_provider` and `provider_models` for clients that route via `provider/model`. |
 | `GET /v1/audio/speech/providers` | TTS provider projection. | Useful for clients that pick `/{provider}/v1/audio/speech` first and then choose a model. |
 | `GET /v1/audio/transcriptions/models` | STT model id projection with provider/model route strings. | Includes `models_by_provider` and `provider_models`. |
@@ -994,6 +1001,9 @@ Endpoints:
 - `POST /{provider}/v1/audio/speech` (json; provider-scoped TTS)
 - `POST /v1/voice/clone` (multipart; extension route for AbstractVoice-compatible voice cloning)
 - `POST /{provider}/v1/voice/clone` (multipart; provider-scoped voice cloning)
+- `GET /v1/voice/clones`, `GET|PATCH|DELETE /v1/voice/clones/{voice_id}` (cloned-voice listing and management)
+- `POST /v1/voice/design` (json; a reusable voice from a written description)
+- `GET /v1/audio/languages` (languages per TTS, STT and cloning engine)
 - `POST /v1/audio/translations` (multipart; reserved for compatibility, returns `501`)
 - `POST /v1/audio/music` (json; extension endpoint, requires a music capability plugin)
 - `POST /{provider}/v1/audio/music` (json; provider/backend-scoped music route)
@@ -1081,7 +1091,11 @@ Notes:
 | `profile` | no | AbstractVoice profile hint for compatible local/plugin backends. |
 | `quality_preset` | no | AbstractVoice/local-backend quality preset when supported. |
 | `quality` | no | OpenAI-compatible quality selector or backend-specific quality hint. |
+| `one_shot` | no | AbstractVoice extension: synthesize the whole text as one generation, so the take keeps one voice from start to end. Qwen3-TTS voices (presets, designed, cloned and built-in) up to 1000 characters; a longer text, another engine, a remote `model` or the stream route answers `422`. |
 | `base_url` | no | Endpoint override for local/gateway routing. Prefer this with `openai-compatible/...`; if set with `openai/...`, the request is sent to that URL instead of api.openai.com. Loopback is allowed by default, non-loopback requires allowlist. |
+
+A `one_shot` request the backend refuses (over its limit, or an engine without one-shot
+synthesis) answers `422` with the backend's reason.
 
 `POST /v1/audio/speech/stream` accepts the same local/plugin routing fields but
 returns `application/x-ndjson` stream events. Audio events carry base64 WAV
@@ -1116,7 +1130,48 @@ returns normal `audio/*` bytes and includes a filename in `Content-Disposition`.
 | `consent` | no | Provider-specific consent id when custom voice creation requires it. |
 
 The returned `voice_id` / `id` can be used as the `voice` value in
-`/v1/audio/speech` when the selected backend supports custom voices.
+`/v1/audio/speech` when the selected backend supports custom voices. For a local
+clone, `voice` carries the stored record (`name`, `engine`, `reference_text`, `meta`).
+
+#### Voices: finding, managing and designing them
+
+Every voice record returned by `GET /v1/audio/voices` and `GET /v1/voice/clones`
+has the same navigation fields:
+
+| Field | Meaning |
+|---|---|
+| `voice_id` | The value to send as `voice` to `/v1/audio/speech`. |
+| `name` | Display name. |
+| `kind` | `profile` (an engine voice) or `clone` (a stored voice: your own, designed or built-in). |
+| `provider` | The engine that speaks it. |
+| `model` | The checkpoint it belongs to; a Qwen3-TTS preset speaker is listed once per installed checkpoint (filter with `model`). |
+| `languages` | Languages the voice can speak; empty when the provider does not restrict them (remote providers). |
+| `language` | The voice's native language when known (Piper voices, Qwen3-TTS presets, built-in and designed voices), else `null`. |
+
+Use `language=fr` on either listing to keep the voices that can speak French, native
+French voices first. `GET /v1/audio/languages?kind=tts` lists the languages of each
+engine. Cloned voices are managed under `/v1/voice/clones/{voice_id}`: `GET` reads the
+stored record, `PATCH` renames it (`name`) or replaces its transcript
+(`reference_text`; both fields are checked before either is applied), `DELETE` removes
+it. Built-in voices are read-only (`422`); an unknown id answers `404`. `PATCH`,
+`DELETE` and `POST /v1/voice/design` change this server's voices, so they need server
+authentication (`Authorization: Bearer <ABSTRACTCORE_AUTH_TOKEN>`) or
+`ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`; a provider key does not authorize them
+(`401`). The listings follow the discovery rule of the other audio catalogs.
+
+`POST /v1/voice/design` creates a reusable voice from a written description, with no
+recording: AbstractVoice renders a reference with Qwen3-TTS 1.7B VoiceDesign, keeps the
+part after the warm-up the model needs to settle, and clones it with Qwen3-TTS 1.7B
+Base. The response is the stored record; its `voice_id` works like any cloned voice.
+Body fields: `description` (required; state the voice's sex explicitly, in the
+reference language when it is not English), `name`, `language` (`en`, `fr`, `es`,
+`de`, `it`, `pt`, `ru`, `zh`, `ja` or `ko`), `text` (replaces the built-in reference
+text). It needs `abstractvoice[qwen3-tts]` and `abstractvoice[stt]`, both included in
+`abstractcore[apple]` and `abstractcore[gpu]`.
+
+Design runs one at a time per server process and takes tens of seconds. A voice
+backend without these methods answers `501` naming the missing method, including a
+`language` filter the backend cannot apply.
 
 `POST /v1/audio/music` and `POST /{provider}/v1/audio/music` JSON parameters:
 
@@ -1202,6 +1257,21 @@ curl -sS -X POST "$BASE/v1/audio/music" \
   -H "Content-Type: application/json" \
   -d '{"prompt":"A short calm piano loop.","provider":"acemusic","duration_s":8,"format":"mp3"}' \
   --output music.mp3
+
+# French voices, native speakers first; then speak with one of them
+curl -sS "$BASE/v1/audio/voices?language=fr" -H "Authorization: Bearer $TOKEN"
+curl -sS -X POST "$BASE/v1/audio/speech" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"input":"Bonjour et bienvenue.","voice":"fr-female-camille","one_shot":true}' \
+  --output bonjour.wav
+
+# Design a voice from a description, rename it, delete it
+curl -sS -X POST "$BASE/v1/voice/design" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"description":"A calm, warm female voice in her thirties.","name":"Mira","language":"en"}'
+curl -sS -X PATCH "$BASE/v1/voice/clones/$VOICE_ID" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"Mira (narrator)"}'
+curl -sS -X DELETE "$BASE/v1/voice/clones/$VOICE_ID" -H "Authorization: Bearer $TOKEN"
 
 # Remote/local OpenAI-compatible voice clone endpoint
 curl -sS -X POST "$BASE/v1/voice/clone" \

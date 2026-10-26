@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud and local LLMs: generation, streaming, host-controlled tools, typed output, sessions, media, embeddings and OpenAI-compatible HTTP serving.
 
-Package version: 2.29.0
+Package version: 2.30.0
 Supported Python: 3.9+; CI tests Python 3.9–3.13.
 
 Use an explicit provider, exact model and endpoint. Local model loads are offline/cache-first;
@@ -42,7 +42,7 @@ executes calls. For durable agent orchestration, use [AbstractRuntime](https://g
 - [Concurrency](docs/concurrency.md): async versus backend batching.
 - [Media input](docs/media-handling-system.md): images, documents, audio/video policies and fallbacks.
 - [Request and output](docs/request-output.md): canonical multimodal request/output contract.
-- [Capabilities](docs/capabilities.md): voice, vision, music, 3D and camera plugins; supported boundaries.
+- [Capabilities](docs/capabilities.md): voice, vision, music, 3D and camera plugins; supported boundaries; voices by engine and language, voice design, cloned-voice management.
 - [Vision](docs/vision-capabilities.md): native image/video input and captioning fallbacks.
 - [Glyph compression](docs/glyphs.md): vision-based document compression and tradeoffs.
 - [Embeddings](docs/embeddings.md): local/remote vectors and the embedding.text route.
@@ -72,7 +72,7 @@ executes calls. For durable agent orchestration, use [AbstractRuntime](https://g
 - [Events](docs/events.md): observability hooks.
 - [Logging](docs/structured-logging.md): log configuration.
 - [Tracing](docs/interaction-tracing.md): opt-in prompt/response/usage capture.
-- [Email](docs/email.md): account configuration, recipient policy and read/send tools.
+- [Email](docs/email.md): account configuration, Read only or Read and write access (`EmailAccount.access`, `set_access`), mailbox verbs, recipient policy and read/send tools.
 
 ## Contributing and Project Information
 

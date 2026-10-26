@@ -420,7 +420,13 @@ ctx.send(OutgoingMessage(to=("me@example.com",), subject="Report", text="Done.")
 ones, else the standard `imap.<domain>` 993 / `smtp.<domain>` 465 SSL).
 `EmailAccountStore.set_folder(name)` changes the folder that is read without connecting again.
 
-The mailbox is read-only, TLS is always verified and errors are typed with a cause and a fix.
+Reading never changes the mailbox. Changes (`client.mark`, `label`, `move`, `delete`) and sends
+need the account's access set to Read and write: `EmailAccount.access` is `"read"` or `"write"`
+(`access_text`: "Read only" / "Read and write"), `can_write` is that choice, `can_send` is
+`can_write` with an outgoing server, and `EmailAccountStore.set_access(access, *, smtp=None,
+test=True)` changes it without connecting again. A Read only account refuses a change or a send
+before connecting (`EmailMailboxReadOnly`, `email_mailbox_read_only`). TLS is always verified and
+errors are typed with a cause and a fix.
 Hosts bind a per-user account with `set_email_account_resolver` / `use_email_context`. See
 **[Email](email.md)** for the CLI, the recipient policy, send limits, OAuth2 and the tools.
 
