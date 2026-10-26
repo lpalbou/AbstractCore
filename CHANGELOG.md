@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.30.0] - 2026-10-26
+
+First published release since 2.26.3: it also ships the changes listed under 2.26.4
+through 2.29.0 below. The AbstractVoice, AbstractVision, AbstractMusic and Abstract3D
+plugins are pinned to their latest releases.
+
 ### Added
 
 - **Voice navigation by engine and language**: `llm.voice.list_voices(provider=..., model=...,
