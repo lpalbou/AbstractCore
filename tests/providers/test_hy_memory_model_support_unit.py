@@ -611,6 +611,7 @@ def test_grouped_mm_probe_detects_a_missing_kernel(monkeypatch) -> None:
 
 @pytest.mark.parametrize("kernel,given,expected", [(False, {}, "eager"), (True, {}, None), (False, {"experts_implementation": "grouped_mm"}, "grouped_mm")])
 def test_transformers_experts_fallback_kwarg(monkeypatch, kernel, given, expected) -> None:
+    pytest.importorskip("transformers")  # the provider's transformers lane; the local-model CI job runs it
     import logging
 
     import abstractcore.providers.huggingface_provider as hf

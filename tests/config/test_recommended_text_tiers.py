@@ -559,6 +559,9 @@ def test_every_upstream_artifact_is_eight_bit_or_a_tier_or_a_reverified_id():
 
     tier_ids = set(PLAIN.values()) | set(MTP.values())
     reverified = {"mlx-community/Qwen3.5-9B-4bit", "mlx-community/Qwen3.8-27B-4bit"}
+    # Hy-Memory row (f5de10cb): the MLX 4-bit build verified from a cold hub download through
+    # AbstractCore and plain mlx-lm, and the upstream GGUF with its size read from the hub API.
+    reverified |= {"mlx-community/Hy-Memory-30B-A3B-4bit", "tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M"}
     reverified |= {r.download["artifact"] for r in RECOMMENDED_MODELS.values()}
     reverified |= {p.download["artifact"] for r in RECOMMENDED_MODELS.values() for p in r.by_accelerator.values()}
     # Speech input models offered next to the recommended large-v3 (round 16): Whisper base
