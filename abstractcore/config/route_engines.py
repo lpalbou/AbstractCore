@@ -60,10 +60,10 @@ __all__ = [
     "voice_engine_id",
 ]
 
-# The first AbstractVoice with `abstractvoice.engine_runtime` (the public
-# runtime probe). Mirrors the floor of the `voice` extra in pyproject.toml;
-# the release stager raises both together.
-ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR = "0.15.0"
+# AbstractCore's AbstractVoice floor (it has `abstractvoice.engine_runtime`, the
+# public runtime probe, since 0.15.0). Mirrors the abstractvoice pins in
+# pyproject.toml; the release stager raises both together.
+ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR = "0.18.0"
 
 # Voice providers that run remotely: AbstractVoice needs nothing beyond its
 # core install for them, and whether they are configured is not a runtime

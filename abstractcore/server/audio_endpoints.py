@@ -593,7 +593,7 @@ def _require_dict(data: Any, *, where: str) -> Dict[str, Any]:
         raise HTTPException(status_code=422, detail=f"Invalid request body for {where}: expected a JSON object.")
     return data
 
-from .auth_policy import server_auth_token
+from .auth_policy import server_allows_unauthenticated as _server_allows_unauthenticated, server_auth_token
 
 _SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
 
@@ -882,13 +882,6 @@ def _plugin_exception_status(exc: Exception) -> int:
     if "api key" in text or "authentication" in text or "unauthorized" in text or "http 401" in text or "http 403" in text:
         return 401
     return 500
-
-
-def _plugin_request_error_status(exc: Exception) -> int:
-    """`_plugin_exception_status`, except that a ValueError it cannot classify is the
-    backend refusing the request as given (e.g. `one_shot` over its limit): 422."""
-    status = _plugin_exception_status(exc)
-    return 422 if status == 500 and isinstance(exc, ValueError) else status
 
 
 def _optional_text(value: Any) -> Optional[str]:
@@ -1663,6 +1656,10 @@ def _audio_voice_catalog_or_available(
             if isinstance(catalog, dict):
                 return dict(catalog)
     except Exception as catalog_error:
+        if language:
+            # The provider-only fallback cannot filter by language; answering with it
+            # would read as "no voices speak this language".
+            raise
         try:
             if hasattr(core.voice, "available_providers"):
                 providers = core.voice.available_providers()
@@ -2158,8 +2155,13 @@ def _audio_speech_impl(
         content_type = getattr(audio_item, "content_type", None)
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
+    except ValueError as e:
+        # A one_shot request the backend cannot honour (too long, wrong engine) is the
+        # caller's to change; other ValueErrors keep the plugin mapping.
+        status = 422 if one_shot and _plugin_exception_status(e) == 500 else _plugin_exception_status(e)
+        raise HTTPException(status_code=status, detail=f"Audio synthesis failed: {e}") from e
     except Exception as e:
-        raise HTTPException(status_code=_plugin_request_error_status(e), detail=f"Audio synthesis failed: {e}") from e
+        raise HTTPException(status_code=_plugin_exception_status(e), detail=f"Audio synthesis failed: {e}") from e
 
     if not isinstance(audio, (bytes, bytearray)):
         raise HTTPException(
@@ -2505,7 +2507,7 @@ async def voice_clone(
             # returns it. A backend without record lookup still created the voice: answer with the id.
             try:
                 info = core.voice.get_cloned_voice(voice_id)
-            except CapabilityUnavailableError:
+            except Exception:  # the voice exists; a failed lookup must not read as a failed clone
                 info = {}
         return {"ok": True, "id": voice_id, "voice_id": voice_id, "voice": info}
     except CapabilityUnavailableError as e:
@@ -2594,13 +2596,29 @@ _AUDIO_MUSIC_RESPONSES = {
 # ---------------------------------------------------------------------------
 # Languages, cloned-voice management and voice design (AbstractVoice extensions)
 #
-# Local plugin operations: they never spend provider keys, so they run on the
-# shared key-free capability core.
+# Listings follow the discovery rule (`guard_catalog_credentials`): the cloned-voice
+# listing goes through the voice catalog, which may probe remote providers.
+# Changes to the local voice store and voice design spend no provider key, so a
+# caller's provider key does not authorize them: server auth does, or the
+# explicit unauthenticated mode (`_require_server_operator`).
 # ---------------------------------------------------------------------------
 
 
 class VoiceDesignRequest(BaseModel):
     """Create a reusable voice from a written description."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "A calm, warm female voice in her thirties, clear and friendly.",
+                    "name": "Mira",
+                    "language": "en",
+                    "text": None,
+                }
+            ]
+        }
+    )
 
     description: str = Field(
         ...,
@@ -2622,10 +2640,29 @@ class VoiceDesignRequest(BaseModel):
 class ClonedVoiceUpdateRequest(BaseModel):
     """Fields of a cloned voice that can be changed; send at least one."""
 
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"name": "Grace", "reference_text": None}]}
+    )
+
     name: Optional[str] = Field(default=None, description="New name; the voice id is unchanged.", examples=["Grace"])
     reference_text: Optional[str] = Field(
         default=None,
         description="Corrected transcript of the voice's reference audio (a wrong one degrades cloned speech).",
+    )
+
+
+def _require_server_operator(request: Request, *, action: str) -> None:
+    """Refuse (401) a voice-store change or a design run without server auth."""
+    if _request_has_server_auth(request) or _server_allows_unauthenticated():
+        return
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            f"{action} changes this server's voices and needs server authentication: set "
+            "ABSTRACTCORE_AUTH_TOKEN and send Authorization: Bearer <server-token>. A provider key "
+            "does not authorize it."
+        ),
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 
@@ -2636,11 +2673,16 @@ def _voice_plugin_error(exc: Exception, *, action: str) -> HTTPException:
         return HTTPException(status_code=501, detail=str(exc))
     if isinstance(exc, KeyError):
         return HTTPException(status_code=404, detail=f"{action} failed: {exc.args[0] if exc.args else exc}")
-    return HTTPException(status_code=_plugin_request_error_status(exc), detail=f"{action} failed: {exc}")
+    if isinstance(exc, ValueError):
+        # These routes take caller input only (ids, names, descriptions); the plugin
+        # raises ValueError for input it refuses.
+        return HTTPException(status_code=422, detail=f"{action} failed: {exc}")
+    return HTTPException(status_code=_plugin_exception_status(exc), detail=f"{action} failed: {exc}")
 
 
 @router.get("/audio/languages")
 def audio_languages(
+    request: Request,
     kind: Optional[str] = Query(default=None, description="`tts`, `stt` or `cloning`; all three when omitted."),
     provider: Optional[str] = Query(default=None, description="One engine, e.g. `qwen3-tts` or `faster-whisper`."),
 ) -> Dict[str, Any]:
@@ -2648,10 +2690,11 @@ def audio_languages(
 
     Returns `{"languages": {kind: {provider: {provider, languages, open, declared}}}}`.
     `open` marks remote providers that decide their own languages; `declared: false`
-    marks an engine that publishes no list.
+    marks an engine that publishes no list. Unknown `provider`: 404; unknown `kind`: 422.
     """
     try:
-        languages = _get_capability_core().voice.list_languages(kind=kind, provider=provider)
+        core = _audio_catalog_core(request, base_url=None, api_key=None)
+        languages = core.voice.list_languages(kind=kind, provider=provider)
     except Exception as e:
         raise _voice_plugin_error(e, action="Language listing") from e
     return {"languages": languages, "source": "abstractvoice"}
@@ -2659,13 +2702,15 @@ def audio_languages(
 
 @router.get("/voice/clones")
 def voice_clones(
+    request: Request,
     provider: Optional[str] = Query(default=None, description="Optional cloning engine filter, e.g. `qwen3-tts`."),
     model: Optional[str] = Query(default=None, description="Optional model filter."),
     language: Optional[str] = Query(default=None, description="Keep the voices that can speak this language; native speakers first."),
 ) -> Dict[str, Any]:
     """Cloned voices, including designed and built-in ones (`tags.builtin`, `tags.designed`)."""
     try:
-        voices = _get_capability_core().voice.list_cloned_voices(provider=provider, model=model, language=language)
+        core = _audio_catalog_core(request, base_url=None, api_key=None)
+        voices = core.voice.list_cloned_voices(provider=provider, model=model, language=language)
     except Exception as e:
         raise _voice_plugin_error(e, action="Cloned-voice listing") from e
     return {"voices": voices, "count": len(voices)}
@@ -2682,15 +2727,24 @@ def voice_clone_get(voice_id: str = FastAPIPath(..., description="Cloned voice i
 
 @router.patch("/voice/clones/{voice_id}")
 def voice_clone_update(
+    request: Request,
     payload: ClonedVoiceUpdateRequest = Body(...),
     voice_id: str = FastAPIPath(..., description="Cloned voice id."),
 ) -> Dict[str, Any]:
-    """Rename a cloned voice and/or replace its reference transcript; returns the updated record."""
+    """Rename a cloned voice and/or replace its reference transcript; returns the updated record.
+
+    Both fields are checked before either is applied.
+    """
+    _require_server_operator(request, action="Updating a cloned voice")
     name, reference_text = payload.name, payload.reference_text
     if name is None and reference_text is None:
         raise HTTPException(status_code=422, detail="Send `name` and/or `reference_text`.")
+    for field, value in (("name", name), ("reference_text", reference_text)):
+        if value is not None and not value.strip():
+            raise HTTPException(status_code=422, detail=f"`{field}` must not be empty.")
     voice = _get_capability_core().voice
     try:
+        voice.get_cloned_voice(voice_id)  # unknown id: 404 before any change
         out: Dict[str, Any] = {}
         if name is not None:
             out = voice.rename_cloned_voice(voice_id, name)
@@ -2702,8 +2756,9 @@ def voice_clone_update(
 
 
 @router.delete("/voice/clones/{voice_id}")
-def voice_clone_delete(voice_id: str = FastAPIPath(..., description="Cloned voice id.")) -> Dict[str, Any]:
+def voice_clone_delete(request: Request, voice_id: str = FastAPIPath(..., description="Cloned voice id.")) -> Dict[str, Any]:
     """Delete a cloned voice and its reference audio. Built-in voices are read-only (422)."""
+    _require_server_operator(request, action="Deleting a cloned voice")
     try:
         return _get_capability_core().voice.delete_cloned_voice(voice_id)
     except Exception as e:
@@ -2711,14 +2766,15 @@ def voice_clone_delete(voice_id: str = FastAPIPath(..., description="Cloned voic
 
 
 @router.post("/voice/design")
-def voice_design(payload: VoiceDesignRequest = Body(...)) -> Dict[str, Any]:
+def voice_design(request: Request, payload: VoiceDesignRequest = Body(...)) -> Dict[str, Any]:
     """Create a reusable voice from a written description, with no recording.
 
     AbstractVoice renders a reference with Qwen3-TTS 1.7B VoiceDesign and clones it with
     Qwen3-TTS 1.7B Base; the voice is stored as a cloned voice, so `/v1/audio/speech`
-    uses it with `voice=<voice_id>`. Needs `abstractvoice[qwen3-tts]` and both checkpoints.
-    Sync-def: synthesis blocks, so it runs in the threadpool.
+    uses it with `voice=<voice_id>`. Needs `abstractvoice[qwen3-tts]` and
+    `abstractvoice[stt]`. Sync-def: synthesis blocks, so it runs in the threadpool.
     """
+    _require_server_operator(request, action="Designing a voice")
     if not payload.description.strip():
         raise HTTPException(status_code=422, detail="`description` must not be empty.")
     try:

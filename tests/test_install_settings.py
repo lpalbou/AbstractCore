@@ -201,8 +201,8 @@ def test_gpu_resolves_with_wheels_only_on_windows() -> None:
     assert gpu["vllm"].endswith("; sys_platform == 'linux'"), gpu["vllm"]
     assert gpu["llama-cpp-python"].endswith("; sys_platform != 'win32'"), gpu["llama-cpp-python"]
     # 0.3.32 is the first abstractvision whose all-gpu marks stable-diffusion.cpp out on Windows
-    # (the floor is 0.3.33 since AbstractCore 2.19.2: sequential CPU offload on CUDA).
-    assert gpu["abstractvision"].startswith("abstractvision[all-gpu]>=0.3.33"), gpu["abstractvision"]
+    # (the floor is 0.3.34 since AbstractCore 2.30.0, the latest AbstractVision release).
+    assert gpu["abstractvision"].startswith("abstractvision[all-gpu]>=0.3.34"), gpu["abstractvision"]
     for name, requirement in gpu.items():
         if name not in {"vllm", "llama-cpp-python", "numpy"}:
             assert "sys_platform" not in requirement, requirement

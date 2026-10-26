@@ -268,3 +268,60 @@ def test_facade_names_the_missing_backend_method(monkeypatch):
     ):
         with pytest.raises(CapabilityUnavailableError):
             call()
+
+
+# ---------------------------------------------------------------------------
+# Hardening
+# ---------------------------------------------------------------------------
+
+
+def test_voice_store_changes_need_server_auth_not_a_provider_key(client, monkeypatch):
+    voice = _install(monkeypatch, _ManagedVoice())
+    monkeypatch.delenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", raising=False)
+    junk = {"X-AbstractCore-Provider-API-Key": "sk-junk"}  # lets a BYOK request past the middleware
+    assert client.delete("/v1/voice/clones/v1", headers=junk).status_code == 401
+    assert client.patch("/v1/voice/clones/v1", json={"name": "x"}, headers=junk).status_code == 401
+    assert client.post("/v1/voice/design", json={"description": "a voice"}, headers=junk).status_code == 401
+    assert "v1" in voice.records and voice.records["v1"]["name"] == "Ada"
+    assert not any(c[0] == "design_voice" for c in voice.calls)
+
+
+def test_voice_store_changes_work_with_server_auth(client, monkeypatch):
+    voice = _install(monkeypatch, _ManagedVoice())
+    monkeypatch.delenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", raising=False)
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "srv-token")
+    auth = {"Authorization": "Bearer srv-token"}
+    assert client.delete("/v1/voice/clones/v1", headers=auth).json()["deleted"] is True
+    assert "v1" not in voice.records
+
+
+def test_patch_checks_every_field_before_changing_anything(client, monkeypatch):
+    voice = _install(monkeypatch, _ManagedVoice())
+    resp = client.patch("/v1/voice/clones/v1", json={"name": "Grace", "reference_text": "   "})
+    assert resp.status_code == 422 and voice.records["v1"]["name"] == "Ada"
+    assert client.patch("/v1/voice/clones/nope", json={"name": "Grace"}).status_code == 404
+
+
+def test_language_filter_is_never_silently_dropped(client, monkeypatch):
+    _install(monkeypatch, _BareVoice())
+    resp = client.get("/v1/audio/voices", params={"language": "fr"})
+    assert resp.status_code == 501
+
+
+def test_speech_value_errors_stay_server_errors_without_one_shot(client, monkeypatch):
+    class _Broken(_ManagedVoice):
+        def tts(self, text, **kwargs):
+            raise ValueError("internal decoder state mismatch")
+
+    _install(monkeypatch, _Broken())
+    assert client.post("/v1/audio/speech", json={"input": "hi", "provider": "qwen3-tts"}).status_code == 500
+
+
+def test_clone_response_survives_a_failed_record_lookup(client, monkeypatch):
+    class _Flaky(_ManagedVoice):
+        def get_cloned_voice(self, voice_id):
+            raise KeyError(voice_id)
+
+    _install(monkeypatch, _Flaky())
+    resp = client.post("/v1/voice/clone", files={"file": ("ref.wav", b"RIFF", "audio/wav")}, data={"provider": "qwen3-tts"})
+    assert resp.status_code == 200 and resp.json()["voice_id"] == "new" and resp.json()["voice"] == {}

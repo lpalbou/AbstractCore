@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cloned-voice management**: `llm.voice.get_cloned_voice`, `rename_cloned_voice`,
   `set_cloned_voice_reference_text`, `delete_cloned_voice`, and `GET|PATCH|DELETE
   /v1/voice/clones/{voice_id}`. Built-in voices are read-only (`422`); an unknown id is `404`.
+  `PATCH`, `DELETE` and `POST /v1/voice/design` need server authentication (or
+  `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`); a provider key does not authorize them.
 - **Voice design**: `llm.voice.design_voice(description, name=..., language=..., text=...)` and
   `POST /v1/voice/design` create a reusable voice from a written description (Qwen3-TTS
   VoiceDesign, then cloned; needs the `qwen3-tts` and `stt` extras of AbstractVoice, included in
@@ -51,8 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extras).
 - `POST /v1/voice/clone` returns the stored record of a local clone under `voice` (name, engine,
   reference text, meta).
-- A TTS request the voice backend refuses as given (for example `one_shot` over its limit)
-  answers `422` with the backend's reason instead of `500`.
+- A `one_shot` TTS request the voice backend refuses (too long, unsupported engine) answers `422`
+  with the backend's reason.
 - A read-only mailbox refuses changes and sends in plain words: "The mailbox <address> is
   read-only: automations only read it." / "Turn on Read and write for <address> to change it or
   send from it." (`email_mailbox_read_only`). `guarded_send` on a read-only account with an

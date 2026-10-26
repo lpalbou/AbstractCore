@@ -25964,8 +25964,8 @@ Notes:
 | `one_shot` | no | AbstractVoice extension: synthesize the whole text as one generation, so the take keeps one voice from start to end. Qwen3-TTS voices (presets, designed, cloned and built-in) up to 1000 characters; a longer text, another engine, a remote `model` or the stream route answers `422`. |
 | `base_url` | no | Endpoint override for local/gateway routing. Prefer this with `openai-compatible/...`; if set with `openai/...`, the request is sent to that URL instead of api.openai.com. Loopback is allowed by default, non-loopback requires allowlist. |
 
-A request the backend refuses as given (for example `one_shot` over its limit) answers
-`422` with the backend's reason.
+A `one_shot` request the backend refuses (over its limit, or an engine without one-shot
+synthesis) answers `422` with the backend's reason.
 
 `POST /v1/audio/speech/stream` accepts the same local/plugin routing fields but
 returns `application/x-ndjson` stream events. Audio events carry base64 WAV
@@ -26022,8 +26022,12 @@ Use `language=fr` on either listing to keep the voices that can speak French, na
 French voices first. `GET /v1/audio/languages?kind=tts` lists the languages of each
 engine. Cloned voices are managed under `/v1/voice/clones/{voice_id}`: `GET` reads the
 stored record, `PATCH` renames it (`name`) or replaces its transcript
-(`reference_text`), `DELETE` removes it. Built-in voices are read-only (`422`); an
-unknown id answers `404`.
+(`reference_text`; both fields are checked before either is applied), `DELETE` removes
+it. Built-in voices are read-only (`422`); an unknown id answers `404`. `PATCH`,
+`DELETE` and `POST /v1/voice/design` change this server's voices, so they need server
+authentication (`Authorization: Bearer <ABSTRACTCORE_AUTH_TOKEN>`) or
+`ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`; a provider key does not authorize them
+(`401`). The listings follow the discovery rule of the other audio catalogs.
 
 `POST /v1/voice/design` creates a reusable voice from a written description, with no
 recording: AbstractVoice renders a reference with Qwen3-TTS 1.7B VoiceDesign, keeps the
@@ -26035,7 +26039,9 @@ reference language when it is not English), `name`, `language` (`en`, `fr`, `es`
 text). It needs `abstractvoice[qwen3-tts]` and `abstractvoice[stt]`, both included in
 `abstractcore[apple]` and `abstractcore[gpu]`.
 
-A voice backend without these methods answers `501` naming the missing method.
+Design runs one at a time per server process and takes tens of seconds. A voice
+backend without these methods answers `501` naming the missing method, including a
+`language` filter the backend cannot apply.
 
 `POST /v1/audio/music` and `POST /{provider}/v1/audio/music` JSON parameters:
 
