@@ -430,7 +430,7 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 
 #### Capability plugins (voice/audio/vision/music)
 To keep the default `abstractcore` install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional **capability plugins**:
-- `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
+- `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT, voice discovery by engine and language, cloning, voice design, cloned-voice management).
 - `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
 - `abstractmusic` can provide `core.music` (text-to-music) when installed.
 
@@ -906,7 +906,7 @@ graph TD
 - **Model Discovery**: Dynamic model listing across all providers
 - **Embedding Support**: Multi-provider embedding generation (remote OpenAI-compatible providers plus local backends)
 - **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations`, `/v1/images/edits`, `/v1/videos/generations`, and `/v1/videos/edits` can proxy to an upstream media server without local vision runtimes; `/v1/vision/*` local model control remains delegated to `abstractvision` when installed and configured. Deep provider catalog discovery is exposed separately at `/v1/vision/providers/` and `/v1/vision/models`, and long image/video runs can use `/v1/vision/jobs/images/*` or `/v1/vision/jobs/videos/*` progress polling.
-- **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`). Voice/profile and TTS model discovery are exposed at `/v1/audio/voices` and `/v1/audio/speech/models`.
+- **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`). Voice/profile and TTS model discovery are exposed at `/v1/audio/voices` (with a `language` filter), `/v1/audio/languages` and `/v1/audio/speech/models`; voices are created and managed with `/v1/voice/clone`, `/v1/voice/design` and `/v1/voice/clones/{voice_id}`.
 - **Prompt Cache Control Plane**: `/acore/prompt_cache/*` endpoints for cache stats/set/update/fork/clear/key_meta on warm gateway runtimes or an upstream `abstractcore.endpoint` (best-effort).
 - **Runtime + Memory Visibility**: `/acore/models/*` runtime load/list/unload plus `lock`/`unlock` model locks (a locked runtime refuses unloading without `force`), `GET /acore/models/context_estimate` context-fit estimates, and `GET /acore/memory` host memory snapshot. Loaded listings merge the host's local model-server sweep and stamp text and sweep records with registry-declared `modalities`, and every record with the observing machine's `host_id`/`host_name` — see [Memory and Model Residency](memory-management.md).
 
