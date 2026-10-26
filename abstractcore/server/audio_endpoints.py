@@ -157,6 +157,17 @@ class AudioSpeechRequest(BaseModel):
         description="Optional style/instruction text for providers that support expressive TTS controls.",
         examples=["Speak clearly and calmly."],
     )
+    one_shot: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Local AbstractVoice extension: synthesize the whole text as ONE generation, with no "
+            "sentence segmentation and no truncation, so the take keeps one voice from start to end. "
+            "Supported by Qwen3-TTS voices (presets, designs, clones and built-in voices) up to 1000 "
+            "characters; a longer text or another engine is refused with 422. Buffered "
+            "`/v1/audio/speech` only; remote providers refuse it."
+        ),
+        examples=[True],
+    )
     provider: Optional[Union[Dict[str, Any], str]] = Field(
         default=None,
         description=(
@@ -871,6 +882,13 @@ def _plugin_exception_status(exc: Exception) -> int:
     if "api key" in text or "authentication" in text or "unauthorized" in text or "http 401" in text or "http 403" in text:
         return 401
     return 500
+
+
+def _plugin_request_error_status(exc: Exception) -> int:
+    """`_plugin_exception_status`, except that a ValueError it cannot classify is the
+    backend refusing the request as given (e.g. `one_shot` over its limit): 422."""
+    status = _plugin_exception_status(exc)
+    return 422 if status == 500 and isinstance(exc, ValueError) else status
 
 
 def _optional_text(value: Any) -> Optional[str]:
@@ -1634,10 +1652,14 @@ def _audio_voice_catalog_or_available(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     providers_only: bool = False,
+    language: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
         if hasattr(core.voice, "voice_catalog"):
-            catalog = core.voice.voice_catalog(provider=provider, model=model, providers_only=providers_only)
+            kwargs: Dict[str, Any] = {"provider": provider, "model": model, "providers_only": providers_only}
+            if language:
+                kwargs["language"] = language
+            catalog = core.voice.voice_catalog(**kwargs)
             if isinstance(catalog, dict):
                 return dict(catalog)
     except Exception as catalog_error:
@@ -1694,11 +1716,22 @@ async def audio_voices(
     provider: Optional[str] = Query(default=None, description="Optional TTS provider/engine filter."),
     model: Optional[str] = Query(default=None, description="Optional TTS model/language filter."),
     providers_only: bool = Query(default=False, description="Return provider names without model/voice lists."),
+    language: Optional[str] = Query(
+        default=None,
+        description="Keep the voices that can speak this language (e.g. `fr`); native speakers come first.",
+    ),
 ) -> Dict[str, Any]:
-    """Discover configured TTS voices/profiles through the AbstractVoice plugin boundary."""
+    """Discover configured TTS voices/profiles through the AbstractVoice plugin boundary.
+
+    Every voice record carries `voice_id` (the value for `/v1/audio/speech` `voice`),
+    `name`, `kind` (`profile` | `clone`), `provider`, `model`, `languages` and `language`
+    (native language, when known).
+    """
     try:
         core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
-        catalog = _audio_voice_catalog_or_available(core, provider=provider, model=model, providers_only=providers_only)
+        catalog = _audio_voice_catalog_or_available(
+            core, provider=provider, model=model, providers_only=providers_only, language=language
+        )
         out = dict(catalog)
         out.setdefault("kind", "tts")
         out.setdefault(
@@ -2069,7 +2102,13 @@ def _audio_speech_impl(
         model = None
     elif request_provider in {"openai", "openai-compatible"} and model and "/" not in model:
         model = f"{request_provider}/{model}"
+    one_shot = data.get("one_shot") is True
     if model:
+        if one_shot:
+            raise HTTPException(
+                status_code=422,
+                detail="one_shot is a local AbstractVoice setting (Qwen3-TTS voices); remote providers do not accept it.",
+            )
         provider, model_name = _parse_model_string(model)
         provider_api_key = _provider_api_key_from_request(request)
         base_url_s = _validate_request_base_url(data.get("base_url"))
@@ -2109,6 +2148,8 @@ def _audio_speech_impl(
                 "profile": _optional_text(data.get("profile")),
                 "provider": request_provider,
                 "model": local_model,
+                # Omitted unless requested: the output spec forwards non-None keys only.
+                "one_shot": True if one_shot else None,
             },
         )
         voice_items = getattr(result, "outputs", {}).get("voice", [])
@@ -2118,7 +2159,7 @@ def _audio_speech_impl(
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=_plugin_exception_status(e), detail=f"Audio synthesis failed: {e}") from e
+        raise HTTPException(status_code=_plugin_request_error_status(e), detail=f"Audio synthesis failed: {e}") from e
 
     if not isinstance(audio, (bytes, bytearray)):
         raise HTTPException(
@@ -2175,6 +2216,11 @@ def _audio_speech_stream_impl(
         raise HTTPException(
             status_code=422,
             detail="Streaming TTS currently supports response_format=format=wav only. Use /v1/audio/speech for other formats.",
+        )
+    if data.get("one_shot") is True:
+        raise HTTPException(
+            status_code=422,
+            detail="one_shot applies to buffered synthesis. Use /v1/audio/speech with one_shot=true.",
         )
 
     request_provider = path_provider or _request_provider_value(data.get("provider"))
@@ -2454,6 +2500,13 @@ async def voice_clone(
             raise RuntimeError("Voice clone backend did not return a usable voice id.")
         metadata = getattr(out, "metadata", None)
         info = dict(metadata or {}) if isinstance(metadata, dict) else {}
+        if not info:
+            # The stored record (name, engine, reference_text, meta), as GET /v1/voice/clones/{id}
+            # returns it. A backend without record lookup still created the voice: answer with the id.
+            try:
+                info = core.voice.get_cloned_voice(voice_id)
+            except CapabilityUnavailableError:
+                info = {}
         return {"ok": True, "id": voice_id, "voice_id": voice_id, "voice": info}
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
@@ -2536,6 +2589,147 @@ _AUDIO_MUSIC_RESPONSES = {
         },
     }
 }
+
+
+# ---------------------------------------------------------------------------
+# Languages, cloned-voice management and voice design (AbstractVoice extensions)
+#
+# Local plugin operations: they never spend provider keys, so they run on the
+# shared key-free capability core.
+# ---------------------------------------------------------------------------
+
+
+class VoiceDesignRequest(BaseModel):
+    """Create a reusable voice from a written description."""
+
+    description: str = Field(
+        ...,
+        description=(
+            "What the voice sounds like. State the sex explicitly, in the reference language when it "
+            "is not English."
+        ),
+        examples=["A calm, warm female voice in her thirties, clear and friendly."],
+    )
+    name: Optional[str] = Field(default=None, description="Friendly name for the voice.", examples=["Mira"])
+    language: Optional[str] = Field(
+        default=None,
+        description="Language the reference is read in: en, fr, es, de, it, pt, ru, zh, ja or ko. Defaults to the backend's language when supported, else en.",
+        examples=["en"],
+    )
+    text: Optional[str] = Field(default=None, description="Optional reference text replacing the built-in one for that language.")
+
+
+class ClonedVoiceUpdateRequest(BaseModel):
+    """Fields of a cloned voice that can be changed; send at least one."""
+
+    name: Optional[str] = Field(default=None, description="New name; the voice id is unchanged.", examples=["Grace"])
+    reference_text: Optional[str] = Field(
+        default=None,
+        description="Corrected transcript of the voice's reference audio (a wrong one degrades cloned speech).",
+    )
+
+
+def _voice_plugin_error(exc: Exception, *, action: str) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        return exc
+    if isinstance(exc, CapabilityUnavailableError):
+        return HTTPException(status_code=501, detail=str(exc))
+    if isinstance(exc, KeyError):
+        return HTTPException(status_code=404, detail=f"{action} failed: {exc.args[0] if exc.args else exc}")
+    return HTTPException(status_code=_plugin_request_error_status(exc), detail=f"{action} failed: {exc}")
+
+
+@router.get("/audio/languages")
+def audio_languages(
+    kind: Optional[str] = Query(default=None, description="`tts`, `stt` or `cloning`; all three when omitted."),
+    provider: Optional[str] = Query(default=None, description="One engine, e.g. `qwen3-tts` or `faster-whisper`."),
+) -> Dict[str, Any]:
+    """Languages each voice engine accepts, read without loading any model.
+
+    Returns `{"languages": {kind: {provider: {provider, languages, open, declared}}}}`.
+    `open` marks remote providers that decide their own languages; `declared: false`
+    marks an engine that publishes no list.
+    """
+    try:
+        languages = _get_capability_core().voice.list_languages(kind=kind, provider=provider)
+    except Exception as e:
+        raise _voice_plugin_error(e, action="Language listing") from e
+    return {"languages": languages, "source": "abstractvoice"}
+
+
+@router.get("/voice/clones")
+def voice_clones(
+    provider: Optional[str] = Query(default=None, description="Optional cloning engine filter, e.g. `qwen3-tts`."),
+    model: Optional[str] = Query(default=None, description="Optional model filter."),
+    language: Optional[str] = Query(default=None, description="Keep the voices that can speak this language; native speakers first."),
+) -> Dict[str, Any]:
+    """Cloned voices, including designed and built-in ones (`tags.builtin`, `tags.designed`)."""
+    try:
+        voices = _get_capability_core().voice.list_cloned_voices(provider=provider, model=model, language=language)
+    except Exception as e:
+        raise _voice_plugin_error(e, action="Cloned-voice listing") from e
+    return {"voices": voices, "count": len(voices)}
+
+
+@router.get("/voice/clones/{voice_id}")
+def voice_clone_get(voice_id: str = FastAPIPath(..., description="Cloned voice id.")) -> Dict[str, Any]:
+    """One cloned voice's stored record (`voice_id`, `name`, `engine`, `reference_text`, `meta`)."""
+    try:
+        return _get_capability_core().voice.get_cloned_voice(voice_id)
+    except Exception as e:
+        raise _voice_plugin_error(e, action="Cloned-voice lookup") from e
+
+
+@router.patch("/voice/clones/{voice_id}")
+def voice_clone_update(
+    payload: ClonedVoiceUpdateRequest = Body(...),
+    voice_id: str = FastAPIPath(..., description="Cloned voice id."),
+) -> Dict[str, Any]:
+    """Rename a cloned voice and/or replace its reference transcript; returns the updated record."""
+    name, reference_text = payload.name, payload.reference_text
+    if name is None and reference_text is None:
+        raise HTTPException(status_code=422, detail="Send `name` and/or `reference_text`.")
+    voice = _get_capability_core().voice
+    try:
+        out: Dict[str, Any] = {}
+        if name is not None:
+            out = voice.rename_cloned_voice(voice_id, name)
+        if reference_text is not None:
+            out = voice.set_cloned_voice_reference_text(voice_id, reference_text)
+        return out
+    except Exception as e:
+        raise _voice_plugin_error(e, action="Cloned-voice update") from e
+
+
+@router.delete("/voice/clones/{voice_id}")
+def voice_clone_delete(voice_id: str = FastAPIPath(..., description="Cloned voice id.")) -> Dict[str, Any]:
+    """Delete a cloned voice and its reference audio. Built-in voices are read-only (422)."""
+    try:
+        return _get_capability_core().voice.delete_cloned_voice(voice_id)
+    except Exception as e:
+        raise _voice_plugin_error(e, action="Cloned-voice deletion") from e
+
+
+@router.post("/voice/design")
+def voice_design(payload: VoiceDesignRequest = Body(...)) -> Dict[str, Any]:
+    """Create a reusable voice from a written description, with no recording.
+
+    AbstractVoice renders a reference with Qwen3-TTS 1.7B VoiceDesign and clones it with
+    Qwen3-TTS 1.7B Base; the voice is stored as a cloned voice, so `/v1/audio/speech`
+    uses it with `voice=<voice_id>`. Needs `abstractvoice[qwen3-tts]` and both checkpoints.
+    Sync-def: synthesis blocks, so it runs in the threadpool.
+    """
+    if not payload.description.strip():
+        raise HTTPException(status_code=422, detail="`description` must not be empty.")
+    try:
+        return _get_capability_core().voice.design_voice(
+            payload.description,
+            name=_optional_text(payload.name),
+            language=_optional_text(payload.language),
+            text=_optional_text(payload.text),
+        )
+    except Exception as e:
+        raise _voice_plugin_error(e, action="Voice design") from e
 
 
 def _audio_music_impl(request: Request, payload: AudioMusicRequest, *, path_provider: Optional[str] = None):

@@ -1362,7 +1362,9 @@ class _VoiceFacade:
         provider: Optional[str] = None,
         model: Optional[str] = None,
         providers_only: bool = False,
+        language: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Providers, models and voices. ``language`` keeps the voices that speak it."""
         backend = self._registry.get_voice()
         method = getattr(backend, "voice_catalog", None)
         if not callable(method):
@@ -1386,6 +1388,15 @@ class _VoiceFacade:
             kwargs["model"] = model
         if providers_only and (accepts_kwargs or "providers_only" in params):
             kwargs["providers_only"] = True
+        if language is not None:
+            if not (accepts_kwargs or "language" in params):
+                raise CapabilityUnavailableError(
+                    capability="voice",
+                    reason="The selected voice capability backend cannot filter voices by language.",
+                    install_hint=self._registry._default_install_hint("voice"),
+                    details={"backend_id": getattr(backend, "backend_id", None)},
+                )
+            kwargs["language"] = language
         out = method(**kwargs) if kwargs else method()
         if not isinstance(out, dict):
             raise CapabilityUnavailableError(
@@ -1438,6 +1449,100 @@ class _VoiceFacade:
             ),
             install_hint=self._registry._default_install_hint("voice"),
         )
+
+    # -- Languages, voices, cloned-voice management and voice design ----------
+    #
+    # Optional backend methods: a backend without one raises
+    # CapabilityUnavailableError naming the method, never a silent empty answer.
+
+    def _backend_method(self, *names: str) -> Any:
+        backend = self._registry.get_voice()
+        for name in names:
+            method = getattr(backend, name, None)
+            if callable(method):
+                return method
+        raise CapabilityUnavailableError(
+            capability="voice",
+            reason=f"The selected voice capability backend does not expose {names[0]}(...).",
+            install_hint=self._registry._default_install_hint("voice"),
+            details={"backend_id": getattr(backend, "backend_id", None), "method": names[0]},
+        )
+
+    def list_languages(self, *, kind: Optional[str] = None, provider: Optional[str] = None) -> Dict[str, Any]:
+        """Languages per engine: ``{kind: {provider: {provider, languages, open, declared}}}``.
+
+        ``kind`` is ``tts``, ``stt`` or ``cloning``. Answered from static tables:
+        no engine is loaded. Unknown provider: KeyError; unknown kind: ValueError.
+        """
+        return dict(self._backend_method("list_languages")(kind=kind, provider=provider) or {})
+
+    def list_voices(
+        self,
+        *,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        language: Optional[str] = None,
+        include_clones: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """TTS voices: profiles, and cloned voices unless ``include_clones=False``.
+
+        Each record carries ``voice_id`` (pass it as ``tts(voice=...)``), ``name``,
+        ``kind``, ``provider``, ``model``, ``languages`` and ``language`` (native, when known).
+        ``language`` keeps the voices that speak it, native speakers first.
+        """
+        method = self._backend_method("list_tts_voices", "list_voices")
+        kwargs: Dict[str, Any] = {"provider": provider, "model": model, "include_clones": include_clones}
+        if language is not None:
+            kwargs["language"] = language
+        return list(method(**kwargs) or [])
+
+    def list_cloned_voices(
+        self,
+        *,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        language: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Cloned voices, including designed and built-in ones (same record shape as `list_voices`)."""
+        kwargs: Dict[str, Any] = {"provider": provider, "model": model}
+        if language is not None:
+            kwargs["language"] = language
+        return list(self._backend_method("list_cloned_voices")(**kwargs) or [])
+
+    def get_cloned_voice(self, voice_id: str) -> Dict[str, Any]:
+        """One cloned voice's stored record; KeyError when unknown."""
+        return dict(self._backend_method("get_cloned_voice")(voice_id))
+
+    def rename_cloned_voice(self, voice_id: str, new_name: str) -> Dict[str, Any]:
+        """Rename a cloned voice (the id is unchanged); returns the updated record."""
+        return dict(self._backend_method("rename_cloned_voice", "rename_voice")(voice_id, new_name))
+
+    def set_cloned_voice_reference_text(self, voice_id: str, reference_text: str) -> Dict[str, Any]:
+        """Replace a cloned voice's reference transcript; returns the updated record."""
+        return dict(self._backend_method("set_cloned_voice_reference_text")(voice_id, reference_text))
+
+    def delete_cloned_voice(self, voice_id: str) -> Dict[str, Any]:
+        """Delete a cloned voice and its reference audio. Built-in voices are read-only."""
+        return dict(self._backend_method("delete_cloned_voice", "delete_voice")(voice_id))
+
+    def design_voice(
+        self,
+        description: str,
+        *,
+        name: Optional[str] = None,
+        language: Optional[str] = None,
+        text: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a reusable voice from a written description; returns its stored record.
+
+        The voice is stored as a cloned voice and used with ``tts(voice=<voice_id>)``.
+        """
+        method = self._backend_method("design_voice")
+        return dict(method(description, name=name, language=language, text=text))
+
+    def compatibility_catalog(self) -> Dict[str, Any]:
+        """Feature support per provider and model across tts, stt and cloning."""
+        return dict(self._backend_method("compatibility_catalog")() or {})
 
 
 class _AudioFacade:

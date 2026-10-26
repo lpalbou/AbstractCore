@@ -196,6 +196,16 @@ lists with optional `data` and `artifact_ref`. Inspect errors and artifact refer
 claiming a file exists. `llm.voice.tts`/`llm.audio.transcribe` provide deterministic speech,
 `llm.vision` image/video, `llm.music` music, `llm.scene3d` 3D and `llm.camera` camera control.
 Plugin return/error types differ from text generation; use that plugin's documented contract.
+
+Voices: pick one from `llm.voice.list_voices(provider=..., language=...)` and pass its
+`voice_id` as `voice=`; records carry `kind` (`profile` | `clone`), `provider`, `languages` and
+the native `language`, and native speakers of the requested language come first.
+`llm.voice.list_languages(kind="tts")` lists each engine's languages without loading a model.
+`llm.voice.design_voice(description, name=..., language=...)` creates a stored voice from a
+description; it loads two 1.7B Qwen3-TTS checkpoints and takes tens of seconds, so create a voice
+once and reuse its id. Built-in voices are read-only (`ValueError`); `one_shot=True` on `tts`
+keeps one voice for a whole text up to 1000 characters (Qwen3-TTS only) and raises `ValueError`
+otherwise. A backend without one of these methods raises `CapabilityUnavailableError`.
 Glyph compression renders text/PDF pages as images and requires a vision model; evaluate
 answer quality before relying on the token savings.
 

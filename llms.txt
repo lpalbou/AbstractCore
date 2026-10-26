@@ -42,7 +42,7 @@ executes calls. For durable agent orchestration, use [AbstractRuntime](https://g
 - [Concurrency](docs/concurrency.md): async versus backend batching.
 - [Media input](docs/media-handling-system.md): images, documents, audio/video policies and fallbacks.
 - [Request and output](docs/request-output.md): canonical multimodal request/output contract.
-- [Capabilities](docs/capabilities.md): voice, vision, music, 3D and camera plugins; supported boundaries.
+- [Capabilities](docs/capabilities.md): voice, vision, music, 3D and camera plugins; supported boundaries; voices by engine and language, voice design, cloned-voice management.
 - [Vision](docs/vision-capabilities.md): native image/video input and captioning fallbacks.
 - [Glyph compression](docs/glyphs.md): vision-based document compression and tradeoffs.
 - [Embeddings](docs/embeddings.md): local/remote vectors and the embedding.text route.

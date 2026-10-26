@@ -43,15 +43,16 @@ Python 3.9 without OmniVoice, torch, or torchaudio. Python 3.10+ is
 recommended. Local voice engines and clone backends come with
 `abstractcore[apple]` or `abstractcore[gpu]`; AEC requires Python 3.11+.
 
-`abstractvoice` 0.11.0 adds the local Qwen3-TTS engine
-(included with `abstractcore[apple]` and `abstractcore[gpu]`, Python 3.10+): preset speakers
-through the standard voice selectors, voice cloning from a few seconds of
-reference audio, and voice *design* from a natural-language description via the
-existing `instructions` selector — all of which flow through AbstractCore's
-`llm.voice.tts(...)` / `/v1/audio/speech` unchanged, since the plugin owns
-discovery and per-model capability reporting. Discovery is also engine-free
-since 0.10.19: listing providers, models, or voices answers from the model
-cache without importing torch or loading weights.
+AbstractVoice provides the local Qwen3-TTS engine (included with
+`abstractcore[apple]` and `abstractcore[gpu]`, Python 3.10+): preset speakers, 70
+built-in voices in six languages, voice cloning from a few seconds of reference
+audio, and voice *design* from a natural-language description, either per call via
+the `instructions` selector or as a stored, reusable voice with
+`llm.voice.design_voice(...)`. All of it flows through `llm.voice.tts(...)` /
+`/v1/audio/speech`, since the plugin owns discovery and per-model capability
+reporting. Discovery is engine-free: listing providers, models and languages, or the
+voices of one provider, answers from static tables and the model cache without
+importing torch or loading weights.
 
 ```python
 from abstractcore import create_llm
@@ -68,6 +69,19 @@ voices = llm.voice.voice_catalog()
 tts_models = llm.voice.list_tts_models()
 # Optional: llm.voice.clone(...) is available only when the selected voice
 # backend exposes cloning. The HTTP server also provides /v1/voice/clone.
+
+# Find voices: by engine and/or language (native speakers first). Every record
+# carries voice_id (pass it as voice=), name, kind, provider, languages, language.
+french = llm.voice.list_voices(language="fr")
+piper_voices = llm.voice.list_voices(provider="piper")
+languages = llm.voice.list_languages(kind="tts")  # {"tts": {provider: {"languages": [...], ...}}}
+clones = llm.voice.list_cloned_voices(provider="qwen3-tts")
+
+# Create, manage and use voices
+designed = llm.voice.design_voice("A calm, warm female voice in her thirties.", name="Mira")
+llm.voice.rename_cloned_voice(designed["voice_id"], "Mira (narrator)")
+wav = llm.voice.tts("Good morning.", voice=designed["voice_id"], one_shot=True)
+llm.voice.delete_cloned_voice(designed["voice_id"])
 
 # Vision via AbstractVision
 # Configure AbstractVision's backend/default first, or pass backend-specific kwargs.
@@ -243,7 +257,10 @@ The server exposes the same deep catalogs through:
 
 - `GET /v1/vision/providers/`
 - `GET /v1/vision/models`
-- `GET /v1/audio/voices`
+- `GET /v1/audio/voices` (optional `language`)
+- `GET /v1/audio/languages`
+- `GET /v1/voice/clones`, `GET|PATCH|DELETE /v1/voice/clones/{voice_id}`
+- `POST /v1/voice/design`
 - `GET /v1/audio/speech/models`
 - `GET /v1/capabilities`
 - `GET /v1/capabilities/{capability}/providers`

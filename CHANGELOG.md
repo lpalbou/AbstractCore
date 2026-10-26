@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Voice navigation by engine and language**: `llm.voice.list_voices(provider=..., model=...,
+  language=...)`, `list_cloned_voices(...)` and `voice_catalog(language=...)`; `GET /v1/audio/voices`
+  and the new `GET /v1/voice/clones` take `language`. Every voice record carries `voice_id` (the
+  value for `voice=`), `name`, `kind` (`profile` | `clone`), `provider`, `model`, `languages` and the native
+  `language` when known; native speakers of the requested language come first.
+- **Languages per engine**: `llm.voice.list_languages(kind=..., provider=...)` and
+  `GET /v1/audio/languages` list the languages of every TTS, STT and cloning engine without loading
+  a model.
+- **Cloned-voice management**: `llm.voice.get_cloned_voice`, `rename_cloned_voice`,
+  `set_cloned_voice_reference_text`, `delete_cloned_voice`, and `GET|PATCH|DELETE
+  /v1/voice/clones/{voice_id}`. Built-in voices are read-only (`422`); an unknown id is `404`.
+- **Voice design**: `llm.voice.design_voice(description, name=..., language=..., text=...)` and
+  `POST /v1/voice/design` create a reusable voice from a written description (Qwen3-TTS
+  VoiceDesign, then cloned; needs the `qwen3-tts` and `stt` extras of AbstractVoice, included in
+  `abstractcore[apple]` and `abstractcore[gpu]`).
+- **`one_shot` on `/v1/audio/speech`**: the whole text as one generation, so the take keeps one
+  voice (Qwen3-TTS voices, up to 1000 characters). The stream route and remote models answer `422`.
+- `llm.voice.compatibility_catalog()`: feature support per provider and model.
+
 - **Guide: [choosing a model for knowledge-graph extraction](docs/knowledge-graph-extraction-models.md)**:
   a measured comparison of local and hosted models on ontology-constrained entity and relationship
   extraction (precision, coverage, time), the prompt rules and second-pass strategies that change
@@ -27,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Plugin floors**: `abstractvoice>=0.18.0`, `abstractvision>=0.3.34`, `abstractmusic>=0.1.17`,
+  `abstract3d>=0.3.2` (base install and the `apple`, `gpu`, `all-apple`, `all-gpu` and `vision-*`
+  extras).
+- `POST /v1/voice/clone` returns the stored record of a local clone under `voice` (name, engine,
+  reference text, meta).
+- A TTS request the voice backend refuses as given (for example `one_shot` over its limit)
+  answers `422` with the backend's reason instead of `500`.
 - A read-only mailbox refuses changes and sends in plain words: "The mailbox <address> is
   read-only: automations only read it." / "Turn on Read and write for <address> to change it or
   send from it." (`email_mailbox_read_only`). `guarded_send` on a read-only account with an
