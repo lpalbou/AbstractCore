@@ -124,14 +124,14 @@ prompts read back with `lms log stream -s model --filter input`):
   model such as Qwen3.6, every other value turns thinking on and produces the same
   reasoning. For Qwen3.8, LM Studio applies the level, mapping `minimal` to `low` and
   `high` to `xhigh` on its side.
-- LM Studio's default for both models was thinking off. Before this fix, `thinking="on"`
-  silently stayed off while the metadata reported `on`.
+- LM Studio's per-model default can be thinking off. `thinking=True` turns it on through
+  `reasoning_effort`, and the metadata reports what was sent.
 - The assistant no-think prefill is not needed once `reasoning_effort: "none"` is sent.
   Sending both renders the empty think block twice. AbstractCore uses the prefill only as
   the off switch of last resort, when the server has rejected `reasoning_effort` earlier
   in the session.
 - The native REST endpoint (`POST /api/v1/chat`, field `reasoning`) cannot carry message
-  history, custom tools, or structured output. `thinking=` no longer routes there. Pass
+  history, custom tools, or structured output, so `thinking=` does not route there. Pass
   `reasoning=` explicitly to use that endpoint for a plain prompt.
 
 Local providers serialize prompts themselves, so their controls are prompt artifacts rather

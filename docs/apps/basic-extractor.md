@@ -50,6 +50,8 @@ pip install "abstractcore[gpu]"      # NVIDIA / AMD: vLLM, HF/GGUF, local media 
 
 **For Production**: Cloud providers (OpenAI GPT-4o-mini, Claude) offer the most reliable JSON-LD generation.
 
+For a measured comparison of local and hosted models on ontology-constrained extraction, including the prompt rules and second-pass strategies that change precision, see [Choosing a model for knowledge-graph extraction](../knowledge-graph-extraction-models.md).
+
 ## Output Formats
 
 BasicExtractor supports three output formats optimized for different use cases:

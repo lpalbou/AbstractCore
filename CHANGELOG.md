@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Guide: [choosing a model for knowledge-graph extraction](docs/knowledge-graph-extraction-models.md)**:
+  a measured comparison of local and hosted models on ontology-constrained entity and relationship
+  extraction (precision, coverage, time), the prompt rules and second-pass strategies that change
+  results, and recommendations.
 - **Registry entries**: `claude-haiku-5-5` (1M context, 128K output, adaptive thinking, effort
   low..xhigh plus `max`) and `gpt-6-luna` (1,050,000 context, 128,000 output,
   `reasoning_effort` none..xhigh plus `max`), from the vendors' model pages (2026-10-25).
@@ -32,8 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A configured reasoning default overrode the caller's `reasoning_effort=`**: with
   `reasoning: minimal` on the text route, `generate(..., reasoning_effort="high")` (or `"none"`)
-  ran as `thinking="minimal"`, mapped to the model's `"low"`, and sent `reasoning_effort: "low"`
-  (live: `gpt-5.6-luna` through an OpenAI-compatible endpoint). Precedence is now `thinking=` >
+  ran as `thinking="minimal"`, mapped to the model's `"low"`, and sent `reasoning_effort: "low"`. Precedence is now `thinking=` >
   a provider-native field on the call (`reasoning_effort=`, `reasoning=`, `think=`, sent as
   given) > the configured effort > nothing. The configured effort also applies only to an
   instance the route describes (same provider or endpoint profile, same model; a reasoning-only
@@ -45,18 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `reasoning: None`, `reasoning_source: not_applied:<reason>`.
 - **An explicit output budget was cut to a guessed ceiling on unregistered models**:
   `max_tokens=12000` on a model missing from `model_capabilities.json` was clamped to the
-  4096 `default_capabilities` guess, truncating JSON output (live: `claude-haiku-5-5`,
-  `gpt-6-luna` through an OpenAI-compatible proxy). For an unregistered model the per-call
+  4096 `default_capabilities` guess, truncating JSON output. For an unregistered model the per-call
   budget is now sent as given and the server enforces its real limit; registered models and
   constructor caps still clamp, with the warning naming the actual source. A GGUF n_ctx clamp
   stays in force for unregistered local models.
 - **LM Studio `thinking=` reached the model only for "off"**: the control rode
   `chat_template_kwargs`, which LM Studio's OpenAI-compatible endpoint ignores, while metadata
-  reported `thinking_effective="on"` (live: `qwen/qwen3.6-35b-a3b`, 0 reasoning tokens for
-  `thinking=True` and `"high"`). The unified control now travels as the top-level
+  reported `thinking_effective="on"`. The unified control now travels as the top-level
   `reasoning_effort` (`"none"` = off, the declared level, or `"medium"` for on), which LM Studio
   maps into the chat template on plain, message-history and tool-history requests, sync and
-  async (live-verified on Qwen3.6 and Qwen3.8). `thinking="off"` no longer appends the assistant
+  async. `thinking="off"` no longer appends the assistant
   no-think prefill on top (it rendered the empty think block twice); the prefill remains the
   off switch only after the server rejected `reasoning_effort`. Models without a surface LM
   Studio can drive (Kimi `thinking` param, budget-only, surface-less) are no longer claimed.
@@ -74,9 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`effort` / `enabled`), with the lowest declared effort (warned) for models whose reasoning
   cannot be disabled.
 - **MLX text-lane usage counted the prompt with a character estimate** although the tokenizer
-  was loaded (7,755 reported vs 4,899 real on a Qwen3.6 prompt). The prompt is now counted with
-  the loaded tokenizer exactly as mlx_lm tokenizes it (live: 5,585 reported = 5,585 chat-template
-  tokens on Qwen3.5-4B, where the estimate said 3,524); the estimate is used only when no
+  was loaded. The prompt is now counted with
+  the loaded tokenizer exactly as mlx_lm tokenizes it; the estimate is used only when no
   tokenizer can count.
 
 ## [2.29.0] - 2026-10-25
@@ -210,7 +210,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeout defaults, and matching AI-readable indexes for version 2.26.4.
 - GLM / Laguna `<arg_key>` tool calls cut inside an argument value (with or without a closing
   `</tool_call>`) are no longer executed with that argument missing; they are reported as
-  unparsed. Before the HY V3 work they ran with the truncated argument silently dropped.
+  unparsed. Previously they ran with that argument missing.
 
 ## [2.26.3] - 2026-10-18
 

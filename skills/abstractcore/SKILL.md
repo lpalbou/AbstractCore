@@ -61,8 +61,13 @@ Stop at the first authentication failure and fix configuration before another re
 - **Budgets:** `max_tokens` is the total input plus output budget; `max_output_tokens` caps
   generation. Set both explicitly. The public output attribute defaults to 2048 but providers
   that allow uncapped output can omit the wire limit when you did not set it. Model metadata
-  can supply sampling defaults; explicit supported call parameters win. `thinking=False`
-  requests no thinking; effort strings are best-effort and can consume extra output tokens.
+  can supply sampling defaults; explicit supported call parameters win. For a model missing from
+  the registry, an explicit per-call budget is sent as given (the server enforces its limit).
+  `thinking=False` requests no thinking; effort strings are best-effort and can consume extra
+  output tokens. Precedence for one call: `thinking=` > a provider-native field on the call
+  (`reasoning_effort=`, `reasoning=`, `think=`, sent as given) > the effort configured on the
+  text route, which applies only to the provider and model that route names. Read
+  `metadata["thinking_effective"]` and `metadata["thinking_source"]` to confirm what was applied.
   Ollama raises small caps while thinking: minimum output budgets are 1024 (`minimal`),
   2048 (`low` or boolean on), 4096 (`medium`), 8192 (`high`). Disable thinking for a small cap.
 - **Time and retries:** config defaults for LLM and tool timeouts are 7200 seconds;

@@ -123,7 +123,10 @@ abstractcore-deepsearch --help
 These run model-backed document/analysis tasks. Specify provider/model and output destinations
 as the app's help describes; inference, file writes and DeepSearch's web activity are effects,
 so a help-only inspection is the cheap first step. Python exposes `BasicSummarizer` and
-`BasicExtractor` from `abstractcore` for application integrations.
+`BasicExtractor` from `abstractcore` for application integrations. For ontology-constrained
+extraction, model choice, the allowed-labels and direction rules in the prompt, reasoning, and a
+verification pass change precision more than anything else; see
+[Choosing a model for knowledge-graph extraction](https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/knowledge-graph-extraction-models.md).
 
 ## Further documentation
 
