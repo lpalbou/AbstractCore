@@ -2406,6 +2406,15 @@ async def voice_clone(
     ),
     name: Optional[str] = Form(default=None, description="Friendly cloned voice name.", examples=["my_voice"]),
     reference_text: Optional[str] = Form(default=None, description="Transcript of the reference audio when available.", examples=["Hello from AbstractCore voice cloning."]),
+    language: Optional[str] = Form(
+        default=None,
+        description=(
+            "Language of the recording (ISO 639-1). When omitted, the cloner identifies it from the "
+            "transcript. Local cloning needs abstractvoice>=0.19.0 to record it; remote "
+            "AbstractVoice-compatible servers receive it as a form field."
+        ),
+        examples=["fr"],
+    ),
     validate: Optional[bool] = Form(default=None, description="Ask compatible clone servers to validate the clone before returning.", examples=[True]),
     base_url: Optional[str] = Form(
         default=None,
@@ -2474,6 +2483,7 @@ async def voice_clone(
                 reference_text=_optional_text(reference_text),
                 validate=validate,
                 clone_path=path,
+                language=_optional_text(language),
                 file_field=field,
                 consent=_optional_text(consent),
             )
@@ -2482,9 +2492,13 @@ async def voice_clone(
         return out
 
     core = _voice_core_for_request(request, task="clone", engine=request_provider)
+    language_s = _optional_text(language)
     try:
         out = core.voice.clone(
             bytes(audio_bytes),
+            # Only when stated: an absent language keeps the backend's own
+            # identification (and the call unchanged for older plugins).
+            **({"language": language_s} if language_s else {}),
             name=_optional_text(name),
             reference_text=_optional_text(reference_text),
             consent=_optional_text(consent),
@@ -2540,6 +2554,15 @@ async def provider_voice_clone(
     ),
     name: Optional[str] = Form(default=None, description="Friendly cloned voice name.", examples=["my_voice"]),
     reference_text: Optional[str] = Form(default=None, description="Transcript of the reference audio when available.", examples=["Hello from AbstractCore voice cloning."]),
+    language: Optional[str] = Form(
+        default=None,
+        description=(
+            "Language of the recording (ISO 639-1). When omitted, the cloner identifies it from the "
+            "transcript. Local cloning needs abstractvoice>=0.19.0 to record it; remote "
+            "AbstractVoice-compatible servers receive it as a form field."
+        ),
+        examples=["fr"],
+    ),
     validate: Optional[bool] = Form(default=None, description="Ask compatible clone servers to validate the clone before returning.", examples=[True]),
     base_url: Optional[str] = Form(
         default=None,
@@ -2574,6 +2597,7 @@ async def provider_voice_clone(
         provider=provider_s,
         name=name,
         reference_text=reference_text,
+        language=language,
         validate=validate,
         base_url=base_url,
         clone_path=clone_path,

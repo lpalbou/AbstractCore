@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import re
 from copy import deepcopy
+from dataclasses import is_dataclass, replace
 from typing import Any, Dict, Iterable, List, Optional
 
 # OpenAI function-name contract; Anthropic's is compatible with this subset.
@@ -159,3 +160,97 @@ def wire_safe_tool_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any
             if isinstance(direct_name, str) and direct_name:
                 call["name"] = wire_safe_tool_name(direct_name)
     return safe
+
+
+def restore_tool_name(name: str, allowed_original_names: Iterable[str]) -> Optional[str]:
+    """The declared tool a returned name means, under the response-normalization rules.
+
+    Exact match, then the wire alias of an allowed original
+    (``resolve_wire_tool_name``), then a namespaced/decorated spelling
+    (``map_namespaced_tool_name``). None when nothing in the allowlist maps:
+    the caller must leave the name as returned (the host refuses it).
+    """
+    allowed = [n for n in (allowed_original_names or []) if isinstance(n, str) and n]
+    candidate = str(name or "").strip()
+    if not candidate or not allowed:
+        return None
+    if candidate in allowed:
+        return candidate
+    return resolve_wire_tool_name(candidate, allowed) or map_namespaced_tool_name(candidate, allowed)
+
+
+def restore_tool_call_names(
+    tool_calls: Any,
+    allowed_original_names: Iterable[str],
+    *,
+    cache: Optional[Dict[str, Optional[str]]] = None,
+) -> "tuple[Any, List[str]]":
+    """Restore declared names on provider-emitted (native) tool calls, nothing else.
+
+    Backlog 0856: the non-streaming passthrough restored wire aliases, streamed
+    native calls did not, so a host saw ``mcp_RAGnarok_query_b6ff8949`` and
+    refused it. This rewrites ONLY the name, wherever the call carries one (a
+    top-level ``name`` and/or ``function.name``), so it is safe on complete
+    calls and on partial deltas alike: ids, indexes and (possibly partial)
+    argument strings are untouched, a delta without a name passes through, and
+    the caller's dicts are copied, never mutated.
+
+    Returns ``(calls, unresolved_names)``. A name nothing in THIS request's
+    allowlist maps to is left as returned and listed in ``unresolved_names``.
+    ``cache`` (one dict per request) memoizes lookups across a stream's
+    chunks: some providers repeat the full name on every partial delta.
+    """
+    allowed = [n for n in (allowed_original_names or []) if isinstance(n, str) and n]
+    if not isinstance(tool_calls, list) or not tool_calls or not allowed:
+        return tool_calls, []
+
+    unresolved: List[str] = []
+
+    def _restored(raw: Any) -> Any:
+        if not isinstance(raw, str) or not raw.strip():
+            return raw
+        key = raw.strip()
+        if cache is not None and key in cache:
+            mapped = cache[key]
+        else:
+            mapped = restore_tool_name(raw, allowed)
+            if cache is not None:
+                cache[key] = mapped
+        if mapped is None:
+            unresolved.append(raw.strip())
+            return raw
+        return mapped
+
+    out: List[Any] = []
+    changed = False
+    for call in tool_calls:
+        if isinstance(call, dict):
+            new_call = call
+            if isinstance(call.get("name"), str):
+                restored = _restored(call["name"])
+                if restored != call["name"]:
+                    new_call = dict(call)
+                    new_call["name"] = restored
+            function = call.get("function")
+            if isinstance(function, dict) and isinstance(function.get("name"), str):
+                restored = _restored(function["name"])
+                if restored != function["name"]:
+                    new_call = dict(new_call) if new_call is call else new_call
+                    new_call["function"] = {**function, "name": restored}
+            changed = changed or new_call is not call
+            out.append(new_call)
+            continue
+        raw_name = getattr(call, "name", None)
+        restored = _restored(raw_name)
+        if restored != raw_name and is_dataclass(call) and not isinstance(call, type):
+            out.append(replace(call, name=restored))
+            changed = True
+        else:
+            out.append(call)
+    return (out if changed else tool_calls), list(dict.fromkeys(unresolved))
+
+
+def unresolved_tool_name_warning(name: str, allowed_original_names: Iterable[str]) -> str:
+    """The warning both streaming lanes attach when a returned name maps to no declared tool."""
+    available = ", ".join(sorted(n for n in allowed_original_names if isinstance(n, str) and n))
+    return f"Tool call '{name}' does not match any available tool (available: {available})."

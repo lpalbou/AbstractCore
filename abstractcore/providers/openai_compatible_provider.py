@@ -2326,7 +2326,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 fields["reference_text"] = str(reference_text)
             if validate is not None:
                 fields["validate"] = "true" if bool(validate) else "false"
-            for key in ("consent",):
+            for key in ("consent", "language"):
                 value = kwargs.get(key)
                 if value is not None:
                     fields[key] = str(value)

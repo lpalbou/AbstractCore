@@ -26,6 +26,13 @@ Each returned tool spec is an AbstractCore-compatible dict you can pass to `tool
 
 See `abstractcore/abstractcore/mcp/naming.py`.
 
+Strict native tool APIs (OpenAI, Anthropic) accept only `^[a-zA-Z0-9_-]{1,64}$` names, so native
+declarations carry a deterministic wire alias (`mcp::RAGnarok::query` is declared as
+`mcp_RAGnarok_query_b6ff8949`). AbstractCore maps the alias back before the response reaches you:
+`tool_calls` carry the declared `mcp::...` name in streaming and non-streaming responses, from
+`generate()` and `agenerate()` alike. Only names declared in the request's `tools=` are restored; any
+other name is returned as the model sent it, so your host's allowlist still refuses it.
+
 ### 2) Execute MCP tools in your host/runtime
 
 AbstractCore’s default execution path is **passthrough** (`execute_tools=False`): the model can
