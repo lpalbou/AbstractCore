@@ -342,3 +342,73 @@ def test_an_engine_missing_from_this_install_is_501_with_the_install_command(cli
     resp = client.post("/v1/voice/clone", files={"file": ("ref.wav", b"RIFF", "audio/wav")}, data={"provider": "qwen3-tts"})
     assert resp.status_code == 501 and "abstractvoice[qwen3-tts]" in resp.json()["error"]["message"]
     assert client.post("/v1/voice/design", json={"description": "a voice"}).status_code == 501
+
+
+# ---------------------------------------------------------------------------
+# Clone language over HTTP (backlog 0857, first slice)
+# ---------------------------------------------------------------------------
+
+
+class _LanguageRecordingVoice(_BareVoice):
+    backend_id = "fake-language-voice"
+
+    def __init__(self):
+        self.clone_kwargs = []
+
+    def clone(self, audio, **kwargs):
+        self.clone_kwargs.append(kwargs)
+        return "lang-1"
+
+
+@pytest.mark.parametrize("path", ["/v1/voice/clone", "/qwen3-tts/v1/voice/clone"])
+def test_clone_language_reaches_the_plugin(client, monkeypatch, path):
+    voice = _install(monkeypatch, _LanguageRecordingVoice())
+    resp = client.post(
+        path,
+        files={"file": ("ref.wav", b"RIFF", "audio/wav")},
+        data={"provider": "qwen3-tts", "language": "fr"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert voice.clone_kwargs[-1]["language"] == "fr"
+
+
+def test_clone_without_language_leaves_identification_to_the_plugin(client, monkeypatch):
+    voice = _install(monkeypatch, _LanguageRecordingVoice())
+    for data in ({"provider": "qwen3-tts"}, {"provider": "qwen3-tts", "language": "  "}):
+        resp = client.post("/v1/voice/clone", files={"file": ("ref.wav", b"RIFF", "audio/wav")}, data=data)
+        assert resp.status_code == 200, resp.text
+        assert "language" not in voice.clone_kwargs[-1]
+
+
+def test_clone_language_reaches_a_remote_compatible_server(client, monkeypatch):
+    from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    posted = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"ok": True, "voice_id": "remote-1"}
+
+    class _Client:
+        def post(self, url, data=None, files=None, headers=None):
+            posted.update(url=url, data=dict(data or {}))
+            return _Resp()
+
+    def fake_init(self, model: str, **kwargs):
+        self.model = model
+        self.base_url = kwargs.get("base_url") or "http://127.0.0.1:5000/v1"
+        self.client = _Client()
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "__init__", fake_init)
+    monkeypatch.setattr(OpenAICompatibleProvider, "_get_headers", lambda self: {})
+    monkeypatch.setattr(OpenAICompatibleProvider, "_raise_for_status", lambda self, r, request_url=None: None)
+    resp = client.post(
+        "/v1/voice/clone",
+        files={"file": ("ref.wav", b"RIFF", "audio/wav")},
+        data={"model": "openai-compatible/default", "base_url": "http://127.0.0.1:5000/v1", "language": "fr"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert posted["url"].endswith("/voice/clone")
+    assert posted["data"]["language"] == "fr"
