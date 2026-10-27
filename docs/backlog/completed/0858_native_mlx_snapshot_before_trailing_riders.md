@@ -35,7 +35,8 @@ provider payloads of the run are otherwise append-only (system prompt and tools 
   per-call view and does not leak into the next call; the installed mlx-vlm's `checkpoint_len` honours the view).
   Red on removal: helper returning None → 4 failed; wrap removed → 1 failed.
 
-## Evidence (real weights, `untracked/` replay of the operator ledger's first 4 provider payloads, MTP on)
+## Evidence (real weights: the operator ledger's first 4 provider payloads replayed through `create_llm("mlx", …,
+speculation={"mode": "native_mtp"})` with one `prompt_cache_key`, main vs this branch, same machine)
 | step | prompt | main: prefilled | branch: restored / prefilled | main → branch |
 |---|---|---|---|---|
 | 1 | 8,714 | 8,714 (cold) | 0 / 8,714 (cold) | 30 s → 27 s |
