@@ -12060,6 +12060,17 @@ Guidance:
 - **What makes caches hit**: a byte-stable prefix — stable system prompt, stable tool schema
   (tool ORDER included), append-only transcript. Any change to the first bytes (even one line)
   forces a full re-prefill everywhere. Agent loops that only append satisfy this by construction.
+- **Per-call context belongs in trailing `system` riders**: a host that must re-send something on
+  every call (a session attachment index, inbox guidance) puts it at the END as `system`
+  messages. On the MLX native lane (mlx-vlm prefix cache, MTP speculation) a hybrid model restores
+  only an exact stored prefix, and the one per-call snapshot is placed before those riders, so the
+  next call restores everything but its new turns and the riders. The record says so:
+  `prompt_cache.snapshot_excludes_tail_tokens` is the rider length the snapshot left out. A rider
+  anywhere else (between turns, or as a final `user` message) is a prefix change: measured on a
+  27B MTP model, a trailing attachment index placed inside the snapshot made 10 of 10 tool-loop
+  calls cold (24,552 tokens re-prefilled at step 10); with the snapshot placed before it, steps
+  2–4 restored 8,536 / 11,424 / 14,764 tokens and fed 3,066 / 3,518 / 2,872 (49–54 s → 11–12 s
+  per step).
 - **Shared server for many short-lived clients**: an LM Studio-style server cache persists across
   client restarts and needs no request field — CLI tools and restarting processes get warm
   prefills for free. In-process caches die with the process.
