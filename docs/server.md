@@ -339,7 +339,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Audio | POST | `/{provider}/v1/audio/speech` | Provider-scoped text-to-speech route where body model is unprefixed | path `provider`, optional `base_url`, TTS body fields |
 | Audio | POST | `/v1/audio/speech/stream` | Text-to-speech JSON Lines stream endpoint | Local/plugin TTS stream events; currently `wav` segment chunks only |
 | Audio | POST | `/{provider}/v1/audio/speech/stream` | Provider-scoped text-to-speech stream route | path `provider`; currently local/plugin `wav` segment chunks only |
-| Audio | POST | `/v1/voice/clone` | AbstractVoice-compatible voice-clone/custom-voice extension | `file`, optional `provider`, `model`, `tts_model`, `cloning_engine`, `base_url`, `name`, `reference_text`, `validate` |
+| Audio | POST | `/v1/voice/clone` | AbstractVoice-compatible voice-clone/custom-voice extension | `file`, optional `provider`, `model`, `tts_model`, `cloning_engine`, `base_url`, `name`, `reference_text`, `language`, `validate` |
 | Audio | POST | `/{provider}/v1/voice/clone` | Provider-scoped voice-clone route where body model is unprefixed | path `provider`, optional `base_url`, voice-clone form fields |
 | Audio | GET | `/v1/voice/clones/{voice_id}` | One cloned voice's stored record | path `voice_id` |
 | Audio | PATCH | `/v1/voice/clones/{voice_id}` | Rename a cloned voice and/or replace its reference transcript | path `voice_id`; body `name` and/or `reference_text` |
@@ -1123,6 +1123,7 @@ returns normal `audio/*` bytes and includes a filename in `Content-Disposition`.
 | `cloning_engine` | no | Optional clone backend/engine selector for compatible local/plugin backends. |
 | `name` | no | Friendly cloned voice name. |
 | `reference_text` | no | Transcript of the reference audio when available. |
+| `language` | no | Language of the recording (ISO 639-1, for example `fr`). When omitted, the cloner identifies it from the transcript. Local cloning records it with `abstractvoice` 0.19.0 or later; remote AbstractVoice-compatible servers receive it as a form field. |
 | `validate` | no | Ask compatible clone servers to validate/smoke-test the clone before returning. |
 | `base_url` | no | OpenAI-compatible endpoint override for `openai-compatible/...`; loopback is allowed by default, non-loopback requires allowlist. |
 | `clone_path` | no | Provider-specific clone path. Defaults to `/voice/clone` for OpenAI-compatible servers and `/audio/voices` for OpenAI. |

@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Clone language over HTTP**: `POST /v1/voice/clone` and `POST /{provider}/v1/voice/clone` take an
+  optional `language` form field (ISO 639-1), passed to the voice plugin (recorded with
+  `abstractvoice` 0.19.0 or later) and to remote AbstractVoice-compatible servers. Without it, the
+  cloner identifies the language from the transcript.
+
 ### Fixed
+
+- **Streamed tool calls carry the declared tool name**: a native tool whose name is not wire-safe
+  (an MCP tool such as `mcp::RAGnarok::query`, declared to strict APIs as
+  `mcp_RAGnarok_query_b6ff8949`) is returned under its declared name in streaming responses, as it
+  already was without streaming, from `generate()` and `agenerate()` (including the native async
+  OpenAI, OpenAI-compatible, Anthropic and Ollama paths, and non-streaming `agenerate()` there).
+  Complete calls and partial deltas keep their ids, indexes and argument fragments. Only names
+  declared in the request's `tools=` are restored; any other name is returned unchanged, with a
+  warning, for the host's allowlist to refuse.
 - MLX native lane (mlx-vlm prefix cache, MTP speculation): the per-call snapshot is placed before
   trailing `system` riders (a host's per-call attachment index), measured in tokens against the
   same request rendered without them. A hybrid model restores only an exact stored prefix, and a
