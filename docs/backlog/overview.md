@@ -9,11 +9,13 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 32
+- Planned: 33
 - Proposed: 28
 - Completed: 30
 - Deprecated: 3
 - Recurrent: 0
+
+2026-10-27: added planned `0857` (voice library: clone language over HTTP, deploy to a library, per-request voice stores on the server).
 
 2026-10-22: added planned `0856` (streaming MCP wire-alias restoration). Planned count reconciled: disk held 31 before this addition; overview said 30.
 
@@ -129,6 +131,8 @@ completed/ in a hygiene pass.)
 7. `planned/2026-05-18_mlx-provider-continuous-batching.md`
    Improve local text throughput and latency via continuous batching/scheduler safety for MLX.
 ## Planned ledger
+
+P2: [0857 — voice library: clone language, deploy to a library, per-request voice stores](planned/0857_voice_library_personal_stores_language_and_deploy.md); follows AbstractVoice 0.19.0 and AbstractRuntime 0.13.0.
 
 P1: [0856 — streaming MCP wire-alias restoration](planned/0856_streaming_mcp_wire_alias_restoration.md); includes incident, code paths, reproduction and validation requirements.
 
