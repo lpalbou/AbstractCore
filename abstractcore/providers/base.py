@@ -4996,27 +4996,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     )
 
         # Convert tools to ToolDefinition objects first (outside retry loop)
-        converted_tools = None
-        if tools:
-            converted_tools = []
-            for tool in tools:
-                if hasattr(tool, "to_dict"):  # ToolDefinition object
-                    converted_tools.append(tool.to_dict())
-                elif callable(tool):  # Function - check for enhanced metadata
-                    if hasattr(tool, "_tool_definition"):
-                        # Use the enhanced tool definition from @tool decorator
-                        converted_tools.append(tool._tool_definition.to_dict())
-                    else:
-                        # Fall back to basic conversion
-                        from ..tools.core import ToolDefinition
-
-                        tool_def = ToolDefinition.from_function(tool)
-                        converted_tools.append(tool_def.to_dict())
-                elif isinstance(tool, dict):  # Already a dict
-                    converted_tools.append(tool)
-                else:
-                    # Handle other types gracefully
-                    self.logger.warning(f"Unknown tool type: {type(tool)}, skipping")
+        converted_tools = self._convert_request_tools(tools) if tools else None
 
         # Handle tool execution control
         should_execute_tools = execute_tools if execute_tools is not None else self.execute_tools
@@ -9017,6 +8997,30 @@ class BaseProvider(AbstractCoreInterface, ABC):
         }
         response.metadata = meta
 
+    def _convert_request_tools(
+        self, tools: Optional[List[Any]], *, warn_unknown: bool = True
+    ) -> List[Dict[str, Any]]:
+        """Request tools (ToolDefinition, @tool function, plain function, dict) as dicts."""
+        converted: List[Dict[str, Any]] = []
+        for tool in tools or []:
+            if hasattr(tool, "to_dict"):  # ToolDefinition object
+                converted.append(tool.to_dict())
+            elif callable(tool):  # Function - check for enhanced metadata
+                if hasattr(tool, "_tool_definition"):
+                    # Use the enhanced tool definition from @tool decorator
+                    converted.append(tool._tool_definition.to_dict())
+                else:
+                    # Fall back to basic conversion
+                    from ..tools.core import ToolDefinition
+
+                    converted.append(ToolDefinition.from_function(tool).to_dict())
+            elif isinstance(tool, dict):  # Already a dict
+                converted.append(tool)
+            elif warn_unknown:
+                # Handle other types gracefully
+                self.logger.warning(f"Unknown tool type: {type(tool)}, skipping")
+        return converted
+
     def _get_allowed_tool_names(self, tools: List[Dict[str, Any]]) -> set[str]:
         """Extract allowed tool names from provider-normalized tool definitions."""
         names: set[str] = set()
@@ -9554,6 +9558,25 @@ Please provide a structured response."""
             prompt, messages, system_prompt, tools, media, stream, **kwargs
         )
 
+        # Native async lanes (OpenAI, OpenAI-compatible, Anthropic, Ollama
+        # override `_agenerate_internal`) never cross the sync passthrough or
+        # the UnifiedStreamProcessor, so their native calls still carry the
+        # WIRE alias of a declared name. Restore it here for both stream modes
+        # (backlog 0856); on the default lane the names are already declared
+        # ones and this is a no-op.
+        allowed_tool_names = (
+            self._get_allowed_tool_names(self._convert_request_tools(tools, warn_unknown=False))
+            if tools
+            else set()
+        )
+        if (
+            allowed_tool_names
+            and not stream
+            and isinstance(response, GenerateResponse)
+            and response.tool_calls
+        ):
+            self._restore_native_tool_call_names(response, allowed_tool_names)
+
         if (
             thinking_meta
             and not stream
@@ -9600,9 +9623,29 @@ Please provide a structured response."""
             # Wrap the async stream so a terminal finish_reason=length chunk is
             # annotated + warned before it reaches the consumer (mirror of the
             # sync unified_stream per-chunk annotation).
+            if allowed_tool_names:
+                response = self._restore_async_stream_tool_names(response, allowed_tool_names)
             return speculation_outcome_async_stream(self._annotate_async_stream(response), speculation_outcome)
 
         return attach_speculation_outcome(response, speculation_outcome)
+
+    async def _restore_async_stream_tool_names(
+        self, source: "AsyncIterator[GenerateResponse]", allowed_tool_names: set[str]
+    ) -> "AsyncIterator[GenerateResponse]":
+        """Restore declared tool names on each chunk's native calls (backlog 0856).
+
+        Only names change, so partial deltas keep their ids and argument
+        fragments. Closing this wrapper closes the provider stream (a host
+        cancel must reach the upstream iterator)."""
+        try:
+            async for chunk in source:
+                if isinstance(chunk, GenerateResponse) and chunk.tool_calls:
+                    self._restore_native_tool_call_names(chunk, allowed_tool_names)
+                yield chunk
+        finally:
+            aclose = getattr(source, "aclose", None)
+            if aclose is not None:
+                await aclose()
 
     async def _annotate_async_stream(
         self, source: "AsyncIterator[GenerateResponse]"
@@ -9618,6 +9661,29 @@ Please provide a structured response."""
             except Exception:
                 pass
             yield chunk
+
+    def _restore_native_tool_call_names(
+        self, response: GenerateResponse, allowed_tool_names: set[str]
+    ) -> None:
+        """Wire alias -> declared name on `response.tool_calls`, in place on the response.
+
+        Same allowlist and warning as the sync stream (UnifiedStreamProcessor):
+        a name no declared tool maps to is left as returned, for the host to refuse.
+        """
+        from ..tools.wire_naming import restore_tool_call_names, unresolved_tool_name_warning
+
+        restored, unresolved = restore_tool_call_names(response.tool_calls, allowed_tool_names)
+        response.tool_calls = restored
+        if unresolved:
+            meta = dict(response.metadata) if isinstance(response.metadata, dict) else {}
+            warnings_list = list(meta.get("warnings") or []) if isinstance(meta.get("warnings"), list) else []
+            for name in unresolved:
+                message = unresolved_tool_name_warning(name, allowed_tool_names)
+                if message not in warnings_list:
+                    warnings_list.append(message)
+                    self.logger.warning(message)
+            meta["warnings"] = warnings_list
+            response.metadata = meta
 
     async def _agenerate_internal(
         self,

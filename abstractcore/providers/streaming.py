@@ -1491,6 +1491,29 @@ class UnifiedStreamProcessor:
                 # overwritten by a synthetic "stop".
                 terminal = chunk.finish_reason is not None
 
+                # Provider-emitted (native) calls carry the WIRE alias of a
+                # declared name (`mcp::srv::tool` is declared as
+                # `mcp_srv_tool_<hash>`). Restore the declared name here, the
+                # one boundary every sync stream crosses with this request's
+                # tools, under the same allowlist as the non-streaming
+                # passthrough (backlog 0856). Only names change: complete calls
+                # and partial deltas keep ids, indexes and argument fragments.
+                if allowed_tool_names and isinstance(chunk.tool_calls, list) and chunk.tool_calls:
+                    from ..tools.wire_naming import (
+                        restore_tool_call_names,
+                        unresolved_tool_name_warning,
+                    )
+
+                    restored_calls, unresolved = restore_tool_call_names(
+                        chunk.tool_calls, allowed_tool_names
+                    )
+                    chunk.tool_calls = restored_calls
+                    if unresolved:
+                        chunk.metadata = _with_warnings(
+                            chunk.metadata,
+                            [unresolved_tool_name_warning(n, allowed_tool_names) for n in unresolved],
+                        )
+
                 if harmony is not None:
                     if isinstance(chunk.metadata, dict):
                         for _k in ("media_delivered", "media_dropped", "prompt_cache"):
