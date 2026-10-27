@@ -9,6 +9,10 @@
 Unified LLM Interface
 > Write once, run everywhere
 
+What's new in 2.31.0: streamed tool calls carry the declared MCP tool name, the MLX prefix cache
+survives per-call system riders in tool loops, and `POST /v1/voice/clone` takes `language`. See the
+[changelog](CHANGELOG.md#2310---2026-10-27).
+
 AbstractCore is an offline-capable, open-source-first LLM infrastructure layer
 for Python applications. It gives you one `create_llm(...)` API across local
 runtimes, self-hosted servers, cloud APIs, and OpenAI-compatible gateways.
