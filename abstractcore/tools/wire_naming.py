@@ -180,7 +180,10 @@ def restore_tool_name(name: str, allowed_original_names: Iterable[str]) -> Optio
 
 
 def restore_tool_call_names(
-    tool_calls: Any, allowed_original_names: Iterable[str]
+    tool_calls: Any,
+    allowed_original_names: Iterable[str],
+    *,
+    cache: Optional[Dict[str, Optional[str]]] = None,
 ) -> "tuple[Any, List[str]]":
     """Restore declared names on provider-emitted (native) tool calls, nothing else.
 
@@ -194,6 +197,8 @@ def restore_tool_call_names(
 
     Returns ``(calls, unresolved_names)``. A name nothing in THIS request's
     allowlist maps to is left as returned and listed in ``unresolved_names``.
+    ``cache`` (one dict per request) memoizes lookups across a stream's
+    chunks: some providers repeat the full name on every partial delta.
     """
     allowed = [n for n in (allowed_original_names or []) if isinstance(n, str) and n]
     if not isinstance(tool_calls, list) or not tool_calls or not allowed:
@@ -204,7 +209,13 @@ def restore_tool_call_names(
     def _restored(raw: Any) -> Any:
         if not isinstance(raw, str) or not raw.strip():
             return raw
-        mapped = restore_tool_name(raw, allowed)
+        key = raw.strip()
+        if cache is not None and key in cache:
+            mapped = cache[key]
+        else:
+            mapped = restore_tool_name(raw, allowed)
+            if cache is not None:
+                cache[key] = mapped
         if mapped is None:
             unresolved.append(raw.strip())
             return raw

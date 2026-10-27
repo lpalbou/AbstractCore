@@ -348,3 +348,35 @@ def test_restore_helper_shapes():
     assert same == [{"name": "nope"}] and unresolved == ["nope"]
     untouched = [{"name": WIRE}]
     assert restore_tool_call_names(untouched, [])[0] is untouched
+
+
+@pytest.mark.parametrize("lane", ["sync", "async-native"])
+def test_name_repeated_on_every_partial_is_restored_and_warned_once(lane):
+    # Anthropic-style partials repeat the full name on every delta.
+    def partials(name):
+        return [
+            GenerateResponse(
+                content="", model="stub", tool_calls=[{"id": CALL_ID, "name": name, "arguments": frag}]
+            )
+            for frag in ('{"workspace": ', '"epar"}')
+        ] + [GenerateResponse(content="", model="stub", finish_reason="tool_calls")]
+
+    provider_cls = _NativeStubProvider if lane == "sync" else _NativeAsyncStubProvider
+    run = _sync_stream if lane == "sync" else _async_stream
+    assert _names(run(provider_cls(partials(WIRE)))) == [MCP, MCP]
+
+    forged = "mcp_RAGnarok_query_deadbeef"
+    provider = provider_cls(partials(forged), name=forged)
+    if lane == "sync":
+        chunks = list(provider.generate(prompt="x", tools=TOOLS, stream=True))
+    else:
+
+        async def _run():
+            stream = await provider.agenerate(prompt="x", tools=TOOLS, stream=True)
+            return [c async for c in stream]
+
+        chunks = asyncio.run(_run())
+    warnings = [
+        w for c in chunks if isinstance(c.metadata, dict) for w in (c.metadata.get("warnings") or [])
+    ]
+    assert len([w for w in warnings if forged in w]) == 1

@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Clone language over HTTP**: `POST /v1/voice/clone` and `POST /{provider}/v1/voice/clone` take an
   optional `language` form field (ISO 639-1), passed to the voice plugin (recorded with
-  `abstractvoice` 0.19.0 or later) and to remote AbstractVoice-compatible servers. Without it, the
-  cloner identifies the language from the transcript.
+  `abstractvoice` 0.19.0 or later) and to remote AbstractVoice-compatible servers (OpenAI custom
+  voices do not take it). Without it, the cloner identifies the language from the transcript.
 
 ### Fixed
 
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (an MCP tool such as `mcp::RAGnarok::query`, declared to strict APIs as
   `mcp_RAGnarok_query_b6ff8949`) is returned under its declared name in streaming responses, as it
   already was without streaming, from `generate()` and `agenerate()` (including the native async
-  OpenAI, OpenAI-compatible, Anthropic and Ollama paths, and non-streaming `agenerate()` there).
+  paths of providers with their own async client, streaming or not).
   Complete calls and partial deltas keep their ids, indexes and argument fragments. Only names
   declared in the request's `tools=` are restored; any other name is returned unchanged, with a
   warning, for the host's allowlist to refuse.

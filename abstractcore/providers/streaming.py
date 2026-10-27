@@ -1482,6 +1482,8 @@ class UnifiedStreamProcessor:
                         metadata=_unparsed_metadata(chunk.metadata, unparsed),
                     )
 
+            native_name_cache: Dict[str, Optional[str]] = {}
+            native_name_warned: set = set()
             for chunk in response_stream:
                 # The provider's TERMINAL chunk (finish_reason set) carries the
                 # accounting — usage, prompt-cache telemetry — and consumers read
@@ -1505,10 +1507,14 @@ class UnifiedStreamProcessor:
                     )
 
                     restored_calls, unresolved = restore_tool_call_names(
-                        chunk.tool_calls, allowed_tool_names
+                        chunk.tool_calls, allowed_tool_names, cache=native_name_cache
                     )
                     chunk.tool_calls = restored_calls
+                    # Warn once per name per stream (Anthropic repeats the name
+                    # on every partial delta).
+                    unresolved = [n for n in unresolved if n not in native_name_warned]
                     if unresolved:
+                        native_name_warned.update(unresolved)
                         chunk.metadata = _with_warnings(
                             chunk.metadata,
                             [unresolved_tool_name_warning(n, allowed_tool_names) for n in unresolved],

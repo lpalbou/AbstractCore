@@ -9635,12 +9635,16 @@ Please provide a structured response."""
         """Restore declared tool names on each chunk's native calls (backlog 0856).
 
         Only names change, so partial deltas keep their ids and argument
-        fragments. Closing this wrapper closes the provider stream (a host
-        cancel must reach the upstream iterator)."""
+        fragments. Lookups are memoized and unresolved names warned once per
+        stream. When this generator is closed it closes its source."""
+        cache: Dict[str, Optional[str]] = {}
+        warned: set = set()
         try:
             async for chunk in source:
                 if isinstance(chunk, GenerateResponse) and chunk.tool_calls:
-                    self._restore_native_tool_call_names(chunk, allowed_tool_names)
+                    self._restore_native_tool_call_names(
+                        chunk, allowed_tool_names, cache=cache, warned=warned
+                    )
                 yield chunk
         finally:
             aclose = getattr(source, "aclose", None)
@@ -9663,7 +9667,12 @@ Please provide a structured response."""
             yield chunk
 
     def _restore_native_tool_call_names(
-        self, response: GenerateResponse, allowed_tool_names: set[str]
+        self,
+        response: GenerateResponse,
+        allowed_tool_names: set[str],
+        *,
+        cache: Optional[Dict[str, Optional[str]]] = None,
+        warned: Optional[set] = None,
     ) -> None:
         """Wire alias -> declared name on `response.tool_calls`, in place on the response.
 
@@ -9672,8 +9681,13 @@ Please provide a structured response."""
         """
         from ..tools.wire_naming import restore_tool_call_names, unresolved_tool_name_warning
 
-        restored, unresolved = restore_tool_call_names(response.tool_calls, allowed_tool_names)
+        restored, unresolved = restore_tool_call_names(
+            response.tool_calls, allowed_tool_names, cache=cache
+        )
         response.tool_calls = restored
+        if warned is not None:
+            unresolved = [n for n in unresolved if n not in warned]
+            warned.update(unresolved)
         if unresolved:
             meta = dict(response.metadata) if isinstance(response.metadata, dict) else {}
             warnings_list = list(meta.get("warnings") or []) if isinstance(meta.get("warnings"), list) else []
