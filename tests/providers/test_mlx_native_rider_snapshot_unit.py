@@ -70,11 +70,19 @@ def _restored(prev_ids: List[int], snapshot_len: int, next_ids: List[int]) -> in
 
 def _render(p, msgs, tools=None):
     text = p._build_prompt("", msgs, SYSTEM, tools)
-    tail = p._native_rider_tail_tokens(
+    tail, unmeasured = p._native_rider_tail_tokens(
         full_prompt=text, processed_prompt="", messages=msgs, system_prompt=SYSTEM, tools=tools,
         prefilled_modules=None, enable_thinking=None, reasoning_effort=None,
     )
+    assert unmeasured is None
     return text, p._encode_prompt_token_ids(text), tail
+
+
+def _lcp(a: List[int], b: List[int]) -> int:
+    n = 0
+    while n < min(len(a), len(b)) and a[n] == b[n]:
+        n += 1
+    return n
 
 
 def _assert_loop_restores(p) -> None:
@@ -82,6 +90,12 @@ def _assert_loop_restores(p) -> None:
         _, ids1, tail1 = _render(p, _with_rider(_iterations(k)))
         _, ids2, _ = _render(p, _with_rider(_iterations(k + 1)))
         assert tail1 and tail1 > CHECKPOINT_GUARD_TOKENS, "the rider must be measured as a tail"
+        # Measured exactly: the tail is what the rider-free render does not share.
+        msgs1 = _iterations(k)
+        head = p._build_prompt_fragment(prompt="", messages=msgs1, system_prompt=SYSTEM, add_generation_prompt=False)
+        assert tail1 == len(ids1) - _lcp(ids1, p._encode_prompt_token_ids(head))
+        # With NO guard at all, the snapshot at the measured boundary is still a prefix.
+        assert _restored(ids1, len(ids1) - tail1, ids2) == len(ids1) - tail1
         default_snap = len(ids1) - CHECKPOINT_GUARD_TOKENS
         rider_snap = len(ids1) - (CHECKPOINT_GUARD_TOKENS + tail1)
         # The bug: the default end-of-prompt snapshot contains the rider.
@@ -135,7 +149,23 @@ def test_no_rider_tail_keeps_the_default_placement(msgs, prompt):
     assert p._native_rider_tail_tokens(
         full_prompt=text, processed_prompt=prompt, messages=msgs, system_prompt=SYSTEM, tools=None,
         prefilled_modules=None, enable_thinking=None, reasoning_effort=None,
-    ) is None
+    ) == (None, None)
+
+
+def test_an_unmeasurable_rider_is_reported_not_silent():
+    p = _provider(_JinjaTokenizer())
+    msgs = _with_rider(_iterations(2))
+    text = p._build_prompt("", msgs, SYSTEM, None)
+
+    def boom(**kwargs):
+        raise RuntimeError("template exploded")
+
+    p._build_prompt_fragment = boom
+    tail, why = p._native_rider_tail_tokens(
+        full_prompt=text, processed_prompt="", messages=msgs, system_prompt=SYSTEM, tools=None,
+        prefilled_modules=None, enable_thinking=None, reasoning_effort=None,
+    )
+    assert tail is None and "RuntimeError" in why
 
 
 def test_guard_view_overrides_only_the_guard_and_forwards_everything_else():
@@ -158,6 +188,13 @@ def test_guard_view_overrides_only_the_guard_and_forwards_everything_else():
     assert view.store_exact_cache([1, 2]) is True and m.stores == 1
     view._prefill_reserve_bytes = 7  # writes land on the real manager
     assert m._prefill_reserve_bytes == 7
+    with pytest.raises(AttributeError):
+        view.exact_cache_guard_tokens = 99  # never through to the shared manager
+    assert m.exact_cache_guard_tokens == CHECKPOINT_GUARD_TOKENS
+    import copy
+
+    clone = copy.copy(view)
+    assert clone.exact_cache_guard_tokens == 200 and clone.lock is m.lock
 
 
 # --- the wiring, end to end through the provider with a fake mlx-vlm --------
@@ -186,7 +223,8 @@ def _native_provider(monkeypatch):
 
     def generate(model, processor, text, **kwargs):
         seen.update(kwargs)
-        return types.SimpleNamespace(text="ok", prompt_tokens=10, cached_tokens=0, generation_tokens=1)
+        return types.SimpleNamespace(text="ok", prompt_tokens=10, cached_tokens=0, generation_tokens=1,
+                                     prompt_tps=1.0, generation_tps=1.0, peak_memory=0.1, finish_reason="stop")
 
     fake.generate = generate
     monkeypatch.setitem(sys.modules, "mlx_vlm", fake)
@@ -208,9 +246,11 @@ def _native_provider(monkeypatch):
 def test_the_rider_guard_reaches_mlx_vlm_on_a_per_call_view(monkeypatch):
     p, seen = _native_provider(monkeypatch)
     msgs = _with_rider(_iterations(2))
-    p._generate_internal_unlocked("", messages=msgs, system_prompt=SYSTEM, prompt_cache_key="session:x")
+    r = p._generate_internal_unlocked("", messages=msgs, system_prompt=SYSTEM, prompt_cache_key="session:x")
     manager = seen.get("apc_manager")
     _, _, tail = _render(p, msgs)
+    assert r.finish_reason != "error", r.content
+    assert r.metadata["prompt_cache"]["snapshot_excludes_tail_tokens"] == tail
     assert isinstance(manager, CheckpointGuardView)
     assert manager.exact_cache_guard_tokens == CHECKPOINT_GUARD_TOKENS + tail
     assert p._native_session.manager.exact_cache_guard_tokens == CHECKPOINT_GUARD_TOKENS
@@ -219,6 +259,28 @@ def test_the_rider_guard_reaches_mlx_vlm_on_a_per_call_view(monkeypatch):
 def test_without_riders_mlx_vlm_gets_the_shared_manager_itself(monkeypatch):
     p, seen = _native_provider(monkeypatch)
     p._generate_internal_unlocked("", messages=_iterations(2), system_prompt=SYSTEM, prompt_cache_key="session:x")
+    assert seen.get("apc_manager") is p._native_session.manager
+
+
+def test_the_rider_guard_is_consumed_by_its_call(monkeypatch):
+    """An out-of-call user of the kwargs (cache warm-up, prefill) never gets a stale view."""
+    p, seen = _native_provider(monkeypatch)
+    p._generate_internal_unlocked("", messages=_with_rider(_iterations(2)), system_prompt=SYSTEM,
+                                  prompt_cache_key="session:x")
+    assert isinstance(seen.get("apc_manager"), CheckpointGuardView)
+    monkeypatch.setattr(p, "_mtp_kwargs", lambda *a, **k: {})
+    p._native_cache_key = "session:x"
+    assert p._mtp_call_kwargs({})["apc_manager"] is p._native_session.manager
+
+
+def test_unmeasured_riders_land_in_the_prompt_cache_record(monkeypatch):
+    p, seen = _native_provider(monkeypatch)
+    monkeypatch.setattr(p, "_encode_prompt_token_ids", lambda text: None)
+    r = p._generate_internal_unlocked("", messages=_with_rider(_iterations(2)), system_prompt=SYSTEM,
+                                      prompt_cache_key="session:x")
+    assert r.finish_reason != "error", r.content
+    record = (r.metadata or {}).get("prompt_cache") or {}
+    assert record.get("snapshot_rider_tail", "").startswith("#FALLBACK unmeasured")
     assert seen.get("apc_manager") is p._native_session.manager
 
 

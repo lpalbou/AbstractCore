@@ -33,7 +33,10 @@ provider payloads of the run are otherwise append-only (system prompt and tools 
 - Tests: `tests/providers/test_mlx_native_rider_snapshot_unit.py` (golden Qwen3.8 tokenizer + hermetic template;
   tool-loop and cross-turn restore; no-rider cases keep the default; the guard reaches a fake `mlx_vlm.generate` on a
   per-call view and does not leak into the next call; the installed mlx-vlm's `checkpoint_len` honours the view).
-  Red on removal: helper returning None → 4 failed; wrap removed → 1 failed.
+  Red on removal (mutation run): helper returning None → 7 failed; wrap removed → 2 failed; per-call consumption
+  removed → 1 failed; unmeasured report removed → 1 failed. Adversarial review (read-only Opus): no blocker/major;
+  minors fixed (view refuses guard writes and copies cleanly; the rider count is consumed by its call so an
+  out-of-call warm-up never gets a stale view; exact-measurement assertion; unmeasured riders reported).
 
 ## Evidence (real weights: the operator ledger's first 4 provider payloads replayed through `create_llm("mlx", …,
 speculation={"mode": "native_mtp"})` with one `prompt_cache_key`, main vs this branch, same machine)
@@ -48,6 +51,13 @@ Cross-turn (real weights): turn 2's first call (history + answer + new user turn
 main 8,747 prefilled, 26.2 s; branch 8,536 restored / 211 prefilled, 1.3 s.
 
 ## Follow-ups (not done)
+- Gaps where the rider still lands in the snapshot (the call stays cold, as before): a request that carries a
+  `prompt` after its messages, and native image calls (vision tokens are prepended to `prompt`). Riders that cannot
+  be measured are reported (`prompt_cache.snapshot_rider_tail: "#FALLBACK unmeasured: …"`, one warning).
+- Trade-off, stated: every trailing `system`/`developer` message counts as a rider. A host whose trailing system
+  message is durable re-prefills it plus the guard on the next call (bounded by its size).
+- Pre-existing, unchanged: with `CHECKPOINT_ENTRIES = 8` a tool loop of 9+ calls evicts the turn's first-call
+  snapshot (LRU), so the next turn's first call is cold. A lineage-aware eviction (keep the turn anchor) would fix it.
 - Scheduled lane (`mlx_batching=True`, `mlx_runtime.py` worker + `NativeCacheStore`): one `BatchGenerator` and one
   manager serve every request, so a per-request guard needs a field on `NativeRequest` and a per-row checkpoint
   length in mlx-vlm's batch path (`generate/ar.py` `_apc_exact_checkpoint_len`). Until then that lane keeps the

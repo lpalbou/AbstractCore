@@ -87,7 +87,12 @@ class CheckpointGuardView:
         return getattr(object.__getattribute__(self, "_manager"), name)
 
     def __setattr__(self, name, value):
+        if name == "exact_cache_guard_tokens":
+            raise AttributeError("a CheckpointGuardView's guard is fixed for its call")
         setattr(object.__getattribute__(self, "_manager"), name, value)
+
+    def __copy__(self):
+        return CheckpointGuardView(object.__getattribute__(self, "_manager"), self.exact_cache_guard_tokens)
 
 
 # Prefix-cache sizing rule (framework 0.9.3). mlx-vlm's automatic shape is
