@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- MLX native lane (mlx-vlm prefix cache, MTP speculation): the per-call snapshot is placed before
+  trailing `system` riders (a host's per-call attachment index), measured in tokens against the
+  same request rendered without them. A hybrid model restores only an exact stored prefix, and a
+  snapshot that contained the rider matched no later prompt: every tool-loop call of an
+  attachment-bearing session re-prefilled the whole conversation (operator run: 10 of 10 calls
+  cold, 24,552 tokens at step 10). Replayed on `Jundot/Qwen3.8-27B-oQ4e-mtp`: steps 2–4 now restore
+  8,536 / 11,424 / 14,764 tokens. New telemetry field `prompt_cache.snapshot_excludes_tail_tokens`.
+  The scheduled lane (`mlx_batching=True`) keeps the default placement (backlog 0858).
+
 ## [2.30.0] - 2026-10-26
 
 First published release since 2.26.3: it also ships the changes listed under 2.26.4
