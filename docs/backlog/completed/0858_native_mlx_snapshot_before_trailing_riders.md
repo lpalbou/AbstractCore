@@ -44,6 +44,8 @@ speculation={"mode": "native_mtp"})` with one `prompt_cache_key`, main vs this b
 | 3 | 14,942 | 14,942 (cold) | 11,424 / 3,518 | 50 s → 13 s |
 | 4 | 17,636 | 17,636 (cold) | 14,764 / 2,872 | 54 s → 11 s |
 Token-level replay of all 10 steps (tokenizer only): step 10 prefills 673 of 24,564 instead of 24,564.
+Cross-turn (real weights): turn 2's first call (history + answer + new user turn + rider) after turn 1's first call:
+main 8,747 prefilled, 26.2 s; branch 8,536 restored / 211 prefilled, 1.3 s.
 
 ## Follow-ups (not done)
 - Scheduled lane (`mlx_batching=True`, `mlx_runtime.py` worker + `NativeCacheStore`): one `BatchGenerator` and one
