@@ -3559,6 +3559,7 @@ class MLXProvider(BaseProvider):
         self._mtp_last_result = None
         self._mtp_last_apc = None
         self._native_cache_key = None
+        self._native_rider_tokens = None
         self._mtp_call_block_size = getattr(self, "_mtp_block_size", None)
         default = getattr(self, "_speculation_request", None)
         if getattr(self, "_speculation_inherits_config", False):
@@ -3821,6 +3822,76 @@ class MLXProvider(BaseProvider):
                     seen.add(identity)
             self._native_media_records = []
 
+    def _native_rider_tail_tokens(
+        self,
+        *,
+        full_prompt: Any,
+        processed_prompt: Any,
+        messages: Optional[List[Dict[str, Any]]],
+        system_prompt: Optional[str],
+        tools: Optional[List[Dict[str, Any]]],
+        prefilled_modules: Optional[List[str]],
+        enable_thinking: Optional[bool],
+        reasoning_effort: Optional[str],
+    ) -> Optional[int]:
+        """Tokens at the END of this prompt that belong to per-call riders, or None.
+
+        A RIDER is a trailing non-leading `system` message: context a host
+        re-injects at the tail on EVERY call (the runtime's session attachment
+        index, inbox guidance). It is the only part of a byte-stable request
+        that moves between calls: call N+1 renders it AFTER the turns appended
+        since call N. A hybrid model restores only an EXACT stored prefix, and
+        the native lane stores ONE snapshot per call, `guard` tokens before the
+        prompt's end. With a rider at the tail that snapshot contains the
+        rider, is a prefix of no later prompt, and every call of the run
+        re-prefills the whole conversation (operator run 2026-10-27: 10 of 10
+        tool-loop calls cold, 24,552 tokens prefilled at step 10, while a run
+        of the same session without attachments restored all but the new turns).
+
+        Measured, never estimated: the boundary is the longest common TOKEN
+        prefix of the full prompt and the same request rendered without its
+        riders (no generation prompt), so a rider the template merges into the
+        previous turn and a BPE re-merge across the boundary are both counted.
+        None (keep the default placement) when nothing trails, when the final
+        turn is `prompt` (riders then do not trail), or when tokenization or
+        rendering is unavailable.
+        """
+        if isinstance(processed_prompt, str) and processed_prompt.strip():
+            return None
+        if not isinstance(full_prompt, str) or not isinstance(messages, list) or not messages:
+            return None
+        keep = len(messages)
+        while keep > 0:
+            last = messages[keep - 1]
+            role = str(last.get("role") or "").strip().lower() if isinstance(last, dict) else ""
+            if role not in ("system", "developer"):
+                break
+            keep -= 1
+        if keep == len(messages) or keep == 0:
+            return None
+        try:
+            head = self._build_prompt_fragment(
+                prompt="",
+                messages=list(messages[:keep]),
+                system_prompt=system_prompt,
+                tools=tools,
+                add_generation_prompt=False,
+                prefilled_modules=prefilled_modules,
+                enable_thinking=enable_thinking,
+                reasoning_effort=reasoning_effort,
+            )
+        except Exception:
+            return None
+        full_ids = self._encode_prompt_token_ids(full_prompt)
+        head_ids = self._encode_prompt_token_ids(head) if isinstance(head, str) else None
+        if not full_ids or not head_ids:
+            return None
+        boundary = self._token_lcp_len(full_ids, head_ids)
+        tail = len(full_ids) - boundary
+        if boundary <= 0 or tail <= 0:
+            return None
+        return tail
+
     def _mtp_call_kwargs(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """Translate the mlx-lm call-site kwargs into mlx-vlm's vocabulary."""
         out = dict(kwargs)
@@ -3862,9 +3933,19 @@ class MLXProvider(BaseProvider):
                 session = getattr(self, "_native_session", None) or getattr(self, "_native_qwen4", None)
                 if session is None:
                     raise ProviderAPIError("Native MLX prefix caching requires a loaded native session")
-                out["apc_manager"] = session.prompt_cache(
+                manager = session.prompt_cache(
                     memory_max_gb=getattr(self, "_mlx_cache_options", {}).get("memory_max_gb")
                 )
+                rider_tokens = getattr(self, "_native_rider_tokens", None)
+                if rider_tokens:
+                    # Snapshot BEFORE this call's trailing riders (see
+                    # `_native_rider_tail_tokens`), on top of the manager's own guard.
+                    from .mlx_native_session import CheckpointGuardView
+
+                    manager = CheckpointGuardView(
+                        manager, int(manager.exact_cache_guard_tokens) + int(rider_tokens)
+                    )
+                out["apc_manager"] = manager
                 out["apc_tenant"] = json.dumps([getattr(self, "_mlx_cache_scope", "local"), self._native_cache_key])
         return out
 
@@ -5237,6 +5318,21 @@ class MLXProvider(BaseProvider):
             # prompt. Never run mlx-lm's suffix/delta discipline on these states.
             self._native_cache_key = str(prompt_cache_key)
             cache_telemetry = {"mode": "key", "key": prompt_cache_key, "backend": "mlx_vlm_apc"}
+            if getattr(self, "_native_runtime", None) is None:
+                self._native_rider_tokens = self._native_rider_tail_tokens(
+                    full_prompt=full_prompt,
+                    processed_prompt=processed_prompt,
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    tools=tools,
+                    prefilled_modules=prompt_cache_prefilled_modules,
+                    enable_thinking=mlx_enable_thinking if isinstance(mlx_enable_thinking, bool) else None,
+                    reasoning_effort=(
+                        mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None
+                    ),
+                )
+                if self._native_rider_tokens:
+                    cache_telemetry["snapshot_excludes_tail_tokens"] = int(self._native_rider_tokens)
             prompt_cache_key = None
         # A turn whose prompt is fed as EMBEDDINGS must never enter key-mode delta
         # feed. `_prepare_cache_delta_feed` matches by longest-common-prefix over
