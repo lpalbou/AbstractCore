@@ -57,6 +57,44 @@ CHECKPOINT_ENTRIES = 8
 CHECKPOINT_GUARD_TOKENS = 8
 
 
+class CheckpointGuardView:
+    """ONE call's view of the session prefix cache, with its own checkpoint guard.
+
+    mlx-vlm places a hybrid model's single per-call snapshot at
+    `len(prompt) - manager.exact_cache_guard_tokens`
+    (`APCCoordinator.checkpoint_len`, read once when the stream starts). A
+    request whose prompt ENDS in per-call riders (non-leading system messages
+    the runtime re-injects at the tail on every call, e.g. the session
+    attachment index) needs the snapshot BEFORE those riders: the next call
+    re-renders them after its newly appended turns, so a snapshot that
+    contains them is never a prefix of anything and every call re-prefills
+    the whole conversation (measured on the operator's 27B run: 10 of 10 tool
+    loop calls cold, 24,552 tokens fed at step 10).
+
+    The guard is per call, so it lives on this view and never on the shared
+    manager: every other attribute and method resolves on the real manager
+    (its lock, budget, counters and snapshots stay one), and writes go to the
+    manager too.
+    """
+
+    __slots__ = ("_manager", "exact_cache_guard_tokens")
+
+    def __init__(self, manager, guard_tokens: int):
+        object.__setattr__(self, "_manager", manager)
+        object.__setattr__(self, "exact_cache_guard_tokens", int(guard_tokens))
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_manager"), name)
+
+    def __setattr__(self, name, value):
+        if name == "exact_cache_guard_tokens":
+            raise AttributeError("a CheckpointGuardView's guard is fixed for its call")
+        setattr(object.__getattribute__(self, "_manager"), name, value)
+
+    def __copy__(self):
+        return CheckpointGuardView(object.__getattribute__(self, "_manager"), self.exact_cache_guard_tokens)
+
+
 # Prefix-cache sizing rule (framework 0.9.3). mlx-vlm's automatic shape is
 # budget = min(8 GiB, working_set/10) PLUS a reserve of max(1 GiB,
 # working_set/10) that must stay free on top of every snapshot it retains.
