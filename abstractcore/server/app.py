@@ -4365,6 +4365,21 @@ def _ensure_loaded_gateway_runtime(
         return runtime, True
 
 
+# Request provider settings a lent resident instance can ignore: tracing (the lent instance
+# keeps its own) and the request timeout (in-process providers run until done). Anything else
+# (an explicit provider key, a base_url) makes the request build its own instance.
+_RESIDENT_REUSE_IGNORED_KWARGS = frozenset({"enable_tracing", "max_traces", "timeout"})
+
+
+def _resident_provider_for_request(provider: str, model: str, provider_kwargs: Dict[str, Any]) -> Any:
+    """The process's resident instance of (provider, model) for a chat request, or None."""
+    if any(key not in _RESIDENT_REUSE_IGNORED_KWARGS for key in provider_kwargs):
+        return None
+    from ..providers.process_residency import resident_provider
+
+    return resident_provider(provider, model)
+
+
 class GatewayRuntimeLockedError(RuntimeError):
     """Raised when an unload reaches a runtime whose registry lock is set."""
 
@@ -9881,7 +9896,26 @@ async def process_chat_completion(
             base_url=provider_kwargs.get("base_url"),
             explicit_provider_key_hash=_provider_key_fingerprint(provider_api_key),
         )
-        llm = loaded_runtime.llm if loaded_runtime is not None else create_llm(provider, model=model, **provider_kwargs)
+        llm = loaded_runtime.llm if loaded_runtime is not None else None
+        lent_resident = False
+        if llm is None and not unload_after_requested:
+            # A model already resident in THIS process (a host's runtime pool, an earlier load) is
+            # REUSED: a second huggingface instance is a second full copy of the weights and its
+            # llama.cpp context (a 2.5 GB GGUF on a 16 GB GPU failed with "Failed to create
+            # llama_context"; on Metal each request added ~11 GB). Never with unload_after, which
+            # would unload the holder's model; never with request-specific provider settings.
+            llm = _resident_provider_for_request(provider_normalized, model, provider_kwargs)
+            lent_resident = llm is not None
+            if llm is not None:
+                logger.info("♻️ Reusing the resident provider instance", request_id=request_id, provider=provider, model=model)
+        if llm is None:
+            llm = create_llm(provider, model=model, **provider_kwargs)
+            # This request's own instance (it may be unloaded at the end: unload_after) is never
+            # lent to another request (`process_residency.resident_provider` skips it).
+            try:
+                llm._abstractcore_request_scoped = True
+            except Exception:  # noqa: BLE001 - a provider that refuses attributes is simply not marked
+                pass
         ollama_key: Optional[Tuple[str, str, str]] = None
         if loaded_runtime is None and provider_normalized == "ollama":
             base_url_for_key = provider_kwargs.get("base_url")
@@ -9943,7 +9977,11 @@ async def process_chat_completion(
         cancel_event = threading.Event() if supports_concurrent_generation(llm) else None
         if cancel_event is not None:
             gen_kwargs["_cancel_event"] = cancel_event
-        elif _client_disconnect_cancels(llm):
+        elif lent_resident or _client_disconnect_cancels(llm):
+            # A lent resident instance (above) serializes its own generations on its worker
+            # thread, behind the holder's runs: waiting for it ON the event loop would freeze
+            # every other request for that whole queue. It takes the off-loop, disconnect-watched
+            # lane below, and a client that goes away cancels its generation.
             # A client that goes away cancels the generation: the
             # runtime's RemoteAbstractCoreLLMClient severs its request on a Stop,
             # and this is the only signal that reaches the server. HTTP-backed

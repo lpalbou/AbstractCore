@@ -330,3 +330,40 @@ def test_offline_hub_is_reported_not_raised(host, tmp_path):
     # Without a query (enrichment only) every lookup fails -> still not ok.
     browse = mc.catalog(hub=True, hf_api=api, hub_cache=tmp_path / "hub2.json", host=synthetic_host("metal128"))
     assert browse["hub"]["ok"] is False and browse["hub"]["errors"]
+
+
+def test_the_lfm_families_are_in_the_catalog_with_gguf_and_mlx(host):
+    """Operator QA 2026-10-28: searching "lfm" showed one row (LFM2.5 2.6B, MLX only). Both Liquid AI families,
+    the 24B-A2B models included, are listed with a GGUF (llama.cpp) and an MLX artifact each, every artifact
+    with its verified size; repo ids are aliases of their capabilities entries."""
+    rows = {r["id"]: r for r in mc.catalog("lfm", host=synthetic_host("metal128"))["rows"]}
+    for family, ids in {
+        "lfm2": ["lfm2-350m", "lfm2-700m", "lfm2-1.2b", "lfm2-2.6b", "lfm2-8b-a1b", "lfm2-24b-a2b"],
+        "lfm2.5": ["lfm2.5-350m", "lfm2.5-1.2b-instruct", "lfm2.5-1.2b-thinking", "lfm2.5-2.6b", "lfm2.5-8b-a1b",
+                   "lfm2.5-24b-a2b"],
+    }.items():
+        for rid in ids:
+            assert rid in rows, f"search 'lfm' misses {rid}"
+            row = rows[rid]
+            assert row["family"] == family
+            seed = next(r for r in mc.load_seed()["rows"] if r["id"] == rid)
+            providers = {a["provider"] for a in seed["artifacts"]}
+            assert {"huggingface", "mlx"} <= providers, (rid, providers)
+            assert any(a["artifact"].endswith((":Q4_K_M", ":Q8_0")) for a in seed["artifacts"] if a["provider"] == "huggingface")
+            # Every artifact carries its size: upstream-verified (hf_api) or seen on a real engine (verified).
+            assert all(a["download_bytes"] and (a.get("verified") or a.get("upstream", {}).get("method") == "hf_api")
+                       for a in seed["artifacts"]), rid
+    caps = json.loads((Path(mc.__file__).parent.parent / "assets" / "model_capabilities.json").read_text())["models"]
+    assert caps["lfm2.5-24b-a2b"]["max_tokens"] == 131072
+    assert "LiquidAI/LFM2.5-24B-A2B-GGUF" in caps["lfm2.5-24b-a2b"]["aliases"]
+    assert "mlx-community/LFM2-24B-A2B-4bit" in caps["lfm2-24b-a2b"]["aliases"]
+
+
+def test_no_liquidai_q4_k_m_gguf_names_a_repo_with_a_hip_optimized_twin():
+    """LiquidAI's LFM2 GGUF repos ship `-Q4_K_M.gguf` AND `-Q4_K_M-hip-optimized.gguf`: the `*Q4_K_M*.gguf`
+    download pattern would fetch both and the loader could pick either (backlog 0860). Their Q4_K_M comes
+    from unsloth; LiquidAI's LFM2.5 repos have no such twin."""
+    twins = {"LiquidAI/LFM2-350M-GGUF", "LiquidAI/LFM2-700M-GGUF", "LiquidAI/LFM2-1.2B-GGUF", "LiquidAI/LFM2-2.6B-GGUF"}
+    bad = [a["artifact"] for r in mc.load_seed()["rows"] for a in r["artifacts"]
+           if a["provider"] == "huggingface" and a["artifact"].split(":")[0] in twins and "Q4_K_M" in a["artifact"].upper()]
+    assert bad == []

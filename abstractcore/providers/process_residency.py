@@ -84,6 +84,40 @@ def resident_rows(backend: Optional[str] = None) -> List[Dict[str, Any]]:
     return rows
 
 
+def resident_provider(provider: Optional[str], model: Optional[str], *, task: Optional[str] = None) -> Optional[Any]:
+    """An alive provider INSTANCE of THIS process already holding `model`, to reuse instead of building
+    another full copy, or None.
+
+    Only the `huggingface` backend lends (GGUF on llama.cpp, transformers): its instances do not share
+    weights, so a second instance of a resident model is a second full copy (llama.cpp: another context
+    and compute buffers; on a 16 GB GPU the second one fails to allocate), and one instance is safe to
+    share across threads (see below). MLX instances already share their weights (`mlx_residency`), and embeddings are not
+    chat providers: None for those.
+
+    Sharing is safe because a HuggingFace instance runs every generation on its own worker thread,
+    one at a time (`HuggingFaceProvider._generation_worker`; a stream is produced there into a queue).
+    An instance the server built for ONE request (`_abstractcore_request_scoped`: it may be unloaded
+    when that request ends, `unload_after`) is never lent.
+
+    A holder is the first alive registered instance whose model name or path matches (`model_matches`,
+    the eject's matcher). The caller must not unload a lent instance: it belongs to its holder (a
+    runtime pool, a server registry)."""
+    if backend_for(provider, task) != "huggingface" or not model or not _backend_loaded("huggingface"):
+        return None
+    from .hf_residency import _holder_alive, registered_providers
+
+    for holder in registered_providers():
+        try:
+            if not _holder_alive(holder) or getattr(holder, "_abstractcore_request_scoped", False):
+                continue
+            path = getattr(getattr(holder, "llm", None), "model_path", None)
+            if model_matches(getattr(holder, "model", None), str(path) if path else None, model):
+                return holder
+        except Exception:  # noqa: BLE001 - an unreadable holder is skipped, never lent
+            continue
+    return None
+
+
 def row_names(row: Dict[str, Any]) -> List[str]:
     return [str(n) for n in (row.get("models") or []) if str(n).strip()]
 
