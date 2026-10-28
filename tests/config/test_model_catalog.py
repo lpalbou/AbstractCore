@@ -357,3 +357,13 @@ def test_the_lfm_families_are_in_the_catalog_with_gguf_and_mlx(host):
     assert caps["lfm2.5-24b-a2b"]["max_tokens"] == 131072
     assert "LiquidAI/LFM2.5-24B-A2B-GGUF" in caps["lfm2.5-24b-a2b"]["aliases"]
     assert "mlx-community/LFM2-24B-A2B-4bit" in caps["lfm2-24b-a2b"]["aliases"]
+
+
+def test_no_liquidai_q4_k_m_gguf_names_a_repo_with_a_hip_optimized_twin():
+    """LiquidAI's LFM2 GGUF repos ship `-Q4_K_M.gguf` AND `-Q4_K_M-hip-optimized.gguf`: the `*Q4_K_M*.gguf`
+    download pattern would fetch both and the loader could pick either (backlog 0860). Their Q4_K_M comes
+    from unsloth; LiquidAI's LFM2.5 repos have no such twin."""
+    twins = {"LiquidAI/LFM2-350M-GGUF", "LiquidAI/LFM2-700M-GGUF", "LiquidAI/LFM2-1.2B-GGUF", "LiquidAI/LFM2-2.6B-GGUF"}
+    bad = [a["artifact"] for r in mc.load_seed()["rows"] for a in r["artifacts"]
+           if a["provider"] == "huggingface" and a["artifact"].split(":")[0] in twins and "Q4_K_M" in a["artifact"].upper()]
+    assert bad == []

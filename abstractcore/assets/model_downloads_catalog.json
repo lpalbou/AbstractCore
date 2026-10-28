@@ -3406,7 +3406,8 @@
    "capabilities_key": "lfm2-2.6b",
    "tags": [
     "chat",
-    "small"
+    "small",
+    "thinking"
    ],
    "starter": false,
    "artifacts": [

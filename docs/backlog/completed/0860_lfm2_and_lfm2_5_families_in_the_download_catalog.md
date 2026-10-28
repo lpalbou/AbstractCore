@@ -9,6 +9,9 @@ carried most LFM2/LFM2.5 models, but `model_downloads_catalog.json` (what the ca
 LFM2 row, no GGUF artifact for any Liquid AI model, and no `lfm2.5-24b-a2b` anywhere.
 
 ## What shipped
+Coverage: LFM2 350M to 24B-A2B and LFM2.5 350M to 24B-A2B (text models). Not covered: LFM2.5 230M (it exists
+upstream, `LiquidAI/LFM2.5-230M`), the VL/audio/JP variants (their capabilities entries exist; no download rows).
+
 - `abstractcore/assets/model_downloads_catalog.json`: 11 rows (lfm2-350m, -700m, -1.2b, -2.6b, -8b-a1b, -24b-a2b;
   lfm2.5-350m, -1.2b-instruct, -1.2b-thinking, -8b-a1b, -24b-a2b), and the official GGUF Q4_K_M/Q8_0 on the
   existing lfm2.5-2.6b row. Each row carries GGUF (`huggingface`, `repo:QUANT`, LiquidAI official and unsloth) and
