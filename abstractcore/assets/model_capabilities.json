@@ -7299,7 +7299,10 @@
       "source": "Hugging Face model card + config metadata (LiquidAI/LFM2.5-350M, accessed 2026-04-05)",
       "canonical_name": "lfm2.5-350m",
       "aliases": [
-        "LiquidAI/LFM2.5-350M"
+        "LiquidAI/LFM2.5-350M",
+        "LiquidAI/LFM2.5-350M-GGUF",
+        "LiquidAI/LFM2.5-350M-MLX-4bit",
+        "mlx-community/LFM2.5-350M-8bit"
       ],
       "max_tokens": 32768,
       "release_date": "2026-03-31",
@@ -7339,7 +7342,9 @@
         "mlx-community/LFM2.5-8B-A1B-MLX-4bit",
         "mlx-community/LFM2.5-8B-A1B-MLX-8bit",
         "LFM2.5-8B-A1B-MLX-4bit",
-        "LFM2.5-8B-A1B-MLX-8bit"
+        "LFM2.5-8B-A1B-MLX-8bit",
+        "LiquidAI/LFM2.5-8B-A1B-GGUF",
+        "unsloth/LFM2.5-8B-A1B-GGUF"
       ],
       "max_tokens": 128000,
       "license": "lfm1.0",
@@ -7370,7 +7375,11 @@
       "source": "Hugging Face model card (LiquidAI/LFM2.5-1.2B-Instruct, accessed 2026-03-11)",
       "canonical_name": "lfm2.5-1.2b-instruct",
       "aliases": [
-        "liquidai/lfm2.5-1.2b-instruct"
+        "liquidai/lfm2.5-1.2b-instruct",
+        "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+        "unsloth/LFM2.5-1.2B-Instruct-GGUF",
+        "mlx-community/LFM2.5-1.2B-Instruct-4bit",
+        "mlx-community/LFM2.5-1.2B-Instruct-8bit"
       ],
       "max_tokens": 32768,
       "video_support": false,
@@ -7424,7 +7433,11 @@
       "source": "Hugging Face model card (LiquidAI/LFM2.5-1.2B-Thinking, accessed 2026-03-11)",
       "canonical_name": "lfm2.5-1.2b-thinking",
       "aliases": [
-        "liquidai/lfm2.5-1.2b-thinking"
+        "liquidai/lfm2.5-1.2b-thinking",
+        "LiquidAI/LFM2.5-1.2B-Thinking-GGUF",
+        "unsloth/LFM2.5-1.2B-Thinking-GGUF",
+        "mlx-community/LFM2.5-1.2B-Thinking-4bit",
+        "mlx-community/LFM2.5-1.2B-Thinking-8bit"
       ],
       "max_tokens": 32768,
       "max_tools": -1,
@@ -7519,6 +7532,50 @@
         ]
       }
     },
+    "lfm2.5-24b-a2b": {
+      "max_output_tokens": null,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "lfm2",
+      "model_type": "lfm2_moe",
+      "total_parameters": "24.0B",
+      "active_parameters": "2.45B",
+      "experts": 64,
+      "experts_activated": 4,
+      "notes": "Liquid AI LFM2.5 24B-A2B: the largest LFM2.5 model, a text-only reasoning hybrid MoE (40 layers: 30 double-gated short-convolution blocks + 10 GQA; 64 experts, top-4) with 131,072-token context. Always thinks before it answers (the chat template opens a <think> block). Tool calls are prompted: Pythonic calls between <|tool_call_start|> and <|tool_call_end|> special tokens, not an OpenAI-native tools API. The model card publishes no hard max-output-token cap, so max_output_tokens is null.",
+      "source": "Hugging Face model card and config.json (LiquidAI/LFM2.5-24B-A2B, accessed 2026-10-28): total 24.0B, active 2.45B, context 131,072 (max_position_embeddings 131072), num_experts 64, num_experts_per_tok 4, vocab 128,000; generation parameters temperature 0.1, top_k 50, repetition_penalty 1.05.",
+      "canonical_name": "lfm2.5-24b-a2b",
+      "aliases": [
+        "LiquidAI/LFM2.5-24B-A2B",
+        "LFM2.5-24B-A2B",
+        "LiquidAI/LFM2.5-24B-A2B-GGUF",
+        "unsloth/LFM2.5-24B-A2B-GGUF",
+        "LiquidAI/LFM2.5-24B-A2B-MLX-4bit",
+        "LiquidAI/LFM2.5-24B-A2B-MLX-8bit"
+      ],
+      "max_tokens": 131072,
+      "license": "lfm1.0",
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "inference_parameters": {
+        "temperature": 0.1,
+        "top_k": 50,
+        "repeat_penalty": 1.05
+      },
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "lfm2-24b-a2b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
@@ -7535,7 +7592,9 @@
       "canonical_name": "lfm2-24b-a2b",
       "aliases": [
         "liquidai/lfm2-24b-a2b",
-        "liquidai/lfm2-24b-a2b-gguf"
+        "liquidai/lfm2-24b-a2b-gguf",
+        "mlx-community/LFM2-24B-A2B-4bit",
+        "LiquidAI/LFM2-24B-A2B-MLX-8bit"
       ],
       "max_tokens": 32768,
       "video_support": false,
@@ -7565,7 +7624,11 @@
       "source": "Hugging Face model card + config metadata (LiquidAI/LFM2-8B-A1B, accessed 2026-03-11)",
       "canonical_name": "lfm2-8b-a1b",
       "aliases": [
-        "liquidai/lfm2-8b-a1b"
+        "liquidai/lfm2-8b-a1b",
+        "LiquidAI/LFM2-8B-A1B-GGUF",
+        "unsloth/LFM2-8B-A1B-GGUF",
+        "mlx-community/LFM2-8B-A1B-4bit",
+        "mlx-community/LFM2-8B-A1B-8bit"
       ],
       "max_tokens": 32768,
       "video_support": false,
@@ -7593,7 +7656,10 @@
       "source": "Hugging Face model card + tokenizer metadata (LiquidAI/LFM2-2.6B, accessed 2026-03-11)",
       "canonical_name": "lfm2-2.6b",
       "aliases": [
-        "liquidai/lfm2-2.6b"
+        "liquidai/lfm2-2.6b",
+        "LiquidAI/LFM2-2.6B-GGUF",
+        "mlx-community/LFM2-2.6B-4bit",
+        "mlx-community/LFM2-2.6B-8bit"
       ],
       "max_tokens": 32768,
       "video_support": false,
@@ -7620,7 +7686,11 @@
       "source": "Hugging Face model card + tokenizer metadata (LiquidAI/LFM2-1.2B, accessed 2026-03-11)",
       "canonical_name": "lfm2-1.2b",
       "aliases": [
-        "liquidai/lfm2-1.2b"
+        "liquidai/lfm2-1.2b",
+        "unsloth/LFM2-1.2B-GGUF",
+        "LiquidAI/LFM2-1.2B-GGUF",
+        "mlx-community/LFM2-1.2B-4bit",
+        "mlx-community/LFM2-1.2B-8bit"
       ],
       "max_tokens": 32768,
       "video_support": false,

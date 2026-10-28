@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.31.1] - 2026-10-28
+
+### Added
+
+- **The LFM2 and LFM2.5 families in the download catalog, from 350M to 24B-A2B** (backlog 0860; LFM2.5 230M not
+  yet): 11 new rows (LFM2 350M, 700M, 1.2B, 2.6B,
+  8B-A1B, 24B-A2B; LFM2.5 350M, 1.2B Instruct, 1.2B Thinking, 8B-A1B, 24B-A2B) and GGUF on LFM2.5 2.6B, each with
+  GGUF (Liquid AI official and unsloth) and MLX (mlx-community, else Liquid AI's own) artifacts, every id and size
+  checked on Hugging Face on 2026-10-28; the capability registry gains `lfm2.5-24b-a2b` and the repo-id aliases.
+  Searching "lfm" in a Models catalog listed one row before.
+
+### Fixed
+
+- **`/v1/chat/completions` (and `/v1/responses`) reuse a model already resident in the process** instead of loading
+  another copy per request (backlog 0859). With no model loaded in the server's own registry, the chat route called
+  `create_llm` for every request; a host that keeps the model in another holder (AbstractGateway's runtime pool, which
+  serves `/v1` through this app) got a second full llama.cpp instance per request. Found on a fresh Linux install: a
+  2.5 GB GGUF on a 16 GB GPU answered 500 "Failed to create llama_context"; reproduced on Metal: holders 1 -> 2 -> 3
+  -> 4 and the process 11.2 -> 43.4 GB over three calls. Now the route reuses the alive `huggingface` holder of the
+  same model (new `process_residency.resident_provider(provider, model)`, matched by name or path like the eject):
+  holders stay at 1 and the process at 11.2 GB. Not with `unload_after` (it would unload the holder's model) nor with
+  request-specific provider settings (an explicit provider key, a `base_url`); an instance the server built for one
+  request is never lent; MLX instances already share weights and are not lent. A lent instance keeps its own tracing
+  (no `X-AbstractCore-Trace-Id` for that request) and ignores the request's `timeout_s`.
+- **Every operation on a HuggingFace provider instance's model runs on one worker thread of that instance, one at a
+  time** (`HuggingFaceProvider._generation_worker`): generations, the prompt-cache prefills, set/clear/save/load,
+  the bloc planner's tokenization, `load_model` and the free step of `unload_model`. Before, only the GGUF prompt-cache prefill took an instance lock, so a pool serving
+  two runs (or a run and a lent `/v1` request) could run two operations on one llama.cpp context at once. A stream is
+  produced on the worker into a queue, so it never waits for its consumer (no deadlock with a call waiting for the
+  instance, or two streams advanced by one thread); a consumer that stops early stops the producer at its next chunk;
+  a stream counts as in flight from the call (an unload cancels and waits for it); the reload of an ejected model is
+  decided on the worker; the caller's contextvars travel with the call; Ctrl-C while waiting cancels the generation.
+- A lent instance answers `/v1` off the event loop, with a client disconnect cancelling its generation (it queues
+  behind the holder's runs; the server's own in-process instances still answer on the loop as before). It keeps its
+  holder's construction defaults (seed, default max output tokens, context size) for settings the request omits,
+  shares the holder's prompt-cache store (by default 32 entries, least recently used), and, when the holder has tracing on,
+  its trace buffer.
+
 ## [2.31.0] - 2026-10-27
 
 ### Added

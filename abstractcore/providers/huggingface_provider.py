@@ -105,6 +105,160 @@ if TYPE_CHECKING:
 _MPS_GENERATION_LOCK = threading.Lock()
 
 
+class _InstanceGenerationWorker:
+    """Every operation on the model of ONE provider instance runs on ONE worker thread, one at a time.
+
+    A HuggingFace instance holds one llama.cpp context (or one transformers model); two
+    operations running on it at once corrupt its state: generations, the prompt-cache prefills
+    and save/load (`_on_model_thread`), and the free step of `unload_model`. An instance is
+    shared when a host's pool serves two runs, or when the server's `/v1` route lends a pool's
+    resident model (`process_residency.resident_provider`). A lock held across a stream's
+    yields deadlocks (a caller that blocks the event loop waiting for it, two streams advanced
+    by one thread); a worker thread does not: a stream is produced there into an unbounded
+    queue, so it finishes whether or not its consumer is reading, and the next operation then
+    starts. Errors raised while a call starts (a stream's prefill included) reach the caller at
+    the call, as before. The caller's contextvars travel with the call. A call made from the
+    worker itself (a lane calling back into its instance) runs inline. A caller interrupted
+    while it waits (Ctrl-C) sets the call's cancel event, so the generation stops."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._lock = threading.Lock()
+        self._executor: Any = None
+        self._worker_ident: Optional[int] = None
+
+    def _pool(self) -> Any:
+        with self._lock:
+            if self._executor is None:
+                from concurrent.futures import ThreadPoolExecutor
+
+                self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=self._name)
+            return self._executor
+
+    def _on_worker(self) -> bool:
+        return self._worker_ident is not None and threading.get_ident() == self._worker_ident
+
+    def _submit(self, task: Any) -> Any:
+        """Queue `task` on the worker in the caller's context; None once the interpreter shuts down."""
+        import contextvars
+
+        ctx = contextvars.copy_context()
+
+        def run_in_context() -> Any:
+            self._worker_ident = threading.get_ident()
+            return ctx.run(task)
+
+        try:
+            return self._pool().submit(run_in_context)
+        except RuntimeError:  # "cannot schedule new futures after (interpreter) shutdown"
+            return None
+
+    @staticmethod
+    def _interrupted(cancel_event: Optional[threading.Event]) -> None:
+        if cancel_event is not None:
+            cancel_event.set()
+
+    def run(self, call: Any, *, cancel_event: Optional[threading.Event] = None) -> Any:
+        if self._on_worker():
+            return call()
+        future = self._submit(call)
+        if future is None:
+            return call()
+        try:
+            return future.result()
+        except (KeyboardInterrupt, SystemExit):
+            if not future.done():
+                self._interrupted(cancel_event)
+            raise
+
+    def stream(self, call: Any, *, cancel_event: Optional[threading.Event] = None,
+               on_done: Optional[Any] = None) -> Iterator[Any]:
+        """`call()` runs on the worker now; its chunks are produced there into a queue. `on_done()`
+        runs on the worker when the production has ended (also when `call()` raised)."""
+        if self._on_worker():
+            if on_done is not None:
+                on_done()
+            return call()
+        import queue as _queue
+        from concurrent.futures import Future
+
+        started: "Future[None]" = Future()
+        out: "_queue.Queue[Tuple[str, Any]]" = _queue.Queue()
+        stop = threading.Event()
+
+        def task() -> None:
+            try:
+                try:
+                    chunks = call()
+                except BaseException as exc:  # noqa: BLE001 - delivered to the caller at the call
+                    started.set_exception(exc)
+                    return
+                started.set_result(None)
+                try:
+                    if isinstance(chunks, GenerateResponse):
+                        out.put(("chunk", chunks))
+                        return
+                    try:
+                        for chunk in chunks:
+                            out.put(("chunk", chunk))
+                            if stop.is_set():
+                                break
+                    finally:
+                        close = getattr(chunks, "close", None)
+                        if stop.is_set() and callable(close):
+                            close()
+                except BaseException as exc:  # noqa: BLE001 - delivered to the consumer in order
+                    out.put(("error", exc))
+                finally:
+                    out.put(("end", None))
+            finally:
+                if on_done is not None:
+                    on_done()
+
+        if self._submit(task) is None:
+            task()
+        try:
+            started.result()
+        except (KeyboardInterrupt, SystemExit):
+            stop.set()
+            self._interrupted(cancel_event)
+            raise
+
+        def consume() -> Iterator[Any]:
+            try:
+                while True:
+                    try:
+                        kind, value = out.get()
+                    except (KeyboardInterrupt, SystemExit):
+                        self._interrupted(cancel_event)
+                        raise
+                    if kind == "end":
+                        return
+                    if kind == "error":
+                        raise value
+                    yield value
+            finally:
+                stop.set()  # a consumer that stops early stops the producer at its next chunk
+
+        return consume()
+
+
+def _on_model_thread(method: Any) -> Any:
+    """Run a method that touches the instance's model (llama.cpp eval or state, the free step of an
+    unload) on the instance's generation worker, serialized with its generations."""
+    import functools
+
+    @functools.wraps(method)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        worker = getattr(self, "_generation_worker", None)
+        if worker is None:
+            return method(self, *args, **kwargs)
+        return worker.run(lambda: method(self, *args, **kwargs))
+
+    wrapper._abstractcore_on_model_thread = True  # type: ignore[attr-defined]
+    return wrapper
+
+
 # --- Host cancel on the in-process lanes (providers/generation_cancel.py) -----
 # transformers: `generate()` is a closed loop, so a StoppingCriteria is the one
 # per-step hook; it RAISES (never "stops normally") so a cancelled answer can
@@ -1051,6 +1205,7 @@ class HuggingFaceProvider(BaseProvider):
         # each a FULL COPY of the weights here) and an eject can free them all.
         from .hf_residency import register_provider as _register_hf_provider
 
+        self._generation_worker = _InstanceGenerationWorker(f"abstractcore-hf-{id(self):x}")
         _register_hf_provider(self)
 
         # Register-at-first-write: HF model loads write into the HF hub cache.
@@ -1471,8 +1626,14 @@ class HuggingFaceProvider(BaseProvider):
         context it is using. A call that does not stop by the deadline makes
         this RAISE (nothing freed) instead of crashing the process.
         """
-        import gc
         self._stop_inflight_before_unload(model_name, refuse_if_running=True)
+        # The free step runs on the generation worker: after any generation already queued
+        # there (cancelled by the stop above), never under one (`_InstanceGenerationWorker`).
+        self._free_model_on_unload()
+
+    @_on_model_thread
+    def _free_model_on_unload(self) -> None:
+        import gc
         try:
             if hasattr(self, 'llm') and self.llm is not None:
                 # Try to properly close the Llama object (GGUF models)
@@ -4994,6 +5155,7 @@ class HuggingFaceProvider(BaseProvider):
                 progress.prefill_progress(processed_tokens=len(state.prompt_tokens))
         return True
 
+    @_on_model_thread
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         if not self.supports_prompt_cache():
             return None
@@ -5052,6 +5214,7 @@ class HuggingFaceProvider(BaseProvider):
             capacity_bytes=cap_effective,
         )
 
+    @_on_model_thread
     def _prompt_cache_backend_clone(self, cache_value: Any) -> Optional[Any]:
         transformers_state = self._transformers_prompt_cache_state(cache_value)
         if transformers_state is not None:
@@ -5086,6 +5249,7 @@ class HuggingFaceProvider(BaseProvider):
             fed_prompt_tokens=tuple(int(tok) for tok in state.fed_prompt_tokens),
         )
 
+    @_on_model_thread
     def _prompt_cache_backend_append(
         self,
         cache_value: Any,
@@ -5403,6 +5567,7 @@ class HuggingFaceProvider(BaseProvider):
             return max(len(state.prompt_tokens), len(longest))
         return len(longest)
 
+    @_on_model_thread
     def prompt_cache_set(
         self,
         key: str,
@@ -5475,6 +5640,7 @@ class HuggingFaceProvider(BaseProvider):
 
         return True
 
+    @_on_model_thread
     def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
         """Clear prompt caches AND their hybrid snapshots (a snapshot must not
         outlive the key it mirrors); on the transformers lane also return the
@@ -5508,6 +5674,7 @@ class HuggingFaceProvider(BaseProvider):
                 pass
         return cleared
 
+    @_on_model_thread
     def prompt_cache_save(self, key: str, filename: str, **kwargs: Any) -> Dict[str, Any]:
         """Save a GGUF llama.cpp prompt cache snapshot to disk (best-effort).
 
@@ -5712,6 +5879,7 @@ class HuggingFaceProvider(BaseProvider):
             "meta": meta,
         }
 
+    @_on_model_thread
     def prompt_cache_load(
         self,
         filename: str,
@@ -7605,6 +7773,10 @@ class HuggingFaceProvider(BaseProvider):
     # cancel event so `unload_model` can stop it before freeing the weights.
     _PRIVATE_CANCEL_EVENT_FOR_EJECT = True
 
+    # The bloc planner tokenizes on the model (read-only, but never under a free): on the worker.
+    prompt_cache_prepare_modules = _on_model_thread(BaseProvider.prompt_cache_prepare_modules)
+
+    @_on_model_thread
     def load_model(self, model_name: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
         """(Re)load this instance's model after an `unload_model` (idempotent).
 
@@ -7656,25 +7828,40 @@ class HuggingFaceProvider(BaseProvider):
         from .generation_progress import PROGRESS_KWARG, TextProgressEmitter
 
         progress = TextProgressEmitter(kwargs.pop(PROGRESS_KWARG, None), provider="huggingface", model=self.model)
-        if not any(getattr(self, a, None) is not None for a in ("llm", "model_instance", "pipeline")):
-            # Ejected (`unload_model`) and asked again: reload on demand, LOUDLY
-            # (the lanes below would otherwise answer "Error: ... not loaded"
-            # as if it were the model's reply). A failed reload raises.
-            self.logger.warning(
-                f"HuggingFace model {self.model} is not loaded (ejected); reloading it on demand for this request"
-            )
-            self.load_model()
 
-        def _run():
+        def _reload_if_ejected():
+            # On the worker, right before the lane: an eject that ran while this call was queued is seen.
+            if not any(getattr(self, a, None) is not None for a in ("llm", "model_instance", "pipeline")):
+                # Ejected (`unload_model`) and asked again: reload on demand, LOUDLY
+                # (the lanes below would otherwise answer "Error: ... not loaded"
+                # as if it were the model's reply). A failed reload raises.
+                self.logger.warning(
+                    f"HuggingFace model {self.model} is not loaded (ejected); reloading it on demand for this request"
+                )
+                self.load_model()
+
+        def _lane():
             if self.model_type == "gguf":
                 return self._generate_gguf(prompt, messages, system_prompt, tools, media, stream, response_model,
                                            cancel_event=cancel_event, **kwargs)
             return self._generate_transformers(prompt, messages, system_prompt, tools, media, stream, response_model,
                                                cancel_event=cancel_event, **kwargs)
 
-        if not progress.active:
-            return _run()
-        return self._with_text_progress(progress, _run)
+        def _call():
+            _reload_if_ejected()
+            return _lane() if not progress.active else self._with_text_progress(progress, _lane)
+
+        worker = getattr(self, "_generation_worker", None)
+        if worker is None:  # an instance built around __init__ (tests, subclasses): no sharing to guard
+            return _call()
+        # Progress is bound inside the worker (it reports from the thread that runs the lane).
+        if not stream:
+            return worker.run(_call, cancel_event=cancel_event)
+        # A stream is produced from now on, before its consumer's first next(): it is in flight
+        # (an unload cancels and waits for it) until its production ends.
+        registry = self._inflight_generations()
+        inflight = registry.begin(cancel_event)
+        return worker.stream(_call, cancel_event=cancel_event, on_done=lambda: registry.end(inflight))
 
     def _with_text_progress(self, progress: Any, run: Any) -> Any:
         """Run one call with `progress` bound to the executing thread.
