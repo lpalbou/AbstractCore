@@ -118,6 +118,16 @@ QUANT_BITS: Dict[str, float] = {
     "q4_k_s": 4.6,
     "q4_k_m": 4.85,
     "q4_k_xl": 4.95,
+    # Unsloth Dynamic "XL" builds (UD-Qn_K_XL: some layers kept at higher
+    # precision). Ratios of the published files to Q4_K_M (unsloth
+    # Qwen3.6-27B-GGUF, 2026-10-28), scaled to Q4_K_M's 4.85.
+    "q2_k_xl": 3.4,
+    "q3_k_xl": 4.15,
+    "q5_k_xl": 5.8,
+    "q6_k_xl": 7.4,
+    "q8_k_xl": 10.2,
+    "q2_k_l": 3.3,
+    "q2_k_s": 2.9,
     "q5_0": 5.5,
     "q5_1": 6.0,
     "q5_k_s": 5.55,
