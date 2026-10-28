@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.31.1] - 2026-10-28
+
+### Fixed
+
+- **`/v1/chat/completions` (and `/v1/responses`) reuse a model already resident in the process** instead of loading
+  another copy per request (backlog 0859). With no model loaded in the server's own registry, the chat route called
+  `create_llm` for every request; a host that keeps the model in another holder (AbstractGateway's runtime pool, which
+  serves `/v1` through this app) got a second full llama.cpp instance per request. Found on a fresh Linux install: a
+  2.5 GB GGUF on a 16 GB GPU answered 500 "Failed to create llama_context"; reproduced on Metal: holders 1 -> 2 -> 3
+  -> 4 and the process 11.2 -> 43.4 GB over three calls. Now the route reuses the alive `huggingface` holder of the
+  same model (new `process_residency.resident_provider(provider, model)`, matched by name or path like the eject):
+  holders stay at 1 and the process at 11.2 GB. Not with `unload_after` (it would unload the holder's model) nor with
+  request-specific provider settings (an explicit provider key, a `base_url`); MLX instances already share weights and
+  are not lent.
+
 ## [2.31.0] - 2026-10-27
 
 ### Added
