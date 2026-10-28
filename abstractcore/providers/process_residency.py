@@ -94,8 +94,8 @@ def resident_provider(provider: Optional[str], model: Optional[str], *, task: Op
     share across threads (see below). MLX instances already share their weights (`mlx_residency`), and embeddings are not
     chat providers: None for those.
 
-    Sharing is safe because a HuggingFace instance runs one generation at a time
-    (`HuggingFaceProvider._generation_gate`, held for a whole call and across a stream's yields).
+    Sharing is safe because a HuggingFace instance runs every generation on its own worker thread,
+    one at a time (`HuggingFaceProvider._generation_worker`; a stream is produced there into a queue).
     An instance the server built for ONE request (`_abstractcore_request_scoped`: it may be unloaded
     when that request ends, `unload_after`) is never lent.
 

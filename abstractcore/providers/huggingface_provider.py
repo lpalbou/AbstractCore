@@ -105,56 +105,98 @@ if TYPE_CHECKING:
 _MPS_GENERATION_LOCK = threading.Lock()
 
 
-class _InstanceGenerationGate:
-    """One generation at a time on ONE provider instance, held for a whole call: a returned
-    response, or a stream from its first `next()` until it ends or is closed.
+class _InstanceGenerationWorker:
+    """Every generation of ONE provider instance runs on ONE worker thread, one at a time.
 
     A HuggingFace instance holds one llama.cpp context (or one transformers model); two
     generations running on it at once corrupt its state. An instance is shared when a host's
-    pool and the server's `/v1` route use the same resident model (`process_residency.
-    resident_provider`), or when a pool serves two runs. Re-entrant on the holding thread (a
-    lane that calls back into the instance); a stream resumed on another thread (the server's
-    thread pool) releases it from there, which a plain `Lock` allows and an `RLock` does not."""
+    pool serves two runs, or when the server's `/v1` route lends a pool's resident model
+    (`process_residency.resident_provider`). A lock held across a stream's yields deadlocks
+    (a caller that blocks the event loop waiting for it, two streams advanced by one thread);
+    a worker thread does not: a stream is produced there into an unbounded queue, so it
+    finishes whether or not its consumer is reading, and the next generation then starts.
+    Errors raised while a call starts (a stream's prefill included) reach the caller at
+    the call, as before. A generation that calls back into its own instance runs inline."""
 
-    def __init__(self) -> None:
+    def __init__(self, name: str) -> None:
+        self._name = name
         self._lock = threading.Lock()
-        self._owner: Optional[int] = None
-        self._depth = 0
+        self._executor: Any = None
+        self._worker_ident: Optional[int] = None
 
-    def acquire(self) -> bool:
-        me = threading.get_ident()
-        if self._owner == me:
-            self._depth += 1
-            return False
-        self._lock.acquire()
-        self._owner, self._depth = me, 1
-        return True
+    def _pool(self) -> Any:
+        with self._lock:
+            if self._executor is None:
+                from concurrent.futures import ThreadPoolExecutor
 
-    def release(self, acquired: bool) -> None:
-        if not acquired:
-            self._depth -= 1
-            return
-        self._owner, self._depth = None, 0
-        self._lock.release()
+                self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=self._name)
+            return self._executor
+
+    def _on_worker(self) -> bool:
+        return self._worker_ident is not None and threading.get_ident() == self._worker_ident
 
     def run(self, call: Any) -> Any:
-        acquired = self.acquire()
-        try:
+        if self._on_worker():
             return call()
-        finally:
-            self.release(acquired)
+
+        def task() -> Any:
+            self._worker_ident = threading.get_ident()
+            return call()
+
+        return self._pool().submit(task).result()
 
     def stream(self, call: Any) -> Iterator[Any]:
-        """`call()` (the lane, eager part included) runs under the gate at the first next()."""
-        acquired = self.acquire()
-        try:
-            result = call()
-            if isinstance(result, GenerateResponse):  # a lane that answered at once (an error reply)
-                yield result
-            else:
-                yield from result
-        finally:
-            self.release(acquired)
+        if self._on_worker():
+            return call()
+        import queue as _queue
+        from concurrent.futures import Future
+
+        started: "Future[None]" = Future()
+        out: "_queue.Queue[Tuple[str, Any]]" = _queue.Queue()
+        stop = threading.Event()
+
+        def task() -> None:
+            self._worker_ident = threading.get_ident()
+            try:
+                chunks = call()
+            except BaseException as exc:  # noqa: BLE001 - delivered to the caller at the call
+                started.set_exception(exc)
+                return
+            started.set_result(None)
+            try:
+                if isinstance(chunks, GenerateResponse):
+                    out.put(("chunk", chunks))
+                    return
+                try:
+                    for chunk in chunks:
+                        out.put(("chunk", chunk))
+                        if stop.is_set():
+                            break
+                finally:
+                    close = getattr(chunks, "close", None)
+                    if stop.is_set() and callable(close):
+                        close()
+            except BaseException as exc:  # noqa: BLE001 - delivered to the consumer in order
+                out.put(("error", exc))
+            finally:
+                out.put(("end", None))
+
+        self._pool().submit(task)
+        started.result()
+
+        def consume() -> Iterator[Any]:
+            try:
+                while True:
+                    kind, value = out.get()
+                    if kind == "end":
+                        return
+                    if kind == "error":
+                        raise value
+                    yield value
+            finally:
+                stop.set()  # a consumer that stops early stops the producer at its next chunk
+
+        return consume()
 
 
 # --- Host cancel on the in-process lanes (providers/generation_cancel.py) -----
@@ -1103,7 +1145,7 @@ class HuggingFaceProvider(BaseProvider):
         # each a FULL COPY of the weights here) and an eject can free them all.
         from .hf_residency import register_provider as _register_hf_provider
 
-        self._generation_gate = _InstanceGenerationGate()
+        self._generation_worker = _InstanceGenerationWorker(f"abstractcore-hf-{id(self):x}")
         _register_hf_provider(self)
 
         # Register-at-first-write: HF model loads write into the HF hub cache.
@@ -7725,21 +7767,14 @@ class HuggingFaceProvider(BaseProvider):
             return self._generate_transformers(prompt, messages, system_prompt, tools, media, stream, response_model,
                                                cancel_event=cancel_event, **kwargs)
 
-        gate = getattr(self, "_generation_gate", None)
-        if gate is None:  # an instance built around __init__ (tests, subclasses): no sharing to guard
-            _run = _lane
-        elif stream:
-            # The whole lane runs lazily under the gate: taken at the first next() (prefill
-            # included), held across every yield, released when the stream ends or is closed.
-            def _run():
-                return gate.stream(_lane)
-        else:
-            def _run():
-                return gate.run(_lane)
+        def _call():
+            return _lane() if not progress.active else self._with_text_progress(progress, _lane)
 
-        if not progress.active:
-            return _run()
-        return self._with_text_progress(progress, _run)
+        worker = getattr(self, "_generation_worker", None)
+        if worker is None:  # an instance built around __init__ (tests, subclasses): no sharing to guard
+            return _call()
+        # Progress is bound inside the worker (it reports from the thread that runs the lane).
+        return worker.stream(_call) if stream else worker.run(_call)
 
     def _with_text_progress(self, progress: Any, run: Any) -> Any:
         """Run one call with `progress` bound to the executing thread.

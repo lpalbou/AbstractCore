@@ -95,6 +95,13 @@ def test_no_reuse_when_it_would_be_wrong(server) -> None:
         # runtime pool's, is spared by `eject_unclaimed`; this bare test holder is not claimed.)
         _chat(app, unload_after=True)
         assert len(created) == 1 and holder.calls == 0
+        # That request's own instance is marked request-scoped and never lent to another request.
+        assert created[0]._abstractcore_request_scoped is True
+        hf_residency.register_provider(created[0])
+        assert app._resident_provider_for_request("huggingface", MODEL, {}) is holder
+        holder.llm = None
+        assert app._resident_provider_for_request("huggingface", MODEL, {}) is None
+        hf_residency._HF_PROVIDERS.discard(created[0])
         holder.llm = types.SimpleNamespace(model_path=None)  # alive again for the next checks
         # Another model, and request-specific provider settings, never borrow.
         _chat(app, model="huggingface/other/Model-GGUF")
