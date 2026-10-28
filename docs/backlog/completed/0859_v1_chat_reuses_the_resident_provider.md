@@ -27,7 +27,8 @@ Reproduced on this Mac (Metal, `unsloth/Qwen3.5-4B-GGUF` Q4_K_M, scratch gateway
   runs on ONE worker thread of that instance, one at a time: generations (a stream is produced there into an
   unbounded queue, so it never waits for its consumer; an early close stops the producer at its next chunk),
   and, through `_on_model_thread`, the prompt-cache backend create/clone/append, `prompt_cache_set/clear/save/load`
-  and the free step of `unload_model` (`_free_model_on_unload`, after the in-flight stop). A stream is in flight
+  `prompt_cache_prepare_modules` (the bloc planner tokenizes), `load_model` and the free step of `unload_model`
+  (`_free_model_on_unload`, after the in-flight stop). A stream is in flight
   (`_inflight_generations`) from the call until its production ends; the ejected-model reload is decided on the
   worker; the caller's contextvars are copied to the call; a caller interrupted while waiting (Ctrl-C) sets the
   call's cancel event; a call made from the worker runs inline. Before, only the GGUF prompt-cache prefill took an
@@ -58,9 +59,15 @@ Reproduced on this Mac (Metal, `unsloth/Qwen3.5-4B-GGUF` Q4_K_M, scratch gateway
   `unload_after`/`base_url`/explicit key never borrow; MLX/embeddings never lent; idle worker threads exit with
   their instance. Recorded, not changed: borrowers inherit the holder's construction defaults, prompt-cache store
   and trace buffer (CHANGELOG).
+- Verification review of the round-2 fixes (Opus, read-only): no deadlock (no lock is held across a wrapped call;
+  the lanes start no threads; a stream consumer only waits for a producer that never needs it), unload frees on the
+  worker after production ends, contextvars and Ctrl-C correct, the off-loop lane for every chat path. Fixed:
+  `load_model` and `prompt_cache_prepare_modules` now on the worker too; the SIGINT test installs the default
+  handler (a background shell starts Python with SIGINT ignored). Recorded: an unload's free waits without a
+  deadline behind an uncancellable prefill on the worker; a call queued behind an eject reloads the model.
 - `tests/providers/test_hf_instance_generation_gate.py` (11): one worker thread for calls from many threads; a
   paused stream never blocks a waiting call; two streams on one thread never overlap; early close frees the
-  instance; start errors raise at the call; re-entry inline; every model operation (8 methods) runs on the worker
+  instance; start errors raise at the call; re-entry inline; every model operation (10 methods) runs on the worker
   and never overlaps a stream; a stream is in flight from the call to the end of its production; an eject while
   a call waits is seen on the worker (reload once); the caller's contextvars reach the lane; SIGINT while waiting
   cancels the generation. With the worker replaced by a passthrough: 3 failed; with each round-2 fix removed
@@ -70,4 +77,4 @@ Reproduced on this Mac (Metal, `unsloth/Qwen3.5-4B-GGUF` Q4_K_M, scratch gateway
   `base_url`, an explicit key, `mlx`, and a holder whose weights were released all build their own. 2 passed;
   with the previous `server/app.py`, 2 failed; with the off-loop lane removed, 1 failed.
 - Metal, the scratch-gateway script (`untracked/release-closing/w5/scripts/v1_holders.sh`) with this branch
-  installed: METAL_AFTER
+  installed: holders stay at 1 and RSS at 11.1-11.2 GB over three sequential `/v1` calls and three concurrent ones (one streamed), all HTTP 200 (unsloth/Qwen3.5-4B-GGUF, scratch gateway; before: holders 1 -> 2 -> 3 -> 4, RSS 11.2 -> 43.4 GB).

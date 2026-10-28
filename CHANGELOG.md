@@ -23,8 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request is never lent; MLX instances already share weights and are not lent. A lent instance keeps its own tracing
   (no `X-AbstractCore-Trace-Id` for that request) and ignores the request's `timeout_s`.
 - **Every operation on a HuggingFace provider instance's model runs on one worker thread of that instance, one at a
-  time** (`HuggingFaceProvider._generation_worker`): generations, the prompt-cache prefills, set/clear/save/load, and
-  the free step of `unload_model`. Before, only the GGUF prompt-cache prefill took an instance lock, so a pool serving
+  time** (`HuggingFaceProvider._generation_worker`): generations, the prompt-cache prefills, set/clear/save/load,
+  the bloc planner's tokenization, `load_model` and the free step of `unload_model`. Before, only the GGUF prompt-cache prefill took an instance lock, so a pool serving
   two runs (or a run and a lent `/v1` request) could run two operations on one llama.cpp context at once. A stream is
   produced on the worker into a queue, so it never waits for its consumer (no deadlock with a call waiting for the
   instance, or two streams advanced by one thread); a consumer that stops early stops the producer at its next chunk;

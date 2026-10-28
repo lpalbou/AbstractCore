@@ -142,7 +142,7 @@ def test_every_operation_that_touches_the_model_runs_on_the_worker() -> None:
     llama.cpp context as a generation: they are queued on the instance's worker too."""
     for name in ("_prompt_cache_backend_create", "_prompt_cache_backend_clone", "_prompt_cache_backend_append",
                  "prompt_cache_set", "prompt_cache_clear", "prompt_cache_save", "prompt_cache_load",
-                 "_free_model_on_unload"):
+                 "prompt_cache_prepare_modules", "load_model", "_free_model_on_unload"):
         assert getattr(getattr(hf.HuggingFaceProvider, name), "_abstractcore_on_model_thread", False), name
 
     seen = _Overlap()
@@ -244,7 +244,14 @@ def test_an_interrupted_caller_cancels_its_generation() -> None:
         cancel.wait(5)
         return "stopped" if cancel.is_set() else "ran to the end"
 
-    threading.Thread(target=lambda: (started.wait(5), time.sleep(0.05), os.kill(os.getpid(), signal.SIGINT)), daemon=True).start()
-    with pytest.raises(KeyboardInterrupt):
-        worker.run(generation, cancel_event=cancel)
+    if threading.current_thread() is not threading.main_thread():
+        pytest.skip("signals are delivered to the main thread only")
+    # A shell that started this process in the background may have it ignore SIGINT: install the default.
+    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        threading.Thread(target=lambda: (started.wait(5), time.sleep(0.05), os.kill(os.getpid(), signal.SIGINT)), daemon=True).start()
+        with pytest.raises(KeyboardInterrupt):
+            worker.run(generation, cancel_event=cancel)
+    finally:
+        signal.signal(signal.SIGINT, previous)
     assert cancel.is_set()

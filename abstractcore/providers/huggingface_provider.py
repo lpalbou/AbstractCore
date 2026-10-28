@@ -7773,6 +7773,10 @@ class HuggingFaceProvider(BaseProvider):
     # cancel event so `unload_model` can stop it before freeing the weights.
     _PRIVATE_CANCEL_EVENT_FOR_EJECT = True
 
+    # The bloc planner tokenizes on the model (read-only, but never under a free): on the worker.
+    prompt_cache_prepare_modules = _on_model_thread(BaseProvider.prompt_cache_prepare_modules)
+
+    @_on_model_thread
     def load_model(self, model_name: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
         """(Re)load this instance's model after an `unload_model` (idempotent).
 
