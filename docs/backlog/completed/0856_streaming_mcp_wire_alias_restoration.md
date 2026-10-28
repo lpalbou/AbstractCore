@@ -2,7 +2,7 @@
 
 > Package: abstractcore
 > Type: bug
-> Status: planned
+> Status: completed (2.31.0, PR #5, 2026-10-27)
 > Created: 2026-10-22
 > Priority: P1
 > Labels: mcp, streaming, tool-calling, gateway
@@ -43,10 +43,10 @@ Coordinate a Runtime follow-up only if its aggregation contract actually needs c
 
 ## Acceptance Criteria
 
-- [ ] Deterministic failing regression demonstrates a native streaming alias escaping through public Core `generate` before the fix.
-- [ ] Sync and async streaming/non-streaming return identical canonical names, arguments and call ids for an MCP tool; two concurrent requests cannot share another request's alias map.
-- [ ] Strict native declarations/history still carry wire-safe names. Already-safe tool names are unchanged.
-- [ ] Unknown aliases remain rejected; collisions, long names, multiple calls, split argument deltas, repeated terminal envelopes and cancellation preserve existing behavior.
+- [x] Deterministic failing regression demonstrates a native streaming alias escaping through public Core `generate` before the fix.
+- [x] Sync and async streaming/non-streaming return identical canonical names, arguments and call ids for an MCP tool; two concurrent requests cannot share another request's alias map.
+- [x] Strict native declarations/history still carry wire-safe names. Already-safe tool names are unchanged.
+- [x] Unknown aliases remain rejected; collisions, long names, multiple calls, split argument deltas, repeated terminal envelopes and cancellation preserve existing behavior.
 - [ ] Runtime aggregation receives the canonical name; gateway Ask reaches approval then the registered MCP executor, Auto works, and Off remains rejected.
 - [ ] A real gateway streaming run is verified when credentials/service are available, or the missing live check is stated explicitly. No claim that separate Qwen repair failures are fixed without reproduction.
 
@@ -66,3 +66,6 @@ Per-user MCP credentials (Gateway planned 0936), remote authentication, tool-ris
 ## Receipts
 
 - 2026-10-22: code-path audit and operator screenshots; diagnosis strongly supported by the escaped alias, but no deterministic full-generate reproduction or live trace read performed yet. Implementation deferred by operator instruction.
+- 2026-10-27 (2.31.0, PR #5, merge 2bc7f0df): fixed. Reproduced through public `generate`/`agenerate` with stub providers emitting deterministic native calls: 8 tests red before the fix with exactly `mcp_RAGnarok_query_b6ff8949`. Restoration at the two shared boundaries: `UnifiedStreamProcessor.process_stream` (every sync stream and the default async lane) and `BaseProvider.agenerate` (native async lanes, both stream modes), through one helper `wire_naming.restore_tool_call_names` that rewrites only names (`name`, `function.name`), copies instead of mutating, memoizes per stream and warns once per unresolved name. Same rules as the non-streaming passthrough (exact, wire alias, namespaced spelling); undeclared names stay as returned. Tests: `tests/streaming/test_stream_wire_alias_restoration.py` (20: complete calls, partial deltas, repeated envelopes, Anthropic-style repeated names, sync/async default/async native, undeclared and forged aliases, interleaved requests). Mutation checks: stream restoration off 5 red, agenerate restoration off 4 red, wire resolver removed 10 red, warn-once dedup off 1 red. Adversarial review (read-only Opus): no blocker/major; findings fixed or recorded below. PR CI 11/11 pass.
+- Not verified here: a live gateway streaming run (no credentials/service in this session); Runtime aggregation and gateway Ask/Auto/Off acceptance items are covered only by the canonical name now reaching them (Runtime code unchanged). Separate Qwen repair failures are not claimed fixed.
+- Follow-ups (not done): native async non-streaming `agenerate()` returns raw chat-completions shapes (names canonical; arguments/ids not normalized as sync does); a name split across partial deltas is not restored (no known server does this); base `_annotate_async_stream` does not close its source on `aclose()` (pre-existing).

@@ -9,11 +9,13 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 33
+- Planned: 32
 - Proposed: 28
-- Completed: 31
+- Completed: 32
 - Deprecated: 3
 - Recurrent: 0
+
+2026-10-27 (2.31.0): completed `0856` (streamed native tool calls carry the declared name) and `0858`; `0857` item 1 (clone `language` over HTTP) shipped, items 2-3 stay planned.
 
 2026-10-27: added planned `0857` (voice library: clone language over HTTP, deploy to a library, per-request voice stores on the server).
 
@@ -134,7 +136,7 @@ completed/ in a hygiene pass.)
 
 P2: [0857 — voice library: clone language, deploy to a library, per-request voice stores](planned/0857_voice_library_personal_stores_language_and_deploy.md); follows AbstractVoice 0.19.0 and AbstractRuntime 0.13.0.
 
-P1: [0856 — streaming MCP wire-alias restoration](planned/0856_streaming_mcp_wire_alias_restoration.md); includes incident, code paths, reproduction and validation requirements.
+Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0856_streaming_mcp_wire_alias_restoration.md).
 
 | Native inference item | Scope |
 | --- | --- |

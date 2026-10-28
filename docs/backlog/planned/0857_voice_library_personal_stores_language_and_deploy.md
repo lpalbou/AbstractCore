@@ -36,3 +36,6 @@ libraries; AbstractRuntime 0.13.0 applies a runtime's stores in process. Abstrac
 A French recording cloned over HTTP with `language=fr` is listed with `language: fr`; deploy over HTTP refuses a
 non-operator (401) and copies the voice for an operator; a remote AbstractRuntime voice facade's `deploy_voice_to_library`
 answers instead of 501 once the route exists.
+
+## Receipts
+- 2026-10-27 (2.31.0, PR #5): item 1 shipped: `language` form field on `/v1/voice/clone` and `/{provider}/v1/voice/clone`, forwarded to the voice plugin when non-empty and as a form field to remote AbstractVoice-compatible servers (OpenAI custom voices do not take it); tests in `tests/server/test_server_voice_management.py`, mutation-checked (3 red). Items 2 (deploy facade + route) and 3 (per-request voice stores) remain planned.

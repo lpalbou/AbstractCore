@@ -2,7 +2,7 @@
 
 > Canonical user documentation in one file. The linked source pages remain authoritative; source code determines behavior.
 
-Package version: 2.30.0
+Package version: 2.31.0
 
 Start with the [agent skill](skills/abstractcore/SKILL.md) for a portable operating procedure,
 or [llms.txt](llms.txt) for a short index. Register the complete skill folder with its references.
@@ -95,6 +95,10 @@ The linked source pages are canonical. Fenced examples retain their source forma
 
 Unified LLM Interface
 > Write once, run everywhere
+
+What's new in 2.31.0: streamed tool calls carry the declared MCP tool name, the MLX prefix cache
+survives per-call system riders in tool loops, and `POST /v1/voice/clone` takes `language`. See the
+[changelog](CHANGELOG.md#2310---2026-10-27).
 
 AbstractCore is an offline-capable, open-source-first LLM infrastructure layer
 for Python applications. It gives you one `create_llm(...)` API across local
@@ -774,7 +778,7 @@ except (ImportError, PackageNotFoundError, AssertionError) as exc:
 print(f"AbstractCore code={abstractcore.__version__}; distribution={installed}")
 if abstractcore.__version__ != installed:
     raise SystemExit("Code/metadata mismatch: reinstall in this Python environment.")
-if installed != "2.30.0":
+if installed != "2.31.0":
     raise SystemExit("Version differs from this guide; use the installed version's docs/skill.")
 ```
 
