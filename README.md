@@ -10,7 +10,8 @@ Unified LLM Interface
 > Write once, run everywhere
 
 What's new in 2.31.1: `/v1/chat/completions` reuses a model already resident in the process (a host's
-runtime pool) instead of loading a second llama.cpp copy per request. See the
+runtime pool) instead of loading a second llama.cpp copy per request; the download catalog lists the
+LFM2 and LFM2.5 families (GGUF and MLX, the 24B-A2B models included). See the
 [changelog](CHANGELOG.md#2311---2026-10-28).
 
 What's new in 2.31.0: streamed tool calls carry the declared MCP tool name, the MLX prefix cache
