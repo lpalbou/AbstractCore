@@ -628,7 +628,7 @@ def _fit_warning(row: Mapping[str, Any], fit: Mapping[str, Any]) -> Optional[str
 # quant_class: one normalized quantization family per artifact
 # ---------------------------------------------------------------------------
 
-QUANT_CLASSES = ("2bit", "3bit", "4bit", "5bit", "6bit", "8bit", "16bit", "full", "unknown")
+QUANT_CLASSES = ("1bit", "2bit", "3bit", "4bit", "5bit", "6bit", "8bit", "16bit", "full", "unknown")
 
 # Label -> class, checked in order against the lowercased quant label
 # (`-`/space -> `_`). The label is authoritative; `bits` is consulted only when
@@ -657,7 +657,7 @@ def quant_class(quant: Any, bits: Any = None) -> str:
     """`q4_k_m` -> `4bit`, `Q8_0` -> `8bit`, `bf16` -> `16bit`, None -> `unknown`.
 
     `bits` (effective bits/weight) is a fallback for a label this table does
-    not parse but the caller measured: [N, N+1) -> Nbit for N in 2..6,
+    not parse but the caller measured: [N, N+1) -> Nbit for N in 1..6,
     [8, 9) -> 8bit, [16, 17) -> 16bit, >= 32 -> full; else `unknown`.
     """
 
@@ -678,7 +678,7 @@ def quant_class(quant: Any, bits: Any = None) -> str:
     if isinstance(bits, bool) or not isinstance(bits, (int, float)) or bits <= 0:
         return "unknown"
     b = float(bits)
-    for n in (2, 3, 4, 5, 6, 8, 16):
+    for n in (1, 2, 3, 4, 5, 6, 8, 16):
         if n <= b < n + 1:
             return f"{n}bit"
     return "full" if b >= 32 else "unknown"

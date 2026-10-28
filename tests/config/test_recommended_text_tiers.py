@@ -380,7 +380,11 @@ QUANT_TABLE = [
     ("fp32", "full"),
     (None, "unknown"),
     ("", "unknown"),
-    ("iq1_s", "unknown"),
+    # The extended quant set (backlog 0861) lists Unsloth's 1-bit builds.
+    ("iq1_s", "1bit"),
+    ("UD-IQ1_M", "1bit"),
+    ("UD-Q3_K_XL", "3bit"),
+    ("UD-Q8_K_XL", "8bit"),
     ("mystery", "unknown"),
 ]
 
@@ -390,7 +394,7 @@ def test_quant_class_table(quant, expected):
     assert mc.quant_class(quant, bits_for_quant(quant)) == expected
 
 
-@pytest.mark.parametrize("bits,expected", [(4.5, "4bit"), (4.85, "4bit"), (8.5, "8bit"), (6.6, "6bit"), (16.0, "16bit"), (32.0, "full"), (1.6, "unknown"), (None, "unknown")])
+@pytest.mark.parametrize("bits,expected", [(4.5, "4bit"), (4.85, "4bit"), (8.5, "8bit"), (6.6, "6bit"), (16.0, "16bit"), (32.0, "full"), (1.6, "1bit"), (0.5, "unknown"), (None, "unknown")])
 def test_quant_class_from_bits_alone(bits, expected):
     assert mc.quant_class(None, bits) == expected
 
