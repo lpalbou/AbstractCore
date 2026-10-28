@@ -16,6 +16,7 @@ Use this file as the entry point for planning status, recommended next work, and
 - Recurrent: 0
 
 2026-10-28 (2.31.1): filed and completed `0859` (`/v1/chat/completions` reuses the model resident in the process instead of a second llama.cpp copy per request).
+2026-10-28 (2.31.1): filed and completed `0860` (the LFM2 and LFM2.5 families in the download catalog, GGUF and MLX, operator QA).
 
 2026-10-27 (2.31.0): completed `0856` (streamed native tool calls carry the declared name) and `0858`; `0857` item 1 (clone `language` over HTTP) shipped, items 2-3 stay planned.
 

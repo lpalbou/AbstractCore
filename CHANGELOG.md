@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.31.1] - 2026-10-28
 
+### Added
+
+- **The LFM2 and LFM2.5 families in the download catalog** (backlog 0860): 11 new rows (LFM2 350M, 700M, 1.2B, 2.6B,
+  8B-A1B, 24B-A2B; LFM2.5 350M, 1.2B Instruct, 1.2B Thinking, 8B-A1B, 24B-A2B) and GGUF on LFM2.5 2.6B, each with
+  GGUF (Liquid AI official and unsloth) and MLX (mlx-community, else Liquid AI's own) artifacts, every id and size
+  checked on Hugging Face on 2026-10-28; the capability registry gains `lfm2.5-24b-a2b` and the repo-id aliases.
+  Searching "lfm" in a Models catalog listed one row before.
+
 ### Fixed
 
 - **`/v1/chat/completions` (and `/v1/responses`) reuse a model already resident in the process** instead of loading

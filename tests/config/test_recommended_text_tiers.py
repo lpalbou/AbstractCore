@@ -562,6 +562,35 @@ def test_every_upstream_artifact_is_eight_bit_or_a_tier_or_a_reverified_id():
     # Hy-Memory row (f5de10cb): the MLX 4-bit build verified from a cold hub download through
     # AbstractCore and plain mlx-lm, and the upstream GGUF with its size read from the hub API.
     reverified |= {"mlx-community/Hy-Memory-30B-A3B-4bit", "tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M"}
+    # LFM2 / LFM2.5 rows (backlog 0860, 2026-10-28): every repo id and size read from the Hugging Face API
+    # (one request per repo; the ids and revisions are listed in the backlog item).
+    reverified |= {
+        "LiquidAI/LFM2-24B-A2B-GGUF:Q4_K_M",
+        "LiquidAI/LFM2-8B-A1B-GGUF:Q4_K_M",
+        "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M",
+        "LiquidAI/LFM2.5-1.2B-Thinking-GGUF:Q4_K_M",
+        "LiquidAI/LFM2.5-2.6B-GGUF:Q4_K_M",
+        "LiquidAI/LFM2.5-24B-A2B-GGUF:Q4_K_M",
+        "LiquidAI/LFM2.5-24B-A2B-MLX-4bit",
+        "LiquidAI/LFM2.5-350M-GGUF:Q4_K_M",
+        "LiquidAI/LFM2.5-350M-MLX-4bit",
+        "LiquidAI/LFM2.5-8B-A1B-GGUF:Q4_K_M",
+        "mlx-community/LFM2-1.2B-4bit",
+        "mlx-community/LFM2-2.6B-4bit",
+        "mlx-community/LFM2-24B-A2B-4bit",
+        "mlx-community/LFM2-350M-4bit",
+        "mlx-community/LFM2-700M-4bit",
+        "mlx-community/LFM2-8B-A1B-4bit",
+        "mlx-community/LFM2.5-1.2B-Instruct-4bit",
+        "mlx-community/LFM2.5-1.2B-Thinking-4bit",
+        "mlx-community/LFM2.5-8B-A1B-MLX-4bit",
+        "unsloth/LFM2-1.2B-GGUF:Q4_K_M",
+        "unsloth/LFM2-350M-GGUF:Q4_K_M",
+        "unsloth/LFM2-700M-GGUF:Q4_K_M",
+        "unsloth/LFM2-8B-A1B-GGUF:Q4_K_M",
+        "unsloth/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M",
+        "unsloth/LFM2.5-1.2B-Thinking-GGUF:Q4_K_M",
+    }
     reverified |= {r.download["artifact"] for r in RECOMMENDED_MODELS.values()}
     reverified |= {p.download["artifact"] for r in RECOMMENDED_MODELS.values() for p in r.by_accelerator.values()}
     # Speech input models offered next to the recommended large-v3 (round 16): Whisper base

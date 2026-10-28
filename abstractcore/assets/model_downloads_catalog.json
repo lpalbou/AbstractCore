@@ -3145,6 +3145,32 @@
    "starter": false,
    "artifacts": [
     {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-2.6B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 1674455040,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "e7caca5d835a3901a8e0d63e94009429bafafdfc"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-2.6B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 2874779648,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "e7caca5d835a3901a8e0d63e94009429bafafdfc"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/LFM2.5-2.6B-4bit",
      "quant": "4bit",
@@ -3159,6 +3185,820 @@
      "download_bytes": 2884062385,
      "size_source": "catalog",
      "verified": true
+    }
+   ]
+  },
+  {
+   "id": "lfm2-350m",
+   "family": "lfm2",
+   "display_name": "LFM2 350M",
+   "vendor": "Liquid AI",
+   "params_total": 350000000,
+   "params_active": null,
+   "license": "lfm1.0",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/LFM2-350M-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 229309152,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "7ed6733192873777637b34cf3c8ba0d8380d931e"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2-350M-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 379214784,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "8fdc9d526b7ed346b19257551b05816c7912ecc2"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-350M-4bit",
+     "quant": "4bit",
+     "download_bytes": 199527820,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "18dc72abf3b2337f9123cfd6eeeb58dfa7947066"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-350M-8bit",
+     "quant": "8bit",
+     "download_bytes": 376737380,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "3b5014a1966c54313045fd0a23a098a220083b1e"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2-700m",
+   "family": "lfm2",
+   "display_name": "LFM2 700M",
+   "vendor": "Liquid AI",
+   "params_total": 700000000,
+   "params_active": null,
+   "license": "lfm1.0",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/LFM2-700M-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 468624096,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "8a92b6d90fc835f810721d775a43bc220a56e1a4"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2-700M-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 791565248,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "fd39e80d7a5ac61494ffff577e61bbbfddbd0d02"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-700M-4bit",
+     "quant": "4bit",
+     "download_bytes": 417827482,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "6b32895938db95f2d40f2d0d70c10117fba5297a"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-700M-8bit",
+     "quant": "8bit",
+     "download_bytes": 789023476,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "cc0f7efcc1c15649dc385f686f6cf142215d1daf"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2-1.2b",
+   "family": "lfm2",
+   "display_name": "LFM2 1.2B",
+   "vendor": "Liquid AI",
+   "params_total": 1200000000,
+   "params_active": null,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm2-1.2b",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/LFM2-1.2B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 730893024,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "154016c6696a2d84ea8c5c2a9e6b2c97f2547f59"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2-1.2B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 1246251968,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "5399e76c648f4eb8c053feb1ab747277dea5bf8b"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-1.2B-4bit",
+     "quant": "4bit",
+     "download_bytes": 658540250,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "3843e4ad0fcb8b7ed8a050908ac8f0bb5320d1bf"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-1.2B-8bit",
+     "quant": "8bit",
+     "download_bytes": 1243645809,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "9384737a4b9172faf97f4d65d4bf7799bee182fa"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2-2.6b",
+   "family": "lfm2",
+   "display_name": "LFM2 2.6B",
+   "vendor": "Liquid AI",
+   "params_total": 2600000000,
+   "params_active": null,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm2-2.6b",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2-2.6B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 2733011168,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "a759abdc5955d4ca97763e5cb7ff3940589ba898"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-2.6B-4bit",
+     "quant": "4bit",
+     "download_bytes": 1445658357,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "493071ebca3592c63085e19612ded87192a2a0dd"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-2.6B-8bit",
+     "quant": "8bit",
+     "download_bytes": 2730164389,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "bf50a6b1531ef001c22a2b1aefd503b753f8334f"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2-8b-a1b",
+   "family": "lfm2",
+   "display_name": "LFM2 8B-A1B",
+   "vendor": "Liquid AI",
+   "params_total": 8300000000,
+   "params_active": 1500000000,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm2-8b-a1b",
+   "tags": [
+    "chat",
+    "moe"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2-8B-A1B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 5044779712,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "145e98524a2ed11d35a45e0080febcee063749b6"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/LFM2-8B-A1B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 5044780096,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "01c1c9ba807324289806d69f5895e11aff6de784"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2-8B-A1B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8868428480,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "145e98524a2ed11d35a45e0080febcee063749b6"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-8B-A1B-4bit",
+     "quant": "4bit",
+     "download_bytes": 5213962077,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "3266a85e9dabe5a6a711f889b8389cfa0c6b08d2"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-8B-A1B-8bit",
+     "quant": "8bit",
+     "download_bytes": 9383100137,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "6b0ba099bc88024decbc0b370e4bfb1302324cbc"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2-24b-a2b",
+   "family": "lfm2",
+   "display_name": "LFM2 24B-A2B",
+   "vendor": "Liquid AI",
+   "params_total": 24000000000,
+   "params_active": 2000000000,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm2-24b-a2b",
+   "tags": [
+    "chat",
+    "moe"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2-24B-A2B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 14415473952,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "6247d03b87c27c05a258feb5acdfb4d5efbf0bd8"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2-24B-A2B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 25351965984,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "6247d03b87c27c05a258feb5acdfb4d5efbf0bd8"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2-24B-A2B-4bit",
+     "quant": "4bit",
+     "download_bytes": 13415177506,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "eede03bcde763b314fe70e0f5269b90aa0e4fd02"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "LiquidAI/LFM2-24B-A2B-MLX-8bit",
+     "quant": "8bit",
+     "download_bytes": 25334341102,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "387dd98f0130fdf6e7f60c8b33c7a47f530140c2"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2.5-350m",
+   "family": "lfm2.5",
+   "display_name": "LFM2.5 350M",
+   "vendor": "Liquid AI",
+   "params_total": 350000000,
+   "params_active": null,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm2.5-350m",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-350M-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 229312224,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "657e078c94084481950a2d555a941481f715536b"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-350M-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 379217632,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "657e078c94084481950a2d555a941481f715536b"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "LiquidAI/LFM2.5-350M-MLX-4bit",
+     "quant": "4bit",
+     "download_bytes": 221809325,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "f6cb4e006bb7a2d8a6afa14ec0a53e0586f65a5b"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2.5-350M-8bit",
+     "quant": "8bit",
+     "download_bytes": 376737380,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "1227587c17a9e439da6c848b351c1901f86b4cce"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2.5-1.2b-instruct",
+   "family": "lfm2.5",
+   "display_name": "LFM2.5 1.2B Instruct",
+   "vendor": "Liquid AI",
+   "params_total": 1200000000,
+   "params_active": null,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm2.5-1.2b-instruct",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 730895168,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "8ed288026e23958ad9dfa92d53ed773a8eee7125"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 730895584,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "b01cc872e5918b0fdec170003cd854851e3ed854"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 1246253888,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "8ed288026e23958ad9dfa92d53ed773a8eee7125"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2.5-1.2B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": 658540250,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "dee2f8a2786e6648bb644a7ca40652842490034b"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2.5-1.2B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 1243645809,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "e8c415057d2eb9e4ef19e57692d6bdbca96a74d2"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2.5-1.2b-thinking",
+   "family": "lfm2.5",
+   "display_name": "LFM2.5 1.2B Thinking",
+   "vendor": "Liquid AI",
+   "params_total": 1200000000,
+   "params_active": null,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm2.5-1.2b-thinking",
+   "tags": [
+    "chat",
+    "small",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-1.2B-Thinking-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 730895360,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "9584426effbfa44b677e925793a12188a36b44ce"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/LFM2.5-1.2B-Thinking-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 730895584,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "0e858c2482368d88ed99097e387527a9e52fcae4"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-1.2B-Thinking-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 1246254080,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "9584426effbfa44b677e925793a12188a36b44ce"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2.5-1.2B-Thinking-4bit",
+     "quant": "4bit",
+     "download_bytes": 658540250,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "81e15e78b44e02efdc281d798e2163abce26bbb3"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2.5-1.2B-Thinking-8bit",
+     "quant": "8bit",
+     "download_bytes": 1243645809,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "35175c7b717f4ee0fef5690940b2c1681039fe8d"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2.5-8b-a1b",
+   "family": "lfm2.5",
+   "display_name": "LFM2.5 8B-A1B",
+   "vendor": "Liquid AI",
+   "params_total": 8300000000,
+   "params_active": 1500000000,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm2.5-8b-a1b",
+   "tags": [
+    "chat",
+    "moe",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-8B-A1B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 5155564768,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "49c14831707011e64d70b2ebd8462ba08d608434"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 9010195680,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "49c14831707011e64d70b2ebd8462ba08d608434"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/LFM2.5-8B-A1B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 9010196064,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "37563684c4a625e9958906fd924e15095cf9c896"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2.5-8B-A1B-MLX-4bit",
+     "quant": "4bit",
+     "download_bytes": 4764265165,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "146590a491db88581884033023f51f6b49a27b89"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2.5-8B-A1B-MLX-8bit",
+     "quant": "8bit",
+     "download_bytes": 8997366385,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "47bba3e481860029062fd05c47e8bc7b45f59a2e"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lfm2.5-24b-a2b",
+   "family": "lfm2.5",
+   "display_name": "LFM2.5 24B-A2B",
+   "vendor": "Liquid AI",
+   "params_total": 24000000000,
+   "params_active": 2450000000,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm2.5-24b-a2b",
+   "tags": [
+    "chat",
+    "moe",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-24B-A2B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 14526258464,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "0912d33141f77e10705345a6732bfd83f0252fdc"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM2.5-24B-A2B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 25493732640,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "0912d33141f77e10705345a6732bfd83f0252fdc"
+     }
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/LFM2.5-24B-A2B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 25493733344,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "aacc77834f6aa568c93b4dbd6d295059736be98c"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "LiquidAI/LFM2.5-24B-A2B-MLX-4bit",
+     "quant": "4bit",
+     "download_bytes": 13567294335,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "667408d494bde191c2cb9dd4f4549827816b9275"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "LiquidAI/LFM2.5-24B-A2B-MLX-8bit",
+     "quant": "8bit",
+     "download_bytes": 25484884997,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-10-28",
+      "revision": "67ab417dd02d0c9545802a726df668620eae049d"
+     }
     }
    ]
   },
