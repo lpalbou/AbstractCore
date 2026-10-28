@@ -7,6 +7,7 @@ request added ~11 GB. The chat route now reuses the alive huggingface holder of 
 """
 from __future__ import annotations
 
+import asyncio
 import importlib
 import sys
 import types
@@ -30,6 +31,7 @@ class _Holder(BaseProvider):
         self.llm: Optional[Any] = types.SimpleNamespace(model_path=f"/cache/{model.split('/')[-1]}/model-Q4_K_M.gguf") if alive else None
         self.calls = 0
         self.unloaded = False
+        self.on_event_loop: List[bool] = []
 
     def get_capabilities(self) -> List[str]:
         return ["chat"]
@@ -42,6 +44,11 @@ class _Holder(BaseProvider):
 
     def _generate_internal(self, prompt: str, messages: Optional[List[Dict[str, Any]]] = None, **kwargs: Any) -> GenerateResponse:
         self.calls += 1
+        try:
+            asyncio.get_running_loop()
+            self.on_event_loop.append(True)
+        except RuntimeError:
+            self.on_event_loop.append(False)
         return GenerateResponse(content="pong", model=self.model, finish_reason="stop",
                                 usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2})
 
@@ -79,6 +86,8 @@ def test_chat_reuses_the_resident_holder_instead_of_a_second_copy(server) -> Non
         for _ in range(3):
             assert _chat(app)["choices"][0]["message"]["content"] == "pong"
         assert created == [] and holder.calls == 3
+        # A lent instance queues behind its holder's runs: never waited for on the event loop.
+        assert holder.on_event_loop == [False, False, False]
         # Matched by path too (a request naming the cached file's repo spelled differently).
         assert app._resident_provider_for_request("huggingface", MODEL.lower(), {}) is holder
     finally:

@@ -9897,6 +9897,7 @@ async def process_chat_completion(
             explicit_provider_key_hash=_provider_key_fingerprint(provider_api_key),
         )
         llm = loaded_runtime.llm if loaded_runtime is not None else None
+        lent_resident = False
         if llm is None and not unload_after_requested:
             # A model already resident in THIS process (a host's runtime pool, an earlier load) is
             # REUSED: a second huggingface instance is a second full copy of the weights and its
@@ -9904,6 +9905,7 @@ async def process_chat_completion(
             # llama_context"; on Metal each request added ~11 GB). Never with unload_after, which
             # would unload the holder's model; never with request-specific provider settings.
             llm = _resident_provider_for_request(provider_normalized, model, provider_kwargs)
+            lent_resident = llm is not None
             if llm is not None:
                 logger.info("♻️ Reusing the resident provider instance", request_id=request_id, provider=provider, model=model)
         if llm is None:
@@ -9975,7 +9977,11 @@ async def process_chat_completion(
         cancel_event = threading.Event() if supports_concurrent_generation(llm) else None
         if cancel_event is not None:
             gen_kwargs["_cancel_event"] = cancel_event
-        elif _client_disconnect_cancels(llm):
+        elif lent_resident or _client_disconnect_cancels(llm):
+            # A lent resident instance (above) serializes its own generations on its worker
+            # thread, behind the holder's runs: waiting for it ON the event loop would freeze
+            # every other request for that whole queue. It takes the off-loop, disconnect-watched
+            # lane below, and a client that goes away cancels its generation.
             # A client that goes away cancels the generation: the
             # runtime's RemoteAbstractCoreLLMClient severs its request on a Stop,
             # and this is the only signal that reaches the server. HTTP-backed

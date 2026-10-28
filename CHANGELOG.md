@@ -22,10 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request-specific provider settings (an explicit provider key, a `base_url`); an instance the server built for one
   request is never lent; MLX instances already share weights and are not lent. A lent instance keeps its own tracing
   (no `X-AbstractCore-Trace-Id` for that request) and ignores the request's `timeout_s`.
-- **A HuggingFace provider instance runs one generation at a time** (`HuggingFaceProvider._generation_gate`): held
-  for a whole call, and for a stream from its first chunk until it ends or is closed (from whichever thread resumes
-  it). Two generations on one llama.cpp context (a pool's runs, a lent `/v1` request) no longer run at once; before,
-  only the prompt-cache prefill was locked.
+- **Every operation on a HuggingFace provider instance's model runs on one worker thread of that instance, one at a
+  time** (`HuggingFaceProvider._generation_worker`): generations, the prompt-cache prefills, set/clear/save/load, and
+  the free step of `unload_model`. Before, only the GGUF prompt-cache prefill took an instance lock, so a pool serving
+  two runs (or a run and a lent `/v1` request) could run two operations on one llama.cpp context at once. A stream is
+  produced on the worker into a queue, so it never waits for its consumer (no deadlock with a call waiting for the
+  instance, or two streams advanced by one thread); a consumer that stops early stops the producer at its next chunk;
+  a stream counts as in flight from the call (an unload cancels and waits for it); the reload of an ejected model is
+  decided on the worker; the caller's contextvars travel with the call; Ctrl-C while waiting cancels the generation.
+- A lent instance answers `/v1` off the event loop, with a client disconnect cancelling its generation (it queues
+  behind the holder's runs; the server's own in-process instances still answer on the loop as before). It keeps its
+  holder's construction defaults (seed, default max output tokens, context size) for settings the request omits,
+  shares the holder's prompt-cache store (by default 32 entries, least recently used), and, when the holder has tracing on,
+  its trace buffer.
 
 ## [2.31.0] - 2026-10-27
 

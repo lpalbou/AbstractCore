@@ -9,6 +9,7 @@ a queue, so it never needs its consumer to finish.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any, Iterator, List
@@ -131,3 +132,119 @@ def test_errors_at_the_start_of_a_stream_reach_the_caller_at_the_call() -> None:
 def test_a_generation_that_calls_back_into_its_instance_runs_inline() -> None:
     worker = hf._InstanceGenerationWorker("test-reentry")
     assert _within(5, lambda: worker.run(lambda: worker.run(lambda: "inner"))) == "inner"
+
+
+# --- Round-2 review findings (worker design) ---------------------------------------------------
+
+
+def test_every_operation_that_touches_the_model_runs_on_the_worker() -> None:
+    """Prompt-cache prefills / save / load / set / clear and the unload's free step drive the same
+    llama.cpp context as a generation: they are queued on the instance's worker too."""
+    for name in ("_prompt_cache_backend_create", "_prompt_cache_backend_clone", "_prompt_cache_backend_append",
+                 "prompt_cache_set", "prompt_cache_clear", "prompt_cache_save", "prompt_cache_load",
+                 "_free_model_on_unload"):
+        assert getattr(getattr(hf.HuggingFaceProvider, name), "_abstractcore_on_model_thread", False), name
+
+    seen = _Overlap()
+    p = _provider(seen, chunks=5)
+
+    @hf._on_model_thread
+    def prefill(self: Any) -> int:
+        with seen:
+            time.sleep(0.02)
+        return threading.get_ident()
+
+    a = p._generate_internal("a", stream=True)
+    next(a)
+    worker_thread = _within(5, lambda: prefill(p))
+    assert list(a) and seen.peak == 1 and seen.threads == {worker_thread}
+
+
+def test_a_stream_is_in_flight_from_the_call_until_its_production_ends() -> None:
+    """An unload cancels and waits for in-flight calls: a stream produces before its first next()."""
+    gate = threading.Event()
+    p = _provider(_Overlap(), chunks=2)
+    inner = p._generate_gguf
+
+    def lane(*a: Any, **k: Any):
+        chunks = inner(*a, **k)
+
+        def held() -> Iterator[GenerateResponse]:
+            gate.wait(5)  # produced on the worker, paused until the test has looked
+            yield from chunks
+        return held()
+
+    p._generate_gguf = lane
+    s = p._generate_internal("x", stream=True, _cancel_event=threading.Event())  # base.generate gives one
+    assert p._inflight_generations().active() == 1
+    gate.set()
+    assert [c.content for c in s] == ["0", "1"]
+    assert _within(5, lambda: _wait_for(lambda: p._inflight_generations().active() == 0))
+
+
+def _wait_for(pred) -> bool:
+    deadline = time.time() + 5
+    while not pred():
+        if time.time() > deadline:
+            return False
+        time.sleep(0.01)
+    return True
+
+
+def test_an_eject_while_a_call_waits_is_seen_on_the_worker() -> None:
+    """The ejected-reload check runs on the worker right before the lane, not when the call queued."""
+    seen = _Overlap()
+    p = _provider(seen, chunks=1)
+    reloads: List[int] = []
+    p.logger = logging.getLogger("test-hf-reload")
+
+    def load_model(*a: Any, **k: Any) -> None:
+        reloads.append(1)
+        p.llm = object()
+
+    p.load_model = load_model
+    busy = threading.Event()
+    release = threading.Event()
+    p._generation_worker.run(lambda: None)  # start the worker
+
+    t = threading.Thread(target=lambda: p._generation_worker.run(lambda: (busy.set(), release.wait(5))))
+    t.start()
+    busy.wait(5)
+    box: List[Any] = []
+    q = threading.Thread(target=lambda: box.append(p._generate_internal("queued")))
+    q.start()
+    time.sleep(0.05)
+    p.llm = None  # ejected while the call waits
+    release.set()
+    t.join(5)
+    q.join(5)
+    assert box and box[0].content == "ok" and reloads == [1]
+
+
+def test_the_callers_contextvars_reach_the_lane() -> None:
+    import contextvars
+
+    var: "contextvars.ContextVar[str]" = contextvars.ContextVar("hf_worker_test", default="unset")
+    worker = hf._InstanceGenerationWorker("test-ctx")
+    var.set("caller")
+    assert worker.run(lambda: var.get()) == "caller"
+    assert list(worker.stream(lambda: iter([var.get()]))) == ["caller"]
+
+
+def test_an_interrupted_caller_cancels_its_generation() -> None:
+    import os
+    import signal
+
+    worker = hf._InstanceGenerationWorker("test-sigint")
+    cancel = threading.Event()
+    started = threading.Event()
+
+    def generation() -> str:
+        started.set()
+        cancel.wait(5)
+        return "stopped" if cancel.is_set() else "ran to the end"
+
+    threading.Thread(target=lambda: (started.wait(5), time.sleep(0.05), os.kill(os.getpid(), signal.SIGINT)), daemon=True).start()
+    with pytest.raises(KeyboardInterrupt):
+        worker.run(generation, cancel_event=cancel)
+    assert cancel.is_set()

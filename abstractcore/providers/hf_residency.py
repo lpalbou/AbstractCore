@@ -49,17 +49,22 @@ _EJECT_LOCK = threading.RLock()
 # Every HuggingFaceProvider built in this process (weak: a collected instance
 # leaves on its own). Registered by HuggingFaceProvider.__init__.
 _HF_PROVIDERS: "weakref.WeakSet[Any]" = weakref.WeakSet()
+# Adds and snapshots are serialized: iterating a WeakSet while another thread adds to it raises
+# "Set changed size during iteration" (the server's `/v1` route reads it per request).
+_HF_PROVIDERS_LOCK = threading.Lock()
 
 
 def register_provider(provider: Any) -> None:
     try:
-        _HF_PROVIDERS.add(provider)
+        with _HF_PROVIDERS_LOCK:
+            _HF_PROVIDERS.add(provider)
     except TypeError:
         pass
 
 
 def registered_providers() -> List[Any]:
-    return [p for p in list(_HF_PROVIDERS)]
+    with _HF_PROVIDERS_LOCK:
+        return list(_HF_PROVIDERS)
 
 
 # ---------------------------------------------------------------------------
