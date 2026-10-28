@@ -2943,6 +2943,14 @@
    "params_active": null,
    "license": "apache-2.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "tiny"
@@ -2976,6 +2984,14 @@
    "params_active": null,
    "license": "apache-2.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "small"
@@ -3009,6 +3025,14 @@
    "params_active": null,
    "license": "apache-2.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "small",
@@ -3138,6 +3162,14 @@
    "params_active": null,
    "license": "lfm1.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "small"
@@ -3197,6 +3229,14 @@
    "params_active": null,
    "license": "lfm1.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "small"
@@ -3266,6 +3306,14 @@
    "params_active": null,
    "license": "lfm1.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "small"
@@ -4196,7 +4244,13 @@
    ],
    "capabilities_override": {
     "text": false,
-    "embedding": true
+    "embedding": true,
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "embedding"
+    ]
    }
   },
   {
@@ -4254,7 +4308,13 @@
    ],
    "capabilities_override": {
     "text": false,
-    "embedding": true
+    "embedding": true,
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "embedding"
+    ]
    }
   },
   {
@@ -4480,6 +4540,14 @@
    "params_active": null,
    "license": "apache-2.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "coding"
    ],
@@ -4558,6 +4626,14 @@
    "params_active": null,
    "license": "apache-2.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "thinking",
@@ -4689,6 +4765,14 @@
    "params_active": 2400000000,
    "license": "deepseek",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "coding",
     "moe"
@@ -4714,6 +4798,14 @@
    "params_active": null,
    "license": "bigcode-openrail-m",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "coding",
     "completion",
@@ -4752,6 +4844,15 @@
    "params_active": null,
    "license": "apache-2.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text",
+     "image"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "vision",
     "small"
@@ -4777,6 +4878,15 @@
    "params_active": null,
    "license": "apache-2.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text",
+     "image"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "vision"
    ],
@@ -4801,6 +4911,14 @@
    "params_active": null,
    "license": "falcon-llm",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat"
    ],
@@ -4837,6 +4955,14 @@
    "params_active": null,
    "license": "cc-by-nc-4.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "tools",
@@ -4863,6 +4989,14 @@
    "params_active": null,
    "license": "exaone",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "multilingual"
@@ -4900,6 +5034,14 @@
    "params_active": null,
    "license": "apache-2.0",
    "capabilities_key": null,
+   "capabilities_override": {
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "text"
+    ]
+   },
    "tags": [
     "chat",
     "open-data"
@@ -4949,7 +5091,13 @@
    ],
    "capabilities_override": {
     "text": false,
-    "embedding": true
+    "embedding": true,
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "embedding"
+    ]
    }
   },
   {
@@ -4978,7 +5126,13 @@
    ],
    "capabilities_override": {
     "text": false,
-    "embedding": true
+    "embedding": true,
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "embedding"
+    ]
    }
   },
   {
@@ -5029,7 +5183,14 @@
    "capabilities_override": {
     "text": false,
     "vision": false,
-    "image_generation": true
+    "image_generation": true,
+    "inputs": [
+     "text",
+     "image"
+    ],
+    "outputs": [
+     "image"
+    ]
    },
    "notes": "The AbstractFramework image-generation recommendation (output.image): the 8-bit MLX-Gen build on Apple silicon, the Diffusers repo on an NVIDIA GPU (CUDA)."
   },
@@ -5062,7 +5223,13 @@
    "capabilities_override": {
     "text": false,
     "audio": true,
-    "speech_synthesis": true
+    "speech_synthesis": true,
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "voice"
+    ]
    },
    "notes": "The AbstractFramework fresh-install voice default (output.voice), fetched through abstractvoice."
   },
@@ -5114,7 +5281,14 @@
     "vision": false,
     "video_generation": true,
     "text_to_video": true,
-    "image_to_video": true
+    "image_to_video": true,
+    "inputs": [
+     "text",
+     "image"
+    ],
+    "outputs": [
+     "video"
+    ]
    },
    "notes": "The AbstractFramework recommended video model (output.video): one checkpoint for text-to-video and image-to-video, run by AbstractVision through MLX-Gen (Apple silicon only). Recommended only where the memory AbstractVision/mlx-gen was measured to use at its default canvas (832x480) fits (the engine's figure, not the model's minimum); the larger 1280x704 canvas is measured too."
   },
@@ -5173,7 +5347,13 @@
     "vision": false,
     "video_generation": true,
     "text_to_video": true,
-    "image_to_video": false
+    "image_to_video": false,
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "video"
+    ]
    },
    "notes": "Wan2.2 A14B text-to-video (MoE, two 14B experts), run by AbstractVision through MLX-Gen (Apple silicon only). Its memory need is measured at AbstractVision's default canvas (832x480)."
   },
@@ -5225,7 +5405,14 @@
     "vision": false,
     "video_generation": true,
     "text_to_video": false,
-    "image_to_video": true
+    "image_to_video": true,
+    "inputs": [
+     "text",
+     "image"
+    ],
+    "outputs": [
+     "video"
+    ]
    },
    "notes": "Wan2.2 A14B image-to-video (MoE, two 14B experts), run by AbstractVision through MLX-Gen (Apple silicon only). Its memory need is measured at AbstractVision's default canvas (832x480)."
   },
@@ -5267,7 +5454,13 @@
    "capabilities_override": {
     "text": false,
     "audio": true,
-    "speech_recognition": true
+    "speech_recognition": true,
+    "inputs": [
+     "voice"
+    ],
+    "outputs": [
+     "text"
+    ]
    },
    "notes": "Whisper base on AbstractVoice's faster-whisper engine (CTranslate2): CUDA on an NVIDIA GPU, the processor elsewhere. The recommended speech input model until round 16 (now whisper-large-v3); kept for small machines and as the download pair that `repair_download_pair_routes` maps back to its route."
   },
@@ -5329,7 +5522,13 @@
    "capabilities_override": {
     "text": false,
     "audio": true,
-    "speech_recognition": true
+    "speech_recognition": true,
+    "inputs": [
+     "voice"
+    ],
+    "outputs": [
+     "text"
+    ]
    },
    "notes": "The AbstractFramework recommended speech input model (input.voice) on every host (operator ruling, round 16). Apple silicon with the apple/gpu setting: mlx-whisper on the Apple GPU (~1.4 s for a 17 s clip on an M5 Max); elsewhere faster-whisper: CUDA on an NVIDIA GPU, the processor otherwise (~20 s for that clip on an M5 Max processor)."
   },
@@ -5390,7 +5589,13 @@
    "capabilities_override": {
     "text": false,
     "audio": true,
-    "speech_recognition": true
+    "speech_recognition": true,
+    "inputs": [
+     "voice"
+    ],
+    "outputs": [
+     "text"
+    ]
    },
    "notes": "Whisper large-v3 with a 4-layer decoder: offered on both Whisper engines, never the default (operator ruling, round 16). The faster choice on a processor; ~0.25 s for a 17 s clip with mlx-whisper on an M5 Max."
   },
@@ -5431,7 +5636,13 @@
    "capabilities_override": {
     "text": false,
     "vision": false,
-    "music_generation": true
+    "music_generation": true,
+    "inputs": [
+     "text"
+    ],
+    "outputs": [
+     "music"
+    ]
    },
    "notes": "The AbstractFramework recommended music model (output.music), run by AbstractMusic's acestep backend (Diffusers AceStepPipeline on PyTorch: CUDA, Apple MPS in bfloat16, or the processor in float32). AbstractMusic loads it from the local Hugging Face cache only: download it first. Its memory need is estimated from the download (not measured)."
   }

@@ -1116,8 +1116,27 @@ def catalog_id_for(provider: Any, artifact: Any) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
+# What a model takes and what it produces, in the framework's modality words
+# (backlog 0862). `inputs` / `outputs` come from model_capabilities.json
+# (`capability_routes.input` / `.output`, `.embedding` -> "embedding") or,
+# for a row the registry does not know (image, video, voice, music engines and
+# a few text models), from the seed row's `capabilities_override`. Never
+# guessed from tags or names: a row with neither says None (unknown).
+MODALITY_INPUTS = ("text", "image", "video", "voice", "sound", "music", "3d")
+MODALITY_OUTPUTS = ("text", "image", "video", "voice", "sound", "music", "3d", "embedding", "rerank")
+
+
+def _modalities(values: Any, allowed: Tuple[str, ...]) -> Optional[List[str]]:
+    if not isinstance(values, (list, tuple)):
+        return None
+    out = [str(v) for v in values if str(v) in allowed]
+    return [m for m in allowed if m in out] or None
+
+
 def _capabilities(key: Optional[str], override: Optional[Mapping[str, Any]], tags: Iterable[str]) -> Dict[str, Any]:
     caps: Dict[str, Any] = {
+        "inputs": None,
+        "outputs": None,
         "text": None,
         "vision": None,
         "audio": None,
@@ -1139,6 +1158,14 @@ def _capabilities(key: Optional[str], override: Optional[Mapping[str, Any]], tag
         routes = registry.get("capability_routes") or {}
         outputs = routes.get("output") if isinstance(routes, dict) else None
         caps["text"] = ("text" in outputs) if isinstance(outputs, list) else True
+        if isinstance(routes, dict):
+            caps["inputs"] = _modalities(routes.get("input"), MODALITY_INPUTS)
+            produced = list(outputs) if isinstance(outputs, list) else []
+            if routes.get("embedding") or str(registry.get("model_type") or "").lower() == "embedding":
+                produced.append("embedding")
+            if routes.get("rerank") or str(registry.get("model_type") or "").lower() in ("rerank", "reranker"):
+                produced.append("rerank")
+            caps["outputs"] = _modalities(produced, MODALITY_OUTPUTS)
         caps["vision"] = bool(registry.get("vision_support"))
         caps["audio"] = bool(registry.get("audio_support"))
         tool = str(registry.get("tool_support") or "").strip().lower()
@@ -1154,6 +1181,8 @@ def _capabilities(key: Optional[str], override: Optional[Mapping[str, Any]], tag
         caps["text"] = False if caps["text"] is None else caps["text"]
     for k, v in dict(override or {}).items():
         caps[k] = v
+    caps["inputs"] = _modalities(caps.get("inputs"), MODALITY_INPUTS)
+    caps["outputs"] = _modalities(caps.get("outputs"), MODALITY_OUTPUTS)
     return caps
 
 
