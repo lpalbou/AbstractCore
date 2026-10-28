@@ -91,9 +91,13 @@ def resident_provider(provider: Optional[str], model: Optional[str], *, task: Op
     Only the `huggingface` backend lends (GGUF on llama.cpp, transformers): its instances do not share
     weights, so a second instance of a resident model is a second full copy (llama.cpp: another context
     and compute buffers; on a 16 GB GPU the second one fails to allocate), and one instance is safe to
-    share across threads (GGUF generation is serialized per instance, transformers on MPS by a
-    process lock). MLX instances already share their weights (`mlx_residency`), and embeddings are not
+    share across threads (see below). MLX instances already share their weights (`mlx_residency`), and embeddings are not
     chat providers: None for those.
+
+    Sharing is safe because a HuggingFace instance runs one generation at a time
+    (`HuggingFaceProvider._generation_gate`, held for a whole call and across a stream's yields).
+    An instance the server built for ONE request (`_abstractcore_request_scoped`: it may be unloaded
+    when that request ends, `unload_after`) is never lent.
 
     A holder is the first alive registered instance whose model name or path matches (`model_matches`,
     the eject's matcher). The caller must not unload a lent instance: it belongs to its holder (a
@@ -104,7 +108,7 @@ def resident_provider(provider: Optional[str], model: Optional[str], *, task: Op
 
     for holder in registered_providers():
         try:
-            if not _holder_alive(holder):
+            if not _holder_alive(holder) or getattr(holder, "_abstractcore_request_scoped", False):
                 continue
             path = getattr(getattr(holder, "llm", None), "model_path", None)
             if model_matches(getattr(holder, "model", None), str(path) if path else None, model):

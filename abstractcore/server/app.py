@@ -9908,6 +9908,12 @@ async def process_chat_completion(
                 logger.info("♻️ Reusing the resident provider instance", request_id=request_id, provider=provider, model=model)
         if llm is None:
             llm = create_llm(provider, model=model, **provider_kwargs)
+            # This request's own instance (it may be unloaded at the end: unload_after) is never
+            # lent to another request (`process_residency.resident_provider` skips it).
+            try:
+                llm._abstractcore_request_scoped = True
+            except Exception:  # noqa: BLE001 - a provider that refuses attributes is simply not marked
+                pass
         ollama_key: Optional[Tuple[str, str, str]] = None
         if loaded_runtime is None and provider_normalized == "ollama":
             base_url_for_key = provider_kwargs.get("base_url")

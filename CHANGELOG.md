@@ -19,8 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -> 4 and the process 11.2 -> 43.4 GB over three calls. Now the route reuses the alive `huggingface` holder of the
   same model (new `process_residency.resident_provider(provider, model)`, matched by name or path like the eject):
   holders stay at 1 and the process at 11.2 GB. Not with `unload_after` (it would unload the holder's model) nor with
-  request-specific provider settings (an explicit provider key, a `base_url`); MLX instances already share weights and
-  are not lent.
+  request-specific provider settings (an explicit provider key, a `base_url`); an instance the server built for one
+  request is never lent; MLX instances already share weights and are not lent. A lent instance keeps its own tracing
+  (no `X-AbstractCore-Trace-Id` for that request) and ignores the request's `timeout_s`.
+- **A HuggingFace provider instance runs one generation at a time** (`HuggingFaceProvider._generation_gate`): held
+  for a whole call, and for a stream from its first chunk until it ends or is closed (from whichever thread resumes
+  it). Two generations on one llama.cpp context (a pool's runs, a lent `/v1` request) no longer run at once; before,
+  only the prompt-cache prefill was locked.
 
 ## [2.31.0] - 2026-10-27
 
