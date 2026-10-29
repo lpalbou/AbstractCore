@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The model catalog never offers MLX off Apple silicon** (operator 2026-10-29: "on Linux never offer MLX"): the
+  mlx / mlx-gen / mlx-vlm artifacts are left out on a host whose engine registry says MLX cannot run (they were
+  listed, not downloadable), and a row with only MLX builds (the Wan video rows) is not listed there.
+
 ### Fixed
 
 - **An embedding default that is not downloaded says so, once, and can be downloaded from the console.** The
