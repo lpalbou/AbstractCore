@@ -168,9 +168,10 @@ def test_unload_reports_residual_when_weights_are_still_referenced(fake_sentence
 def test_eject_embedding_models_unloads_every_manager(fake_sentence_transformers, tmp_path):
     manager_mod, state = fake_sentence_transformers
     a = _manager(manager_mod, tmp_path)
-    b = _manager(manager_mod, tmp_path)   # a rebuilt embedder: second full copy
+    b = _manager(manager_mod, tmp_path)   # a rebuilt embedder: shares the loaded model (R3), no second copy
     assert manager_mod.resident_embedding_models()[0]["holders"] == 2
-    assert state["allocated"] == 180_000
+    assert manager_mod.resident_embedding_models()[0]["copies"] == 1
+    assert state["allocated"] == 90_000
     result = manager_mod.eject_embedding_models("fake/model")
     assert result["ok"] is True and len(result["holders_unloaded"]) == 2
     assert result["residual"] is None

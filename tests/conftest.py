@@ -700,3 +700,16 @@ def pytest_sessionfinish(session, exitstatus):
 
 def pytest_unconfigure(config):
     _hermetic_unconfigure()
+
+
+
+@pytest.fixture(autouse=True)
+def _isolate_shared_embedding_models():
+    """Each test starts with no shared embedding model (R3: one loaded model per process)."""
+    try:
+        from abstractcore.embeddings import manager as _m
+
+        _m._SHARED_EMBEDDING_MODELS.clear()
+    except Exception:
+        pass
+    yield

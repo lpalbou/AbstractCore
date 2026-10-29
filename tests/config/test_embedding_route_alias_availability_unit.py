@@ -121,6 +121,7 @@ def test_manager_loads_the_gguf_build_when_the_repo_is_missing(tmp_path, monkeyp
     assert built[0][1]["n_gpu_layers"] == -1, "operator ruling: the GPU is the default when there is room"
     assert mgr.model_id == "Qwen/Qwen3-Embedding-0.6B-GGUF", "another build is another embedding space"
     assert list(mgr.model.encode(["a", "b"]).shape) == [2, 2] and mgr.model.get_sentence_embedding_dimension() == 2
+    mgr._release_shared_model()  # what unload() does first (R3: the model is shared per process)
     mgr.model = None
     mgr._load_model()  # a reload after unload() comes back to the same build
     assert len([b for b in built if b != "closed"]) == 2 and mgr.model_id == "Qwen/Qwen3-Embedding-0.6B-GGUF"
