@@ -19,11 +19,17 @@ answer, it reads `general.architecture` from the first GGUF header (`read_gguf_a
 - `clip` and tokenizers give no task;
 - an embedding repo (its name contains "embed": Qwen3-Embedding's architecture is `qwen3`) gives `embedding` /
   `text_embedding`;
-- anything else gives `text_generation`.
+- an architecture on the text allow-list `_GGUF_TEXT_ARCH` gives `text_generation`. The list holds what the
+  catalog's GGUF repos ship, read from the Hugging Face API's `gguf.architecture` for every seed repo on 2026-10-29:
+  cohere2, deepseek2, exaone, gemma3/3n/4, gpt-oss, granite, granitehybrid, hy_v3, lfm2/lfm2moe, llama, llama4,
+  minimax-m2, mistral3, olmo2, phi3, qwen2/3/35, their MoE and VL variants, smollm3 and starcoder2;
+- any other architecture is `kind: model` with no tasks: it is never called a text model. This follows the merge
+  desk's review (spark2_5, an unknown "foo").
 `tasks_source: "gguf"`. A repo that ships its own config keeps the config's answer.
 
 ## Evidence
-- `tests/config/test_installed_gguf_tasks.py`: the server's five real cases (architectures read live on the server:
+- `tests/config/test_installed_gguf_tasks.py`: the unknown architectures (spark2_5, foo) leave the tasks empty,
+  which is red without the allow-list; the server's real cases (architectures read live on the server:
   qwen35, spark2_5, qwen3 embedding, qwen3-tts, flux), plus a repo with a config. Red without the GGUF step
   (mutation-checked).
 - `tests/config`: 1029 passed.

@@ -5014,6 +5014,15 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
     return {"kind": kind, "tasks": tasks, "tasks_source": source}
 
 
+# GGUF `general.architecture` values of the text models the catalog's GGUF repos ship, read from the
+# Hugging Face API (`gguf.architecture`) for every seed repo on 2026-10-29. Another architecture is
+# not called a text model: its tasks stay unknown (merge desk review of backlog 0866).
+_GGUF_TEXT_ARCH = frozenset({
+    "cohere2", "deepseek2", "exaone", "gemma3", "gemma3n", "gemma4", "gpt-oss", "granite", "granitehybrid",
+    "hy_v3", "lfm2", "lfm2moe", "llama", "llama4", "minimax-m2", "mistral3", "olmo2", "phi3", "qwen2", "qwen3",
+    "qwen35", "qwen35moe", "qwen3moe", "qwen3vl", "qwen3vlmoe", "smollm3", "starcoder2",
+})
+
 # GGUF `general.architecture` values that are not text models (speech, image, tokenizers).
 _GGUF_NON_TEXT_ARCH = (
     ("tts", ["text_to_speech"]),
@@ -5047,7 +5056,9 @@ def _gguf_kind_tasks(snap: Path, repo_path: Optional[Path]) -> Optional[Dict[str
     name = repo_path.name.split("--", 2)[-1] if repo_path is not None else ""
     if "embed" in name.lower():
         return {"kind": "embedding", "tasks": ["text_embedding"], "tasks_source": "gguf"}
-    return {"kind": "model", "tasks": ["text_generation"], "tasks_source": "gguf"}
+    if lowered in _GGUF_TEXT_ARCH:
+        return {"kind": "model", "tasks": ["text_generation"], "tasks_source": "gguf"}
+    return {"kind": "model", "tasks": [], "tasks_source": "gguf"}  # an architecture AbstractCore does not know
 
 
 def _lmstudio_kind_tasks(item: Dict[str, Any]) -> Dict[str, Any]:

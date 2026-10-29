@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866, operator QA item c). The repos the
   catalog downloads hold only the quant file, with no config or card, so `models list` reported them as an unknown
   model with no task. The kind and tasks now come from the file's own `general.architecture`:
-  - `qwen35` or `gemma4`: text generation;
+  - an architecture the catalog's GGUF repos use (`qwen35`, `gemma4`, `llama`, `lfm2`, ...): text generation; any
+    other architecture stays unknown;
   - `qwen3-tts`: text to speech;
   - `flux`: text to image;
   - an embedding repo (its name says so; Qwen3-Embedding reuses `qwen3`): text embedding.

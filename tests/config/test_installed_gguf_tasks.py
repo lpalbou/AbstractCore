@@ -34,7 +34,10 @@ def _repo(tmp_path: Path, repo: str, files: dict) -> Path:
 
 @pytest.mark.parametrize("repo,files,kind,tasks", [
     ("mradermacher/Qwen3.5-9B-Kimi-k3-Distilled-GGUF", {"Qwen3.5-9B-Kimi.Q4_K_M.gguf": "qwen35"}, "model", ["text_generation"]),
-    ("XHToken/Spark-X2.6-4B-GGUF", {"Spark-X2.6-4B-Q4_K_M.gguf": "spark2_5"}, "model", ["text_generation"]),
+    ("unsloth/gemma-4-E4B-it-GGUF", {"gemma-4-E4B-it-Q4_K_M.gguf": "gemma4"}, "model", ["text_generation"]),
+    # An architecture AbstractCore does not know stays unknown (never called a text model).
+    ("XHToken/Spark-X2.6-4B-GGUF", {"Spark-X2.6-4B-Q4_K_M.gguf": "spark2_5"}, "model", []),
+    ("someone/Foo-GGUF", {"foo.gguf": "foo"}, "model", []),
     ("Qwen/Qwen3-Embedding-0.6B-GGUF", {"Qwen3-Embedding-0.6B-Q8_0.gguf": "qwen3"}, "embedding", ["text_embedding"]),
     ("Serveurperso/Qwen3-TTS-GGUF", {"qwen-talker-0.6b-base-Q4_K_M.gguf": "qwen3-tts"}, "model", ["text_to_speech"]),
     ("unsloth/FLUX.2-klein-4B-GGUF", {"flux-2-klein-4b-Q4_K_M.gguf": "flux"}, "model", ["text_to_image"]),
@@ -48,3 +51,11 @@ def test_a_repo_with_its_own_config_keeps_the_config_answer(tmp_path) -> None:
     root = _repo(tmp_path, "org/Model-GGUF", {"m.gguf": "flux"})
     (root / "snapshots" / "abc" / "config.json").write_text('{"architectures": ["LlamaForCausalLM"]}')
     assert mm._hf_local_kind_tasks(root)["tasks"] == ["text_generation"]
+
+
+def test_every_seed_gguf_architecture_is_a_known_text_architecture() -> None:
+    """The allow-list holds what the catalog's GGUF repos ship (2026-10-29, Hugging Face API);
+    the embedding one (`nomic-bert`) is named by its repo, never listed as text."""
+    assert "nomic-bert" not in mm._GGUF_TEXT_ARCH
+    for arch in ("qwen35", "gemma4", "llama", "lfm2", "gpt-oss", "deepseek2", "mistral3"):
+        assert arch in mm._GGUF_TEXT_ARCH
