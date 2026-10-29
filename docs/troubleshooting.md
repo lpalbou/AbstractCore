@@ -534,6 +534,15 @@ For quantized transformers checkpoints, see
 
 ## Server Issues
 
+### Issue: Managed listener is unavailable while native inference works
+
+The optional Core HTTP listener and native framework execution have separate readiness.
+Inspect the listener handle's `status()` and `last_error`, or its supervising host's service
+status. Check the configured bind, a port collision and Core's own token; a Gateway token is
+not a direct Core credential. Fix the listener configuration before asking the host to retry.
+Stopping or restarting HTTP serving does not require unloading the execution owner's models.
+See [managed listeners](server.md#managed-listener-in-an-execution-owner).
+
 ### Issue: Server Won't Start
 
 **Symptoms:**
@@ -549,12 +558,13 @@ Port 8000 is already allocated
 lsof -i :8000  # Linux/Mac
 netstat -ano | findstr :8000  # Windows
 
-# Kill process on port
-kill -9 $(lsof -t -i:8000)  # Linux/Mac
-
 # Use different port
 uvicorn abstractcore.server.app:app --port 3000
 ```
+
+Identify the process holding the port before changing it. Reuse the intended service or choose
+an available port; a separate server process has its own model pool. Direct uvicorn serving
+requires explicit Core authentication configuration; see [Server](server.md).
 
 ### Issue: Client complains about missing API key
 
@@ -887,6 +897,19 @@ response = llm.generate(
 )
 ```
 
+### Issue: Model is already loaded with another configuration
+
+`InvalidRequestError` messages that say a second copy is never loaded are deterministic
+resource-admission refusals. Keep the resident device, backend, GPU-layer placement or MLX
+target/head/PLE configuration, or finish active work and unload all holders before changing
+it. Transformers callers reuse the existing provider rather than constructing another for
+the same base artifact. A retry of the same conflicting request will not help.
+
+List `resident_rows()` or the host's loaded-models surface to find the owner; do not disable
+model sharing or launch another standalone server to bypass the refusal. Separate contexts
+can legitimately allocate separate KV while sharing GGUF weights. See
+[managed-loader sharing rules](memory-management.md#one-resident-artifact-per-process).
+
 ### Issue: High Memory Usage
 
 **Solutions:**
@@ -907,9 +930,8 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 **Symptoms:** `unload_model()` or `POST /acore/models/unload` succeeds, but the process still holds
 the model's memory.
 
-**Causes:** another holder in the same process keeps the model (MLX instances share weights;
-HuggingFace and embedding instances each hold a full copy), or another owner (a managed runtime, an
-AbstractRuntime client) still uses it.
+**Causes:** another compatible holder or owner (a managed runtime, an AbstractRuntime client)
+still uses the resident model. Holder count does not imply a separate weight copy.
 
 **Check:**
 

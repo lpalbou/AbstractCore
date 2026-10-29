@@ -49,12 +49,12 @@ or [llms.txt](llms.txt) for a short index. Register the complete skill folder wi
 - [Recommended models](docs/recommended-models.md): capability choices by platform and memory.
 - [Engines](docs/engines.md): inventory, install plans and platform support.
 - [Configuration](docs/centralized-config.md): persistent routes, endpoint profiles, credentials and timeouts.
-- [Server](docs/server.md): multi-provider /v1 endpoints, authentication and control planes.
+- [Server](docs/server.md): optional multi-provider /v1 serving, Core authentication and managed listener lifecycle.
 - [Endpoint](docs/endpoint.md): one provider/model per HTTP worker.
 - [Web console](docs/console.md): model/engine/config management through the browser.
 - [Terminal console](docs/console-tui.md): terminal host management.
 - [Chat CLI](docs/acore-cli.md): interactive conversations.
-- [Memory and residency](docs/memory-management.md): loaded models, ownership, unload and memory accounting.
+- [Memory and residency](docs/memory-management.md): process-local artifact sharing/refusals, loaded models, ownership, unload and memory accounting.
 - [Memory blocs](docs/memory-blocs.md): text snapshots and native KV artifacts with live-binding checks.
 - [Cancellation](docs/generation-cancel.md): cancel_event, per-lane support and safe eject.
 - [HF compatibility](docs/huggingface-model-compatibility.md): Transformers/GGUF artifacts and loading limits.
@@ -1245,8 +1245,18 @@ The universal server routes `POST /v1/chat/completions` using model IDs such as
 `response_format` enables JSON/schema validation over HTTP. `/console` manages the host.
 Do not start another server on an occupied port or treat a help command as proof of health.
 
+A framework execution owner can start the optional Core HTTP listener with
+`abstractcore.server.managed.start_managed_server`; stopping that listener retains its resident
+models. It uses Core's own token and configuration. Native framework clients continue through
+Gateway run APIs and Runtime's ledger. See [Server](docs/server.md#managed-listener-in-an-execution-owner).
+
 ### Memory, caches, cancellation and diagnostics
 
+- Managed local loaders share compatible resident artifacts or refuse conflicting allocations
+  before loading. Reuse the resident configuration; Transformers callers reuse the provider.
+  Finish work and unload holders before changing engines, placement or native head profiles.
+  This contract is process-local and excludes arbitrary plugins/raw engine constructors and
+  independent external servers. See [sharing scope](docs/memory-management.md#one-resident-artifact-per-process).
 - `llm.get_prompt_cache_capabilities()` describes `none`, `keyed`, or `local_control_plane`.
   `llm.prompt_cache_supports_operation(...)` gates controls. Unsupported operations raise
   structured cache errors with `operation`, `code` and `capabilities`.
@@ -3451,6 +3461,15 @@ For quantized transformers checkpoints, see
 
 ## Server Issues
 
+### Issue: Managed listener is unavailable while native inference works
+
+The optional Core HTTP listener and native framework execution have separate readiness.
+Inspect the listener handle's `status()` and `last_error`, or its supervising host's service
+status. Check the configured bind, a port collision and Core's own token; a Gateway token is
+not a direct Core credential. Fix the listener configuration before asking the host to retry.
+Stopping or restarting HTTP serving does not require unloading the execution owner's models.
+See [managed listeners](docs/server.md#managed-listener-in-an-execution-owner).
+
 ### Issue: Server Won't Start
 
 **Symptoms:**
@@ -3466,12 +3485,13 @@ Port 8000 is already allocated
 lsof -i :8000  # Linux/Mac
 netstat -ano | findstr :8000  # Windows
 
-# Kill process on port
-kill -9 $(lsof -t -i:8000)  # Linux/Mac
-
 # Use different port
 uvicorn abstractcore.server.app:app --port 3000
 ```
+
+Identify the process holding the port before changing it. Reuse the intended service or choose
+an available port; a separate server process has its own model pool. Direct uvicorn serving
+requires explicit Core authentication configuration; see [Server](docs/server.md).
 
 ### Issue: Client complains about missing API key
 
@@ -3804,6 +3824,19 @@ response = llm.generate(
 )
 ```
 
+### Issue: Model is already loaded with another configuration
+
+`InvalidRequestError` messages that say a second copy is never loaded are deterministic
+resource-admission refusals. Keep the resident device, backend, GPU-layer placement or MLX
+target/head/PLE configuration, or finish active work and unload all holders before changing
+it. Transformers callers reuse the existing provider rather than constructing another for
+the same base artifact. A retry of the same conflicting request will not help.
+
+List `resident_rows()` or the host's loaded-models surface to find the owner; do not disable
+model sharing or launch another standalone server to bypass the refusal. Separate contexts
+can legitimately allocate separate KV while sharing GGUF weights. See
+[managed-loader sharing rules](docs/memory-management.md#one-resident-artifact-per-process).
+
 ### Issue: High Memory Usage
 
 **Solutions:**
@@ -3824,9 +3857,8 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 **Symptoms:** `unload_model()` or `POST /acore/models/unload` succeeds, but the process still holds
 the model's memory.
 
-**Causes:** another holder in the same process keeps the model (MLX instances share weights;
-HuggingFace and embedding instances each hold a full copy), or another owner (a managed runtime, an
-AbstractRuntime client) still uses it.
+**Causes:** another compatible holder or owner (a managed runtime, an AbstractRuntime client)
+still uses the resident model. Holder count does not imply a separate weight copy.
 
 **Check:**
 
@@ -4416,6 +4448,12 @@ a prompt preserves the normal `GenerateResponse` path for compatibility.
 
 ## Memory and model residency
 
+Managed local loaders reuse compatible resident weights or raise `InvalidRequestError` before
+a conflicting second allocation. Transformers callers must reuse the resident provider;
+creating another provider for the same base artifact is refused. The contract covers the
+supported Core loaders in one process, not independent servers or arbitrary plugin/raw-engine
+allocations. See [sharing rules](docs/memory-management.md#one-resident-artifact-per-process).
+
 `get_memory_snapshot()` reports host RAM, this process and the accelerator in one call;
 `device["process_held_bytes"]` is the accelerator memory this process holds across MLX, torch and
 llama.cpp. `process_residency` lists and ejects models across every in-process backend (MLX,
@@ -4501,6 +4539,20 @@ abstractcore serve
 ```
 
 See **[Server](docs/server.md)**.
+
+### Managed HTTP listener
+
+`abstractcore.server.managed.start_managed_server(*, host=None, port=None, timeout_s=15.0)`
+starts Core's authenticated app in the calling execution-owner process. Omitted host/port use
+Core's server configuration (default `127.0.0.1:8000`); `port=0` selects an available port.
+Importing the helper starts no listener and imports no HTTP app.
+
+It returns a `CoreHTTPServer` handle with `url`, `is_running`, `last_error`, `status()`
+(`running`, `url`, `error`) and `stop(*, timeout_s=6.0)`. Stopping is repeatable and retains
+resident models; a listener that fails to stop raises rather than reporting success.
+Timeouts must be finite, nonnegative numbers. The host owns supervision, and Core's
+authentication and bind-sensitive engine-install policy remain in force. See
+[managed listener lifecycle](docs/server.md#managed-listener-in-an-execution-owner).
 
 ## Request-scoped server authentication
 
@@ -5787,9 +5839,12 @@ and powers `abstractcore.utils.context_estimate.estimate_context_fit()` — an a
 context-fit answer that never loads weights.
 See [Memory and Model Residency](docs/memory-management.md).
 
-`unload_model()` releases one instance's hold. Several holders can keep the same model alive
-in one process (MLX instances share weights; HuggingFace and embedding instances each hold a full
-copy), so `abstractcore.providers.process_residency` gives one door to every in-process backend:
+`unload_model()` releases one instance's hold. Several compatible holders can keep one model's
+weights alive in a process. Managed local loaders share supported configurations or refuse a
+conflicting second allocation, using the existing backend registries and one process load lock.
+Transformers callers reuse the resident provider; a second provider for its base artifact is
+refused. See [sharing rules and scope](docs/memory-management.md#one-resident-artifact-per-process).
+`abstractcore.providers.process_residency` gives one door to the managed in-process backends:
 `resident_rows()` lists every model alive in the process, `eject()` unloads every holder, and
 `eject_unclaimed()` ejects only when no registered owner (the server's managed runtimes,
 AbstractRuntime clients) still pools, locks or is loading the model. The claim check and the eject
@@ -6353,6 +6408,25 @@ graph LR
 ### 10. Server Architecture (Optional Component)
 
 The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
+
+Python applications and native framework workflows can call Core without HTTP. A host can
+start Core's optional listener in its execution-owner process through
+[`start_managed_server`](docs/server.md#managed-listener-in-an-execution-owner). The listener uses
+Core authentication and the same process-local resource admission as Python callers. Starting
+or stopping it does not create or eject model resources. A fatal execution-owner process
+failure still affects every inference in that process; a supervising Gateway can restart it.
+
+```mermaid
+flowchart LR
+    Native["Native framework clients"] --> GW["Gateway run APIs / Runtime ledger"]
+    GW --> RPC["Execution-owner Python client"]
+    Direct["Optional OpenAI-compatible clients"] --> HTTP["Core HTTP listener / Core token"]
+    subgraph Owner["One execution-owner process"]
+        RPC --> Core["Core provider calls"]
+        HTTP --> Core
+        Core --> Admission["Existing loader admission and resident resources"]
+    end
+```
 
 ```mermaid
 graph TD
@@ -15175,6 +15249,35 @@ Related pages:
 - [Native MLX Runtime](docs/native-mlx-runtime.md) — shared native weights, request-owner leases, bounded queues and RAM/SSD prefix storage
 - [Server](docs/server.md) — the HTTP routes (`/acore/memory`, `/acore/models/loaded`, `/acore/models/unload`, `/acore/prompt_cache/*`)
 
+## One resident artifact per process
+
+Core's managed local loaders identify an artifact by its resolved file or cached snapshot
+directory. A symlink or repository ID that resolves to the same snapshot does not select a
+second copy. Different snapshots or quantized artifacts remain distinct models.
+
+Loading is serialized across the supported local loaders. Compatible holders reuse resident
+weights; a configuration that cannot share them raises `InvalidRequestError` before allocating
+another copy. Provider wrappers retain their own request and account state.
+
+| Loader | Sharing and conflict behavior |
+| --- | --- |
+| HuggingFace GGUF chat | Contexts can have separate KV allocations while sharing the same file's weights. An explicit GPU-layer placement that conflicts with the resident placement is refused, including when the requested context differs. |
+| MLX plain and native | Compatible holders share their existing model/session. Changing native target/head configuration or Qwen4 PLE placement requires unloading first. A target or drafter cannot also be loaded in a conflicting engine or target/head role. |
+| HuggingFace Transformers | Reuse the resident provider. Constructing a second provider for the same base artifact is refused; Core does not merge mutable provider state. |
+| Local embeddings | Compatible device/backend/trust settings share the encoder. Automatic settings can adopt a compatible resident entry; conflicting explicit settings are refused. |
+
+The same artifact cannot be loaded separately through these managed chat and embedding paths,
+or through incompatible supported engines. This is a **process-local** contract: separate Core
+processes, external servers such as Ollama or LM Studio, direct engine constructors and arbitrary
+capability-plugin loaders have their own resource ownership. Keep framework-managed inference
+in one execution owner when all clients must use one pool. Starting a separate standalone Core
+server does not join another process's pool.
+
+If a request is refused, reuse the resident configuration or finish active work and unload its
+holders before selecting a different configuration. Do not retry the same incompatible request
+or disable MLX model sharing. See [eject safety](docs/generation-cancel.md) and the
+[Python residency API](docs/api.md#memory-and-model-residency).
+
 ## Host memory snapshot
 
 `abstractcore.utils.memory.get_memory_snapshot()` reports system RAM, this process, and the
@@ -15258,8 +15361,9 @@ Shape:
 - `resident` lists every model whose weights are alive in this process across backends — MLX,
   the HuggingFace provider (transformers and GGUF) and in-process embedding models — one row per
   model with `backend`, `holders`, `weights_bytes`, `cache_bytes`, `held_bytes` and
-  `shared_weights`. HuggingFace and embedding instances do not share weights, so each holder is a
-  full copy (`shared_weights: false`). A GGUF row whose cache figure includes the f16 KV estimate
+  `shared_weights`. Holder count is not a count of physical weight copies: compatible GGUF,
+  MLX and embedding holders can share weights. Read the row's sharing fields rather than
+  multiplying weights by holder count. A GGUF row whose cache figure includes the f16 KV estimate
   carries `kv_bytes_estimated: true`. Reading the snapshot never loads a backend that the process
   has not loaded already.
 - `device.host_in_use_bytes` (Metal only, else `null`) is the **accelerator heap across
@@ -15495,11 +15599,10 @@ ejected instance reloads it on demand (logged). See
 
 ### Ejecting a model from the whole process
 
-On MLX, several provider instances in one process can share the same weights, and
-`unload_model()` releases only the calling instance's hold. With the HuggingFace provider and
-embedding models it is the other way round: each instance has its own full copy, so another
-instance (a summarizer, an older client) keeps its copy after yours is unloaded. To free a model
-completely, eject it from the whole process. One call covers every in-process backend:
+Several compatible holders can share weights in one process, and `unload_model()` releases
+only the calling holder's resources. Another instance or owner can keep the model alive after
+yours is unloaded. To free a model completely, eject its holders from the whole process. One
+call covers the managed in-process backends:
 
 ```python
 from abstractcore.providers.process_residency import eject, resident_rows
@@ -24968,17 +25071,52 @@ If you want a dedicated **single-model** `/v1` server (one provider/model per wo
 
 ## Serving through AbstractGateway
 
-AbstractGateway can expose Core's OpenAI-compatible serving routes at
-`<gateway-url>/core/v1`. Its console controls enablement, token access, and
-local-network open access. The endpoint uses the Gateway listener and Network
-policy; its Core token is separate from Gateway user tokens and credentials
-used to connect to a remote Core server. Gateway controls the exposed route
-allowlist; Core implements inference and provider credential checks.
+Native framework clients use Gateway run APIs and replay Runtime's ledger. They do not need an
+OpenAI-compatible endpoint. Gateway can optionally start Core's direct listener in the existing
+execution owner: its address and authentication come from Core's server configuration, and
+requests are handled by Core without Gateway/Runtime run orchestration. The direct listener is
+disabled by default and has a separate lifecycle from native execution.
 
-Open access does not authorize use of server-held cloud provider credentials.
-Clients using a cloud provider must supply their own
-`X-AbstractCore-Provider-API-Key`, or authenticate with the endpoint's Core token.
-See [Operator control and server trust boundary](docs/adr/0004-operator-control-and-server-trust-boundary.md).
+Gateway also offers a separate compatibility API at `<gateway-url>/v1` (the deprecated
+`/core/v1` prefix redirects there). That API uses Gateway account admission, named OpenAI API
+keys and its network policy. Its credentials are distinct from a direct Core listener's token.
+See [Gateway's OpenAI API guide](https://github.com/lpalbou/abstractgateway/blob/main/docs/openai-api.md)
+for its configuration and key rules. Core continues to own inference and upstream credential
+policy. See [Operator control and server trust boundary](docs/adr/0004-operator-control-and-server-trust-boundary.md).
+
+### Managed listener in an execution owner
+
+Hosts that already own Core inference can explicitly start its authenticated HTTP app without
+launching another model-owning process:
+
+```python
+from abstractcore.server.managed import start_managed_server
+
+listener = start_managed_server()  # Core's configured server host/port
+try:
+    print(listener.url)
+    print(listener.status())
+    # Keep the host's normal service loop running here.
+finally:
+    listener.stop()
+```
+
+The default address is `127.0.0.1:8000`; explicit `host=` and `port=` override the persisted
+server configuration, and `port=0` selects an available port. Importing the helper does not
+import the HTTP application or bind a socket. Starting it uses Core's existing first-run token
+handling and authentication; it does not accept Gateway credentials as Core credentials.
+The actual listener bind controls the default engine-install policy, independently for each
+concurrent listener. An explicit `ABSTRACTCORE_ALLOW_ENGINE_INSTALL` setting still wins.
+
+`status()` returns `running`, `url` and `error`; `is_running` and `last_error` are also available.
+Startup is bounded by `timeout_s` (15 seconds by default); invalid timeouts and failed binds
+raise before serving. `stop(timeout_s=6.0)` is repeatable and stops HTTP serving without
+unloading resident weights or restarting the execution owner. It raises if the listener cannot
+stop, so hosts can report and retry cleanup. Hosts own supervision and service recovery.
+
+The listener shares process resources with Python callers under the
+[managed-loader sharing rules](docs/memory-management.md#one-resident-artifact-per-process).
+Launching `abstractcore serve` separately creates an independent process and pool.
 
 ### Embedding Core in an ASGI host
 

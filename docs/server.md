@@ -6,17 +6,52 @@ If you want a dedicated **single-model** `/v1` server (one provider/model per wo
 
 ## Serving through AbstractGateway
 
-AbstractGateway can expose Core's OpenAI-compatible serving routes at
-`<gateway-url>/core/v1`. Its console controls enablement, token access, and
-local-network open access. The endpoint uses the Gateway listener and Network
-policy; its Core token is separate from Gateway user tokens and credentials
-used to connect to a remote Core server. Gateway controls the exposed route
-allowlist; Core implements inference and provider credential checks.
+Native framework clients use Gateway run APIs and replay Runtime's ledger. They do not need an
+OpenAI-compatible endpoint. Gateway can optionally start Core's direct listener in the existing
+execution owner: its address and authentication come from Core's server configuration, and
+requests are handled by Core without Gateway/Runtime run orchestration. The direct listener is
+disabled by default and has a separate lifecycle from native execution.
 
-Open access does not authorize use of server-held cloud provider credentials.
-Clients using a cloud provider must supply their own
-`X-AbstractCore-Provider-API-Key`, or authenticate with the endpoint's Core token.
-See [Operator control and server trust boundary](adr/0004-operator-control-and-server-trust-boundary.md).
+Gateway also offers a separate compatibility API at `<gateway-url>/v1` (the deprecated
+`/core/v1` prefix redirects there). That API uses Gateway account admission, named OpenAI API
+keys and its network policy. Its credentials are distinct from a direct Core listener's token.
+See [Gateway's OpenAI API guide](https://github.com/lpalbou/abstractgateway/blob/main/docs/openai-api.md)
+for its configuration and key rules. Core continues to own inference and upstream credential
+policy. See [Operator control and server trust boundary](adr/0004-operator-control-and-server-trust-boundary.md).
+
+### Managed listener in an execution owner
+
+Hosts that already own Core inference can explicitly start its authenticated HTTP app without
+launching another model-owning process:
+
+```python
+from abstractcore.server.managed import start_managed_server
+
+listener = start_managed_server()  # Core's configured server host/port
+try:
+    print(listener.url)
+    print(listener.status())
+    # Keep the host's normal service loop running here.
+finally:
+    listener.stop()
+```
+
+The default address is `127.0.0.1:8000`; explicit `host=` and `port=` override the persisted
+server configuration, and `port=0` selects an available port. Importing the helper does not
+import the HTTP application or bind a socket. Starting it uses Core's existing first-run token
+handling and authentication; it does not accept Gateway credentials as Core credentials.
+The actual listener bind controls the default engine-install policy, independently for each
+concurrent listener. An explicit `ABSTRACTCORE_ALLOW_ENGINE_INSTALL` setting still wins.
+
+`status()` returns `running`, `url` and `error`; `is_running` and `last_error` are also available.
+Startup is bounded by `timeout_s` (15 seconds by default); invalid timeouts and failed binds
+raise before serving. `stop(timeout_s=6.0)` is repeatable and stops HTTP serving without
+unloading resident weights or restarting the execution owner. It raises if the listener cannot
+stop, so hosts can report and retry cleanup. Hosts own supervision and service recovery.
+
+The listener shares process resources with Python callers under the
+[managed-loader sharing rules](memory-management.md#one-resident-artifact-per-process).
+Launching `abstractcore serve` separately creates an independent process and pool.
 
 ### Embedding Core in an ASGI host
 

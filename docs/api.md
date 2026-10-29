@@ -382,6 +382,12 @@ a prompt preserves the normal `GenerateResponse` path for compatibility.
 
 ## Memory and model residency
 
+Managed local loaders reuse compatible resident weights or raise `InvalidRequestError` before
+a conflicting second allocation. Transformers callers must reuse the resident provider;
+creating another provider for the same base artifact is refused. The contract covers the
+supported Core loaders in one process, not independent servers or arbitrary plugin/raw-engine
+allocations. See [sharing rules](memory-management.md#one-resident-artifact-per-process).
+
 `get_memory_snapshot()` reports host RAM, this process and the accelerator in one call;
 `device["process_held_bytes"]` is the accelerator memory this process holds across MLX, torch and
 llama.cpp. `process_residency` lists and ejects models across every in-process backend (MLX,
@@ -467,6 +473,20 @@ abstractcore serve
 ```
 
 See **[Server](server.md)**.
+
+### Managed HTTP listener
+
+`abstractcore.server.managed.start_managed_server(*, host=None, port=None, timeout_s=15.0)`
+starts Core's authenticated app in the calling execution-owner process. Omitted host/port use
+Core's server configuration (default `127.0.0.1:8000`); `port=0` selects an available port.
+Importing the helper starts no listener and imports no HTTP app.
+
+It returns a `CoreHTTPServer` handle with `url`, `is_running`, `last_error`, `status()`
+(`running`, `url`, `error`) and `stop(*, timeout_s=6.0)`. Stopping is repeatable and retains
+resident models; a listener that fails to stop raises rather than reporting success.
+Timeouts must be finite, nonnegative numbers. The host owns supervision, and Core's
+authentication and bind-sensitive engine-install policy remain in force. See
+[managed listener lifecycle](server.md#managed-listener-in-an-execution-owner).
 
 ## Request-scoped server authentication
 

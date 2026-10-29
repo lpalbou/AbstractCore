@@ -198,6 +198,13 @@ Python, shell text or an arbitrary function name.
 - Native MLX batching/MTP is opt-in and checkpoint-specific (`mlx_batching=True`, `speculation`).
   Inspect `metadata["speculation"]["used"]` and execution metadata; accepting an option is not
   evidence it ran. The shared contract does not enable HuggingFace/GGUF MTP.
+- Managed local loaders share compatible resident artifacts or refuse a conflicting second
+  allocation before loading. Reuse the resident configuration; Transformers callers reuse the
+  provider. Finish work and unload holders before changing engines, placement or head profiles.
+  This is process-local; arbitrary plugins/raw engines and independent servers own their pools.
+- A host's optional Core HTTP listener uses Core's token and configuration. Stopping the
+  listener retains resident weights. Native framework clients use Gateway runs and Runtime's
+  ledger; they do not need this listener. See the operations reference for lifecycle guidance.
 - When editing AbstractCore itself, read repository instructions and `CONTRIBUTING.md`, then
   the relevant public docs and tests. Keep local-engine imports lazy and use the existing
   three install settings. Route contributor work to those docs; do not invent private APIs.
@@ -209,6 +216,7 @@ Python, shell text or an arbitrary function name.
 | 401/403 or `AuthenticationError` | Stop; check the endpoint's own key and server-vs-upstream token distinction. Never retry login blindly. |
 | Connection refused/timeout | Start the intended server; check host, port, `/v1` and explicit timeout. Do not switch providers silently. |
 | Model missing/artifact mismatch | List installed/backend models; download the exact authorized artifact. Specify quantization rather than substituting another build. |
+| Already loaded / second copy refused | Reuse the resident settings/provider, or finish work and unload its holders before changing configuration. Do not repeat the same conflicting request. |
 | Empty text, `length`, unparsed call | Inspect reasoning/tools and finish metadata. Treat cutoff as incomplete; adjust budgets and retry only within the task's policy. |
 | Import error, validation or media failure | Install the matching engine setting, simplify the schema, or select a supported media policy/model; see the recipes and troubleshooting. |
 
