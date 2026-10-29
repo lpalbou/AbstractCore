@@ -97,6 +97,22 @@ class InvalidRequestError(ProviderError):
     pass
 
 
+class ContextWindowExceededError(InvalidRequestError):
+    """The request needs more tokens than the context the model is loaded with.
+
+    Raised by local engines (llama.cpp) BEFORE evaluating a prompt that cannot
+    fit, instead of letting the engine fail mid-prefill ("failed to find a
+    memory slot") and answering an "Error: ..." text. `prompt_tokens` and
+    `context_length` say by how much."""
+
+    def __init__(self, message: str, *, prompt_tokens: "int | None" = None,
+                 context_length: "int | None" = None, model: "str | None" = None):
+        super().__init__(message)
+        self.prompt_tokens = prompt_tokens
+        self.context_length = context_length
+        self.model = model
+
+
 class UnsupportedFeatureError(AbstractCoreError):
     """Feature not supported by provider"""
     pass
@@ -237,6 +253,7 @@ def format_provider_error(provider: str, reason: str) -> str:
 
 # Export all exceptions for easy importing
 __all__ = [
+    'ContextWindowExceededError',
     'AbstractCoreError',
     'ProviderError',
     'ProviderAPIError',

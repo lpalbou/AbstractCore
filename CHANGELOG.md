@@ -20,6 +20,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GGUF residency rows report the KV cache llama.cpp really allocates, and the context it was built
+  with.** The estimate counted every block as an attention layer: `Qwen3.5-9B-Kimi-k3-Distilled-GGUF`
+  (qwen35, 33 blocks, a KV cache on one block in four) at 65,536 tokens read "+ 8.3 GiB cache" on a
+  16 GB card whose GPU held 9.1 GiB in total; it is 2.0 GiB. The layer walk (`utils.kv_geometry`)
+  reads the layout from the GGUF header (`full_attention_interval`, per-layer `head_count_kv`,
+  sliding-window layers and widths, shared/MTP layers) and is used by the residency rows, the
+  context-fit estimate and the load. Rows and claims carry `context_length`, `kv_cache_bytes`
+  (`kv_cache_estimated: true`).
+- **The GGUF context is sized to the card before allocating** (CUDA/ROCm): the KV cache may take at
+  most half of the free device memory after the weights and a reserve of max(1 GiB, 10%); rungs
+  above are skipped (docs/memory-management.md). An explicit `max_tokens` is never resized.
+- **A prompt longer than the loaded GGUF context fails clearly, before any eval**
+  (`ContextWindowExceededError`, a subclass of `InvalidRequestError`): it used to fill the KV cache
+  ("decode: failed to find a memory slot for batch of size 512"), retry cold, rebuild the engine and
+  answer "Error: failed to prefill GGUF prompt cache ..." as text; llama-cpp-python's own "exceed
+  context window" refusal is raised the same way. Decoding that reaches the end of the context
+  stops with `finish_reason="length"` instead of appending "Error: llama_decode returned 1".
+
 - **`/v1/chat/completions` (and `/v1/responses`) reuse a model already resident in the process** instead of loading
   another copy per request (backlog 0859). With no model loaded in the server's own registry, the chat route called
   `create_llm` for every request; a host that keeps the model in another holder (AbstractGateway's runtime pool, which
