@@ -3805,6 +3805,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     "Use stream=False, or stream first and validate afterwards."
                 )
 
+            # The structured handler calls `_generate_internal` directly: the host's
+            # `cancel_event=` goes to it under the provider's one cancel kwarg
+            # (`_structured_handler_kwargs`). The hybrid branch above keeps the raw
+            # kwarg for its first pass, which IS the plain path.
+            kwargs = self._structured_handler_kwargs(kwargs)
             # Standard structured output (no tools)
             from ..structured import StructuredOutputHandler
 
@@ -9260,6 +9265,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
         except Exception:
             return content
 
+    def _structured_handler_kwargs(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Kwargs for the structured handler, which calls `_generate_internal` directly (never the
+        plain path that consumes the host's `cancel_event=`): the event goes under the provider's
+        one cancel kwarg when it supports generation cancel, and is dropped otherwise (it would
+        reach the payload). Never a raw `cancel_event` (HuggingFaceProvider's GGUF lane got it twice:
+        "got multiple values for keyword argument 'cancel_event'", OVH 2026-10-28)."""
+        if "cancel_event" not in kwargs:
+            return kwargs
+        from .generation_cancel import CANCEL_KWARG, as_cancel_event
+
+        out = dict(kwargs)
+        event = as_cancel_event(out.pop("cancel_event", None))
+        if event is not None and self.supports_generation_cancel():
+            out.setdefault(CANCEL_KWARG, event)
+        return out
+
     def _handle_tools_with_structured_output(
         self,
         prompt: str,
@@ -9361,7 +9382,7 @@ Please provide a structured response."""
             system_prompt=system_prompt,
             tools=None,  # No tools in structured output pass
             stream=False,
-            **kwargs,
+            **self._structured_handler_kwargs(kwargs),
         )
 
         self.logger.info(
