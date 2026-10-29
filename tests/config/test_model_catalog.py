@@ -174,7 +174,8 @@ def test_the_starter_text_model_is_preselected_on_apple_silicon(host):
     assert lms["recommended"] is False and lms["supported_on_host"] is True
 
 
-def test_the_portable_starter_is_preselected_off_apple_silicon(host):
+def test_the_portable_starter_is_preselected_off_apple_silicon(host, monkeypatch):
+    _no_local_engines(monkeypatch)  # with no engine installed the curated LM Studio build leads
     row = next(r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"] if r["id"] == "qwen3.5-9b")
     assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["qwen/qwen3.5-9b@q4_k_m"]
     assert row["starter"] is True
@@ -196,6 +197,56 @@ def _no_local_engines(monkeypatch):
         return out
 
     monkeypatch.setattr(engines, "engine_inventory", inventory)
+
+
+def _only_engines(monkeypatch, *installed):
+    from abstractcore.config import engines
+
+    real = engines.engine_inventory
+
+    def inventory(*args, **kwargs):
+        out = real(*args, **kwargs)
+        for e in out["engines"]:
+            e["installed"] = e["id"] in installed
+        return out
+
+    monkeypatch.setattr(engines, "engine_inventory", inventory)
+
+
+def test_a_host_with_only_llamacpp_is_offered_the_gguf_first(host, monkeypatch):
+    """Backlog 0863 (the OVH server): llama.cpp Ready, LM Studio and Ollama absent. The row's
+    pre-selection and first artifact is the HF GGUF llama.cpp serves, not the curated LM Studio
+    build; the absent engines' builds stay listed after it."""
+    _only_engines(monkeypatch, "llamacpp")
+    rows = {r["id"]: r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"]}
+    arts = rows["qwen3.5-9b"]["artifacts"]
+    first = arts[0]
+    assert (first["provider"], first["artifact"], first["engine"]) == (
+        "huggingface", "unsloth/Qwen3.5-9B-GGUF:Q4_K_M", "llamacpp"
+    )
+    assert first["recommended"] is True and first["engine_installed"] is True
+    assert [a["provider"] for a in arts if a["recommended"]] == ["huggingface"]
+    assert {"lmstudio", "ollama"} <= {a["provider"] for a in arts[1:]}
+    assert not any(a["engine_installed"] for a in arts if a["provider"] in ("lmstudio", "ollama"))
+    # Installed-engine artifacts are listed before any artifact of an absent engine, on every row.
+    for row in rows.values():
+        flags = [a["engine_installed"] for a in row["artifacts"] if not a["recommended"]]
+        assert flags == sorted(flags, reverse=True), row["id"]
+
+
+def test_every_curated_text_row_has_a_build_llamacpp_serves():
+    """Backlog 0863: no curated chat row offers only engines a llama.cpp-only host lacks.
+    (Qwen3.8 Flash-Next: the hub has no plain GGUF quant, only its MTP drafter files.)"""
+    missing = []
+    for r in mc.load_seed()["rows"]:
+        if "chat" not in (r.get("tags") or []) and "coding" not in (r.get("tags") or []):
+            continue
+        provs = {a["provider"] for a in r["artifacts"]}
+        if not provs & {"lmstudio", "ollama", "mlx"}:
+            continue
+        if not any(mc._engine_for(a["provider"], a.get("quant")) == "llamacpp" for a in r["artifacts"]):
+            missing.append(r["id"])
+    assert missing == ["qwen3.8-flash-next"]
 
 
 def test_mlx_is_never_offered_off_apple_silicon(host, monkeypatch):

@@ -591,6 +591,50 @@ def test_every_upstream_artifact_is_eight_bit_or_a_tier_or_a_reverified_id():
         "unsloth/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M",
         "unsloth/LFM2.5-1.2B-Thinking-GGUF:Q4_K_M",
     }
+    # GGUF builds for the curated rows that had none (backlog 0863, 2026-10-29): a host whose only
+    # engine is llama.cpp is offered a build it runs. Every repo id, size and revision read from
+    # the Hugging Face API (`?blobs=true`, the files the `*QUANT*.gguf` download pattern fetches).
+    reverified |= {
+        "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct-GGUF:Q4_K_M",
+        "allenai/OLMo-2-1124-7B-Instruct-GGUF:Q4_K_M",
+        "bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF:Q4_K_M",
+        "bartowski/c4ai-command-r7b-12-2024-GGUF:Q4_K_M",
+        "ggml-org/gpt-oss-120b-GGUF:MXFP4",
+        "second-state/StarCoder2-3B-GGUF:Q4_K_M",
+        "tiiuae/Falcon3-7B-Instruct-GGUF:Q4_K_M",
+        "unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF:Q4_K_M",
+        "unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF:Q4_K_M",
+        "unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF:Q4_K_M",
+        "unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF:Q4_K_M",
+        "unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF:Q4_K_M",
+        "unsloth/GLM-4.7-Flash-GGUF:Q4_K_M",
+        "unsloth/Llama-3.3-70B-Instruct-GGUF:Q4_K_M",
+        "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_M",
+        "unsloth/Magistral-Small-2509-GGUF:Q4_K_M",
+        "unsloth/MiniMax-M2-GGUF:Q4_K_M",
+        "unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF:Q4_K_M",
+        "unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M",
+        "unsloth/QwQ-32B-GGUF:Q4_K_M",
+        "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF:Q4_K_M",
+        "unsloth/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M",
+        "unsloth/Qwen3-VL-8B-Instruct-GGUF:Q4_K_M",
+        "unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M",
+        "unsloth/Qwen3.5-27B-GGUF:Q4_K_M",
+        "unsloth/Qwen3.5-35B-A3B-GGUF:Q4_K_M",
+        "unsloth/Qwen3.5-9B-GGUF:Q4_K_M",
+        "unsloth/Qwen3.6-27B-GGUF:Q4_K_M",
+        "unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M",
+        "unsloth/SmolLM2-1.7B-Instruct-GGUF:Q4_K_M",
+        "unsloth/SmolLM2-135M-Instruct-GGUF:Q4_K_M",
+        "unsloth/gemma-3-12b-it-GGUF:Q4_K_M",
+        "unsloth/gemma-3-1b-it-GGUF:Q4_K_M",
+        "unsloth/gemma-3-27b-it-GGUF:Q4_K_M",
+        "unsloth/gemma-3-4b-it-GGUF:Q4_K_M",
+        "unsloth/gemma-3n-E4B-it-GGUF:Q4_K_M",
+        "unsloth/gemma-4-26B-A4B-it-GGUF:Q4_K_M",
+        "unsloth/granite-4.0-h-tiny-GGUF:Q4_K_M",
+        "unsloth/granite-4.1-8b-GGUF:Q4_K_M",
+    }
     reverified |= {r.download["artifact"] for r in RECOMMENDED_MODELS.values()}
     reverified |= {p.download["artifact"] for r in RECOMMENDED_MODELS.values() for p in r.by_accelerator.values()}
     # Speech input models offered next to the recommended large-v3 (round 16): Whisper base

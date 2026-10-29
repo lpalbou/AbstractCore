@@ -53,6 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Defaults grid reads "installed: served by the installed GGUF build ...". Measured there: 1024 dimensions,
   similarity 0.775 for two cat sentences vs 0.262 against a revenue sentence. Only without any build the route reads
   "not downloaded" with Download.
+
+- **A host's installed engine is offered first in the download catalog** (backlog 0863). On a Linux server with
+  llama.cpp and neither LM Studio nor Ollama, the Qwen3.5 9B row listed and pre-selected the LM Studio build.
+  39 curated chat rows had no GGUF build. Each now has one: a Q4_K_M, read from the Hugging Face API on
+  2026-10-29, with its size and revision. A curated pick for an absent engine yields to an artifact an installed
+  engine serves. Every artifact carries `engine_installed`, and a row lists the pre-selection first, then
+  installed engines' artifacts.
+
 - **Structured output with a host's `cancel_event`** no longer fails on the HuggingFace GGUF lane with "got multiple
   values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
   under the provider's cancel kwarg.
