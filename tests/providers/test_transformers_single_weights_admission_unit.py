@@ -112,12 +112,13 @@ def test_transformers_pipeline_still_holding_weights_prevents_a_reload(load_mode
 @pytest.fixture()
 def cross_backend_loaders(load_model, monkeypatch):
     from abstractcore.embeddings import manager as em
-    from abstractcore.providers import mlx_native_session as native, mlx_provider as mp
+    from abstractcore.providers import mlx_native_session as native, mlx_provider as mp, mlx_qwen4 as qwen4
 
     hf_load, hf_calls = load_model
     monkeypatch.setattr(em, "_SHARED_EMBEDDING_MODELS", weakref.WeakValueDictionary())
     monkeypatch.setattr(native, "_SESSIONS", weakref.WeakValueDictionary())
     monkeypatch.setattr(mp, "_SHARED_MLX_MODELS", weakref.WeakValueDictionary())
+    monkeypatch.setattr(qwen4, "_SESSIONS", weakref.WeakValueDictionary())
     mlx_calls, embedding_calls = [], []
     vlm = types.ModuleType("mlx_vlm")
     def mlx_allocate(path):
@@ -130,6 +131,11 @@ def cross_backend_loaders(load_model, monkeypatch):
     monkeypatch.setitem(sys.modules, "mlx_vlm.speculative.drafters", drafters)
     monkeypatch.setattr(native, "resolve_native_drafter_path", lambda path: str(Path(path).resolve()))
     monkeypatch.setattr("abstractcore.providers.weights_fingerprint.weights_fingerprint_for_dir", lambda path: "revision")
+    def qwen4_allocate(path, *, mtp, ple_offload):
+        session = qwen4.Qwen4Session()
+        session.model, session.processor = mlx_allocate(path)
+        return session
+    monkeypatch.setattr(qwen4, "_create_qwen4_session", qwen4_allocate)
     def plain(path):
         provider = mp.MLXProvider.__new__(mp.MLXProvider)
         provider.logger = logging.getLogger("test_cross_backend")
@@ -154,11 +160,13 @@ def cross_backend_loaders(load_model, monkeypatch):
         "native": lambda path: native.load_native_session(str(path)),
         "nativehead": lambda path: native.load_native_session(
             str(Path(path).parent / ("target-for-" + Path(path).resolve().name)), str(path)),
+        "qwen4": lambda path: qwen4.load_qwen4_session(str(path), mtp=False),
     }, lambda: len(hf_calls) + len(mlx_calls) + len(embedding_calls)
 
 
 _CROSS_PAIRS = [("hf", "embedding"), ("mlx", "embedding"), ("native", "embedding"),
                 ("hf", "mlx"), ("hf", "native"), ("hf", "nativehead"), ("embedding", "nativehead")]
+_CROSS_PAIRS += [("qwen4", lane) for lane in ("hf", "embedding", "mlx", "native", "nativehead")]
 
 
 @pytest.mark.parametrize("pair", _CROSS_PAIRS)
@@ -209,3 +217,40 @@ def test_cross_backend_concurrent_first_loads_allocate_once(cross_backend_loader
         thread.join(5)
         assert not thread.is_alive()
     assert allocated() == 1 and sum(isinstance(r, InvalidRequestError) for r in results) == 1
+
+
+def test_qwen4_same_profile_reuses_and_changed_ple_profile_refuses(cross_backend_loaders, tmp_path):
+    from abstractcore.providers import mlx_qwen4 as qwen4
+    loaders, allocated = cross_backend_loaders
+    first = loaders["qwen4"](tmp_path)
+    assert loaders["qwen4"](tmp_path) is first
+    with pytest.raises(InvalidRequestError, match="second copy is never loaded"):
+        qwen4.load_qwen4_session(str(tmp_path), mtp=False, ple_offload=False)
+    assert allocated() == 1
+    del first
+    import gc
+    gc.collect()
+    replacement = qwen4.load_qwen4_session(str(tmp_path), mtp=False, ple_offload=False)
+    assert replacement is not None and allocated() == 2
+
+
+@pytest.mark.parametrize("same_profile", [False, True])
+def test_qwen4_concurrent_first_profiles_allocate_once(cross_backend_loaders, tmp_path, same_profile):
+    from abstractcore.providers import mlx_qwen4 as qwen4
+    _loaders, allocated = cross_backend_loaders
+    gate = threading.Barrier(2)
+    results = []
+    def load(ple_offload):
+        gate.wait()
+        try:
+            results.append(qwen4.load_qwen4_session(str(tmp_path), mtp=False, ple_offload=ple_offload))
+        except InvalidRequestError as exc:
+            results.append(exc)
+    threads = [threading.Thread(target=load, args=(True,)), threading.Thread(target=load, args=(same_profile,))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(5)
+        assert not thread.is_alive()
+    assert allocated() == 1
+    assert sum(isinstance(r, InvalidRequestError) for r in results) == (0 if same_profile else 1)

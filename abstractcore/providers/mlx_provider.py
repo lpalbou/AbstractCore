@@ -9,6 +9,7 @@ import uuid
 import inspect
 import os
 import threading
+import sys
 import weakref
 from datetime import datetime
 from typing import List, Dict, Any, Callable, Optional, Tuple, Union, Iterator, Type, TYPE_CHECKING
@@ -464,6 +465,12 @@ class MLXProvider(BaseProvider):
         from . import mlx_native_session
 
         with mlx_native_session._LOAD_LOCK, _SHARED_MLX_MODELS_LOCK:
+            qwen4 = sys.modules.get(__package__ + ".mlx_qwen4")
+            if qwen4 is not None and any(k[0] == key for k in qwen4._SESSIONS):
+                raise InvalidRequestError(
+                    f"MLX model '{key}' is already loaded through Qwen4 native MLX. "
+                    "Unload it before changing lanes; a second copy is never loaded."
+                )
             if any(key in k[:2] for k in mlx_native_session._SESSIONS):
                 raise InvalidRequestError(
                     f"MLX model '{key}' is already loaded through native mlx-vlm. "

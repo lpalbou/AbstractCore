@@ -391,6 +391,12 @@ def _load_native_session_locked(path: str, drafter_path=None):
         if session is None:
             from ..exceptions import InvalidRequestError
 
+            qwen4 = sys.modules.get(__package__ + ".mlx_qwen4")
+            if qwen4 is not None and any(k[0] in (target, head) for k in qwen4._SESSIONS):
+                raise InvalidRequestError(
+                    "This target or drafter is already loaded through Qwen4 native MLX. "
+                    "Unload it before changing lanes; a second copy is never loaded."
+                )
             if any(k[0] == target for k in _SESSIONS):
                 raise InvalidRequestError(
                     f"MLX model '{target}' is already loaded with a different drafter configuration. "

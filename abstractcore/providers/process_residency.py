@@ -307,6 +307,10 @@ def refuse_other_backend_artifact(path: Any, *, backend: str) -> None:
         if native is not None:
             with native._LOAD_LOCK:
                 residents.extend(("mlx", path) for key in list(native._SESSIONS) for path in key[:2] if path)
+        qwen4 = sys.modules.get("abstractcore.providers.mlx_qwen4")
+        if qwen4 is not None:
+            with qwen4._LOAD_LOCK:
+                residents.extend(("mlx", key[0]) for key in list(qwen4._SESSIONS))
     for owner, artifact in residents:
         if identity(artifact) == wanted:
             from ..exceptions import InvalidRequestError
