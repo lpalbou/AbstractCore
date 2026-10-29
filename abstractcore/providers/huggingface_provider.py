@@ -79,6 +79,7 @@ from ..exceptions import (
     GenerationCancelledError,
     InvalidRequestError,
     ModelArtifactMismatchError,
+    ModelDoesNotFitError,
     ModelNotFoundError,
     ProviderError,
     format_model_error,
@@ -1045,6 +1046,10 @@ _GGUF_SHARD_RE = re.compile(r"^(?P<stem>.+)-(?P<index>\d{5})-of-(?P<count>\d{5})
 
 # llama-cpp-python's refusal of a prompt longer than the context.
 _LLAMA_CONTEXT_OVERFLOW_RE = re.compile(r"Requested tokens \((\d+)\) exceed context window of (\d+)")
+# llama-cpp-python's `LlamaContext.decode` raises this when llama.cpp's `llama_decode` fails; 1 is
+# "could not find a KV slot for the batch" (the engine logs "decode: failed to find a memory slot
+# for batch of size N"): the context memory filled up during the request.
+_LLAMA_DECODE_FAILED_RE = re.compile(r"llama_decode returned (-?\d+)")
 
 
 def _gguf_total_weight_bytes(model_path: Union[str, Path]) -> Optional[int]:
@@ -3304,6 +3309,60 @@ class HuggingFaceProvider(BaseProvider):
     _GGUF_RESERVE_FLOOR_BYTES = 1 << 30
     _GGUF_RESERVE_FRACTION = 0.10
 
+    def _gguf_ensure_cpu_fit(self, model_path: Any, n_ctx: int) -> None:
+        """Raise `ModelDoesNotFitError` (device "RAM") when the available RAM cannot
+        hold the weights + KV at `n_ctx` + 1 GiB. Unknown figures: no refusal."""
+        try:
+            from ..utils.memory import get_memory_snapshot
+            from ..utils.kv_geometry import kv_cache_bytes
+            from .hf_residency import gguf_file_geometry
+
+            avail = ((get_memory_snapshot() or {}).get("ram") or {}).get("available_bytes")
+            weights_b = _gguf_total_weight_bytes(model_path)
+            kv = kv_cache_bytes(gguf_file_geometry(model_path), int(n_ctx), pad_v=True)
+            if not (isinstance(avail, int) and weights_b and kv):
+                return
+            need = int(weights_b) + int(kv) + (1 << 30)
+        except Exception:
+            return
+        if need <= int(avail):
+            return
+        # No eviction here: the resident models sit on the GPU, evicting them frees no RAM.
+        from . import process_residency
+
+        process_residency.refuse_fit(str(self.model), need, int(avail), device="RAM (CPU fallback)", kept=[])
+
+    def _gguf_ensure_fit(self, model_path: Any, min_ctx: int) -> Optional[Dict[str, Any]]:
+        """ADR 0010 on one full-offload CUDA card (the device rule's scope): need =
+        file weights + KV at `min_ctx` + reserve. None when the check does not
+        apply (CPU, partial offload, several cards, Metal, unknown geometry)."""
+        try:
+            if not (isinstance(self.n_gpu_layers, int) and self.n_gpu_layers < 0):
+                return None
+            import torch
+
+            if not torch.cuda.is_available() or int(torch.cuda.device_count()) != 1:
+                return None
+            from ..utils.kv_geometry import kv_cache_bytes
+            from .hf_residency import gguf_file_geometry
+
+            weights_b = _gguf_total_weight_bytes(model_path)
+            geom = gguf_file_geometry(model_path)
+            total_b = int(torch.cuda.mem_get_info()[1])
+            if not weights_b or not geom:
+                return None
+            reserve = max(self._GGUF_RESERVE_FLOOR_BYTES, int(total_b * self._GGUF_RESERVE_FRACTION))
+            need = int(weights_b) + int(kv_cache_bytes(geom, int(min_ctx), pad_v=True) or 0) + reserve
+        except Exception:
+            return None
+        from . import process_residency
+
+        def _free() -> int:
+            return int(torch.cuda.mem_get_info()[0])
+
+        return process_residency.ensure_fit(str(self.model), need, _free, provider="huggingface", device="GPU",
+                                            reserve_bytes=reserve)
+
     def _gguf_device_fit_rungs(self, model_path: Any, candidate_ctxs: List[int]) -> List[int]:
         """`candidate_ctxs` without the rungs whose KV cache does not fit the
         device under the GGUF context rule (above). Unchanged when the device
@@ -3390,9 +3449,53 @@ class HuggingFaceProvider(BaseProvider):
             prompt_tokens=int(n_prompt), context_length=int(n_ctx), model=self.model,
         )
 
+    def _gguf_memory_full_error(self, return_code: int) -> ContextWindowExceededError:
+        """The context memory filled up during a request (llama.cpp could not place a batch)."""
+        n_ctx = self._gguf_loaded_context()
+        size = f"its {int(n_ctx):,}-token context" if n_ctx else "its context"
+        return ContextWindowExceededError(
+            f"{self.model} ran out of context memory while answering ({size} is full; llama.cpp "
+            f"could not place the next batch, code {int(return_code)}). The request was stopped and "
+            "that memory freed. Start a new conversation or shorten this one, or load the model with "
+            "a larger context if the device has room.",
+            prompt_tokens=None, context_length=n_ctx, model=self.model,
+        )
+
+    def _gguf_free_context_memory(self) -> None:
+        """Free what a failed decode left in the engine's context memory, so the next request
+        starts clean instead of failing on the same full memory ("failed to find a memory slot"
+        repeated, OVH 2026-10-28). `Llama.reset()` forgets the evaluated tokens; the context's
+        memory is cleared with the call this llama-cpp-python has (`memory_clear` from 0.3.x,
+        `kv_cache_clear` before). A failure is logged, never raised."""
+        llm = getattr(self, "llm", None)
+        if llm is None:
+            return
+        try:
+            llm.reset()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(f"llama.cpp reset() after a full context failed: {exc}")
+        ctx = getattr(llm, "_ctx", None)
+        for name, args in (("memory_clear", (True,)), ("kv_cache_clear", ())):
+            fn = getattr(ctx, name, None)
+            if callable(fn):
+                try:
+                    fn(*args)
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(f"llama.cpp {name}() after a full context failed: {exc}")
+                return
+
+    def _gguf_raise_if_decode_failed(self, error: BaseException) -> None:
+        """A llama.cpp decode failure (the context memory is full): free it, then raise the clear
+        `ContextWindowExceededError` instead of an "Error: llama_decode returned 1" answer."""
+        failed = _LLAMA_DECODE_FAILED_RE.search(str(error))
+        if failed:
+            self._gguf_free_context_memory()
+            raise self._gguf_memory_full_error(int(failed.group(1))) from error
+
     def _gguf_context_checked_stream(self, stream: Any) -> Iterator[Any]:
         """A llama-cpp-python chat stream whose "exceed context window" refusal
-        (raised lazily, at the first chunk) becomes `ContextWindowExceededError`."""
+        (raised lazily, at the first chunk) becomes `ContextWindowExceededError`,
+        as does a decode failure mid-stream (the memory is freed first)."""
         try:
             for chunk in stream:
                 yield chunk
@@ -3400,6 +3503,9 @@ class HuggingFaceProvider(BaseProvider):
             overflow = _LLAMA_CONTEXT_OVERFLOW_RE.search(str(e))
             if overflow:
                 raise self._gguf_context_exceeded_error(int(overflow.group(1)), int(overflow.group(2))) from e
+            raise
+        except RuntimeError as e:
+            self._gguf_raise_if_decode_failed(e)
             raise
 
     def _gguf_raise_if_prompt_exceeds_context(self, n_prompt: int) -> None:
@@ -7378,6 +7484,15 @@ class HuggingFaceProvider(BaseProvider):
             return f"models--{model_name}"
 
     def _load_gguf_model(self):
+        """Load the GGUF under the process load lock (ADR 0010): the fit check and the
+        allocation it admits are one step, so two loads cannot both pass the check
+        against the same free memory and then run out of it."""
+        from .process_residency import load_lock
+
+        with load_lock():
+            return self._load_gguf_model_unlocked()
+
+    def _load_gguf_model_unlocked(self):
         """Load GGUF model using llama-cpp-python (cache-only, no downloading)"""
         import os
         try:
@@ -7509,6 +7624,14 @@ class HuggingFaceProvider(BaseProvider):
             if requested_n_ctx_i <= 0:
                 requested_n_ctx_i = 16384
 
+            # THE FIT CHECK (core ADR 0010), before anything is allocated: the weights
+            # and the KV of the smallest context this load accepts must fit the free
+            # device memory, after evicting resident models that are not locked
+            # (least recently used first); else ModelDoesNotFitError, with numbers and
+            # smaller suggestions. Never a load that fills the card or the RAM.
+            _min_ctx = requested_n_ctx_i if getattr(self, "_user_provided_max_tokens", False) else min(4096, requested_n_ctx_i)
+            self._gguf_fit_report = self._gguf_ensure_fit(model_path, _min_ctx)
+
             if getattr(self, "_user_provided_max_tokens", False):
                 candidate_ctxs = [requested_n_ctx_i]
             else:
@@ -7583,6 +7706,11 @@ class HuggingFaceProvider(BaseProvider):
                     is_metal_host = platform.system().lower() == "darwin" and platform.machine().lower() == "arm64"
                     cpu_retry_now = is_metal_host or n_ctx_i == candidate_ctxs[-1]
                     if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers != 0 and cpu_retry_now:
+                        # ADR 0010: the CPU fallback puts weights AND the KV cache in RAM;
+                        # refuse it with the numbers when RAM cannot hold them, instead of
+                        # letting the kernel kill the process.
+                        if not is_metal_host:  # Metal retries every rung on the CPU: its ladder decides
+                            self._gguf_ensure_cpu_fit(model_path, int(n_ctx_i))
                         try:
                             self.logger.warning(
                                 f"GGUF load failed with n_gpu_layers={self.n_gpu_layers}; retrying with CPU (n_gpu_layers=0). Error: {e}"
@@ -7771,6 +7899,8 @@ class HuggingFaceProvider(BaseProvider):
             except Exception:
                 pass
 
+        except ModelDoesNotFitError:
+            raise  # ADR 0010: the typed refusal reaches the caller as itself
         except ModelArtifactMismatchError:
             # ADR 0009 Enforcement: an artifact-fidelity refusal must reach the caller
             # as itself. Wrapping it in RuntimeError here made the contract type
@@ -9336,6 +9466,8 @@ class HuggingFaceProvider(BaseProvider):
                 # context window of 1024"): the same clear failure as the
                 # prompt-cache lane, never an "Error: ..." answer.
                 raise self._gguf_context_exceeded_error(int(overflow.group(1)), int(overflow.group(2))) from e
+            # The memory filled up during the request: freed, then the same clear failure.
+            self._gguf_raise_if_decode_failed(e)
             if stream:
                 # Return error as a generator
                 def error_generator():
