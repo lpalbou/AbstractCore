@@ -301,6 +301,20 @@ no bound.
 - The operator's acceptance: on the Linux server, two accounts and a `/v1` client on one 9B GGUF model
   at the same time, one copy in memory, every request answered or visibly queued, nothing crashed.
 
+### Note (OVH 8080 pass four, 2026-10-29): one slot at the reserved context is by design
+
+On the Linux test server's 16 GB card, one Kimi 9B GGUF copy served the admin pool, a second account's
+automation run, the sandbox, `/v1` twice and the embeddings (GPU memory flat at 13,886 MiB; `holders 2,
+copies 1`). Four concurrent `/v1` requests all answered 200 in FIFO order, and the pool row read
+`slots 1/4, active 1, queued 3` with the reason "another slot ... needs 8.3 GiB of GPU memory for its
+135,680-token context, 1.0 GiB free (5 % kept free)". So a short request waited behind a long one: the
+second slot does not fit at the reserved context, and this decision never shrinks the context nor
+evicts another model to build a slot. That is accepted by design. The room was taken by the GGUF
+embedder's compute buffers (6.6 GB at n_batch = n_ubatch = 8,192); the embedder now reserves the
+largest input that fits beside the resident models (5 % buffer) and reports it, which leaves room for
+a second slot on this card when the embedder loads after the LLM's slot pool (core
+`embeddings/manager.py`, `_embedding_fit`).
+
 ## Backlog links
 
 - AbstractCore 0870 (this wave: the scheduler, the shared GGUF weights, the test files above);
