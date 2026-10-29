@@ -331,8 +331,13 @@ _GGUF_EMBEDDING_QUANT_ORDER = ("f16", "bf16", "q8_0", "q6_k", "q5_k_m", "q4_k_m"
 
 def gguf_sibling_snapshot(repo_id: str) -> "Optional[tuple]":
     """(sibling repo id, chosen .gguf file) of the installed GGUF build of `repo_id`
-    (`<repo>-GGUF`), or None. Cache-only: never downloads."""
+    (`<repo>-GGUF`), or None. Cache-only: never downloads. None too when
+    llama-cpp-python is not installed (nothing could serve it)."""
     try:
+        import importlib.util
+
+        if importlib.util.find_spec("llama_cpp") is None:
+            return None
         from ..utils.model_cache import resolve_hf_load_snapshot
 
         repo = str(repo_id or "").strip()
@@ -371,8 +376,12 @@ class _LlamaCppSentenceEncoder:
         self.file_name = path.name
         self.model_name_or_path = str(path)
         self.device = "cpu"
+        # n_batch / n_ubatch = n_ctx: llama-cpp-python's embed() cuts every text to
+        # n_batch tokens (512 by default), silently. Pooling comes from the file.
         self._llm = llama_cpp.Llama(model_path=str(path), embedding=True, n_ctx=int(n_ctx),
+                                    n_batch=int(n_ctx), n_ubatch=int(n_ctx),
                                     n_gpu_layers=0, verbose=False)
+        self._lock = threading.Lock()  # one llama.cpp context: one encode at a time
         self._dim: Optional[int] = None
 
     def encode(self, texts: Any, show_progress_bar: bool = False, convert_to_numpy: bool = True, **_: Any) -> Any:
@@ -380,10 +389,14 @@ class _LlamaCppSentenceEncoder:
 
         single = isinstance(texts, str)
         batch = [texts] if single else list(texts)
-        vectors = [self._llm.embed(t, normalize=True) for t in batch]
+        with self._lock:
+            vectors = [self._llm.embed(t, normalize=True) for t in batch]
+        for v in vectors:
+            if v and isinstance(v[0], (list, tuple)):
+                # Pooling NONE in the file: one vector per token, not a sentence embedding.
+                raise RuntimeError(f"{self.repo_id} ({self.file_name}) pools nothing (one vector per token); "
+                                   "it cannot serve sentence embeddings")
         arr = np.asarray(vectors, dtype=np.float32)
-        if arr.ndim == 3:  # a per-token result: pooling NONE in the file
-            arr = arr.mean(axis=1)
         return arr[0] if single else arr
 
     def get_sentence_embedding_dimension(self) -> int:
@@ -739,10 +752,14 @@ class EmbeddingManager:
             # offline only when the HF provider had already written
             # HF_HUB_OFFLINE=1 into the process; that write is gone.
             configured = getattr(self, "_gguf_sibling_of", None)
+            if configured:
+                # A reload after unload(): the original model if it was downloaded since,
+                # else the same GGUF build again.
+                self.model_id = configured
             try:
-                if configured:  # a reload after unload(): the same GGUF build again
-                    raise ModelNotFoundError(f"{configured} is served by its GGUF build")
                 source, load_kwargs = self._sentence_transformers_source()
+                if configured:
+                    self._gguf_sibling_of = None
             except ModelNotFoundError:
                 # The configured repo is not here; the GGUF build of the SAME model may be
                 # (Linux test server, 2026-10-29: Qwen/Qwen3-Embedding-0.6B absent,

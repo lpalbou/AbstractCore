@@ -62,6 +62,9 @@ def test_not_downloaded_embedding_is_not_an_error_log(monkeypatch, caplog):
 def _gguf_snapshot(tmp_path, monkeypatch, *, present: bool):
     from abstractcore.utils import model_cache
 
+    import importlib.util as _iu
+    _real = _iu.find_spec
+    monkeypatch.setattr(_iu, "find_spec", lambda name, *a: object() if name == "llama_cpp" else _real(name, *a))
     snap = tmp_path / "models--Qwen--Qwen3-Embedding-0.6B-GGUF" / "snapshots" / "abc"
     snap.mkdir(parents=True)
     (snap / "Qwen3-Embedding-0.6B-Q8_0.gguf").write_bytes(b"GGUF")
@@ -111,6 +114,7 @@ def test_manager_loads_the_gguf_build_when_the_repo_is_missing(tmp_path, monkeyp
     mgr._load_model()
     assert built[0][0] == str(snap / "Qwen3-Embedding-0.6B-f16.gguf"), "the most faithful build is chosen"
     assert built[0][1]["embedding"] is True
+    assert built[0][1]["n_batch"] == built[0][1]["n_ctx"], "MUTANT: default n_batch -> texts cut to 512 tokens -> RED"
     assert mgr.model_id == "Qwen/Qwen3-Embedding-0.6B-GGUF", "another build is another embedding space"
     assert list(mgr.model.encode(["a", "b"]).shape) == [2, 2] and mgr.model.get_sentence_embedding_dimension() == 2
     mgr.model = None
@@ -123,3 +127,10 @@ def test_without_the_gguf_build_it_is_still_not_downloaded(tmp_path, monkeypatch
 
     _gguf_snapshot(tmp_path, monkeypatch, present=False)
     assert em.gguf_sibling_snapshot("Qwen/Qwen3-Embedding-0.6B") is None
+
+
+def test_a_route_of_another_provider_is_never_served_by_a_hf_gguf(tmp_path, monkeypatch):
+    _gguf_snapshot(tmp_path, monkeypatch, present=True)
+    monkeypatch.setattr(mm, "probe", lambda p, a, base_url=None: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT, evidence="t"))
+    row = mm.annotate_route_availability([{"key": "embedding.text", "provider": "vllm", "model": "Qwen/Qwen3-Embedding-0.6B"}])[0]
+    assert row["availability"]["status"] == mm.PRESENCE_ABSENT
