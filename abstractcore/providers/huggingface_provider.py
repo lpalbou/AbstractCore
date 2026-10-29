@@ -1799,7 +1799,9 @@ class HuggingFaceProvider(BaseProvider):
             try:
                 from .base import PromptCacheStore
 
-                self._prompt_cache_store = PromptCacheStore(max_entries=32)
+                self._prompt_cache_store = PromptCacheStore(
+                    max_entries=32, on_evict=self._prompt_cache_store_evicted,
+                    on_set=self._prompt_cache_store_after_set)
             except Exception:  # noqa: BLE001
                 pass
             self._gguf_prompt_cache_lock = threading.Lock()
@@ -2535,7 +2537,10 @@ class HuggingFaceProvider(BaseProvider):
         )
 
     def _prompt_cache_value_bytes(self, cache_value: Any) -> Optional[int]:
-        """Best-effort bytes held by one transformers KV-cache store entry."""
+        """Best-effort bytes held by one store entry (GGUF snapshots, or transformers KV tensors)."""
+        gguf_cache = self._gguf_prompt_cache_unwrap(cache_value)
+        if gguf_cache is not None:
+            return self._gguf_cache_nbytes(gguf_cache)
         cache = getattr(cache_value, "cache", None)
         if cache is None:
             return None
@@ -2601,10 +2606,7 @@ class HuggingFaceProvider(BaseProvider):
                 try:
                     for _k, llama_state in cache_state.items():
                         count += 1
-                        try:
-                            size = int(getattr(llama_state, "llama_state_size", 0) or 0)
-                        except Exception:
-                            size = 0
+                        size = self._gguf_llama_state_nbytes(llama_state)
                         if size > 0:
                             total += size
                             if size > max_b:
@@ -2627,6 +2629,9 @@ class HuggingFaceProvider(BaseProvider):
             }
 
         stats["gguf"] = {
+            # The store-wide byte budget and what the stored snapshots hold now (the Resources row).
+            "prompt_cache_budget_bytes": self._gguf_prompt_cache_budget_bytes(),
+            "prompt_cache_total_bytes": self._gguf_prompt_cache_total_bytes(),
             "control_plane_chat_format": (
                 self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
             ),
@@ -2730,16 +2735,62 @@ class HuggingFaceProvider(BaseProvider):
                 best = normalized
         return best
 
-    def _gguf_clone_llama_state(self, state: Any) -> Optional[Any]:
+    def _gguf_context_keeps_all_logits(self) -> bool:
+        """True when the llama.cpp context writes a logits row per token (`logits_all=True`, needed
+        for logprobs). Only then does a `LlamaState`'s `scores` array carry information."""
+        try:
+            return bool(getattr(self.llm, "_logits_all", False))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _gguf_state_scores(scores: Any, *, compact: bool) -> Any:
+        """The `scores` a stored `LlamaState` keeps.
+
+        `Llama.save_state` copies `scores[:n_tokens]` of an array shaped `(n_batch, n_vocab)`
+        float32 when `logits_all=False`: 512 x 248,320 x 4 B = 508 MB for a Qwen3.5 vocabulary, in
+        EVERY snapshot. With `logits_all=False` that array is never written (`Llama.eval`: "logits
+        are only needed for logprobs which requires logits_all") and never read (sampling runs in
+        the sampler, and a restore always evaluates at least one prompt token), so it is garbage
+        the snapshot paid for. Measured on the 8080 box (pass four, 2026-10-29): the model host
+        child grew 1.65 GB per basic-agent run, three snapshots of which only the 0.42 GB of
+        `llama_state` were counted. Compacted, a state keeps ONE zero row: `Llama.load_state`
+        assigns `scores[:n_tokens, :] = state.scores`, which broadcasts a `(1, n_vocab)` row."""
+        import numpy as np
+
+        arr = np.asarray(scores, dtype=np.single)
+        if compact and arr.ndim == 2:
+            return np.zeros((1, int(arr.shape[1])), dtype=np.single)
+        return arr.copy()
+
+    @staticmethod
+    def _gguf_llama_state_nbytes(state: Any) -> int:
+        """Bytes one `LlamaState` holds: the serialized context plus its numpy arrays (the arrays
+        are what `LlamaRAMCache.cache_size` and the old stats left out)."""
+        total = 0
+        try:
+            total += int(getattr(state, "llama_state_size", 0) or 0)
+        except Exception:
+            pass
+        for attr in ("scores", "input_ids"):
+            try:
+                total += int(getattr(getattr(state, attr, None), "nbytes", 0) or 0)
+            except Exception:
+                pass
+        return total
+
+    def _gguf_clone_llama_state(self, state: Any, *, compact_scores: Optional[bool] = None) -> Optional[Any]:
         try:
             import numpy as np
             from llama_cpp.llama import LlamaState
         except Exception:
             return None
+        if compact_scores is None:
+            compact_scores = not self._gguf_context_keeps_all_logits()
         try:
             return LlamaState(
                 input_ids=np.asarray(getattr(state, "input_ids"), dtype=np.intc).copy(),
-                scores=np.asarray(getattr(state, "scores"), dtype=np.single).copy(),
+                scores=self._gguf_state_scores(getattr(state, "scores"), compact=bool(compact_scores)),
                 n_tokens=int(getattr(state, "n_tokens", 0) or 0),
                 llama_state=bytes(getattr(state, "llama_state", b"")),
                 llama_state_size=int(getattr(state, "llama_state_size", 0) or 0),
@@ -3451,6 +3502,99 @@ class HuggingFaceProvider(BaseProvider):
             stable_end = min(stable_end, int(generation_boundary))
         return max(int(prefix_len), int(stable_end))
 
+    def _gguf_cache_nbytes(self, cache_obj: Any) -> int:
+        state_map = getattr(cache_obj, "cache_state", None)
+        if not hasattr(state_map, "values"):
+            return 0
+        try:
+            return sum(self._gguf_llama_state_nbytes(st) for st in list(state_map.values()))
+        except Exception:
+            return 0
+
+    _GGUF_PROMPT_CACHE_BUDGET_CAP_BYTES = 8 << 30
+
+    def _gguf_prompt_cache_budget_bytes(self) -> int:
+        """Store-wide byte budget for this model's GGUF snapshots (every key together).
+
+        The store's count bound (32 keys, two snapshots each) is no bound on BYTES: one snapshot is
+        the serialized context, 0.08-0.17 GB for a 4k-token agent turn on a 9B model and several GB
+        near a 128k context, and a basic-agent run leaves three keys. Least recently used keys are
+        evicted past it.
+
+        The setting is `gguf_prompt_cache_max_gb` in the AbstractCore config (GiB, > 0; read like
+        `model_memory_buffer`), overridden by the environment variable
+        `ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB`. Unset: min(8 GiB, a quarter of physical RAM), the
+        MLX prefix cache's rule (`machine_prefix_cache_budget_gb`). A value that is not a positive
+        number is refused, naming where it came from."""
+        cached = self.__dict__.get("_gguf_prompt_cache_budget")
+        if isinstance(cached, int):
+            return cached
+        raw: Any = os.environ.get("ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB")
+        source = "ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB"
+        if raw is None or not str(raw).strip():
+            from ..config.model_contexts import _read
+
+            raw = _read(getattr(self, "_abstractcore_config_file", None)).get("gguf_prompt_cache_max_gb")
+            source = "gguf_prompt_cache_max_gb in the AbstractCore config"
+        budget: Optional[int] = None
+        if raw is not None and str(raw).strip():
+            try:
+                gb = float(str(raw).strip())
+            except ValueError:
+                raise ValueError(f"{source} must be a number of GiB, got {raw!r}")
+            if not gb > 0:
+                raise ValueError(f"{source} must be > 0, got {raw!r}")
+            budget = int(gb * (1 << 30))
+        if budget is None:
+            cap = self._GGUF_PROMPT_CACHE_BUDGET_CAP_BYTES
+            try:
+                phys = int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_PHYS_PAGES"))
+            except (ValueError, OSError, AttributeError):
+                phys = 0
+            budget = min(cap, phys // 4) if phys > 0 else cap
+        self.__dict__["_gguf_prompt_cache_budget"] = int(budget)
+        return int(budget)
+
+    def _gguf_prompt_cache_total_bytes(self) -> int:
+        store = getattr(self, "_prompt_cache_store", None)
+        if store is None:
+            return 0
+        total = 0
+        for key in store.keys():
+            cache_obj = self._gguf_prompt_cache_unwrap(store.peek(key))
+            if cache_obj is not None:
+                total += self._gguf_cache_nbytes(cache_obj)
+        return total
+
+    def _gguf_enforce_prompt_cache_budget(self, *, keep: Any = None) -> List[str]:
+        """Evict least recently used keys until the snapshots fit the budget. `keep` (the cache the
+        caller just wrote) is never evicted: one snapshot larger than the budget stays, as the
+        auto-growing cache keeps it. Returns the evicted keys."""
+        store = getattr(self, "_prompt_cache_store", None)
+        if store is None:
+            return []
+        budget = self._gguf_prompt_cache_budget_bytes()
+        sizes: List[tuple] = []
+        for key in store.keys():  # least recently used first
+            cache_obj = self._gguf_prompt_cache_unwrap(store.peek(key))
+            if cache_obj is not None:
+                sizes.append((key, cache_obj, self._gguf_cache_nbytes(cache_obj)))
+        total = sum(n for _, _, n in sizes)
+        evicted: List[str] = []
+        for key, cache_obj, n in sizes:
+            if total <= budget:
+                break
+            if cache_obj is keep:
+                continue
+            if store.evict(key):
+                total -= n
+                evicted.append(key)
+        if evicted:
+            self.logger.info(
+                f"GGUF {self.model}: prompt-cache snapshots over the {budget / (1 << 30):.1f} GiB budget; "
+                f"evicted {len(evicted)} least recently used key(s), {total / (1 << 30):.2f} GiB kept.")
+        return evicted
+
     def _gguf_snapshot_bound(self) -> int:
         """Hard cap on states kept in ONE key's llama cache (LRU beyond it).
 
@@ -4018,10 +4162,13 @@ class HuggingFaceProvider(BaseProvider):
                 and restored_key_len != stable_end  # already stored at this boundary
             ):
                 saved_state = llm.save_state()
-                cloned_state = self._gguf_clone_llama_state(saved_state)
+                cloned_state = self._gguf_clone_llama_state(
+                    saved_state, compact_scores=not bool(getattr(llm, "_logits_all", False)))
                 cache_obj[boundary_key] = cloned_state if cloned_state is not None else saved_state
+                del saved_state  # the full-size scores copy is not kept past this line
                 if snapshot_at_boundary:
                     self._gguf_prune_snapshots(cache_obj, boundary_key, protect=protect_snapshot_key)
+                self._gguf_enforce_prompt_cache_budget(keep=cache_obj)
             if tail:
                 self._gguf_eval_cancellable(llm, tail, cancel_event, position=stable_end)
             if set_cache and hasattr(llm, "set_cache"):
@@ -5073,6 +5220,13 @@ class HuggingFaceProvider(BaseProvider):
                     torch.mps.empty_cache()
         except Exception:
             pass
+
+    def _prompt_cache_store_after_set(self, key: str, cache_value: Any) -> None:
+        """A GGUF cache entered the store (a new key, a fork, a load, a rebuilt value): the
+        snapshots of every key together must stay under the byte budget."""
+        gguf_cache = self._gguf_prompt_cache_unwrap(cache_value)
+        if gguf_cache is not None:
+            self._gguf_enforce_prompt_cache_budget(keep=gguf_cache)
 
     def _prompt_cache_store_evicted(self, key: str, cache_value: Any) -> None:
         """Store LRU/TTL-evicted `key`: its `_TransformersPromptCacheValue`
@@ -6583,7 +6737,8 @@ class HuggingFaceProvider(BaseProvider):
 
         llama_state = LlamaState(
             input_ids=np.asarray(input_ids, dtype=np.intc).copy(),
-            scores=np.asarray(scores, dtype=np.single).copy(),
+            # A file saved before the compaction carries the full (n_batch, n_vocab) array.
+            scores=self._gguf_state_scores(scores, compact=not self._gguf_context_keeps_all_logits()),
             n_tokens=int(n_tokens),
             llama_state=bytes(np.asarray(llama_state_u8, dtype=np.uint8).tobytes()),
             llama_state_size=int(llama_state_size),

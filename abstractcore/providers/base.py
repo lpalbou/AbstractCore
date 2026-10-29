@@ -126,6 +126,7 @@ class PromptCacheStore:
         max_entries: int = 32,
         default_ttl_s: Optional[float] = None,
         on_evict: Optional[Any] = None,
+        on_set: Optional[Any] = None,
     ):
         self._max_entries = int(max_entries) if max_entries and int(max_entries) > 0 else 32
         self._default_ttl_s = default_ttl_s if default_ttl_s is None else float(default_ttl_s)
@@ -140,10 +141,18 @@ class PromptCacheStore:
         # deepcopy per key for the provider's lifetime once the key was
         # LRU-evicted, since nothing told the provider the key was gone).
         self._on_evict = on_evict
+        # Called as on_set(key, value) after every set(), outside the lock: a provider that bounds
+        # its entries by a measure the store cannot compute (GGUF snapshot BYTES) enforces it here,
+        # on every insert path at once.
+        self._on_set = on_set
 
     def set_on_evict(self, callback: Optional[Any]) -> None:
         """Register the eviction callback (see __init__). One callback, last wins."""
         self._on_evict = callback
+
+    def set_on_set(self, callback: Optional[Any]) -> None:
+        """Register the after-set callback (see __init__). One callback, last wins."""
+        self._on_set = callback
 
     def _fire_evictions(self, evicted: List[tuple]) -> None:
         """Invoke the eviction callback OUTSIDE self._lock (callbacks may take
@@ -215,6 +224,12 @@ class PromptCacheStore:
                 evicted_key, evicted_entry = self._entries.popitem(last=False)
                 evicted.append((evicted_key, evicted_entry.value))
         self._fire_evictions(evicted)
+        cb = self._on_set
+        if cb is not None:
+            try:
+                cb(key, value)
+            except Exception as exc:
+                logger.warning(f"prompt cache on_set callback failed for key '{key}': {type(exc).__name__}: {exc}")
 
     def delete(self, key: str) -> bool:
         if not isinstance(key, str) or not key.strip():
@@ -222,6 +237,19 @@ class PromptCacheStore:
         key = key.strip()
         with self._lock:
             return self._entries.pop(key, None) is not None
+
+    def evict(self, key: str) -> bool:
+        """Drop `key` as a capacity eviction: unlike delete(), the on_evict callback fires (the
+        provider frees what it keyed to the entry). For budgets the store cannot measure itself."""
+        if not isinstance(key, str) or not key.strip():
+            return False
+        key = key.strip()
+        with self._lock:
+            entry = self._entries.pop(key, None)
+        if entry is None:
+            return False
+        self._fire_evictions([(key, entry.value)])
+        return True
 
     def clear(self) -> None:
         with self._lock:
@@ -870,6 +898,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             # provider so per-key side state (snapshots, device pools) can be
             # released — silent eviction is a leak (2026-08-03 audit).
             on_evict=self._prompt_cache_store_evicted,
+            on_set=self._prompt_cache_store_after_set,
         )
 
         # Provider created successfully - no event emission needed
@@ -7272,6 +7301,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
     # `prompt_cache_update`, `prompt_cache_fork`, and `prompt_cache_prepare_modules`.
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         return None
+
+    def _prompt_cache_store_after_set(self, key: str, cache_value: Any) -> None:
+        """Hook: `key` was just stored. Providers bounding the store by bytes enforce it here.
+        Default: nothing."""
+        _ = (key, cache_value)
 
     def _prompt_cache_store_evicted(self, key: str, cache_value: Any) -> None:
         """Hook: `key` left the prompt-cache store WITHOUT an explicit clear
