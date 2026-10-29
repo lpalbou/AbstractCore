@@ -7,12 +7,13 @@
 > Links: [ADR 0011](../../adr/0011-shared-weights-and-concurrent-requests.md), [ADR 0010](../../adr/0010-model-residency-fit-and-eviction.md), [0870](0870_per_model_slot_scheduler_and_shared_gguf_weights.md), core PR #34 (R5: the GGUF embedder reserves the largest input that fits)
 
 ## Why
-Core PR #34 sizes the GGUF embedder's input (`n_ctx = n_batch = n_ubatch`) to what fits beside the models already
-resident minus the 5 % buffer (OVH 8080: the embedder's 8,192 reservation took 6.6 GB of a 16 GB card and left
-1.0 GiB, so the LLM's second slot never fit and every request queued FIFO behind the running one). The fix is
-order-dependent: it only frees the second LLM slot when the LLM loads FIRST. An embedder that loads on an EMPTY card
-(the automation that embeds before anyone chats, a restart that warms embeddings first) still takes its full
-reservation, and the text default then loads with one slot — the pass-four picture again, by another path.
+Core PR #34 (amended, 2026-10-29) first made the GGUF embedder's reservation cheap — flash attention and 512-token
+micro-batches took its compute scratch on OVH 8080 from 6,710 to 1,808 MB at the full 8,192-token reservation — and
+keeps a fit check as the safety net: the input is sized to what fits beside the models already resident minus the
+5 % buffer. That safety net is order-dependent: it only yields when the LLM loads FIRST. An embedder that loads on an
+EMPTY card (the automation that embeds before anyone chats, a restart that warms embeddings first) takes its whole
+reservation, and on a card where the text default's slots are tight (the 16 GB card: a second Kimi 9B slot needs
+8.3 GiB) the ~1.8 GB still decides whether the second slot fits. Smaller than before, same shape of defect.
 
 ## What
 - The embedder's fit considers the CONFIGURED text default (`capability_defaults` output.text, when it is a local
