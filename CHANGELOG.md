@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A GGUF this computer's llama.cpp cannot load says so before it is chosen** (backlog 0867, operator QA item f).
+  XHToken/Spark-X2.6-4B (architecture `spark2_5`) downloaded fine and failed only at its first call. An installed
+  GGUF's row now carries `architecture`, and, when this install's llama-cpp-python does not name that architecture,
+  `loadable: false` with `unloadable_reason`: "This computer's llama.cpp (llama-cpp-python 0.3.x) cannot load the
+  spark2_5 architecture. Update llama-cpp-python, or choose another model." The check reads llama.cpp's own table of
+  architecture names in `libllama`, without importing it (`llamacpp_knows_architecture`).
 - **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866, operator QA item c). The repos the
   catalog downloads hold only the quant file, with no config or card, so `models list` reported them as an unknown
   model with no task. The kind and tasks now come from the file's own `general.architecture`:

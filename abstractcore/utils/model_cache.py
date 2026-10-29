@@ -669,3 +669,95 @@ def read_gguf_architecture(path: Path) -> Optional[str]:
     except Exception:
         return None
     return None
+
+
+# ---------------------------------------------------------------------------
+# Which GGUF architectures this install's llama.cpp can load (operator QA 2026-10-28 (f))
+# ---------------------------------------------------------------------------
+
+_LLAMA_LIB_CACHE: dict = {}
+#: Architecture names every llama.cpp build has carried for years: the scan's sanity check.
+_LLAMA_ARCH_SENTINELS = (b"llama", b"qwen2")
+
+
+def _llama_library_bytes() -> Optional[bytes]:
+    """The bytes of llama-cpp-python's `libllama` (the table of architecture names lives there),
+    found WITHOUT importing the package (no GPU init). None when llama-cpp-python is absent."""
+    import importlib.util
+
+    try:
+        spec = importlib.util.find_spec("llama_cpp")
+    except Exception:
+        return None
+    if spec is None or not spec.submodule_search_locations:
+        return None
+    lib_dir = Path(list(spec.submodule_search_locations)[0]) / "lib"
+    try:
+        files = [p for p in lib_dir.iterdir() if p.is_file()]
+        # `libllama.*` first (the shared library itself), then a Windows `llama.dll`.
+        candidates = sorted(p for p in files if p.name.lower().startswith("libllama")) or sorted(
+            p for p in files if p.name.lower().startswith("llama.")
+        )
+    except Exception:
+        return None
+    if not candidates:
+        return None
+    lib = candidates[0].resolve()
+    try:
+        st = lib.stat()
+    except OSError:
+        return None
+    key = (str(lib), st.st_mtime_ns, st.st_size)
+    cached = _LLAMA_LIB_CACHE.get("lib")
+    if cached and cached[0] == key:
+        return cached[1]
+    try:
+        data = lib.read_bytes()
+    except OSError:
+        return None
+    _LLAMA_LIB_CACHE["lib"] = (key, data)
+    return data
+
+
+def llamacpp_knows_architecture(arch: Optional[str]) -> Optional[bool]:
+    """Whether this install's llama.cpp names the GGUF `general.architecture` ``arch`` (its
+    architecture table is a list of C strings in `libllama`). None when it cannot be told:
+    no llama-cpp-python, or no architecture."""
+    name = str(arch or "").strip()
+    if not name:
+        return None
+    data = _llama_library_bytes()
+    if data is None:
+        return None
+    # The table is trusted only when names every llama.cpp build carries are found the same way:
+    # a library laid out differently (stripped, a stub, another build) must not turn every GGUF
+    # into "cannot load" (merge desk review).
+    if not all((sentinel + b"\x00") in data for sentinel in _LLAMA_ARCH_SENTINELS):
+        if not _LLAMA_LIB_CACHE.get("sentinel_logged"):
+            _LLAMA_LIB_CACHE["sentinel_logged"] = True
+            import logging
+
+            logging.getLogger(__name__).debug("libllama does not hold the architecture table as expected; architecture support unknown")
+        return None
+    # A C string's END is certain; its start is not: the linker merges a name into the tail of a
+    # longer one ("qwen2" lives inside another string in the server's libllama). So the test is
+    # "a string ends with the name": a false "known" only leaves a model offered (fail-safe), never
+    # a false "cannot load".
+    return (name.encode("utf-8") + b"\x00") in data
+
+
+def gguf_unloadable_reason(arch: Optional[str]) -> Optional[str]:
+    """The sentence when this install's llama.cpp cannot load ``arch``, else None."""
+    if llamacpp_knows_architecture(arch) is not False:
+        return None
+    try:
+        from importlib.metadata import version
+
+        installed = version("llama-cpp-python")
+    except Exception:
+        installed = ""
+    which = f"llama-cpp-python {installed}" if installed else "llama-cpp-python"
+    return (
+        f"This computer's llama.cpp ({which}) cannot load the {arch} architecture. "
+        "Update llama-cpp-python, or choose another model."
+    )
