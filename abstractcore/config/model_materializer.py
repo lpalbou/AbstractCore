@@ -4218,6 +4218,17 @@ def _route_probe_provider(provider: str, key: str) -> str:
     return normalize_engine_id(pid)
 
 
+def _embedding_alias_repo(alias: str) -> Optional[str]:
+    """The Hugging Face repo an embedding catalog alias loads (`embeddings.models`), or None."""
+    try:
+        from ..embeddings.models import get_model_config
+
+        repo = str(get_model_config(alias).model_id or "").strip()
+        return repo if "/" in repo else None
+    except Exception:
+        return None
+
+
 def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
     """Annotate capability-default rows with weight availability.
 
@@ -4288,6 +4299,14 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
                     artifact = inherited
             if probe_provider == provider and provider:
                 probe_provider = _route_probe_provider(provider, key)
+            if key.startswith("embedding.") and _norm(provider) == "huggingface" and artifact and "/" not in artifact:
+                # An embedding route names a catalog alias ("qwen3-embedding"); the
+                # embedding manager loads its Hugging Face repo. Probe and download THAT,
+                # or the route reads "not checked" with no Download action while every
+                # boot fails to load it (Linux test server, 2026-10-29).
+                repo = _embedding_alias_repo(artifact)
+                if repo:
+                    artifact = repo
 
             if not provider or not artifact:
                 row["availability"] = ModelPresence(
@@ -4300,6 +4319,20 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
             presence = seen_cache.get(cache_key)
             if presence is None:
                 presence = probe(probe_provider, artifact, base_url=base_url)
+                if key.startswith("embedding.") and presence.status == PRESENCE_ABSENT and _norm(provider) == "huggingface":
+                    # The embedding manager serves the installed GGUF build of the same
+                    # model when the repo itself is not downloaded: that route runs.
+                    try:
+                        from ..embeddings.manager import gguf_sibling_snapshot
+
+                        sibling = gguf_sibling_snapshot(artifact)
+                    except Exception:
+                        sibling = None
+                    if sibling:
+                        presence = ModelPresence(
+                            provider, artifact, PRESENCE_INSTALLED, evidence="hf cache scan",
+                            detail=f"served by the installed GGUF build {sibling[0]} ({sibling[1].name})",
+                        )
                 seen_cache[cache_key] = presence
             row["availability"] = presence.to_dict()
             if artifact != model:
