@@ -245,6 +245,12 @@ class _InstanceGenerationWorker:
         return consume()
 
 
+def _gguf_slots_mod() -> Any:
+    from . import gguf_slots
+
+    return gguf_slots
+
+
 def _on_model_thread(method: Any) -> Any:
     """Run a method that touches the instance's model (llama.cpp eval or state, the free step of an
     unload) on the instance's generation worker, serialized with its generations."""
@@ -1250,6 +1256,8 @@ class HuggingFaceProvider(BaseProvider):
 
         # Store provider-specific configuration
         self.n_gpu_layers = n_gpu_layers
+        # A GPU-layer count a PERSON passed is honoured or refused, never adopted from a resident pool.
+        self._n_gpu_layers_explicit = n_gpu_layers is not None
         self.model_type = None  # Will be "transformers" or "gguf"
         self.device = self._resolve_requested_device(device)
 
@@ -1634,6 +1642,232 @@ class HuggingFaceProvider(BaseProvider):
                 out[surfaces.effort_template_kwarg] = effort
         return out
 
+    # -- llama.cpp slot pool (one weights instance per model, concurrent slots on it) ----------
+    @property
+    def llm(self) -> Any:
+        """The llama.cpp context this call runs on: the slot it borrowed from the model's pool, else
+        the pool's first slot (n_ctx, model_path, metadata), else this instance's own engine."""
+        sched = self.__dict__.get("_gguf_scheduler")
+        if sched is not None:
+            cur = _gguf_slots_mod().current_llm(sched)
+            return cur if cur is not None else sched.first_llm
+        return self.__dict__.get("_llm_own")
+
+    @llm.setter
+    def llm(self, value: Any) -> None:
+        sched = self.__dict__.get("_gguf_scheduler")
+        if sched is not None:
+            if value is None:
+                self._gguf_detach()
+                return
+            raise RuntimeError(f"{self.model}: the llama.cpp contexts belong to the model's slot pool")
+        self.__dict__["_llm_own"] = value
+
+    def _gguf_create_slot_pool(self, llama_cls: Any, slot_kwargs: Dict[str, Any], model_path: Any, wkey: str) -> None:
+        """This fresh load becomes slot 0 of the model's pool, and this instance its first holder."""
+        from . import gguf_slots
+        from .process_residency import load_lock
+
+        first = self.__dict__.get("_llm_own")
+        n_ctx = int(slot_kwargs.get("n_ctx") or self.max_tokens or 0)
+
+        def make_slot() -> Any:
+            with load_lock():
+                engine = llama_cls(**slot_kwargs)
+            try:
+                self._gguf_probe_decode(engine)  # resets first: hybrid memories need it before decode 1
+            except Exception:
+                try:
+                    engine.close()
+                except Exception:
+                    pass
+                raise
+            return engine
+
+        def slot_fits() -> Optional[str]:
+            return self._gguf_slot_fits(model_path, n_ctx)
+
+        set_n = self._gguf_configured_concurrency()
+        sched = gguf_slots.SlotScheduler(
+            key=gguf_slots.scheduler_key(wkey, n_ctx), model=str(self.model), first_llm=first, n_ctx=n_ctx,
+            make_slot=make_slot, slot_fits=slot_fits,
+            max_concurrent=set_n or gguf_slots.default_concurrency(self.n_gpu_layers),
+        )
+        if set_n and set_n > 1:
+            # A concurrency a PERSON set is a pin (like a set context): every slot is built now, or
+            # the load is refused with the numbers -- never fewer slots behind their back.
+            built: List[Any] = []
+            try:
+                for i in range(1, int(set_n)):
+                    reason = slot_fits()
+                    if reason is not None:
+                        raise ModelDoesNotFitError(
+                            f"{self.model} is set to run {int(set_n)} generations at once, but {reason}. "
+                            f"Lower its concurrency (Resources page) or free memory; nothing stays loaded.",
+                            model=str(self.model), device="GPU" if self.n_gpu_layers else "RAM")
+                    built.append(make_slot())
+            except BaseException:
+                for engine in built:
+                    try:
+                        engine.close()
+                    except Exception:
+                        pass
+                self.__dict__["_llm_own"] = None
+                try:
+                    first.close()
+                except Exception:
+                    pass
+                raise
+            for engine in built:
+                sched.add_slot(engine)
+            sched.pinned_slots = int(set_n)
+        sched.attach_state = {
+            "context_reservation": dict(getattr(self, "_context_reservation", None) or {}),
+            "requested_context": getattr(self, "_gguf_requested_context", None),
+            "n_gpu_layers": self.n_gpu_layers,
+            "max_output_tokens": self.max_output_tokens,
+            "output_ceiling_source": getattr(self, "_output_ceiling_source", None),
+            "prompt_cache_store": getattr(self, "_prompt_cache_store", None),
+            "prompt_cache_lock": self._gguf_prompt_cache_lock,
+            "context_source": getattr(self, "_context_source", None),
+        }
+        gguf_slots.register(wkey, sched)
+        self.__dict__["_llm_own"] = None
+        self.__dict__["_gguf_scheduler"] = sched
+        gguf_slots.attach(sched, self)
+        self._gguf_instance_worker = self._generation_worker
+        self._generation_worker = sched
+        self.logger.info(
+            f"GGUF {self.model}: slot pool ready (n_ctx {n_ctx:,}; up to {sched.max_concurrent} concurrent "
+            "generations on one weights instance)."
+        )
+
+    def _gguf_attach(self, sched: Any) -> None:
+        """Use the model's resident slot pool: no context of this instance's own, no second copy."""
+        st = sched.attach_state
+        resident_layers = st.get("n_gpu_layers")
+        adopted = resident_layers is not None and self.n_gpu_layers != resident_layers
+        if adopted and getattr(self, "_n_gpu_layers_explicit", False):
+            raise InvalidRequestError(
+                f"{self.model} is already loaded in this process with n_gpu_layers={resident_layers}, and this "
+                f"instance asks for n_gpu_layers={self.n_gpu_layers}. A second copy is never loaded: drop "
+                "n_gpu_layers= to use the loaded model, or unload it first to load it with your setting.")
+        if adopted:
+            self.logger.info(
+                f"GGUF {self.model}: this instance resolved n_gpu_layers={self.n_gpu_layers}, the resident model "
+                f"runs with {resident_layers}; adopting the resident setting (no second copy).")
+        self._adopted_gpu_layers_from_resident_pool = bool(adopted)
+        self.__dict__["_llm_own"] = None
+        self.__dict__["_gguf_scheduler"] = sched
+        _gguf_slots_mod().attach(sched, self)
+        self.max_tokens = int(sched.n_ctx)
+        self._context_reservation = dict(st.get("context_reservation") or {})
+        self._gguf_requested_context = st.get("requested_context")
+        self._gguf_fit_report = None
+        if st.get("n_gpu_layers") is not None:
+            self.n_gpu_layers = st["n_gpu_layers"]
+        if isinstance(self.max_output_tokens, int) and self.max_output_tokens > self.max_tokens:
+            self.max_output_tokens = int(self.max_tokens)
+            self._output_ceiling_source = "GGUF n_ctx of the loaded model"
+        if st.get("prompt_cache_store") is not None:
+            # The prompt caches are the MODEL's (a KV state is valid on any slot of it).
+            self._prompt_cache_store = st["prompt_cache_store"]
+        if st.get("prompt_cache_lock") is not None:
+            self._gguf_prompt_cache_lock = st["prompt_cache_lock"]
+        self._gguf_instance_worker = self._generation_worker
+        self._generation_worker = sched
+        self.logger.info(
+            f"GGUF {self.model}: already resident in this process; attached to its slot pool "
+            f"(n_ctx {int(sched.n_ctx):,}, {len(sched.holders)} holders, no second copy)."
+        )
+
+    def _gguf_detach(self) -> bool:
+        """Stop using the model's slot pool. True when other holders still use it."""
+        from . import gguf_slots
+
+        sched = self.__dict__.get("_gguf_scheduler")
+        if sched is None:
+            return False
+        # The last holder of a busy pool: ModelBusyError, and this instance stays attached.
+        still_used = gguf_slots.detach(sched, self)
+        self.__dict__.pop("_gguf_scheduler", None)
+        self.__dict__["_llm_own"] = None
+        worker = self.__dict__.pop("_gguf_instance_worker", None)
+        self._generation_worker = worker if worker is not None else _InstanceGenerationWorker(f"abstractcore-hf-{id(self):x}")
+        if still_used:
+            # The shared prompt caches stay with the other holders; this instance starts empty.
+            try:
+                from .base import PromptCacheStore
+
+                self._prompt_cache_store = PromptCacheStore(max_entries=32)
+            except Exception:  # noqa: BLE001
+                pass
+            self._gguf_prompt_cache_lock = threading.Lock()
+        return still_used
+
+    def _gguf_rebuild_current_slot(self) -> bool:
+        """A failed prefill poisoned the borrowed slot's context: replace that context only (the
+        weights stay resident; other slots keep running). False when not on a pool's slot."""
+        sched = self.__dict__.get("_gguf_scheduler")
+        if sched is None or _gguf_slots_mod().current_llm(sched) is None:
+            return False
+        broken = _gguf_slots_mod().current_llm(sched)
+        try:
+            broken.close()
+        except Exception:
+            pass
+        sched.rebind_current(sched._make_slot())
+        return True
+
+    def _gguf_configured_concurrency(self) -> Optional[int]:
+        """The concurrency a person set for this model (`model_concurrency`), or None (default)."""
+        try:
+            from ..config.model_contexts import configured_model_concurrency
+
+            set_n = configured_model_concurrency("huggingface", str(self.model),
+                                                 config_file=getattr(self, "_abstractcore_config_file", None))
+        except Exception:  # noqa: BLE001
+            set_n = None
+        return int(set_n) if set_n else None
+
+    def _gguf_slot_fits(self, model_path: Any, n_ctx: int) -> Optional[str]:
+        """None when one more slot (its KV and compute buffers at the pool's n_ctx) fits the free
+        memory NOW, minus the safety buffer; else the reason. Never evicts anything (a slot is
+        capacity, not a load) and never shrinks the context."""
+        try:
+            from ..utils.kv_geometry import kv_cache_bytes
+            from .hf_residency import gguf_file_geometry
+
+            geom = gguf_file_geometry(model_path) or {}
+            kv = int(kv_cache_bytes(geom, int(n_ctx), pad_v=True) or 0) if geom else 0
+            n_head = int(geom.get("head_count") or 0)
+            need = kv + 512 * n_head * 4 * int(n_ctx)
+            buffer = self._gguf_memory_buffer()
+            free = None
+            device = "memory"
+            if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers != 0:
+                try:
+                    import torch
+
+                    if torch.cuda.is_available() and int(torch.cuda.device_count()) == 1:
+                        free = int(torch.cuda.mem_get_info()[0])
+                        device = "GPU memory"
+                except Exception:  # noqa: BLE001
+                    free = None
+            if free is None:
+                import psutil
+
+                free = int(psutil.virtual_memory().available)
+                device = "memory"
+            if need <= 0 or need <= int(free * (1.0 - buffer)):
+                return None
+            gib = float(1 << 30)
+            return (f"another slot of {self.model} needs {need / gib:.1f} GiB of {device} for its "
+                    f"{int(n_ctx):,}-token context, {free / gib:.1f} GiB free ({buffer * 100:.0f} % kept free)")
+        except Exception as exc:  # noqa: BLE001 - unmeasurable: try the allocation (it fails loudly)
+            self.logger.debug(f"slot fit for {self.model} not measurable: {exc}")
+            return None
+
     def unload_model(self, model_name: str) -> None:
         """
         Unload the model from memory.
@@ -1650,6 +1884,10 @@ class HuggingFaceProvider(BaseProvider):
         this RAISE (nothing freed) instead of crashing the process.
         """
         self._stop_inflight_before_unload(model_name, refuse_if_running=True)
+        if self.__dict__.get("_gguf_scheduler") is not None:
+            # A holder of the model's slot pool owns no context: it detaches (never through a
+            # slot: an unload must not queue behind other holders' generations).
+            self._gguf_detach()
         # The free step runs on the generation worker: after any generation already queued
         # there (cancelled by the stop above), never under one (`_InstanceGenerationWorker`).
         self._free_model_on_unload()
@@ -3366,6 +3604,8 @@ class HuggingFaceProvider(BaseProvider):
             total_b = int(torch.cuda.mem_get_info()[1])
             if not weights_b or not geom:
                 return None
+            if getattr(self, "_gguf_weights_already_resident", False):
+                weights_b = 0  # borrowed: only this context's KV is allocated
             reserve = max(self._GGUF_RESERVE_FLOOR_BYTES, int(total_b * self._GGUF_RESERVE_FRACTION))
             need = int(weights_b) + int(kv_cache_bytes(geom, int(min_ctx), pad_v=True) or 0) + reserve
         except Exception:
@@ -3494,6 +3734,8 @@ class HuggingFaceProvider(BaseProvider):
             geom = gguf_file_geometry(model_path)
             if not weights_b or not geom:
                 return None
+            if getattr(self, "_gguf_weights_already_resident", False):
+                weights_b = 0  # borrowed: only this context's KV is allocated
             buffer = self._gguf_memory_buffer()
             one = kv_cache_breakdown(geom, 1, pad_v=True) or {}
             two = kv_cache_breakdown(geom, 2, pad_v=True) or {}
@@ -3843,6 +4085,8 @@ class HuggingFaceProvider(BaseProvider):
                 # Free the broken engine BEFORE loading the new one: reloading
                 # first doubled residency (two ~90 GB models: measured 62 -> 123 GB
                 # RSS) and turned a transient OOM into a permanent one.
+                if self._gguf_rebuild_current_slot():
+                    return _recurse()
                 broken = getattr(self, "llm", None)
                 self.llm = None
                 try:
@@ -7508,6 +7752,13 @@ class HuggingFaceProvider(BaseProvider):
             llama_cls = globals().get("Llama")
             if llama_cls is None:
                 from llama_cpp import Llama as llama_cls  # type: ignore
+            # ONE weights instance per GGUF in the process (residency audit R1, 2026-10-29): every
+            # context of this model -- another pool's, a gateway client's, a server request's --
+            # borrows the resident weights; only its own KV is allocated.
+            from . import gguf_shared as _gguf_shared
+            from . import gguf_slots as _gguf_slots
+
+            llama_cls = _gguf_shared.shared_llama(llama_cls)
 
             # llama-cpp-python 0.3.x can throw an "Exception ignored in: __del__" when model
             # initialization fails early (missing `sampler` attribute). Patch defensively to
@@ -7634,6 +7885,18 @@ class HuggingFaceProvider(BaseProvider):
                 requested_n_ctx_i = 16384
 
             self._gguf_requested_context = int(requested_n_ctx_i)
+            _wkey = _gguf_shared.weights_key(model_path, n_gpu_layers=self.n_gpu_layers, use_mmap=use_mmap)
+            # THE MODEL IS ALREADY RESIDENT (another pool, a gateway client, a server request):
+            # attach to its slot pool -- no context, no weights, no fit check. A pinned context
+            # attaches only to a pool of that context (every slot of a pool has the pool's n_ctx).
+            _pinned_ctx = int(requested_n_ctx_i) if getattr(self, "_user_provided_max_tokens", False) else None
+            _sched = _gguf_slots.find_for_file(model_path, _pinned_ctx)
+            if _sched is not None:
+                self._gguf_attach(_sched)
+                return
+            # Weights already resident (a pool of another context): this load allocates a
+            # context only (its KV), so the fit check and the context sizing count no weights.
+            self._gguf_weights_already_resident = _gguf_shared.resident(_wkey) is not None
             # THE FIT CHECK (core ADR 0010), before anything is allocated: the weights
             # and the KV of the smallest context this load accepts must fit the free
             # device memory, after evicting resident models that are not locked
@@ -7829,6 +8092,14 @@ class HuggingFaceProvider(BaseProvider):
             # concrete `n_ctx` allocation. After successful load (including fallbacks),
             # treat `self.max_tokens` as the runtime context window budget.
             self.max_tokens = int(chosen_n_ctx)
+            if getattr(self.llm, "_abstractcore_weights_borrowed", False):
+                self.logger.info(
+                    f"GGUF {self.model}: weights already resident in this process; this load allocated "
+                    f"only its own {int(chosen_n_ctx):,}-token context (no second copy)."
+                )
+            _slot_kwargs = dict(llama_kwargs, n_ctx=int(chosen_n_ctx))
+            if self.n_gpu_layers == 0 and llama_kwargs.get("n_gpu_layers") != 0:
+                _slot_kwargs.update(n_gpu_layers=0, offload_kqv=False)
 
             # Remember where the ladder settled (context calibration). Only when
             # the ladder actually ran — a user-provided max_tokens is a pin, not
@@ -7890,6 +8161,9 @@ class HuggingFaceProvider(BaseProvider):
                     self._output_ceiling_source = "GGUF n_ctx of the loaded model"
             except Exception:
                 pass
+
+            if getattr(self.llm, "_abstractcore_weights_key", None):
+                self._gguf_create_slot_pool(llama_cls, _slot_kwargs, model_path, _wkey)
 
         except ModelDoesNotFitError:
             raise  # ADR 0010: the typed refusal reaches the caller as itself
@@ -8119,13 +8393,16 @@ class HuggingFaceProvider(BaseProvider):
         if worker is None:  # an instance built around __init__ (tests, subclasses): no sharing to guard
             return _call()
         # Progress is bound inside the worker (it reports from the thread that runs the lane).
+        extra: Dict[str, Any] = {}
+        if isinstance(worker, _gguf_slots_mod().SlotScheduler) and progress.active:
+            extra["on_queued"] = lambda position, state: progress.queued(position=position, **state)
         if not stream:
-            return worker.run(_call, cancel_event=cancel_event)
+            return worker.run(_call, cancel_event=cancel_event, **extra)
         # A stream is produced from now on, before its consumer's first next(): it is in flight
         # (an unload cancels and waits for it) until its production ends.
         registry = self._inflight_generations()
         inflight = registry.begin(cancel_event)
-        return worker.stream(_call, cancel_event=cancel_event, on_done=lambda: registry.end(inflight))
+        return worker.stream(_call, cancel_event=cancel_event, on_done=lambda: registry.end(inflight), **extra)
 
     def _with_text_progress(self, progress: Any, run: Any) -> Any:
         """Run one call with `progress` bound to the executing thread.

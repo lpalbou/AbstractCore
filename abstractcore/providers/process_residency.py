@@ -293,7 +293,11 @@ def _hf_holder_state(holder: Any) -> Dict[str, Any]:
             last_used = max(float(last_used or 0.0), float(registry.last_used_at))
     except Exception:  # noqa: BLE001 - a holder without the registry is never "in use" by it
         pass
-    return {"held_bytes": int(row.get("held_bytes") or 0), "inflight": inflight, "last_used_at": last_used}
+    # A slot pool with a generation running or a request waiting is in use (never evicted).
+    inflight += int(row.get("active") or 0) + int(row.get("queued") or 0)
+    return {"held_bytes": int(row.get("held_bytes") or 0), "inflight": inflight, "last_used_at": last_used,
+            "weights_bytes": int(row.get("weights_bytes") or 0), "weights_id": row.get("weights_id"),
+            "scheduler_id": row.get("scheduler_id")}
 
 
 def resident_model_states() -> List[Dict[str, Any]]:
@@ -307,6 +311,8 @@ def resident_model_states() -> List[Dict[str, Any]]:
     from .hf_residency import _holder_alive, registered_providers
 
     by_model: Dict[str, Dict[str, Any]] = {}
+    counted_weights: set = set()
+    counted_pools: set = set()
     for holder in registered_providers():
         try:
             if not _holder_alive(holder):
@@ -320,7 +326,22 @@ def resident_model_states() -> List[Dict[str, Any]]:
         cur = by_model.setdefault(name, {"backend": "huggingface", "provider": "huggingface", "model": name,
                                          "held_bytes": 0, "last_used_at": None, "in_use": False, "holders": 0})
         cur["holders"] += 1
-        cur["held_bytes"] += st["held_bytes"]
+        # Weights shared by several holders (gguf_shared) are held ONCE: what evicting frees.
+        wid = st.get("weights_id")
+        pid = st.get("scheduler_id")
+        if pid is not None and pid in counted_pools:
+            cur["in_use"] = cur["in_use"] or st["inflight"] > 0
+            if st["last_used_at"] is not None:
+                cur["last_used_at"] = max(float(cur["last_used_at"] or 0.0), float(st["last_used_at"]))
+            continue  # the pool's contexts and weights are counted with its first holder
+        if pid is not None:
+            counted_pools.add(pid)
+        if wid is not None and wid in counted_weights:
+            cur["held_bytes"] += max(0, int(st["held_bytes"]) - int(st.get("weights_bytes") or 0))
+        else:
+            cur["held_bytes"] += st["held_bytes"]
+            if wid is not None:
+                counted_weights.add(wid)
         cur["in_use"] = cur["in_use"] or st["inflight"] > 0
         if st["last_used_at"] is not None:
             cur["last_used_at"] = max(float(cur["last_used_at"] or 0.0), float(st["last_used_at"]))

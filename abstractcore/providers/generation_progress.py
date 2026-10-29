@@ -11,7 +11,8 @@ Contract (documented in docs/native-mlx-runtime.md and docs/prompt-caching.md):
 
     {
       "kind": "llm",                    # discriminator: never a media event
-      "phase": "prefill"|"generate"|"complete",
+      "phase": "queued"|"prefill"|"generate"|"complete",
+      "queue_position": int,            # queued events only: 1 = next for a slot
       "provider": "mlx", "model": "...",
       "prompt_tokens": int,             # total prompt tokens for this call
       "cached_tokens": int,             # prompt tokens served from KV cache
@@ -65,6 +66,7 @@ import os
 import time
 from typing import Any, Callable, Dict, Optional
 
+PHASE_QUEUED = "queued"
 PHASE_PREFILL = "prefill"
 PHASE_GENERATE = "generate"
 PHASE_COMPLETE = "complete"
@@ -177,6 +179,8 @@ class TextProgressEmitter:
         self._prefill_observed: Optional[int] = None
         self._prefill_emitted: Optional[int] = None
         self._prefill_rate_base: Optional[tuple] = None
+        #: "queued" events sent before the call got its slot (they do not count as a started call).
+        self._queued_events = 0
 
     # -- introspection -----------------------------------------------------
     @property
@@ -263,6 +267,28 @@ class TextProgressEmitter:
             return False
         return True
 
+    def queued(self, *, position: int, **state: Any) -> bool:
+        """The call waits for a slot of its model (every slot busy): `position` in the model's
+        FIFO queue (1 = next) and the pool's state (`slots`, `slots_max`, `active`, `queued`,
+        `slot_refusal_reason`). A true signal from the slot pool, emitted when the position
+        changes; never after prefill started."""
+        if self._callback is None or self._done or self._emitted > self._queued_events:
+            return False
+        # Called on every wake while the call waits: a new position is sent at once, the same one
+        # again at the emitter's cadence (a long wait never goes dark, never floods).
+        if (self._last_emit_at is not None and position == getattr(self, "_queued_position", None)
+                and self._clock() - self._last_emit_at < self._min_interval_s):
+            return False
+        self._queued_position = position
+        extra: Dict[str, Any] = {"queue_position": int(position)}
+        for k in ("slots", "slots_max", "active", "queued", "slot_refusal_reason"):
+            if state.get(k) is not None:
+                extra[k] = state[k]
+        sent = self._send(PHASE_QUEUED, extra)
+        if sent:
+            self._queued_events += 1
+        return sent
+
     def prefill(
         self,
         *,
@@ -272,7 +298,7 @@ class TextProgressEmitter:
     ) -> bool:
         """Announce that prompt processing has started. Always emitted."""
 
-        if self._callback is None or self._done or self._emitted:
+        if self._callback is None or self._done or self._emitted > self._queued_events:
             return False
         self._remember(prompt_tokens=prompt_tokens, cached_tokens=cached_tokens, fed_tokens=fed_tokens)
         extra: Dict[str, Any] = {"generated_tokens": 0}
