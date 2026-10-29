@@ -496,12 +496,14 @@ Residency records report lock state truthfully:
 
 ### GGUF context on a discrete GPU: the sizing rule
 
-Before the ladder allocates anything on a CUDA / ROCm card, the provider drops the rungs whose KV
+Before the ladder allocates anything on a single CUDA / ROCm card with every layer offloaded
+(`n_gpu_layers=-1`, the default), the provider drops the rungs whose KV
 cache cannot fit: **the KV cache may take at most half of the device memory that is free when the
 model loads, after the GGUF weights and a reserve of max(1 GiB, 10% of the device)** for llama.cpp's
 compute buffers. The other half stays free for the models a gateway loads next (speech,
-embeddings). The smallest rung is always kept, an explicit `max_tokens` is never resized, and
-Metal and CPU loads are unchanged. Example (Quadro RTX 5000, 14.5 GiB free, Qwen3.5-9B Q4_K_M at
+embeddings). The smallest rung is always kept, an explicit `max_tokens` is never resized, a rung the
+rule chose is not stored as a calibration (it reflects that load's free memory, not the card), and
+Metal, CPU, partial-offload and multi-GPU loads are unchanged. Example (Quadro RTX 5000, 14.5 GiB free, Qwen3.5-9B Q4_K_M at
 5.6 GiB): half of 7.4 GiB is 3.7 GiB, so the load starts at 65,536 tokens (2.0 GiB of KV) instead of
 the advertised 262,144.
 

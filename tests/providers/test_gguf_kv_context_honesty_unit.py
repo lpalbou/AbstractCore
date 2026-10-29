@@ -145,9 +145,14 @@ def _provider(**attrs: Any) -> HuggingFaceProvider:
     return p
 
 
-def _device(monkeypatch, *, backend="cuda", free=int(14.5 * GIB), total=int(14.56 * GIB), weights=int(5.6 * GIB)):
+def _device(monkeypatch, *, backend="cuda", free=int(14.5 * GIB), total=int(14.56 * GIB), weights=int(5.6 * GIB),
+            cards=1):
+    import sys
+    from types import SimpleNamespace
     import abstractcore.utils.memory as mem
     import abstractcore.providers.huggingface_provider as hp
+
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(device_count=lambda: cards)))
 
     monkeypatch.setattr(mem, "get_memory_snapshot",
                         lambda: {"device": {"backend": backend, "free_bytes": free, "total_bytes": total}})
@@ -171,12 +176,15 @@ def test_a_full_card_keeps_the_smallest_rung(tmp_path, monkeypatch):
     assert _provider()._gguf_device_fit_rungs(str(_kimi_file(tmp_path)), list(LADDER)) == [4096]
 
 
-def test_rule_does_not_apply_off_cuda_or_on_cpu(tmp_path, monkeypatch):
+def test_rule_does_not_apply_off_cuda_on_cpu_partial_offload_or_several_cards(tmp_path, monkeypatch):
     path = str(_kimi_file(tmp_path))
     _device(monkeypatch, backend="metal")
     assert _provider()._gguf_device_fit_rungs(path, list(LADDER)) == LADDER
     _device(monkeypatch)
     assert _provider(n_gpu_layers=0)._gguf_device_fit_rungs(path, list(LADDER)) == LADDER
+    assert _provider(n_gpu_layers=20)._gguf_device_fit_rungs(path, list(LADDER)) == LADDER
+    _device(monkeypatch, cards=2)
+    assert _provider()._gguf_device_fit_rungs(path, list(LADDER)) == LADDER
 
 
 # -- 3. a prompt the context cannot hold fails clearly, before any eval --------------------
@@ -222,3 +230,14 @@ def test_prompt_that_fits_still_prefills():
 def test_llama_cpp_refusal_text_is_recognized():
     m = _LLAMA_CONTEXT_OVERFLOW_RE.search("Requested tokens (6402) exceed context window of 1024")
     assert m and (m.group(1), m.group(2)) == ("6402", "1024")
+
+
+def test_streamed_llama_cpp_refusal_becomes_the_clear_error():
+    def refusing():
+        raise ValueError("Requested tokens (6402) exceed context window of 1024")
+        yield  # pragma: no cover
+
+    p = _provider()
+    with pytest.raises(ContextWindowExceededError) as err:
+        list(p._gguf_context_checked_stream(refusing()))
+    assert err.value.prompt_tokens == 6402 and err.value.context_length == 1024

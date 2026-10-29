@@ -28,9 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sliding-window layers and widths, shared/MTP layers) and is used by the residency rows, the
   context-fit estimate and the load. Rows and claims carry `context_length`, `kv_cache_bytes`
   (`kv_cache_estimated: true`).
-- **The GGUF context is sized to the card before allocating** (CUDA/ROCm): the KV cache may take at
-  most half of the free device memory after the weights and a reserve of max(1 GiB, 10%); rungs
-  above are skipped (docs/memory-management.md). An explicit `max_tokens` is never resized.
+- **The GGUF context is sized to the card before allocating** (one CUDA/ROCm card, full offload):
+  the KV cache may take at most half of the free device memory after the weights and a reserve of
+  max(1 GiB, 10%); rungs above are skipped and the rule's pick is not stored as a calibration
+  (docs/memory-management.md). An explicit `max_tokens` is never resized.
+- **A skipped eject names its holders in words** (`owner_label` of the claim, "the runtime of account
+  default/bob"), never "runtime client 70a5b844f350" (ADR 0043).
 - **A prompt longer than the loaded GGUF context fails clearly, before any eval**
   (`ContextWindowExceededError`, a subclass of `InvalidRequestError`): it used to fill the KV cache
   ("decode: failed to find a memory slot for batch of size 512"), retry cold, rebuild the engine and

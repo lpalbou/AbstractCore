@@ -3313,7 +3313,16 @@ class HuggingFaceProvider(BaseProvider):
         try:
             if not candidate_ctxs or len(candidate_ctxs) < 2:
                 return candidate_ctxs
-            if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers == 0:
+            # Full offload only (-1): with a partial offload the weights on the
+            # card are a fraction this rule cannot know, and the KV may sit in RAM.
+            if not (isinstance(self.n_gpu_layers, int) and self.n_gpu_layers < 0):
+                return candidate_ctxs
+            try:
+                import torch
+
+                if int(torch.cuda.device_count()) != 1:
+                    return candidate_ctxs  # llama.cpp splits across cards; one card's free memory is not the budget
+            except Exception:
                 return candidate_ctxs
             from ..utils.memory import get_memory_snapshot
             from ..utils.kv_geometry import kv_cache_bytes
@@ -3330,7 +3339,12 @@ class HuggingFaceProvider(BaseProvider):
                 return candidate_ctxs
             reserve = max(self._GGUF_RESERVE_FLOOR_BYTES, int(total_b * self._GGUF_RESERVE_FRACTION))
             budget = int(max(0, free_b - int(weights_b) - reserve) * self._GGUF_KV_SHARE_OF_FREE)
-            kept = [c for c in candidate_ctxs if (kv_cache_bytes(geom, c) or 0) <= budget]
+            # This lane does not enable flash attention, so llama.cpp pads every
+            # V row to the widest layer (mixed-width models such as Gemma 4).
+            def _kv(c: int) -> int:
+                return int(kv_cache_bytes(geom, c, pad_v=True) or 0)
+
+            kept = [c for c in candidate_ctxs if _kv(c) <= budget]
             if not kept:
                 kept = [candidate_ctxs[-1]]
             gib = float(1 << 30)
@@ -3343,13 +3357,13 @@ class HuggingFaceProvider(BaseProvider):
                 "reserve_bytes": int(reserve),
                 "kv_budget_bytes": int(budget),
                 "first_rung": int(chosen),
-                "first_rung_kv_bytes": kv_cache_bytes(geom, chosen),
+                "first_rung_kv_bytes": _kv(chosen),
                 "skipped_rungs": [int(c) for c in candidate_ctxs if c not in kept],
             }
             if kept != candidate_ctxs:
                 self.logger.info(
                     f"GGUF context for {self.model}: starting at {chosen:,} tokens "
-                    f"(KV ~{(kv_cache_bytes(geom, chosen) or 0) / gib:.1f} GiB) -- the KV cache may take half of the "
+                    f"(KV ~{_kv(chosen) / gib:.1f} GiB) -- the KV cache may take half of the "
                     f"{(free_b - weights_b - reserve) / gib:.1f} GiB this device has free after the "
                     f"{weights_b / gib:.1f} GiB weights and a {reserve / gib:.1f} GiB reserve; "
                     f"skipped {', '.join(f'{c:,}' for c in self._gguf_context_rule['skipped_rungs'])}"
@@ -3375,6 +3389,18 @@ class HuggingFaceProvider(BaseProvider):
             "device has room).",
             prompt_tokens=int(n_prompt), context_length=int(n_ctx), model=self.model,
         )
+
+    def _gguf_context_checked_stream(self, stream: Any) -> Iterator[Any]:
+        """A llama-cpp-python chat stream whose "exceed context window" refusal
+        (raised lazily, at the first chunk) becomes `ContextWindowExceededError`."""
+        try:
+            for chunk in stream:
+                yield chunk
+        except ValueError as e:
+            overflow = _LLAMA_CONTEXT_OVERFLOW_RE.search(str(e))
+            if overflow:
+                raise self._gguf_context_exceeded_error(int(overflow.group(1)), int(overflow.group(2))) from e
+            raise
 
     def _gguf_raise_if_prompt_exceeds_context(self, n_prompt: int) -> None:
         """Refuse a prompt that leaves no room for one generated token."""
@@ -7690,7 +7716,13 @@ class HuggingFaceProvider(BaseProvider):
             # Remember where the ladder settled (context calibration). Only when
             # the ladder actually ran — a user-provided max_tokens is a pin, not
             # a measurement. Best-effort: calibration must never break a load.
-            if not getattr(self, "_user_provided_max_tokens", False):
+            _rule = getattr(self, "_gguf_context_rule", None) or {}
+            # A rung the device rule picked from the free memory of THIS load is
+            # not a hardware ceiling: storing it would seed every later load
+            # below it (the rule re-runs on each load). Only a settle below the
+            # rule's first rung -- an allocation that really failed -- is one.
+            _rule_settle = bool(_rule.get("skipped_rungs")) and int(chosen_n_ctx) >= int(_rule.get("first_rung") or 0)
+            if not getattr(self, "_user_provided_max_tokens", False) and not _rule_settle:
                 self._gguf_context_calibrated = True
                 self._gguf_calibrated_context = int(chosen_n_ctx)
                 try:
@@ -9955,7 +9987,7 @@ class HuggingFaceProvider(BaseProvider):
         host_cancel = next(
             (p for p in (kwargs.get("logits_processor") or []) if isinstance(p, _LlamaCppHostCancel)), None
         )
-        stream = self.llm.create_chat_completion(**kwargs)
+        stream = self._gguf_context_checked_stream(self.llm.create_chat_completion(**kwargs))
 
         current_tool_call = None
         accumulated_arguments = ""
