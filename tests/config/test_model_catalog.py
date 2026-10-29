@@ -349,6 +349,31 @@ def test_a_hub_gguf_this_llamacpp_cannot_load_is_flagged_before_download(host, t
     assert spark2["loadable"] is None and spark2["downloadable"] is True
 
 
+def test_extended_lists_every_quant_of_the_rows_own_gguf_repos(host, tmp_path):
+    """Batch item (b), "All" quants: with `extended`, a row gains every quant its own GGUF repo
+    ships (exact size from the file list, its fit), marked `extended`, never the pre-selection;
+    a label whose download pattern would fetch other files too (Q6_K also matches UD-Q6_K_XL;
+    any Q4_K_M rides an MTP drafter's) is left out; mmproj is not a quant."""
+    repo = "unsloth/Qwen3-8B-GGUF"
+    files = {
+        "Qwen3-8B-Q4_K_M.gguf": 5_000_000_000, "Qwen3-8B-Q8_0.gguf": 8_700_000_000,
+        "Qwen3-8B-UD-IQ1_S.gguf": 2_275_000_000, "Qwen3-8B-Q3_K_M.gguf": 4_100_000_000,
+        "Qwen3-8B-Q6_K.gguf": 6_700_000_000, "Qwen3-8B-UD-Q6_K_XL.gguf": 7_400_000_000,
+        "BF16/Qwen3-8B-BF16-00001-of-00002.gguf": 8_000_000_000, "BF16/Qwen3-8B-BF16-00002-of-00002.gguf": 8_300_000_000,
+        "mmproj-F16.gguf": 600_000_000,
+    }
+    api = FakeHfApi(repos={repo: {"files": files}})
+    kw = dict(hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    row = next(r for r in mc.catalog("qwen3 8b", extended=True, **kw)["rows"] if r["id"] == "qwen3-8b")
+    ext = {a["artifact"].split(":", 1)[1]: a for a in row["artifacts"] if a.get("extended")}
+    assert sorted(ext) == ["BF16", "Q3_K_M", "UD-IQ1_S", "UD-Q6_K_XL"]
+    assert ext["BF16"]["download_bytes"] == 16_300_000_000 and ext["Q3_K_M"]["download_bytes"] == 4_100_000_000
+    assert all(a["provider"] == "huggingface" and a["engine"] == "llamacpp" and a["fit"]["verdict"] for a in ext.values())
+    assert not any(a["recommended"] for a in ext.values())
+    plain = next(r for r in mc.catalog("qwen3 8b", **kw)["rows"] if r["id"] == "qwen3-8b")
+    assert not any(a.get("extended") for a in plain["artifacts"])
+
+
 def test_rate_limit_degrades_to_the_offline_answer(host, tmp_path):
     api = FakeHfApi()
     api.fail_with = HubRateLimited()
@@ -406,3 +431,12 @@ def test_no_liquidai_q4_k_m_gguf_names_a_repo_with_a_hip_optimized_twin():
     bad = [a["artifact"] for r in mc.load_seed()["rows"] for a in r["artifacts"]
            if a["provider"] == "huggingface" and a["artifact"].split(":")[0] in twins and "Q4_K_M" in a["artifact"].upper()]
     assert bad == []
+
+
+def test_an_extended_quant_is_never_the_preselection():
+    def art(name, verdict, **kw):
+        return {"provider": "huggingface", "artifact": name, "engine": "llamacpp", "supported_on_host": True,
+                "downloadable": True, "fit": {"verdict": verdict}, "presence": {"status": "absent"}, **kw}
+    row = {"id": "r", "artifacts": [art("r:Q4_K_M", "too_large"), art("r:UD-IQ1_S", "fits", extended=True)]}
+    mc._pick_recommended(row, "cuda", {"llamacpp": True})
+    assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["r:Q4_K_M"]

@@ -60,7 +60,9 @@ def register_provider(provider: Any) -> None:
     try:
         with _HF_PROVIDERS_LOCK:
             _HF_PROVIDERS.add(provider)
-    except TypeError:
+        if getattr(provider, "_residency_registered_at", None) is None:
+            provider._residency_registered_at = time.time()
+    except (TypeError, AttributeError):
         pass
 
 

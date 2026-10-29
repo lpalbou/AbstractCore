@@ -16,7 +16,7 @@ Related pages: [Engines](engines.md) (installing Ollama, LM Studio, MLX, llama.c
 | Verb | CLI | HTTP | Python |
 |---|---|---|---|
 | Describe this machine | `abstractcore host profile --json` | `GET /acore/host/profile` | `abstractcore.utils.host_profile.host_profile()` |
-| Browse downloadable models | `abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json` | `GET /acore/models/catalog?q=&engine=&fits=&hub=&tag=` | `abstractcore.config.model_catalog.catalog(...)` |
+| Browse downloadable models | `abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json` | `GET /acore/models/catalog?q=&engine=&fits=&hub=&tag=&extended=` | `abstractcore.config.model_catalog.catalog(...)` |
 | Search | `abstractcore models search "<query>" [--engine X] [--fits] [--hub] --json` | same route with `q=` | `model_catalog.search(q, ...)` |
 | List installed models | `abstractcore models list [--provider X] --json` | `GET /acore/models/installed?provider=` | `model_materializer.list_installed(provider)` |
 | Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
@@ -243,6 +243,11 @@ The catalog works offline. With `--hub` (`hub=true`), AbstractCore asks the Hugg
 for exact file sizes and parameter counts of the Hugging Face-hosted artifacts and, when a
 query is given, appends up to 20 `hf_search` rows per lane (MLX repos on Apple silicon, GGUF
 repos everywhere; a GGUF search result gets the best available quant, Q4_K_M first).
+With `extended=true` as well, each row also lists every quant its own GGUF repos ship (UD-IQ1_S
+to Q8_0, BF16), each with its exact size from the hub's file list and its fit, marked
+`extended: true`. A label whose `*LABEL*.gguf` download pattern would also fetch other files is
+left out: `Q6_K` also matches `UD-Q6_K_XL`, and an MTP drafter's file rides its quant's name. An
+extended quant is never the pre-selection.
 Answers are cached for 24 hours in `~/.abstractcore/config/cache/hf_hub_catalog.json`. A rate
 limit (HTTP 429) or an offline machine is reported in `hub.errors` and the offline answer is
 returned. Set `HF_TOKEN` for gated repos and higher rate limits.
