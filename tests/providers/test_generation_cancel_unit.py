@@ -391,3 +391,28 @@ def test_generate_core_propagates_the_cancel_instead_of_an_error_answer():
     provider.temperature, provider.top_p, provider.top_k, provider.seed = 0.7, 0.9, None, None
     with pytest.raises(GenerationCancelledError):
         provider._generate_core("hello", messages=None, system_prompt=None, **{CANCEL_KWARG: event})
+
+
+def test_structured_output_hands_the_cancel_event_over_once():
+    """OVH 2026-10-28: a structured call with the host's cancel_event reached the provider as a raw
+    `cancel_event` kwarg (the plain path consumes it; structured output never got there), and the
+    HuggingFace GGUF lane passed it twice: TypeError on every structured call."""
+    from pydantic import BaseModel
+
+    class Answer(BaseModel):
+        value: str
+
+    for supports in (True, False):
+        provider = _recording_provider(supports=supports)
+        original = provider._generate_internal
+
+        def _json(prompt, **kwargs):
+            original(prompt, **kwargs)
+            return GenerateResponse(content='{"value": "ok"}', model="static-model", finish_reason="stop")
+
+        provider._generate_internal = _json  # type: ignore[method-assign]
+        event = threading.Event()
+        result = provider.generate(prompt="hi", response_model=Answer, cancel_event=event)
+        assert getattr(result, "value", None) == "ok"
+        assert "cancel_event" not in provider.seen, "never a raw cancel_event kwarg"
+        assert (provider.seen.get(CANCEL_KWARG) is event) is supports

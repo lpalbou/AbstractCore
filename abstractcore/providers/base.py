@@ -3753,6 +3753,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Handle structured output request
         if response_model is not None:
+            # The host's `cancel_event=` is consumed by the plain path's retry loop
+            # below, which structured output never reaches: hand it to the provider
+            # under its one cancel kwarg (or drop it), never as a raw `cancel_event`
+            # (HuggingFaceProvider's GGUF lane then got it twice — "got multiple values
+            # for keyword argument 'cancel_event'" on every structured call, OVH
+            # 2026-10-28, unsloth/gemma-4-E4B-it-GGUF).
+            if "cancel_event" in kwargs:
+                from .generation_cancel import CANCEL_KWARG, as_cancel_event
+
+                structured_cancel = as_cancel_event(kwargs.pop("cancel_event", None))
+                if structured_cancel is not None and self.supports_generation_cancel():
+                    kwargs.setdefault(CANCEL_KWARG, structured_cancel)
             if not PYDANTIC_AVAILABLE:
                 raise ImportError(
                     "Pydantic is required for structured outputs; it is part of the light install. "
