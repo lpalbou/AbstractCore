@@ -1557,6 +1557,12 @@ def _pick_recommended(
         if not forced:
             raise LookupError(f"tier artifact {tier_artifact} missing from catalog row {row.get('id')!r}")
         curated = forced
+    elif curated and not installed_engines.get(str(curated[0].get("engine"))) and any(
+        installed_engines.get(str(a.get("engine"))) for a in arts if a.get("supported_on_host") and a.get("downloadable")
+    ):
+        # A curated pick for an engine that is NOT installed never beats an artifact an installed
+        # engine serves (a Linux server with llama.cpp: the HF GGUF, not the LM Studio build).
+        curated = []
     for a in arts:
         a["recommended"] = False
     if curated:
@@ -1565,16 +1571,27 @@ def _pick_recommended(
     order = _HOST_PREFERENCE.get(accelerator, _HOST_PREFERENCE["none"])
     verdict_rank = {"fits": 0, "tight": 1, "partial_offload": 2, "needs_gpu_limit": 2, "unknown": 3, "too_large": 4}
 
-    def rank(a: Mapping[str, Any]) -> Tuple[int, int, int, int]:
+    def rank(a: Mapping[str, Any]) -> Tuple[int, int, int, int, int]:
         installed = 0 if (a.get("presence") or {}).get("status") == "installed" else 1
         engine_ok = 0 if installed_engines.get(str(a.get("engine"))) else 1
         pos = order.index(a["provider"]) if a["provider"] in order else len(order)
-        return (verdict_rank.get((a.get("fit") or {}).get("verdict", "unknown"), 3), installed, engine_ok, pos)
+        verdict = verdict_rank.get((a.get("fit") or {}).get("verdict", "unknown"), 3)
+        # An installed engine first, unless its artifact is too large for this host.
+        return (1 if verdict >= 4 else 0, engine_ok, verdict, installed, pos)
 
     candidates = [a for a in arts if a.get("supported_on_host") and a.get("downloadable")]
     if candidates:
         min(candidates, key=rank)["recommended"] = True
 
+
+
+def _order_for_installed_engines(row: Dict[str, Any], installed_engines: Mapping[str, bool]) -> None:
+    """Mark each artifact `engine_installed` and list the pre-selection first, then what an
+    INSTALLED engine serves, then the rest (stable): a host with only llama.cpp sees the HF GGUF
+    before the LM Studio and Ollama builds it cannot run yet."""
+    for a in row["artifacts"]:
+        a["engine_installed"] = bool(installed_engines.get(str(a.get("engine"))))
+    row["artifacts"].sort(key=lambda a: (0 if a.get("recommended") else 1, 0 if a["engine_installed"] else 1))
 
 def _matches_query(row: Mapping[str, Any], query: str) -> bool:
     if not query:
@@ -1752,6 +1769,7 @@ def catalog(
                 if forced is not None and not any((a["provider"], a["artifact"]) == forced for a in arts):
                     forced = None  # an engine filter (`engine=ollama`) removed the tier artifact
                 _pick_recommended(row, accelerator, installed_engines, forced)
+                _order_for_installed_engines(row, installed_engines)
             rows_out.append(row)
 
         seen_repos = {
@@ -1809,6 +1827,7 @@ def catalog(
                 "artifacts": [art],
             }
             _pick_recommended(row, accelerator, installed_engines)
+            _order_for_installed_engines(row, installed_engines)
             rows_out.append(row)
 
     if fits:
