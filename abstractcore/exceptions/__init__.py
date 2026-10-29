@@ -97,6 +97,33 @@ class InvalidRequestError(ProviderError):
     pass
 
 
+class ModelDoesNotFitError(ProviderError):
+    """A model was asked to load, and its weights + KV cache do not fit the memory
+    that is free, even after evicting every resident model that is not locked
+    (core ADR 0010). Nothing was allocated. Fields say by how much and what to do:
+    `needed_bytes`, `free_bytes`, `device`, `kept` (locked / in-use models, in
+    words), `evicted`, `suggestions` (smaller artifacts of the same model)."""
+
+    code = "model_does_not_fit"
+
+    def __init__(self, message: str, *, model: "str | None" = None, needed_bytes: "int | None" = None,
+                 free_bytes: "int | None" = None, device: "str | None" = None, kept: "list | None" = None,
+                 evicted: "list | None" = None, suggestions: "list | None" = None):
+        super().__init__(message)
+        self.model = model
+        self.needed_bytes = needed_bytes
+        self.free_bytes = free_bytes
+        self.device = device
+        self.kept = list(kept or [])
+        self.evicted = list(evicted or [])
+        self.suggestions = list(suggestions or [])
+
+    def as_dict(self) -> dict:
+        return {"code": self.code, "message": str(self), "model": self.model, "needed_bytes": self.needed_bytes,
+                "free_bytes": self.free_bytes, "device": self.device, "kept": self.kept,
+                "evicted": self.evicted, "suggestions": self.suggestions}
+
+
 class ContextWindowExceededError(InvalidRequestError):
     """The request needs more tokens than the context the model is loaded with.
 
@@ -253,6 +280,7 @@ def format_provider_error(provider: str, reason: str) -> str:
 
 # Export all exceptions for easy importing
 __all__ = [
+    'ModelDoesNotFitError',
     'ContextWindowExceededError',
     'AbstractCoreError',
     'ProviderError',
