@@ -8972,6 +8972,49 @@ def _provider_exception_status(exc: Exception) -> int:
     return 500
 
 
+# ONE EmbeddingManager per (provider, model, dimensions, provider settings) for the life of
+# the process (operator rule 2026-10-29: a request on a loaded model reuses it, never reloads
+# it). Built per request, every `/v1/embeddings` call constructed a new manager and
+# `EmbeddingManager.__init__` loads the weights, so each request was a full load of the
+# embedding model and another copy beside the previous request's (measured: 4 managers alive
+# after 2 requests). A manager whose model was ejected reloads on its next call
+# (`_ensure_local_model`), so an eject still frees the memory; the manager stays registered
+# in `embeddings.manager` for the residency listing and the eject, as before.
+_EMBEDDING_MANAGERS_LOCK = threading.Lock()
+_EMBEDDING_MANAGERS: Dict[Tuple[str, str, Optional[int], str], Any] = {}
+
+
+def _embedding_manager_key(provider: str, model: str, dimensions: Optional[int],
+                           provider_kwargs: Dict[str, Any]) -> Tuple[str, str, Optional[int], str]:
+    # Settings are fingerprinted, never kept: an api_key / base_url in the kwargs must not live in a key.
+    fingerprint = hashlib.sha256(
+        json.dumps(provider_kwargs or {}, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:16]
+    return (str(provider).strip().lower(), str(model).strip(), dimensions, fingerprint)
+
+
+def _embedding_manager_for(*, provider: str, model: str, dimensions: Optional[int],
+                           provider_kwargs: Dict[str, Any]) -> Any:
+    """The process's EmbeddingManager for this (provider, model, dimensions, settings): built once,
+    reused by every later `/v1/embeddings` request. The build runs under the lock, so two first
+    requests cannot both load the weights."""
+    from ..embeddings.manager import EmbeddingManager
+
+    key = _embedding_manager_key(provider, model, dimensions, provider_kwargs)
+    with _EMBEDDING_MANAGERS_LOCK:
+        embedder = _EMBEDDING_MANAGERS.get(key)
+        if embedder is None:
+            embedder = EmbeddingManager(
+                model=model,
+                provider=provider,
+                output_dims=dimensions,
+                strict=True,
+                provider_kwargs=provider_kwargs,
+            )
+            _EMBEDDING_MANAGERS[key] = embedder
+        return embedder
+
+
 @app.post("/v1/embeddings", tags=["embeddings"])
 async def create_embeddings(request: EmbeddingRequest, http_request: Request):
     """
@@ -9081,14 +9124,8 @@ async def create_embeddings(request: EmbeddingRequest, http_request: Request):
         # Route local/native providers through EmbeddingManager. strict=True is
         # important for the HTTP server: provider/model failures must surface as
         # errors, not silent zero-vector fallbacks.
-        from ..embeddings.manager import EmbeddingManager
-
-        embedder = EmbeddingManager(
-            model=model,
-            provider=provider_lower,
-            output_dims=dimensions,
-            strict=True,
-            provider_kwargs=provider_kwargs,
+        embedder = _embedding_manager_for(
+            provider=provider_lower, model=model, dimensions=dimensions, provider_kwargs=provider_kwargs
         )
 
         # Generate embeddings
