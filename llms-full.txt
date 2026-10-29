@@ -15927,7 +15927,11 @@ joined from AbstractCore's model capability registry, and one entry per artifact
   the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
   LM Studio, Ollama, Hugging Face. Elsewhere the curated starter wins when the host can run it,
   then the order is Ollama, LM Studio, Hugging Face. Both prefer artifacts that fit and engines
-  that are installed. LM Studio and Ollama builds stay listed and downloadable on a Mac;
+  that are installed, and a curated pick whose engine is absent yields to an artifact an installed
+  engine serves (a Linux server with only llama.cpp pre-selects the row's GGUF). LM Studio and
+  Ollama builds stay listed and downloadable on a Mac;
+- `engine_installed`: whether the engine that serves this artifact is installed. A row lists its
+  pre-selection first, then installed engines' artifacts, then the rest;
 - `starter` (per row): part of this machine's recommended fresh-install set. Exactly one text
   row is the starter: the row of the recommended text model.
 
