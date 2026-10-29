@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A GGUF context that fills up mid-request** (llama.cpp "failed to find a memory slot", `llama_decode returned 1`)
+  frees the engine's context memory and fails with a clear `ContextWindowExceededError` sentence, instead of an
+  "Error: llama_decode returned 1" answer and a memory left full for the next request (backlog 0862).
+
 ## [2.31.1] - 2026-10-28
 
 ### Added
