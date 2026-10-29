@@ -79,6 +79,7 @@ from ..exceptions import (
     GenerationCancelledError,
     InvalidRequestError,
     ModelArtifactMismatchError,
+    ModelDoesNotFitError,
     ModelNotFoundError,
     ProviderError,
     format_model_error,
@@ -3307,6 +3308,60 @@ class HuggingFaceProvider(BaseProvider):
     _GGUF_KV_SHARE_OF_FREE = 0.5
     _GGUF_RESERVE_FLOOR_BYTES = 1 << 30
     _GGUF_RESERVE_FRACTION = 0.10
+
+    def _gguf_ensure_cpu_fit(self, model_path: Any, n_ctx: int) -> None:
+        """Raise `ModelDoesNotFitError` (device "RAM") when the available RAM cannot
+        hold the weights + KV at `n_ctx` + 1 GiB. Unknown figures: no refusal."""
+        try:
+            from ..utils.memory import get_memory_snapshot
+            from ..utils.kv_geometry import kv_cache_bytes
+            from .hf_residency import gguf_file_geometry
+
+            avail = ((get_memory_snapshot() or {}).get("ram") or {}).get("available_bytes")
+            weights_b = _gguf_total_weight_bytes(model_path)
+            kv = kv_cache_bytes(gguf_file_geometry(model_path), int(n_ctx), pad_v=True)
+            if not (isinstance(avail, int) and weights_b and kv):
+                return
+            need = int(weights_b) + int(kv) + (1 << 30)
+        except Exception:
+            return
+        if need <= int(avail):
+            return
+        # No eviction here: the resident models sit on the GPU, evicting them frees no RAM.
+        from . import process_residency
+
+        process_residency.refuse_fit(str(self.model), need, int(avail), device="RAM (CPU fallback)", kept=[])
+
+    def _gguf_ensure_fit(self, model_path: Any, min_ctx: int) -> Optional[Dict[str, Any]]:
+        """ADR 0010 on one full-offload CUDA card (the device rule's scope): need =
+        file weights + KV at `min_ctx` + reserve. None when the check does not
+        apply (CPU, partial offload, several cards, Metal, unknown geometry)."""
+        try:
+            if not (isinstance(self.n_gpu_layers, int) and self.n_gpu_layers < 0):
+                return None
+            import torch
+
+            if not torch.cuda.is_available() or int(torch.cuda.device_count()) != 1:
+                return None
+            from ..utils.kv_geometry import kv_cache_bytes
+            from .hf_residency import gguf_file_geometry
+
+            weights_b = _gguf_total_weight_bytes(model_path)
+            geom = gguf_file_geometry(model_path)
+            total_b = int(torch.cuda.mem_get_info()[1])
+            if not weights_b or not geom:
+                return None
+            reserve = max(self._GGUF_RESERVE_FLOOR_BYTES, int(total_b * self._GGUF_RESERVE_FRACTION))
+            need = int(weights_b) + int(kv_cache_bytes(geom, int(min_ctx), pad_v=True) or 0) + reserve
+        except Exception:
+            return None
+        from . import process_residency
+
+        def _free() -> int:
+            return int(torch.cuda.mem_get_info()[0])
+
+        return process_residency.ensure_fit(str(self.model), need, _free, provider="huggingface", device="GPU",
+                                            reserve_bytes=reserve)
 
     def _gguf_device_fit_rungs(self, model_path: Any, candidate_ctxs: List[int]) -> List[int]:
         """`candidate_ctxs` without the rungs whose KV cache does not fit the
@@ -7429,6 +7484,15 @@ class HuggingFaceProvider(BaseProvider):
             return f"models--{model_name}"
 
     def _load_gguf_model(self):
+        """Load the GGUF under the process load lock (ADR 0010): the fit check and the
+        allocation it admits are one step, so two loads cannot both pass the check
+        against the same free memory and then run out of it."""
+        from .process_residency import load_lock
+
+        with load_lock():
+            return self._load_gguf_model_unlocked()
+
+    def _load_gguf_model_unlocked(self):
         """Load GGUF model using llama-cpp-python (cache-only, no downloading)"""
         import os
         try:
@@ -7560,6 +7624,14 @@ class HuggingFaceProvider(BaseProvider):
             if requested_n_ctx_i <= 0:
                 requested_n_ctx_i = 16384
 
+            # THE FIT CHECK (core ADR 0010), before anything is allocated: the weights
+            # and the KV of the smallest context this load accepts must fit the free
+            # device memory, after evicting resident models that are not locked
+            # (least recently used first); else ModelDoesNotFitError, with numbers and
+            # smaller suggestions. Never a load that fills the card or the RAM.
+            _min_ctx = requested_n_ctx_i if getattr(self, "_user_provided_max_tokens", False) else min(4096, requested_n_ctx_i)
+            self._gguf_fit_report = self._gguf_ensure_fit(model_path, _min_ctx)
+
             if getattr(self, "_user_provided_max_tokens", False):
                 candidate_ctxs = [requested_n_ctx_i]
             else:
@@ -7634,6 +7706,11 @@ class HuggingFaceProvider(BaseProvider):
                     is_metal_host = platform.system().lower() == "darwin" and platform.machine().lower() == "arm64"
                     cpu_retry_now = is_metal_host or n_ctx_i == candidate_ctxs[-1]
                     if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers != 0 and cpu_retry_now:
+                        # ADR 0010: the CPU fallback puts weights AND the KV cache in RAM;
+                        # refuse it with the numbers when RAM cannot hold them, instead of
+                        # letting the kernel kill the process.
+                        if not is_metal_host:  # Metal retries every rung on the CPU: its ladder decides
+                            self._gguf_ensure_cpu_fit(model_path, int(n_ctx_i))
                         try:
                             self.logger.warning(
                                 f"GGUF load failed with n_gpu_layers={self.n_gpu_layers}; retrying with CPU (n_gpu_layers=0). Error: {e}"
@@ -7822,6 +7899,8 @@ class HuggingFaceProvider(BaseProvider):
             except Exception:
                 pass
 
+        except ModelDoesNotFitError:
+            raise  # ADR 0010: the typed refusal reaches the caller as itself
         except ModelArtifactMismatchError:
             # ADR 0009 Enforcement: an artifact-fidelity refusal must reach the caller
             # as itself. Wrapping it in RuntimeError here made the contract type

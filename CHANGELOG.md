@@ -49,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A GGUF context that fills up mid-request** (llama.cpp "failed to find a memory slot", `llama_decode returned 1`)
   frees the engine's context memory and fails with a clear `ContextWindowExceededError` sentence, instead of an
   "Error: llama_decode returned 1" answer and a memory left full for the next request (backlog 0862).
+### Added
+
+- **Model residency failsafe (ADR 0010): a load never fills the card.** Before llama.cpp allocates (one full-offload
+  CUDA card), the GGUF load checks weights + KV at its smallest context + the reserve against the free device
+  memory; when it does not fit, resident models that are neither locked (a "Keep loaded" pin) nor in use are
+  evicted, least recently used first, one at a time (`process_residency.make_room`); if it still does not fit, the
+  load fails before allocating with `ModelDoesNotFitError` (`needed_bytes`, `free_bytes`, `kept`, `evicted`,
+  `suggestions`: smaller artifacts of the same model from the catalog) and a sentence ("X needs 13.7 GB but only
+  9.2 GB is free on the GPU (kept: Y (locked by the runtime of account default/admin)). Choose a smaller model, for
+  example ..."). The CPU fallback is checked against available RAM the same way. `InflightGenerations.last_used_at`
+  and `_residency_registered_at` give the order.
 
 ## [2.31.1] - 2026-10-28
 

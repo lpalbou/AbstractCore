@@ -260,6 +260,9 @@ class InflightGenerations:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._calls: "_weakref.WeakSet[_InflightCall]" = _weakref.WeakSet()
+        # Wall-clock time a generation last began or ended on this instance: the
+        # "least recently used" of the residency failsafe (core ADR 0010).
+        self.last_used_at: Optional[float] = None
 
     def begin(self, event: Optional[threading.Event]) -> Optional[_InflightCall]:
         if event is None:
@@ -267,6 +270,7 @@ class InflightGenerations:
         call = _InflightCall(event)
         with self._lock:
             self._calls.add(call)
+            self.last_used_at = _time.time()
         return call
 
     def end(self, call: Optional[_InflightCall]) -> None:
@@ -275,6 +279,7 @@ class InflightGenerations:
         call.done.set()
         with self._lock:
             self._calls.discard(call)
+            self.last_used_at = _time.time()
 
     def active(self) -> int:
         with self._lock:
