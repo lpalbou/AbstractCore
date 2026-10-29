@@ -197,3 +197,14 @@ def test_a_text_longer_than_the_model_reads_is_refused_never_cut(tmp_path, monke
     enc.encode(" ".join(["w"] * 8000))
     with pytest.raises(ContextWindowExceededError, match="nothing was cut"):
         enc.encode(" ".join(["w"] * 9000))
+
+
+
+def test_an_explicit_gpu_that_does_not_fit_is_said_not_hidden_as_not_downloaded(tmp_path, monkeypatch):
+    """Server finding: the GPU refusal was swallowed and the person read "not in the local cache"."""
+    from abstractcore.embeddings import manager as em
+
+    _gguf_snapshot(tmp_path, monkeypatch, present=True)
+    _fake_llama(monkeypatch, gpu_fails=True)
+    with pytest.raises(em.EmbeddingDeviceUnavailable, match="set its Device to CPU"):
+        em._gguf_sibling_encoder("Qwen/Qwen3-Embedding-0.6B", device="gpu")

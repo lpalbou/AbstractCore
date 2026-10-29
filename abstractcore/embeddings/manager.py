@@ -363,6 +363,10 @@ def gguf_sibling_snapshot(repo_id: str) -> "Optional[tuple]":
         return None
 
 
+class EmbeddingDeviceUnavailable(RuntimeError):
+    """The person chose a device for the embedding model and it cannot take it now."""
+
+
 class _LlamaCppSentenceEncoder:
     """The slice of `SentenceTransformer` this manager uses (`encode`,
     `get_sentence_embedding_dimension`, `device`), over a llama.cpp embedding
@@ -408,7 +412,7 @@ class _LlamaCppSentenceEncoder:
                     self.device_bytes = max(0, before - after)
             except Exception as exc:
                 if want == "gpu":
-                    raise RuntimeError(
+                    raise EmbeddingDeviceUnavailable(
                         f"{repo_id} could not be placed on the GPU ({exc}); free GPU memory or set its Device to CPU"
                     ) from exc
                 # Default placement: no room on the GPU now, so the CPU, and it says so.
@@ -483,6 +487,8 @@ def _gguf_sibling_encoder(repo_id: str, *, max_seq: Optional[int] = None,
             n_ctx = None
     try:
         return _LlamaCppSentenceEncoder(found[0], found[1], n_ctx=int(n_ctx or 8192), device=device)
+    except EmbeddingDeviceUnavailable:
+        raise  # the person's Device choice cannot be honoured: say so, never "not downloaded"
     except Exception as exc:
         logger.warning(f"The installed GGUF build {found[0]} of {repo_id} could not be loaded: {exc}")
         return None
