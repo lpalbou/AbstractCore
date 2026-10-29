@@ -212,7 +212,10 @@ The package version is sourced from `abstractcore/utils/version.py`.
 
 For a release:
 1. Bump `abstractcore/utils/version.py`.
-2. Add a new section to `CHANGELOG.md`.
+2. Assemble the changelog: `python scripts/changelog.py assemble X.Y.Z` (writes `## [X.Y.Z] - <date>`
+   from `changelog.d/` and deletes the fragments). Each pull request that changes `abstractcore/` adds
+   its entry as a new file `changelog.d/<pr-or-slug>.md`, never an edit of `CHANGELOG.md`
+   ([changelog.d/README.md](changelog.d/README.md); CI checks it).
 3. Verify: `python -c "import abstractcore; print(abstractcore.__version__)"`
 
 ## Security
