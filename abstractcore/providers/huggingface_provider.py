@@ -3511,30 +3511,42 @@ class HuggingFaceProvider(BaseProvider):
         except Exception:
             return 0
 
+    _GGUF_PROMPT_CACHE_BUDGET_CAP_BYTES = 8 << 30
+
     def _gguf_prompt_cache_budget_bytes(self) -> int:
         """Store-wide byte budget for this model's GGUF snapshots (every key together).
 
         The store's count bound (32 keys, two snapshots each) is no bound on BYTES: one snapshot is
         the serialized context, 0.08-0.17 GB for a 4k-token agent turn on a 9B model and several GB
-        near a 128k context, and a basic-agent run leaves three keys. Default: min(8 GiB, a quarter
-        of physical RAM), the MLX prefix cache's rule (`machine_prefix_cache_budget_gb`). Operator
-        override: `ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB` (float GiB, > 0). Least recently used
-        keys are evicted past it."""
+        near a 128k context, and a basic-agent run leaves three keys. Least recently used keys are
+        evicted past it.
+
+        The setting is `gguf_prompt_cache_max_gb` in the AbstractCore config (GiB, > 0; read like
+        `model_memory_buffer`), overridden by the environment variable
+        `ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB`. Unset: min(8 GiB, a quarter of physical RAM), the
+        MLX prefix cache's rule (`machine_prefix_cache_budget_gb`). A value that is not a positive
+        number is refused, naming where it came from."""
         cached = self.__dict__.get("_gguf_prompt_cache_budget")
         if isinstance(cached, int):
             return cached
-        raw = os.environ.get("ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB")
+        raw: Any = os.environ.get("ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB")
+        source = "ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB"
+        if raw is None or not str(raw).strip():
+            from ..config.model_contexts import _read
+
+            raw = _read(getattr(self, "_abstractcore_config_file", None)).get("gguf_prompt_cache_max_gb")
+            source = "gguf_prompt_cache_max_gb in the AbstractCore config"
         budget: Optional[int] = None
         if raw is not None and str(raw).strip():
             try:
                 gb = float(str(raw).strip())
             except ValueError:
-                raise ValueError(f"ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB must be a number of GiB, got {raw!r}")
+                raise ValueError(f"{source} must be a number of GiB, got {raw!r}")
             if not gb > 0:
-                raise ValueError(f"ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB must be > 0, got {raw!r}")
+                raise ValueError(f"{source} must be > 0, got {raw!r}")
             budget = int(gb * (1 << 30))
         if budget is None:
-            cap = 8 << 30
+            cap = self._GGUF_PROMPT_CACHE_BUDGET_CAP_BYTES
             try:
                 phys = int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_PHYS_PAGES"))
             except (ValueError, OSError, AttributeError):

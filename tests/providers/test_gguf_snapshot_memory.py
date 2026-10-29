@@ -160,6 +160,7 @@ class _FakeLlama:
 
     def load_state(self, state):
         self.n_tokens = int(state.n_tokens)
+        self._input_ids = [int(t) for t in state.input_ids[: self.n_tokens]]
 
     def set_cache(self, cache):
         pass
@@ -237,3 +238,53 @@ def test_a_detaching_holder_gets_its_own_hooked_store_and_leaves_the_shared_one_
     assert own is not shared
     assert own._on_evict == leaving._prompt_cache_store_evicted and own._on_set == leaving._prompt_cache_store_after_set
     assert (shared._on_evict, shared._on_set) == hooks
+
+
+def test_the_budget_comes_from_the_config_and_the_environment_overrides_it(monkeypatch, tmp_path):
+    cfg = tmp_path / "abstractcore.json"
+    cfg.write_text('{"gguf_prompt_cache_max_gb": 2}', encoding="utf-8")
+    monkeypatch.delenv("ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB", raising=False)
+    p = _provider()
+    p._abstractcore_config_file = str(cfg)
+    assert p._gguf_prompt_cache_budget_bytes() == 2 << 30
+    monkeypatch.setenv("ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB", "0.5")
+    q = _provider()
+    q._abstractcore_config_file = str(cfg)
+    assert q._gguf_prompt_cache_budget_bytes() == 1 << 29
+    cfg.write_text('{"gguf_prompt_cache_max_gb": "lots"}', encoding="utf-8")
+    monkeypatch.delenv("ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB")
+    r = _provider()
+    r._abstractcore_config_file = str(cfg)
+    with pytest.raises(ValueError, match="gguf_prompt_cache_max_gb in the AbstractCore config"):
+        r._gguf_prompt_cache_budget_bytes()
+
+
+def test_a_restore_from_a_compacted_snapshot_re_evaluates_the_last_prompt_token():
+    """The sampler must never read logits this prompt did not produce. A compacted snapshot has a
+    zero scores row, so this holds only because the provider never restores to the full prompt:
+    `feed_floor = n_prompt - 1` and the zero-feed guard in `_gguf_prefill_prompt_cache` roll a
+    whole-prompt state back one token, which `eval` then decodes. Red if that guard goes."""
+    llm = _FakeLlama()
+    evals = []
+    real_eval = llm.eval
+    llm.eval = lambda toks: (evals.append(list(toks)), real_eval(toks))[1]
+    loads = []
+    real_load = llm.load_state
+    llm.load_state = lambda st: (loads.append(st.scores.shape), real_load(st))[1]
+    llm._ctx = type("Ctx", (), {"kv_cache_seq_rm": lambda self, *a: True})()
+    p = _provider(PromptCacheStore(max_entries=32))
+    p.llm = llm
+    prompt = tuple(range(1, 200))
+    cache = LlamaRAMCache(capacity_bytes=1 << 40)
+    saved = _saved_state(len(prompt), 64)
+    saved.input_ids[: len(prompt)] = prompt  # the state holds exactly this prompt
+    whole = p._gguf_clone_llama_state(saved)
+    assert whole.scores.shape == (1, N_VOCAB)
+    cache[prompt] = whole  # a snapshot covering the WHOLE prompt (a durable bloc stores this)
+    llm.eval([7, 7, 7])  # a previous call left another context resident
+    evals.clear()
+    assert p._gguf_prefill_prompt_cache(cache, prompt, save_state=False)
+    fed = [t for batch in evals for t in batch]
+    assert fed and fed[-1] == prompt[-1], f"the last prompt token was not decoded after the restore: {fed[-5:]}"
+    assert llm.n_tokens == len(prompt)
+    assert loads == [(1, N_VOCAB)], "the compacted snapshot was not the one restored"
