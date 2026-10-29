@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StreamingResponse`), and `mcp` 2.3 requires `sse-starlette>=3`, so every environment holding both ended in a pip
   conflict. Checked with sse-starlette 3.6.0 (starlette 0.52.1, fastapi 0.136.1): the server app starts and
   `tests/server` passes as with 1.8.2; `uv pip compile` resolves abstractcore + sse-starlette 3.6.0 + mcp 2.3.0.
+### Added
+
+- **Model residency failsafe (ADR 0010): a load never fills the card.** Before llama.cpp allocates (one full-offload
+  CUDA card), the GGUF load checks weights + KV at its smallest context + the reserve against the free device
+  memory; when it does not fit, resident models that are neither locked (a "Keep loaded" pin) nor in use are
+  evicted, least recently used first, one at a time (`process_residency.make_room`); if it still does not fit, the
+  load fails before allocating with `ModelDoesNotFitError` (`needed_bytes`, `free_bytes`, `kept`, `evicted`,
+  `suggestions`: smaller artifacts of the same model from the catalog) and a sentence ("X needs 13.7 GB but only
+  9.2 GB is free on the GPU (kept: Y (locked by the runtime of account default/admin)). Choose a smaller model, for
+  example ..."). The CPU fallback is checked against available RAM the same way. `InflightGenerations.last_used_at`
+  and `_residency_registered_at` give the order.
 
 ## [2.31.1] - 2026-10-28
 
