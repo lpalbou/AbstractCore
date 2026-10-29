@@ -143,6 +143,12 @@ joined from AbstractCore's model capability registry, and one entry per artifact
 - `smaller_canvas`: `{canvas, need_bytes, verdict}` when the default canvas does not fit this
   machine but a measured smaller canvas does (`canvas` is `WIDTHxHEIGHTxFRAMES`), else `null`;
 - `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
+- `gguf_architecture`, `loadable`, `unloadable_reason` (llama.cpp builds, with `--hub`): the GGUF's
+  `general.architecture` as the Hugging Face API reports it (`gguf.architecture`), checked against this
+  computer's llama.cpp before anything downloads. `loadable: false` comes with the sentence ("This computer's
+  llama.cpp (llama-cpp-python 0.3.x) cannot load the spark2_5 architecture. Update llama-cpp-python, or choose
+  another model."), `downloadable: false`, and a fit note. `null` means it could not be told (no architecture from
+  the Hub, or no llama-cpp-python), and the build stays offered;
 - `recommended`: exactly one artifact per row is pre-selected for this machine. On Apple silicon
   the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
   LM Studio, Ollama, Hugging Face. Elsewhere the curated starter wins when the host can run it,
