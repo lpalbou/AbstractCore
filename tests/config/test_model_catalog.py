@@ -366,6 +366,61 @@ def test_hub_search_adds_hf_rows_with_a_picked_quant(host, tmp_path):
     assert hf_rows[0]["id"] == "hf:someone/cool-7b-gguf"
 
 
+def test_hub_search_pages_and_says_how_many_and_whether_more(host, tmp_path):
+    """Backlog 0864: Hugging Face results come a page at a time, and `hub.search` says how many
+    rows the page added and whether another page exists."""
+    repos = {f"someone/Model{i:02d}-GGUF": {"files": {f"Model{i:02d}-Q4_K_M.gguf": 1_000_000_000}} for i in range(45)}
+    api = FakeHfApi(repos=repos, search={"gguf:model": sorted(repos)})
+    kw = dict(hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    pages = []
+    for page in (1, 2, 3):
+        payload = mc.catalog("model", hub_page=page, **kw)
+        ids = [r["id"] for r in payload["rows"] if r["source"] == "hf_search"]
+        pages.append(ids)
+        search = payload["hub"]["search"]
+        assert search["page"] == page and search["page_size"] == 20 and search["rows"] == len(ids)
+        assert search["has_more"] is (page < 3)
+    assert [len(p) for p in pages] == [20, 20, 5]
+    assert len(set(pages[0]) | set(pages[1]) | set(pages[2])) == 45  # no repeats across pages
+    assert pages[1][0] == "hf:someone/model20-gguf"
+
+
+def test_an_exact_handle_finds_the_repo_and_its_builds(host, tmp_path):
+    """Backlog 0864: `someone/Cool-7B` lists that repo first (a Transformers checkpoint, fetched
+    whole) and the GGUF builds the hub has for its name, `Cool-7B`."""
+    api = FakeHfApi(
+        repos={
+            "someone/Cool-7B": {"files": {"model-00001-of-00002.safetensors": 8_000_000_000, "config.json": 1_000}},
+            "other/Cool-7B-GGUF": {"files": {"Cool-7B-Q4_K_M.gguf": 4_000_000_000}},
+        },
+        search={"gguf:Cool-7B": ["other/Cool-7B-GGUF"]},
+    )
+    payload = mc.catalog("someone/Cool-7B", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    hf_rows = [r for r in payload["rows"] if r["source"] == "hf_search"]
+    assert [r["id"] for r in hf_rows] == ["hf:someone/cool-7b", "hf:other/cool-7b-gguf"]
+    exact = hf_rows[0]
+    assert exact["exact"] is True and hf_rows[1]["exact"] is False
+    assert (exact["artifacts"][0]["provider"], exact["artifacts"][0]["artifact"]) == ("huggingface", "someone/Cool-7B")
+    assert exact["artifacts"][0]["engine"] == "huggingface"
+    assert payload["hub"]["search"]["handle"] == "someone/Cool-7B" and payload["hub"]["search"]["handle_found"] is True
+    assert ("list_models", "Cool-7B", "gguf") in api.calls  # the name, not the handle
+
+
+def test_a_handle_that_does_not_exist_still_searches_its_name(host, tmp_path):
+    api = FakeHfApi(repos={"other/Cool-7B-GGUF": {"files": {"Cool-7B-Q4_K_M.gguf": 4_000_000_000}}},
+                    search={"gguf:Cool-7B": ["other/Cool-7B-GGUF"]})
+    payload = mc.catalog("nobody/Cool-7B", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    assert [r["id"] for r in payload["rows"] if r["source"] == "hf_search"] == ["hf:other/cool-7b-gguf"]
+    assert payload["hub"]["search"]["handle_found"] is False
+
+
+def test_a_handle_or_hyphenated_name_finds_the_curated_row(host):
+    """Backlog 0864: the query splits like the row, so "Qwen/Qwen3.5-9B" and "qwen3.5-9B" find
+    qwen3.5-9b (the console's Hugging Face mode asks the catalog with the typed text)."""
+    for q in ("Qwen/Qwen3.5-9B", "qwen3.5-9B", "qwen3.5 9b"):
+        assert "qwen3.5-9b" in [r["id"] for r in mc.catalog(q, host=synthetic_host("cuda24"))["rows"]], q
+
+
 def test_extended_lists_every_quant_of_the_rows_own_gguf_repos(host, tmp_path):
     """Batch item (b), "All" quants: with `extended`, a row gains every quant its own GGUF repo
     ships (exact size from the file list, its fit), marked `extended`, never the pre-selection;

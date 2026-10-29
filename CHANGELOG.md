@@ -61,6 +61,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   engine serves. Every artifact carries `engine_installed`, and a row lists the pre-selection first, then
   installed engines' artifacts.
 
+- **Hugging Face search pages, counts, and finds an exact handle** (backlog 0864).
+  - `catalog(..., hub_page=, hub_page_size=)` and the `/acore/models/catalog` route serve one page of results at a
+    time. `hub.search` reports the page, how many rows it added, and whether another page exists.
+  - Searching `Qwen/Qwen3.5-9B` now lists that repo first, then the GGUF builds of `Qwen3.5-9B`. Before, it
+    returned neither the repo nor the curated row.
+  - A hyphenated or slashed query (`qwen3.5-9B`) now finds the curated row. Before, the query was split only on
+    spaces.
+
 - **Structured output with a host's `cancel_event`** no longer fails on the HuggingFace GGUF lane with "got multiple
   values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
   under the provider's cancel kwarg.

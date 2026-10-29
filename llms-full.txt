@@ -15822,7 +15822,7 @@ Related pages: [Engines](docs/engines.md) (installing Ollama, LM Studio, MLX, ll
 | Verb | CLI | HTTP | Python |
 |---|---|---|---|
 | Describe this machine | `abstractcore host profile --json` | `GET /acore/host/profile` | `abstractcore.utils.host_profile.host_profile()` |
-| Browse downloadable models | `abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json` | `GET /acore/models/catalog?q=&engine=&fits=&hub=&tag=&extended=` | `abstractcore.config.model_catalog.catalog(...)` |
+| Browse downloadable models | `abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json` | `GET /acore/models/catalog?q=&engine=&fits=&hub=&tag=&hub_page=&hub_page_size=&extended=` | `abstractcore.config.model_catalog.catalog(...)` |
 | Search | `abstractcore models search "<query>" [--engine X] [--fits] [--hub] --json` | same route with `q=` | `model_catalog.search(q, ...)` |
 | List installed models | `abstractcore models list [--provider X] --json` | `GET /acore/models/installed?provider=` | `model_materializer.list_installed(provider)` |
 | Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
@@ -16047,6 +16047,13 @@ The catalog works offline. With `--hub` (`hub=true`), AbstractCore asks the Hugg
 for exact file sizes and parameter counts of the Hugging Face-hosted artifacts and, when a
 query is given, appends up to 20 `hf_search` rows per lane (MLX repos on Apple silicon, GGUF
 repos everywhere; a GGUF search result gets the best available quant, Q4_K_M first).
+Results come a page at a time: `hub_page` (1-based) and `hub_page_size` (20 by default, at most
+100; 200 results deep per lane). `hub.search` reports `{query, page, page_size, rows, has_more,
+handle, handle_found}`: `rows` is how many `hf_search` rows the page added, and `has_more` says
+whether another page exists. A query that is an exact repo handle (`Qwen/Qwen3.5-9B`) looks that
+repo up and lists it first (`exact: true`; a Transformers checkpoint is fetched whole), then
+searches the name (`Qwen3.5-9B`) for its GGUF and MLX builds. The query splits on `/ : @ _ , -`
+like the rows, so `Qwen/Qwen3.5-9B` and `qwen3.5-9B` both find the curated `qwen3.5-9b` row.
 With `extended=true` as well, each row also lists every quant its own GGUF repos ship (UD-IQ1_S
 to Q8_0, BF16), each with its exact size from the hub's file list and its fit, marked
 `extended: true`. A label whose `*LABEL*.gguf` download pattern would also fetch other files is
@@ -25336,7 +25343,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Email | POST | `/acore/email/oauth/start`, `/acore/email/oauth/finish` | OAuth2 sign-in (device code or browser on the server's machine), then connect; `finish` answers `{pending: true}` until the sign-in is approved and a flow is used once | JSON `address`, `provider`, optional `client_id` (empty = the built-in client when registered), `client_secret`, `flow`, `tenant`, `ca_file`; then `flow_id`, `wait_s` (at most 60) |
 | Email | POST | `/acore/email/oauth/cancel` | Drop a pending OAuth2 sign-in (closes its loopback listener) | JSON `flow_id` |
 | Models & engines | GET | `/acore/host/profile` | Host profile: accelerator, memory ceiling, free memory, disk per model store (see [Local Models](docs/models.md)) | optional `refresh` |
-| Models & engines | GET | `/acore/models/catalog` | Downloadable model catalog with presence and fit verdicts | `q`, `engine`, `fits`, `hub`, `tag` |
+| Models & engines | GET | `/acore/models/catalog` | Downloadable model catalog with presence and fit verdicts | `q`, `engine`, `fits`, `hub`, `tag`, `hub_page`, `hub_page_size` |
 | Models & engines | GET | `/acore/models/installed` | Installed models per engine, with sizes and delete blockers | optional `provider` |
 | Models & engines | POST | `/acore/models/download` | Start (or join) a download job | `provider`, `artifact`, `dry_run`, optional `expected_bytes` |
 | Models & engines | POST | `/acore/models/delete` | Start a delete job; `409` with `delete_blockers` when refused | `provider`, `artifact`, `dry_run`, `force` |
