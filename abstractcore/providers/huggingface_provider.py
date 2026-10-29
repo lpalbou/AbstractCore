@@ -1788,7 +1788,7 @@ class HuggingFaceProvider(BaseProvider):
         sched = self.__dict__.get("_gguf_scheduler")
         if sched is None:
             return False
-        # The last holder of a busy pool: ModelBusyError, and this instance stays attached.
+        # The last holder of a pool still finishing work: the pool frees itself when it drains.
         still_used = gguf_slots.detach(sched, self)
         self.__dict__.pop("_gguf_scheduler", None)
         self.__dict__["_llm_own"] = None

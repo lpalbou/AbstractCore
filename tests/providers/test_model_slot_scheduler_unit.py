@@ -273,3 +273,87 @@ def test_attach_adopts_the_resident_gpu_layers_unless_a_person_set_them():
     with pytest.raises(InvalidRequestError, match="never loaded"):
         pinned._gguf_attach(pool)
     assert pool.state()["holders"] == 1
+
+
+def test_a_holder_dropped_while_its_pool_works_frees_the_pool_when_the_work_ends():
+    """The last holder leaves while a generation runs: nothing is freed under it, and the pool
+    (slots, weights) is freed when that generation returns. MUTANT: swallow the busy refusal and
+    keep the attachment -> the pool leaks -> RED."""
+    class Holder:
+        pass
+
+    pool = gguf_slots.register("w2", _pool())
+    a = Holder()
+    gguf_slots.attach(pool, a)
+    gate, started = threading.Event(), threading.Event()
+    t = threading.Thread(target=lambda: pool.run(lambda: (started.set(), gate.wait(5))))
+    t.start()
+    started.wait(5)
+    first = pool.first_llm
+    t0 = time.time()
+    del a
+    gc.collect()
+    assert time.time() - t0 < 1.0, "a dropped holder never waits inside garbage collection"
+    assert not first.closed and pool not in gguf_slots.all_schedulers()
+    gate.set()
+    t.join(5)
+    assert pool.closed and first.closed
+
+
+def test_two_streams_interleave_on_a_two_slot_pool():
+    """ADR 0011 test (c). MUTANT: one worker for both streams -> one stream ends before the other starts -> RED."""
+    pool = _pool(max_concurrent=2)
+    order = []
+    lock = threading.Lock()
+
+    def chunks(name):
+        for i in range(5):
+            time.sleep(0.03)
+            yield f"{name}{i}"
+
+    def consume(name):
+        for c in pool.stream(lambda: chunks(name)):
+            with lock:
+                order.append(c)
+
+    ts = [threading.Thread(target=consume, args=(n,)) for n in ("a", "b")]
+    [t.start() for t in ts]
+    [t.join(10) for t in ts]
+    first_a, last_a = order.index("a0"), order.index("a4")
+    first_b, last_b = order.index("b0"), order.index("b4")
+    assert first_b < last_a and first_a < last_b, order
+
+
+def test_cancelling_one_of_four_active_requests_stops_only_it():
+    """ADR 0011 test (d): the cancelled call stops within one token and returns its slot; the other
+    three complete in full. MUTANT: the slot is not returned on an error -> the next request hangs -> RED."""
+    pool = _pool(max_concurrent=4)
+    events = [threading.Event() for _ in range(4)]
+    started = threading.Barrier(5)
+
+    def decode(i):
+        def call():
+            started.wait(5)
+            out = []
+            for tok in range(20):
+                if events[i].is_set():
+                    raise GenerationCancelledError("cancelled", generated_tokens=len(out))
+                out.append(tok)
+                time.sleep(0.02)
+            return out
+        return call
+
+    results = {}
+    ts = [threading.Thread(target=lambda i=i: results.__setitem__(i, _catch(lambda: pool.run(decode(i), cancel_event=events[i]))))
+          for i in range(4)]
+    [t.start() for t in ts]
+    started.wait(5)
+    time.sleep(0.05)
+    t_cancel = time.time()
+    events[1].set()
+    ts[1].join(5)
+    assert time.time() - t_cancel < 0.2, "stopped within about one token"
+    [t.join(10) for t in ts]
+    assert isinstance(results[1], GenerationCancelledError)
+    assert all(results[i] == list(range(20)) for i in (0, 2, 3))
+    assert pool.state()["active"] == 0 and pool.run(lambda: "slot returned") == "slot returned"

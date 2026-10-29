@@ -137,6 +137,8 @@ class SlotScheduler:
         self._attached: set = set()
         #: Slots a person pinned (`model_concurrency`): never reaped.
         self.pinned_slots = 1
+        #: The last holder left while work was still running or waiting: close when it drains.
+        self.close_when_idle = False
         self.closed = False
         # What a holder attaching to the resident model takes over (filled by the loader).
         self.attach_state: Dict[str, Any] = {}
@@ -260,6 +262,14 @@ class SlotScheduler:
             slot.busy = False
             slot.last_used = time.monotonic()
             self._cv.notify_all()
+            drained = self.close_when_idle and not self._queue and not any(s.busy for s in self._slots)
+        if drained:
+            # The last holder left while this work ran: free every slot (and the weights) now.
+            try:
+                self.close(wait_s=0.0)
+            except ModelBusyError:
+                pass  # work admitted meanwhile: the next release closes
+            return
         self.reap_idle()
 
     def reap_idle(self, *, now: Optional[float] = None) -> int:
@@ -532,30 +542,39 @@ def attach(scheduler: SlotScheduler, holder: Any) -> None:
 def _detach_token(scheduler: SlotScheduler, token_id: int) -> None:
     try:
         _detach_id(scheduler, token_id)
-    except Exception:  # noqa: BLE001 - a dropped holder's pool that is busy stays (the next detach frees it)
+    except Exception:  # noqa: BLE001 - a finalizer never raises
         pass
 
 
 def _detach_id(scheduler: SlotScheduler, token_id: int) -> bool:
+    """Remove one attachment. The last one unregisters the pool (under the registry lock) and
+    closes it OUTSIDE that lock: never a wait that stalls every other load. A pool still running
+    or holding queued work closes itself when it drains (`close_when_idle`), never leaks."""
     with _REG_LOCK:
         if token_id not in scheduler._attached:
             return len(scheduler._attached) > 0
-        if len(scheduler._attached) > 1:
-            scheduler._attached.discard(token_id)
-            return True
-        # The last holder: close first (it refuses while busy, and then nothing changed).
-        scheduler.close()
         scheduler._attached.discard(token_id)
+        if scheduler._attached:
+            return True
         for k, s in list(_SCHEDULERS.items()):
             if s is scheduler:
                 _SCHEDULERS.pop(k, None)
-        return False
+        scheduler.close_when_idle = True
+    try:
+        scheduler.close(wait_s=0.0)
+    except ModelBusyError:
+        logger_msg = (f"{scheduler.model}: its last holder left while a generation ran or a request waited; "
+                      "its slots are freed when that work ends")
+        import logging
+
+        logging.getLogger("abstractcore.residency").info(logger_msg)
+    return False
 
 
 def detach(scheduler: SlotScheduler, holder: Any) -> bool:
     """`holder` stops using the model. True when OTHER holders still use it (nothing freed);
-    False when it was the last: every slot is closed and the weights go with the last context.
-    Raises `ModelBusyError` (and nothing changes) when the last holder leaves a busy pool."""
+    False when it was the last: every slot is closed and the weights go with the last context
+    (at once, or when the work still running on the pool ends)."""
     token, fin = holder.__dict__.get("_gguf_attach_token") or (None, None)
     if token is None:
         return len(scheduler._attached) > 0
