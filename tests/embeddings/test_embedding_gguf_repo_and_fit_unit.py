@@ -18,8 +18,8 @@ GIB = 1 << 30
 
 def _fake_llama(built, monkeypatch, *, free_after=None):
     class FakeLlama:
-        def __init__(self, model_path, **kw):
-            built.append(kw)
+        def __init__(self, model_path, n_ctx=512, n_batch=512, n_ubatch=512, flash_attn=False, **kw):
+            built.append(dict(kw, n_ctx=n_ctx, n_batch=n_batch, n_ubatch=n_ubatch, flash_attn=flash_attn))
 
         def embed(self, text, normalize=True, truncate=True):
             return [0.6, 0.8]
@@ -63,8 +63,12 @@ def test_a_gguf_repo_id_is_served_by_llama_cpp_never_sentence_transformers(tmp_p
     assert list(mgr.model.encode(["a"]).shape) == [1, 2]
 
 
-def _encoder(tmp_path, monkeypatch, *, free_gib, pinned=None, device=None):
+def _encoder(tmp_path, monkeypatch, *, free_gib, pinned=None, device=None, causal=True):
     from abstractcore.embeddings import manager as em
+    from abstractcore.utils import model_cache
+
+    monkeypatch.setattr(model_cache, "read_gguf_embedder_facts",
+                        lambda p: {"architecture": "qwen3" if causal else "bert", "causal": causal, "vocab_size": 151669})
 
     path = tmp_path / "Qwen3-Embedding-0.6B-Q8_0.gguf"
     path.write_bytes(b"G" * 1024)
@@ -78,12 +82,27 @@ def _encoder(tmp_path, monkeypatch, *, free_gib, pinned=None, device=None):
     return enc, built
 
 
-def test_the_embedder_reserves_the_largest_input_that_fits(tmp_path, monkeypatch):
-    """R5. 2.0 GiB free: 8,192 tokens (about 6 GB) does not fit, a smaller multiple of 256 does.
-    MUTANT: n_ctx = 8,192 regardless -> RED."""
+def test_a_causal_embedder_reads_its_full_input_in_small_micro_batches_with_flash_attention(tmp_path, monkeypatch):
+    """The cause of the 6.6 GB (operator, 2026-10-29): n_ubatch = 8,192 reserved a 5.1 GB compute
+    buffer. A causal embedder keeps n_ctx = n_batch = 8,192 (its full input) with 512-token
+    micro-batches and flash attention. MUTANT: n_ubatch = n_ctx, or no flash attention -> RED."""
     enc, built = _encoder(tmp_path, monkeypatch, free_gib=2.0)
+    assert enc.n_ctx == 8192 and enc.context_source is None, "the model's full input fits once the scratch is small"
+    assert built[0]["n_ctx"] == built[0]["n_batch"] == 8192 and built[0]["n_ubatch"] == 512
+    assert built[0]["flash_attn"] is True and enc.flash_attn is True
+
+
+def test_a_bidirectional_encoder_keeps_the_whole_input_in_one_micro_batch(tmp_path, monkeypatch):
+    enc, built = _encoder(tmp_path, monkeypatch, free_gib=40.0, causal=False)
+    assert built[0]["n_ubatch"] == built[0]["n_ctx"] == 8192
+
+
+def test_the_embedder_reserves_the_largest_input_that_fits(tmp_path, monkeypatch):
+    """R5 safety net. 1.0 GiB free: 8,192 tokens (KV ~0.9 GB + compute) does not fit, a smaller
+    multiple of 256 does. MUTANT: n_ctx = 8,192 regardless -> RED."""
+    enc, built = _encoder(tmp_path, monkeypatch, free_gib=1.0)
     assert 512 <= enc.n_ctx < 8192 and enc.n_ctx % 256 == 0
-    assert built[0]["n_ctx"] == built[0]["n_batch"] == built[0]["n_ubatch"] == enc.n_ctx
+    assert built[0]["n_ctx"] == built[0]["n_batch"] == enc.n_ctx and built[0]["n_ubatch"] == 512
     assert enc.context_source == "memory" and enc.context_reason == "limited by memory"
     assert enc.advertised_context_length == 8192 and enc.device == "gpu"
     assert enc.device_bytes == int(1.5 * GIB), "device_bytes measured (free before - after)"
@@ -100,9 +119,9 @@ def test_a_set_maximum_input_is_used_exactly_or_refused(tmp_path, monkeypatch):
     from abstractcore.embeddings.manager import EmbeddingDeviceUnavailable
 
     enc, built = _encoder(tmp_path, monkeypatch, free_gib=40.0, pinned=1024)
-    assert enc.n_ctx == 1024 and built[0]["n_ubatch"] == 1024 and enc.context_source == "configured"
+    assert enc.n_ctx == 1024 and built[0]["n_batch"] == 1024 and enc.context_source == "configured"
     with pytest.raises(EmbeddingDeviceUnavailable, match="is set to read 8,192 tokens"):
-        _encoder(tmp_path, monkeypatch, free_gib=2.0, pinned=8192, device="gpu")
+        _encoder(tmp_path, monkeypatch, free_gib=1.0, pinned=8192, device="gpu")
 
 
 def test_a_text_longer_than_the_reserved_input_is_refused_never_cut(tmp_path, monkeypatch):
@@ -116,10 +135,12 @@ def test_a_text_longer_than_the_reserved_input_is_refused_never_cut(tmp_path, mo
 def test_the_row_shows_the_reserved_input(tmp_path, monkeypatch):
     from abstractcore.embeddings import manager as em
 
-    enc, _ = _encoder(tmp_path, monkeypatch, free_gib=2.0)
+    enc, _ = _encoder(tmp_path, monkeypatch, free_gib=1.0)
     mgr = em.EmbeddingManager.__new__(em.EmbeddingManager)
     mgr.model_id, mgr.provider, mgr.model, mgr.device_preference = "Qwen/Qwen3-Embedding-0.6B-GGUF", "huggingface", enc, None
     claim = mgr.get_residency()
     assert claim["context_length"] == enc.n_ctx and claim["advertised_context_length"] == 8192
     assert claim["context_source"] == "memory" and claim["memory_buffer"] == 0.05
     assert claim["device_bytes"] == int(1.5 * GIB)
+    assert claim["quant"] == "Q8_0" and claim["model_file"] == "Qwen3-Embedding-0.6B-Q8_0.gguf"
+    assert claim["flash_attn"] is True and claim["micro_batch"] == 512

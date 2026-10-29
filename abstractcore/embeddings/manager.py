@@ -471,8 +471,30 @@ class _LlamaCppSentenceEncoder:
         # device memory listed nowhere (OVH 8080).
         want = (device or "").strip().lower() or None
         on_gpu = want != "cpu" and bool(llama_cpp.llama_supports_gpu_offload())
+        # THE SCRATCH, NOT THE MODEL (operator, 2026-10-29: "Qwen 0.6B embedding will NEVER use that
+        # much memory"). With n_ubatch = 8,192 llama.cpp reserved a 5.1 GB compute buffer: the output
+        # projection for every token of the micro-batch (8,192 x 151,669 vocabulary x 4 bytes) plus the
+        # attention scratch. A CAUSAL embedder (Qwen3-Embedding: last-token pooling) processes its
+        # input in 512-token micro-batches with the same result (cosine >= 0.9995 on 20 texts up to
+        # 7,581 tokens), and flash attention keeps the attention scratch linear: measured on OVH 8080,
+        # Q8_0, 8,192 tokens, 6,710 MB -> 1,808 MB of GPU memory (model 604 MiB + KV 896 MiB + compute
+        # 306 MiB). A bidirectional encoder (BERT-style) still needs the whole input in one micro-batch.
+        try:
+            from ..utils.model_cache import read_gguf_embedder_facts
+
+            facts = read_gguf_embedder_facts(path) or {}
+        except Exception:
+            facts = {}
+        self.causal = bool(facts.get("causal", True))
+        self.vocab_size = facts.get("vocab_size")
+        self.n_ubatch = self._micro_batch(n_ctx)
+        self.quant = _gguf_quant_label(path.name)
+        import inspect as _inspect
+
+        fa_ok = "flash_attn" in _inspect.signature(llama_cpp.Llama.__init__).parameters
         base: Dict[str, Any] = dict(model_path=str(path), embedding=True, n_ctx=n_ctx, n_batch=n_ctx,
-                                    n_ubatch=n_ctx, verbose=False)
+                                    n_ubatch=self.n_ubatch, verbose=False, **({"flash_attn": True} if fa_ok else {}))
+        self.flash_attn = fa_ok
         import inspect
 
         cpu_kwargs = dict(base, n_gpu_layers=0, offload_kqv=False)
@@ -484,7 +506,8 @@ class _LlamaCppSentenceEncoder:
         self._llm = None
         if on_gpu:
             before = _cuda_free_bytes()
-            fit = _embedding_fit(path, ceiling, before, self.memory_buffer)
+            fit = _embedding_fit(path, ceiling, before, self.memory_buffer, causal=self.causal,
+                                 vocab_size=self.vocab_size)
             if fit is not None:
                 need_pinned = fit["need"](n_ctx)
                 if pinned and before is not None and need_pinned > before * (1.0 - self.memory_buffer):
@@ -506,8 +529,9 @@ class _LlamaCppSentenceEncoder:
                         self.device_note = "not enough free GPU memory for a 512-token input now; running on the CPU"
                         n_ctx = ceiling
                 self.n_ctx = n_ctx
-                base.update(n_ctx=n_ctx, n_batch=n_ctx, n_ubatch=n_ctx)
-                cpu_kwargs.update(n_ctx=n_ctx, n_batch=n_ctx, n_ubatch=n_ctx)
+                self.n_ubatch = self._micro_batch(n_ctx)
+                base.update(n_ctx=n_ctx, n_batch=n_ctx, n_ubatch=self.n_ubatch)
+                cpu_kwargs.update(n_ctx=n_ctx, n_batch=n_ctx, n_ubatch=self.n_ubatch)
                 logger.info(f"Embedding model {repo_id}: reserving {n_ctx:,} of {ceiling:,} input tokens "
                             f"({self.context_reason}; {self.memory_buffer * 100:.0f} % buffer)")
         if on_gpu:
@@ -529,6 +553,11 @@ class _LlamaCppSentenceEncoder:
             self._llm = llama_cpp.Llama(**cpu_kwargs)
         self._lock = threading.Lock()  # one llama.cpp context: one encode at a time
         self._dim: Optional[int] = None
+
+    def _micro_batch(self, n_ctx: int) -> int:
+        """512-token micro-batches for a causal embedder (same vectors, a compute buffer that does not
+        grow with the input); the whole input in one for a bidirectional encoder (llama.cpp needs it)."""
+        return min(512, int(n_ctx)) if self.causal else int(n_ctx)
 
     def encode(self, texts: Any, show_progress_bar: bool = False, convert_to_numpy: bool = True, **_: Any) -> Any:
         import numpy as np
@@ -603,7 +632,16 @@ def _memory_buffer() -> float:
         return 0.05
 
 
-def _embedding_fit(path: Path, ceiling: int, free: Optional[int], buffer: float) -> "Optional[Dict[str, Any]]":
+def _gguf_quant_label(file_name: str) -> Optional[str]:
+    """`Q8_0`, `F16`, `Q4_K_M`... from a GGUF file name, or None."""
+    import re as _re
+
+    m = _re.search(r"(?i)(?:^|[-_.])((?:IQ|Q)\d[\w]*?|F16|BF16|F32)(?=\.gguf$|[-.]|$)", str(file_name))
+    return m.group(1).upper() if m else None
+
+
+def _embedding_fit(path: Path, ceiling: int, free: Optional[int], buffer: float, *, causal: bool = False,
+                   vocab_size: Optional[int] = None) -> "Optional[Dict[str, Any]]":
     """`{reserved, need}`: the largest input (multiple of 256, at most `ceiling`) whose weights + KV +
     compute buffers fit `free * (1 - buffer)`, and the need function. With n_ubatch = n_ctx the
     compute grows with n_ctx^2 (n_ctx x n_ctx x n_head attention scores, f32) plus activations;
@@ -626,7 +664,13 @@ def _embedding_fit(path: Path, ceiling: int, free: Optional[int], buffer: float)
 
     def need(n: int) -> int:
         kv = int(kv_cache_bytes(geom, int(n), pad_v=True) or 0)
-        compute = int(n) * int(n) * n_head * 4 + int(n) * max(n_embd, 1) * 4 * 8
+        if causal:
+            # 512-token micro-batches + flash attention: the compute buffer no longer grows with n
+            # (measured 306 MiB for a 151,669-token vocabulary: 512 x vocab x 4 bytes).
+            ub = min(512, int(n))
+            compute = ub * int(vocab_size or 152_000) * 4 + ub * max(n_embd, 1) * 4 * 8
+        else:
+            compute = int(n) * int(n) * n_head * 4 + int(n) * max(n_embd, 1) * 4 * 8
         return int((weights + kv + compute) * 1.08)  # 8 % for the graph's other buffers
 
     budget = int(free * (1.0 - buffer))
@@ -2260,6 +2304,12 @@ class EmbeddingManager:
             claim["device_note"] = str(model.device_note)
         # The maximum input the GGUF encoder reserved (like an LLM's context: "N of M; limited by
         # memory, 5 % buffer"), so the Models row shows it and a longer text is refused, never cut.
+        if getattr(model, "quant", None):
+            claim["quant"] = str(model.quant)  # which build serves it (Q8_0, F16, ...)
+            claim["model_file"] = getattr(model, "file_name", None)
+        if getattr(model, "flash_attn", None) is not None:
+            claim["flash_attn"] = bool(model.flash_attn)
+            claim["micro_batch"] = getattr(model, "n_ubatch", None)
         if isinstance(getattr(model, "n_ctx", None), int) and getattr(model, "advertised_context_length", None):
             claim["context_length"] = int(model.n_ctx)
             claim["advertised_context_length"] = int(model.advertised_context_length)
