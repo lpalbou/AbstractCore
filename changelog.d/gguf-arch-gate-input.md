@@ -1,0 +1,3 @@
+### Fixed
+
+- **The GGUF architecture gate never refuses a model over a value that is not an architecture** (`utils/model_cache.py`). `llamacpp_knows_architecture` / `gguf_unloadable_reason` answer only for a GGUF `general.architecture` token, read from the INSTALLED `libllama`. Anything else (a model id such as `unsloth/Qwen3.5-4B-GGUF`, a file name) is "cannot be told" (None). Before, a model id passed in read as "No llama.cpp release supports the unsloth/Qwen3.5-4B-GGUF architecture yet", although the installed llama.cpp loads that model (qwen35, gemma4 and qwen2vl all load on this Mac's 0.3.35 Metal build). New real-file test: every GGUF in the account's hub cache that the installed llama.cpp opens (`vocab_only`) is never refused by the gate.
