@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `download_artifact` (it read "not checked": "'qwen3-embedding' is not an <org>/<repo> Hugging Face reference").
   A not-cached model raises its "download it first" `ModelNotFoundError` without an ERROR log line (one per
   account on every boot on the Linux test server); the caller says it.
+- **An embedding default whose repo is not downloaded runs on the installed GGUF build of the same model.** When
+  `Qwen/Qwen3-Embedding-0.6B` is absent and `Qwen/Qwen3-Embedding-0.6B-GGUF` is installed (the Linux test server),
+  the embedding manager loads the GGUF through llama.cpp (`embedding=True`, CPU, L2-normalized, the most faithful
+  quant first: f16, bf16, Q8_0, ...) under that repo's id (another build is another embedding space), and the
+  Defaults grid reads "installed: served by the installed GGUF build ...". Measured there: 1024 dimensions,
+  similarity 0.775 for two cat sentences vs 0.262 against a revenue sentence. Only without any build the route reads
+  "not downloaded" with Download.
 
 ## [2.31.1] - 2026-10-28
 

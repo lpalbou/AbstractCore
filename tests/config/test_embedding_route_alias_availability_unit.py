@@ -56,3 +56,70 @@ def test_not_downloaded_embedding_is_not_an_error_log(monkeypatch, caplog):
     with pytest.raises(ModelNotFoundError):
         mgr._load_model()
     assert not [r for r in caplog.records if r.levelno >= logging.ERROR], [r.getMessage() for r in caplog.records]
+
+
+# -- the installed GGUF build of the same model serves the route ------------------------
+def _gguf_snapshot(tmp_path, monkeypatch, *, present: bool):
+    from abstractcore.utils import model_cache
+
+    snap = tmp_path / "models--Qwen--Qwen3-Embedding-0.6B-GGUF" / "snapshots" / "abc"
+    snap.mkdir(parents=True)
+    (snap / "Qwen3-Embedding-0.6B-Q8_0.gguf").write_bytes(b"GGUF")
+    (snap / "Qwen3-Embedding-0.6B-f16.gguf").write_bytes(b"GGUF")
+    monkeypatch.setattr(model_cache, "resolve_hf_load_snapshot",
+                        lambda repo, cache_dirs=None: snap if present and repo == "Qwen/Qwen3-Embedding-0.6B-GGUF" else None)
+    return snap
+
+
+def test_route_is_installed_when_only_the_gguf_build_is(tmp_path, monkeypatch):
+    """The coordinator's server fact: only Qwen/Qwen3-Embedding-0.6B-GGUF is there.
+    MUTANT: no sibling check -> "not downloaded" for a model that runs -> RED."""
+    _gguf_snapshot(tmp_path, monkeypatch, present=True)
+    monkeypatch.setattr(mm, "probe", lambda p, a, base_url=None: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT, evidence="t", downloadable=True))
+    row = mm.annotate_route_availability([{"key": "embedding.text", "provider": "huggingface", "model": "qwen3-embedding"}])[0]
+    assert row["availability"]["status"] == mm.PRESENCE_INSTALLED
+    assert "Qwen/Qwen3-Embedding-0.6B-GGUF" in row["availability"]["detail"]
+
+
+def test_manager_loads_the_gguf_build_when_the_repo_is_missing(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from abstractcore.embeddings import manager as em
+
+    snap = _gguf_snapshot(tmp_path, monkeypatch, present=True)
+    built = []
+
+    class FakeLlama:
+        def __init__(self, model_path, **kw):
+            built.append((model_path, kw))
+
+        def embed(self, text, normalize=True):
+            return [0.6, 0.8]
+
+        def close(self):
+            built.append("closed")
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama))
+    monkeypatch.setattr(em, "sentence_transformers", object())
+
+    def not_cached(self):
+        raise ModelNotFoundError("not in the local Hugging Face cache")
+
+    monkeypatch.setattr(em.EmbeddingManager, "_sentence_transformers_source", not_cached)
+    mgr = em.EmbeddingManager.__new__(em.EmbeddingManager)
+    mgr.model_id = "Qwen/Qwen3-Embedding-0.6B"
+    mgr._load_model()
+    assert built[0][0] == str(snap / "Qwen3-Embedding-0.6B-f16.gguf"), "the most faithful build is chosen"
+    assert built[0][1]["embedding"] is True
+    assert mgr.model_id == "Qwen/Qwen3-Embedding-0.6B-GGUF", "another build is another embedding space"
+    assert list(mgr.model.encode(["a", "b"]).shape) == [2, 2] and mgr.model.get_sentence_embedding_dimension() == 2
+    mgr.model = None
+    mgr._load_model()  # a reload after unload() comes back to the same build
+    assert len([b for b in built if b != "closed"]) == 2 and mgr.model_id == "Qwen/Qwen3-Embedding-0.6B-GGUF"
+
+
+def test_without_the_gguf_build_it_is_still_not_downloaded(tmp_path, monkeypatch):
+    from abstractcore.embeddings import manager as em
+
+    _gguf_snapshot(tmp_path, monkeypatch, present=False)
+    assert em.gguf_sibling_snapshot("Qwen/Qwen3-Embedding-0.6B") is None

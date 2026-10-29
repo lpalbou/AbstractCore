@@ -4319,6 +4319,20 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
             presence = seen_cache.get(cache_key)
             if presence is None:
                 presence = probe(probe_provider, artifact, base_url=base_url)
+                if key.startswith("embedding.") and presence.status == PRESENCE_ABSENT:
+                    # The embedding manager serves the installed GGUF build of the same
+                    # model when the repo itself is not downloaded: that route runs.
+                    try:
+                        from ..embeddings.manager import gguf_sibling_snapshot
+
+                        sibling = gguf_sibling_snapshot(artifact)
+                    except Exception:
+                        sibling = None
+                    if sibling:
+                        presence = ModelPresence(
+                            provider, artifact, PRESENCE_INSTALLED, evidence="hf cache scan",
+                            detail=f"served by the installed GGUF build {sibling[0]} ({sibling[1].name})",
+                        )
                 seen_cache[cache_key] = presence
             row["availability"] = presence.to_dict()
             if artifact != model:
