@@ -249,3 +249,170 @@ def eject_unclaimed(provider: str, model: str, *, task: Optional[str] = None, pa
                     "locked": any(bool(c.get("locked")) for c in claims),
                     "reason": f"{model} is still in use by {', '.join(owners)}; not ejected"}
         return eject(backend, model, reason=reason)
+
+
+# ---------------------------------------------------------------------------
+# The residency failsafe (core ADR 0010): a load checks weights + KV against
+# the free memory, evicts resident models that are not locked (least recently
+# used first, one at a time), and otherwise refuses with a typed error.
+# ---------------------------------------------------------------------------
+_GB = 1000 ** 3
+
+
+def _fmt_gb(n: Optional[int]) -> str:
+    return "unknown" if n is None else f"{n / _GB:.1f} GB"
+
+
+def _hf_holder_state(holder: Any) -> Dict[str, Any]:
+    from .hf_residency import _holder_row
+
+    row = _holder_row(holder)
+    inflight = 0
+    last_used = getattr(holder, "_residency_registered_at", None)
+    try:
+        registry = holder._inflight_generations()
+        inflight = int(registry.active())
+        if getattr(registry, "last_used_at", None):
+            last_used = max(float(last_used or 0.0), float(registry.last_used_at))
+    except Exception:  # noqa: BLE001 - a holder without the registry is never "in use" by it
+        pass
+    return {"held_bytes": int(row.get("held_bytes") or 0), "inflight": inflight, "last_used_at": last_used}
+
+
+def resident_model_states() -> List[Dict[str, Any]]:
+    """Every in-process HuggingFace model resident now, with what the failsafe
+    decides on: `held_bytes`, `last_used_at` (newest over its instances),
+    `in_use` (a generation running on any instance), `locked_by` (the readable
+    owners whose claim locks it). MLX and embeddings are not evicted by the
+    failsafe yet (ADR 0010: adopted lane by lane)."""
+    if not _backend_loaded("huggingface"):
+        return []
+    from .hf_residency import _holder_alive, registered_providers
+
+    by_model: Dict[str, Dict[str, Any]] = {}
+    for holder in registered_providers():
+        try:
+            if not _holder_alive(holder):
+                continue
+            name = str(getattr(holder, "model", "") or "").strip()
+            if not name:
+                continue
+            st = _hf_holder_state(holder)
+        except Exception:  # noqa: BLE001
+            continue
+        cur = by_model.setdefault(name, {"backend": "huggingface", "provider": "huggingface", "model": name,
+                                         "held_bytes": 0, "last_used_at": None, "in_use": False, "holders": 0})
+        cur["holders"] += 1
+        cur["held_bytes"] += st["held_bytes"]
+        cur["in_use"] = cur["in_use"] or st["inflight"] > 0
+        if st["last_used_at"] is not None:
+            cur["last_used_at"] = max(float(cur["last_used_at"] or 0.0), float(st["last_used_at"]))
+    for state in by_model.values():
+        claims = claims_for("huggingface", state["model"])
+        state["locked_by"] = sorted({str(c.get("owner_label") or "another owner in this process")
+                                     for c in claims if c.get("locked")})
+    return list(by_model.values())
+
+
+def make_room(needed_bytes: int, free_bytes: Any, *, provider: Optional[str] = None, model: Optional[str] = None,
+              reason: str = "make_room") -> Dict[str, Any]:
+    """Evict resident models that are neither locked nor in use, least recently
+    used first, one at a time, until `free_bytes()` reaches `needed_bytes` or
+    none is evictable. Never evicts `model` itself. Returns `{"fits", "free_bytes",
+    "evicted": [{model, freed_bytes}], "kept": [readable reasons]}`."""
+    evicted: List[Dict[str, Any]] = []
+    with _RESIDENCY_LOCK:
+        free = int(free_bytes())
+        while free < int(needed_bytes):
+            states = [s for s in resident_model_states()
+                      if not (model and model_matches(s["model"], None, model))]
+            candidates = [s for s in states if not s["locked_by"] and not s["in_use"]]
+            if not candidates:
+                break
+            victim = min(candidates, key=lambda s: float(s["last_used_at"] or 0.0))
+            report = eject(victim["backend"], victim["model"], reason=reason)
+            after = int(free_bytes())
+            evicted.append({"model": victim["model"], "freed_bytes": max(0, after - free),
+                            "ok": bool(report.get("ok", True))})
+            if after <= free and not report.get("ok", True):
+                break  # it did not free anything: stop rather than loop
+            free = after
+        kept = []
+        for s in resident_model_states():
+            if model and model_matches(s["model"], None, model):
+                continue
+            if s["locked_by"]:
+                kept.append(f"{s['model']} (locked by {', '.join(s['locked_by'])})")
+            elif s["in_use"]:
+                kept.append(f"{s['model']} (in use)")
+    return {"fits": free >= int(needed_bytes), "free_bytes": free, "evicted": evicted, "kept": kept}
+
+
+def smaller_suggestions(model: str, budget_bytes: int, *, provider: str = "huggingface",
+                        limit: int = 3) -> List[Dict[str, Any]]:
+    """Catalog artifacts of the same model (or its family) on `provider` whose
+    download fits `budget_bytes` with room for a KV cache, largest first."""
+    try:
+        from ..config.model_catalog import load_seed
+
+        rows = list(load_seed().get("rows") or [])
+    except Exception:  # noqa: BLE001
+        return []
+    name = str(model or "").lower()
+    same = [r for r in rows if any(str(a.get("artifact") or "").lower() == name for a in r.get("artifacts") or [])]
+    if not same:
+        same = [r for r in rows if str(r.get("id") or "").lower() and str(r.get("id")).lower() in name.replace("_", "-")]
+    families = {str(r.get("family") or "") for r in same if r.get("family")}
+    pool = same + [r for r in rows if r not in same and str(r.get("family") or "") in families]
+    out: List[Dict[str, Any]] = []
+    for r in pool:
+        for a in r.get("artifacts") or []:
+            size = a.get("download_bytes")
+            if str(a.get("provider") or "") != provider or not isinstance(size, int):
+                continue
+            if str(a.get("artifact") or "").lower() == name:
+                continue
+            if size * 1.15 + (1 << 30) > budget_bytes:
+                continue
+            out.append({"model": r.get("display_name") or r.get("id"), "artifact": a.get("artifact"),
+                        "quant": a.get("quant"), "download_bytes": size})
+    out.sort(key=lambda x: -int(x["download_bytes"]))
+    seen, uniq = set(), []
+    for item in out:
+        if item["artifact"] in seen:
+            continue
+        seen.add(item["artifact"])
+        uniq.append(item)
+    return uniq[:limit]
+
+
+def ensure_fit(model: str, needed_bytes: int, free_bytes: Any, *, provider: str = "huggingface",
+               device: str = "GPU") -> Dict[str, Any]:
+    """THE fit check (ADR 0010). Evicts unlocked LRU models when needed; raises
+    `ModelDoesNotFitError` with the sentence, numbers and smaller suggestions when
+    the load still cannot fit. Returns the make-room report when it fits."""
+    report = make_room(needed_bytes, free_bytes, provider=provider, model=model, reason=f"room for {model}")
+    for ev in report["evicted"]:
+        import logging
+
+        logging.getLogger("abstractcore.residency").warning(
+            f"evicted {ev['model']} (least recently used, not locked) to make room for {model}")
+    if report["fits"]:
+        return report
+    from ..exceptions import ModelDoesNotFitError
+
+    free = int(report["free_bytes"])
+    suggestions = smaller_suggestions(model, free, provider=provider)
+    kept = report["kept"]
+    sentence = f"{model} needs {_fmt_gb(needed_bytes)} but only {_fmt_gb(free)} is free on the {device}"
+    if kept:
+        sentence += f" (kept: {'; '.join(kept)})"
+    sentence += ". Choose a smaller model"
+    if suggestions:
+        sentence += ", for example " + ", ".join(
+            f"{s['artifact']} ({_fmt_gb(s['download_bytes'])})" for s in suggestions)
+    if any("locked" in k for k in kept):
+        sentence += ", or unlock a kept model on the Models page"
+    sentence += "."
+    raise ModelDoesNotFitError(sentence, model=model, needed_bytes=int(needed_bytes), free_bytes=free,
+                               device=device, kept=kept, evicted=report["evicted"], suggestions=suggestions)
