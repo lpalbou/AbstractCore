@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mlx / mlx-gen / mlx-vlm artifacts are left out on a host whose engine registry says MLX cannot run (they were
   listed, not downloadable), and a row with only MLX builds (the Wan video rows) is not listed there.
 
+### Added
+
+- **Every quant of a model, on demand** (backlog 0865; operator QA batch item b, "All" quants).
+  `catalog(hub=True, extended=True)` and `?extended=true` list, per row, every quant its own GGUF repos ship (UD-IQ1_S
+  to Q8_0, BF16), each with its exact size and its fit, marked `extended: true` and never pre-selected. Labels the
+  download pattern cannot fetch exactly are left out. `gguf_quant_labels(facts)` is the enumeration.
+
 ### Fixed
 
 - **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866, operator QA item c). The repos the
