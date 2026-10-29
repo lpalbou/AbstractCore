@@ -96,13 +96,16 @@ def test_manager_loads_the_gguf_build_when_the_repo_is_missing(tmp_path, monkeyp
         def __init__(self, model_path, **kw):
             built.append((model_path, kw))
 
-        def embed(self, text, normalize=True):
+        def embed(self, text, normalize=True, truncate=True):
             return [0.6, 0.8]
+
+        def tokenize(self, b, add_bos=True):
+            return list(range(len(b.split())))
 
         def close(self):
             built.append("closed")
 
-    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama))
+    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama, llama_supports_gpu_offload=lambda: True))
     monkeypatch.setattr(em, "sentence_transformers", object())
 
     def not_cached(self):
@@ -115,9 +118,7 @@ def test_manager_loads_the_gguf_build_when_the_repo_is_missing(tmp_path, monkeyp
     assert built[0][0] == str(snap / "Qwen3-Embedding-0.6B-f16.gguf"), "the most faithful build is chosen"
     assert built[0][1]["embedding"] is True
     assert built[0][1]["n_batch"] == built[0][1]["n_ctx"], "MUTANT: default n_batch -> texts cut to 512 tokens -> RED"
-    assert built[0][1]["offload_kqv"] is False and built[0][1]["n_gpu_layers"] == 0, (
-        "MUTANT: KV / compute buffers offloaded -> 4.9 GiB of GPU for a 0.6B embedder -> RED")
-    assert built[0][1]["n_ctx"] <= 4096
+    assert built[0][1]["n_gpu_layers"] == -1, "operator ruling: the GPU is the default when there is room"
     assert mgr.model_id == "Qwen/Qwen3-Embedding-0.6B-GGUF", "another build is another embedding space"
     assert list(mgr.model.encode(["a", "b"]).shape) == [2, 2] and mgr.model.get_sentence_embedding_dimension() == 2
     mgr.model = None
@@ -137,3 +138,125 @@ def test_a_route_of_another_provider_is_never_served_by_a_hf_gguf(tmp_path, monk
     monkeypatch.setattr(mm, "probe", lambda p, a, base_url=None: mm.ModelPresence(p, a, mm.PRESENCE_ABSENT, evidence="t"))
     row = mm.annotate_route_availability([{"key": "embedding.text", "provider": "vllm", "model": "Qwen/Qwen3-Embedding-0.6B"}])[0]
     assert row["availability"]["status"] == mm.PRESENCE_ABSENT
+
+
+
+def _fake_llama(monkeypatch, *, gpu_fails=False):
+    import sys
+    from types import SimpleNamespace
+
+    built = []
+
+    class FakeLlama:
+        def __init__(self, model_path, **kw):
+            if gpu_fails and kw.get("n_gpu_layers") == -1:
+                raise RuntimeError("cudaMalloc failed: out of memory")
+            built.append(kw)
+
+        def embed(self, text, normalize=True, truncate=True):
+            assert truncate is False, "never a silent cut"
+            return [1.0, 0.0]
+
+        def tokenize(self, b, add_bos=True):
+            return list(range(len(b.split())))
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama, llama_supports_gpu_offload=lambda: True))
+    return built
+
+
+def test_cpu_device_is_all_on_the_cpu(tmp_path, monkeypatch):
+    from abstractcore.embeddings import manager as em
+
+    built = _fake_llama(monkeypatch)
+    enc = em._LlamaCppSentenceEncoder("r/x-GGUF", tmp_path / "x.gguf", n_ctx=8192, device="cpu")
+    assert enc.device == "cpu" and built[0]["n_gpu_layers"] == 0 and built[0]["offload_kqv"] is False, (
+        "MUTANT: KV / compute buffers offloaded -> 4.9 GiB of GPU for a 0.6B embedder -> RED")
+
+
+def test_default_takes_the_gpu_and_falls_back_to_the_cpu_without_room(tmp_path, monkeypatch):
+    from abstractcore.embeddings import manager as em
+
+    built = _fake_llama(monkeypatch)
+    assert em._LlamaCppSentenceEncoder("r/x-GGUF", tmp_path / "x.gguf").device == "gpu"
+    built = _fake_llama(monkeypatch, gpu_fails=True)
+    enc = em._LlamaCppSentenceEncoder("r/x-GGUF", tmp_path / "x.gguf")
+    assert enc.device == "cpu" and "running on the CPU" in enc.device_note
+    with pytest.raises(RuntimeError, match="set its Device to CPU"):
+        em._LlamaCppSentenceEncoder("r/x-GGUF", tmp_path / "x.gguf", device="gpu")
+
+
+def test_a_text_longer_than_the_model_reads_is_refused_never_cut(tmp_path, monkeypatch):
+    """Framework ADR 0026 (operator ruling 2026-10-29): no silent truncation. MUTANT: a 4,096
+    cap / truncate=True -> the text is cut -> RED."""
+    from abstractcore.embeddings import manager as em
+    from abstractcore.exceptions import ContextWindowExceededError
+
+    _fake_llama(monkeypatch)
+    enc = em._LlamaCppSentenceEncoder("r/x-GGUF", tmp_path / "x.gguf", n_ctx=8192, device="cpu")
+    assert enc.n_ctx == 8192
+    enc.encode(" ".join(["w"] * 8000))
+    with pytest.raises(ContextWindowExceededError, match="nothing was cut"):
+        enc.encode(" ".join(["w"] * 9000))
+
+
+
+def test_an_explicit_gpu_that_does_not_fit_is_said_not_hidden_as_not_downloaded(tmp_path, monkeypatch):
+    """Server finding: the GPU refusal was swallowed and the person read "not in the local cache"."""
+    from abstractcore.embeddings import manager as em
+
+    _gguf_snapshot(tmp_path, monkeypatch, present=True)
+    _fake_llama(monkeypatch, gpu_fails=True)
+    with pytest.raises(em.EmbeddingDeviceUnavailable, match="set its Device to CPU"):
+        em._gguf_sibling_encoder("Qwen/Qwen3-Embedding-0.6B", device="gpu")
+
+
+# -- the sentence-transformers lane: the model's full length, a longer text refused --------------
+class _FakeST:
+    def __init__(self, limit):
+        self.max_seq_length = limit
+        self.encoded = []
+
+    def tokenizer(self, text, add_special_tokens=True, truncation=False):
+        assert truncation is False
+        return {"input_ids": [0] + list(range(len(text.split()))) + [1]}  # CLS ... SEP
+
+    def encode(self, texts, **kw):
+        import numpy as np
+
+        self.encoded.append(texts)
+        return np.zeros((len(texts), 4)) if isinstance(texts, list) else np.zeros(4)
+
+    def get_sentence_embedding_dimension(self):
+        return 4
+
+
+def test_a_text_one_token_over_is_refused_and_not_cut(tmp_path, monkeypatch):
+    """Merge desk grep (2026-10-29): sentence-transformers cut every text at its max_seq_length
+    silently. MUTANT: no check -> the library truncates -> RED."""
+    from abstractcore.embeddings import manager as em
+    from abstractcore.exceptions import ContextWindowExceededError
+
+    fake = _FakeST(limit=10)
+    monkeypatch.setattr(em, "sentence_transformers", object())
+    monkeypatch.setattr(em.EmbeddingManager, "_load_model", lambda self: setattr(self, "model", fake))
+    mgr = em.EmbeddingManager(provider="huggingface", model="all-minilm-l6-v2", cache_dir=tmp_path, strict=False)
+    mgr.model = fake
+    mgr.embed(" ".join(["w"] * 8))                      # 8 + 2 specials = 10: fits exactly
+    with pytest.raises(ContextWindowExceededError, match="nothing was cut") as err:
+        mgr.embed(" ".join(["v"] * 9))                  # 11 tokens: one over
+    assert err.value.prompt_tokens == 11 and err.value.context_length == 10
+    assert all(" ".join(["v"] * 9) not in str(t) for t in fake.encoded), "the long text never reached the encoder"
+    with pytest.raises(ContextWindowExceededError):     # never a zero vector, strict or not
+        mgr.embed_batch(["short", " ".join(["u"] * 20)])
+
+
+def test_the_full_sequence_length_comes_from_the_model_config(tmp_path, monkeypatch):
+    from abstractcore.embeddings import manager as em
+
+    fake = _FakeST(limit=512)
+    monkeypatch.setattr(em, "sentence_transformers", object())
+    monkeypatch.setattr(em.EmbeddingManager, "_load_model", lambda self: setattr(self, "model", fake))
+    mgr = em.EmbeddingManager(provider="huggingface", model="qwen3-embedding", cache_dir=tmp_path)
+    mgr.model = fake
+    mgr._set_full_sequence_length()
+    assert fake.max_seq_length == 8192, "the library's 512 replaced by the model's own 8,192"

@@ -38,7 +38,7 @@ except ImportError:
 from .models import EmbeddingBackend, get_model_config, get_default_model, list_available_models, list_available_providers
 from ..utils.structured_logging import get_logger
 from ..utils.install_settings import local_engines_hint
-from ..exceptions import ModelNotFoundError
+from ..exceptions import ContextWindowExceededError, ModelNotFoundError
 
 logger = get_logger(__name__)
 
@@ -326,7 +326,6 @@ def embeddings_memory_report() -> Dict[str, Any]:
 
 # GGUF builds of an embedding model, tried when its Hugging Face repo is not downloaded,
 # in this order of fidelity to the original weights.
-_GGUF_EMBEDDING_MAX_CTX = 4096  # tokens per text on the GGUF embedding lane (CPU)
 _GGUF_EMBEDDING_QUANT_ORDER = ("f16", "bf16", "q8_0", "q6_k", "q5_k_m", "q4_k_m")
 
 
@@ -364,35 +363,84 @@ def gguf_sibling_snapshot(repo_id: str) -> "Optional[tuple]":
         return None
 
 
+def _refuse_too_long(model: Any, texts: List[Any], model_id: str) -> None:
+    """A text longer than the model reads is refused with the sentence, never cut: the
+    sentence-transformers lane (the GGUF lane checks inside its encoder). Counted with the
+    model's own tokenizer, special tokens included, against its `max_seq_length`."""
+    limit = getattr(model, "max_seq_length", None)
+    tokenizer = getattr(model, "tokenizer", None)
+    if not isinstance(limit, int) or limit <= 0 or tokenizer is None or not callable(tokenizer):
+        return
+    for t in texts:
+        ids = tokenizer(str(t), add_special_tokens=True, truncation=False)["input_ids"]
+        n = len(ids)
+        if n > limit:
+            from ..exceptions import ContextWindowExceededError
+
+            raise ContextWindowExceededError(
+                f"This text is {n:,} tokens, but the embedding model {model_id} reads at most {limit:,}; "
+                "split it before embedding it (nothing was cut).",
+                prompt_tokens=n, context_length=limit, model=model_id,
+            )
+
+
+class EmbeddingDeviceUnavailable(RuntimeError):
+    """The person chose a device for the embedding model and it cannot take it now."""
+
+
 class _LlamaCppSentenceEncoder:
     """The slice of `SentenceTransformer` this manager uses (`encode`,
     `get_sentence_embedding_dimension`, `device`), over a llama.cpp embedding
     model (pooling from the GGUF; vectors L2-normalized like the original's
     Normalize module)."""
 
-    def __init__(self, repo_id: str, path: Path, *, n_ctx: int = 8192):
+    def __init__(self, repo_id: str, path: Path, *, n_ctx: int = 8192, device: Optional[str] = None):
         import llama_cpp  # noqa: F401 - the GGUF lane needs llama-cpp-python
 
         self.repo_id = repo_id
         self.file_name = path.name
         self.model_name_or_path = str(path)
-        self.device = "cpu"
-        # n_batch / n_ubatch = n_ctx: llama-cpp-python's embed() cuts every text to
-        # n_batch tokens (512 by default), silently. Pooling comes from the file.
-        # ALL ON THE CPU (OVH 8080, 2026-10-29): with n_gpu_layers=0 llama.cpp's CUDA
-        # build still put the KV cache and the n_ubatch-sized compute buffers on the
-        # GPU (offload_kqv defaults on): 4.9 GiB of device memory for a 0.6B embedding
-        # model, listed nowhere, which then made the residency failsafe refuse a model
-        # that fit. The context is bounded too (CPU RAM): longer texts are cut at it.
-        n_ctx = max(512, min(int(n_ctx), _GGUF_EMBEDDING_MAX_CTX))
-        kwargs: Dict[str, Any] = dict(model_path=str(path), embedding=True, n_ctx=n_ctx, n_batch=n_ctx,
-                                      n_ubatch=n_ctx, n_gpu_layers=0, offload_kqv=False, verbose=False)
+        # The model's full context: a text longer than it is REFUSED with a sentence, never
+        # cut (framework ADR 0026). n_batch / n_ubatch = n_ctx too: llama-cpp-python's embed()
+        # otherwise cuts every text to n_batch tokens (512 by default), silently.
+        n_ctx = max(512, int(n_ctx))
+        self.n_ctx = n_ctx
+        # DEVICE: the user's choice (route option `device`: "gpu" | "cpu"; operator ruling
+        # 2026-10-29: embedders must run fast, so the GPU is the default when there is room).
+        # "cpu" is ALL on the CPU: with n_gpu_layers=0 llama.cpp's CUDA build still placed the
+        # KV cache and the compute buffers on the GPU (offload_kqv defaults on), 4.9 GiB of
+        # device memory listed nowhere (OVH 8080).
+        want = (device or "").strip().lower() or None
+        on_gpu = want != "cpu" and bool(llama_cpp.llama_supports_gpu_offload())
+        base: Dict[str, Any] = dict(model_path=str(path), embedding=True, n_ctx=n_ctx, n_batch=n_ctx,
+                                    n_ubatch=n_ctx, verbose=False)
         import inspect
 
+        cpu_kwargs = dict(base, n_gpu_layers=0, offload_kqv=False)
         if "op_offload" in inspect.signature(llama_cpp.Llama.__init__).parameters:
-            kwargs["op_offload"] = False  # host-tensor ops stay on the host as well
-        self._llm = llama_cpp.Llama(**kwargs)
-        self.n_ctx = n_ctx
+            cpu_kwargs["op_offload"] = False  # host-tensor ops stay on the host as well
+        self.device = "cpu"
+        self.device_bytes: Optional[int] = None  # measured on the GPU (free memory before/after)
+        self.device_note: Optional[str] = None
+        self._llm = None
+        if on_gpu:
+            before = _cuda_free_bytes()
+            try:
+                self._llm = llama_cpp.Llama(**dict(base, n_gpu_layers=-1))
+                self.device = "gpu"
+                after = _cuda_free_bytes()
+                if before is not None and after is not None:
+                    self.device_bytes = max(0, before - after)
+            except Exception as exc:
+                if want == "gpu":
+                    raise EmbeddingDeviceUnavailable(
+                        f"{repo_id} could not be placed on the GPU ({exc}); free GPU memory or set its Device to CPU"
+                    ) from exc
+                # Default placement: no room on the GPU now, so the CPU, and it says so.
+                self.device_note = f"not enough free GPU memory now ({exc}); running on the CPU"
+                logger.info(f"{repo_id}: {self.device_note}")
+        if self._llm is None:
+            self._llm = llama_cpp.Llama(**cpu_kwargs)
         self._lock = threading.Lock()  # one llama.cpp context: one encode at a time
         self._dim: Optional[int] = None
 
@@ -402,7 +450,18 @@ class _LlamaCppSentenceEncoder:
         single = isinstance(texts, str)
         batch = [texts] if single else list(texts)
         with self._lock:
-            vectors = [self._llm.embed(t, normalize=True) for t in batch]
+            vectors = []
+            for t in batch:
+                n_tokens = len(self._llm.tokenize(str(t).encode("utf-8"), add_bos=True))
+                if n_tokens > self.n_ctx:
+                    from ..exceptions import ContextWindowExceededError
+
+                    raise ContextWindowExceededError(
+                        f"This text is {n_tokens:,} tokens, but the embedding model {self.repo_id} reads at most "
+                        f"{self.n_ctx:,}; split it before embedding it (nothing was cut).",
+                        prompt_tokens=n_tokens, context_length=self.n_ctx, model=self.repo_id,
+                    )
+                vectors.append(self._llm.embed(t, normalize=True, truncate=False))
         for v in vectors:
             if v and isinstance(v[0], (list, tuple)):
                 # Pooling NONE in the file: one vector per token, not a sentence embedding.
@@ -423,12 +482,34 @@ class _LlamaCppSentenceEncoder:
             pass
 
 
-def _gguf_sibling_encoder(repo_id: str, *, max_seq: Optional[int] = None) -> "Optional[_LlamaCppSentenceEncoder]":
+def _cuda_free_bytes() -> Optional[int]:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return int(torch.cuda.mem_get_info()[0])
+    except Exception:
+        pass
+    return None
+
+
+def _gguf_sibling_encoder(repo_id: str, *, max_seq: Optional[int] = None,
+                          device: Optional[str] = None) -> "Optional[_LlamaCppSentenceEncoder]":
     found = gguf_sibling_snapshot(repo_id)
     if found is None:
         return None
+    n_ctx = max_seq
+    if not n_ctx:
+        try:
+            from ..providers.hf_residency import gguf_file_geometry
+
+            n_ctx = (gguf_file_geometry(found[1]) or {}).get("context_length")
+        except Exception:
+            n_ctx = None
     try:
-        return _LlamaCppSentenceEncoder(found[0], found[1], n_ctx=int(max_seq or 8192))
+        return _LlamaCppSentenceEncoder(found[0], found[1], n_ctx=int(n_ctx or 8192), device=device)
+    except EmbeddingDeviceUnavailable:
+        raise  # the person's Device choice cannot be honoured: say so, never "not downloaded"
     except Exception as exc:
         logger.warning(f"The installed GGUF build {found[0]} of {repo_id} could not be loaded: {exc}")
         return None
@@ -468,6 +549,7 @@ class EmbeddingManager:
         trust_remote_code: bool = False,
         strict: Optional[bool] = None,
         provider_kwargs: Optional[Dict[str, Any]] = None,
+        device: Optional[str] = None,
     ):
         """Initialize the embedding manager.
 
@@ -485,7 +567,10 @@ class EmbeddingManager:
             strict: If true, raise on provider/model failures instead of returning zero vectors.
             provider_kwargs: Optional provider-constructor kwargs for server-backed providers
                 (for example ``api_key`` or ``base_url``).
+            device: where a LOCAL model runs: "gpu" (the default when there is room) or "cpu";
+                the embedding route's `options.device` when not given.
         """
+        self.device_preference = (str(device).strip().lower() or None) if device else None
         if strict is None:
             strict_raw = str(os.environ.get("ABSTRACTCORE_EMBEDDINGS_STRICT", "") or "").strip().lower()
             strict = strict_raw in {"1", "true", "yes", "on"}
@@ -700,6 +785,10 @@ class EmbeddingManager:
             route_provider = embedding_route.get("provider") if isinstance(embedding_route, dict) else None
             route_model = embedding_route.get("model") if isinstance(embedding_route, dict) else None
             route_base_url = embedding_route.get("base_url") if isinstance(embedding_route, dict) else None
+            route_options = embedding_route.get("options") if isinstance(embedding_route, dict) else None
+            if getattr(self, "device_preference", None) is None and isinstance(route_options, dict):
+                dev = str(route_options.get("device") or "").strip().lower()
+                self.device_preference = dev if dev in ("gpu", "cpu") else None
 
             # Apply defaults ONLY if not explicitly provided
             if provider is None:
@@ -776,8 +865,10 @@ class EmbeddingManager:
                 # The configured repo is not here; the GGUF build of the SAME model may be
                 # (Linux test server, 2026-10-29: Qwen/Qwen3-Embedding-0.6B absent,
                 # Qwen/Qwen3-Embedding-0.6B-GGUF installed). Serve it through llama.cpp.
+                cfg = getattr(self, "model_config", None)
                 encoder = _gguf_sibling_encoder(configured or self.model_id,
-                                                max_seq=getattr(self, "max_sequence_length", None))
+                                                max_seq=getattr(cfg, "max_sequence_length", None),
+                                                device=getattr(self, "device_preference", None))
                 if encoder is None:
                     raise
                 logger.info(
@@ -789,6 +880,9 @@ class EmbeddingManager:
                 self.model = encoder
                 return
 
+            # DEVICE: the user's choice (route option `device`); unset = the GPU when there is one.
+            if getattr(self, "device_preference", None) == "cpu":
+                load_kwargs = {**load_kwargs, "device": "cpu"}
             # Determine best backend
             backend = self._select_backend()
 
@@ -836,6 +930,7 @@ class EmbeddingManager:
                         **load_kwargs,
                     )
                     logger.info(f"Loaded {self.model_id} with PyTorch backend")
+            self._set_full_sequence_length()
 
         except ImportError:
             raise ImportError(
@@ -851,6 +946,22 @@ class EmbeddingManager:
         except Exception as e:
             logger.error(f"Failed to load embedding model {self.model_id}: {e}")
             raise
+
+    def _set_full_sequence_length(self) -> None:
+        """sentence-transformers truncates every text at `max_seq_length` silently (often 512,
+        model-defined). Use the model's full length (the catalog's `max_sequence_length` when
+        known, else what the model declares) and REFUSE longer texts (`_refuse_too_long`;
+        framework ADR 0026: nothing is ever cut)."""
+        model = getattr(self, "model", None)
+        if model is None or not hasattr(model, "max_seq_length"):
+            return
+        cfg = getattr(self, "model_config", None)
+        full = getattr(cfg, "max_sequence_length", None)
+        try:
+            if isinstance(full, int) and full > 0:
+                model.max_seq_length = int(full)
+        except Exception:
+            pass
 
     def _ensure_local_model(self) -> Any:
         """Reload the in-process model after `unload()`: the next embedding
@@ -1261,6 +1372,7 @@ class EmbeddingManager:
             if self.provider == "huggingface":
                 # HuggingFace: Use sentence-transformers model
                 with self._local_model_in_use() as model:
+                    _refuse_too_long(model, [text], self.model_id)
                     embedding = model.encode(
                         text,
                         show_progress_bar=False,
@@ -1312,6 +1424,8 @@ class EmbeddingManager:
             logger.debug(f"Generated embedding for text (length: {len(text)}, dims: {len(embedding)}, provider: {self.provider})")
             return embedding
 
+        except ContextWindowExceededError:
+            raise  # a text too long is refused, never a zero vector (ADR 0026)
         except Exception as e:
             logger.error(f"Failed to embed text with {self.provider}: {e}")
             if self.strict:
@@ -1356,6 +1470,7 @@ class EmbeddingManager:
                 if self.provider == "huggingface":
                     # HuggingFace: Use sentence-transformers batch encoding
                     with self._local_model_in_use() as model:
+                        _refuse_too_long(model, list(uncached_texts), self.model_id)
                         batch_embeddings = model.encode(
                             uncached_texts,
                             show_progress_bar=False,
@@ -1403,6 +1518,8 @@ class EmbeddingManager:
                     else:
                         raise ValueError(f"Invalid batch response from {self.provider} provider")
 
+            except ContextWindowExceededError:
+                raise  # a text too long is refused, never a zero vector (ADR 0026)
             except Exception as e:
                 logger.error(f"Failed to embed batch with {self.provider}: {e}")
                 if self.strict:
@@ -1933,6 +2050,13 @@ class EmbeddingManager:
             claim["model_path"] = str(getattr(model, "model_name_or_path", None) or "") or None
         except Exception:
             pass
+        # The GGUF lane measures what it took on the GPU (free memory before/after) and says
+        # why it is on the CPU when the default placement found no room.
+        if isinstance(getattr(model, "device_bytes", None), int):
+            claim["device_bytes"] = int(model.device_bytes)
+        if getattr(model, "device_note", None):
+            claim["device_note"] = str(model.device_note)
+        claim["device_preference"] = getattr(self, "device_preference", None) or "auto"
         return claim
 
     def unload(self, *, drain_timeout_s: float = 30.0) -> Dict[str, Any]:

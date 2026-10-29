@@ -1409,7 +1409,7 @@ def iter_capability_default_specs() -> Iterable[CapabilityDefaultSpec]:
         ("output", "scene3d", "3D Scene Output", "scene3d_generation", "abstract3d", {}),
         ("output", "scene3d.text_to_scene3d", "Text To 3D", "text_to_scene3d", "abstract3d", {}),
         ("output", "scene3d.image_to_scene3d", "Image To 3D", "image_to_scene3d", "abstract3d", {}),
-        ("embedding", "text", "Text Embeddings", "text_embedding", "abstractcore.embeddings", {}),
+        ("embedding", "text", "Text Embeddings", "text_embedding", "abstractcore.embeddings", {"device": "gpu"}),
         ("embedding", "image", "Image Embeddings", "image_embedding", "abstractcore.embeddings or abstractvision", {}),
         ("rerank", "text", "Text Rerank", "text_rerank", "future reranker manager", {}),
     ]
