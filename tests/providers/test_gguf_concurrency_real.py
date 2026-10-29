@@ -13,7 +13,23 @@ import time
 
 import pytest
 
-MODEL = os.environ.get("ABSTRACTCORE_GGUF_CONCURRENCY_MODEL", "unsloth/Qwen3.5-4B-GGUF")
+def _default_model() -> str:
+    """The cached Qwen3.5-4B Q4_K_M FILE in the account's real hub cache: the test conftest isolates
+    HOME and HF_HUB_CACHE, so a hub id cannot resolve inside a test (a path can)."""
+    import glob
+
+    try:
+        import pwd
+
+        home = pwd.getpwuid(os.getuid()).pw_dir
+    except Exception:  # noqa: BLE001 - Windows
+        home = os.path.expanduser("~")
+    hits = sorted(glob.glob(os.path.join(home, ".cache", "huggingface", "hub", "models--unsloth--Qwen3.5-4B-GGUF",
+                                         "snapshots", "*", "Qwen3.5-4B-Q4_K_M.gguf")))
+    return hits[0] if hits else "unsloth/Qwen3.5-4B-GGUF"
+
+
+MODEL = os.environ.get("ABSTRACTCORE_GGUF_CONCURRENCY_MODEL") or _default_model()
 
 pytestmark = pytest.mark.skipif(os.environ.get("ABSTRACTCORE_RUN_GGUF_TESTS") != "1",
                                 reason="GGUF tests are heavy; set ABSTRACTCORE_RUN_GGUF_TESTS=1 to run")
