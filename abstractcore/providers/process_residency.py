@@ -257,11 +257,11 @@ def eject_unclaimed(provider: str, model: str, *, task: Optional[str] = None, pa
 # used first, one at a time), and otherwise refuses with a typed error.
 # ---------------------------------------------------------------------------
 _GB = 1000 ** 3
-_LOAD_LOCK = _threading.Lock()
+_LOAD_LOCK = _threading.RLock()
 
 
-def load_lock() -> "_threading.Lock":
-    """One in-process model load at a time (ADR 0010): fit check + allocation."""
+def load_lock() -> "_threading.RLock":
+    """One in-process load at a time; initial loads may build nested context slots."""
     return _LOAD_LOCK
 
 
