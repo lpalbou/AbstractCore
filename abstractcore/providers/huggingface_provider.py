@@ -1203,6 +1203,19 @@ class HuggingFaceProvider(BaseProvider):
         # authoritative, and nothing else may override it.
         requested_model_type = self._coerce_requested_model_type(kwargs.pop("model_type", None))
 
+        # A context a PERSON set for this model (Models page; core ADR 0010) is a pin: loaded as
+        # is, refused with the sentence when it does not fit, never shrunk behind their back.
+        self._context_source = "explicit" if kwargs.get("max_tokens") is not None else None
+        if kwargs.get("max_tokens") is None:
+            try:
+                from ..config.model_contexts import configured_model_context
+
+                set_ctx = configured_model_context("huggingface", model, config_file=kwargs.get("_abstractcore_config_file"))
+            except Exception:
+                set_ctx = None
+            if set_ctx:
+                kwargs["max_tokens"] = int(set_ctx)
+                self._context_source = "configured"
         user_provided_max_tokens = "max_tokens" in kwargs and kwargs.get("max_tokens") is not None
 
         super().__init__(model, **kwargs)
@@ -7624,6 +7637,7 @@ class HuggingFaceProvider(BaseProvider):
             if requested_n_ctx_i <= 0:
                 requested_n_ctx_i = 16384
 
+            self._gguf_requested_context = int(requested_n_ctx_i)
             # THE FIT CHECK (core ADR 0010), before anything is allocated: the weights
             # and the KV of the smallest context this load accepts must fit the free
             # device memory, after evicting resident models that are not locked
@@ -11134,6 +11148,15 @@ class HuggingFaceProvider(BaseProvider):
                     hrow = _holder_row(self)
                     if isinstance(hrow.get("n_ctx"), int) and hrow["n_ctx"] > 0:
                         claim["context_length"] = int(hrow["n_ctx"])
+                        # The context is explicit (core ADR 0010): what the model advertises, and
+                        # why the loaded one differs ("memory": the fit rule / ladder chose it;
+                        # "configured": a person set it; "explicit": the caller passed max_tokens).
+                        advertised = getattr(self, "_gguf_requested_context", None)
+                        source = getattr(self, "_context_source", None)
+                        if isinstance(advertised, int) and source is None:
+                            claim["advertised_context_length"] = advertised
+                        claim["context_source"] = source or (
+                            "memory" if isinstance(advertised, int) and int(hrow["n_ctx"]) < advertised else "advertised")
                     if isinstance(hrow.get("kv_alloc_bytes"), int):
                         claim["kv_cache_bytes"] = int(hrow["kv_alloc_bytes"])
                         claim["kv_cache_estimated"] = True

@@ -50,6 +50,15 @@ process, every claim, and the estimate; Runtime and Gateway only declare locks a
    owner, unbuilt defaults claim nothing). The refusal names locks by owner label ("the runtime of
    account default/bob"), never by id (ADR 0043 of the framework).
 
+8. **The reserved context is explicit and the person's** (operator ruling 2026-10-29). The load-time fit rule and the
+   ADR 0008 allocation ladder choose how much context to RESERVE when nothing is set; that is not truncation of a
+   request. The chosen context is shown with the model's advertised one ("Context 65,536 (model advertises 262,144;
+   limited by memory)": claim fields `context_length`, `advertised_context_length`, `context_source`), and a person
+   can set it per model (`config.model_contexts.set_model_context`, the Models page): a set context is a pin, loaded
+   as is and refused with the readable sentence when it does not fit, never shrunk. A request longer than the loaded
+   context NEVER gets cut: it fails with `ContextWindowExceededError`. No per-route caps, no automatic shrinking of a
+   request (framework ADR 0026).
+
 ## Consequences
 
 - A load either fits (possibly after evicting idle unlocked models) or fails before allocating with a
