@@ -498,4 +498,7 @@ class FakeHfApi:
         self.calls.append(("list_models", search, filter))
         if self.fail_with is not None:
             raise self.fail_with
-        return [SimpleNamespace(id=r, downloads=1000) for r in self.search_results.get(f"{filter}:{search}", [])]
+        hits = self.search_results.get(f"{filter}:{search}", [])
+        if isinstance(limit, int):
+            hits = hits[:limit]  # the hub returns at most `limit` results
+        return [SimpleNamespace(id=r, downloads=1000) for r in hits]

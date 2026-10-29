@@ -16,7 +16,7 @@ Related pages: [Engines](engines.md) (installing Ollama, LM Studio, MLX, llama.c
 | Verb | CLI | HTTP | Python |
 |---|---|---|---|
 | Describe this machine | `abstractcore host profile --json` | `GET /acore/host/profile` | `abstractcore.utils.host_profile.host_profile()` |
-| Browse downloadable models | `abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json` | `GET /acore/models/catalog?q=&engine=&fits=&hub=&tag=` | `abstractcore.config.model_catalog.catalog(...)` |
+| Browse downloadable models | `abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json` | `GET /acore/models/catalog?q=&engine=&fits=&hub=&tag=&hub_page=&hub_page_size=` | `abstractcore.config.model_catalog.catalog(...)` |
 | Search | `abstractcore models search "<query>" [--engine X] [--fits] [--hub] --json` | same route with `q=` | `model_catalog.search(q, ...)` |
 | List installed models | `abstractcore models list [--provider X] --json` | `GET /acore/models/installed?provider=` | `model_materializer.list_installed(provider)` |
 | Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
@@ -237,6 +237,13 @@ The catalog works offline. With `--hub` (`hub=true`), AbstractCore asks the Hugg
 for exact file sizes and parameter counts of the Hugging Face-hosted artifacts and, when a
 query is given, appends up to 20 `hf_search` rows per lane (MLX repos on Apple silicon, GGUF
 repos everywhere; a GGUF search result gets the best available quant, Q4_K_M first).
+Results come a page at a time: `hub_page` (1-based) and `hub_page_size` (20 by default, at most
+100; 200 results deep per lane). `hub.search` reports `{query, page, page_size, rows, has_more,
+handle, handle_found}`: `rows` is how many `hf_search` rows the page added, and `has_more` says
+whether another page exists. A query that is an exact repo handle (`Qwen/Qwen3.5-9B`) looks that
+repo up and lists it first (`exact: true`; a Transformers checkpoint is fetched whole), then
+searches the name (`Qwen3.5-9B`) for its GGUF and MLX builds. The query splits on `/ : @ _ , -`
+like the rows, so `Qwen/Qwen3.5-9B` and `qwen3.5-9B` both find the curated `qwen3.5-9b` row.
 Answers are cached for 24 hours in `~/.abstractcore/config/cache/hf_hub_catalog.json`. A rate
 limit (HTTP 429) or an offline machine is reported in `hub.errors` and the offline answer is
 returned. Set `HF_TOKEN` for gated repos and higher rate limits.
