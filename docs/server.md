@@ -382,7 +382,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Email | POST | `/acore/email/oauth/start`, `/acore/email/oauth/finish` | OAuth2 sign-in (device code or browser on the server's machine), then connect; `finish` answers `{pending: true}` until the sign-in is approved and a flow is used once | JSON `address`, `provider`, optional `client_id` (empty = the built-in client when registered), `client_secret`, `flow`, `tenant`, `ca_file`; then `flow_id`, `wait_s` (at most 60) |
 | Email | POST | `/acore/email/oauth/cancel` | Drop a pending OAuth2 sign-in (closes its loopback listener) | JSON `flow_id` |
 | Models & engines | GET | `/acore/host/profile` | Host profile: accelerator, memory ceiling, free memory, disk per model store (see [Local Models](models.md)) | optional `refresh` |
-| Models & engines | GET | `/acore/models/catalog` | Downloadable model catalog with presence and fit verdicts | `q`, `engine`, `fits`, `hub`, `tag` |
+| Models & engines | GET | `/acore/models/catalog` | Downloadable model catalog with presence and fit verdicts | `q`, `engine`, `fits`, `hub`, `tag`, `hub_page`, `hub_page_size` |
 | Models & engines | GET | `/acore/models/installed` | Installed models per engine, with sizes and delete blockers | optional `provider` |
 | Models & engines | POST | `/acore/models/download` | Start (or join) a download job | `provider`, `artifact`, `dry_run`, optional `expected_bytes` |
 | Models & engines | POST | `/acore/models/delete` | Start a delete job; `409` with `delete_blockers` when refused | `provider`, `artifact`, `dry_run`, `force` |

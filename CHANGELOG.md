@@ -13,8 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mlx / mlx-gen / mlx-vlm artifacts are left out on a host whose engine registry says MLX cannot run (they were
   listed, not downloadable), and a row with only MLX builds (the Wan video rows) is not listed there.
 
+### Added
+
+- **Every quant of a model, on demand** (backlog 0865; operator QA batch item b, "All" quants).
+  `catalog(hub=True, extended=True)` and `?extended=true` list, per row, every quant its own GGUF repos ship (UD-IQ1_S
+  to Q8_0, BF16), each with its exact size and its fit, marked `extended: true` and never pre-selected. Labels the
+  download pattern cannot fetch exactly are left out. `gguf_quant_labels(facts)` is the enumeration.
+
 ### Fixed
 
+- **A GGUF this computer's llama.cpp cannot load says so before it is chosen** (backlog 0867, operator QA item f).
+  XHToken/Spark-X2.6-4B (architecture `spark2_5`) downloaded fine and failed only at its first call. An installed
+  GGUF's row now carries `architecture`, and, when this install's llama-cpp-python does not name that architecture,
+  `loadable: false` with `unloadable_reason`: "This computer's llama.cpp (llama-cpp-python 0.3.x) cannot load the
+  spark2_5 architecture. Update llama-cpp-python, or choose another model." The check reads llama.cpp's own table of
+  architecture names in `libllama`, without importing it (`llamacpp_knows_architecture`).
 - **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866, operator QA item c). The repos the
   catalog downloads hold only the quant file, with no config or card, so `models list` reported them as an unknown
   model with no task. The kind and tasks now come from the file's own `general.architecture`:
@@ -40,6 +53,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Defaults grid reads "installed: served by the installed GGUF build ...". Measured there: 1024 dimensions,
   similarity 0.775 for two cat sentences vs 0.262 against a revenue sentence. Only without any build the route reads
   "not downloaded" with Download.
+
+- **A host's installed engine is offered first in the download catalog** (backlog 0863). On a Linux server with
+  llama.cpp and neither LM Studio nor Ollama, the Qwen3.5 9B row listed and pre-selected the LM Studio build.
+  39 curated chat rows had no GGUF build. Each now has one: a Q4_K_M, read from the Hugging Face API on
+  2026-10-29, with its size and revision. A curated pick for an absent engine yields to an artifact an installed
+  engine serves. Every artifact carries `engine_installed`, and a row lists the pre-selection first, then
+  installed engines' artifacts.
+
+- **Hugging Face search pages, counts, and finds an exact handle** (backlog 0864).
+  - `catalog(..., hub_page=, hub_page_size=)` and the `/acore/models/catalog` route serve one page of results at a
+    time. `hub.search` reports the page, how many rows it added, and whether another page exists.
+  - Searching `Qwen/Qwen3.5-9B` now lists that repo first, then the GGUF builds of `Qwen3.5-9B`. Before, it
+    returned neither the repo nor the curated row.
+  - A hyphenated or slashed query (`qwen3.5-9B`) now finds the curated row. Before, the query was split only on
+    spaces.
+
 - **Structured output with a host's `cancel_event`** no longer fails on the HuggingFace GGUF lane with "got multiple
   values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
   under the provider's cancel kwarg.
@@ -50,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `StreamingResponse`), and `mcp` 2.3 requires `sse-starlette>=3`, so every environment holding both ended in a pip
   conflict. Checked with sse-starlette 3.6.0 (starlette 0.52.1, fastapi 0.136.1): the server app starts and
   `tests/server` passes as with 1.8.2; `uv pip compile` resolves abstractcore + sse-starlette 3.6.0 + mcp 2.3.0.
+### Fixed
+
+- **A GGUF context that fills up mid-request** (llama.cpp "failed to find a memory slot", `llama_decode returned 1`)
+  frees the engine's context memory and fails with a clear `ContextWindowExceededError` sentence, instead of an
+  "Error: llama_decode returned 1" answer and a memory left full for the next request (backlog 0862).
 ### Added
 
 - **Model residency failsafe (ADR 0010): a load never fills the card.** Before llama.cpp allocates (one full-offload

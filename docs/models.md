@@ -16,7 +16,7 @@ Related pages: [Engines](engines.md) (installing Ollama, LM Studio, MLX, llama.c
 | Verb | CLI | HTTP | Python |
 |---|---|---|---|
 | Describe this machine | `abstractcore host profile --json` | `GET /acore/host/profile` | `abstractcore.utils.host_profile.host_profile()` |
-| Browse downloadable models | `abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json` | `GET /acore/models/catalog?q=&engine=&fits=&hub=&tag=` | `abstractcore.config.model_catalog.catalog(...)` |
+| Browse downloadable models | `abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json` | `GET /acore/models/catalog?q=&engine=&fits=&hub=&tag=&hub_page=&hub_page_size=&extended=` | `abstractcore.config.model_catalog.catalog(...)` |
 | Search | `abstractcore models search "<query>" [--engine X] [--fits] [--hub] --json` | same route with `q=` | `model_catalog.search(q, ...)` |
 | List installed models | `abstractcore models list [--provider X] --json` | `GET /acore/models/installed?provider=` | `model_materializer.list_installed(provider)` |
 | Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
@@ -147,7 +147,11 @@ joined from AbstractCore's model capability registry, and one entry per artifact
   the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
   LM Studio, Ollama, Hugging Face. Elsewhere the curated starter wins when the host can run it,
   then the order is Ollama, LM Studio, Hugging Face. Both prefer artifacts that fit and engines
-  that are installed. LM Studio and Ollama builds stay listed and downloadable on a Mac;
+  that are installed, and a curated pick whose engine is absent yields to an artifact an installed
+  engine serves (a Linux server with only llama.cpp pre-selects the row's GGUF). LM Studio and
+  Ollama builds stay listed and downloadable on a Mac;
+- `engine_installed`: whether the engine that serves this artifact is installed. A row lists its
+  pre-selection first, then installed engines' artifacts, then the rest;
 - `starter` (per row): part of this machine's recommended fresh-install set. Exactly one text
   row is the starter: the row of the recommended text model.
 
@@ -237,6 +241,18 @@ The catalog works offline. With `--hub` (`hub=true`), AbstractCore asks the Hugg
 for exact file sizes and parameter counts of the Hugging Face-hosted artifacts and, when a
 query is given, appends up to 20 `hf_search` rows per lane (MLX repos on Apple silicon, GGUF
 repos everywhere; a GGUF search result gets the best available quant, Q4_K_M first).
+Results come a page at a time: `hub_page` (1-based) and `hub_page_size` (20 by default, at most
+100; 200 results deep per lane). `hub.search` reports `{query, page, page_size, rows, has_more,
+handle, handle_found}`: `rows` is how many `hf_search` rows the page added, and `has_more` says
+whether another page exists. A query that is an exact repo handle (`Qwen/Qwen3.5-9B`) looks that
+repo up and lists it first (`exact: true`; a Transformers checkpoint is fetched whole), then
+searches the name (`Qwen3.5-9B`) for its GGUF and MLX builds. The query splits on `/ : @ _ , -`
+like the rows, so `Qwen/Qwen3.5-9B` and `qwen3.5-9B` both find the curated `qwen3.5-9b` row.
+With `extended=true` as well, each row also lists every quant its own GGUF repos ship (UD-IQ1_S
+to Q8_0, BF16), each with its exact size from the hub's file list and its fit, marked
+`extended: true`. A label whose `*LABEL*.gguf` download pattern would also fetch other files is
+left out: `Q6_K` also matches `UD-Q6_K_XL`, and an MTP drafter's file rides its quant's name. An
+extended quant is never the pre-selection.
 Answers are cached for 24 hours in `~/.abstractcore/config/cache/hf_hub_catalog.json`. A rate
 limit (HTTP 429) or an offline machine is reported in `hub.errors` and the offline answer is
 returned. Set `HF_TOKEN` for gated repos and higher rate limits.
