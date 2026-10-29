@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import platform
 import struct
 from pathlib import Path
@@ -719,12 +720,21 @@ def _llama_library_bytes() -> Optional[bytes]:
     return data
 
 
+#: A GGUF `general.architecture` value: a short lowercase token ("qwen35", "gemma4", "lfm2",
+#: "spark2_5"). Anything else -- a model id ("unsloth/Qwen3.5-4B-GGUF"), a file name -- is not an
+#: architecture, and the gate must never refuse a model over it (merge desk, 2026-10-29: a model
+#: id passed here read as "No llama.cpp release supports the unsloth/Qwen3.5-4B-GGUF architecture").
+_GGUF_ARCH_TOKEN = re.compile(r"^[a-z0-9][a-z0-9_.\-]{0,63}$")
+
+
 def llamacpp_knows_architecture(arch: Optional[str]) -> Optional[bool]:
     """Whether this install's llama.cpp names the GGUF `general.architecture` ``arch`` (its
-    architecture table is a list of C strings in `libllama`). None when it cannot be told:
-    no llama-cpp-python, or no architecture."""
+    architecture table is a list of C strings in `libllama`, read from the INSTALLED library).
+    None when it cannot be told: no llama-cpp-python, no architecture, or a value that is not an
+    architecture token (a model id): only a real "the installed library does not name it" is
+    False."""
     name = str(arch or "").strip()
-    if not name:
+    if not name or not _GGUF_ARCH_TOKEN.match(name):
         return None
     data = _llama_library_bytes()
     if data is None:
