@@ -1,6 +1,6 @@
 # ADR 0011: One weights object per model, concurrent requests on it — a per-model slot scheduler in the process that holds the weights
 
-Status: Accepted (2026-10-29). Operator ruling, verbatim: "1) yes we MUST share a pool of resources;
+Status: Proposed (2026-10-29; Accepted once R1/R2 ship against it — lead ruling). Operator ruling, verbatim: "1) yes we MUST share a pool of resources;
 2) however, we must also allow concurrency. Make sure we are on track for that and we have the proper
 tests to confirm it."
 
