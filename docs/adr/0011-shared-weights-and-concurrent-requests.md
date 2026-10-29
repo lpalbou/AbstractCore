@@ -209,7 +209,7 @@ A request that is not running says so, in words, at every layer:
 
 | engine | this wave (R1, R2, R3 + the scheduler) | later item | what a person sees now |
 | --- | --- | --- | --- |
-| llama.cpp (GGUF) | one `LlamaModel` per weights key; a slot pool of contexts on it (lazy, fit-checked, same `n_ctx`); the per-instance worker becomes per-slot; the queue of §2.3 and the state of §2.4 | one context with `n_seq_max` sequences and `kv_unified` through the low-level batch API (continuous batching, one KV budget shared by the sequences, prefix sharing); Core backlog 0871 | N requests on one model run in parallel up to the slots that fit; past that, "queued behind N" and a clean 503 at the queue bound; one copy of the weights however many accounts and paths |
+| llama.cpp (GGUF) | one `LlamaModel` per weights key; a slot pool of contexts on it (lazy, fit-checked, same `n_ctx`); the per-instance worker becomes per-slot; the queue of §2.3 and the state of §2.4 | one context with `n_seq_max` sequences and `kv_unified` through the low-level batch API (continuous batching, one KV budget shared by the sequences, prefix sharing); Core backlog 0871 | N requests on one model are IN FLIGHT at once up to the slots that fit (no head-of-line blocking: a short answer returns while a long one decodes); past that, "queued behind N" and a clean 503 at the queue bound; one copy of the weights however many accounts and paths. Not more tokens per second: measured 2026-10-29 (Qwen3.5-4B Q4_K_M, Metal), 4 equal 96-token decodes take 3.29 s serial and 3.08 s concurrent (0.94×), because one decode already saturates the GPU and each context reads the weights for itself; a 0.10 s request finished while a 3.95 s one was decoding. Throughput is 0871's. |
 | MLX, mlx-lm lane | shared weights (already); the scheduler with one slot: concurrent requests queue, visibly, cancellable from the queue; two requests never touch the weights at once (the Metal crash class is removed by construction) | the lane rewritten on mlx-lm's `BatchGenerator` (continuous batching, per-uid prompt caches mapped onto the prompt-cache store), `max_concurrent` 4 by default; Core backlog 0871 | one request at a time, in order, with the position shown; no crash under concurrent load |
 | MLX, native lane | unchanged batching; its `stats()` and errors exposed through §2.4's surface | — | as today: concurrent requests batch; the queue is now visible in the UI |
 | transformers | shared weights through `hf_residency`; the scheduler with one slot (the MPS lock stays and is that slot) | transformers' continuous batching once it is stable; not a release gate | one at a time, queued state visible |
@@ -250,8 +250,12 @@ wall-clock is under 1.5 × a single request; with N = `max_concurrent` + 2 the t
 pool → `ModelQueueTimeoutError`; order of completion follows admission order. Real weights:
 `tests/providers/test_gguf_concurrency_real.py` (Qwen3.5-4B-GGUF, Metal and CUDA): N = 4 concurrent
 `generate` calls complete, one `LlamaModel` pointer, RSS after the run ≤ RSS after the first slot
-allocation + 3 × `slot_bytes_measured` + 256 MB, and wall-clock < 0.7 × the serial time (the prototype's
-0.39 s vs 0.48 s is the floor; the real figure goes in the release report). MLX mlx-lm lane
+allocation + 3 × `slot_bytes_measured` + 256 MB, wall-clock never worse than serial (< 1.1 × the serial
+time) and the head-of-line property (a short request submitted during a long decode finishes in
+< 0.5 × the long one's time). Measured 2026-10-29 on Metal (Qwen3.5-4B Q4_K_M): 3.14 GiB with one
+holder, 3.14 with two, 3.86 with four slots (0.72 GiB for three extra KVs), 0.94 × serial, the short
+request 0.10 s against 3.95 s. A throughput gain (< 0.7 × serial) is the acceptance of 0871, not of
+this wave: separate contexts interleave on a GPU that one decode already saturates. MLX mlx-lm lane
 (`test_mlx_lm_concurrency_real.py`, Qwen1.5-0.5B-4bit): N = 4 complete serially, no crash, every request
 after the first saw a `queued` event, wall-clock ≈ serial time. Native lane: the existing
 `tests/providers/test_mlx_runtime_*` already prove batching; they gain the §2.4 state assertions.
