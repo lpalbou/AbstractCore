@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An embedding default that is not downloaded says so, once, and can be downloaded from the console.** The
+  availability probe resolves an embedding route's catalog alias (`huggingface/qwen3-embedding`) to the repo the
+  embedding manager loads (`Qwen/Qwen3-Embedding-0.6B`), so the route reads "not downloaded" with a
+  `download_artifact` (it read "not checked": "'qwen3-embedding' is not an <org>/<repo> Hugging Face reference").
+  A not-cached model raises its "download it first" `ModelNotFoundError` without an ERROR log line (one per
+  account on every boot on the Linux test server); the caller says it.
+- **An embedding default whose repo is not downloaded runs on the installed GGUF build of the same model.** When
+  `Qwen/Qwen3-Embedding-0.6B` is absent and `Qwen/Qwen3-Embedding-0.6B-GGUF` is installed (the Linux test server),
+  the embedding manager loads the GGUF through llama.cpp (`embedding=True`, CPU, L2-normalized, the most faithful
+  quant first: f16, bf16, Q8_0, ...) under that repo's id (another build is another embedding space), and the
+  Defaults grid reads "installed: served by the installed GGUF build ...". Measured there: 1024 dimensions,
+  similarity 0.775 for two cat sentences vs 0.262 against a revenue sentence. Only without any build the route reads
+  "not downloaded" with Download.
+- **Structured output with a host's `cancel_event`** no longer fails on the HuggingFace GGUF lane with "got multiple
+  values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
+  under the provider's cancel kwarg.
+
 ### Added
 
 - **Model residency failsafe (ADR 0010): a load never fills the card.** Before llama.cpp allocates (one full-offload
