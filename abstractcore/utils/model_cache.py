@@ -594,6 +594,54 @@ def read_gguf_geometry(path: Path) -> Optional[dict]:
         return None
 
 
+#: Embedding architectures whose attention is bidirectional when the header carries no
+#: `<arch>.attention.causal` flag (llama.cpp's own non-causal encoders).
+_GGUF_NON_CAUSAL_ARCHS = frozenset({"bert", "nomic-bert", "nomic-bert-moe", "jina-bert-v2", "jina-bert-v3",
+                                    "neo-bert", "modern-bert", "t5encoder", "gemma-embedding"})
+
+
+def read_gguf_embedder_facts(path: Path) -> Optional[dict]:
+    """`{architecture, causal, vocab_size}` from a GGUF header (best-effort, a few KB to the token
+    list). `causal`: the `<arch>.attention.causal` flag, else False for llama.cpp's bidirectional
+    encoder architectures, else True (decoder-based embedders: Qwen3-Embedding, gte-Qwen...).
+    A causal embedder can process its input in micro-batches smaller than the input; a bidirectional
+    one cannot (llama.cpp needs the whole sequence in one micro-batch)."""
+    try:
+        out: dict = {}
+        causal_flag = None
+        with path.open("rb") as f:
+            if _read_exact(f, 4) != _GGUF_MAGIC:
+                return None
+            _ = _read_u32(f)
+            _ = _read_u64(f)
+            kv_count = _read_u64(f)
+            for _ in range(kv_count):
+                key = _read_gguf_string(f)
+                value_type = _read_u32(f)
+                if key == "general.architecture" and value_type == _GGUF_TYPE_STRING:
+                    out["architecture"] = _read_gguf_string(f).strip()
+                    continue
+                if key.endswith(".attention.causal") and value_type == _GGUF_TYPE_BOOL:
+                    causal_flag = bool(_read_exact(f, 1)[0])
+                    continue
+                if key == "tokenizer.ggml.tokens" and value_type == _GGUF_TYPE_ARRAY:
+                    elem_type = _read_u32(f)
+                    length = _read_u64(f)
+                    out["vocab_size"] = int(length)
+                    if elem_type == _GGUF_TYPE_STRING:
+                        for _ in range(length):
+                            _read_gguf_string(f)
+                    else:
+                        f.seek((_GGUF_FIXED_SIZES.get(elem_type) or 0) * length, os.SEEK_CUR)
+                    continue
+                _skip_gguf_value(f, value_type)
+        arch = str(out.get("architecture") or "").lower()
+        out["causal"] = causal_flag if causal_flag is not None else arch not in _GGUF_NON_CAUSAL_ARCHS
+        return out
+    except Exception:
+        return None
+
+
 def read_gguf_mtp_layers(path: Path) -> Optional[int]:
     """Read `<arch>.nextn_predict_layers` from a GGUF header, or None.
 
