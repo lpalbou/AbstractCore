@@ -231,7 +231,7 @@ def embedding_load(fake_llama, monkeypatch):
     pkg.Llama = Llama
     pkg.llama_supports_gpu_offload = lambda: False
     monkeypatch.setattr(em, "_SHARED_EMBEDDING_MODELS", weakref.WeakValueDictionary())
-    monkeypatch.setattr("abstractcore.utils.model_cache.read_gguf_embedder_facts", lambda path: {})
+    monkeypatch.setattr("abstractcore.utils.model_cache.read_gguf_embedder_facts", lambda path: {}, raising=False)
     managers = []
     def load(path):
         manager = em.EmbeddingManager.__new__(em.EmbeddingManager)

@@ -107,3 +107,105 @@ def test_transformers_pipeline_still_holding_weights_prevents_a_reload(load_mode
     with pytest.raises(InvalidRequestError, match="second copy is never loaded"):
         load(tmp_path)
     assert len(calls) == 1
+
+
+@pytest.fixture()
+def cross_backend_loaders(load_model, monkeypatch):
+    from abstractcore.embeddings import manager as em
+    from abstractcore.providers import mlx_native_session as native, mlx_provider as mp
+
+    hf_load, hf_calls = load_model
+    monkeypatch.setattr(em, "_SHARED_EMBEDDING_MODELS", weakref.WeakValueDictionary())
+    monkeypatch.setattr(native, "_SESSIONS", weakref.WeakValueDictionary())
+    monkeypatch.setattr(mp, "_SHARED_MLX_MODELS", weakref.WeakValueDictionary())
+    mlx_calls, embedding_calls = [], []
+    vlm = types.ModuleType("mlx_vlm")
+    def mlx_allocate(path):
+        mlx_calls.append(path)
+        return object(), object()
+    vlm.load = mlx_allocate
+    monkeypatch.setitem(sys.modules, "mlx_vlm", vlm)
+    drafters = types.ModuleType("mlx_vlm.speculative.drafters")
+    drafters.load_drafter = lambda path: (types.SimpleNamespace(), "mtp")
+    monkeypatch.setitem(sys.modules, "mlx_vlm.speculative.drafters", drafters)
+    monkeypatch.setattr(native, "resolve_native_drafter_path", lambda path: str(Path(path).resolve()))
+    monkeypatch.setattr("abstractcore.providers.weights_fingerprint.weights_fingerprint_for_dir", lambda path: "revision")
+    def plain(path):
+        provider = mp.MLXProvider.__new__(mp.MLXProvider)
+        provider.logger = logging.getLogger("test_cross_backend")
+        provider._prompt_cache_store = object()
+        provider._load_or_adopt_shared_model(str(path), lambda: mlx_allocate(path))
+        return provider
+    def embedding(path):
+        manager = em.EmbeddingManager.__new__(em.EmbeddingManager)
+        manager.model_id = str(path)
+        manager.backend = None
+        manager.device_preference = None
+        manager.trust_remote_code = False
+        manager.model = None
+        def allocate():
+            embedding_calls.append(path)
+            manager.model = types.SimpleNamespace(model_name_or_path=str(path))
+        manager._load_model_unshared = allocate
+        manager._load_model()
+        return manager
+    return {
+        "hf": hf_load, "embedding": embedding, "mlx": plain,
+        "native": lambda path: native.load_native_session(str(path)),
+        "nativehead": lambda path: native.load_native_session(
+            str(Path(path).parent / ("target-for-" + Path(path).resolve().name)), str(path)),
+    }, lambda: len(hf_calls) + len(mlx_calls) + len(embedding_calls)
+
+
+_CROSS_PAIRS = [("hf", "embedding"), ("mlx", "embedding"), ("native", "embedding"),
+                ("hf", "mlx"), ("hf", "native"), ("hf", "nativehead"), ("embedding", "nativehead")]
+
+
+@pytest.mark.parametrize("pair", _CROSS_PAIRS)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_cross_backend_same_snapshot_refuses_before_second_allocator(
+    cross_backend_loaders, tmp_path, pair, reverse
+):
+    loaders, allocated = cross_backend_loaders
+    path = tmp_path / "snapshot"
+    path.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(path, target_is_directory=True)
+    a, b = pair[::-1] if reverse else pair
+    held = loaders[a](path)
+    with pytest.raises(InvalidRequestError, match="second copy is never loaded"):
+        loaders[b](alias)
+    assert allocated() == 1
+    other = loaders[b](tmp_path / "different-revision")
+    assert other is not None and allocated() == 2
+    if a == "hf":
+        held.model_instance = None
+    elif a == "embedding":
+        held._release_shared_model()
+        held.model = None
+    else:
+        del held
+        import gc
+        gc.collect()
+    replacement = loaders[b](alias)
+    assert replacement is not None and allocated() == 3
+
+
+@pytest.mark.parametrize("pair", _CROSS_PAIRS)
+def test_cross_backend_concurrent_first_loads_allocate_once(cross_backend_loaders, tmp_path, pair):
+    loaders, allocated = cross_backend_loaders
+    gate = threading.Barrier(2)
+    results = []
+    def load(backend):
+        gate.wait()
+        try:
+            results.append(loaders[backend](tmp_path))
+        except InvalidRequestError as exc:
+            results.append(exc)
+    threads = [threading.Thread(target=load, args=(backend,)) for backend in pair]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(5)
+        assert not thread.is_alive()
+    assert allocated() == 1 and sum(isinstance(r, InvalidRequestError) for r in results) == 1

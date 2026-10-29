@@ -1074,6 +1074,9 @@ class EmbeddingManager:
 
     def _load_model_locked(self):
         key = self._shared_model_key()
+        from ..providers.process_residency import refuse_other_backend_artifact
+
+        refuse_other_backend_artifact(key[1], backend="embeddings")
         with _SHARED_EMBEDDING_LOCK:  # also serializes two first loads of one model
             entry = _SHARED_EMBEDDING_MODELS.get(key)
             if entry is None:

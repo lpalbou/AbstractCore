@@ -265,6 +265,58 @@ def load_lock() -> "_threading.Lock":
     return _LOAD_LOCK
 
 
+def refuse_other_backend_artifact(path: Any, *, backend: str) -> None:
+    """Under ``load_lock``, refuse a second engine for an already resident artifact.
+
+    Read existing registries only; do not import engines or maintain another ownership map.
+    Backends keep their own compatible-sharing and profile admission rules.
+    """
+    from pathlib import Path
+    from ..utils.model_cache import resolve_hf_load_snapshot
+
+    def identity(value: Any) -> str:
+        candidate = Path(str(value)).expanduser()
+        if candidate.exists():
+            return str(candidate.resolve())
+        snapshot = resolve_hf_load_snapshot(str(value))
+        return str(Path(snapshot).resolve()) if snapshot else str(value)
+
+    wanted = identity(path)
+    residents = []
+    hf = sys.modules.get("abstractcore.providers.hf_residency")
+    if backend != "huggingface" and hf is not None:
+        for provider in hf.registered_providers():
+            source = getattr(provider, "_transformers_source", None)
+            if source is not None and (
+                getattr(provider, "model_instance", None) is not None
+                or getattr(getattr(provider, "pipeline", None), "model", None) is not None
+            ):
+                residents.append(("huggingface", source.model))
+    embeddings = sys.modules.get(_EMBEDDINGS_MODULE)
+    if backend != "embeddings" and embeddings is not None:
+        with embeddings._SHARED_EMBEDDING_LOCK:
+            for entry in list(embeddings._SHARED_EMBEDDING_MODELS.values()):
+                if entry.model is not None:
+                    residents.append(("embeddings", getattr(entry.model, "model_name_or_path", None) or entry.model_id))
+    if backend != "mlx":
+        plain = sys.modules.get("abstractcore.providers.mlx_provider")
+        if plain is not None:
+            with plain._SHARED_MLX_MODELS_LOCK:
+                residents.extend(("mlx", key) for key in list(plain._SHARED_MLX_MODELS))
+        native = sys.modules.get("abstractcore.providers.mlx_native_session")
+        if native is not None:
+            with native._LOAD_LOCK:
+                residents.extend(("mlx", path) for key in list(native._SESSIONS) for path in key[:2] if path)
+    for owner, artifact in residents:
+        if identity(artifact) == wanted:
+            from ..exceptions import InvalidRequestError
+
+            raise InvalidRequestError(
+                f"Model artifact '{path}' is already loaded by {owner}. Unload it before "
+                f"selecting {backend}; a second copy is never loaded."
+            )
+
+
 def _release_torch_device_cache() -> None:
     """Freed torch tensors stay in its CUDA cache, which the free-memory probe
     counts as used: return them before measuring."""

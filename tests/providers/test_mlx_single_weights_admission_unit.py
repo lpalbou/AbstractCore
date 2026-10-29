@@ -138,3 +138,27 @@ def test_native_profile_refusal_does_not_fall_back_to_a_plain_load(loaders, monk
     with pytest.raises(InvalidRequestError, match="different drafter"):
         p._enter_mtp_lane(target, {"drafter": str(tmp_path / "head")})
     assert first.model is not None and len(calls) == 1
+
+
+@pytest.mark.parametrize("reuse_role", ["head", "target", "plain"])
+def test_native_drafter_cannot_be_loaded_again_in_another_role(loaders, tmp_path, reuse_role):
+    plain, calls, heads = loaders
+    target, head = tmp_path / "target", tmp_path / "head"
+    resident = native.load_native_session(str(target), str(head))
+    with pytest.raises(InvalidRequestError, match="second copy is never loaded"):
+        if reuse_role == "head":
+            native.load_native_session(str(tmp_path / "other-target"), str(head))
+        elif reuse_role == "target":
+            native.load_native_session(str(head))
+        else:
+            plain(head)
+    assert resident.model is not None and len(calls) == len(heads) == 1
+
+
+def test_plain_target_cannot_be_loaded_again_as_a_native_drafter(loaders, tmp_path):
+    plain, calls, heads = loaders
+    head = tmp_path / "head"
+    resident = plain(head)
+    with pytest.raises(InvalidRequestError, match="second copy is never loaded"):
+        native.load_native_session(str(tmp_path / "target"), str(head))
+    assert resident is not None and len(calls) == 1 and heads == []

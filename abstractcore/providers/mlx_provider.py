@@ -448,7 +448,7 @@ class MLXProvider(BaseProvider):
         store (its size bound, TTL and eviction hook) becomes the shared one.
         """
         from pathlib import Path
-        from . import mlx_native_session
+        from .process_residency import load_lock, refuse_other_backend_artifact
 
         if not getattr(self, "_share_loaded_model", True):
             raise InvalidRequestError(
@@ -456,8 +456,15 @@ class MLXProvider(BaseProvider):
                 "ABSTRACTCORE_MLX_SHARE_MODELS=0 would permit duplicate weights."
             )
         key = str(Path(key).resolve())
+        with load_lock():
+            refuse_other_backend_artifact(key, backend="mlx")
+            return self._load_or_adopt_shared_model_locked(key, loader)
+
+    def _load_or_adopt_shared_model_locked(self, key: str, loader: Any) -> Tuple[Any, Any]:
+        from . import mlx_native_session
+
         with mlx_native_session._LOAD_LOCK, _SHARED_MLX_MODELS_LOCK:
-            if any(k[0] == key for k in mlx_native_session._SESSIONS):
+            if any(key in k[:2] for k in mlx_native_session._SESSIONS):
                 raise InvalidRequestError(
                     f"MLX model '{key}' is already loaded through native mlx-vlm. "
                     "Unload it before selecting the mlx-lm configuration; a second copy is never loaded."

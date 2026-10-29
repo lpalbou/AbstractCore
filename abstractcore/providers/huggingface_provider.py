@@ -6873,6 +6873,9 @@ class HuggingFaceProvider(BaseProvider):
         plain "download it first" message when a local-only load has no cache."""
         source = _resolve_transformers_load_source(self.model, local_only=_hf_load_is_local_only())
         self._transformers_source = source
+        from .process_residency import refuse_other_backend_artifact
+
+        refuse_other_backend_artifact(source.model, backend="huggingface")
         from .hf_residency import registered_providers
 
         def artifact(value: str) -> str:
