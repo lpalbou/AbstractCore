@@ -312,11 +312,16 @@ def test_the_fits_filter_hides_video_where_it_cannot_run(tmp_path, monkeypatch):
     }
 
 
-@pytest.mark.parametrize("kind, starter", [("cuda24", False), ("metal16", False), ("metal64", True), ("metal128", True)])
+@pytest.mark.parametrize("kind, starter", [("metal16", False), ("metal64", True), ("metal128", True)])
 def test_the_video_starter_follows_the_host(tmp_path, monkeypatch, kind, starter):
     rows = _rows(tmp_path, monkeypatch, synthetic_host(kind), tags=["video"])
     assert rows["wan2.2-ti2v-5b"]["starter"] is starter
     assert rows["wan2.2-t2v-a14b"]["starter"] is rows["wan2.2-i2v-a14b"]["starter"] is False
+
+
+def test_the_mlx_only_video_rows_are_not_offered_off_apple_silicon(tmp_path, monkeypatch):
+    """Their only build runs on mlx (Apple silicon): off it, they are not listed at all."""
+    assert _rows(tmp_path, monkeypatch, synthetic_host("cuda24"), tags=["video"]) == {}
 
 
 # ---------------------------------------------------------------------------

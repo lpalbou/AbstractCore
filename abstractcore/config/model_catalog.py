@@ -1905,6 +1905,11 @@ def catalog(
                 a for a in row["artifacts"]
                 if a.get("supported_on_host") and (a.get("fit") or {}).get("verdict") in FITS_FILTER_VERDICTS
             ]
+    # MLX runs on Apple silicon only: on any other host its artifacts are never offered (operator
+    # 2026-10-29: "on Linux never offer MLX"), and a row left with none is not listed.
+    if support.get("mlx", {}).get("supported") is False:
+        for r in rows_out:
+            r["artifacts"] = [a for a in r["artifacts"] if _engine_for(a["provider"], a.get("quant")) != "mlx"]
     rows_out = [r for r in rows_out if r["artifacts"]]
 
     return {

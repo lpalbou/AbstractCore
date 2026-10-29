@@ -38,6 +38,7 @@ except ImportError:
 from .models import EmbeddingBackend, get_model_config, get_default_model, list_available_models, list_available_providers
 from ..utils.structured_logging import get_logger
 from ..utils.install_settings import local_engines_hint
+from ..exceptions import ModelNotFoundError
 
 logger = get_logger(__name__)
 
@@ -321,6 +322,104 @@ def embeddings_memory_report() -> Dict[str, Any]:
         "holders": int(sum(int(r.get("holders") or 0) for r in rows)),
         "resident_models": len(rows),
     }
+
+
+# GGUF builds of an embedding model, tried when its Hugging Face repo is not downloaded,
+# in this order of fidelity to the original weights.
+_GGUF_EMBEDDING_QUANT_ORDER = ("f16", "bf16", "q8_0", "q6_k", "q5_k_m", "q4_k_m")
+
+
+def gguf_sibling_snapshot(repo_id: str) -> "Optional[tuple]":
+    """(sibling repo id, chosen .gguf file) of the installed GGUF build of `repo_id`
+    (`<repo>-GGUF`), or None. Cache-only: never downloads. None too when
+    llama-cpp-python is not installed (nothing could serve it)."""
+    try:
+        import importlib.util
+
+        if importlib.util.find_spec("llama_cpp") is None:
+            return None
+        from ..utils.model_cache import resolve_hf_load_snapshot
+
+        repo = str(repo_id or "").strip()
+        if "/" not in repo or repo.lower().endswith("-gguf"):
+            return None
+        sibling = f"{repo}-GGUF"
+        snap = resolve_hf_load_snapshot(sibling)
+        if snap is None:
+            return None
+        files = [p for p in Path(snap).rglob("*.gguf") if "mmproj" not in p.name.lower()]
+        if not files:
+            return None
+
+        def rank(p: Path) -> tuple:
+            name = p.name.lower()
+            for i, q in enumerate(_GGUF_EMBEDDING_QUANT_ORDER):
+                if q in name:
+                    return (i, name)
+            return (len(_GGUF_EMBEDDING_QUANT_ORDER), name)
+
+        return sibling, sorted(files, key=rank)[0]
+    except Exception:
+        return None
+
+
+class _LlamaCppSentenceEncoder:
+    """The slice of `SentenceTransformer` this manager uses (`encode`,
+    `get_sentence_embedding_dimension`, `device`), over a llama.cpp embedding
+    model (pooling from the GGUF; vectors L2-normalized like the original's
+    Normalize module)."""
+
+    def __init__(self, repo_id: str, path: Path, *, n_ctx: int = 8192):
+        import llama_cpp  # noqa: F401 - the GGUF lane needs llama-cpp-python
+
+        self.repo_id = repo_id
+        self.file_name = path.name
+        self.model_name_or_path = str(path)
+        self.device = "cpu"
+        # n_batch / n_ubatch = n_ctx: llama-cpp-python's embed() cuts every text to
+        # n_batch tokens (512 by default), silently. Pooling comes from the file.
+        self._llm = llama_cpp.Llama(model_path=str(path), embedding=True, n_ctx=int(n_ctx),
+                                    n_batch=int(n_ctx), n_ubatch=int(n_ctx),
+                                    n_gpu_layers=0, verbose=False)
+        self._lock = threading.Lock()  # one llama.cpp context: one encode at a time
+        self._dim: Optional[int] = None
+
+    def encode(self, texts: Any, show_progress_bar: bool = False, convert_to_numpy: bool = True, **_: Any) -> Any:
+        import numpy as np
+
+        single = isinstance(texts, str)
+        batch = [texts] if single else list(texts)
+        with self._lock:
+            vectors = [self._llm.embed(t, normalize=True) for t in batch]
+        for v in vectors:
+            if v and isinstance(v[0], (list, tuple)):
+                # Pooling NONE in the file: one vector per token, not a sentence embedding.
+                raise RuntimeError(f"{self.repo_id} ({self.file_name}) pools nothing (one vector per token); "
+                                   "it cannot serve sentence embeddings")
+        arr = np.asarray(vectors, dtype=np.float32)
+        return arr[0] if single else arr
+
+    def get_sentence_embedding_dimension(self) -> int:
+        if self._dim is None:
+            self._dim = int(len(self.encode("dimension probe")))
+        return self._dim
+
+    def close(self) -> None:
+        try:
+            self._llm.close()
+        except Exception:
+            pass
+
+
+def _gguf_sibling_encoder(repo_id: str, *, max_seq: Optional[int] = None) -> "Optional[_LlamaCppSentenceEncoder]":
+    found = gguf_sibling_snapshot(repo_id)
+    if found is None:
+        return None
+    try:
+        return _LlamaCppSentenceEncoder(found[0], found[1], n_ctx=int(max_seq or 8192))
+    except Exception as exc:
+        logger.warning(f"The installed GGUF build {found[0]} of {repo_id} could not be loaded: {exc}")
+        return None
 
 
 class EmbeddingManager:
@@ -652,7 +751,31 @@ class EmbeddingManager:
             # fail with a plain "download it first". This load used to stay
             # offline only when the HF provider had already written
             # HF_HUB_OFFLINE=1 into the process; that write is gone.
-            source, load_kwargs = self._sentence_transformers_source()
+            configured = getattr(self, "_gguf_sibling_of", None)
+            if configured:
+                # A reload after unload(): the original model if it was downloaded since,
+                # else the same GGUF build again.
+                self.model_id = configured
+            try:
+                source, load_kwargs = self._sentence_transformers_source()
+                if configured:
+                    self._gguf_sibling_of = None
+            except ModelNotFoundError:
+                # The configured repo is not here; the GGUF build of the SAME model may be
+                # (Linux test server, 2026-10-29: Qwen/Qwen3-Embedding-0.6B absent,
+                # Qwen/Qwen3-Embedding-0.6B-GGUF installed). Serve it through llama.cpp.
+                encoder = _gguf_sibling_encoder(configured or self.model_id,
+                                                max_seq=getattr(self, "max_sequence_length", None))
+                if encoder is None:
+                    raise
+                logger.info(
+                    f"Embedding model {self.model_id} is not downloaded; using the installed GGUF build "
+                    f"{encoder.repo_id} ({encoder.file_name}) of the same model"
+                )
+                self._gguf_sibling_of = configured or self.model_id
+                self.model_id = encoder.repo_id  # vectors of another build are another embedding space
+                self.model = encoder
+                return
 
             # Determine best backend
             backend = self._select_backend()
@@ -707,6 +830,12 @@ class EmbeddingManager:
                 "sentence-transformers is required for embedding functionality. "
                 f"{local_engines_hint('Local embeddings')}"
             )
+        except ModelNotFoundError:
+            # Not downloaded is a state, not a crash (Linux test server, 2026-10-29: an
+            # ERROR line per account on every boot for an embedding default nobody had
+            # fetched). The raised message already names the model and the download
+            # command; the caller decides how loudly to say it, once.
+            raise
         except Exception as e:
             logger.error(f"Failed to load embedding model {self.model_id}: {e}")
             raise
@@ -1851,6 +1980,8 @@ class EmbeddingManager:
                 weights_ref = weakref.ref(self.model) if self.model is not None else None
             except TypeError:
                 weights_ref = None
+            if isinstance(self.model, _LlamaCppSentenceEncoder):
+                self.model.close()  # llama.cpp frees its buffers only on close
             self.model = None
         try:
             self.embed.cache_clear()
