@@ -1212,6 +1212,7 @@ class AnthropicProvider(BaseProvider):
         Returns:
             List of model names, optionally filtered by capabilities
         """
+        raise_on_error = bool(kwargs.get("raise_on_error", False))
         try:
             import httpx
             from .model_capabilities import filter_models_by_capabilities
@@ -1262,8 +1263,35 @@ class AnthropicProvider(BaseProvider):
                 return models
             else:
                 self.logger.warning(f"Anthropic API returned status {response.status_code}")
+                if raise_on_error:
+                    # A key check (`raise_on_error=True`, the gateway's "Check the key") must say
+                    # WHY no model is listed: Anthropic answers a bad key with 401 and
+                    # {"error": {"type": "authentication_error", "message": "invalid x-api-key"}}.
+                    _raise_anthropic_listing_error(response)
                 return []
 
         except Exception as e:
+            if raise_on_error:
+                raise
             self.logger.debug(f"Failed to fetch Anthropic models from API: {e}")
             return []
+
+
+def _raise_anthropic_listing_error(response: Any) -> None:
+    """Raise the provider's own reason for a failed GET /v1/models (key checks).
+
+    401/403 -> AuthenticationError, anything else -> ProviderAPIError; the message is
+    Anthropic's `error.message` (it never contains the key)."""
+    status = int(getattr(response, "status_code", 0) or 0)
+    detail = ""
+    try:
+        body = response.json()
+        err = body.get("error") if isinstance(body, dict) else None
+        if isinstance(err, dict) and isinstance(err.get("message"), str):
+            detail = err["message"].strip()
+    except Exception:
+        detail = ""
+    msg = f"Anthropic API error ({status})" + (f": {detail}" if detail else "")
+    if status in (401, 403):
+        raise AuthenticationError(msg, status_code=status)
+    raise ProviderAPIError(msg, status_code=status)

@@ -10,7 +10,7 @@ This provider subclasses `OpenAICompatibleProvider` and adds:
 import base64
 import os
 import warnings
-from typing import Any, Optional, Dict, Tuple
+from typing import Any, Optional, Dict, List, Tuple
 
 from .base import THINKING_EFFECTIVE_EFFORT_KWARG, ThinkingControlHandling
 from .openai_compatible_provider import OpenAICompatibleProvider
@@ -54,6 +54,45 @@ class OpenRouterProvider(OpenAICompatibleProvider):
         if not key:
             return False
         return key.upper() != "EMPTY"
+
+    def list_available_models(self, **kwargs) -> List[str]:
+        """List OpenRouter's models, for THIS key.
+
+        OpenRouter's GET /models is public: it answers 200 with the whole catalogue for any
+        Authorization header, a wrong key included (checked 2026-10-29). Listing models alone
+        therefore proves nothing about a key, and a key check built on it ("Key works ·
+        N models") said yes to a typo. GET /key is authenticated (401 "User not found." for a
+        wrong key), so it is asked first: 401/403 lists nothing (`raise_on_error=True` raises
+        AuthenticationError with OpenRouter's reason). Any other answer (a proxy `base_url`
+        without /key, say) falls through to the listing, as before.
+        """
+        base_url = str(kwargs.get("base_url") or self.base_url or "").rstrip("/")
+        if self._api_key_refused(base_url, raise_on_error=bool(kwargs.get("raise_on_error", False))):
+            return []
+        return super().list_available_models(**kwargs)
+
+    def _api_key_refused(self, base_url: str, *, raise_on_error: bool) -> bool:
+        """True when OpenRouter's authenticated GET /key refuses this key (401/403).
+
+        With `raise_on_error`, a refusal raises AuthenticationError with OpenRouter's reason
+        and a transport failure is re-raised. No key, no base URL, or any other status: False
+        (the listing decides)."""
+        if not base_url or not self._has_api_key():
+            return False
+        try:
+            response = self.client.get(f"{base_url}/key", headers=self._get_headers(), timeout=5.0)
+        except Exception as e:
+            if raise_on_error:
+                raise
+            self.logger.warning(f"OpenRouter key check failed: {e}")
+            return True
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int) and status in (401, 403):
+            if raise_on_error:
+                self._raise_for_status(response, request_url=f"{base_url}/key")
+            self.logger.warning(f"OpenRouter refused the API key ({status})")
+            return True
+        return False
 
     def _get_api_key_from_config(self) -> Optional[str]:
         try:
