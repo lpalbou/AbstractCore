@@ -1528,10 +1528,12 @@ def _build_artifact(
     # checked against libllama, utils.model_cache) would download and then fail at its first call:
     # it is not offered for download and says why (backlog 0868; the installed row says so too, 0867).
     unloadable_reason: Optional[str] = None
+    llamacpp_update: Optional[Dict[str, Any]] = None
     if engine == "llamacpp" and gguf_architecture:
-        from ..utils.model_cache import gguf_unloadable_reason
+        from ..utils.model_cache import gguf_unloadable_reason, llamacpp_update_for
 
         unloadable_reason = gguf_unloadable_reason(gguf_architecture)
+        llamacpp_update = llamacpp_update_for(gguf_architecture) if unloadable_reason else None
     if unloadable_reason:
         downloadable = False
         fit["notes"] = list(fit.get("notes") or []) + [unloadable_reason]
@@ -1571,6 +1573,9 @@ def _build_artifact(
         "companions": companions,
         "companion_bytes": companion_bytes,
         "note": art.get("note"),
+        # `{architecture, installed, update_to}` when a newer llama-cpp-python loads this GGUF
+        # (the console's "Update llama.cpp"), else None.
+        "llamacpp_update": llamacpp_update,
         "options": json.loads(json.dumps(art.get("options") or {})),
         "download_bytes": size if isinstance(size, int) else None,
         "size_source": size_source,
