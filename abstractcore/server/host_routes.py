@@ -174,11 +174,15 @@ async def acore_models_catalog(
     fits: bool = Query(False),
     hub: bool = Query(False, description="Enrich from the Hugging Face API (cached 24 h)"),
     tag: Optional[List[str]] = Query(None),
+    hub_page: int = Query(1, ge=1, description="Page of Hugging Face search results (with hub and q)"),
+    hub_page_size: int = Query(20, ge=1, le=100, description="Hugging Face search results per lane and page"),
     extended: bool = Query(False, description="With hub: every quant the rows' own GGUF repos ship (exact sizes, fit)"),
 ) -> Dict[str, Any]:
     from ..config.model_catalog import catalog
 
-    return await run_in_threadpool(lambda: catalog(q, engine=engine, fits=fits, hub=hub, tags=tag, extended=extended))
+    return await run_in_threadpool(
+        lambda: catalog(q, engine=engine, fits=fits, hub=hub, tags=tag, hub_page=hub_page, hub_page_size=hub_page_size, extended=extended)
+    )
 
 
 @router.get("/acore/models/installed", summary="Installed models per engine, with sizes (contract D)")

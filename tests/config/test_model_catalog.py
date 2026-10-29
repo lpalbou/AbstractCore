@@ -174,7 +174,8 @@ def test_the_starter_text_model_is_preselected_on_apple_silicon(host):
     assert lms["recommended"] is False and lms["supported_on_host"] is True
 
 
-def test_the_portable_starter_is_preselected_off_apple_silicon(host):
+def test_the_portable_starter_is_preselected_off_apple_silicon(host, monkeypatch):
+    _no_local_engines(monkeypatch)  # with no engine installed the curated LM Studio build leads
     row = next(r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"] if r["id"] == "qwen3.5-9b")
     assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["qwen/qwen3.5-9b@q4_k_m"]
     assert row["starter"] is True
@@ -196,6 +197,56 @@ def _no_local_engines(monkeypatch):
         return out
 
     monkeypatch.setattr(engines, "engine_inventory", inventory)
+
+
+def _only_engines(monkeypatch, *installed):
+    from abstractcore.config import engines
+
+    real = engines.engine_inventory
+
+    def inventory(*args, **kwargs):
+        out = real(*args, **kwargs)
+        for e in out["engines"]:
+            e["installed"] = e["id"] in installed
+        return out
+
+    monkeypatch.setattr(engines, "engine_inventory", inventory)
+
+
+def test_a_host_with_only_llamacpp_is_offered_the_gguf_first(host, monkeypatch):
+    """Backlog 0863 (the OVH server): llama.cpp Ready, LM Studio and Ollama absent. The row's
+    pre-selection and first artifact is the HF GGUF llama.cpp serves, not the curated LM Studio
+    build; the absent engines' builds stay listed after it."""
+    _only_engines(monkeypatch, "llamacpp")
+    rows = {r["id"]: r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"]}
+    arts = rows["qwen3.5-9b"]["artifacts"]
+    first = arts[0]
+    assert (first["provider"], first["artifact"], first["engine"]) == (
+        "huggingface", "unsloth/Qwen3.5-9B-GGUF:Q4_K_M", "llamacpp"
+    )
+    assert first["recommended"] is True and first["engine_installed"] is True
+    assert [a["provider"] for a in arts if a["recommended"]] == ["huggingface"]
+    assert {"lmstudio", "ollama"} <= {a["provider"] for a in arts[1:]}
+    assert not any(a["engine_installed"] for a in arts if a["provider"] in ("lmstudio", "ollama"))
+    # Installed-engine artifacts are listed before any artifact of an absent engine, on every row.
+    for row in rows.values():
+        flags = [a["engine_installed"] for a in row["artifacts"] if not a["recommended"]]
+        assert flags == sorted(flags, reverse=True), row["id"]
+
+
+def test_every_curated_text_row_has_a_build_llamacpp_serves():
+    """Backlog 0863: no curated chat row offers only engines a llama.cpp-only host lacks.
+    (Qwen3.8 Flash-Next: the hub has no plain GGUF quant, only its MTP drafter files.)"""
+    missing = []
+    for r in mc.load_seed()["rows"]:
+        if "chat" not in (r.get("tags") or []) and "coding" not in (r.get("tags") or []):
+            continue
+        provs = {a["provider"] for a in r["artifacts"]}
+        if not provs & {"lmstudio", "ollama", "mlx"}:
+            continue
+        if not any(mc._engine_for(a["provider"], a.get("quant")) == "llamacpp" for a in r["artifacts"]):
+            missing.append(r["id"])
+    assert missing == ["qwen3.8-flash-next"]
 
 
 def test_mlx_is_never_offered_off_apple_silicon(host, monkeypatch):
@@ -347,6 +398,61 @@ def test_a_hub_gguf_this_llamacpp_cannot_load_is_flagged_before_download(host, t
     again = mc.catalog("4b", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
     spark2 = next(r["artifacts"][0] for r in again["rows"] if r["id"] == "hf:xhtoken/spark-x2.6-4b-gguf")
     assert spark2["loadable"] is None and spark2["downloadable"] is True
+
+
+def test_hub_search_pages_and_says_how_many_and_whether_more(host, tmp_path):
+    """Backlog 0864: Hugging Face results come a page at a time, and `hub.search` says how many
+    rows the page added and whether another page exists."""
+    repos = {f"someone/Model{i:02d}-GGUF": {"files": {f"Model{i:02d}-Q4_K_M.gguf": 1_000_000_000}} for i in range(45)}
+    api = FakeHfApi(repos=repos, search={"gguf:model": sorted(repos)})
+    kw = dict(hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    pages = []
+    for page in (1, 2, 3):
+        payload = mc.catalog("model", hub_page=page, **kw)
+        ids = [r["id"] for r in payload["rows"] if r["source"] == "hf_search"]
+        pages.append(ids)
+        search = payload["hub"]["search"]
+        assert search["page"] == page and search["page_size"] == 20 and search["rows"] == len(ids)
+        assert search["has_more"] is (page < 3)
+    assert [len(p) for p in pages] == [20, 20, 5]
+    assert len(set(pages[0]) | set(pages[1]) | set(pages[2])) == 45  # no repeats across pages
+    assert pages[1][0] == "hf:someone/model20-gguf"
+
+
+def test_an_exact_handle_finds_the_repo_and_its_builds(host, tmp_path):
+    """Backlog 0864: `someone/Cool-7B` lists that repo first (a Transformers checkpoint, fetched
+    whole) and the GGUF builds the hub has for its name, `Cool-7B`."""
+    api = FakeHfApi(
+        repos={
+            "someone/Cool-7B": {"files": {"model-00001-of-00002.safetensors": 8_000_000_000, "config.json": 1_000}},
+            "other/Cool-7B-GGUF": {"files": {"Cool-7B-Q4_K_M.gguf": 4_000_000_000}},
+        },
+        search={"gguf:Cool-7B": ["other/Cool-7B-GGUF"]},
+    )
+    payload = mc.catalog("someone/Cool-7B", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    hf_rows = [r for r in payload["rows"] if r["source"] == "hf_search"]
+    assert [r["id"] for r in hf_rows] == ["hf:someone/cool-7b", "hf:other/cool-7b-gguf"]
+    exact = hf_rows[0]
+    assert exact["exact"] is True and hf_rows[1]["exact"] is False
+    assert (exact["artifacts"][0]["provider"], exact["artifacts"][0]["artifact"]) == ("huggingface", "someone/Cool-7B")
+    assert exact["artifacts"][0]["engine"] == "huggingface"
+    assert payload["hub"]["search"]["handle"] == "someone/Cool-7B" and payload["hub"]["search"]["handle_found"] is True
+    assert ("list_models", "Cool-7B", "gguf") in api.calls  # the name, not the handle
+
+
+def test_a_handle_that_does_not_exist_still_searches_its_name(host, tmp_path):
+    api = FakeHfApi(repos={"other/Cool-7B-GGUF": {"files": {"Cool-7B-Q4_K_M.gguf": 4_000_000_000}}},
+                    search={"gguf:Cool-7B": ["other/Cool-7B-GGUF"]})
+    payload = mc.catalog("nobody/Cool-7B", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    assert [r["id"] for r in payload["rows"] if r["source"] == "hf_search"] == ["hf:other/cool-7b-gguf"]
+    assert payload["hub"]["search"]["handle_found"] is False
+
+
+def test_a_handle_or_hyphenated_name_finds_the_curated_row(host):
+    """Backlog 0864: the query splits like the row, so "Qwen/Qwen3.5-9B" and "qwen3.5-9B" find
+    qwen3.5-9b (the console's Hugging Face mode asks the catalog with the typed text)."""
+    for q in ("Qwen/Qwen3.5-9B", "qwen3.5-9B", "qwen3.5 9b"):
+        assert "qwen3.5-9b" in [r["id"] for r in mc.catalog(q, host=synthetic_host("cuda24"))["rows"]], q
 
 
 def test_extended_lists_every_quant_of_the_rows_own_gguf_repos(host, tmp_path):

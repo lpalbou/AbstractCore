@@ -56,6 +56,10 @@ FITS_FILTER_VERDICTS = ("fits", "tight", "needs_gpu_limit")
 SEED_SCHEMA = "model_downloads_catalog_v1"
 _HUB_TTL_S = 24 * 3600
 _HUB_SEARCH_LIMIT = 20
+# One page of Hugging Face search results per lane, at most this many pages deep.
+_HUB_SEARCH_MAX_RESULTS = 200
+# `org/name`: an exact Hugging Face repo handle (`Qwen/Qwen3.5-9B`).
+_HUB_HANDLE_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
 _SEED_PROVIDERS = ("ollama", "lmstudio", "mlx", "huggingface", "mlx-gen", "mlx-vlm", "diffusers", "supertonic")
 _EXACT_SIZE_SOURCES = ("catalog", "hf_api", "engine")
 _HF_REPO_PROVIDERS = ("mlx", "huggingface", "mlx-gen", "mlx-vlm", "diffusers")
@@ -1286,21 +1290,39 @@ def _size_for(facts: Mapping[str, Any], patterns: Optional[List[str]]) -> Option
     return total if counted else None
 
 
-def _hub_search(api: Any, cache: _HubCache, query: str, engine: Optional[str], accelerator: str) -> List[Dict[str, Any]]:
-    """Free-text hub search -> `[{repo_id, provider, downloads}]` (cached)."""
+def _hub_search(
+    api: Any,
+    cache: _HubCache,
+    query: str,
+    engine: Optional[str],
+    accelerator: str,
+    *,
+    page: int = 1,
+    page_size: int = _HUB_SEARCH_LIMIT,
+) -> Tuple[List[Dict[str, Any]], bool]:
+    """Free-text hub search, one page -> (`[{repo_id, provider, downloads}]`, more pages exist).
 
+    Each lane (GGUF; MLX on Apple silicon) is asked for the results up to the end of `page`
+    plus one, most downloaded first, and cached per depth; the page is that slice. A handle
+    (`Qwen/Qwen3.5-9B`) searches its name (`Qwen3.5-9B`): the GGUF and MLX builds of a model
+    live under other organisations (`catalog` looks the handle itself up)."""
+
+    term = query.split("/", 1)[1] if _HUB_HANDLE_RE.match(query) else query
+    start = (page - 1) * page_size
+    want = min(_HUB_SEARCH_MAX_RESULTS, start + page_size + 1)
     lanes: List[Tuple[str, str]] = []
     if engine in (None, "", "mlx") and (accelerator == "metal" or engine == "mlx"):
         lanes.append(("mlx", "mlx"))
     if engine in (None, "", "huggingface", "llamacpp"):
         lanes.append(("gguf", "huggingface"))
     out: List[Dict[str, Any]] = []
+    more = False
     for tag, provider in lanes:
-        key = f"{tag}:{query.lower()}"
+        key = f"{tag}:{term.lower()}" + ("" if want == _HUB_SEARCH_LIMIT + 1 else f"#{want}")
         hit = cache.get("searches", key)
         if hit is None:
             try:
-                results = api.list_models(search=query, filter=tag, sort="downloads", limit=_HUB_SEARCH_LIMIT)
+                results = api.list_models(search=term, filter=tag, sort="downloads", limit=want)
                 rows = [
                     {"repo_id": str(getattr(m, "id", None) or getattr(m, "modelId", "")), "downloads": getattr(m, "downloads", None)}
                     for m in results
@@ -1311,10 +1333,28 @@ def _hub_search(api: Any, cache: _HubCache, query: str, engine: Optional[str], a
                 raise LookupError(str(exc)) from exc
             cache.put("searches", key, {"results": rows})
             hit = {"results": rows}
-        for r in hit.get("results") or []:
-            if r.get("repo_id"):
-                out.append({"repo_id": r["repo_id"], "provider": provider, "downloads": r.get("downloads")})
-    return out
+        rows = [r for r in hit.get("results") or [] if r.get("repo_id")]
+        more = more or (len(rows) > start + page_size and start + page_size < _HUB_SEARCH_MAX_RESULTS)
+        for r in rows[start : start + page_size]:
+            out.append({"repo_id": r["repo_id"], "provider": provider, "downloads": r.get("downloads")})
+    return out, more
+
+
+def _hub_handle_hit(facts: Mapping[str, Any], repo_id: str) -> Optional[Dict[str, Any]]:
+    """The exact repo a handle names, as a search hit: a GGUF repo (llama.cpp), an MLX build,
+    or a Transformers checkpoint (safetensors). None for anything else (a dataset-like repo, an
+    adapter with no weights)."""
+
+    names = [str(n).lower() for n, _s in facts.get("siblings") or []]
+    if any(n.endswith(".gguf") for n in names):
+        provider = "huggingface"
+    elif not any(n.endswith((".safetensors", ".bin")) for n in names):
+        return None
+    elif repo_id.lower().startswith("mlx-community/") or re.search(r"(^|[-_])mlx([-_]|$)", repo_id.rsplit("/", 1)[-1], re.IGNORECASE):
+        provider = "mlx"
+    else:
+        provider = "huggingface"
+    return {"repo_id": repo_id, "provider": provider, "downloads": None, "exact": True}
 
 
 # ---------------------------------------------------------------------------
@@ -1674,6 +1714,12 @@ def _pick_recommended(
         if not forced:
             raise LookupError(f"tier artifact {tier_artifact} missing from catalog row {row.get('id')!r}")
         curated = forced
+    elif curated and not installed_engines.get(str(curated[0].get("engine"))) and any(
+        installed_engines.get(str(a.get("engine"))) for a in arts if a.get("supported_on_host") and a.get("downloadable")
+    ):
+        # A curated pick for an engine that is NOT installed never beats an artifact an installed
+        # engine serves (a Linux server with llama.cpp: the HF GGUF, not the LM Studio build).
+        curated = []
     for a in arts:
         a["recommended"] = False
     if curated:
@@ -1682,16 +1728,27 @@ def _pick_recommended(
     order = _HOST_PREFERENCE.get(accelerator, _HOST_PREFERENCE["none"])
     verdict_rank = {"fits": 0, "tight": 1, "partial_offload": 2, "needs_gpu_limit": 2, "unknown": 3, "too_large": 4}
 
-    def rank(a: Mapping[str, Any]) -> Tuple[int, int, int, int]:
+    def rank(a: Mapping[str, Any]) -> Tuple[int, int, int, int, int]:
         installed = 0 if (a.get("presence") or {}).get("status") == "installed" else 1
         engine_ok = 0 if installed_engines.get(str(a.get("engine"))) else 1
         pos = order.index(a["provider"]) if a["provider"] in order else len(order)
-        return (verdict_rank.get((a.get("fit") or {}).get("verdict", "unknown"), 3), installed, engine_ok, pos)
+        verdict = verdict_rank.get((a.get("fit") or {}).get("verdict", "unknown"), 3)
+        # An installed engine first, unless its artifact is too large for this host.
+        return (1 if verdict >= 4 else 0, engine_ok, verdict, installed, pos)
 
     candidates = [a for a in arts if a.get("supported_on_host") and a.get("downloadable") and not a.get("extended")]
     if candidates:
         min(candidates, key=rank)["recommended"] = True
 
+
+
+def _order_for_installed_engines(row: Dict[str, Any], installed_engines: Mapping[str, bool]) -> None:
+    """Mark each artifact `engine_installed` and list the pre-selection first, then what an
+    INSTALLED engine serves, then the rest (stable): a host with only llama.cpp sees the HF GGUF
+    before the LM Studio and Ollama builds it cannot run yet."""
+    for a in row["artifacts"]:
+        a["engine_installed"] = bool(installed_engines.get(str(a.get("engine"))))
+    row["artifacts"].sort(key=lambda a: (0 if a.get("recommended") else 1, 0 if a["engine_installed"] else 1))
 
 def _matches_query(row: Mapping[str, Any], query: str) -> bool:
     if not query:
@@ -1711,7 +1768,9 @@ def _matches_query(row: Mapping[str, Any], query: str) -> bool:
     import re as _re
 
     words = [w for w in _re.split(r"[\s/:@_,-]+", hay) if w]
-    return all(any(w.startswith(tok) for w in words) for tok in query.lower().split())
+    # The query splits like the row: "Qwen/Qwen3.5-9B" and "qwen3.5-9b" find the qwen3.5-9b row.
+    tokens = [t for t in _re.split(r"[\s/:@_,-]+", query.lower()) if t]
+    return all(any(w.startswith(tok) for w in words) for tok in tokens)
 
 
 def _artifact_matches_engine(art: Mapping[str, Any], engine: str) -> bool:
@@ -1729,6 +1788,8 @@ def catalog(
     hf_api: Any = None,
     hub_cache: Optional[Path] = None,
     tags: Optional[Iterable[str]] = None,
+    hub_page: int = 1,
+    hub_page_size: int = _HUB_SEARCH_LIMIT,
     extended: bool = False,
 ) -> Dict[str, Any]:
     """Contract C: the `model_catalog_v1` payload.
@@ -1742,6 +1803,11 @@ def catalog(
     hub      enrich HF-hosted artifacts with exact sizes from the Hugging Face
              API and, when `q` is given, append `hf_search` rows
     tags     keep only rows carrying every tag (e.g. ["embedding"])
+    hub_page, hub_page_size
+             which page of Hugging Face search results to append (1-based; 20 per lane
+             by default). `hub.search` reports the page, how many rows it added and
+             whether another page exists. A query that is an exact handle
+             (`Qwen/Qwen3.5-9B`) also looks that repo up and lists it first (page 1).
     extended with `hub`: every quant the row's own GGUF repos ship (UD-IQ1_S ... Q8_0,
              BF16), each with its exact size from the hub's file list (cached 24 h) and
              its fit, marked `extended: true`; a label the download pattern cannot
@@ -1755,6 +1821,16 @@ def catalog(
     accelerator = str(profile.get("accelerator") or "none")
     query = str(q or "").strip()
     eng = _norm(engine) or None
+    try:
+        page = max(1, int(hub_page))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = min(100, max(1, int(hub_page_size)))
+    except (TypeError, ValueError):
+        page_size = _HUB_SEARCH_LIMIT
+    handle = query if _HUB_HANDLE_RE.match(query) else None
+    search_more = False
     want_tags = [_norm(t) for t in (tags or []) if _norm(t)]
     seed = load_seed()
     support = _engine_support(profile)
@@ -1802,8 +1878,16 @@ def catalog(
                             if repo not in repos:
                                 repos.append(repo)
                 try:
+                    if handle and page == 1:
+                        try:
+                            exact = _hub_handle_hit(_hub_model_facts(api, cache, handle), handle)
+                        except LookupError:
+                            exact = None  # no such repo (or private): the name search still runs
+                        if exact is not None:
+                            search_hits.append(exact)
                     if query:
-                        search_hits = _hub_search(api, cache, query, eng, accelerator)
+                        hits, search_more = _hub_search(api, cache, query, eng, accelerator, page=page, page_size=page_size)
+                        search_hits.extend(hits)
                         for hit in search_hits:
                             if hit["repo_id"] not in repos:
                                 repos.append(hit["repo_id"])
@@ -1876,6 +1960,7 @@ def catalog(
                 if forced is not None and not any((a["provider"], a["artifact"]) == forced for a in arts):
                     forced = None  # an engine filter (`engine=ollama`) removed the tier artifact
                 _pick_recommended(row, accelerator, installed_engines, forced)
+                _order_for_installed_engines(row, installed_engines)
             rows_out.append(row)
 
         seen_repos = {
@@ -1884,6 +1969,8 @@ def catalog(
             for a in r["artifacts"]
             if a["provider"] in _HF_REPO_PROVIDERS
         }
+        hub_rows_added = 0
+        exact_listed = bool(handle) and handle.lower() in seen_repos  # a curated row already lists it
         for hit in search_hits:
             if hit["repo_id"].lower() in seen_repos:
                 continue
@@ -1896,8 +1983,9 @@ def catalog(
                 quant = _pick_gguf_quant(facts)
                 if quant:
                     artifact = f"{artifact}:{quant}"
-                else:
+                elif not hit.get("exact"):
                     continue  # a GGUF repo with no recognisable quant file is not one click
+                # else: the exact handle of a Transformers checkpoint, fetched whole
             elif provider == "mlx":
                 import re as _re
 
@@ -1928,12 +2016,31 @@ def catalog(
                 "source": "hf_search",
                 "tags": tags_hit,
                 "starter": False,
-                "notes": f"Hugging Face search result ({hit.get('downloads') or 0} downloads); capabilities unknown until installed.",
+                "notes": (
+                    "The Hugging Face repo you named; capabilities unknown until installed."
+                    if hit.get("exact")
+                    else f"Hugging Face search result ({hit.get('downloads') or 0} downloads); capabilities unknown until installed."
+                ),
                 "downloads": hit.get("downloads"),
+                "exact": bool(hit.get("exact")),
                 "artifacts": [art],
             }
             _pick_recommended(row, accelerator, installed_engines)
+            _order_for_installed_engines(row, installed_engines)
             rows_out.append(row)
+            hub_rows_added += 1
+
+        if hub_block is not None and query:
+            exact_listed = exact_listed or any(r.get("exact") for r in rows_out)
+            hub_block["search"] = {
+                "query": query,
+                "page": page,
+                "page_size": page_size,
+                "rows": hub_rows_added,
+                "has_more": bool(search_more),
+                "handle": handle,
+                "handle_found": bool(handle) and exact_listed,
+            }
 
     if fits:
         for row in rows_out:
