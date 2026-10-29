@@ -8,7 +8,18 @@ from __future__ import annotations
 import socket
 import threading
 import time
+import math
 from typing import Any, Optional
+
+
+def _timeout_seconds(value: Any) -> float:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Core HTTP timeout must be a finite non-negative number") from exc
+    if isinstance(value, bool) or not math.isfinite(seconds) or seconds < 0:
+        raise ValueError("Core HTTP timeout must be a finite non-negative number")
+    return seconds
 
 
 class CoreHTTPServer:
@@ -40,8 +51,9 @@ class CoreHTTPServer:
 
     def stop(self, *, timeout_s: float = 6.0) -> None:
         """Stop HTTP serving only. Repeated calls are safe."""
+        timeout_s = _timeout_seconds(timeout_s)
         self._server.should_exit = True
-        self._thread.join(timeout=max(0.0, float(timeout_s)))
+        self._thread.join(timeout=timeout_s)
         if self._thread.is_alive():
             self._server.force_exit = True
             self._thread.join(timeout=1.0)
@@ -58,6 +70,7 @@ def start_managed_server(
     port. Core's existing first-run token handling and server policy apply.
     This function creates no provider or model of its own.
     """
+    timeout_s = _timeout_seconds(timeout_s)
     from ..config.manager import get_config_manager
 
     configured = get_config_manager().config.server
@@ -71,6 +84,7 @@ def start_managed_server(
     if not bind_host:
         raise ValueError("Core server host must be a non-empty string")
     sock = socket.socket(socket.AF_INET6 if ":" in bind_host else socket.AF_INET, socket.SOCK_STREAM)
+    handle = None
     try:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((bind_host, bind_port))
@@ -81,21 +95,29 @@ def start_managed_server(
 
         prepare_server_auth(bind_host)
         from .app import app
+        from .host_routes import use_server_bind_host
         import uvicorn
 
+        async def listener_app(scope, receive, send):
+            with use_server_bind_host(bind_host):
+                await app(scope, receive, send)
+
         server = uvicorn.Server(uvicorn.Config(
-            app, lifespan="off", log_level="warning", access_log=False,
+            listener_app, lifespan="off", log_level="warning", access_log=False,
             timeout_graceful_shutdown=5,
         ))
         handle = CoreHTTPServer(server, sock, bind_host)
         handle._thread.start()
-        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        deadline = time.monotonic() + timeout_s
         while not handle.is_running:
             if not handle._thread.is_alive() or time.monotonic() >= deadline:
-                handle.stop()
                 raise RuntimeError(handle.last_error or "Core HTTP listener did not become ready")
             time.sleep(0.01)
         return handle
     except BaseException:
-        sock.close()
+        try:
+            if handle is not None and handle._thread.ident is not None:
+                handle.stop()
+        finally:
+            sock.close()
         raise

@@ -1,5 +1,8 @@
 """Core listener lifecycle and auth are independent of framework run execution."""
 import os
+import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import sys
@@ -98,3 +101,99 @@ def test_empty_host_is_refused_before_binding(host):
 
     with pytest.raises(ValueError, match="host"):
         start_managed_server(host=host, port=0)
+
+
+def test_each_listener_uses_its_actual_bind_without_changing_legacy_policy(monkeypatch):
+    import asyncio
+    from abstractcore.server.app import app
+    from abstractcore.server.host_routes import server_allows_engine_install
+    from abstractcore.server.managed import start_managed_server
+
+    token = "core-listener-policy-test-token"
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", token)
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_BIND_HOST", "127.0.0.1")
+    monkeypatch.delenv("ABSTRACTCORE_ALLOW_ENGINE_INSTALL", raising=False)
+    routes = list(app.router.routes)
+
+    async def policy():
+        # Overlap requests on both listeners to expose process-global policy.
+        await asyncio.sleep(0.01)
+        return {"allowed": server_allows_engine_install()}
+
+    app.add_api_route("/managed-listener-policy", policy, methods=["GET"])
+    local = remote = None
+    try:
+        local = start_managed_server(host="127.0.0.1", port=0)
+        remote = start_managed_server(host="0.0.0.0", port=0)
+        local_url = local.url + "/managed-listener-policy"
+        remote_url = remote.url.replace("0.0.0.0", "127.0.0.1") + "/managed-listener-policy"
+
+        def allowed(url):
+            req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return json.load(response)["allowed"]
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            probes = [(local_url, True), (remote_url, False)] * 8
+            results = list(pool.map(allowed, [url for url, _ in probes]))
+        assert results == [expected for _, expected in probes]
+        assert os.environ["ABSTRACTCORE_SERVER_BIND_HOST"] == "127.0.0.1"
+        assert server_allows_engine_install() is True  # legacy env fallback untouched
+        for setting, expected in [("1", True), ("0", False)]:
+            monkeypatch.setenv("ABSTRACTCORE_ALLOW_ENGINE_INSTALL", setting)
+            assert allowed(local_url) is expected and allowed(remote_url) is expected
+    finally:
+        if remote is not None:
+            remote.stop()
+        if local is not None:
+            local.stop()
+        app.router.routes[:] = routes
+
+
+@pytest.mark.parametrize("timeout", ["bad", None, True, -1, float("nan"), float("inf")])
+def test_invalid_timeout_is_refused_before_binding(monkeypatch, timeout):
+    import abstractcore.server.managed as managed
+
+    def unexpected_socket(*_args, **_kwargs):
+        pytest.fail("invalid startup deadline allocated a socket")
+
+    monkeypatch.setattr(managed.socket, "socket", unexpected_socket)
+    with pytest.raises(ValueError, match="timeout"):
+        managed.start_managed_server(host="127.0.0.1", port=0, timeout_s=timeout)
+
+
+def test_failure_after_thread_start_stops_the_listener(monkeypatch):
+    from types import SimpleNamespace
+    import abstractcore.server.managed as managed
+    import uvicorn
+
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "core-startup-cleanup-test-token")
+    servers = []
+
+    class Server:
+        def __init__(self, _config):
+            self.started = False
+            self.should_exit = False
+            self.force_exit = False
+            self.finished = threading.Event()
+            servers.append(self)
+
+        def run(self, **_kwargs):
+            self.started = True
+            while not (self.should_exit or self.force_exit):
+                self.finished.wait(0.01)
+            self.finished.set()
+
+    monkeypatch.setattr(uvicorn, "Server", Server)
+
+    def deadline_failure():
+        raise RuntimeError("deadline clock unavailable")
+
+    monkeypatch.setattr(managed, "time", SimpleNamespace(monotonic=deadline_failure))
+    try:
+        with pytest.raises(RuntimeError, match="deadline clock unavailable"):
+            managed.start_managed_server(host="127.0.0.1", port=0)
+        assert servers[0].should_exit and servers[0].finished.wait(1)
+    finally:
+        for server in servers:
+            server.should_exit = True
