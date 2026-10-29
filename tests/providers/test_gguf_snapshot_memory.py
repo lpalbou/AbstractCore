@@ -216,3 +216,24 @@ def test_a_provider_store_is_wired_with_the_after_set_hook():
     from abstractcore.providers import base
 
     assert "on_set=self._prompt_cache_store_after_set" in inspect.getsource(base.BaseProvider.__init__)
+
+
+def test_a_detaching_holder_gets_its_own_hooked_store_and_leaves_the_shared_one_alone(monkeypatch):
+    """A holder leaving a pool other holders still use gets a fresh private store wired with its own
+    hooks; the pool's shared store keeps the hooks it had."""
+    from abstractcore.providers import gguf_slots
+
+    shared = PromptCacheStore(max_entries=32)
+    first = _provider(shared)  # the pool's first holder: its hooks are on the shared store
+    first.__dict__["_gguf_scheduler"] = object()
+    shared.set_on_set(first._prompt_cache_store_after_set)
+    hooks = (shared._on_evict, shared._on_set)
+    leaving = _provider()
+    leaving._prompt_cache_store = shared
+    leaving.__dict__["_gguf_scheduler"] = object()
+    monkeypatch.setattr(gguf_slots, "detach", lambda sched, holder: True)
+    assert leaving._gguf_detach() is True
+    own = leaving._prompt_cache_store
+    assert own is not shared
+    assert own._on_evict == leaving._prompt_cache_store_evicted and own._on_set == leaving._prompt_cache_store_after_set
+    assert (shared._on_evict, shared._on_set) == hooks
