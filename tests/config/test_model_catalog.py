@@ -249,11 +249,16 @@ def test_every_curated_text_row_has_a_build_llamacpp_serves():
     assert missing == ["qwen3.8-flash-next"]
 
 
-def test_mlx_artifacts_are_not_downloadable_off_apple_silicon(host, monkeypatch):
+def test_mlx_is_never_offered_off_apple_silicon(host, monkeypatch):
+    """Operator 2026-10-29: "on Linux never offer MLX" — no mlx / mlx-gen / mlx-vlm artifact off Apple
+    silicon (they were listed, not downloadable), and a row with only MLX builds is not listed."""
     _no_local_engines(monkeypatch)
+    apple = mc.catalog(host=synthetic_host("metal128"))["rows"]
+    mlx_only = {r["id"] for r in apple if r["artifacts"] and all(mc._engine_for(a["provider"], a.get("quant")) == "mlx" for a in r["artifacts"])}
+    assert any(mc._engine_for(a["provider"], a.get("quant")) == "mlx" for r in apple for a in r["artifacts"])
     rows = mc.catalog(host=synthetic_host("cuda24"))["rows"]
-    mlx = [a for r in rows for a in r["artifacts"] if a["provider"] == "mlx"]
-    assert mlx and all(not a["downloadable"] and not a["supported_on_host"] for a in mlx)
+    assert not [a for r in rows for a in r["artifacts"] if mc._engine_for(a["provider"], a.get("quant")) == "mlx"]
+    assert mlx_only and not mlx_only & {r["id"] for r in rows}
     qwen8 = next(r for r in rows if r["id"] == "qwen3-8b")
     assert next(a for a in qwen8["artifacts"] if a["recommended"])["provider"] == "ollama"
 

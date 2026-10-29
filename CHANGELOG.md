@@ -7,7 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The model catalog never offers MLX off Apple silicon** (operator 2026-10-29: "on Linux never offer MLX"): the
+  mlx / mlx-gen / mlx-vlm artifacts are left out on a host whose engine registry says MLX cannot run (they were
+  listed, not downloadable), and a row with only MLX builds (the Wan video rows) is not listed there.
+
 ### Fixed
+
+- **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866, operator QA item c). The repos the
+  catalog downloads hold only the quant file, with no config or card, so `models list` reported them as an unknown
+  model with no task. The kind and tasks now come from the file's own `general.architecture`:
+  - an architecture the catalog's GGUF repos use (`qwen35`, `gemma4`, `llama`, `lfm2`, ...): text generation; any
+    other architecture stays unknown;
+  - `qwen3-tts`: text to speech;
+  - `flux`: text to image;
+  - an embedding repo (its name says so; Qwen3-Embedding reuses `qwen3`): text embedding.
+  `tasks_source: "gguf"`. A model outside the catalog can then be offered as the default text model.
+
+### Fixed
+
+- **An embedding default that is not downloaded says so, once, and can be downloaded from the console.** The
+  availability probe resolves an embedding route's catalog alias (`huggingface/qwen3-embedding`) to the repo the
+  embedding manager loads (`Qwen/Qwen3-Embedding-0.6B`), so the route reads "not downloaded" with a
+  `download_artifact` (it read "not checked": "'qwen3-embedding' is not an <org>/<repo> Hugging Face reference").
+  A not-cached model raises its "download it first" `ModelNotFoundError` without an ERROR log line (one per
+  account on every boot on the Linux test server); the caller says it.
+- **An embedding default whose repo is not downloaded runs on the installed GGUF build of the same model.** When
+  `Qwen/Qwen3-Embedding-0.6B` is absent and `Qwen/Qwen3-Embedding-0.6B-GGUF` is installed (the Linux test server),
+  the embedding manager loads the GGUF through llama.cpp (`embedding=True`, CPU, L2-normalized, the most faithful
+  quant first: f16, bf16, Q8_0, ...) under that repo's id (another build is another embedding space), and the
+  Defaults grid reads "installed: served by the installed GGUF build ...". Measured there: 1024 dimensions,
+  similarity 0.775 for two cat sentences vs 0.262 against a revenue sentence. Only without any build the route reads
+  "not downloaded" with Download.
 
 - **A host's installed engine is offered first in the download catalog** (backlog 0863). On a Linux server with
   llama.cpp and neither LM Studio nor Ollama, the Qwen3.5 9B row listed and pre-selected the LM Studio build.
@@ -32,6 +64,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Searching "lfm" in a Models catalog listed one row before.
 
 ### Fixed
+
+- **GGUF residency rows report the KV cache llama.cpp really allocates, and the context it was built
+  with.** The estimate counted every block as an attention layer: `Qwen3.5-9B-Kimi-k3-Distilled-GGUF`
+  (qwen35, 33 blocks, a KV cache on one block in four) at 65,536 tokens read "+ 8.3 GiB cache" on a
+  16 GB card whose GPU held 9.1 GiB in total; it is 2.0 GiB. The layer walk (`utils.kv_geometry`)
+  reads the layout from the GGUF header (`full_attention_interval`, per-layer `head_count_kv`,
+  sliding-window layers and widths, shared/MTP layers) and is used by the residency rows, the
+  context-fit estimate and the load. Rows and claims carry `context_length`, `kv_cache_bytes`
+  (`kv_cache_estimated: true`).
+- **The GGUF context is sized to the card before allocating** (one CUDA/ROCm card, full offload):
+  the KV cache may take at most half of the free device memory after the weights and a reserve of
+  max(1 GiB, 10%); rungs above are skipped and the rule's pick is not stored as a calibration
+  (docs/memory-management.md). An explicit `max_tokens` is never resized.
+- **A skipped eject names its holders in words** (`owner_label` of the claim, "the runtime of account
+  default/bob"), never "runtime client 70a5b844f350" (ADR 0043).
+- **A prompt longer than the loaded GGUF context fails clearly, before any eval**
+  (`ContextWindowExceededError`, a subclass of `InvalidRequestError`): it used to fill the KV cache
+  ("decode: failed to find a memory slot for batch of size 512"), retry cold, rebuild the engine and
+  answer "Error: failed to prefill GGUF prompt cache ..." as text; llama-cpp-python's own "exceed
+  context window" refusal is raised the same way. Decoding that reaches the end of the context
+  stops with `finish_reason="length"` instead of appending "Error: llama_decode returned 1".
 
 - **`/v1/chat/completions` (and `/v1/responses`) reuse a model already resident in the process** instead of loading
   another copy per request (backlog 0859). With no model loaded in the server's own registry, the chat route called

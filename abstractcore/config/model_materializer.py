@@ -4218,6 +4218,17 @@ def _route_probe_provider(provider: str, key: str) -> str:
     return normalize_engine_id(pid)
 
 
+def _embedding_alias_repo(alias: str) -> Optional[str]:
+    """The Hugging Face repo an embedding catalog alias loads (`embeddings.models`), or None."""
+    try:
+        from ..embeddings.models import get_model_config
+
+        repo = str(get_model_config(alias).model_id or "").strip()
+        return repo if "/" in repo else None
+    except Exception:
+        return None
+
+
 def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
     """Annotate capability-default rows with weight availability.
 
@@ -4288,6 +4299,14 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
                     artifact = inherited
             if probe_provider == provider and provider:
                 probe_provider = _route_probe_provider(provider, key)
+            if key.startswith("embedding.") and _norm(provider) == "huggingface" and artifact and "/" not in artifact:
+                # An embedding route names a catalog alias ("qwen3-embedding"); the
+                # embedding manager loads its Hugging Face repo. Probe and download THAT,
+                # or the route reads "not checked" with no Download action while every
+                # boot fails to load it (Linux test server, 2026-10-29).
+                repo = _embedding_alias_repo(artifact)
+                if repo:
+                    artifact = repo
 
             if not provider or not artifact:
                 row["availability"] = ModelPresence(
@@ -4300,6 +4319,20 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
             presence = seen_cache.get(cache_key)
             if presence is None:
                 presence = probe(probe_provider, artifact, base_url=base_url)
+                if key.startswith("embedding.") and presence.status == PRESENCE_ABSENT and _norm(provider) == "huggingface":
+                    # The embedding manager serves the installed GGUF build of the same
+                    # model when the repo itself is not downloaded: that route runs.
+                    try:
+                        from ..embeddings.manager import gguf_sibling_snapshot
+
+                        sibling = gguf_sibling_snapshot(artifact)
+                    except Exception:
+                        sibling = None
+                    if sibling:
+                        presence = ModelPresence(
+                            provider, artifact, PRESENCE_INSTALLED, evidence="hf cache scan",
+                            detail=f"served by the installed GGUF build {sibling[0]} ({sibling[1].name})",
+                        )
                 seen_cache[cache_key] = presence
             row["availability"] = presence.to_dict()
             if artifact != model:
@@ -5004,7 +5037,61 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
             tasks = ["text_generation"] + (["image_to_text"] if isinstance(config.get("vision_config"), dict) else [])
         if tasks:
             source = "config"
+    if not tasks and kind == "model" and not archs:
+        # A GGUF-only repo (the download fetched the quant file, no config or card): the file's own
+        # `general.architecture`, read from its header, and the repo's name (operator QA 2026-10-28
+        # (c): a model outside the catalog was not offered as the default text model).
+        gguf = _gguf_kind_tasks(snap, repo_path)
+        if gguf is not None:
+            kind, tasks, source = gguf["kind"], gguf["tasks"], gguf["tasks_source"]
     return {"kind": kind, "tasks": tasks, "tasks_source": source}
+
+
+# GGUF `general.architecture` values of the text models the catalog's GGUF repos ship, read from the
+# Hugging Face API (`gguf.architecture`) for every seed repo on 2026-10-29. Another architecture is
+# not called a text model: its tasks stay unknown (merge desk review of backlog 0866).
+_GGUF_TEXT_ARCH = frozenset({
+    "cohere2", "deepseek2", "exaone", "gemma3", "gemma3n", "gemma4", "gpt-oss", "granite", "granitehybrid",
+    "hy_v3", "lfm2", "lfm2moe", "llama", "llama4", "minimax-m2", "mistral3", "olmo2", "phi3", "qwen2", "qwen3",
+    "qwen35", "qwen35moe", "qwen3moe", "qwen3vl", "qwen3vlmoe", "smollm3", "starcoder2",
+})
+
+# GGUF `general.architecture` values that are not text models (speech, image, tokenizers).
+_GGUF_NON_TEXT_ARCH = (
+    ("tts", ["text_to_speech"]),
+    ("flux", ["text_to_image"]),
+    ("whisper", ["speech_to_text"]),
+    ("clip", []),
+    ("tokenizer", []),
+)
+
+
+def _gguf_kind_tasks(snap: Path, repo_path: Optional[Path]) -> Optional[Dict[str, Any]]:
+    """kind / tasks of a GGUF-only snapshot, or None when it holds no readable GGUF."""
+    from ..utils.model_cache import read_gguf_architecture
+
+    try:
+        files = sorted(p for p in snap.rglob("*.gguf") if "mmproj" not in p.name.lower())
+    except Exception:
+        return None
+    arch = None
+    for path in files[:4]:
+        arch = read_gguf_architecture(path)
+        if arch:
+            break
+    if not arch:
+        return None
+    lowered = arch.lower()
+    for marker, tasks in _GGUF_NON_TEXT_ARCH:
+        if marker in lowered:
+            return {"kind": "model", "tasks": list(tasks), "tasks_source": "gguf"}
+    # An embedding model reuses a text architecture (Qwen3-Embedding is `qwen3`): its name says so.
+    name = repo_path.name.split("--", 2)[-1] if repo_path is not None else ""
+    if "embed" in name.lower():
+        return {"kind": "embedding", "tasks": ["text_embedding"], "tasks_source": "gguf"}
+    if lowered in _GGUF_TEXT_ARCH:
+        return {"kind": "model", "tasks": ["text_generation"], "tasks_source": "gguf"}
+    return {"kind": "model", "tasks": [], "tasks_source": "gguf"}  # an architecture AbstractCore does not know
 
 
 def _lmstudio_kind_tasks(item: Dict[str, Any]) -> Dict[str, Any]:
