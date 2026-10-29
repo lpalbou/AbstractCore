@@ -68,3 +68,41 @@ def set_model_context(provider: str, model: str, tokens: Optional[int], *,
     tmp.write_text(json.dumps(doc, indent=2), encoding="utf-8")
     tmp.replace(path)
     return contexts
+
+
+_CONCURRENCY_KEY = "model_concurrency"
+
+
+def configured_model_concurrency(provider: str, model: str, *,
+                                 config_file: Optional[Union[str, Path]] = None) -> Optional[int]:
+    """How many generations may run at once on this local model (its slot pool's bound), or None
+    (the engine's default: llama.cpp on a GPU / Metal 4, CPU-only 1)."""
+    try:
+        value = (_read(config_file).get(_CONCURRENCY_KEY) or {}).get(_key(provider, model))
+        return int(value) if value else None
+    except Exception:
+        return None
+
+
+def set_model_concurrency(provider: str, model: str, slots: Optional[int], *,
+                          config_file: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """Set (slots >= 1) or clear (None) the concurrency bound of one model; applies at its next load."""
+    from .manager import resolve_config_file
+
+    if slots is not None:
+        slots = int(slots)
+        if slots < 1:
+            raise ValueError("a model's concurrency is at least 1")
+    path = Path(resolve_config_file(config_file=config_file))
+    doc = _read(config_file)
+    current = dict(doc.get(_CONCURRENCY_KEY) or {})
+    if slots is None:
+        current.pop(_key(provider, model), None)
+    else:
+        current[_key(provider, model)] = slots
+    doc[_CONCURRENCY_KEY] = current
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    tmp.replace(path)
+    return current

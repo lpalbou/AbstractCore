@@ -414,6 +414,28 @@ def _holder_row(holder: Any) -> Dict[str, Any]:
         cache += int(kv if isinstance(kv, int) else (info.get("state_bytes") or 0))
         cache += llama_state_bytes(getattr(holder, "_prompt_cache_store", None))
         path = getattr(getattr(holder, "llm", None), "model_path", None)
+        # One weights instance may serve many contexts (gguf_shared): the row says which.
+        try:
+            from .gguf_shared import weights_identity
+
+            row["weights_id"] = weights_identity(getattr(holder, "llm", None))
+        except Exception:  # noqa: BLE001
+            row["weights_id"] = None
+        row["weights_borrowed"] = bool(getattr(getattr(holder, "llm", None), "_abstractcore_weights_borrowed", False))
+        sched = holder.__dict__.get("_gguf_scheduler") if hasattr(holder, "__dict__") else None
+        if sched is not None:
+            # The model's slot pool (ADR 0011): one weights copy, `slots` contexts of the pool's
+            # n_ctx, each with its own KV (`slot_bytes`, estimated from the GGUF geometry).
+            st = sched.state()
+            row["scheduler_id"] = id(sched)
+            row["adopted_gpu_layers_from_resident_pool"] = bool(getattr(holder, "_adopted_gpu_layers_from_resident_pool", False))
+            row.update({k: st.get(k) for k in ("slots", "slots_max", "active", "queued", "slot_refusal_reason")})
+            if isinstance(kv, int):
+                row["slot_bytes"] = int(kv)
+                row["slot_bytes_estimated"] = True
+                extra = int(kv) * max(0, int(st.get("slots") or 1) - 1)
+                row["kv_alloc_bytes"] = int(kv) * max(1, int(st.get("slots") or 1))
+                cache += extra
     else:
         model_obj = getattr(holder, "model_instance", None)
         if model_obj is None:
@@ -433,10 +455,14 @@ def _holder_row(holder: Any) -> Dict[str, Any]:
 
 def resident_models() -> List[Dict[str, Any]]:
     """Every model whose weights are alive in this process through a
-    HuggingFace provider instance, ONE ROW PER MODEL NAME. Unlike MLX, holders
-    do not share weights: `holders` == full copies, and `weights_bytes` is the
-    SUM over the copies (what the process actually pins)."""
+    HuggingFace provider instance, ONE ROW PER MODEL NAME. GGUF holders share
+    one weights instance (`gguf_shared`): `copies` counts weights instances,
+    `holders` the provider instances (each with its own context and KV), and
+    `weights_bytes` counts each weights instance ONCE (what the process pins).
+    Transformers holders do not share: there each holder is a copy."""
     by_model: Dict[str, Dict[str, Any]] = {}
+    seen_weights: Dict[str, set] = {}
+    seen_pools: set = set()
     for holder in registered_providers():
         try:
             if not _holder_alive(holder):
@@ -468,8 +494,25 @@ def resident_models() -> List[Dict[str, Any]]:
                 "mmap": hrow.get("mmap"),
             }
         row["holders"] += 1
-        row["copies"] += 1
+        wid = hrow.get("weights_id")
+        seen = seen_weights.setdefault(name, set())
+        first_of_weights = wid is None or wid not in seen
+        if wid is not None:
+            seen.add(wid)
+        if first_of_weights:
+            row["copies"] += 1
+        row["shared_weights"] = row["holders"] > row["copies"]
         row["holder_rows"].append(hrow)
+        sid = hrow.get("scheduler_id")
+        first_of_pool = sid is None or sid not in seen_pools
+        if sid is not None:
+            seen_pools.add(sid)
+            for k in ("slots", "slots_max", "active", "queued", "slot_refusal_reason", "slot_bytes", "slot_bytes_estimated"):
+                if hrow.get(k) is not None:
+                    row[k] = hrow[k]
+        if not first_of_pool:
+            # Another holder of the same slot pool: its contexts and caches are the pool's, counted once.
+            continue
         # The context each copy was built for and its KV allocation (an
         # estimate from the GGUF geometry): what the "cache" figure is made of.
         if isinstance(hrow.get("n_ctx"), int):
@@ -481,7 +524,7 @@ def resident_models() -> List[Dict[str, Any]]:
             row["kv_bytes_estimated"] = True
         if row["lane"] != hrow["lane"]:
             row["lane"] = "transformers+gguf"
-        if isinstance(hrow.get("weights_bytes"), int):
+        if isinstance(hrow.get("weights_bytes"), int) and first_of_weights:
             row["weights_bytes"] = int(row["weights_bytes"] or 0) + int(hrow["weights_bytes"])
         row["cache_bytes"] += int(hrow.get("cache_bytes") or 0)
         row["prompt_cache_bytes"] += int(hrow.get("cache_bytes") or 0)
