@@ -5004,7 +5004,50 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
             tasks = ["text_generation"] + (["image_to_text"] if isinstance(config.get("vision_config"), dict) else [])
         if tasks:
             source = "config"
+    if not tasks and kind == "model" and not archs:
+        # A GGUF-only repo (the download fetched the quant file, no config or card): the file's own
+        # `general.architecture`, read from its header, and the repo's name (operator QA 2026-10-28
+        # (c): a model outside the catalog was not offered as the default text model).
+        gguf = _gguf_kind_tasks(snap, repo_path)
+        if gguf is not None:
+            kind, tasks, source = gguf["kind"], gguf["tasks"], gguf["tasks_source"]
     return {"kind": kind, "tasks": tasks, "tasks_source": source}
+
+
+# GGUF `general.architecture` values that are not text models (speech, image, tokenizers).
+_GGUF_NON_TEXT_ARCH = (
+    ("tts", ["text_to_speech"]),
+    ("flux", ["text_to_image"]),
+    ("whisper", ["speech_to_text"]),
+    ("clip", []),
+    ("tokenizer", []),
+)
+
+
+def _gguf_kind_tasks(snap: Path, repo_path: Optional[Path]) -> Optional[Dict[str, Any]]:
+    """kind / tasks of a GGUF-only snapshot, or None when it holds no readable GGUF."""
+    from ..utils.model_cache import read_gguf_architecture
+
+    try:
+        files = sorted(p for p in snap.rglob("*.gguf") if "mmproj" not in p.name.lower())
+    except Exception:
+        return None
+    arch = None
+    for path in files[:4]:
+        arch = read_gguf_architecture(path)
+        if arch:
+            break
+    if not arch:
+        return None
+    lowered = arch.lower()
+    for marker, tasks in _GGUF_NON_TEXT_ARCH:
+        if marker in lowered:
+            return {"kind": "model", "tasks": list(tasks), "tasks_source": "gguf"}
+    # An embedding model reuses a text architecture (Qwen3-Embedding is `qwen3`): its name says so.
+    name = repo_path.name.split("--", 2)[-1] if repo_path is not None else ""
+    if "embed" in name.lower():
+        return {"kind": "embedding", "tasks": ["text_embedding"], "tasks_source": "gguf"}
+    return {"kind": "model", "tasks": ["text_generation"], "tasks_source": "gguf"}
 
 
 def _lmstudio_kind_tasks(item: Dict[str, Any]) -> Dict[str, Any]:

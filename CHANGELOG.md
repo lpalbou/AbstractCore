@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866, operator QA item c). The repos the
+  catalog downloads hold only the quant file, with no config or card, so `models list` reported them as an unknown
+  model with no task. The kind and tasks now come from the file's own `general.architecture`:
+  - `qwen35` or `gemma4`: text generation;
+  - `qwen3-tts`: text to speech;
+  - `flux`: text to image;
+  - an embedding repo (its name says so; Qwen3-Embedding reuses `qwen3`): text embedding.
+  `tasks_source: "gguf"`. A model outside the catalog can then be offered as the default text model.
+
+### Fixed
+
 - **Structured output with a host's `cancel_event`** no longer fails on the HuggingFace GGUF lane with "got multiple
   values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
   under the provider's cancel kwarg.
