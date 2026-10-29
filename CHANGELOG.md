@@ -65,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
   under the provider's cancel kwarg.
 
+### Fixed
+
+- **A GGUF context that fills up mid-request** (llama.cpp "failed to find a memory slot", `llama_decode returned 1`)
+  frees the engine's context memory and fails with a clear `ContextWindowExceededError` sentence, instead of an
+  "Error: llama_decode returned 1" answer and a memory left full for the next request (backlog 0862).
 ### Added
 
 - **Model residency failsafe (ADR 0010): a load never fills the card.** Before llama.cpp allocates (one full-offload

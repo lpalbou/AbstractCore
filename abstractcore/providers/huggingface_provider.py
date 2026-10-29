@@ -1046,6 +1046,10 @@ _GGUF_SHARD_RE = re.compile(r"^(?P<stem>.+)-(?P<index>\d{5})-of-(?P<count>\d{5})
 
 # llama-cpp-python's refusal of a prompt longer than the context.
 _LLAMA_CONTEXT_OVERFLOW_RE = re.compile(r"Requested tokens \((\d+)\) exceed context window of (\d+)")
+# llama-cpp-python's `LlamaContext.decode` raises this when llama.cpp's `llama_decode` fails; 1 is
+# "could not find a KV slot for the batch" (the engine logs "decode: failed to find a memory slot
+# for batch of size N"): the context memory filled up during the request.
+_LLAMA_DECODE_FAILED_RE = re.compile(r"llama_decode returned (-?\d+)")
 
 
 def _gguf_total_weight_bytes(model_path: Union[str, Path]) -> Optional[int]:
@@ -3445,9 +3449,53 @@ class HuggingFaceProvider(BaseProvider):
             prompt_tokens=int(n_prompt), context_length=int(n_ctx), model=self.model,
         )
 
+    def _gguf_memory_full_error(self, return_code: int) -> ContextWindowExceededError:
+        """The context memory filled up during a request (llama.cpp could not place a batch)."""
+        n_ctx = self._gguf_loaded_context()
+        size = f"its {int(n_ctx):,}-token context" if n_ctx else "its context"
+        return ContextWindowExceededError(
+            f"{self.model} ran out of context memory while answering ({size} is full; llama.cpp "
+            f"could not place the next batch, code {int(return_code)}). The request was stopped and "
+            "that memory freed. Start a new conversation or shorten this one, or load the model with "
+            "a larger context if the device has room.",
+            prompt_tokens=None, context_length=n_ctx, model=self.model,
+        )
+
+    def _gguf_free_context_memory(self) -> None:
+        """Free what a failed decode left in the engine's context memory, so the next request
+        starts clean instead of failing on the same full memory ("failed to find a memory slot"
+        repeated, OVH 2026-10-28). `Llama.reset()` forgets the evaluated tokens; the context's
+        memory is cleared with the call this llama-cpp-python has (`memory_clear` from 0.3.x,
+        `kv_cache_clear` before). A failure is logged, never raised."""
+        llm = getattr(self, "llm", None)
+        if llm is None:
+            return
+        try:
+            llm.reset()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(f"llama.cpp reset() after a full context failed: {exc}")
+        ctx = getattr(llm, "_ctx", None)
+        for name, args in (("memory_clear", (True,)), ("kv_cache_clear", ())):
+            fn = getattr(ctx, name, None)
+            if callable(fn):
+                try:
+                    fn(*args)
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(f"llama.cpp {name}() after a full context failed: {exc}")
+                return
+
+    def _gguf_raise_if_decode_failed(self, error: BaseException) -> None:
+        """A llama.cpp decode failure (the context memory is full): free it, then raise the clear
+        `ContextWindowExceededError` instead of an "Error: llama_decode returned 1" answer."""
+        failed = _LLAMA_DECODE_FAILED_RE.search(str(error))
+        if failed:
+            self._gguf_free_context_memory()
+            raise self._gguf_memory_full_error(int(failed.group(1))) from error
+
     def _gguf_context_checked_stream(self, stream: Any) -> Iterator[Any]:
         """A llama-cpp-python chat stream whose "exceed context window" refusal
-        (raised lazily, at the first chunk) becomes `ContextWindowExceededError`."""
+        (raised lazily, at the first chunk) becomes `ContextWindowExceededError`,
+        as does a decode failure mid-stream (the memory is freed first)."""
         try:
             for chunk in stream:
                 yield chunk
@@ -3455,6 +3503,9 @@ class HuggingFaceProvider(BaseProvider):
             overflow = _LLAMA_CONTEXT_OVERFLOW_RE.search(str(e))
             if overflow:
                 raise self._gguf_context_exceeded_error(int(overflow.group(1)), int(overflow.group(2))) from e
+            raise
+        except RuntimeError as e:
+            self._gguf_raise_if_decode_failed(e)
             raise
 
     def _gguf_raise_if_prompt_exceeds_context(self, n_prompt: int) -> None:
@@ -9415,6 +9466,8 @@ class HuggingFaceProvider(BaseProvider):
                 # context window of 1024"): the same clear failure as the
                 # prompt-cache lane, never an "Error: ..." answer.
                 raise self._gguf_context_exceeded_error(int(overflow.group(1)), int(overflow.group(2))) from e
+            # The memory filled up during the request: freed, then the same clear failure.
+            self._gguf_raise_if_decode_failed(e)
             if stream:
                 # Return error as a generator
                 def error_generator():
