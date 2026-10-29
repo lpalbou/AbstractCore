@@ -151,3 +151,14 @@ def test_suggestions_use_the_fit_reserve(monkeypatch):
     assert pr.smaller_suggestions("org/fam-x:Q8", int(6.1 * GB), reserve_bytes=int(1.6 * GB)) == [], (
         "MUTANT: a 1 GiB reserve -> suggests a model the check itself refuses -> RED")
     assert pr.smaller_suggestions("org/fam-x:Q8", int(7 * GB), reserve_bytes=int(1.6 * GB))
+
+
+def test_nothing_is_evicted_when_evicting_cannot_make_it_fit(card):
+    """OVH 8080 (2026-10-29): the unlocked model was evicted and the load refused
+    anyway. MUTANT: no plan -> evicts A, still refuses -> RED."""
+    card.holders.append(_Holder("idle/A", 4 * GB, time.time() - 999))
+    with pytest.raises(ModelDoesNotFitError):
+        pr.ensure_fit("big/B", 16 * GB, card.free)     # free 11 + A 4 = 15 < 16: cannot fit
+    assert card.ejected == [], "evicted a model and refused anyway"
+    out = pr.ensure_fit("big/B", 13 * GB, card.free)   # 15 >= 13: evicting A makes it fit
+    assert out["fits"] and card.ejected == ["idle/A"]

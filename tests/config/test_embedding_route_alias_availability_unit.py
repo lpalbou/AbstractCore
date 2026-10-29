@@ -115,6 +115,9 @@ def test_manager_loads_the_gguf_build_when_the_repo_is_missing(tmp_path, monkeyp
     assert built[0][0] == str(snap / "Qwen3-Embedding-0.6B-f16.gguf"), "the most faithful build is chosen"
     assert built[0][1]["embedding"] is True
     assert built[0][1]["n_batch"] == built[0][1]["n_ctx"], "MUTANT: default n_batch -> texts cut to 512 tokens -> RED"
+    assert built[0][1]["offload_kqv"] is False and built[0][1]["n_gpu_layers"] == 0, (
+        "MUTANT: KV / compute buffers offloaded -> 4.9 GiB of GPU for a 0.6B embedder -> RED")
+    assert built[0][1]["n_ctx"] <= 4096
     assert mgr.model_id == "Qwen/Qwen3-Embedding-0.6B-GGUF", "another build is another embedding space"
     assert list(mgr.model.encode(["a", "b"]).shape) == [2, 2] and mgr.model.get_sentence_embedding_dimension() == 2
     mgr.model = None

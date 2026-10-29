@@ -340,6 +340,19 @@ def make_room(needed_bytes: int, free_bytes: Any, *, provider: Optional[str] = N
     evicted: List[Dict[str, Any]] = []
     with _RESIDENCY_LOCK:
         free = int(free_bytes())
+        if free < int(needed_bytes):
+            # PLAN FIRST (OVH 8080, 2026-10-29): evicting the unlocked model and then
+            # refusing anyway left the operator with neither model. Evict only when the
+            # evictable models can cover the gap; otherwise refuse with everything kept.
+            evictable = [s for s in resident_model_states()
+                         if not (model and model_matches(s["model"], None, model))
+                         and not s["locked_by"] and not s["in_use"]]
+            if free + sum(int(s["held_bytes"] or 0) for s in evictable) < int(needed_bytes):
+                kept = [f"{s['model']} (locked by {', '.join(s['locked_by'])})" if s["locked_by"]
+                        else (f"{s['model']} (in use)" if s["in_use"] else f"{s['model']} (not enough to free)")
+                        for s in resident_model_states() if not (model and model_matches(s["model"], None, model))]
+                return {"fits": False, "free_bytes": free, "evicted": [], "kept": kept,
+                        "unaccounted": True}
         while free < int(needed_bytes):
             states = [s for s in resident_model_states()
                       if not (model and model_matches(s["model"], None, model))]
