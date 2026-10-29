@@ -160,8 +160,12 @@ free after the weights; set 1 slot, or a smaller context"), never lowered silent
 - **Bounded**: `max_queue` (default 32). Past it the request fails at once with the typed
   `ModelQueueFullError` (HTTP 503 with `Retry-After`, `error.code = "model_queue_full"`), never a silent
   wait. **Timed**: `queue_timeout_s` (default 120) per request, then `ModelQueueTimeoutError` (HTTP 504,
-  `error.code = "model_queue_timeout"`). Both are request-local (never retried, never counted against
-  model health), as the native lane's `queue_full` / `queue_timeout` already are.
+  `error.code = "model_queue_timeout"`). Both carry `request_local = True` and their status, as the
+  native lane's `queue_full` / `queue_timeout` already do: Core's retry layer never resamples them
+  silently and never counts them against the model's health; the runtime's LLM_CALL retry policy may
+  retry a `model_queue_full` after `Retry-After`, as a ledger-recorded attempt, never a hidden wait.
+  A request cancelled while queued raises `GenerationCancelledError` (the cancel contract: a host
+  decision, not a provider fault, never retried), not a provider error.
 - A slot is handed to the head of the queue the moment it is returned. A slot's live KV is an affinity
   hint only (a request whose session prefix is in a slot's KV prefers that slot when it is free); FIFO
   never waits for affinity, and correctness never depends on it: the prompt-cache store (llama.cpp
