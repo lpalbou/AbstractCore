@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An embedding default that is not downloaded says so, once, and can be downloaded from the console.** The
+  availability probe resolves an embedding route's catalog alias (`huggingface/qwen3-embedding`) to the repo the
+  embedding manager loads (`Qwen/Qwen3-Embedding-0.6B`), so the route reads "not downloaded" with a
+  `download_artifact` (it read "not checked": "'qwen3-embedding' is not an <org>/<repo> Hugging Face reference").
+  A not-cached model raises its "download it first" `ModelNotFoundError` without an ERROR log line (one per
+  account on every boot on the Linux test server); the caller says it.
+
 ## [2.31.1] - 2026-10-28
 
 ### Added

@@ -38,6 +38,7 @@ except ImportError:
 from .models import EmbeddingBackend, get_model_config, get_default_model, list_available_models, list_available_providers
 from ..utils.structured_logging import get_logger
 from ..utils.install_settings import local_engines_hint
+from ..exceptions import ModelNotFoundError
 
 logger = get_logger(__name__)
 
@@ -707,6 +708,12 @@ class EmbeddingManager:
                 "sentence-transformers is required for embedding functionality. "
                 f"{local_engines_hint('Local embeddings')}"
             )
+        except ModelNotFoundError:
+            # Not downloaded is a state, not a crash (Linux test server, 2026-10-29: an
+            # ERROR line per account on every boot for an embedding default nobody had
+            # fetched). The raised message already names the model and the download
+            # command; the caller decides how loudly to say it, once.
+            raise
         except Exception as e:
             logger.error(f"Failed to load embedding model {self.model_id}: {e}")
             raise

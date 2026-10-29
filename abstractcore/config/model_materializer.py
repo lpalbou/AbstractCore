@@ -4218,6 +4218,17 @@ def _route_probe_provider(provider: str, key: str) -> str:
     return normalize_engine_id(pid)
 
 
+def _embedding_alias_repo(alias: str) -> Optional[str]:
+    """The Hugging Face repo an embedding catalog alias loads (`embeddings.models`), or None."""
+    try:
+        from ..embeddings.models import get_model_config
+
+        repo = str(get_model_config(alias).model_id or "").strip()
+        return repo if "/" in repo else None
+    except Exception:
+        return None
+
+
 def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
     """Annotate capability-default rows with weight availability.
 
@@ -4288,6 +4299,14 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
                     artifact = inherited
             if probe_provider == provider and provider:
                 probe_provider = _route_probe_provider(provider, key)
+            if key.startswith("embedding.") and _norm(provider) == "huggingface" and artifact and "/" not in artifact:
+                # An embedding route names a catalog alias ("qwen3-embedding"); the
+                # embedding manager loads its Hugging Face repo. Probe and download THAT,
+                # or the route reads "not checked" with no Download action while every
+                # boot fails to load it (Linux test server, 2026-10-29).
+                repo = _embedding_alias_repo(artifact)
+                if repo:
+                    artifact = repo
 
             if not provider or not artifact:
                 row["availability"] = ModelPresence(
