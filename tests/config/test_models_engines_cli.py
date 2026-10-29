@@ -74,7 +74,12 @@ def test_models_catalog_and_search_accept_engine_and_fits(host):
     assert code != 0
     code, out, err = _cli("models", "search", "qwen3 8b", "--engine", "mlx", "--json")
     assert code == 0, err
-    assert any(r["id"] == "qwen3-8b" for r in _json(out)["rows"])
+    found = _json(out)
+    if found["host_profile"].get("accelerator") == "metal":
+        assert any(r["id"] == "qwen3-8b" for r in found["rows"])
+    else:
+        # Off Apple silicon MLX is never offered (Core #12): an MLX-only answer is empty.
+        assert found["rows"] == []
 
 
 def test_engine_install_refusals_exit_2_with_a_reason(host, monkeypatch):
