@@ -18,7 +18,7 @@ import warnings
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional, Union, Any, Dict, TYPE_CHECKING
+from typing import List, Optional, Tuple, Union, Any, Dict, TYPE_CHECKING
 import time
 
 if TYPE_CHECKING:
@@ -203,6 +203,40 @@ def _get_optimal_onnx_model() -> Optional[str]:
 _EMBEDDING_MANAGERS: "weakref.WeakSet[Any]" = weakref.WeakSet()
 
 
+# ---------------------------------------------------------------------------
+# ONE loaded embedding model per (model, device, backend) in the process
+# (residency audit R3, 2026-10-29): every account's runtime service built its
+# own EmbeddingManager, and each loaded the weights again -- one full copy of
+# the embedder per account, plus one per /v1/embeddings request before #28.
+# A manager is a cheap facade (its caches, output dims, provider settings);
+# the weights are shared: a later manager of the same model ADOPTS the loaded
+# one. An unload of one manager detaches it; the weights go when the last
+# manager holding them unloads (an eject unloads them all). The GGUF encoder
+# serializes its own encodes (one llama.cpp context); SentenceTransformer
+# inference is shared as one manager's already was across its callers.
+# ---------------------------------------------------------------------------
+class _SharedEmbeddingModel:
+    def __init__(self, key: Tuple[Any, ...], model: Any, model_id: str, gguf_sibling_of: Optional[str]) -> None:
+        self.key = key
+        self.model = model
+        self.model_id = model_id
+        self.gguf_sibling_of = gguf_sibling_of
+        self.holders: "weakref.WeakSet[Any]" = weakref.WeakSet()
+
+
+# WEAK values: the managers hold the strong references (`_shared_embedding`). A manager simply
+# dropped frees the model with the last one, exactly as before sharing.
+_SHARED_EMBEDDING_MODELS: "weakref.WeakValueDictionary[Tuple[Any, ...], _SharedEmbeddingModel]" = weakref.WeakValueDictionary()
+_SHARED_EMBEDDING_LOCK = threading.RLock()
+
+
+def shared_embedding_models() -> List[Dict[str, Any]]:
+    """`[{model, holders}]` for every shared embedding model alive (diagnostics, tests)."""
+    with _SHARED_EMBEDDING_LOCK:
+        return [{"model": e.model_id, "holders": len(e.holders)} for e in _SHARED_EMBEDDING_MODELS.values()
+                if e.model is not None]
+
+
 def _atexit_save_caches(ref: "weakref.ReferenceType") -> None:
     manager = ref()
     if manager is None:
@@ -223,7 +257,8 @@ def registered_embedding_managers() -> List["EmbeddingManager"]:
 
 def resident_embedding_models() -> List[Dict[str, Any]]:
     """Every in-process embedding model whose weights are alive, one row per
-    model id (holders = managers, each its own copy), in the residency row
+    model id (holders = managers; `copies` = distinct loaded models, weights
+    counted once each: managers of one model share it), in the residency row
     shape shared with `mlx_residency` / `hf_residency`."""
     by_model: Dict[str, Dict[str, Any]] = {}
     for manager in registered_embedding_managers():
@@ -252,13 +287,21 @@ def resident_embedding_models() -> List[Dict[str, Any]]:
                 "device": claim.get("device"),
             }
         row["holders"] += 1
-        row["copies"] += 1
+        weights_id = id(getattr(manager, "model", None))
+        seen = row.setdefault("_weights_ids", set())
+        first_copy = weights_id not in seen
+        seen.add(weights_id)
+        if first_copy:
+            row["copies"] += 1
+        row["shared_weights"] = row["holders"] > row["copies"]
         row["holder_rows"].append({"id": id(manager), "model": name, "type": type(manager).__name__,
                                    "instance_loaded": True, "device": claim.get("device"),
-                                   "weights_bytes": claim.get("weights_bytes")})
-        if isinstance(claim.get("weights_bytes"), int):
+                                   "weights_bytes": claim.get("weights_bytes"), "weights_id": weights_id})
+        if isinstance(claim.get("weights_bytes"), int) and first_copy:
             row["weights_bytes"] = int(row["weights_bytes"] or 0) + int(claim["weights_bytes"])
         row["held_bytes"] = int(row["weights_bytes"] or 0)
+    for row in by_model.values():
+        row.pop("_weights_ids", None)
     return list(by_model.values())
 
 
@@ -831,7 +874,51 @@ class EmbeddingManager:
             self._resolved_model = model or "all-minilm-l6-v2"
             self._resolved_base_url = None
 
+    def _shared_model_key(self) -> Tuple[Any, ...]:
+        configured = getattr(self, "_gguf_sibling_of", None) or self.model_id
+        backend = getattr(self, "backend", None)
+        return ("huggingface", str(configured), str(getattr(self, "device_preference", None) or "auto"),
+                str(getattr(backend, "value", backend) or "auto"), bool(getattr(self, "trust_remote_code", False)))
+
     def _load_model(self):
+        """The model of this (model, device, backend), loaded ONCE per process: a manager whose
+        model another manager already loaded adopts it (no second copy)."""
+        key = self._shared_model_key()
+        with _SHARED_EMBEDDING_LOCK:  # also serializes two first loads of one model
+            entry = _SHARED_EMBEDDING_MODELS.get(key)
+            if entry is not None and entry.model is not None:
+                self.model = entry.model
+                self.model_id = entry.model_id
+                if entry.gguf_sibling_of:
+                    self._gguf_sibling_of = entry.gguf_sibling_of
+                entry.holders.add(self)
+                self._shared_embedding = entry
+                logger.info(f"Embedding model {entry.model_id} already loaded in this process; "
+                            f"sharing it ({len(entry.holders)} managers, no second copy)")
+                return
+            self._load_model_unshared()
+            entry = _SharedEmbeddingModel(key, self.model, self.model_id, getattr(self, "_gguf_sibling_of", None))
+            entry.holders.add(self)
+            _SHARED_EMBEDDING_MODELS[key] = entry
+            self._shared_embedding = entry
+
+    def _release_shared_model(self) -> bool:
+        """Stop using the shared model. True when OTHER managers still hold it (nothing to free)."""
+        entry = getattr(self, "_shared_embedding", None)
+        self._shared_embedding = None
+        if entry is None:
+            return False
+        with _SHARED_EMBEDDING_LOCK:
+            entry.holders.discard(self)
+            others = [m for m in list(entry.holders) if getattr(m, "model", None) is entry.model]
+            if others:
+                return True
+            if _SHARED_EMBEDDING_MODELS.get(entry.key) is entry:
+                _SHARED_EMBEDDING_MODELS.pop(entry.key, None)
+            entry.model = None
+            return False
+
+    def _load_model_unshared(self):
         """Load the HuggingFace embedding model with optimal backend and reduced warnings."""
         try:
             if sentence_transformers is None:
@@ -2116,8 +2203,9 @@ class EmbeddingManager:
                 weights_ref = weakref.ref(self.model) if self.model is not None else None
             except TypeError:
                 weights_ref = None
-            if isinstance(self.model, _LlamaCppSentenceEncoder):
-                self.model.close()  # llama.cpp frees its buffers only on close
+            shared_by_others = self._release_shared_model()
+            if isinstance(self.model, _LlamaCppSentenceEncoder) and not shared_by_others:
+                self.model.close()  # llama.cpp frees its buffers only on close (the last holder)
             self.model = None
         try:
             self.embed.cache_clear()

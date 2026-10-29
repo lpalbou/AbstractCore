@@ -1,0 +1,3 @@
+### Fixed
+
+- **One loaded embedding model per (model, device, backend) in a process** (`embeddings/manager.py`, residency audit R3, 2026-10-29). Before, every `EmbeddingManager` loaded the weights again: each account's runtime service held its own full copy of the embedder. Now a manager whose model is already loaded adopts it, and stays a cheap facade (its caches, output dims and provider settings are its own). Unloading one manager detaches it. The weights go with the last manager that holds them, whether it unloads or is dropped. An eject still unloads every manager. The residency rows count the weights once (`copies` = distinct models, `holders` = managers, `shared_weights`). The GGUF encoder already serializes its own encodes, so sharing it is safe.
