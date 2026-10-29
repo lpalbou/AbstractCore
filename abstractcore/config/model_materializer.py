@@ -5099,6 +5099,13 @@ def _gguf_kind_tasks(snap: Path, repo_path: Optional[Path]) -> Optional[Dict[str
     reason = gguf_unloadable_reason(arch)
     if reason:
         out.update(loadable=False, unloadable_reason=reason)
+        from ..utils.model_cache import llamacpp_update_for
+
+        update = llamacpp_update_for(arch)
+        if update:
+            # The console offers "Update llama.cpp" for this row (one click, the engine
+            # install path) instead of only greying it.
+            out["llamacpp_update"] = update
     return out
 
 

@@ -4,7 +4,7 @@ import os
 import platform
 import struct
 from pathlib import Path
-from typing import BinaryIO, Optional, Sequence
+from typing import Any, BinaryIO, Dict, Optional, Sequence
 
 
 def _dedupe_existing_dirs(candidates: Sequence[Path]) -> list[Path]:
@@ -746,18 +746,59 @@ def llamacpp_knows_architecture(arch: Optional[str]) -> Optional[bool]:
     return (name.encode("utf-8") + b"\x00") in data
 
 
-def gguf_unloadable_reason(arch: Optional[str]) -> Optional[str]:
-    """The sentence when this install's llama.cpp cannot load ``arch``, else None."""
+def newest_llamacpp_architectures() -> Optional[Dict[str, Any]]:
+    """The architecture table of the newest llama-cpp-python release AbstractCore knows
+    (`assets/llamacpp_known_architectures.json`: the `LLM_ARCH_NAMES` of the llama.cpp
+    commit that release vendors), or None when the asset is missing."""
+    try:
+        import json as _json
+
+        path = Path(__file__).resolve().parents[1] / "assets" / "llamacpp_known_architectures.json"
+        data = _json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data.get("architectures"), list) else None
+    except Exception:
+        return None
+
+
+def llamacpp_update_for(arch: Optional[str]) -> Optional[Dict[str, Any]]:
+    """When this install's llama.cpp cannot load ``arch`` but the newest llama-cpp-python
+    release can: `{"architecture", "installed", "update_to"}`. None otherwise (it loads, it
+    cannot be told, or no release knows it yet)."""
     if llamacpp_knows_architecture(arch) is not False:
         return None
+    newest = newest_llamacpp_architectures()
+    if not newest or str(arch) not in set(newest.get("architectures") or []):
+        return None
+    return {"architecture": str(arch), "installed": _installed_llamacpp_version() or None,
+            "update_to": str(newest.get("llama_cpp_python") or "") or None}
+
+
+def _installed_llamacpp_version() -> str:
     try:
         from importlib.metadata import version
 
-        installed = version("llama-cpp-python")
+        return version("llama-cpp-python")
     except Exception:
-        installed = ""
+        return ""
+
+
+def gguf_unloadable_reason(arch: Optional[str]) -> Optional[str]:
+    """The sentence when this install's llama.cpp cannot load ``arch``, else None. It says
+    whether updating llama.cpp fixes it (the newest release knows the architecture) or not."""
+    if llamacpp_knows_architecture(arch) is not False:
+        return None
+    installed = _installed_llamacpp_version()
     which = f"llama-cpp-python {installed}" if installed else "llama-cpp-python"
+    update = llamacpp_update_for(arch)
+    if update and update.get("update_to"):
+        return (
+            f"This computer's llama.cpp ({which}) cannot load the {arch} architecture; "
+            f"llama-cpp-python {update['update_to']} can: update llama.cpp."
+        )
+    newest = newest_llamacpp_architectures() or {}
+    latest = newest.get("llama_cpp_python")
     return (
-        f"This computer's llama.cpp ({which}) cannot load the {arch} architecture. "
-        "Update llama-cpp-python, or choose another model."
+        f"No llama.cpp release supports the {arch} architecture yet"
+        + (f" (newest checked: llama-cpp-python {latest})" if latest else "")
+        + "; choose another model."
     )
