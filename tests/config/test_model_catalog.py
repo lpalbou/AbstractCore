@@ -315,6 +315,40 @@ def test_hub_search_adds_hf_rows_with_a_picked_quant(host, tmp_path):
     assert hf_rows[0]["id"] == "hf:someone/cool-7b-gguf"
 
 
+def test_a_hub_gguf_this_llamacpp_cannot_load_is_flagged_before_download(host, tmp_path, monkeypatch):
+    """Backlog 0868 (OVH: XHToken/Spark-X2.6-4B-GGUF downloaded, then failed at Test: `spark2_5`). The
+    Hub's `gguf.architecture` is checked against this computer's llama.cpp before anything downloads."""
+    from abstractcore.utils import model_cache
+
+    monkeypatch.setattr(model_cache, "llamacpp_knows_architecture", lambda arch: {"spark2_5": False, "qwen3": True}.get(arch))
+    api = FakeHfApi(
+        repos={
+            "XHToken/Spark-X2.6-4B-GGUF": {"files": {"Spark-X2.6-4B-Q4_K_M.gguf": 2_500_000_000}, "architecture": "spark2_5"},
+            "someone/Cool-4B-GGUF": {"files": {"Cool-4B-Q4_K_M.gguf": 2_400_000_000}, "architecture": "qwen3"},
+            "other/Plain-4B-GGUF": {"files": {"Plain-4B-Q4_K_M.gguf": 2_400_000_000}},
+        },
+        search={"gguf:4b": ["XHToken/Spark-X2.6-4B-GGUF", "someone/Cool-4B-GGUF", "other/Plain-4B-GGUF"], "mlx:4b": []},
+    )
+    payload = mc.catalog("4b", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    arts = {r["artifacts"][0]["artifact"].split(":")[0]: r["artifacts"][0] for r in payload["rows"] if r["source"] == "hf_search"}
+    spark = arts["XHToken/Spark-X2.6-4B-GGUF"]
+    assert spark["gguf_architecture"] == "spark2_5" and spark["loadable"] is False
+    assert spark["unloadable_reason"].startswith("This computer's llama.cpp (llama-cpp-python")
+    assert "cannot load the spark2_5 architecture" in spark["unloadable_reason"]
+    assert spark["downloadable"] is False and spark["recommended"] is False
+    assert spark["unloadable_reason"] in spark["fit"]["notes"]
+    cool = arts["someone/Cool-4B-GGUF"]
+    assert cool["loadable"] is True and cool["unloadable_reason"] is None and cool["downloadable"] is True
+    # The Hub did not say (or no llama-cpp-python): nothing is claimed.
+    plain = arts["other/Plain-4B-GGUF"]
+    assert plain["gguf_architecture"] is None and plain["loadable"] is None and plain["downloadable"] is True
+    # Unknown to the check (None): offered, never refused.
+    monkeypatch.setattr(model_cache, "llamacpp_knows_architecture", lambda arch: None)
+    again = mc.catalog("4b", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    spark2 = next(r["artifacts"][0] for r in again["rows"] if r["id"] == "hf:xhtoken/spark-x2.6-4b-gguf")
+    assert spark2["loadable"] is None and spark2["downloadable"] is True
+
+
 def test_rate_limit_degrades_to_the_offline_answer(host, tmp_path):
     api = FakeHfApi()
     api.fail_with = HubRateLimited()

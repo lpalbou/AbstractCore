@@ -50,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
   under the provider's cancel kwarg.
 
+### Added
+
+- **A Hugging Face GGUF this computer's llama.cpp cannot load is flagged before download** (backlog 0868, following
+  0867). With `--hub`, the catalog reads each GGUF repo's `gguf.architecture` from the Hugging Face API and checks
+  it against llama-cpp-python's `libllama`. A build it cannot load carries `loadable: false`, `unloadable_reason`
+  (the sentence) and `downloadable: false`, is never the pre-selection, and says why in its fit notes. A known
+  architecture is `loadable: true`. When it cannot be told, the value is `null` and the build stays offered.
+
 ## [2.31.1] - 2026-10-28
 
 ### Added
