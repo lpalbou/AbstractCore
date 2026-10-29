@@ -5,13 +5,21 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per pull request;
+`python scripts/changelog.py assemble X.Y.Z` writes them here at release.
+
 ## [Unreleased]
+
 
 ### Changed
 
 - **The model catalog never offers MLX off Apple silicon** (operator 2026-10-29: "on Linux never offer MLX"): the
   mlx / mlx-gen / mlx-vlm artifacts are left out on a host whose engine registry says MLX cannot run (they were
   listed, not downloadable), and a row with only MLX builds (the Wan video rows) is not listed there.
+- **`sse-starlette>=1.8,<4`** (was `<2.0.0`): AbstractCore never imports it (the server streams with Starlette's
+  `StreamingResponse`), and `mcp` 2.3 requires `sse-starlette>=3`, so every environment holding both ended in a pip
+  conflict. Checked with sse-starlette 3.6.0 (starlette 0.52.1, fastapi 0.136.1): the server app starts and
+  `tests/server` passes as with 1.8.2; `uv pip compile` resolves abstractcore + sse-starlette 3.6.0 + mcp 2.3.0.
 
 ### Added
 
@@ -19,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `catalog(hub=True, extended=True)` and `?extended=true` list, per row, every quant its own GGUF repos ship (UD-IQ1_S
   to Q8_0, BF16), each with its exact size and its fit, marked `extended: true` and never pre-selected. Labels the
   download pattern cannot fetch exactly are left out. `gguf_quant_labels(facts)` is the enumeration.
+- **Model residency failsafe (ADR 0010): a load never fills the card.** Before llama.cpp allocates (one full-offload
+  CUDA card), the GGUF load checks weights + KV at its smallest context + the reserve against the free device
+  memory; when it does not fit, resident models that are neither locked (a "Keep loaded" pin) nor in use are
+  evicted, least recently used first, one at a time (`process_residency.make_room`); if it still does not fit, the
+  load fails before allocating with `ModelDoesNotFitError` (`needed_bytes`, `free_bytes`, `kept`, `evicted`,
+  `suggestions`: smaller artifacts of the same model from the catalog) and a sentence ("X needs 13.7 GB but only
+  9.2 GB is free on the GPU (kept: Y (locked by the runtime of account default/admin)). Choose a smaller model, for
+  example ..."). The CPU fallback is checked against available RAM the same way. `InflightGenerations.last_used_at`
+  and `_residency_registered_at` give the order.
 
 ### Fixed
 
@@ -37,9 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `flux`: text to image;
   - an embedding repo (its name says so; Qwen3-Embedding reuses `qwen3`): text embedding.
   `tasks_source: "gguf"`. A model outside the catalog can then be offered as the default text model.
-
-### Fixed
-
 - **An embedding default that is not downloaded says so, once, and can be downloaded from the console.** The
   availability probe resolves an embedding route's catalog alias (`huggingface/qwen3-embedding`) to the repo the
   embedding manager loads (`Qwen/Qwen3-Embedding-0.6B`), so the route reads "not downloaded" with a
@@ -72,29 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Structured output with a host's `cancel_event`** no longer fails on the HuggingFace GGUF lane with "got multiple
   values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
   under the provider's cancel kwarg.
-
-### Changed
-
-- **`sse-starlette>=1.8,<4`** (was `<2.0.0`): AbstractCore never imports it (the server streams with Starlette's
-  `StreamingResponse`), and `mcp` 2.3 requires `sse-starlette>=3`, so every environment holding both ended in a pip
-  conflict. Checked with sse-starlette 3.6.0 (starlette 0.52.1, fastapi 0.136.1): the server app starts and
-  `tests/server` passes as with 1.8.2; `uv pip compile` resolves abstractcore + sse-starlette 3.6.0 + mcp 2.3.0.
-### Fixed
-
 - **A GGUF context that fills up mid-request** (llama.cpp "failed to find a memory slot", `llama_decode returned 1`)
   frees the engine's context memory and fails with a clear `ContextWindowExceededError` sentence, instead of an
   "Error: llama_decode returned 1" answer and a memory left full for the next request (backlog 0862).
-### Added
-
-- **Model residency failsafe (ADR 0010): a load never fills the card.** Before llama.cpp allocates (one full-offload
-  CUDA card), the GGUF load checks weights + KV at its smallest context + the reserve against the free device
-  memory; when it does not fit, resident models that are neither locked (a "Keep loaded" pin) nor in use are
-  evicted, least recently used first, one at a time (`process_residency.make_room`); if it still does not fit, the
-  load fails before allocating with `ModelDoesNotFitError` (`needed_bytes`, `free_bytes`, `kept`, `evicted`,
-  `suggestions`: smaller artifacts of the same model from the catalog) and a sentence ("X needs 13.7 GB but only
-  9.2 GB is free on the GPU (kept: Y (locked by the runtime of account default/admin)). Choose a smaller model, for
-  example ..."). The CPU fallback is checked against available RAM the same way. `InflightGenerations.last_used_at`
-  and `_residency_registered_at` give the order.
 
 - **A Hugging Face GGUF this computer's llama.cpp cannot load is flagged before download** (backlog 0868, following
   0867). With `--hub`, the catalog reads each GGUF repo's `gguf.architecture` from the Hugging Face API and checks

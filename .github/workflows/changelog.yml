@@ -1,0 +1,23 @@
+name: Changelog
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    # A pull request that changes abstractcore/ adds a fragment, changelog.d/<pr-or-slug>.md, instead of
+    # editing CHANGELOG.md (scripts/changelog.py; changelog.d/README.md).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fragment present and well formed
+        run: python scripts/changelog.py check --base "origin/${{ github.base_ref }}"
