@@ -188,7 +188,11 @@ class TestProviderRegistry:
 
         # Return a list that intentionally does NOT include the registry's default model
         # ("openai/gpt-4o-mini") to ensure validation would fail if it ran.
-        with patch.object(OpenAICompatibleProvider, "list_available_models", return_value=["some-other-model"]):
+        from abstractcore.providers.openrouter_provider import OpenRouterProvider
+
+        # The key check (GET /key, 2026-10-29) is stubbed: a unit test makes no network call.
+        with patch.object(OpenAICompatibleProvider, "list_available_models", return_value=["some-other-model"]), \
+                patch.object(OpenRouterProvider, "_api_key_refused", return_value=False):
             models = registry.get_available_models("openrouter")
 
         assert models == ["some-other-model"]
