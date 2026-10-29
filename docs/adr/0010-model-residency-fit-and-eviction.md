@@ -60,7 +60,7 @@ process, every claim, and the estimate; Runtime and Gateway only declare locks a
    ("131,072 of 262,144; limited by memory, 5 % buffer"). A person can set a model's context
    (`config.model_contexts.set_model_context`): used exactly or refused with the readable sentence, never shrunk. A
    request longer than the loaded context NEVER gets cut: it fails with `ContextWindowExceededError`. No per-route
-   caps (framework ADR 0026). The `model_loaded` ledger event with these numbers is AbstractRuntime backlog 0866.
+   caps (framework ADR 0026). The `model_loaded` ledger event with these numbers is AbstractRuntime backlog 0865.
 
 ## Consequences
 
