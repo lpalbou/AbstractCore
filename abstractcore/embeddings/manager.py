@@ -326,6 +326,7 @@ def embeddings_memory_report() -> Dict[str, Any]:
 
 # GGUF builds of an embedding model, tried when its Hugging Face repo is not downloaded,
 # in this order of fidelity to the original weights.
+_GGUF_EMBEDDING_MAX_CTX = 4096  # tokens per text on the GGUF embedding lane (CPU)
 _GGUF_EMBEDDING_QUANT_ORDER = ("f16", "bf16", "q8_0", "q6_k", "q5_k_m", "q4_k_m")
 
 
@@ -378,9 +379,20 @@ class _LlamaCppSentenceEncoder:
         self.device = "cpu"
         # n_batch / n_ubatch = n_ctx: llama-cpp-python's embed() cuts every text to
         # n_batch tokens (512 by default), silently. Pooling comes from the file.
-        self._llm = llama_cpp.Llama(model_path=str(path), embedding=True, n_ctx=int(n_ctx),
-                                    n_batch=int(n_ctx), n_ubatch=int(n_ctx),
-                                    n_gpu_layers=0, verbose=False)
+        # ALL ON THE CPU (OVH 8080, 2026-10-29): with n_gpu_layers=0 llama.cpp's CUDA
+        # build still put the KV cache and the n_ubatch-sized compute buffers on the
+        # GPU (offload_kqv defaults on): 4.9 GiB of device memory for a 0.6B embedding
+        # model, listed nowhere, which then made the residency failsafe refuse a model
+        # that fit. The context is bounded too (CPU RAM): longer texts are cut at it.
+        n_ctx = max(512, min(int(n_ctx), _GGUF_EMBEDDING_MAX_CTX))
+        kwargs: Dict[str, Any] = dict(model_path=str(path), embedding=True, n_ctx=n_ctx, n_batch=n_ctx,
+                                      n_ubatch=n_ctx, n_gpu_layers=0, offload_kqv=False, verbose=False)
+        import inspect
+
+        if "op_offload" in inspect.signature(llama_cpp.Llama.__init__).parameters:
+            kwargs["op_offload"] = False  # host-tensor ops stay on the host as well
+        self._llm = llama_cpp.Llama(**kwargs)
+        self.n_ctx = n_ctx
         self._lock = threading.Lock()  # one llama.cpp context: one encode at a time
         self._dim: Optional[int] = None
 
