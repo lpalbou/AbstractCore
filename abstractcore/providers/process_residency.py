@@ -283,9 +283,13 @@ def refuse_other_backend_artifact(path: Any, *, backend: str) -> None:
 
     wanted = identity(path)
     residents = []
+    # sys.modules exposes a module before its import finishes. Registries not
+    # initialized yet cannot hold managed weights; never wait for that import
+    # while holding the process load lock (the importer may need this lock).
     hf = sys.modules.get("abstractcore.providers.hf_residency")
-    if backend != "huggingface" and hf is not None:
-        for provider in hf.registered_providers():
+    registered = getattr(hf, "registered_providers", None)
+    if backend != "huggingface" and registered is not None:
+        for provider in registered():
             source = getattr(provider, "_transformers_source", None)
             if source is not None and (
                 getattr(provider, "model_instance", None) is not None
@@ -293,24 +297,32 @@ def refuse_other_backend_artifact(path: Any, *, backend: str) -> None:
             ):
                 residents.append(("huggingface", source.model))
     embeddings = sys.modules.get(_EMBEDDINGS_MODULE)
-    if backend != "embeddings" and embeddings is not None:
-        with embeddings._SHARED_EMBEDDING_LOCK:
-            for entry in list(embeddings._SHARED_EMBEDDING_MODELS.values()):
+    embedding_lock = getattr(embeddings, "_SHARED_EMBEDDING_LOCK", None)
+    embedding_models = getattr(embeddings, "_SHARED_EMBEDDING_MODELS", None)
+    if backend != "embeddings" and embedding_lock is not None and embedding_models is not None:
+        with embedding_lock:
+            for entry in list(embedding_models.values()):
                 if entry.model is not None:
                     residents.append(("embeddings", getattr(entry.model, "model_name_or_path", None) or entry.model_id))
     if backend != "mlx":
         plain = sys.modules.get("abstractcore.providers.mlx_provider")
-        if plain is not None:
-            with plain._SHARED_MLX_MODELS_LOCK:
-                residents.extend(("mlx", key) for key in list(plain._SHARED_MLX_MODELS))
+        plain_lock = getattr(plain, "_SHARED_MLX_MODELS_LOCK", None)
+        plain_models = getattr(plain, "_SHARED_MLX_MODELS", None)
+        if plain_lock is not None and plain_models is not None:
+            with plain_lock:
+                residents.extend(("mlx", key) for key in list(plain_models))
         native = sys.modules.get("abstractcore.providers.mlx_native_session")
-        if native is not None:
-            with native._LOAD_LOCK:
-                residents.extend(("mlx", path) for key in list(native._SESSIONS) for path in key[:2] if path)
+        native_lock = getattr(native, "_LOAD_LOCK", None)
+        native_sessions = getattr(native, "_SESSIONS", None)
+        if native_lock is not None and native_sessions is not None:
+            with native_lock:
+                residents.extend(("mlx", path) for key in list(native_sessions) for path in key[:2] if path)
         qwen4 = sys.modules.get("abstractcore.providers.mlx_qwen4")
-        if qwen4 is not None:
-            with qwen4._LOAD_LOCK:
-                residents.extend(("mlx", key[0]) for key in list(qwen4._SESSIONS))
+        qwen4_lock = getattr(qwen4, "_LOAD_LOCK", None)
+        qwen4_sessions = getattr(qwen4, "_SESSIONS", None)
+        if qwen4_lock is not None and qwen4_sessions is not None:
+            with qwen4_lock:
+                residents.extend(("mlx", key[0]) for key in list(qwen4_sessions))
     for owner, artifact in residents:
         if identity(artifact) == wanted:
             from ..exceptions import InvalidRequestError

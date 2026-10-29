@@ -220,6 +220,15 @@ def test_provider_after_unload_can_choose_new_placement_and_other_artifact(fake_
     assert shared.weights_identity(second.llm) != shared.weights_identity(third.llm)
 
 
+def test_gguf_first_load_while_embedding_module_is_importing(fake_llama, provider_load, monkeypatch, tmp_path):
+    name = "abstractcore.embeddings.manager"
+    monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    path = tmp_path / "m.gguf"
+    path.write_bytes(b"x")
+    held = provider_load(path)
+    assert held is not None and len(fake_llama[2]) == 1
+
+
 @pytest.fixture()
 def embedding_load(fake_llama, monkeypatch):
     """Actual GGUF encoder/manager admission with the same fake native allocator as chat."""

@@ -392,7 +392,7 @@ def _load_native_session_locked(path: str, drafter_path=None):
             from ..exceptions import InvalidRequestError
 
             qwen4 = sys.modules.get(__package__ + ".mlx_qwen4")
-            if qwen4 is not None and any(k[0] in (target, head) for k in qwen4._SESSIONS):
+            if any(k[0] in (target, head) for k in getattr(qwen4, "_SESSIONS", ())):
                 raise InvalidRequestError(
                     "This target or drafter is already loaded through Qwen4 native MLX. "
                     "Unload it before changing lanes; a second copy is never loaded."
@@ -413,9 +413,11 @@ def _load_native_session_locked(path: str, drafter_path=None):
             # same target object. Their existing registries share this load lock
             # so a simultaneous first load cannot allocate both representations.
             plain = sys.modules.get(__package__ + ".mlx_provider")
-            if plain is not None:
-                with plain._SHARED_MLX_MODELS_LOCK:
-                    if target in plain._SHARED_MLX_MODELS or head in plain._SHARED_MLX_MODELS:
+            plain_lock = getattr(plain, "_SHARED_MLX_MODELS_LOCK", None)
+            plain_models = getattr(plain, "_SHARED_MLX_MODELS", None)
+            if plain_lock is not None and plain_models is not None:
+                with plain_lock:
+                    if target in plain_models or head in plain_models:
                         raise InvalidRequestError(
                             f"MLX target or drafter for '{target}' is already loaded through mlx-lm. "
                             "Unload it before selecting the native mlx-vlm configuration; "

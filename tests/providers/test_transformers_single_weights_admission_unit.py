@@ -254,3 +254,53 @@ def test_qwen4_concurrent_first_profiles_allocate_once(cross_backend_loaders, tm
         assert not thread.is_alive()
     assert allocated() == 1
     assert sum(isinstance(r, InvalidRequestError) for r in results) == (0 if same_profile else 1)
+
+
+@pytest.mark.parametrize("lane", ["hf", "mlx", "native", "qwen4"])
+def test_first_load_while_embedding_module_is_importing(cross_backend_loaders, monkeypatch, tmp_path, lane):
+    loaders, allocated = cross_backend_loaders
+    name = "abstractcore.embeddings.manager"
+    initialized = sys.modules[name]
+    # Import machinery publishes this object before manager's expensive imports
+    # finish and before the embedding registry can hold any weights.
+    monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    held = loaders[lane](tmp_path)
+    assert held is not None and allocated() == 1
+    monkeypatch.setitem(sys.modules, name, initialized)
+    with pytest.raises(InvalidRequestError, match="second copy is never loaded"):
+        loaders["embedding"](tmp_path)
+    assert allocated() == 1
+
+
+@pytest.mark.parametrize("lane, partials", [
+    ("mlx", ["mlx_qwen4"]),
+    ("native", ["mlx_qwen4", "mlx_provider"]),
+    ("qwen4", ["mlx_native_session", "mlx_provider"]),
+])
+def test_first_mlx_load_while_other_lane_is_importing(cross_backend_loaders, monkeypatch, tmp_path, lane, partials):
+    loaders, allocated = cross_backend_loaders
+    for partial in partials:
+        name = "abstractcore.providers." + partial
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    held = loaders[lane](tmp_path)
+    assert held is not None and allocated() == 1
+
+
+@pytest.mark.parametrize("name, lock_name, registry_name", [
+    ("abstractcore.embeddings.manager", "_SHARED_EMBEDDING_LOCK", "_SHARED_EMBEDDING_MODELS"),
+    ("abstractcore.providers.mlx_provider", "_SHARED_MLX_MODELS_LOCK", "_SHARED_MLX_MODELS"),
+    ("abstractcore.providers.mlx_native_session", "_LOAD_LOCK", "_SESSIONS"),
+    ("abstractcore.providers.mlx_qwen4", "_LOAD_LOCK", "_SESSIONS"),
+    ("abstractcore.providers.hf_residency", None, None),
+])
+@pytest.mark.parametrize("stage", ["published", "lock_only", "registry_only"])
+def test_admission_skips_incomplete_registry_initialization(monkeypatch, tmp_path, name, lock_name, registry_name, stage):
+    from abstractcore.providers.process_residency import load_lock, refuse_other_backend_artifact
+    partial = types.ModuleType(name)
+    if stage == "lock_only" and lock_name:
+        setattr(partial, lock_name, threading.RLock())
+    if stage == "registry_only" and registry_name:
+        setattr(partial, registry_name, {})
+    monkeypatch.setitem(sys.modules, name, partial)
+    with load_lock():
+        refuse_other_backend_artifact(tmp_path, backend="test")

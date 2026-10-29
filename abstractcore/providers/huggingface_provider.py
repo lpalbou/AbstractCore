@@ -7828,8 +7828,9 @@ class HuggingFaceProvider(BaseProvider):
                 raise FileNotFoundError(f"GGUF model file not found: {model_path}")
 
             embedding_module = sys.modules.get("abstractcore.embeddings.manager")
-            if embedding_module is not None:
-                embedding_module._refuse_resident_gguf_embedding(model_path)
+            refuse_embedding = getattr(embedding_module, "_refuse_resident_gguf_embedding", None)
+            if refuse_embedding is not None:
+                refuse_embedding(model_path)
 
             gguf_arch: str | None = None
             try:

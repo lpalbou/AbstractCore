@@ -224,8 +224,8 @@ def _load_qwen4_session_locked(path: str, *, mtp: bool, ple_offload: bool) -> Qw
             plain = sys.modules.get(__package__ + ".mlx_provider")
             if (
                 any(k[0] == key[0] for k in _SESSIONS)
-                or (native is not None and any(key[0] in k[:2] for k in native._SESSIONS))
-                or (plain is not None and key[0] in plain._SHARED_MLX_MODELS)
+                or any(key[0] in k[:2] for k in getattr(native, "_SESSIONS", ()))
+                or key[0] in getattr(plain, "_SHARED_MLX_MODELS", ())
             ):
                 raise InvalidRequestError(
                     f"MLX artifact '{key[0]}' is already loaded with another lane or PLE profile. "

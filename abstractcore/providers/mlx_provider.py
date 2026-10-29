@@ -466,7 +466,7 @@ class MLXProvider(BaseProvider):
 
         with mlx_native_session._LOAD_LOCK, _SHARED_MLX_MODELS_LOCK:
             qwen4 = sys.modules.get(__package__ + ".mlx_qwen4")
-            if qwen4 is not None and any(k[0] == key for k in qwen4._SESSIONS):
+            if any(k[0] == key for k in getattr(qwen4, "_SESSIONS", ())):
                 raise InvalidRequestError(
                     f"MLX model '{key}' is already loaded through Qwen4 native MLX. "
                     "Unload it before changing lanes; a second copy is never loaded."
