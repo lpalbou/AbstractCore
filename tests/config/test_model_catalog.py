@@ -174,7 +174,8 @@ def test_the_starter_text_model_is_preselected_on_apple_silicon(host):
     assert lms["recommended"] is False and lms["supported_on_host"] is True
 
 
-def test_the_portable_starter_is_preselected_off_apple_silicon(host):
+def test_the_portable_starter_is_preselected_off_apple_silicon(host, monkeypatch):
+    _no_local_engines(monkeypatch)  # with no engine installed the curated LM Studio build leads
     row = next(r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"] if r["id"] == "qwen3.5-9b")
     assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["qwen/qwen3.5-9b@q4_k_m"]
     assert row["starter"] is True
@@ -196,6 +197,56 @@ def _no_local_engines(monkeypatch):
         return out
 
     monkeypatch.setattr(engines, "engine_inventory", inventory)
+
+
+def _only_engines(monkeypatch, *installed):
+    from abstractcore.config import engines
+
+    real = engines.engine_inventory
+
+    def inventory(*args, **kwargs):
+        out = real(*args, **kwargs)
+        for e in out["engines"]:
+            e["installed"] = e["id"] in installed
+        return out
+
+    monkeypatch.setattr(engines, "engine_inventory", inventory)
+
+
+def test_a_host_with_only_llamacpp_is_offered_the_gguf_first(host, monkeypatch):
+    """Backlog 0863 (the OVH server): llama.cpp Ready, LM Studio and Ollama absent. The row's
+    pre-selection and first artifact is the HF GGUF llama.cpp serves, not the curated LM Studio
+    build; the absent engines' builds stay listed after it."""
+    _only_engines(monkeypatch, "llamacpp")
+    rows = {r["id"]: r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"]}
+    arts = rows["qwen3.5-9b"]["artifacts"]
+    first = arts[0]
+    assert (first["provider"], first["artifact"], first["engine"]) == (
+        "huggingface", "unsloth/Qwen3.5-9B-GGUF:Q4_K_M", "llamacpp"
+    )
+    assert first["recommended"] is True and first["engine_installed"] is True
+    assert [a["provider"] for a in arts if a["recommended"]] == ["huggingface"]
+    assert {"lmstudio", "ollama"} <= {a["provider"] for a in arts[1:]}
+    assert not any(a["engine_installed"] for a in arts if a["provider"] in ("lmstudio", "ollama"))
+    # Installed-engine artifacts are listed before any artifact of an absent engine, on every row.
+    for row in rows.values():
+        flags = [a["engine_installed"] for a in row["artifacts"] if not a["recommended"]]
+        assert flags == sorted(flags, reverse=True), row["id"]
+
+
+def test_every_curated_text_row_has_a_build_llamacpp_serves():
+    """Backlog 0863: no curated chat row offers only engines a llama.cpp-only host lacks.
+    (Qwen3.8 Flash-Next: the hub has no plain GGUF quant, only its MTP drafter files.)"""
+    missing = []
+    for r in mc.load_seed()["rows"]:
+        if "chat" not in (r.get("tags") or []) and "coding" not in (r.get("tags") or []):
+            continue
+        provs = {a["provider"] for a in r["artifacts"]}
+        if not provs & {"lmstudio", "ollama", "mlx"}:
+            continue
+        if not any(mc._engine_for(a["provider"], a.get("quant")) == "llamacpp" for a in r["artifacts"]):
+            missing.append(r["id"])
+    assert missing == ["qwen3.8-flash-next"]
 
 
 def test_mlx_is_never_offered_off_apple_silicon(host, monkeypatch):
@@ -370,6 +421,31 @@ def test_a_handle_or_hyphenated_name_finds_the_curated_row(host):
         assert "qwen3.5-9b" in [r["id"] for r in mc.catalog(q, host=synthetic_host("cuda24"))["rows"]], q
 
 
+def test_extended_lists_every_quant_of_the_rows_own_gguf_repos(host, tmp_path):
+    """Batch item (b), "All" quants: with `extended`, a row gains every quant its own GGUF repo
+    ships (exact size from the file list, its fit), marked `extended`, never the pre-selection;
+    a label whose download pattern would fetch other files too (Q6_K also matches UD-Q6_K_XL;
+    any Q4_K_M rides an MTP drafter's) is left out; mmproj is not a quant."""
+    repo = "unsloth/Qwen3-8B-GGUF"
+    files = {
+        "Qwen3-8B-Q4_K_M.gguf": 5_000_000_000, "Qwen3-8B-Q8_0.gguf": 8_700_000_000,
+        "Qwen3-8B-UD-IQ1_S.gguf": 2_275_000_000, "Qwen3-8B-Q3_K_M.gguf": 4_100_000_000,
+        "Qwen3-8B-Q6_K.gguf": 6_700_000_000, "Qwen3-8B-UD-Q6_K_XL.gguf": 7_400_000_000,
+        "BF16/Qwen3-8B-BF16-00001-of-00002.gguf": 8_000_000_000, "BF16/Qwen3-8B-BF16-00002-of-00002.gguf": 8_300_000_000,
+        "mmproj-F16.gguf": 600_000_000,
+    }
+    api = FakeHfApi(repos={repo: {"files": files}})
+    kw = dict(hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
+    row = next(r for r in mc.catalog("qwen3 8b", extended=True, **kw)["rows"] if r["id"] == "qwen3-8b")
+    ext = {a["artifact"].split(":", 1)[1]: a for a in row["artifacts"] if a.get("extended")}
+    assert sorted(ext) == ["BF16", "Q3_K_M", "UD-IQ1_S", "UD-Q6_K_XL"]
+    assert ext["BF16"]["download_bytes"] == 16_300_000_000 and ext["Q3_K_M"]["download_bytes"] == 4_100_000_000
+    assert all(a["provider"] == "huggingface" and a["engine"] == "llamacpp" and a["fit"]["verdict"] for a in ext.values())
+    assert not any(a["recommended"] for a in ext.values())
+    plain = next(r for r in mc.catalog("qwen3 8b", **kw)["rows"] if r["id"] == "qwen3-8b")
+    assert not any(a.get("extended") for a in plain["artifacts"])
+
+
 def test_rate_limit_degrades_to_the_offline_answer(host, tmp_path):
     api = FakeHfApi()
     api.fail_with = HubRateLimited()
@@ -427,3 +503,12 @@ def test_no_liquidai_q4_k_m_gguf_names_a_repo_with_a_hip_optimized_twin():
     bad = [a["artifact"] for r in mc.load_seed()["rows"] for a in r["artifacts"]
            if a["provider"] == "huggingface" and a["artifact"].split(":")[0] in twins and "Q4_K_M" in a["artifact"].upper()]
     assert bad == []
+
+
+def test_an_extended_quant_is_never_the_preselection():
+    def art(name, verdict, **kw):
+        return {"provider": "huggingface", "artifact": name, "engine": "llamacpp", "supported_on_host": True,
+                "downloadable": True, "fit": {"verdict": verdict}, "presence": {"status": "absent"}, **kw}
+    row = {"id": "r", "artifacts": [art("r:Q4_K_M", "too_large"), art("r:UD-IQ1_S", "fits", extended=True)]}
+    mc._pick_recommended(row, "cuda", {"llamacpp": True})
+    assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["r:Q4_K_M"]

@@ -5043,7 +5043,7 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
         # (c): a model outside the catalog was not offered as the default text model).
         gguf = _gguf_kind_tasks(snap, repo_path)
         if gguf is not None:
-            kind, tasks, source = gguf["kind"], gguf["tasks"], gguf["tasks_source"]
+            return gguf
     return {"kind": kind, "tasks": tasks, "tasks_source": source}
 
 
@@ -5089,9 +5089,17 @@ def _gguf_kind_tasks(snap: Path, repo_path: Optional[Path]) -> Optional[Dict[str
     name = repo_path.name.split("--", 2)[-1] if repo_path is not None else ""
     if "embed" in name.lower():
         return {"kind": "embedding", "tasks": ["text_embedding"], "tasks_source": "gguf"}
+    from ..utils.model_cache import gguf_unloadable_reason
+
+    out: Dict[str, Any] = {"kind": "model", "tasks": [], "tasks_source": "gguf", "architecture": arch}
     if lowered in _GGUF_TEXT_ARCH:
-        return {"kind": "model", "tasks": ["text_generation"], "tasks_source": "gguf"}
-    return {"kind": "model", "tasks": [], "tasks_source": "gguf"}  # an architecture AbstractCore does not know
+        out["tasks"] = ["text_generation"]
+    # Batch item (f): a GGUF this install's llama.cpp cannot load says so here, before it is chosen,
+    # never at its first call (XHToken/Spark-X2.6-4B: `spark2_5`).
+    reason = gguf_unloadable_reason(arch)
+    if reason:
+        out.update(loadable=False, unloadable_reason=reason)
+    return out
 
 
 def _lmstudio_kind_tasks(item: Dict[str, Any]) -> Dict[str, Any]:
