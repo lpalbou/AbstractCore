@@ -363,6 +363,15 @@ def smaller_suggestions(model: str, budget_bytes: int, *, provider: str = "huggi
     if not same:
         same = [r for r in rows if str(r.get("id") or "").lower() and str(r.get("id")).lower() in name.replace("_", "-")]
     families = {str(r.get("family") or "") for r in same if r.get("family")}
+    if not families:
+        # A fine-tune or re-quant the catalog does not list ("mradermacher/Gemma-4-14B-
+        # A4B-Heretic-GGUF"): its family by name ("gemma4" in "gemma-4-14b-...").
+        import re as _re
+
+        flat = _re.sub(r"[^a-z0-9]", "", name)
+        families = {str(r.get("family")) for r in rows
+                    if r.get("family") and len(_re.sub(r"[^a-z0-9]", "", str(r.get("family")))) >= 5
+                    and _re.sub(r"[^a-z0-9]", "", str(r.get("family")).lower()) in flat}
     pool = same + [r for r in rows if r not in same and str(r.get("family") or "") in families]
     out: List[Dict[str, Any]] = []
     for r in pool:
