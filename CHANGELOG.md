@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866, operator QA item c). The repos the
+  catalog downloads hold only the quant file, with no config or card, so `models list` reported them as an unknown
+  model with no task. The kind and tasks now come from the file's own `general.architecture`:
+  - an architecture the catalog's GGUF repos use (`qwen35`, `gemma4`, `llama`, `lfm2`, ...): text generation; any
+    other architecture stays unknown;
+  - `qwen3-tts`: text to speech;
+  - `flux`: text to image;
+  - an embedding repo (its name says so; Qwen3-Embedding reuses `qwen3`): text embedding.
+  `tasks_source: "gguf"`. A model outside the catalog can then be offered as the default text model.
+
+### Fixed
+
 - **An embedding default that is not downloaded says so, once, and can be downloaded from the console.** The
   availability probe resolves an embedding route's catalog alias (`huggingface/qwen3-embedding`) to the repo the
   embedding manager loads (`Qwen/Qwen3-Embedding-0.6B`), so the route reads "not downloaded" with a
