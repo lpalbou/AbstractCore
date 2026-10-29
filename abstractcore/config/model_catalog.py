@@ -1531,6 +1531,87 @@ def _build_artifact(
     }
 
 
+# A GGUF file's quant label: `Model-UD-Q4_K_XL.gguf`, `Q8_0/Model-Q8_0-00001-of-00002.gguf`, `model-iq4_xs.gguf`.
+_GGUF_FILE_QUANT_RE = re.compile(
+    r"[-_.]((?:UD[-_])?(?:I?Q\d(?:_[0-9A-Z]+)*|BF16|F16|F32|MXFP4))(?:-\d{5}-of-\d{5})?\.gguf$", re.IGNORECASE
+)
+
+
+def gguf_quant_labels(facts: Mapping[str, Any]) -> Dict[str, Optional[int]]:
+    """Every quant a GGUF repo ships, from its file list: {label: total bytes or None}.
+
+    Only labels the catalog can fetch EXACTLY are listed: the `*LABEL*.gguf` download pattern
+    (`hf_artifact_parts`) must select that label's files and nothing else (a `Q4_K` pattern
+    would also fetch `Q4_K_M`; an MTP drafter `MTP/mtp-...-Q4_K_M.gguf` rides any `Q4_K_M`).
+    Vision projectors (`mmproj`) are not model quants."""
+    from .model_materializer import _matches_any
+
+    files = [(str(n), size) for n, size in facts.get("siblings") or [] if str(n).lower().endswith(".gguf")]
+    by_label: Dict[str, List[Tuple[str, Any]]] = {}
+    for name, size in files:
+        base = name.rsplit("/", 1)[-1]
+        if "mmproj" in base.lower():
+            continue
+        m = _GGUF_FILE_QUANT_RE.search(base)
+        if not m:
+            continue
+        label = m.group(1).upper().replace("UD_", "UD-")
+        by_label.setdefault(label, []).append((name, size))
+    out: Dict[str, Optional[int]] = {}
+    for label, own in sorted(by_label.items()):
+        variants = list(dict.fromkeys([label, label.upper(), label.lower()]))
+        patterns = [f"*{v}*.gguf" for v in variants]
+        selected = {name for name, _ in files if _matches_any(name, patterns)}
+        if selected != {name for name, _ in own}:
+            continue  # the pattern over-fetches (or misses): not one click
+        sizes = [size for _, size in own]
+        out[label] = sum(sizes) if all(isinstance(x, int) for x in sizes) else None
+    return out
+
+
+def _extended_quant_artifacts(
+    seed_row: Mapping[str, Any],
+    arts: List[Dict[str, Any]],
+    caps: Mapping[str, Any],
+    host: Mapping[str, Any],
+    support: Mapping[str, Mapping[str, Any]],
+    hub: Optional[Dict[str, Any]],
+    installed_sizes: Mapping[Tuple[str, str], int],
+) -> List[Dict[str, Any]]:
+    """`extended`: the other quants of the row's own GGUF repos (the curated, trusted sources:
+    the model's official organisation and the community builds the seed already names), each
+    with its exact size and its fit. Marked `extended: true`; never the pre-selection."""
+    from . import model_materializer as mm
+
+    facts_by_repo = (hub or {}).get("facts") or {}
+    have = {(a["provider"], _norm(a["artifact"])) for a in arts}
+    out: List[Dict[str, Any]] = []
+    repos: List[str] = []
+    for a in seed_row.get("artifacts") or []:
+        if a.get("provider") != "huggingface" or _engine_for("huggingface", a.get("quant")) != "llamacpp":
+            continue
+        repo = mm.hf_artifact_parts(a["artifact"])[0]
+        if repo not in repos:
+            repos.append(repo)
+    for repo in repos:
+        facts = facts_by_repo.get(repo)
+        if not isinstance(facts, Mapping):
+            continue
+        for label, size in gguf_quant_labels(facts).items():
+            artifact = f"{repo}:{label}"
+            if ("huggingface", _norm(artifact)) in have:
+                continue
+            have.add(("huggingface", _norm(artifact)))
+            built = _build_artifact(
+                seed_row,
+                {"provider": "huggingface", "artifact": artifact, "quant": label.lower(), "download_bytes": size},
+                caps, host, support, hub, installed_sizes,
+            )
+            built["extended"] = True
+            out.append(built)
+    return out
+
+
 def _pick_recommended(
     row: Dict[str, Any],
     accelerator: str,
@@ -1571,7 +1652,7 @@ def _pick_recommended(
         pos = order.index(a["provider"]) if a["provider"] in order else len(order)
         return (verdict_rank.get((a.get("fit") or {}).get("verdict", "unknown"), 3), installed, engine_ok, pos)
 
-    candidates = [a for a in arts if a.get("supported_on_host") and a.get("downloadable")]
+    candidates = [a for a in arts if a.get("supported_on_host") and a.get("downloadable") and not a.get("extended")]
     if candidates:
         min(candidates, key=rank)["recommended"] = True
 
@@ -1612,6 +1693,7 @@ def catalog(
     hf_api: Any = None,
     hub_cache: Optional[Path] = None,
     tags: Optional[Iterable[str]] = None,
+    extended: bool = False,
 ) -> Dict[str, Any]:
     """Contract C: the `model_catalog_v1` payload.
 
@@ -1624,6 +1706,10 @@ def catalog(
     hub      enrich HF-hosted artifacts with exact sizes from the Hugging Face
              API and, when `q` is given, append `hf_search` rows
     tags     keep only rows carrying every tag (e.g. ["embedding"])
+    extended with `hub`: every quant the row's own GGUF repos ship (UD-IQ1_S ... Q8_0,
+             BF16), each with its exact size from the hub's file list (cached 24 h) and
+             its fit, marked `extended: true`; a label the download pattern cannot
+             fetch exactly is left out. Never the pre-selection.
     """
 
     from ..utils.host_profile import host_profile, utc_now_iso
@@ -1727,6 +1813,8 @@ def catalog(
                 for a in seed_row["artifacts"]
                 if eng is None or a["provider"] == eng or _engine_for(a["provider"], a.get("quant")) == eng
             ]
+            if extended and hub_ctx is not None and (eng is None or eng in ("huggingface", "llamacpp")):
+                arts += _extended_quant_artifacts(seed_row, arts, caps, profile, support, hub_ctx, installed_sizes)
             row = {
                 "id": seed_row["id"],
                 "family": seed_row["family"],
@@ -1822,7 +1910,7 @@ def catalog(
     return {
         "schema": MODEL_CATALOG_SCHEMA,
         "host_profile": profile,
-        "query": {"q": query or None, "engine": eng, "fits": bool(fits), "hub": bool(hub), "tags": want_tags or None},
+        "query": {"q": query or None, "engine": eng, "fits": bool(fits), "hub": bool(hub), "tags": want_tags or None, "extended": bool(extended)},
         "hub": hub_block,
         "seed_version": seed.get("version"),
         "counts": {
