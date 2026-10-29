@@ -19,7 +19,7 @@ that future work must respect.
 | [0008](0008-provider-owned-model-residency-truth.md) | Accepted | Provider-owned model residency truth | Requires model loaded-state truth to come from provider/capability contracts. |
 | [0009](0009-model-handle-fidelity.md) | Accepted | Model handle fidelity | Forbids loading a different model artifact than the handle names; amends 0001. |
 | [0010](0010-model-residency-fit-and-eviction.md) | Accepted | Model residency fit and eviction | A load checks weights + KV against free memory, evicts unlocked LRU models, else refuses with a typed error and smaller suggestions. |
-| [0011](0011-shared-weights-and-concurrent-requests.md) | Accepted | Shared weights and concurrent requests | One weights object per model per process for every request path; a per-model slot scheduler (bounded, fair FIFO, visible queued state, per-request cancel) in the process that holds the weights; slots fit-checked under 0010, never a silent context reduction. |
+| [0011](0011-shared-weights-and-concurrent-requests.md) | Proposed | Shared weights and concurrent requests | One weights object per model per process for every request path; a per-model slot scheduler (bounded, fair FIFO, visible queued state, per-request cancel) in the process that holds the weights; slots fit-checked under 0010, never a silent context reduction. |
 
 ## How To Use This Set
 
