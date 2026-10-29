@@ -38,7 +38,7 @@ except ImportError:
 from .models import EmbeddingBackend, get_model_config, get_default_model, list_available_models, list_available_providers
 from ..utils.structured_logging import get_logger
 from ..utils.install_settings import local_engines_hint
-from ..exceptions import ContextWindowExceededError, ModelNotFoundError
+from ..exceptions import ContextWindowExceededError, InvalidRequestError, ModelNotFoundError
 
 logger = get_logger(__name__)
 
@@ -235,6 +235,19 @@ def shared_embedding_models() -> List[Dict[str, Any]]:
     with _SHARED_EMBEDDING_LOCK:
         return [{"model": e.model_id, "holders": len(e.holders)} for e in _SHARED_EMBEDDING_MODELS.values()
                 if e.model is not None]
+
+
+def _refuse_resident_gguf_embedding(path: Any) -> None:
+    """Called under the process load lock before a chat lane allocates these weights."""
+    identity = Path(path).resolve()
+    with _SHARED_EMBEDDING_LOCK:
+        for entry in list(_SHARED_EMBEDDING_MODELS.values()):
+            loaded_path = getattr(entry.model, "model_name_or_path", None)
+            if loaded_path and Path(loaded_path).resolve() == identity:
+                raise InvalidRequestError(
+                    f"GGUF model '{path}' is already loaded for embeddings. Unload it before "
+                    "using it for chat; a second copy is never loaded."
+                )
 
 
 def _atexit_save_caches(ref: "weakref.ReferenceType") -> None:
@@ -446,6 +459,13 @@ class _LlamaCppSentenceEncoder:
         self.repo_id = repo_id
         self.file_name = path.name
         self.model_name_or_path = str(path)
+        from ..providers.gguf_slots import find_for_file
+
+        if find_for_file(path) is not None:
+            raise InvalidRequestError(
+                f"GGUF model '{path}' is already loaded for chat. Unload it before "
+                "using it for embeddings; a second copy is never loaded."
+            )
         # n_batch / n_ubatch = n_ctx: llama-cpp-python's embed() otherwise cuts every text to
         # n_batch tokens (512 by default), silently. A text longer than n_ctx is REFUSED with a
         # sentence, never cut (framework ADR 0026).
@@ -706,7 +726,7 @@ def _gguf_sibling_encoder(repo_id: str, *, max_seq: Optional[int] = None,
         pinned = None
     try:
         return _LlamaCppSentenceEncoder(found[0], found[1], n_ctx=int(n_ctx or 8192), device=device, pinned=pinned)
-    except EmbeddingDeviceUnavailable:
+    except (EmbeddingDeviceUnavailable, InvalidRequestError):
         raise  # the person's Device choice cannot be honoured: say so, never "not downloaded"
     except Exception as exc:
         logger.warning(f"The installed GGUF build {found[0]} of {repo_id} could not be loaded: {exc}")
@@ -1032,15 +1052,49 @@ class EmbeddingManager:
     def _shared_model_key(self) -> Tuple[Any, ...]:
         configured = getattr(self, "_gguf_sibling_of", None) or self.model_id
         backend = getattr(self, "backend", None)
-        return ("huggingface", str(configured), str(getattr(self, "device_preference", None) or "auto"),
+        return ("huggingface", self._shared_artifact_identity(configured), str(getattr(self, "device_preference", None) or "auto"),
                 str(getattr(backend, "value", backend) or "auto"), bool(getattr(self, "trust_remote_code", False)))
 
+    @staticmethod
+    def _shared_artifact_identity(model: str) -> str:
+        path = Path(str(model)).expanduser()
+        if path.exists():
+            return str(path.resolve())
+        from ..utils.model_cache import resolve_hf_load_snapshot
+
+        cached = resolve_hf_load_snapshot(str(model))
+        return str(Path(cached).resolve()) if cached else str(model)
+
     def _load_model(self):
-        """The model of this (model, device, backend), loaded ONCE per process: a manager whose
-        model another manager already loaded adopts it (no second copy)."""
+        """Adopt compatible resident weights or refuse before allocating another copy."""
+        from ..providers.process_residency import load_lock
+
+        with load_lock():
+            return self._load_model_locked()
+
+    def _load_model_locked(self):
         key = self._shared_model_key()
         with _SHARED_EMBEDDING_LOCK:  # also serializes two first loads of one model
             entry = _SHARED_EMBEDDING_MODELS.get(key)
+            if entry is None:
+                for resident in list(_SHARED_EMBEDDING_MODELS.values()):
+                    if resident.model is None or key[1] not in (
+                        resident.key[1], self._shared_artifact_identity(resident.model_id)
+                    ):
+                        continue
+                    compatible = (
+                        key[4] == resident.key[4]
+                        and (key[2] == "auto" or key[2] == resident.key[2])
+                        and (key[3] == "auto" or key[3] == resident.key[3])
+                    )
+                    if not compatible:
+                        raise InvalidRequestError(
+                            f"Embedding model '{self.model_id}' is already loaded with device/backend/trust "
+                            f"settings {resident.key[2:]}; this request asks for {key[2:]}. "
+                            "Reuse its settings or unload it first; a second copy is never loaded."
+                        )
+                    entry = resident
+                    break
             if entry is not None and entry.model is not None:
                 self.model = entry.model
                 self.model_id = entry.model_id

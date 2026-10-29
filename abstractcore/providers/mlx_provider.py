@@ -134,7 +134,7 @@ def _installed_mlx_versions() -> str:
 
 
 def _mlx_model_sharing_enabled(kwargs: Optional[Dict[str, Any]] = None) -> bool:
-    """On by default. `share_loaded_model=False` or ABSTRACTCORE_MLX_SHARE_MODELS=0 opts out."""
+    """Read legacy sharing flags so disabled sharing can be refused before allocation."""
     explicit = (kwargs or {}).get("share_loaded_model")
     if isinstance(explicit, bool):
         return explicit

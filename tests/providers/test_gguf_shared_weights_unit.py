@@ -218,3 +218,84 @@ def test_provider_after_unload_can_choose_new_placement_and_other_artifact(fake_
     third = provider_load(other)
     assert len(loads) == 3 and second.n_gpu_layers == 0
     assert shared.weights_identity(second.llm) != shared.weights_identity(third.llm)
+
+
+@pytest.fixture()
+def embedding_load(fake_llama, monkeypatch):
+    """Actual GGUF encoder/manager admission with the same fake native allocator as chat."""
+    import weakref
+    from abstractcore.embeddings import manager as em
+
+    _shared, Llama, _loads = fake_llama
+    pkg = sys.modules["llama_cpp"]
+    pkg.Llama = Llama
+    pkg.llama_supports_gpu_offload = lambda: False
+    monkeypatch.setattr(em, "_SHARED_EMBEDDING_MODELS", weakref.WeakValueDictionary())
+    monkeypatch.setattr("abstractcore.utils.model_cache.read_gguf_embedder_facts", lambda path: {})
+    managers = []
+    def load(path):
+        manager = em.EmbeddingManager.__new__(em.EmbeddingManager)
+        manager.model_id = str(path)
+        manager.backend = None
+        manager.trust_remote_code = False
+        manager.device_preference = "cpu"
+        manager.model = None
+        manager._load_model_unshared = lambda: setattr(
+            manager, "model", em._LlamaCppSentenceEncoder(str(path), path, device="cpu"))
+        manager._load_model()
+        managers.append(manager)
+        return manager
+    yield load
+    for manager in managers:
+        model = manager.model
+        manager._release_shared_model()
+        manager.model = None
+        if model is not None:
+            model._llm.close()
+
+
+@pytest.mark.parametrize("embedding_first", [False, True])
+def test_chat_embedding_same_gguf_refuses_second_lane_before_allocation(
+    fake_llama, provider_load, embedding_load, tmp_path, embedding_first
+):
+    _shared, _Llama, loads = fake_llama
+    path = tmp_path / "same.gguf"
+    path.write_bytes(b"x")
+    alias = tmp_path / "alias.gguf"
+    alias.symlink_to(path)
+    first, second = (embedding_load, provider_load) if embedding_first else (provider_load, embedding_load)
+    resident = first(path)
+    with pytest.raises(InvalidRequestError, match="second copy is never loaded"):
+        second(alias)
+    assert len(loads) == 1
+    if embedding_first:
+        resident.model._llm.close()
+        resident._release_shared_model()
+        resident.model = None
+    else:
+        resident._gguf_detach()
+    replacement = second(alias)
+    assert replacement is not None and len(loads) == 2
+
+
+def test_chat_embedding_concurrent_first_loads_allocate_once(
+    fake_llama, provider_load, embedding_load, tmp_path
+):
+    _shared, _Llama, loads = fake_llama
+    path = tmp_path / "same.gguf"
+    path.write_bytes(b"x")
+    gate = threading.Barrier(2)
+    results = []
+    def run(load):
+        gate.wait()
+        try:
+            results.append(load(path))
+        except InvalidRequestError as exc:
+            results.append(exc)
+    threads = [threading.Thread(target=run, args=(load,)) for load in (provider_load, embedding_load)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(5)
+        assert not thread.is_alive()
+    assert len(loads) == 1 and sum(isinstance(r, InvalidRequestError) for r in results) == 1

@@ -6873,6 +6873,27 @@ class HuggingFaceProvider(BaseProvider):
         plain "download it first" message when a local-only load has no cache."""
         source = _resolve_transformers_load_source(self.model, local_only=_hf_load_is_local_only())
         self._transformers_source = source
+        from .hf_residency import registered_providers
+
+        def artifact(value: str) -> str:
+            path = Path(value).expanduser()
+            cached = path if path.exists() else _get_local_model_path(value)
+            return str(Path(cached).resolve()) if cached else str(value).strip()
+
+        identity = artifact(source.model)
+        for holder in registered_providers():
+            if holder is self or (
+                getattr(holder, "model_instance", None) is None
+                and getattr(getattr(holder, "pipeline", None), "model", None) is None
+            ):
+                continue
+            other = getattr(holder, "_transformers_source", None)
+            if other is not None and artifact(other.model) == identity:
+                raise InvalidRequestError(
+                    f"Transformers model '{source.model}' is already loaded in this process. "
+                    "Reuse the resident provider, or unload it before changing its configuration; "
+                    "a second copy is never loaded."
+                )
         if source.adapter:
             # Before the base model's weights are read: an adapter that cannot be
             # attached must not cost a full base load first.
@@ -7197,6 +7218,12 @@ class HuggingFaceProvider(BaseProvider):
 
     def _load_transformers_model(self):
         """Load standard HuggingFace transformers model"""
+        from .process_residency import load_lock
+
+        with load_lock():
+            return self._load_transformers_model_unlocked()
+
+    def _load_transformers_model_unlocked(self):
         try:
             import torch  # type: ignore
             from transformers import (  # type: ignore
@@ -7796,6 +7823,10 @@ class HuggingFaceProvider(BaseProvider):
             # Verify file exists and is accessible
             if not Path(model_path).exists():
                 raise FileNotFoundError(f"GGUF model file not found: {model_path}")
+
+            embedding_module = sys.modules.get("abstractcore.embeddings.manager")
+            if embedding_module is not None:
+                embedding_module._refuse_resident_gguf_embedding(model_path)
 
             gguf_arch: str | None = None
             try:
