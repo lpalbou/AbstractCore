@@ -9,7 +9,7 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 32
+- Planned: 34
 - Proposed: 28
 - Completed: 33
 - Deprecated: 3
@@ -152,6 +152,8 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 | Item | Notes |
 | --- | --- |
+| `planned/0870_per_model_slot_scheduler_and_shared_gguf_weights.md` | ADR 0011, this wave: one weights object per model for every request path (shared llama.cpp weights, R1-R3) and a per-model slot scheduler (bounded, fair FIFO, visible queued state, per-request cancel, slots fit-checked under ADR 0010); the test files of ADR 0011 Enforcement. |
+| `planned/0871_continuous_batching_llamacpp_and_mlx_lm.md` | ADR 0011, later: N sequences in one llama.cpp context (`n_seq_max`, `kv_unified`, low-level batch API) and the mlx-lm lane on `BatchGenerator`; same contract and tests as 0870, more throughput on the same memory. |
 | `planned/0869_console_theme_copy_resyncs_to_ui_kit_0_9_6.md` | The console's generated theme copy (`themes.py`) is behind ui-kit 0.9.6: its drift pin fails against the sibling checkout and skips in CI. Re-sync it and add a CI-visible provenance pin. |
 | `planned/0854_models_engines_backend_follow_ups.md` | Models & engines backend follow-ups: catalog id/size verification, hub geometry, quant-level HF deletes, LM Studio fallbacks and byte progress, live Ollama fixture, Windows smoke. |
 | `planned/0847_shared_in_process_model_pool.md` | MLX model+prompt-cache sharing landed 2026-09-17 (one 15 GB model was resident 4x in one gateway); extend to the HuggingFace/GGUF lanes and decide the tenancy of a process-shared cache store. |
