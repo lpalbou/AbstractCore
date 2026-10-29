@@ -1742,10 +1742,9 @@ class HuggingFaceProvider(BaseProvider):
             "generations on one weights instance)."
         )
 
-    def _gguf_attach(self, sched: Any) -> None:
-        """Use the model's resident slot pool: no context of this instance's own, no second copy."""
-        st = sched.attach_state
-        resident_layers = st.get("n_gpu_layers")
+    def _gguf_adopt_resident_placement(self, sched: Any) -> None:
+        """Use the file's resident placement, or refuse an explicit conflicting load."""
+        resident_layers = sched.attach_state.get("n_gpu_layers")
         adopted = resident_layers is not None and self.n_gpu_layers != resident_layers
         if adopted and getattr(self, "_n_gpu_layers_explicit", False):
             raise InvalidRequestError(
@@ -1756,7 +1755,16 @@ class HuggingFaceProvider(BaseProvider):
             self.logger.info(
                 f"GGUF {self.model}: this instance resolved n_gpu_layers={self.n_gpu_layers}, the resident model "
                 f"runs with {resident_layers}; adopting the resident setting (no second copy).")
-        self._adopted_gpu_layers_from_resident_pool = bool(adopted)
+        self._adopted_gpu_layers_from_resident_pool = bool(
+            adopted or getattr(self, "_adopted_gpu_layers_from_resident_pool", False)
+        )
+        if resident_layers is not None:
+            self.n_gpu_layers = int(resident_layers)
+
+    def _gguf_attach(self, sched: Any) -> None:
+        """Use the model's resident slot pool: no context of this instance's own, no second copy."""
+        st = sched.attach_state
+        self._gguf_adopt_resident_placement(sched)
         self.__dict__["_llm_own"] = None
         self.__dict__["_gguf_scheduler"] = sched
         _gguf_slots_mod().attach(sched, self)
@@ -7885,6 +7893,13 @@ class HuggingFaceProvider(BaseProvider):
                 requested_n_ctx_i = 16384
 
             self._gguf_requested_context = int(requested_n_ctx_i)
+            # Contexts have separate KV, but every context of this file must use the
+            # same weights placement. Check ALL resident contexts before filtering
+            # by a caller's pinned n_ctx; otherwise another context could load a
+            # second CPU/GPU copy and bypass _gguf_attach's placement refusal.
+            _resident = _gguf_slots.find_for_file(model_path)
+            if _resident is not None:
+                self._gguf_adopt_resident_placement(_resident)
             _wkey = _gguf_shared.weights_key(model_path, n_gpu_layers=self.n_gpu_layers, use_mmap=use_mmap)
             # THE MODEL IS ALREADY RESIDENT (another pool, a gateway client, a server request):
             # attach to its slot pool -- no context, no weights, no fit check. A pinned context
@@ -8167,6 +8182,8 @@ class HuggingFaceProvider(BaseProvider):
 
         except ModelDoesNotFitError:
             raise  # ADR 0010: the typed refusal reaches the caller as itself
+        except InvalidRequestError:
+            raise  # Conflicting resident placement is a request refusal, not a load failure.
         except ModelArtifactMismatchError:
             # ADR 0009 Enforcement: an artifact-fidelity refusal must reach the caller
             # as itself. Wrapping it in RuntimeError here made the contract type

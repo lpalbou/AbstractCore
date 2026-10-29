@@ -45,7 +45,7 @@ from ..architectures.response_postprocessing import (
 from ..core.types import GenerateResponse
 from .base import PromptCacheStore
 from .generation_progress import PREFILL_PROGRESS_KWARG
-from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
+from ..exceptions import InvalidRequestError, ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -447,9 +447,21 @@ class MLXProvider(BaseProvider):
         weights it was computed on, so the two travel together. The first provider's
         store (its size bound, TTL and eviction hook) becomes the shared one.
         """
+        from pathlib import Path
+        from . import mlx_native_session
+
         if not getattr(self, "_share_loaded_model", True):
-            return loader()
-        with _SHARED_MLX_MODELS_LOCK:  # also serializes two 15 GB loads of one model
+            raise InvalidRequestError(
+                "MLX model sharing cannot be disabled: share_loaded_model=False and "
+                "ABSTRACTCORE_MLX_SHARE_MODELS=0 would permit duplicate weights."
+            )
+        key = str(Path(key).resolve())
+        with mlx_native_session._LOAD_LOCK, _SHARED_MLX_MODELS_LOCK:
+            if any(k[0] == key for k in mlx_native_session._SESSIONS):
+                raise InvalidRequestError(
+                    f"MLX model '{key}' is already loaded through native mlx-vlm. "
+                    "Unload it before selecting the mlx-lm configuration; a second copy is never loaded."
+                )
             shared = _SHARED_MLX_MODELS.get(key)
             if shared is None:
                 llm, tokenizer = loader()
@@ -3494,6 +3506,8 @@ class MLXProvider(BaseProvider):
                     session = load_native_session(str(load_target), drafter_id)
                     drafter, kind = session.drafter, session.draft_kind
                     model, processor = session.model, session.processor
+        except InvalidRequestError:
+            raise  # A resident-profile refusal must never fall back to another weights load.
         except Exception as exc:
             if drafter_id is None:
                 why = plan.get("why") or "this lane loads through mlx-vlm"
@@ -4453,6 +4467,8 @@ class MLXProvider(BaseProvider):
                 f"(AbstractCore requires mlx>=0.32.2, mlx-lm>=0.31.3, mlx-vlm>=0.7.1). "
                 f"Fix with: pip install -U \"abstractcore[apple]\""
             ) from e
+        except InvalidRequestError:
+            raise  # Keep resident-profile and sharing-policy refusals actionable.
         except SpeculationUnavailableError:
             # `require_acceleration=True` is an explicit "fail rather than run
             # slow". Re-flattening it into a generic "Failed to load MLX model"

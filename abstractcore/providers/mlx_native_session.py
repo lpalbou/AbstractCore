@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 import weakref
+import sys
 from pathlib import Path
 
 _SESSIONS = weakref.WeakValueDictionary()
@@ -376,6 +377,25 @@ def load_native_session(path: str, drafter_path=None):
     with _LOAD_LOCK:
         session = _SESSIONS.get(key)
         if session is None:
+            from ..exceptions import InvalidRequestError
+
+            if any(k[0] == target for k in _SESSIONS):
+                raise InvalidRequestError(
+                    f"MLX model '{target}' is already loaded with a different drafter configuration. "
+                    "A second copy is never loaded: reuse its configuration or unload it first."
+                )
+            # The plain mlx-lm lane and native mlx-vlm lane cannot share the
+            # same target object. Their existing registries share this load lock
+            # so a simultaneous first load cannot allocate both representations.
+            plain = sys.modules.get(__package__ + ".mlx_provider")
+            if plain is not None:
+                with plain._SHARED_MLX_MODELS_LOCK:
+                    if target in plain._SHARED_MLX_MODELS:
+                        raise InvalidRequestError(
+                            f"MLX model '{target}' is already loaded through mlx-lm. "
+                            "Unload it before selecting the native mlx-vlm configuration; "
+                            "a second copy is never loaded."
+                        )
             from mlx_vlm import load
             session = NativeSession()
             session.drafter_path = head
