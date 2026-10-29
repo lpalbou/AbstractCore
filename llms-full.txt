@@ -15655,6 +15655,32 @@ Residency records report lock state truthfully:
 
 ## Context calibration and estimation
 
+### GGUF context on a discrete GPU: the sizing rule
+
+Before the ladder allocates anything on a single CUDA / ROCm card with every layer offloaded
+(`n_gpu_layers=-1`, the default), the provider drops the rungs whose KV
+cache cannot fit: **the KV cache may take at most half of the device memory that is free when the
+model loads, after the GGUF weights and a reserve of max(1 GiB, 10% of the device)** for llama.cpp's
+compute buffers. The other half stays free for the models a gateway loads next (speech,
+embeddings). The smallest rung is always kept, an explicit `max_tokens` is never resized, a rung the
+rule chose is not stored as a calibration (it reflects that load's free memory, not the card), and
+Metal, CPU, partial-offload and multi-GPU loads are unchanged. Example (Quadro RTX 5000, 14.5 GiB free, Qwen3.5-9B Q4_K_M at
+5.6 GiB): half of 7.4 GiB is 3.7 GiB, so the load starts at 65,536 tokens (2.0 GiB of KV) instead of
+the advertised 262,144.
+
+The KV figure is computed layer by layer from the GGUF header (`abstractcore.utils.kv_geometry`):
+only the layers llama.cpp gives a cache count (one block in `full_attention_interval` on hybrid
+models such as Qwen3.5; sliding-window layers at their own width; per-layer head counts), f16 K
+and V, plus the fixed recurrent state. Residency rows report it as `kv_cache_bytes`
+(`kv_cache_estimated: true`) with the loaded `context_length`; `cache_bytes` is that KV plus the
+session prompt caches.
+
+A prompt that does not fit the loaded context fails before any evaluation with
+`ContextWindowExceededError` ("This conversation is N tokens, but MODEL is loaded with an M-token
+context on this machine ...") instead of filling the KV cache, retrying and rebuilding the engine.
+An answer that reaches the end of the context stops with `finish_reason="length"` and
+`metadata.context_exhausted`.
+
 ### The calibration store
 
 When the HuggingFace provider loads a GGUF model, it settles a workable context size by walking a
