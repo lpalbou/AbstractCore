@@ -75,6 +75,7 @@ from ..utils.install_settings import llama_cpp_hint, local_engines_hint
 from ..utils.windows_dll import prepare_llama_cpp_import
 from ..core import degeneration as _degeneration
 from ..exceptions import (
+    ContextWindowExceededError,
     GenerationCancelledError,
     InvalidRequestError,
     ModelArtifactMismatchError,
@@ -1040,6 +1041,10 @@ def _resolve_transformers_load_source(model: str, *, local_only: bool, _depth: i
 # the FIRST shard, so a naive `stat()` reports a fraction of the real weights
 # (live: 10,946,624 B for a 89,986,353,824 B three-shard model — off by 8,220x).
 _GGUF_SHARD_RE = re.compile(r"^(?P<stem>.+)-(?P<index>\d{5})-of-(?P<count>\d{5})\.gguf$", re.IGNORECASE)
+
+
+# llama-cpp-python's refusal of a prompt longer than the context.
+_LLAMA_CONTEXT_OVERFLOW_RE = re.compile(r"Requested tokens \((\d+)\) exceed context window of (\d+)")
 
 
 def _gguf_total_weight_bytes(model_path: Union[str, Path]) -> Optional[int]:
@@ -3283,6 +3288,126 @@ class HuggingFaceProvider(BaseProvider):
             return False
         return True
 
+    # THE GGUF CONTEXT RULE on a discrete accelerator (CUDA / ROCm through
+    # torch): the KV cache may take at most HALF of the device memory that is
+    # free when the model loads, after the GGUF weights and a reserve of
+    # max(1 GiB, 10% of the device) for llama.cpp's compute buffers. The other
+    # half stays for the models a gateway loads next (speech, embeddings) and
+    # for another context. The largest ladder rung whose KV estimate
+    # (`utils.kv_geometry`) fits is tried first; rungs above it are skipped
+    # without allocating; the smallest rung is always kept so the ladder can
+    # still settle, and an explicit `max_tokens` is never resized. Measured
+    # reason (Linux, Quadro RTX 5000 16 GB, 2026-10-29): the ladder used to
+    # start at the advertised 262,144 tokens and settle at whatever allocation
+    # first succeeded, i.e. the card filled up to the last rung that fits.
+    _GGUF_KV_SHARE_OF_FREE = 0.5
+    _GGUF_RESERVE_FLOOR_BYTES = 1 << 30
+    _GGUF_RESERVE_FRACTION = 0.10
+
+    def _gguf_device_fit_rungs(self, model_path: Any, candidate_ctxs: List[int]) -> List[int]:
+        """`candidate_ctxs` without the rungs whose KV cache does not fit the
+        device under the GGUF context rule (above). Unchanged when the device
+        is not a discrete CUDA/ROCm card, when the weights stay on the CPU
+        (`n_gpu_layers == 0`) or when the geometry / free memory is unknown."""
+        self._gguf_context_rule = None
+        try:
+            if not candidate_ctxs or len(candidate_ctxs) < 2:
+                return candidate_ctxs
+            # Full offload only (-1): with a partial offload the weights on the
+            # card are a fraction this rule cannot know, and the KV may sit in RAM.
+            if not (isinstance(self.n_gpu_layers, int) and self.n_gpu_layers < 0):
+                return candidate_ctxs
+            try:
+                import torch
+
+                if int(torch.cuda.device_count()) != 1:
+                    return candidate_ctxs  # llama.cpp splits across cards; one card's free memory is not the budget
+            except Exception:
+                return candidate_ctxs
+            from ..utils.memory import get_memory_snapshot
+            from ..utils.kv_geometry import kv_cache_bytes
+            from .hf_residency import gguf_file_geometry
+
+            device = (get_memory_snapshot() or {}).get("device") or {}
+            if str(device.get("backend") or "").lower() != "cuda":
+                return candidate_ctxs
+            free_b = device.get("free_bytes")
+            total_b = device.get("total_bytes")
+            weights_b = _gguf_total_weight_bytes(model_path)
+            geom = gguf_file_geometry(model_path)
+            if not (isinstance(free_b, int) and isinstance(total_b, int) and weights_b and geom):
+                return candidate_ctxs
+            reserve = max(self._GGUF_RESERVE_FLOOR_BYTES, int(total_b * self._GGUF_RESERVE_FRACTION))
+            budget = int(max(0, free_b - int(weights_b) - reserve) * self._GGUF_KV_SHARE_OF_FREE)
+            # This lane does not enable flash attention, so llama.cpp pads every
+            # V row to the widest layer (mixed-width models such as Gemma 4).
+            def _kv(c: int) -> int:
+                return int(kv_cache_bytes(geom, c, pad_v=True) or 0)
+
+            kept = [c for c in candidate_ctxs if _kv(c) <= budget]
+            if not kept:
+                kept = [candidate_ctxs[-1]]
+            gib = float(1 << 30)
+            chosen = kept[0]
+            self._gguf_context_rule = {
+                "rule": "kv_at_most_half_of_free_after_weights_and_reserve",
+                "device_free_bytes": int(free_b),
+                "device_total_bytes": int(total_b),
+                "weights_bytes": int(weights_b),
+                "reserve_bytes": int(reserve),
+                "kv_budget_bytes": int(budget),
+                "first_rung": int(chosen),
+                "first_rung_kv_bytes": _kv(chosen),
+                "skipped_rungs": [int(c) for c in candidate_ctxs if c not in kept],
+            }
+            if kept != candidate_ctxs:
+                self.logger.info(
+                    f"GGUF context for {self.model}: starting at {chosen:,} tokens "
+                    f"(KV ~{_kv(chosen) / gib:.1f} GiB) -- the KV cache may take half of the "
+                    f"{(free_b - weights_b - reserve) / gib:.1f} GiB this device has free after the "
+                    f"{weights_b / gib:.1f} GiB weights and a {reserve / gib:.1f} GiB reserve; "
+                    f"skipped {', '.join(f'{c:,}' for c in self._gguf_context_rule['skipped_rungs'])}"
+                )
+            return kept
+        except Exception:
+            return candidate_ctxs
+
+    def _gguf_loaded_context(self) -> Optional[int]:
+        """The context (n_ctx) the llama.cpp engine was built with, or None."""
+        try:
+            fn = getattr(getattr(self, "llm", None), "n_ctx", None)
+            value = fn() if callable(fn) else None
+            return int(value) if isinstance(value, int) and value > 0 else None
+        except Exception:
+            return None
+
+    def _gguf_context_exceeded_error(self, n_prompt: int, n_ctx: int) -> ContextWindowExceededError:
+        return ContextWindowExceededError(
+            f"This conversation is {int(n_prompt):,} tokens, but {self.model} is loaded with a "
+            f"{int(n_ctx):,}-token context on this machine, so it does not fit. Start a new "
+            "conversation or shorten this one (or load the model with a larger context if the "
+            "device has room).",
+            prompt_tokens=int(n_prompt), context_length=int(n_ctx), model=self.model,
+        )
+
+    def _gguf_context_checked_stream(self, stream: Any) -> Iterator[Any]:
+        """A llama-cpp-python chat stream whose "exceed context window" refusal
+        (raised lazily, at the first chunk) becomes `ContextWindowExceededError`."""
+        try:
+            for chunk in stream:
+                yield chunk
+        except ValueError as e:
+            overflow = _LLAMA_CONTEXT_OVERFLOW_RE.search(str(e))
+            if overflow:
+                raise self._gguf_context_exceeded_error(int(overflow.group(1)), int(overflow.group(2))) from e
+            raise
+
+    def _gguf_raise_if_prompt_exceeds_context(self, n_prompt: int) -> None:
+        """Refuse a prompt that leaves no room for one generated token."""
+        n_ctx = self._gguf_loaded_context()
+        if n_ctx is not None and int(n_prompt) >= n_ctx:
+            raise self._gguf_context_exceeded_error(int(n_prompt), n_ctx)
+
     def _gguf_probe_decode(self, llm: Any) -> None:
         """One real full-width decode on a fresh context; raises if unusable.
 
@@ -3434,6 +3559,13 @@ class HuggingFaceProvider(BaseProvider):
                 telemetry.update(fields)
 
         n_prompt = len(prompt_tokens)
+        # A prompt the context cannot hold is refused BEFORE any eval: llama.cpp
+        # would fill the KV cache, fail the next batch ("decode: failed to find
+        # a memory slot for batch of size 512") and the old path retried it
+        # cold, then REBUILT THE ENGINE and failed a third time -- seconds of
+        # GPU work and an engine reload per request, answered as "Error: ..."
+        # text (measured on the Linux test server, 2026-10-29).
+        self._gguf_raise_if_prompt_exceeds_context(n_prompt)
         feed_floor = n_prompt - 1  # max reusable prefix; ≥1 token must be fed
 
         live_prefix = self._gguf_live_context_prefix_len(prompt_tokens)  # already ≤ feed_floor
@@ -3537,7 +3669,7 @@ class HuggingFaceProvider(BaseProvider):
                 self._gguf_eval_cancellable(llm, tail, cancel_event, position=stable_end)
             if set_cache and hasattr(llm, "set_cache"):
                 llm.set_cache(cache_obj)
-        except GenerationCancelledError:
+        except (GenerationCancelledError, ContextWindowExceededError):
             raise  # a host Stop is not a prefill failure: no reset, no cold retry
         except Exception as prefill_err:
             # Never swallow the engine's reason (ADR-0001): a bare False here
@@ -7416,6 +7548,10 @@ class HuggingFaceProvider(BaseProvider):
                 except Exception:
                     pass
 
+                # Device rule (gguf_context_rule): skip, BEFORE allocating
+                # anything, the rungs whose KV cache cannot fit the card.
+                candidate_ctxs = self._gguf_device_fit_rungs(model_path, candidate_ctxs)
+
             last_error: Exception | None = None
             chosen_n_ctx: int | None = None
             attempted_rungs: list[int] = []
@@ -7580,7 +7716,13 @@ class HuggingFaceProvider(BaseProvider):
             # Remember where the ladder settled (context calibration). Only when
             # the ladder actually ran — a user-provided max_tokens is a pin, not
             # a measurement. Best-effort: calibration must never break a load.
-            if not getattr(self, "_user_provided_max_tokens", False):
+            _rule = getattr(self, "_gguf_context_rule", None) or {}
+            # A rung the device rule picked from the free memory of THIS load is
+            # not a hardware ceiling: storing it would seed every later load
+            # below it (the rule re-runs on each load). Only a settle below the
+            # rule's first rung -- an allocation that really failed -- is one.
+            _rule_settle = bool(_rule.get("skipped_rungs")) and int(chosen_n_ctx) >= int(_rule.get("first_rung") or 0)
+            if not getattr(self, "_user_provided_max_tokens", False) and not _rule_settle:
                 self._gguf_context_calibrated = True
                 self._gguf_calibrated_context = int(chosen_n_ctx)
                 try:
@@ -8116,7 +8258,7 @@ class HuggingFaceProvider(BaseProvider):
                     reasoning_effort=hf_transformers_reasoning_effort,
                     cancel_event=cancel_event,
                 )
-            except GenerationCancelledError:
+            except (GenerationCancelledError, ContextWindowExceededError):
                 raise  # a host Stop is never an "Error:" answer
             except Exception as e:
                 return GenerateResponse(
@@ -8214,7 +8356,7 @@ class HuggingFaceProvider(BaseProvider):
 
                 return response
 
-        except GenerationCancelledError:
+        except (GenerationCancelledError, ContextWindowExceededError):
             raise  # a host Stop is never an "Error:" answer
         except Exception as e:
             return GenerateResponse(
@@ -8846,7 +8988,7 @@ class HuggingFaceProvider(BaseProvider):
                 return _single_chunk_stream()
             return response
 
-        except GenerationCancelledError:
+        except (GenerationCancelledError, ContextWindowExceededError):
             raise  # a host Stop is never an "Error:" answer
         except Exception as e:
             gen_time = (time.time() - start_time) * 1000 if 'start_time' in locals() else 0.0
@@ -9184,10 +9326,16 @@ class HuggingFaceProvider(BaseProvider):
 
                 return response
 
-        except GenerationCancelledError:
+        except (GenerationCancelledError, ContextWindowExceededError):
             raise  # a host Stop is never an "Error:" answer
         except Exception as e:
             error_message = str(e)
+            overflow = _LLAMA_CONTEXT_OVERFLOW_RE.search(error_message)
+            if overflow:
+                # llama-cpp-python's own refusal ("Requested tokens (6402) exceed
+                # context window of 1024"): the same clear failure as the
+                # prompt-cache lane, never an "Error: ..." answer.
+                raise self._gguf_context_exceeded_error(int(overflow.group(1)), int(overflow.group(2))) from e
             if stream:
                 # Return error as a generator
                 def error_generator():
@@ -9573,6 +9721,8 @@ class HuggingFaceProvider(BaseProvider):
         pending = ""
         output_tokens = 0
         finish_reason = "stop"
+        ctx_limit = self._gguf_loaded_context()
+        context_exhausted = False
 
         try:
             for tok in llm.generate(
@@ -9614,6 +9764,13 @@ class HuggingFaceProvider(BaseProvider):
                 if isinstance(max_output_tokens, int) and max_output_tokens > 0 and output_tokens > int(max_output_tokens):
                     finish_reason = "length"
                     break
+                if ctx_limit is not None and len(prompt_tokens) + output_tokens >= ctx_limit:
+                    # The context is full: llama.cpp cannot decode one more
+                    # token ("failed to find a memory slot for batch of size
+                    # 1"). Keep this token and end as a length stop instead of
+                    # appending "Error: llama_decode returned 1".
+                    finish_reason = "length"
+                    context_exhausted = True
                 _hf_report_generated(output_tokens)  # live phase: first token, then cadence
 
                 try:
@@ -9627,8 +9784,10 @@ class HuggingFaceProvider(BaseProvider):
                 if len(pending) > flush_threshold:
                     yield GenerateResponse(content=pending, model=self.model)
                     pending = ""
+                if context_exhausted:
+                    break
 
-        except GenerationCancelledError:
+        except (GenerationCancelledError, ContextWindowExceededError):
             raise  # a host Stop is never an "Error:" chunk
         except Exception as e:
             yield GenerateResponse(
@@ -9648,7 +9807,7 @@ class HuggingFaceProvider(BaseProvider):
             yield GenerateResponse(content=pending, model=self.model)
 
         completion_tokens = int(output_tokens)
-        if finish_reason == "length" and isinstance(max_output_tokens, int) and max_output_tokens > 0:
+        if finish_reason == "length" and not context_exhausted and isinstance(max_output_tokens, int) and max_output_tokens > 0:
             completion_tokens = int(max_output_tokens)
 
         usage = {
@@ -9672,6 +9831,7 @@ class HuggingFaceProvider(BaseProvider):
                 # the estimate in `usage.input_tokens` cannot give.
                 "prompt_cache": dict(cache_telemetry),
                 **prompt_cache_meta,
+                **({"context_exhausted": True, "context_length": int(ctx_limit)} if context_exhausted and ctx_limit else {}),
             },
         )
 
@@ -9827,7 +9987,7 @@ class HuggingFaceProvider(BaseProvider):
         host_cancel = next(
             (p for p in (kwargs.get("logits_processor") or []) if isinstance(p, _LlamaCppHostCancel)), None
         )
-        stream = self.llm.create_chat_completion(**kwargs)
+        stream = self._gguf_context_checked_stream(self.llm.create_chat_completion(**kwargs))
 
         current_tool_call = None
         accumulated_arguments = ""
@@ -10587,7 +10747,7 @@ class HuggingFaceProvider(BaseProvider):
                     gen_time=gen_time
                 )
 
-        except GenerationCancelledError:
+        except (GenerationCancelledError, ContextWindowExceededError):
             raise  # a host Stop is never an "Error:" answer
         except Exception as e:
             gen_time = round((time.time() - start_time) * 1000, 1) if 'start_time' in locals() else 0.0
@@ -10651,7 +10811,7 @@ class HuggingFaceProvider(BaseProvider):
                     finish_reason="stop"
                 )
 
-        except GenerationCancelledError:
+        except (GenerationCancelledError, ContextWindowExceededError):
             raise  # a host Stop is never an "Error:" chunk
         except Exception as e:
             yield GenerateResponse(
@@ -10831,6 +10991,24 @@ class HuggingFaceProvider(BaseProvider):
             est_weights = self._est_weights_bytes()
             if est_weights is not None:
                 claim["est_weights_bytes"] = est_weights
+            if getattr(self, "llm", None) is not None:
+                # The llama.cpp context this instance was BUILT with and the
+                # KV cache it allocated for it (estimated from the GGUF
+                # geometry, f16 K/V): the figures behind the panel's "cache",
+                # same arithmetic as the process rows (`hf_residency`).
+                try:
+                    from .hf_residency import _holder_row
+
+                    hrow = _holder_row(self)
+                    if isinstance(hrow.get("n_ctx"), int) and hrow["n_ctx"] > 0:
+                        claim["context_length"] = int(hrow["n_ctx"])
+                    if isinstance(hrow.get("kv_alloc_bytes"), int):
+                        claim["kv_cache_bytes"] = int(hrow["kv_alloc_bytes"])
+                        claim["kv_cache_estimated"] = True
+                    if isinstance(hrow.get("cache_bytes"), int):
+                        claim["cache_bytes"] = int(hrow["cache_bytes"])
+                except Exception:
+                    pass
         return claim
 
     def validate_config(self) -> bool:

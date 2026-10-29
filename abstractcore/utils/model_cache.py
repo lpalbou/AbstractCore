@@ -497,7 +497,48 @@ _GGUF_GEOMETRY_SUFFIXES: dict[str, str] = {
     ".attention.value_length": "value_length",
     ".embedding_length": "embedding_length",
     ".context_length": "context_length",
+    # Layer layout (which layers hold a KV cache at all, and how big): read so
+    # the KV estimate counts only the layers llama.cpp gives a cache, at their
+    # own widths (`utils.kv_geometry`).
+    ".full_attention_interval": "full_attention_interval",
+    ".attention.sliding_window": "sliding_window",
+    ".attention.sliding_window_pattern": "sliding_window_pattern",
+    ".attention.key_length_swa": "key_length_swa",
+    ".attention.value_length_swa": "value_length_swa",
+    ".attention.shared_kv_layers": "shared_kv_layers",
+    ".nextn_predict_layers": "nextn_predict_layers",
+    ".ssm.conv_kernel": "ssm_conv_kernel",
+    ".ssm.state_size": "ssm_state_size",
+    ".ssm.group_count": "ssm_group_count",
+    ".ssm.inner_size": "ssm_inner_size",
 }
+
+# Geometry keys that may be PER-LAYER arrays (`gemma4.attention.head_count_kv
+# = [8, 8, 8, 8, 8, 2, ...]`, `.sliding_window_pattern = [True, True, ...]`):
+# the array lands in `<name>_layers`; a scalar stays in `<name>`.
+_GGUF_GEOMETRY_ARRAY_FIELDS = frozenset({"head_count_kv", "sliding_window_pattern"})
+_GGUF_GEOMETRY_MAX_LAYERS = 4096
+
+
+def _read_gguf_int_array(f: BinaryIO) -> Optional[list]:
+    """An int / bool GGUF array as a list of ints, or None (after skipping it)
+    when its element type is not an integer type or it is implausibly long."""
+    elem_type = _read_u32(f)
+    length = _read_u64(f)
+    fmt = _GGUF_SCALAR_FORMATS.get(elem_type)
+    if fmt is None or elem_type in (_GGUF_TYPE_FLOAT32, _GGUF_TYPE_FLOAT64) or length > _GGUF_GEOMETRY_MAX_LAYERS:
+        if elem_type == _GGUF_TYPE_STRING:
+            for _ in range(length):
+                _read_gguf_string(f)
+        else:
+            size = _GGUF_FIXED_SIZES.get(elem_type)
+            if size is None:
+                raise ValueError(f"Unsupported GGUF array element type: {elem_type}")
+            f.seek(size * length, os.SEEK_CUR)
+        return None
+    size = struct.calcsize(fmt)
+    raw = _read_exact(f, size * int(length))
+    return [int(struct.unpack_from(fmt, raw, i * size)[0]) for i in range(int(length))]
 
 
 def read_gguf_geometry(path: Path) -> Optional[dict]:
@@ -532,6 +573,14 @@ def read_gguf_geometry(path: Path) -> Optional[dict]:
                     if key.endswith(suffix):
                         field = name
                         break
+                if field in _GGUF_GEOMETRY_ARRAY_FIELDS and value_type == _GGUF_TYPE_ARRAY:
+                    values = _read_gguf_int_array(f)
+                    if values:
+                        out[f"{field}_layers"] = values
+                        if field == "head_count_kv":
+                            # Dense consumers read one width: the widest layer.
+                            out["head_count_kv"] = max(values)
+                    continue
                 if field is not None and value_type in _GGUF_SCALAR_FORMATS:
                     try:
                         out[field] = int(_read_gguf_scalar(f, value_type))

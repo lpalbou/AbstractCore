@@ -158,9 +158,16 @@ def _geometry_from_gguf(path: Path) -> Tuple[Optional[Dict[str, Any]], Optional[
         return None, None
     kv = None
     if n_layers and n_kv_heads and head_dim:
-        k_dim = k_len if isinstance(k_len, int) and k_len > 0 else head_dim
-        v_dim = v_len if isinstance(v_len, int) and v_len > 0 else head_dim
-        kv = int(n_layers) * int(n_kv_heads) * (int(k_dim) + int(v_dim)) * _KV_BYTES_PER_ELEMENT
+        # Only the layers llama.cpp gives a KV cache, at their own widths
+        # (hybrid / sliding-window / per-layer head counts): `utils.kv_geometry`,
+        # the same rule the residency rows and the load-time sizing use.
+        from .kv_geometry import kv_bytes_per_token
+
+        kv = kv_bytes_per_token(raw)
+        if kv is None:
+            k_dim = k_len if isinstance(k_len, int) and k_len > 0 else head_dim
+            v_dim = v_len if isinstance(v_len, int) and v_len > 0 else head_dim
+            kv = int(n_layers) * int(n_kv_heads) * (int(k_dim) + int(v_dim)) * _KV_BYTES_PER_ELEMENT
     return geometry, kv
 
 

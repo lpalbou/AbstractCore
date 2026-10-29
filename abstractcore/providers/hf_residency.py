@@ -34,12 +34,14 @@ safety guard that depends on llama_cpp being imported before torch.
 """
 from __future__ import annotations
 
+import functools
 import gc
 import logging
 import sys
 import threading
 import time
 import weakref
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 logger = logging.getLogger("abstractcore.providers.huggingface")
@@ -254,44 +256,67 @@ def llama_state_bytes(root: Any, *, max_depth: int = 10, max_nodes: int = 50_000
     return int(total)
 
 
-def llama_kv_alloc_bytes(metadata: Any, n_ctx: Optional[int], *, bytes_per_elem: int = 2) -> Optional[int]:
-    """The KV cache llama.cpp ALLOCATES for a context of `n_ctx` tokens, from
-    the GGUF metadata (`<arch>.block_count`, `.attention.head_count_kv`,
-    `.attention.key_length` / `embedding_length` / `head_count`), f16 K and V.
-    This is what the process holds from the moment the engine is built --
-    `llama_state_get_size` only measures the tokens in use (measured:
-    0.05 GB of state beside a 4.7 GB allocation). None when the
-    metadata does not describe the geometry. An estimate: it is labelled so."""
+def llama_kv_alloc_bytes(metadata: Any, n_ctx: Optional[int], *, bytes_per_elem: int = 2,
+                         geometry: Optional[Dict[str, Any]] = None, swa_full: bool = True,
+                         pad_v: bool = False) -> Optional[int]:
+    """The KV cache llama.cpp ALLOCATES for a context of `n_ctx` tokens (plus
+    the fixed recurrent state of hybrid models), from the GGUF geometry:
+    `geometry` (the file header, `utils.model_cache.read_gguf_geometry`, which
+    carries the per-layer arrays) when given, else llama-cpp-python's
+    `metadata`. Only the layers llama.cpp gives a cache are counted, at their
+    own widths (`utils.kv_geometry`): a Qwen3.5 hybrid holds a cache on one
+    block in four, not on all 33. This is what the process holds from the
+    moment the engine is built -- `llama_state_get_size` only measures the
+    tokens in use (measured: 0.05 GB of state beside a 4.7 GB allocation).
+    None when the geometry is unknown. An estimate: it is labelled so."""
     try:
-        if not isinstance(metadata, dict) or not n_ctx:
-            return None
-        arch = str(metadata.get("general.architecture") or "").strip()
-        if not arch:
-            return None
+        from ..utils.kv_geometry import geometry_from_metadata, kv_cache_bytes
 
-        def _int_key(*keys: str) -> Optional[int]:
-            for key in keys:
-                value = metadata.get(key)
-                if value is None:
-                    continue
-                try:
-                    return int(str(value).strip())
-                except Exception:
-                    continue
-            return None
-
-        n_layer = _int_key(f"{arch}.block_count")
-        n_head = _int_key(f"{arch}.attention.head_count")
-        n_head_kv = _int_key(f"{arch}.attention.head_count_kv") or n_head
-        head_dim = _int_key(f"{arch}.attention.key_length")
-        if head_dim is None:
-            n_embd = _int_key(f"{arch}.embedding_length")
-            head_dim = (n_embd // n_head) if (n_embd and n_head) else None
-        if not (n_layer and n_head_kv and head_dim):
-            return None
-        return int(n_ctx) * int(n_layer) * 2 * int(n_head_kv) * int(head_dim) * int(bytes_per_elem)
+        geom = geometry if isinstance(geometry, dict) and geometry else geometry_from_metadata(metadata)
+        return kv_cache_bytes(geom, n_ctx, swa_full=swa_full, pad_v=pad_v, bytes_per_element=bytes_per_elem)
     except Exception:
         return None
+
+
+@functools.lru_cache(maxsize=32)
+def _gguf_file_geometry(path: str, mtime_ns: int, size: int) -> Optional[Dict[str, Any]]:
+    from ..utils.model_cache import read_gguf_geometry
+
+    return read_gguf_geometry(Path(path))
+
+
+def gguf_file_geometry(model_path: Any) -> Optional[Dict[str, Any]]:
+    """The header geometry of a GGUF file (cached by path, mtime and size), or None."""
+    try:
+        path = Path(str(model_path))
+        st = path.stat()
+        geom = _gguf_file_geometry(str(path), int(st.st_mtime_ns), int(st.st_size))
+        return dict(geom) if isinstance(geom, dict) else None
+    except Exception:
+        return None
+
+
+def _llama_cache_layout(llm: Any) -> Dict[str, bool]:
+    """(swa_full, pad_v) of a built engine, from its context params: llama.cpp
+    pads V to the widest layer unless flash attention is ON."""
+    out = {"swa_full": True, "pad_v": True}
+    params = getattr(llm, "context_params", None)
+    if params is None:
+        return out
+    try:
+        if hasattr(params, "swa_full"):
+            out["swa_full"] = bool(params.swa_full)
+    except Exception:
+        pass
+    try:
+        fa_type = getattr(params, "flash_attn_type", None)
+        if fa_type is not None:
+            out["pad_v"] = int(fa_type) != 1  # 1 = enabled; -1 auto / 0 disabled pad
+        elif hasattr(params, "flash_attn"):
+            out["pad_v"] = not bool(params.flash_attn)
+    except Exception:
+        pass
+    return out
 
 
 def llama_bytes(llm: Any) -> Dict[str, Optional[int]]:
@@ -316,7 +341,12 @@ def llama_bytes(llm: Any) -> Dict[str, Optional[int]]:
     except Exception:
         pass
     try:
-        out["kv_alloc_bytes"] = llama_kv_alloc_bytes(getattr(llm, "metadata", None), out["n_ctx"])
+        layout = _llama_cache_layout(llm)
+        out["kv_alloc_bytes"] = llama_kv_alloc_bytes(
+            getattr(llm, "metadata", None), out["n_ctx"],
+            geometry=gguf_file_geometry(getattr(llm, "model_path", None)),
+            swa_full=layout["swa_full"], pad_v=layout["pad_v"],
+        )
     except Exception:
         pass
     if llama_cpp is None:
@@ -438,6 +468,12 @@ def resident_models() -> List[Dict[str, Any]]:
         row["holders"] += 1
         row["copies"] += 1
         row["holder_rows"].append(hrow)
+        # The context each copy was built for and its KV allocation (an
+        # estimate from the GGUF geometry): what the "cache" figure is made of.
+        if isinstance(hrow.get("n_ctx"), int):
+            row["context_length"] = max(int(row.get("context_length") or 0), int(hrow["n_ctx"]))
+        if isinstance(hrow.get("kv_alloc_bytes"), int):
+            row["kv_cache_bytes"] = int(row.get("kv_cache_bytes") or 0) + int(hrow["kv_alloc_bytes"])
         if hrow.get("kv_bytes_estimated"):
             # `cache_bytes` / `held_bytes` include an f16 KV estimate.
             row["kv_bytes_estimated"] = True

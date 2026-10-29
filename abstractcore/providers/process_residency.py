@@ -241,7 +241,10 @@ def eject_unclaimed(provider: str, model: str, *, task: Optional[str] = None, pa
     with _RESIDENCY_LOCK:
         claims = claims_for(provider, model, path=path, task=task)
         if claims:
-            owners = sorted({f"{c.get('owner') or c.get('kind')}{' (locked)' if c.get('locked') else ''}" for c in claims})
+            # Holders in words (ADR 0043): a claimant's `owner_label` ("the
+            # runtime of account default/bob"), never its id.
+            owners = sorted({f"{c.get('owner_label') or 'another owner in this process'}"
+                             f"{' (locked)' if c.get('locked') else ''}" for c in claims})
             return {"ok": True, "skipped": True, "backend": backend, "model": model, "claims": claims,
                     "locked": any(bool(c.get("locked")) for c in claims),
                     "reason": f"{model} is still in use by {', '.join(owners)}; not ejected"}
