@@ -11,9 +11,13 @@ because its `general.architecture` is `spark2_5`, which that llama-cpp-python bu
 ## What shipped
 - `abstractcore/utils/model_cache.py`:
   - `llamacpp_knows_architecture(arch)` reads llama-cpp-python's `libllama` bytes, found with `find_spec`
-    without importing the package (no GPU init), cached by file identity. It checks whether the architecture name
-    is one of its C strings, which is how llama.cpp keeps its table of architecture names. It returns None without
-    llama-cpp-python.
+    without importing the package (no GPU init), cached by file identity. `libllama.*` is preferred over another
+    `llama.*` file. It checks whether a C string ENDS with the architecture name: the linker merges a name into
+    the tail of a longer one ("qwen2" in the server's libllama), so a leading NUL cannot be required. The error
+    is fail-safe: a false "known" leaves a model offered, and never produces a false "cannot load".
+  - The table is trusted only when the sentinels `llama` and `qwen2` are found the same way. A library laid out
+    differently (stripped, a stub) gives None, so nothing is claimed (merge desk review).
+  - It returns None without llama-cpp-python.
   - `gguf_unloadable_reason(arch)` gives the sentence, naming the installed llama-cpp-python version.
 - `abstractcore/config/model_materializer.py` `_gguf_kind_tasks`: an installed GGUF's row carries `architecture`.
   When llama.cpp does not know it, the row also carries `loadable: false` and `unloadable_reason`.
@@ -24,6 +28,9 @@ because its `general.architecture` is `spark2_5`, which that llama-cpp-python bu
 - `tests/config/test_installed_gguf_tasks.py`:
   - `test_a_gguf_this_llamacpp_cannot_load_says_so`, with a stand-in library: spark2_5 reads loadable false with
     the sentence; qwen35 has no flag; without llama-cpp-python nothing is claimed.
+  - `test_a_library_without_the_table_claims_nothing`: no sentinel, so no flag. Red without the sentinel check
+    (mutation-checked).
+  - `test_libllama_is_preferred_over_another_llama_file`.
   - `test_the_real_llama_library_knows_its_own_architectures` runs against this machine's real library: `llama` is
     known, a made-up name is not.
 - `tests/config` passes.

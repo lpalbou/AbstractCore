@@ -627,6 +627,8 @@ def read_gguf_architecture(path: Path) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 _LLAMA_LIB_CACHE: dict = {}
+#: Architecture names every llama.cpp build has carried for years: the scan's sanity check.
+_LLAMA_ARCH_SENTINELS = (b"llama", b"qwen2")
 
 
 def _llama_library_bytes() -> Optional[bytes]:
@@ -642,7 +644,11 @@ def _llama_library_bytes() -> Optional[bytes]:
         return None
     lib_dir = Path(list(spec.submodule_search_locations)[0]) / "lib"
     try:
-        candidates = sorted(p for p in lib_dir.iterdir() if p.is_file() and p.name.lower().startswith(("libllama", "llama.")))
+        files = [p for p in lib_dir.iterdir() if p.is_file()]
+        # `libllama.*` first (the shared library itself), then a Windows `llama.dll`.
+        candidates = sorted(p for p in files if p.name.lower().startswith("libllama")) or sorted(
+            p for p in files if p.name.lower().startswith("llama.")
+        )
     except Exception:
         return None
     if not candidates:
@@ -674,7 +680,21 @@ def llamacpp_knows_architecture(arch: Optional[str]) -> Optional[bool]:
     data = _llama_library_bytes()
     if data is None:
         return None
-    return (b"\x00" + name.encode("utf-8") + b"\x00") in data
+    # The table is trusted only when names every llama.cpp build carries are found the same way:
+    # a library laid out differently (stripped, a stub, another build) must not turn every GGUF
+    # into "cannot load" (merge desk review).
+    if not all((sentinel + b"\x00") in data for sentinel in _LLAMA_ARCH_SENTINELS):
+        if not _LLAMA_LIB_CACHE.get("sentinel_logged"):
+            _LLAMA_LIB_CACHE["sentinel_logged"] = True
+            import logging
+
+            logging.getLogger(__name__).debug("libllama does not hold the architecture table as expected; architecture support unknown")
+        return None
+    # A C string's END is certain; its start is not: the linker merges a name into the tail of a
+    # longer one ("qwen2" lives inside another string in the server's libllama). So the test is
+    # "a string ends with the name": a false "known" only leaves a model offered (fail-safe), never
+    # a false "cannot load".
+    return (name.encode("utf-8") + b"\x00") in data
 
 
 def gguf_unloadable_reason(arch: Optional[str]) -> Optional[str]:
