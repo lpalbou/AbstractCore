@@ -208,3 +208,55 @@ def test_an_explicit_gpu_that_does_not_fit_is_said_not_hidden_as_not_downloaded(
     _fake_llama(monkeypatch, gpu_fails=True)
     with pytest.raises(em.EmbeddingDeviceUnavailable, match="set its Device to CPU"):
         em._gguf_sibling_encoder("Qwen/Qwen3-Embedding-0.6B", device="gpu")
+
+
+# -- the sentence-transformers lane: the model's full length, a longer text refused --------------
+class _FakeST:
+    def __init__(self, limit):
+        self.max_seq_length = limit
+        self.encoded = []
+
+    def tokenizer(self, text, add_special_tokens=True, truncation=False):
+        assert truncation is False
+        return {"input_ids": [0] + list(range(len(text.split()))) + [1]}  # CLS ... SEP
+
+    def encode(self, texts, **kw):
+        import numpy as np
+
+        self.encoded.append(texts)
+        return np.zeros((len(texts), 4)) if isinstance(texts, list) else np.zeros(4)
+
+    def get_sentence_embedding_dimension(self):
+        return 4
+
+
+def test_a_text_one_token_over_is_refused_and_not_cut(tmp_path, monkeypatch):
+    """Merge desk grep (2026-10-29): sentence-transformers cut every text at its max_seq_length
+    silently. MUTANT: no check -> the library truncates -> RED."""
+    from abstractcore.embeddings import manager as em
+    from abstractcore.exceptions import ContextWindowExceededError
+
+    fake = _FakeST(limit=10)
+    monkeypatch.setattr(em, "sentence_transformers", object())
+    monkeypatch.setattr(em.EmbeddingManager, "_load_model", lambda self: setattr(self, "model", fake))
+    mgr = em.EmbeddingManager(provider="huggingface", model="all-minilm-l6-v2", cache_dir=tmp_path, strict=False)
+    mgr.model = fake
+    mgr.embed(" ".join(["w"] * 8))                      # 8 + 2 specials = 10: fits exactly
+    with pytest.raises(ContextWindowExceededError, match="nothing was cut") as err:
+        mgr.embed(" ".join(["v"] * 9))                  # 11 tokens: one over
+    assert err.value.prompt_tokens == 11 and err.value.context_length == 10
+    assert all(" ".join(["v"] * 9) not in str(t) for t in fake.encoded), "the long text never reached the encoder"
+    with pytest.raises(ContextWindowExceededError):     # never a zero vector, strict or not
+        mgr.embed_batch(["short", " ".join(["u"] * 20)])
+
+
+def test_the_full_sequence_length_comes_from_the_model_config(tmp_path, monkeypatch):
+    from abstractcore.embeddings import manager as em
+
+    fake = _FakeST(limit=512)
+    monkeypatch.setattr(em, "sentence_transformers", object())
+    monkeypatch.setattr(em.EmbeddingManager, "_load_model", lambda self: setattr(self, "model", fake))
+    mgr = em.EmbeddingManager(provider="huggingface", model="qwen3-embedding", cache_dir=tmp_path)
+    mgr.model = fake
+    mgr._set_full_sequence_length()
+    assert fake.max_seq_length == 8192, "the library's 512 replaced by the model's own 8,192"

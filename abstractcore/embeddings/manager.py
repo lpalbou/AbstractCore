@@ -38,7 +38,7 @@ except ImportError:
 from .models import EmbeddingBackend, get_model_config, get_default_model, list_available_models, list_available_providers
 from ..utils.structured_logging import get_logger
 from ..utils.install_settings import local_engines_hint
-from ..exceptions import ModelNotFoundError
+from ..exceptions import ContextWindowExceededError, ModelNotFoundError
 
 logger = get_logger(__name__)
 
@@ -361,6 +361,27 @@ def gguf_sibling_snapshot(repo_id: str) -> "Optional[tuple]":
         return sibling, sorted(files, key=rank)[0]
     except Exception:
         return None
+
+
+def _refuse_too_long(model: Any, texts: List[Any], model_id: str) -> None:
+    """A text longer than the model reads is refused with the sentence, never cut: the
+    sentence-transformers lane (the GGUF lane checks inside its encoder). Counted with the
+    model's own tokenizer, special tokens included, against its `max_seq_length`."""
+    limit = getattr(model, "max_seq_length", None)
+    tokenizer = getattr(model, "tokenizer", None)
+    if not isinstance(limit, int) or limit <= 0 or tokenizer is None or not callable(tokenizer):
+        return
+    for t in texts:
+        ids = tokenizer(str(t), add_special_tokens=True, truncation=False)["input_ids"]
+        n = len(ids)
+        if n > limit:
+            from ..exceptions import ContextWindowExceededError
+
+            raise ContextWindowExceededError(
+                f"This text is {n:,} tokens, but the embedding model {model_id} reads at most {limit:,}; "
+                "split it before embedding it (nothing was cut).",
+                prompt_tokens=n, context_length=limit, model=model_id,
+            )
 
 
 class EmbeddingDeviceUnavailable(RuntimeError):
@@ -909,6 +930,7 @@ class EmbeddingManager:
                         **load_kwargs,
                     )
                     logger.info(f"Loaded {self.model_id} with PyTorch backend")
+            self._set_full_sequence_length()
 
         except ImportError:
             raise ImportError(
@@ -924,6 +946,22 @@ class EmbeddingManager:
         except Exception as e:
             logger.error(f"Failed to load embedding model {self.model_id}: {e}")
             raise
+
+    def _set_full_sequence_length(self) -> None:
+        """sentence-transformers truncates every text at `max_seq_length` silently (often 512,
+        model-defined). Use the model's full length (the catalog's `max_sequence_length` when
+        known, else what the model declares) and REFUSE longer texts (`_refuse_too_long`;
+        framework ADR 0026: nothing is ever cut)."""
+        model = getattr(self, "model", None)
+        if model is None or not hasattr(model, "max_seq_length"):
+            return
+        cfg = getattr(self, "model_config", None)
+        full = getattr(cfg, "max_sequence_length", None)
+        try:
+            if isinstance(full, int) and full > 0:
+                model.max_seq_length = int(full)
+        except Exception:
+            pass
 
     def _ensure_local_model(self) -> Any:
         """Reload the in-process model after `unload()`: the next embedding
@@ -1334,6 +1372,7 @@ class EmbeddingManager:
             if self.provider == "huggingface":
                 # HuggingFace: Use sentence-transformers model
                 with self._local_model_in_use() as model:
+                    _refuse_too_long(model, [text], self.model_id)
                     embedding = model.encode(
                         text,
                         show_progress_bar=False,
@@ -1385,6 +1424,8 @@ class EmbeddingManager:
             logger.debug(f"Generated embedding for text (length: {len(text)}, dims: {len(embedding)}, provider: {self.provider})")
             return embedding
 
+        except ContextWindowExceededError:
+            raise  # a text too long is refused, never a zero vector (ADR 0026)
         except Exception as e:
             logger.error(f"Failed to embed text with {self.provider}: {e}")
             if self.strict:
@@ -1429,6 +1470,7 @@ class EmbeddingManager:
                 if self.provider == "huggingface":
                     # HuggingFace: Use sentence-transformers batch encoding
                     with self._local_model_in_use() as model:
+                        _refuse_too_long(model, list(uncached_texts), self.model_id)
                         batch_embeddings = model.encode(
                             uncached_texts,
                             show_progress_bar=False,
@@ -1476,6 +1518,8 @@ class EmbeddingManager:
                     else:
                         raise ValueError(f"Invalid batch response from {self.provider} provider")
 
+            except ContextWindowExceededError:
+                raise  # a text too long is refused, never a zero vector (ADR 0026)
             except Exception as e:
                 logger.error(f"Failed to embed batch with {self.provider}: {e}")
                 if self.strict:
