@@ -73,6 +73,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
   under the provider's cancel kwarg.
 
+### Changed
+
+- **`sse-starlette>=1.8,<4`** (was `<2.0.0`): AbstractCore never imports it (the server streams with Starlette's
+  `StreamingResponse`), and `mcp` 2.3 requires `sse-starlette>=3`, so every environment holding both ended in a pip
+  conflict. Checked with sse-starlette 3.6.0 (starlette 0.52.1, fastapi 0.136.1): the server app starts and
+  `tests/server` passes as with 1.8.2; `uv pip compile` resolves abstractcore + sse-starlette 3.6.0 + mcp 2.3.0.
 ### Fixed
 
 - **A GGUF context that fills up mid-request** (llama.cpp "failed to find a memory slot", `llama_decode returned 1`)
