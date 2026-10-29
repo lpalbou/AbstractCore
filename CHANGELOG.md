@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Structured output with a host's `cancel_event`** no longer fails on the HuggingFace GGUF lane with "got multiple
+  values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
+  under the provider's cancel kwarg.
+
 ## [2.31.1] - 2026-10-28
 
 ### Added
