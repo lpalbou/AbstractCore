@@ -183,65 +183,6 @@ def test_huggingface_gguf_records_calibration_on_settle(
     assert residency["calibrated_context_length"] == 8192
 
 
-def test_huggingface_gguf_calibration_seeds_candidate_order(
-    tmp_path, _probe_gated_llama, monkeypatch
-) -> None:
-    from abstractcore.utils import context_calibration as cal_mod
-
-    recorded: list[Dict[str, Any]] = []
-    monkeypatch.setattr(cal_mod, "record_context_calibration", lambda entry: recorded.append(dict(entry)))
-    monkeypatch.setattr(
-        cal_mod,
-        "lookup_context_calibration",
-        lambda provider, model_id, device_total, ram_total: {
-            "provider": provider,
-            "model_id": model_id,
-            "settled_context": 4096,
-        },
-    )
-    _probe_gated_llama.probe_pass_threshold = 4096
-
-    gguf_path = tmp_path / "dummy.gguf"
-    gguf_path.write_bytes(b"GGUF")
-
-    llm = HuggingFaceProvider(model=str(gguf_path), device="cpu")
-
-    # Seeded ladder: requested first, then the calibrated rung — 8192 skipped.
-    assert _probe_gated_llama.constructed_n_ctx == [16384, 4096]
-    # The cached rung was still probed (memory conditions change).
-    assert _probe_gated_llama.eval_probed_n_ctx[:2] == [16384, 4096]
-    assert llm.max_tokens == 4096
-    assert recorded and recorded[0]["rungs_tried"] == [16384, 4096]
-
-
-def test_huggingface_gguf_seeded_ladder_stays_descending(
-    tmp_path, _probe_gated_llama, monkeypatch
-) -> None:
-    """Rungs LARGER than the calibrated seed must never follow it: they
-    already failed on this hardware, and a seeded ladder [16384, 4096, 8192]
-    would re-pay the 8192 allocation the seed exists to skip."""
-    from abstractcore.utils import context_calibration as cal_mod
-
-    monkeypatch.setattr(cal_mod, "record_context_calibration", lambda entry: None)
-    monkeypatch.setattr(
-        cal_mod,
-        "lookup_context_calibration",
-        lambda *a, **k: {"settled_context": 4096},
-    )
-    # Every rung fails its probe, so the FULL candidate walk becomes visible.
-    _probe_gated_llama.probe_pass_threshold = 0
-
-    gguf_path = tmp_path / "dummy.gguf"
-    gguf_path.write_bytes(b"GGUF")
-
-    with pytest.raises(RuntimeError, match="probe decode at every context"):
-        HuggingFaceProvider(model=str(gguf_path), device="cpu")
-
-    # Strictly descending: nothing larger than the 4096 seed after it.
-    assert _probe_gated_llama.constructed_n_ctx == [16384, 4096]
-    assert 8192 not in _probe_gated_llama.constructed_n_ctx
-
-
 def test_huggingface_gguf_user_max_tokens_skips_calibration(
     tmp_path, monkeypatch, _calibration_spy
 ) -> None:

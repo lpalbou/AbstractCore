@@ -3306,6 +3306,8 @@ class HuggingFaceProvider(BaseProvider):
             return False
         return True
 
+    # (Replaced 2026-10-29: the "KV at most half of the free memory" rule. See
+    # `_gguf_max_context_that_fits`.) Former header kept for the reserve constants:
     # THE GGUF CONTEXT RULE on a discrete accelerator (CUDA / ROCm through
     # torch): the KV cache may take at most HALF of the device memory that is
     # free when the model loads, after the GGUF weights and a reserve of
@@ -3375,74 +3377,6 @@ class HuggingFaceProvider(BaseProvider):
 
         return process_residency.ensure_fit(str(self.model), need, _free, provider="huggingface", device="GPU",
                                             reserve_bytes=reserve)
-
-    def _gguf_device_fit_rungs(self, model_path: Any, candidate_ctxs: List[int]) -> List[int]:
-        """`candidate_ctxs` without the rungs whose KV cache does not fit the
-        device under the GGUF context rule (above). Unchanged when the device
-        is not a discrete CUDA/ROCm card, when the weights stay on the CPU
-        (`n_gpu_layers == 0`) or when the geometry / free memory is unknown."""
-        self._gguf_context_rule = None
-        try:
-            if not candidate_ctxs or len(candidate_ctxs) < 2:
-                return candidate_ctxs
-            # Full offload only (-1): with a partial offload the weights on the
-            # card are a fraction this rule cannot know, and the KV may sit in RAM.
-            if not (isinstance(self.n_gpu_layers, int) and self.n_gpu_layers < 0):
-                return candidate_ctxs
-            try:
-                import torch
-
-                if int(torch.cuda.device_count()) != 1:
-                    return candidate_ctxs  # llama.cpp splits across cards; one card's free memory is not the budget
-            except Exception:
-                return candidate_ctxs
-            from ..utils.memory import get_memory_snapshot
-            from ..utils.kv_geometry import kv_cache_bytes
-            from .hf_residency import gguf_file_geometry
-
-            device = (get_memory_snapshot() or {}).get("device") or {}
-            if str(device.get("backend") or "").lower() != "cuda":
-                return candidate_ctxs
-            free_b = device.get("free_bytes")
-            total_b = device.get("total_bytes")
-            weights_b = _gguf_total_weight_bytes(model_path)
-            geom = gguf_file_geometry(model_path)
-            if not (isinstance(free_b, int) and isinstance(total_b, int) and weights_b and geom):
-                return candidate_ctxs
-            reserve = max(self._GGUF_RESERVE_FLOOR_BYTES, int(total_b * self._GGUF_RESERVE_FRACTION))
-            budget = int(max(0, free_b - int(weights_b) - reserve) * self._GGUF_KV_SHARE_OF_FREE)
-            # This lane does not enable flash attention, so llama.cpp pads every
-            # V row to the widest layer (mixed-width models such as Gemma 4).
-            def _kv(c: int) -> int:
-                return int(kv_cache_bytes(geom, c, pad_v=True) or 0)
-
-            kept = [c for c in candidate_ctxs if _kv(c) <= budget]
-            if not kept:
-                kept = [candidate_ctxs[-1]]
-            gib = float(1 << 30)
-            chosen = kept[0]
-            self._gguf_context_rule = {
-                "rule": "kv_at_most_half_of_free_after_weights_and_reserve",
-                "device_free_bytes": int(free_b),
-                "device_total_bytes": int(total_b),
-                "weights_bytes": int(weights_b),
-                "reserve_bytes": int(reserve),
-                "kv_budget_bytes": int(budget),
-                "first_rung": int(chosen),
-                "first_rung_kv_bytes": _kv(chosen),
-                "skipped_rungs": [int(c) for c in candidate_ctxs if c not in kept],
-            }
-            if kept != candidate_ctxs:
-                self.logger.info(
-                    f"GGUF context for {self.model}: starting at {chosen:,} tokens "
-                    f"(KV ~{_kv(chosen) / gib:.1f} GiB) -- the KV cache may take half of the "
-                    f"{(free_b - weights_b - reserve) / gib:.1f} GiB this device has free after the "
-                    f"{weights_b / gib:.1f} GiB weights and a {reserve / gib:.1f} GiB reserve; "
-                    f"skipped {', '.join(f'{c:,}' for c in self._gguf_context_rule['skipped_rungs'])}"
-                )
-            return kept
-        except Exception:
-            return candidate_ctxs
 
     def _gguf_loaded_context(self) -> Optional[int]:
         """The context (n_ctx) the llama.cpp engine was built with, or None."""
@@ -3526,6 +3460,68 @@ class HuggingFaceProvider(BaseProvider):
         n_ctx = self._gguf_loaded_context()
         if n_ctx is not None and int(n_prompt) >= n_ctx:
             raise self._gguf_context_exceeded_error(int(n_prompt), n_ctx)
+
+    _GGUF_MEMORY_BUFFER_DEFAULT = 0.05
+
+    def _gguf_memory_buffer(self) -> float:
+        """The safety buffer kept free when sizing a context (fraction of the free memory):
+        `model_memory_buffer` in the AbstractCore config, 5 % by default."""
+        try:
+            from ..config.model_contexts import _read
+
+            v = float(_read(getattr(self, "_abstractcore_config_file", None)).get("model_memory_buffer"))
+            return v if 0.0 <= v < 0.5 else self._GGUF_MEMORY_BUFFER_DEFAULT
+        except Exception:
+            return self._GGUF_MEMORY_BUFFER_DEFAULT
+
+    def _gguf_max_context_that_fits(self, model_path: Any, advertised: int) -> Optional[Dict[str, Any]]:
+        """`{advertised, reserved, free_bytes, buffer, reason}`: the largest context (a multiple of
+        256, at most `advertised`) whose weights + KV + compute fit the device's free memory minus
+        the buffer, by inverting the KV-size formula. None when it cannot be measured (CPU lane,
+        partial offload, several cards, Metal, unknown geometry). Logged (INFO)."""
+        try:
+            if not (isinstance(self.n_gpu_layers, int) and self.n_gpu_layers < 0):
+                return None
+            import torch
+
+            if not torch.cuda.is_available() or int(torch.cuda.device_count()) != 1:
+                return None
+            from ..utils.kv_geometry import kv_cache_breakdown
+            from .hf_residency import gguf_file_geometry
+
+            free_b = int(torch.cuda.mem_get_info()[0])
+            weights_b = _gguf_total_weight_bytes(model_path)
+            geom = gguf_file_geometry(model_path)
+            if not weights_b or not geom:
+                return None
+            buffer = self._gguf_memory_buffer()
+            one = kv_cache_breakdown(geom, 1, pad_v=True) or {}
+            two = kv_cache_breakdown(geom, 2, pad_v=True) or {}
+            kv_per_token = int((two.get("kv_bytes") or 0) - (one.get("kv_bytes") or 0))
+            if kv_per_token <= 0:
+                return None
+            fixed = int(one.get("recurrent_bytes") or 0)
+            # llama.cpp's compute buffer grows with the context: one attention score matrix of
+            # n_ctx x n_ubatch x n_head floats (flash attention off), reused across layers.
+            n_head = int(geom.get("head_count") or 0)
+            compute_per_token = 512 * n_head * 4
+            budget = int(free_b * (1.0 - buffer)) - int(weights_b) - fixed
+            per_token = kv_per_token + compute_per_token
+            fit_ctx = max(0, budget // per_token)
+            reserved = int(min(int(advertised), (fit_ctx // 256) * 256))
+            limited = reserved < int(advertised)
+            out = {"advertised": int(advertised), "reserved": max(512, reserved), "free_bytes": free_b,
+                   "weights_bytes": int(weights_b), "buffer": buffer,
+                   "reason": "limited by memory" if limited else "the model's advertised context fits"}
+            gib = float(1 << 30)
+            self.logger.info(
+                f"GGUF context for {self.model}: reserving {out['reserved']:,} of {int(advertised):,} tokens "
+                f"({out['reason']}; {free_b / gib:.1f} GiB free, {weights_b / gib:.1f} GiB weights, "
+                f"{buffer * 100:.0f} % buffer)"
+            )
+            return out
+        except Exception:
+            return None
 
     def _gguf_probe_decode(self, llm: Any) -> None:
         """One real full-width decode on a fresh context; raises if unusable.
@@ -7647,47 +7643,26 @@ class HuggingFaceProvider(BaseProvider):
             self._gguf_fit_report = self._gguf_ensure_fit(model_path, _min_ctx)
 
             if getattr(self, "_user_provided_max_tokens", False):
+                # A context a person set (or the caller passed) is used exactly, or refused.
                 candidate_ctxs = [requested_n_ctx_i]
+                self._context_reservation = {"advertised": None, "reserved": int(requested_n_ctx_i),
+                                             "reason": "set for this model" if getattr(self, "_context_source", None) == "configured" else "requested"}
             else:
-                candidate_ctxs = [requested_n_ctx_i]
-                for fallback in (131072, 65536, 32768, 16384, 8192, 4096):
-                    if fallback < requested_n_ctx_i:
-                        candidate_ctxs.append(int(fallback))
-                # Calibration seed: if a previous load of this model on this
-                # hardware settled at a smaller context, try that rung right
-                # after the requested one so a re-load skips the known-failing
-                # rungs. The probe still gates it — memory conditions change,
-                # so the cached rung is a HINT, never a fact (ADR 0008).
-                try:
-                    from ..utils.context_calibration import (
-                        gguf_calibration_model_id,
-                        lookup_context_calibration,
-                    )
-                    from ..utils.memory import get_memory_snapshot
-
-                    _mem_snapshot = get_memory_snapshot()
-                    _cal_hit = lookup_context_calibration(
-                        "huggingface",
-                        gguf_calibration_model_id(model_path),
-                        (_mem_snapshot.get("device") or {}).get("total_bytes"),
-                        (_mem_snapshot.get("ram") or {}).get("total_bytes"),
-                    )
-                    _cal_ctx = (_cal_hit or {}).get("settled_context")
-                    if isinstance(_cal_ctx, int) and 0 < _cal_ctx < requested_n_ctx_i:
-                        # Keep the ladder strictly descending: rungs LARGER
-                        # than the calibrated settle already failed on this
-                        # hardware — retrying them after the seed would just
-                        # re-pay the failed allocations the seed exists to
-                        # skip.
-                        candidate_ctxs = [requested_n_ctx_i, int(_cal_ctx)] + [
-                            c for c in candidate_ctxs[1:] if c < int(_cal_ctx)
-                        ]
-                except Exception:
-                    pass
-
-                # Device rule (gguf_context_rule): skip, BEFORE allocating
-                # anything, the rungs whose KV cache cannot fit the card.
-                candidate_ctxs = self._gguf_device_fit_rungs(model_path, candidate_ctxs)
+                # THE MAXIMUM CONTEXT THAT FITS (operator ruling 2026-10-29, ADR 0010 point 8):
+                # the smaller of the advertised context and the largest whose weights + KV +
+                # compute fit this device's free memory minus a safety buffer (5 % by default,
+                # `model_memory_buffer` in the AbstractCore config). Computed from the GGUF
+                # geometry, not guessed from fixed rungs; if the allocation still fails, the
+                # context halves each time down to 4,096 (each attempt logged).
+                fit = self._gguf_max_context_that_fits(model_path, requested_n_ctx_i)
+                first = int(fit["reserved"]) if fit else int(requested_n_ctx_i)
+                candidate_ctxs = [first]
+                c = first
+                while c > 4096:
+                    c = max(4096, (int(c * 0.5) // 256) * 256)
+                    candidate_ctxs.append(c)
+                self._context_reservation = fit or {"advertised": int(requested_n_ctx_i), "reserved": first,
+                                                    "reason": "advertised (memory not measurable here)"}
 
             last_error: Exception | None = None
             chosen_n_ctx: int | None = None
@@ -7858,12 +7833,15 @@ class HuggingFaceProvider(BaseProvider):
             # Remember where the ladder settled (context calibration). Only when
             # the ladder actually ran — a user-provided max_tokens is a pin, not
             # a measurement. Best-effort: calibration must never break a load.
-            _rule = getattr(self, "_gguf_context_rule", None) or {}
-            # A rung the device rule picked from the free memory of THIS load is
-            # not a hardware ceiling: storing it would seed every later load
-            # below it (the rule re-runs on each load). Only a settle below the
-            # rule's first rung -- an allocation that really failed -- is one.
-            _rule_settle = bool(_rule.get("skipped_rungs")) and int(chosen_n_ctx) >= int(_rule.get("first_rung") or 0)
+            _res = getattr(self, "_context_reservation", None) or {}
+            # The computed maximum reflects THIS load's free memory, not a hardware
+            # ceiling: it is never stored as calibration. Only a settle below it (an
+            # allocation that really failed) is one.
+            _rule_settle = int(chosen_n_ctx) >= int(_res.get("reserved") or 0)
+            if isinstance(_res, dict):
+                _res["reserved"] = int(chosen_n_ctx)
+                if _res.get("advertised") and int(chosen_n_ctx) < int(_res["advertised"]):
+                    _res["reason"] = "limited by memory"
             if not getattr(self, "_user_provided_max_tokens", False) and not _rule_settle:
                 self._gguf_context_calibrated = True
                 self._gguf_calibrated_context = int(chosen_n_ctx)
@@ -11157,6 +11135,10 @@ class HuggingFaceProvider(BaseProvider):
                             claim["advertised_context_length"] = advertised
                         claim["context_source"] = source or (
                             "memory" if isinstance(advertised, int) and int(hrow["n_ctx"]) < advertised else "advertised")
+                        res = getattr(self, "_context_reservation", None)
+                        if isinstance(res, dict) and isinstance(res.get("buffer"), float):
+                            claim["memory_buffer"] = res["buffer"]
+                            claim["context_reservation"] = {k: res.get(k) for k in ("advertised", "reserved", "free_bytes", "buffer", "reason")}
                     if isinstance(hrow.get("kv_alloc_bytes"), int):
                         claim["kv_cache_bytes"] = int(hrow["kv_alloc_bytes"])
                         claim["kv_cache_estimated"] = True

@@ -162,31 +162,6 @@ def _device(monkeypatch, *, backend="cuda", free=int(14.5 * GIB), total=int(14.5
 LADDER = [262144, 131072, 65536, 32768, 16384, 8192, 4096]
 
 
-def test_kv_takes_at_most_half_of_what_is_free_after_weights(tmp_path, monkeypatch):
-    _device(monkeypatch)
-    p = _provider()
-    rungs = p._gguf_device_fit_rungs(str(_kimi_file(tmp_path)), list(LADDER))
-    # free 14.5 - weights 5.6 - reserve 1.46 = 7.44 GiB; half = 3.7 GiB -> 65,536 (2.0 GiB KV)
-    assert rungs[0] == 65536, f"MUTANT: no rule -> starts at 262,144 -> RED (got {rungs[0]})"
-    assert rungs[-1] == 4096 and p._gguf_context_rule["skipped_rungs"] == [262144, 131072]
-
-
-def test_a_full_card_keeps_the_smallest_rung(tmp_path, monkeypatch):
-    _device(monkeypatch, free=int(6 * GIB))
-    assert _provider()._gguf_device_fit_rungs(str(_kimi_file(tmp_path)), list(LADDER)) == [4096]
-
-
-def test_rule_does_not_apply_off_cuda_on_cpu_partial_offload_or_several_cards(tmp_path, monkeypatch):
-    path = str(_kimi_file(tmp_path))
-    _device(monkeypatch, backend="metal")
-    assert _provider()._gguf_device_fit_rungs(path, list(LADDER)) == LADDER
-    _device(monkeypatch)
-    assert _provider(n_gpu_layers=0)._gguf_device_fit_rungs(path, list(LADDER)) == LADDER
-    assert _provider(n_gpu_layers=20)._gguf_device_fit_rungs(path, list(LADDER)) == LADDER
-    _device(monkeypatch, cards=2)
-    assert _provider()._gguf_device_fit_rungs(path, list(LADDER)) == LADDER
-
-
 # -- 3. a prompt the context cannot hold fails clearly, before any eval --------------------
 class _Llama:
     def __init__(self, n_ctx: int):

@@ -50,14 +50,17 @@ process, every claim, and the estimate; Runtime and Gateway only declare locks a
    owner, unbuilt defaults claim nothing). The refusal names locks by owner label ("the runtime of
    account default/bob"), never by id (ADR 0043 of the framework).
 
-8. **The reserved context is explicit and the person's** (operator ruling 2026-10-29). The load-time fit rule and the
-   ADR 0008 allocation ladder choose how much context to RESERVE when nothing is set; that is not truncation of a
-   request. The chosen context is shown with the model's advertised one ("Context 65,536 (model advertises 262,144;
-   limited by memory)": claim fields `context_length`, `advertised_context_length`, `context_source`), and a person
-   can set it per model (`config.model_contexts.set_model_context`, the Models page): a set context is a pin, loaded
-   as is and refused with the readable sentence when it does not fit, never shrunk. A request longer than the loaded
-   context NEVER gets cut: it fails with `ContextWindowExceededError`. No per-route caps, no automatic shrinking of a
-   request (framework ADR 0026).
+8. **A load reserves the MAXIMUM context, explicitly** (operator ruling 2026-10-29). When nothing is set, the context
+   is the smaller of the model's advertised context and the largest whose weights + KV + compute fit the device's free
+   memory minus a safety buffer (5 % by default, `model_memory_buffer` in the AbstractCore config), computed by
+   inverting the KV-size formula (`_gguf_max_context_that_fits`); if the allocation still fails the context halves,
+   down to 4,096. No fixed rungs, no "half of the free memory". The choice is logged ("reserving 131,072 of 262,144
+   tokens (limited by memory; ... 5 % buffer)") and carried on the residency claim (`context_length`,
+   `advertised_context_length`, `context_source`, `memory_buffer`, `context_reservation`), so the Models row shows it
+   ("131,072 of 262,144; limited by memory, 5 % buffer"). A person can set a model's context
+   (`config.model_contexts.set_model_context`): used exactly or refused with the readable sentence, never shrunk. A
+   request longer than the loaded context NEVER gets cut: it fails with `ContextWindowExceededError`. No per-route
+   caps (framework ADR 0026). The `model_loaded` ledger event with these numbers is AbstractRuntime backlog 0866.
 
 ## Consequences
 
