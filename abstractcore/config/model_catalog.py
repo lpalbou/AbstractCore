@@ -1262,7 +1262,16 @@ def _hub_model_facts(api: Any, cache: _HubCache, repo_id: str) -> Dict[str, Any]
         if isinstance(total, int) and total > 0:
             params = total
             break
-    facts = {"siblings": siblings, "params_total": params, "gated": bool(getattr(info, "gated", False))}
+    # A GGUF repo's `general.architecture` as the Hub reads it (`gguf.architecture`): whether this
+    # computer's llama.cpp can load it is known BEFORE the download (backlog 0868).
+    gguf_block = getattr(info, "gguf", None)
+    arch = gguf_block.get("architecture") if isinstance(gguf_block, dict) else getattr(gguf_block, "architecture", None)
+    facts = {
+        "siblings": siblings,
+        "params_total": params,
+        "gated": bool(getattr(info, "gated", False)),
+        "gguf_architecture": str(arch).strip() if isinstance(arch, str) and arch.strip() else None,
+    }
     cache.put("models", repo_id, facts)
     return facts
 
@@ -1420,6 +1429,11 @@ def _build_artifact(
     if presence.status == mm.PRESENCE_INSTALLED and isinstance(installed_size, int):
         size, size_source = installed_size, "engine"
 
+    gguf_architecture: Optional[str] = None
+    if hub is not None and provider in _HF_REPO_PROVIDERS:
+        facts = hub["facts"].get(mm.hf_artifact_parts(artifact)[0])
+        if facts and isinstance(facts.get("gguf_architecture"), str):
+            gguf_architecture = facts["gguf_architecture"]
     if hub is not None and provider in _HF_REPO_PROVIDERS and size_source not in ("engine",):
         repo, _q, patterns = mm.hf_artifact_parts(artifact)
         facts = hub["facts"].get(repo)
@@ -1510,6 +1524,17 @@ def _build_artifact(
     if not supported:
         fit["notes"] = list(fit.get("notes") or []) + [f"the {engine} engine does not run on this host"]
     downloadable = supported and provider in mm.supported_providers() and presence.status != mm.PRESENCE_NOT_APPLICABLE
+    # A GGUF whose architecture this computer's llama.cpp does not know (Hub `gguf.architecture`,
+    # checked against libllama, utils.model_cache) would download and then fail at its first call:
+    # it is not offered for download and says why (backlog 0868; the installed row says so too, 0867).
+    unloadable_reason: Optional[str] = None
+    if engine == "llamacpp" and gguf_architecture:
+        from ..utils.model_cache import gguf_unloadable_reason
+
+        unloadable_reason = gguf_unloadable_reason(gguf_architecture)
+    if unloadable_reason:
+        downloadable = False
+        fit["notes"] = list(fit.get("notes") or []) + [unloadable_reason]
 
     # The default canvas does not fit but a measured smaller one does (video):
     # the size at which it still runs here.
@@ -1565,10 +1590,21 @@ def _build_artifact(
         "fit": fit,
         "supported_on_host": supported,
         "downloadable": bool(downloadable),
+        # The GGUF's architecture (Hub facts) and whether this computer's llama.cpp loads it:
+        # `loadable` is False with the sentence when it cannot, None when it cannot be told.
+        "gguf_architecture": gguf_architecture,
+        "loadable": False if unloadable_reason else (True if gguf_architecture and engine == "llamacpp" and _llamacpp_known(gguf_architecture) else None),
+        "unloadable_reason": unloadable_reason,
         "recommended": bool(art.get("recommended")),
         "verified": bool(art.get("verified")),
         "cli_download": f"abstractcore models download {provider} {artifact}",
     }
+
+
+def _llamacpp_known(arch: str) -> bool:
+    from ..utils.model_cache import llamacpp_knows_architecture
+
+    return llamacpp_knows_architecture(arch) is True
 
 
 # A GGUF file's quant label: `Model-UD-Q4_K_XL.gguf`, `Q8_0/Model-Q8_0-00001-of-00002.gguf`, `model-iq4_xs.gguf`.

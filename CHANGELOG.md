@@ -16,6 +16,10 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 - **The model catalog never offers MLX off Apple silicon** (operator 2026-10-29: "on Linux never offer MLX"): the
   mlx / mlx-gen / mlx-vlm artifacts are left out on a host whose engine registry says MLX cannot run (they were
   listed, not downloadable), and a row with only MLX builds (the Wan video rows) is not listed there.
+- **`sse-starlette>=1.8,<4`** (was `<2.0.0`): AbstractCore never imports it (the server streams with Starlette's
+  `StreamingResponse`), and `mcp` 2.3 requires `sse-starlette>=3`, so every environment holding both ended in a pip
+  conflict. Checked with sse-starlette 3.6.0 (starlette 0.52.1, fastapi 0.136.1): the server app starts and
+  `tests/server` passes as with 1.8.2; `uv pip compile` resolves abstractcore + sse-starlette 3.6.0 + mcp 2.3.0.
 
 ### Added
 
@@ -85,6 +89,12 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 - **A GGUF context that fills up mid-request** (llama.cpp "failed to find a memory slot", `llama_decode returned 1`)
   frees the engine's context memory and fails with a clear `ContextWindowExceededError` sentence, instead of an
   "Error: llama_decode returned 1" answer and a memory left full for the next request (backlog 0862).
+
+- **A Hugging Face GGUF this computer's llama.cpp cannot load is flagged before download** (backlog 0868, following
+  0867). With `--hub`, the catalog reads each GGUF repo's `gguf.architecture` from the Hugging Face API and checks
+  it against llama-cpp-python's `libllama`. A build it cannot load carries `loadable: false`, `unloadable_reason`
+  (the sentence) and `downloadable: false`, is never the pre-selection, and says why in its fit notes. A known
+  architecture is `loadable: true`. When it cannot be told, the value is `null` and the build stays offered.
 
 ## [2.31.1] - 2026-10-28
 

@@ -89,7 +89,7 @@ dependencies = [
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
-    "sse-starlette>=1.6.0,<2.0.0",
+    "sse-starlette>=1.8,<4",
     # Capability plugins (llm.voice / llm.audio, llm.vision, llm.music, llm.scene3d). Their
     # base installs carry no local engine; `apple` / `gpu` add the engines.
     # Email (abstractcore.comms.email): credentials encrypted at rest (AES-256-GCM) under one

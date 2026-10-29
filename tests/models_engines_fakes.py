@@ -492,7 +492,9 @@ class FakeHfApi:
         spec = self.repos[repo_id]
         siblings = [SimpleNamespace(rfilename=n, size=s) for n, s in spec.get("files", {}).items()]
         st = SimpleNamespace(total=spec["params"]) if spec.get("params") else None
-        return SimpleNamespace(id=repo_id, siblings=siblings, safetensors=st, gguf=None, gated=False)
+        # The Hub serves a GGUF repo's `gguf` block as a dict ({architecture, total, context_length, ...}).
+        gg = {"architecture": spec["architecture"]} if spec.get("architecture") else None
+        return SimpleNamespace(id=repo_id, siblings=siblings, safetensors=st, gguf=gg, gated=False)
 
     def list_models(self, search: str = "", filter: Any = None, sort: Any = None, limit: Any = None, **_: Any) -> Any:
         self.calls.append(("list_models", search, filter))
