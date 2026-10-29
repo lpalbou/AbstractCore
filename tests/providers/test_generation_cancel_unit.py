@@ -391,3 +391,58 @@ def test_generate_core_propagates_the_cancel_instead_of_an_error_answer():
     provider.temperature, provider.top_p, provider.top_k, provider.seed = 0.7, 0.9, None, None
     with pytest.raises(GenerationCancelledError):
         provider._generate_core("hello", messages=None, system_prompt=None, **{CANCEL_KWARG: event})
+
+
+def test_structured_output_hands_the_cancel_event_over_once():
+    """OVH 2026-10-28: a structured call with the host's cancel_event reached the provider as a raw
+    `cancel_event` kwarg (the plain path consumes it; structured output never got there), and the
+    HuggingFace GGUF lane passed it twice: TypeError on every structured call."""
+    from pydantic import BaseModel
+
+    class Answer(BaseModel):
+        value: str
+
+    for supports in (True, False):
+        provider = _recording_provider(supports=supports)
+        original = provider._generate_internal
+
+        def _json(prompt, **kwargs):
+            original(prompt, **kwargs)
+            return GenerateResponse(content='{"value": "ok"}', model="static-model", finish_reason="stop")
+
+        provider._generate_internal = _json  # type: ignore[method-assign]
+        event = threading.Event()
+        result = provider.generate(prompt="hi", response_model=Answer, cancel_event=event)
+        assert getattr(result, "value", None) == "ok"
+        assert "cancel_event" not in provider.seen, "never a raw cancel_event kwarg"
+        assert (provider.seen.get(CANCEL_KWARG) is event) is supports
+
+
+def test_tools_plus_structured_output_hands_the_host_event_to_both_passes():
+    """Review of 0861 (merge desk, 2026-10-29): the first pass of tools + response_model is the plain
+    path. It must see the HOST's event (not a private eject event minted because the raw kwarg was
+    already taken), and the structured second pass gets it under the cancel kwarg, never raw."""
+    from pydantic import BaseModel
+
+    class Answer(BaseModel):
+        value: str
+
+    provider = _recording_provider(supports=True)
+    provider._PRIVATE_CANCEL_EVENT_FOR_EJECT = True  # as HuggingFaceProvider: an unhosted call gets a private event
+    calls: List[Dict[str, Any]] = []
+
+    def _record(prompt, **kwargs):
+        calls.append(dict(kwargs))
+        content = '{"value": "ok"}' if len(calls) > 1 else "tool pass"
+        return GenerateResponse(content=content, model="static-model", finish_reason="stop")
+
+    provider._generate_internal = _record  # type: ignore[method-assign]
+    tool = {"name": "noop", "description": "does nothing", "parameters": {"type": "object", "properties": {}}}
+    event = threading.Event()
+    result = provider.generate(prompt="hi", tools=[tool], response_model=Answer, cancel_event=event)
+    assert getattr(result, "value", None) == "ok"
+    assert len(calls) >= 2
+    assert calls[0].get(CANCEL_KWARG) is event, "the first (tools) pass is stopped by the host's own event"
+    for kw in calls:
+        assert "cancel_event" not in kw
+        assert kw.get(CANCEL_KWARG) is event
