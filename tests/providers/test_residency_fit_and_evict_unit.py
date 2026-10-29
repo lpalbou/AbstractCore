@@ -136,6 +136,18 @@ def test_the_gguf_load_runs_the_fit_check_before_allocating(monkeypatch):
     import inspect
     from abstractcore.providers.huggingface_provider import HuggingFaceProvider
 
-    src = inspect.getsource(HuggingFaceProvider._load_gguf_model)
+    src = inspect.getsource(HuggingFaceProvider._load_gguf_model_unlocked)
     assert src.index("self._gguf_ensure_fit(") < src.index("llama_cls(**llama_kwargs)")
     assert "self._gguf_ensure_cpu_fit(" in src
+    # one load at a time: the check and the allocation it admits under one lock (review)
+    assert "with load_lock():" in inspect.getsource(HuggingFaceProvider._load_gguf_model)
+
+
+def test_suggestions_use_the_fit_reserve(monkeypatch):
+    import abstractcore.config.model_catalog as mc
+
+    monkeypatch.setattr(mc, "load_seed", lambda: {"rows": [{"id": "fam-x", "family": "famx", "artifacts": [
+        {"provider": "huggingface", "artifact": "org/fam-x:Q4", "download_bytes": int(4.3 * GB)}]}]})
+    assert pr.smaller_suggestions("org/fam-x:Q8", int(6.1 * GB), reserve_bytes=int(1.6 * GB)) == [], (
+        "MUTANT: a 1 GiB reserve -> suggests a model the check itself refuses -> RED")
+    assert pr.smaller_suggestions("org/fam-x:Q8", int(7 * GB), reserve_bytes=int(1.6 * GB))

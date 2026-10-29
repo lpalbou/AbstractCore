@@ -3323,11 +3323,10 @@ class HuggingFaceProvider(BaseProvider):
             return
         if need <= int(avail):
             return
+        # No eviction here: the resident models sit on the GPU, evicting them frees no RAM.
         from . import process_residency
 
-        process_residency.ensure_fit(str(self.model), need, lambda: int(
-            ((get_memory_snapshot() or {}).get("ram") or {}).get("available_bytes") or 0),
-            provider="huggingface", device="RAM (CPU fallback)")
+        process_residency.refuse_fit(str(self.model), need, int(avail), device="RAM (CPU fallback)", kept=[])
 
     def _gguf_ensure_fit(self, model_path: Any, min_ctx: int) -> Optional[Dict[str, Any]]:
         """ADR 0010 on one full-offload CUDA card (the device rule's scope): need =
@@ -3357,7 +3356,8 @@ class HuggingFaceProvider(BaseProvider):
         def _free() -> int:
             return int(torch.cuda.mem_get_info()[0])
 
-        return process_residency.ensure_fit(str(self.model), need, _free, provider="huggingface", device="GPU")
+        return process_residency.ensure_fit(str(self.model), need, _free, provider="huggingface", device="GPU",
+                                            reserve_bytes=reserve)
 
     def _gguf_device_fit_rungs(self, model_path: Any, candidate_ctxs: List[int]) -> List[int]:
         """`candidate_ctxs` without the rungs whose KV cache does not fit the
@@ -7433,6 +7433,15 @@ class HuggingFaceProvider(BaseProvider):
             return f"models--{model_name}"
 
     def _load_gguf_model(self):
+        """Load the GGUF under the process load lock (ADR 0010): the fit check and the
+        allocation it admits are one step, so two loads cannot both pass the check
+        against the same free memory and then run out of it."""
+        from .process_residency import load_lock
+
+        with load_lock():
+            return self._load_gguf_model_unlocked()
+
+    def _load_gguf_model_unlocked(self):
         """Load GGUF model using llama-cpp-python (cache-only, no downloading)"""
         import os
         try:
@@ -7649,7 +7658,8 @@ class HuggingFaceProvider(BaseProvider):
                         # ADR 0010: the CPU fallback puts weights AND the KV cache in RAM;
                         # refuse it with the numbers when RAM cannot hold them, instead of
                         # letting the kernel kill the process.
-                        self._gguf_ensure_cpu_fit(model_path, int(n_ctx_i))
+                        if not is_metal_host:  # Metal retries every rung on the CPU: its ladder decides
+                            self._gguf_ensure_cpu_fit(model_path, int(n_ctx_i))
                         try:
                             self.logger.warning(
                                 f"GGUF load failed with n_gpu_layers={self.n_gpu_layers}; retrying with CPU (n_gpu_layers=0). Error: {e}"

@@ -257,6 +257,23 @@ def eject_unclaimed(provider: str, model: str, *, task: Optional[str] = None, pa
 # used first, one at a time), and otherwise refuses with a typed error.
 # ---------------------------------------------------------------------------
 _GB = 1000 ** 3
+_LOAD_LOCK = _threading.Lock()
+
+
+def load_lock() -> "_threading.Lock":
+    """One in-process model load at a time (ADR 0010): fit check + allocation."""
+    return _LOAD_LOCK
+
+
+def _release_torch_device_cache() -> None:
+    """Freed torch tensors stay in its CUDA cache, which the free-memory probe
+    counts as used: return them before measuring."""
+    torch = sys.modules.get("torch")
+    try:
+        if torch is not None and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _fmt_gb(n: Optional[int]) -> str:
@@ -330,7 +347,19 @@ def make_room(needed_bytes: int, free_bytes: Any, *, provider: Optional[str] = N
             if not candidates:
                 break
             victim = min(candidates, key=lambda s: float(s["last_used_at"] or 0.0))
+            # Re-checked right before the eject: a generation that started since is
+            # never cancelled for room (the next candidate is tried instead).
+            again = next((s for s in resident_model_states() if s["model"] == victim["model"]), None)
+            if again is None or again["in_use"] or again["locked_by"]:
+                if again is None:
+                    continue
+                states_skip = victim["model"]
+                candidates = [c for c in candidates if c["model"] != states_skip]
+                if not candidates:
+                    break
+                continue
             report = eject(victim["backend"], victim["model"], reason=reason)
+            _release_torch_device_cache()
             after = int(free_bytes())
             evicted.append({"model": victim["model"], "freed_bytes": max(0, after - free),
                             "ok": bool(report.get("ok", True))})
@@ -349,7 +378,7 @@ def make_room(needed_bytes: int, free_bytes: Any, *, provider: Optional[str] = N
 
 
 def smaller_suggestions(model: str, budget_bytes: int, *, provider: str = "huggingface",
-                        limit: int = 3) -> List[Dict[str, Any]]:
+                        limit: int = 3, reserve_bytes: int = 1 << 30) -> List[Dict[str, Any]]:
     """Catalog artifacts of the same model (or its family) on `provider` whose
     download fits `budget_bytes` with room for a KV cache, largest first."""
     try:
@@ -381,7 +410,8 @@ def smaller_suggestions(model: str, budget_bytes: int, *, provider: str = "huggi
                 continue
             if str(a.get("artifact") or "").lower() == name:
                 continue
-            if size * 1.15 + (1 << 30) > budget_bytes:
+            # The fit check's own arithmetic: weights + a small-context KV (~15%) + the reserve.
+            if size * 1.15 + int(reserve_bytes) > budget_bytes:
                 continue
             out.append({"model": r.get("display_name") or r.get("id"), "artifact": a.get("artifact"),
                         "quant": a.get("quant"), "download_bytes": size})
@@ -396,7 +426,7 @@ def smaller_suggestions(model: str, budget_bytes: int, *, provider: str = "huggi
 
 
 def ensure_fit(model: str, needed_bytes: int, free_bytes: Any, *, provider: str = "huggingface",
-               device: str = "GPU") -> Dict[str, Any]:
+               device: str = "GPU", reserve_bytes: int = 1 << 30) -> Dict[str, Any]:
     """THE fit check (ADR 0010). Evicts unlocked LRU models when needed; raises
     `ModelDoesNotFitError` with the sentence, numbers and smaller suggestions when
     the load still cannot fit. Returns the make-room report when it fits."""
@@ -408,11 +438,19 @@ def ensure_fit(model: str, needed_bytes: int, free_bytes: Any, *, provider: str 
             f"evicted {ev['model']} (least recently used, not locked) to make room for {model}")
     if report["fits"]:
         return report
+    refuse_fit(model, needed_bytes, int(report["free_bytes"]), device=device, kept=report["kept"],
+               evicted=report["evicted"], provider=provider, reserve_bytes=reserve_bytes)
+    return report  # pragma: no cover - refuse_fit raises
+
+
+def refuse_fit(model: str, needed_bytes: int, free: int, *, device: str, kept: List[str],
+               evicted: Optional[List[Dict[str, Any]]] = None, provider: str = "huggingface",
+               reserve_bytes: int = 1 << 30) -> None:
+    """Raise the typed refusal (ADR 0010) with its sentence and suggestions."""
     from ..exceptions import ModelDoesNotFitError
 
-    free = int(report["free_bytes"])
-    suggestions = smaller_suggestions(model, free, provider=provider)
-    kept = report["kept"]
+    evicted = list(evicted or [])
+    suggestions = smaller_suggestions(model, free, provider=provider, reserve_bytes=reserve_bytes)
     sentence = f"{model} needs {_fmt_gb(needed_bytes)} but only {_fmt_gb(free)} is free on the {device}"
     if kept:
         sentence += f" (kept: {'; '.join(kept)})"
@@ -424,4 +462,4 @@ def ensure_fit(model: str, needed_bytes: int, free_bytes: Any, *, provider: str 
         sentence += ", or unlock a kept model on the Models page"
     sentence += "."
     raise ModelDoesNotFitError(sentence, model=model, needed_bytes=int(needed_bytes), free_bytes=free,
-                               device=device, kept=kept, evicted=report["evicted"], suggestions=suggestions)
+                               device=device, kept=kept, evicted=evicted, suggestions=suggestions)
