@@ -31,3 +31,28 @@ def test_the_installed_library_decides(lib_knows):
     assert "update llama.cpp" in mc.gguf_unloadable_reason("spark2_5")
     # Known nowhere: the honest sentence.
     assert "No llama.cpp release supports the madeup9 architecture" in mc.gguf_unloadable_reason("madeup9")
+
+
+def test_catalog_checks_scan_each_architecture_once_and_invalidate_on_library_change(monkeypatch):
+    class Library(bytes):
+        scans = 0
+
+        def __contains__(self, value):
+            self.scans += 1
+            return super().__contains__(value)
+
+    library = Library(b"llama\x00qwen2\x00qwen35\x00")
+    monkeypatch.setattr(mc, "_LLAMA_LIB_CACHE", {})
+    monkeypatch.setattr(mc, "_llama_library_bytes", lambda: library)
+    for _ in range(1000):
+        assert mc.llamacpp_knows_architecture("qwen35") is True
+        assert mc.llamacpp_knows_architecture("spark2_5") is False
+    assert library.scans == 4  # two sentinels, two distinct names
+    library = Library(b"llama\x00qwen2\x00spark2_5\x00")
+    assert mc.llamacpp_knows_architecture("spark2_5") is True
+    assert mc.llamacpp_knows_architecture("qwen35") is False
+    assert library.scans == 4
+    library = Library(b"stub\x00")
+    for _ in range(10):
+        assert mc.llamacpp_knows_architecture("qwen35") is None
+    assert library.scans == 1
