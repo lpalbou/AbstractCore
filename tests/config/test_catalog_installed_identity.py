@@ -50,6 +50,20 @@ def test_explicit_precisions_are_not_interchangeable_files():
     assert mm._matches_installed_id('model@4bit', 'model')
 
 
+def test_hf_cache_inventory_still_requires_the_checkpoint_probe(tmp_path, monkeypatch):
+    isolate_host(tmp_path, monkeypatch)
+    calls = []
+    def probe(provider, artifact):
+        calls.append((provider, artifact))
+        return mm.ModelPresence(provider=provider, artifact=artifact, status=mm.PRESENCE_UNKNOWN)
+    monkeypatch.setattr(mm, 'probe', probe)
+    row = next(r for r in mc.load_seed()['rows'] if r['id'] == 'all-minilm-l6-v2')
+    spec = next(a for a in row['artifacts'] if a['provider'] == 'huggingface')
+    art = mc._build_artifact(row, spec, {'text':False,'embedding':True}, synthetic_host('metal128'), {}, None, {}, installed={'location':'partial/cache'})
+    assert art['presence']['status'] == mm.PRESENCE_UNKNOWN
+    assert calls == [(spec['provider'], spec['artifact'])]
+
+
 def test_new_model_metadata_and_wire_formats_are_specific():
     spark = get_model_capabilities('spark-x2.6-4b')
     assert spark['max_tokens'] == 1048576 and spark['vision_support'] is False and spark['thinking_support'] is True

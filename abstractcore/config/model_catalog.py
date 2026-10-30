@@ -1459,8 +1459,13 @@ def _build_artifact(
     params = row.get("params_total")
     params_source = "catalog"
 
-    presence = mm.ModelPresence(provider=provider, artifact=artifact, status=mm.PRESENCE_INSTALLED,
-                                evidence="engine inventory", location=installed.get("location")) if installed else mm.probe(provider, artifact)
+    # Server engine inventories are authoritative. An HF cache directory can
+    # still be incomplete, so cached checkpoints retain the normal file probe.
+    if installed and provider in ("lmstudio", "ollama"):
+        presence = mm.ModelPresence(provider=provider, artifact=artifact, status=mm.PRESENCE_INSTALLED,
+                                    evidence="engine inventory", location=installed.get("location"))
+    else:
+        presence = mm.probe(provider, artifact)
     installed_size = installed_sizes.get((provider, _norm(artifact)))
     if presence.status == mm.PRESENCE_INSTALLED and isinstance(installed_size, int):
         size, size_source = installed_size, "engine"
