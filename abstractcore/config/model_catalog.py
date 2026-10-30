@@ -1207,7 +1207,8 @@ def _inventory_descriptor(local: Mapping[str, Any], presence: Mapping[str, Any])
             "kind": _local_asset_kind(local), "tasks": list(local.get("tasks") or []),
             "tasks_source": local.get("tasks_source"), "files": local.get("nb_files"),
             "incomplete_files": local.get("incomplete_files", 0), "missing_shards": local.get("missing_shards", 0),
-            "bytes": local.get("size_bytes")}
+            "bytes": local.get("size_bytes"),
+            **({"adapter": local["adapter"]} if local.get("adapter") else {})}
 
 
 def _discovered_asset(local: Mapping[str, Any], profile: Mapping[str, Any], support: Mapping[str, Any],
@@ -1453,6 +1454,14 @@ def _hub_handle_hit(facts: Mapping[str, Any], repo_id: str) -> Optional[Dict[str
     else:
         provider = "huggingface"
     return {"repo_id": repo_id, "provider": provider, "downloads": None, "exact": True}
+
+
+def _hub_asset_kind(facts: Mapping[str, Any]) -> str:
+    """Recognize explicit adapter packaging even in already-cached Hub facts."""
+    names = {str(n).lower() for n, _size in facts.get("siblings") or []}
+    return "adapter" if "adapter_config.json" in names or (
+        {"adapter_model.safetensors", "adapter_model.bin"} & names and not {"config.json", "model_index.json"} & names
+    ) else "model"
 
 
 # ---------------------------------------------------------------------------
@@ -2142,6 +2151,7 @@ def catalog(
             artifact = hit["repo_id"]
             quant = None
             facts = (hub_ctx or {}).get("facts", {}).get(artifact) or {}
+            asset_kind = _hub_asset_kind(facts)
             if provider == "huggingface":
                 quant = _pick_gguf_quant(facts)
                 if quant:
@@ -2169,6 +2179,7 @@ def catalog(
             name = hit["repo_id"].rsplit("/", 1)[-1]
             row = {
                 "id": "hf:" + hit["repo_id"].lower(),
+                "asset_kind": asset_kind,
                 "family": name.lower(),
                 "display_name": name,
                 "vendor": hit["repo_id"].split("/", 1)[0],
@@ -2188,6 +2199,9 @@ def catalog(
                 "exact": bool(hit.get("exact")),
                 "artifacts": [art],
             }
+            if asset_kind == "adapter":
+                art["asset_kind"] = "adapter"
+                art["fit"] = {"verdict":"unknown", "notes":[]}
             _pick_recommended(row, accelerator, installed_engines)
             _order_for_installed_engines(row, installed_engines)
             rows_out.append(row)

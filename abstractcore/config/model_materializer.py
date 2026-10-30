@@ -4924,27 +4924,61 @@ def _hf_card_front_matter(path: Path) -> Dict[str, Any]:
     if not lines or lines[0].strip() != "---":
         return {}
     out: Dict[str, Any] = {"tags": []}
-    in_tags = False
+    list_key = None
     for line in lines[1:]:
         if line.strip() == "---":
             break
         stripped = line.strip()
-        if in_tags and stripped.startswith("- "):
-            out["tags"].append(stripped[2:].strip().strip("'\"").lower())
+        if list_key and stripped.startswith("- "):
+            value = stripped[2:].strip().strip("'\"")
+            if value:
+                out[list_key].append(value.lower() if list_key == "tags" else value)
             continue
-        in_tags = False
+        list_key = None
         key, sep, value = line.partition(":")
         if not sep or line[:1].isspace():
             continue
         key, value = key.strip(), value.strip().strip("'\"")
-        if key == "tags":
+        if key in ("tags", "base_model", "trigger_words"):
+            out.setdefault(key, [])
             if value.startswith("[") and value.endswith("]"):
-                out["tags"].extend(v.strip().strip("'\"").lower() for v in value[1:-1].split(",") if v.strip())
-            else:
-                in_tags = True
-        elif key in ("pipeline_tag", "library_name") and value:
+                values = [v.strip().strip("'\"") for v in value[1:-1].split(",") if v.strip()]
+                out[key].extend(v.lower() if key == "tags" else v for v in values)
+            elif not value:
+                list_key = key
+            elif key != "tags":
+                out[key].append(value)
+        elif key in ("pipeline_tag", "library_name", "base_model_relation") and value:
             out[key] = value.lower()
     return out
+
+
+def _adapter_metadata(config: Dict[str, Any], card: Dict[str, Any], adapter: Dict[str, Any],
+                      tasks: List[str], tasks_source: Optional[str], lora_weights: bool) -> Dict[str, Any]:
+    """Declared local adapter facts, never a compatibility or loading guarantee.
+
+    The Vision adapter registry owns engine-specific inference profiles. This
+    descriptor is shared catalogue metadata, usable without importing a backend.
+    """
+    def strings(value: Any) -> List[str]:
+        values = [value] if isinstance(value, str) else value if isinstance(value, list) else []
+        return list(dict.fromkeys(v.strip() for v in values if isinstance(v, str) and v.strip()))
+
+    raw_peft = adapter.get("peft_type")
+    peft = raw_peft.strip().upper() if isinstance(raw_peft, str) else ""
+    kind = "controlnet" if "ControlNet" in str(config.get("_class_name") or "") else (
+        "lora" if peft in ("LORA", "ADALORA") or lora_weights or "lora" in (card.get("tags") or []) else "peft" if peft else "unknown"
+    )
+    bases = strings(adapter.get("base_model_name_or_path")) or strings(card.get("base_model"))
+    triggers = strings(card.get("trigger_words"))
+    rank = adapter.get("r")
+    return {"schema": "adapter_metadata_v1", "type": kind, "peft_type": peft or None,
+            "base_models": bases, "tasks": list(tasks), "trigger_words": triggers,
+            "target_modules": strings(adapter.get("target_modules")),
+            "rank": rank if isinstance(rank, int) and not isinstance(rank, bool) and rank > 0 else None,
+            "sources": {"type": "config" if kind == "controlnet" else "adapter_config" if peft else "files" if lora_weights else "model_card" if kind == "lora" else None,
+                        "base_models": "adapter_config" if strings(adapter.get("base_model_name_or_path")) else "model_card" if bases else None,
+                        "tasks": tasks_source, "trigger_words": "model_card" if triggers else None}}
 
 
 def _pipeline_tasks(tag: str) -> List[str]:
@@ -5043,24 +5077,27 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
     )
     sentence_tf = bool({"modules.json", "config_sentence_transformers.json"} & names) or card.get("library_name") == "sentence-transformers"
     lora_weights = any(n.lower().endswith(".safetensors") and "lora" in n.lower() for n in names)
+    adapter: Dict[str, Any] = {}
+    if "adapter_config.json" in names:
+        try:
+            raw_adapter = json.loads((snap / "adapter_config.json").read_text(encoding="utf-8"))
+            adapter = raw_adapter if isinstance(raw_adapter, dict) else {}
+        except (OSError, ValueError):
+            pass
 
     kind: Optional[str] = None
     if "ControlNet" in config_class:
         kind = "adapter"
         source = source or "config"
-    elif config_class and "model_index.json" not in names and (
+    elif config_class and "adapter_config.json" not in names and card.get("base_model_relation") not in ("adapter", "lora") and "model_index.json" not in names and (
         config_class.endswith("Model") or "Autoencoder" in config_class
     ):
         kind = "component"
         source = source or "config"
-    elif "adapter_config.json" in names:
+    elif "adapter_config.json" in names or card.get("base_model_relation") in ("adapter", "lora"):
         kind = "adapter"
         if not tasks:
-            try:
-                adapter = json.loads((snap / "adapter_config.json").read_text(encoding="utf-8"))
-            except Exception:
-                adapter = {}
-            if isinstance(adapter, dict) and str(adapter.get("task_type") or "").upper() == "CAUSAL_LM":
+            if str(adapter.get("task_type") or "").upper() == "CAUSAL_LM":
                 tasks, source = ["text_generation"], "adapter_config"
     elif ("lora" in tags or lora_weights) and "config.json" not in names and "model_index.json" not in names:
         kind = "adapter"
@@ -5097,7 +5134,8 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
         a.endswith(("ForCausalLM", "LMHeadModel")) for a in archs
     )
     return {"kind": kind, "tasks": tasks, "tasks_source": source, "text_default_supported": standalone_text,
-            "has_weights": has_weights, "missing_shards": len(missing_shards), "checkpoint_index_valid": index_valid}
+            "has_weights": has_weights, "missing_shards": len(missing_shards), "checkpoint_index_valid": index_valid,
+            **({"adapter": _adapter_metadata(config, card, adapter, tasks, source, lora_weights)} if kind == "adapter" else {})}
 
 
 # GGUF `general.architecture` values of the text models the catalog's GGUF repos ship, read from the

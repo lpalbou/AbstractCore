@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Declared adapter catalogue metadata",
+  "description": "Local metadata, not a guarantee that an adapter can run with a particular engine or base checkpoint. Engine inference profiles stay with their capability plugin.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "peft_type", "base_models", "tasks", "trigger_words", "target_modules", "rank", "sources"],
+  "properties": {
+    "schema": {"const": "adapter_metadata_v1"},
+    "type": {"enum": ["lora", "controlnet", "peft", "unknown"]},
+    "peft_type": {"type": ["string", "null"]},
+    "base_models": {"$ref": "#/definitions/strings"},
+    "tasks": {"$ref": "#/definitions/strings"},
+    "trigger_words": {"$ref": "#/definitions/strings"},
+    "target_modules": {"$ref": "#/definitions/strings"},
+    "rank": {"type": ["integer", "null"], "minimum": 1},
+    "sources": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "base_models", "tasks", "trigger_words"],
+      "properties": {
+        "type": {"$ref": "#/definitions/source"},
+        "base_models": {"$ref": "#/definitions/source"},
+        "tasks": {"$ref": "#/definitions/source"},
+        "trigger_words": {"$ref": "#/definitions/source"}
+      }
+    }
+  },
+  "definitions": {
+    "strings": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "source": {"enum": ["config", "adapter_config", "model_card", "files", null]}
+  }
+}
