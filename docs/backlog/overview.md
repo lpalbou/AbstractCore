@@ -9,9 +9,9 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 37
+- Planned: 36
 - Proposed: 28
-- Completed: 45
+- Completed: 46
 - Deprecated: 3
 - Recurrent: 0
 
@@ -201,6 +201,7 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 | Original path | Final path | Completed | Outcome | Comment | Key validation |
 | --- | --- | --- | --- | --- | --- |
+| `planned/0876_adapter_catalogue_metadata.md` | [completed/0876_adapter_catalogue_metadata.md](completed/0876_adapter_catalogue_metadata.md) | 2026-10-30 | Done, unreleased | Separate schema-backed adapter metadata; existing Vision inference registry preserved. | Core `0062fa69` / deployed `449aefce`; 168 Core checks, 38 Gateway checks, 248 browser assertions; live evidence in `abstractgateway/design/model-types-1001/REVIEW.md`. |
 | `planned/0875_discovered_cached_assets_in_catalog.md` | [completed/0875_discovered_cached_assets_in_catalog.md](completed/0875_discovered_cached_assets_in_catalog.md) | 2026-10-30 | Done, unreleased | First-class discovered cache assets; Core `17662521` deployed as `8f2fd00b`. | 161 Core checks, 35 Gateway checks, 240 browser assertions; all 162 live inventory entries covered; `abstractgateway/design/catalog-assets-1000/REVIEW.md`. |
 | `planned/0873_installed_model_catalog_identity.md` | [completed/0873_installed_model_catalog_identity.md](completed/0873_installed_model_catalog_identity.md) | 2026-10-30 | Done, unreleased | Registry-backed installed variants / primary-source metadata; Core `62581e63`/`8afe7771`. | 132 deployed Core tests; 23 LM Studio mappings; Gateway 36 tests / 214 browser assertions; `abstractgateway/design/model-library-catalog-0998/REVIEW.md`. |
 | `planned/0874_local_model_registry_completion.md` | [completed/0874_local_model_registry_completion.md](completed/0874_local_model_registry_completion.md) | 2026-10-30 | Done, unreleased | Registry-backed installed variants / primary-source metadata; Core `62581e63`/`8afe7771`. | 132 deployed Core tests; 23 LM Studio mappings; Gateway 36 tests / 214 browser assertions; `abstractgateway/design/model-library-catalog-0998/REVIEW.md`. |
@@ -250,4 +251,4 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 2026-10-30: [0875 Discovered cached assets in the catalogue](completed/0875_discovered_cached_assets_in_catalog.md), operator follow-up for the remaining HF cache inventory.
 
-2026-10-30: [0876 Adapter catalogue metadata](planned/0876_adapter_catalogue_metadata.md), operator correction to the model/adapter distinction.
+2026-10-30: [0876 Adapter catalogue metadata](completed/0876_adapter_catalogue_metadata.md), operator correction to the model/adapter distinction.
