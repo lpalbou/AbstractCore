@@ -9,9 +9,9 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 34
+- Planned: 38
 - Proposed: 28
-- Completed: 33
+- Completed: 42
 - Deprecated: 3
 - Recurrent: 0
 
@@ -239,3 +239,8 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 - Prefer `proposed/` for uncertain ideas and `planned/` only for committed implementation work.
 - When a planned item completes, move it to `completed/`, append a completion report, and update
   this overview in the same pass.
+
+2026-10-30 operator catalogue follow-up:
+
+- [0873 Robust installed-model identity and catalogue integration](planned/0873_installed_model_catalog_identity.md)
+- [0874 Complete local model capabilities and architecture metadata](planned/0874_local_model_registry_completion.md)
