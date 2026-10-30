@@ -3194,7 +3194,8 @@
       "canonical_name": "gemma-4-e2b-it",
       "aliases": [
         "google/gemma-4-E2B-it",
-        "gemma-4-E2B-it"
+        "gemma-4-E2B-it",
+        "lmstudio-community/gemma-4-E2B-it-GGUF"
       ],
       "max_tokens": 131072,
       "max_tools": -1,
@@ -3234,7 +3235,8 @@
       "canonical_name": "gemma-4-e4b-it",
       "aliases": [
         "google/gemma-4-E4B-it",
-        "gemma-4-E4B-it"
+        "gemma-4-E4B-it",
+        "lmstudio-community/gemma-4-E4B-it-GGUF"
       ],
       "max_tokens": 131072,
       "max_tools": -1,
@@ -3278,7 +3280,9 @@
         "google/gemma-4-12B-it",
         "gemma-4-12B-it",
         "yuxinlu1/gemma-4-12B-agentic-fable5-composer2.5-v2-3.5x-tau2-GGUF",
-        "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF"
+        "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF",
+        "lmstudio-community/gemma-4-12B-it-QAT-GGUF",
+        "google/gemma-4-12b-qat"
       ],
       "max_tokens": 262144,
       "max_tools": -1,
@@ -3328,7 +3332,9 @@
       "aliases": [
         "mlx-community/gemma-4-26B-A4B-it-qat-4bit",
         "google/gemma-4-26B-A4B-it",
-        "gemma-4-26B-A4B-it"
+        "gemma-4-26B-A4B-it",
+        "lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit",
+        "google/gemma-4-26b-a4b-qat"
       ],
       "max_tokens": 262144,
       "max_tools": -1,
@@ -10280,6 +10286,207 @@
         64,
         32
       ]
+    },
+    "spark-x2.6-4b": {
+      "canonical_name": "spark-x2.6-4b",
+      "aliases": [
+        "XHToken/Spark-X2.6-4B",
+        "XHToken/Spark-X2.6-4B-GGUF",
+        "mlx-community/Spark-X2.6-4B-OptiQ-4bit"
+      ],
+      "max_tokens": 1048576,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "spark2_5",
+      "total_parameters": "4B",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "notes": "Text-only Spark X2.6 agent model, same architecture as Spark X2.5. Its template supports thinking on/off and low/high reasoning effort, plus native arg_key/arg_value tool calls. Example output budgets are not hard completion limits.",
+      "source": "https://huggingface.co/XHToken/Spark-X2.6-4B model card, config.json and chat_template.jinja, accessed 2026-10-30.",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "effort_template_kwarg": "reasoning_effort"
+      },
+      "reasoning_levels": [
+        "low",
+        "high"
+      ]
+    },
+    "lfm3-1.7b": {
+      "canonical_name": "lfm3-1.7b",
+      "aliases": [
+        "LiquidAI/LFM3-1.7B",
+        "LiquidAI/LFM3-1.7B-GGUF",
+        "lmstudio-community/LFM3-1.7B-GGUF",
+        "LiquidAI/LFM3-1.7B-MLX-4bit",
+        "LiquidAI/LFM3-1.7B-MLX-8bit"
+      ],
+      "max_tokens": 262144,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "lfm3",
+      "total_parameters": "1.73B",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "notes": "Text-only tri-hybrid LFM3: 13 short-convolution, 5 sliding-attention and 6 full-attention layers. Its chat template supports enable_thinking and Qwen3-Coder XML tool calls. This is the post-trained text model, not the Base, VL, Audio or Omni checkpoint.",
+      "source": "https://huggingface.co/LiquidAI/LFM3-1.7B model card, config.json and chat_template.jinja, accessed 2026-10-30.",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "lfm1.0"
+    },
+    "bonsai-27b": {
+      "canonical_name": "bonsai-27b",
+      "aliases": [
+        "prism-ml/Bonsai-27B-unpacked",
+        "prism-ml/Bonsai-27B-gguf",
+        "prism-ml/Bonsai-27B-mlx-1bit",
+        "prism-ml/Bonsai-27B-mlx-2bit",
+        "lmstudio-community/Bonsai-27B-GGUF",
+        "prism-ml/bonsai-27b"
+      ],
+      "max_tokens": 262144,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "27B",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "notes": "Prism Bonsai low-bit Qwen3.6-27B derivative, with thinking and an optional vision projector. Tool format follows the source Qwen template. Config-only MTP fields are not evidence of an embedded head; no speculation support is asserted. Ternary Bonsai and Bonsai 2 are distinct checkpoints.",
+      "source": "https://huggingface.co/prism-ml/Bonsai-27B-gguf model card; prism-ml/Bonsai-27B-unpacked config/tokenizer; lmstudio-community/Bonsai-27B-GGUF conversion card, accessed 2026-10-30.",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      }
+    },
+    "qwen3.6-35b-a3b-hauhaucs-aggressive": {
+      "canonical_name": "qwen3.6-35b-a3b-hauhaucs-aggressive",
+      "aliases": [
+        "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive",
+        "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive"
+      ],
+      "max_tokens": 262144,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "qwen3_6",
+      "total_parameters": "35B",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "notes": "Distinct HauhauCS Aggressive fine-tune of Qwen3.6-35B-A3B, about 3B active parameters. Card confirms thinking and image input via mmproj. Uses the parent Qwen3.6 conversation/tool format; it is kept separate from the original checkpoint. No MTP-weight claim is inherited.",
+      "source": "https://huggingface.co/HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive model card and parent Qwen3.6 template, accessed 2026-10-30.",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "active_parameters": "3B"
+    },
+    "all-minilm-l6-v2": {
+      "canonical_name": "all-minilm-l6-v2",
+      "aliases": [
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "text-embedding-all-minilm-l6-v2",
+        "stratalab-org/all-MiniLM-L6-v2-GGUF",
+        "mlx-community/all-MiniLM-L6-v2-4bit",
+        "mlx-community/all-MiniLM-L6-v2-8bit"
+      ],
+      "max_tokens": 256,
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "max_tools": 0,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": false,
+      "architecture": "minilm",
+      "total_parameters": "22.7M",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
+      "notes": "Sentence-transformer encoder producing 384-dimensional embeddings. Its standard sentence-transformers pipeline uses a 256-wordpiece input limit (BERT config positions: 512). Not a generative chat model.",
+      "source": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2 model card and config.json, accessed 2026-10-30.",
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 384
     }
   },
   "tool_support_levels": {

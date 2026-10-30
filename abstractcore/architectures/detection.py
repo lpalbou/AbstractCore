@@ -54,7 +54,7 @@ _VARIANT_TOKEN_RE = re.compile(
     r"(?i)^(?:"
     r"gguf|mlx|awq|gptq|bnb|quant|quantized|"
     r"(?:nv|mx)?fp\d+|bf\d+|f(?:16|32|64)|int\d+|uint\d+|nf4|"
-    r"4bit|8bit|q[2-8](?:_[a-z0-9]+)*"
+    r"[1-9]bit|(?:i|t)?q[1-8](?:_[a-z0-9]+)*"
     r")$"
 )
 _TRAILING_VARIANT_SEGMENT_RE = re.compile(r"(?i)([-_.@])([a-z0-9_]+)$")
@@ -114,7 +114,10 @@ def _variant_normalizations(name: str) -> List[str]:
         if not match:
             break
         token = match.group(2)
-        if not _is_variant_token(token):
+        # Unsloth's UD marks a quant family only when it precedes an already
+        # removed precision suffix; a model/fine-tune ending in UD is not a quant.
+        ud_quant = token.lower() == "ud" and any(re.match(r"(?i)^(?:i|t)?q[1-8]", t) for _, t in trailing_tokens_reversed)
+        if not _is_variant_token(token) and not ud_quant:
             break
         trailing_tokens_reversed.append((match.group(1), token))
         working = working[:match.start()].rstrip(".-_@")
@@ -474,6 +477,18 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
         fallback = fallback_tail
     _resolved_aliases_cache[model_name] = fallback
     return fallback
+
+
+def resolve_registered_model_name(model_name: str) -> Optional[str]:
+    """Resolve an explicit registry identity, without the partial-match ladder.
+
+    Provider paths, aliases and trailing file/precision tags are accepted.
+    Unknown fine-tunes stay unknown rather than inheriting a base-model identity.
+    """
+    _load_json_assets()
+    models = (_model_capabilities or {}).get("models", {})
+    canonical = resolve_model_alias(model_name, models)
+    return canonical if canonical in models else None
 
 
 def lookup_registry_model_capabilities(model_name: str) -> Optional[Dict[str, Any]]:

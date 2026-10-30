@@ -340,7 +340,7 @@ def _matches_installed_id(installed: Any, artifact: str) -> bool:
     `qwen/qwen3.5-9b@q4_k_m`, because a single-quant install is what LM Studio
     reports under the bare id. The reverse is NOT true in general, but an
     installed `...@4bit` obviously satisfies a bare request for the same base,
-    so both `@`-carrying forms are compared on their bases.
+    so a bare request compares bases. Two explicit precisions must agree.
     """
 
     got = _norm(installed)
@@ -349,9 +349,9 @@ def _matches_installed_id(installed: Any, artifact: str) -> bool:
         return False
     if got == want:
         return True
-    want_base, _ = split_artifact(want)
-    got_base, _ = split_artifact(got)
-    return bool(want_base) and got_base == want_base
+    want_base, want_quant = split_artifact(want)
+    got_base, got_quant = split_artifact(got)
+    return bool(want_base) and got_base == want_base and (not want_quant or not got_quant or want_quant == got_quant)
 
 
 # ---------------------------------------------------------------------------
@@ -4754,6 +4754,13 @@ def _lmstudio_row_artifact(row: Dict[str, Any]) -> str:
 
 
 def _lmstudio_row_matches(row: Dict[str, Any], artifact: str) -> bool:
+    _base, requested_quant = split_artifact(artifact)
+    selected = str(row.get("selectedVariant") or "")
+    _selected_base, selected_quant = split_artifact(selected)
+    quantization = row.get("quantization")
+    reported_quant = selected_quant or (quantization.get("name") if isinstance(quantization, dict) else None)
+    if requested_quant and reported_quant and _norm(requested_quant) != _norm(reported_quant):
+        return False
     candidates = [
         row.get("selectedVariant"),
         row.get("modelKey"),
@@ -5212,7 +5219,7 @@ def _annotate_catalog_ids(rows: List[Dict[str, Any]]) -> None:
         return
     for row in rows:
         try:
-            row["catalog_id"] = catalog_id_for(row["provider"], row["artifact"])
+            row["catalog_id"] = catalog_id_for(row["provider"], row["artifact"], metadata=row)
         except Exception:
             row["catalog_id"] = None
 

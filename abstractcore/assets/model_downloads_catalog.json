@@ -1,7 +1,7 @@
 {
  "$schema": "./model_downloads_catalog.schema.json",
  "schema": "model_downloads_catalog_v1",
- "version": "2026-10-08",
+ "version": "2026-10-30",
  "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer. upstream={method, checked, revision?} records an id verified to exist upstream on that date (hf_api: HfApi.model_info(files_metadata=True), download_bytes = the weight files; ollama_registry: the registry manifest, download_bytes = the sum of its layers); such an artifact must carry its verified size. options carries route options the recommendation copies (the MTP builds: speculation). resident={bytes, source} (optional, per artifact) is the MEASURED memory the engine needs while it runs, for models whose working memory is not their file size (video generation): the fit verdict uses it instead of download_bytes, and `source` says where and at which profile it was measured. route={key, provider, model} (optional, per artifact) names the capability route that runs the artifact when its engine is not the download provider (AbstractVoice's faster-whisper runs `base`, fetched as a Hugging Face repo): what a surface shows and writes for that route, and how a route stored with the download pair is repaired (capability_defaults.repair_download_pair_routes).",
  "companion_sizes": {
   "mlx-community/Qwen3.5-4B-MTP-4bit": {
@@ -4597,7 +4597,7 @@
    "params_total": 22700000,
    "params_active": null,
    "license": "apache-2.0",
-   "capabilities_key": null,
+   "capabilities_key": "all-minilm-l6-v2",
    "tags": [
     "embedding",
     "tiny"
@@ -5941,6 +5941,186 @@
     "music_generation": true
    },
    "notes": "The AbstractFramework recommended music model (output.music), run by AbstractMusic's acestep backend (Diffusers AceStepPipeline on PyTorch: CUDA, Apple MPS in bfloat16, or the processor in float32). AbstractMusic loads it from the local Hugging Face cache only: download it first. Its memory need is estimated from the download (not measured)."
+  },
+  {
+   "id": "spark-x2.6-4b",
+   "family": "spark",
+   "display_name": "Spark X2.6 4B",
+   "vendor": "XHToken",
+   "params_total": 4000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "spark-x2.6-4b",
+   "tags": [
+    "chat",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "XHToken/Spark-X2.6-4B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "spark-x2.6-4b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "notes": "Primary model cards and local engine inventory audited 2026-10-30; installed variants retain their exact identifiers."
+  },
+  {
+   "id": "lfm3-1.7b",
+   "family": "lfm3",
+   "display_name": "LFM3 1.7B",
+   "vendor": "Liquid AI",
+   "params_total": 1730000000,
+   "params_active": null,
+   "license": "lfm1.0",
+   "capabilities_key": "lfm3-1.7b",
+   "tags": [
+    "chat",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "LiquidAI/LFM3-1.7B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "LiquidAI/LFM3-1.7B-MLX-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "lfm3-1.7b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "notes": "Primary model cards and local engine inventory audited 2026-10-30; installed variants retain their exact identifiers."
+  },
+  {
+   "id": "bonsai-27b",
+   "family": "bonsai",
+   "display_name": "Bonsai 27B",
+   "vendor": "Prism ML",
+   "params_total": 27000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "bonsai-27b",
+   "tags": [
+    "chat",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "prism-ml/Bonsai-27B-gguf:Q1_0",
+     "quant": "q1_0",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "notes": "Primary model cards and local engine inventory audited 2026-10-30; installed variants retain their exact identifiers."
+  },
+  {
+   "id": "qwen3.6-35b-a3b-hauhaucs-aggressive",
+   "family": "qwen3.6-hauhaucs",
+   "display_name": "Qwen3.6 35B A3B · HauhauCS Aggressive",
+   "vendor": "HauhauCS",
+   "params_total": 35000000000,
+   "params_active": 3000000000,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.6-35b-a3b-hauhaucs-aggressive",
+   "tags": [
+    "chat",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "notes": "Primary model cards and local engine inventory audited 2026-10-30; installed variants retain their exact identifiers."
+  },
+  {
+   "id": "gemma-4-e2b",
+   "family": "gemma4",
+   "display_name": "Gemma 4 E2B",
+   "vendor": "Google",
+   "params_total": 5123178051,
+   "params_active": null,
+   "license": "gemma",
+   "capabilities_key": "gemma-4-e2b-it",
+   "tags": [
+    "chat",
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "lmstudio-community/gemma-4-E2B-it-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "notes": "Instruction model. Total tensor parameters from google/gemma-4-E2B-it HF safetensors metadata (5,123,178,051, checked 2026-10-30); E2B is the effective-size name. Installed variants retain exact engine IDs."
+  },
+  {
+   "id": "gemma-4-12b",
+   "family": "gemma4",
+   "display_name": "Gemma 4 12B",
+   "vendor": "Google",
+   "params_total": 11959730224,
+   "params_active": null,
+   "license": "gemma",
+   "capabilities_key": "gemma-4-12b-it",
+   "tags": [
+    "chat",
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "lmstudio-community/gemma-4-12B-it-QAT-GGUF:Q4_0",
+     "quant": "q4_0",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "notes": "Primary model cards and local engine inventory audited 2026-10-30; installed variants retain their exact identifiers."
   }
  ]
 }

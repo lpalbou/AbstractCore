@@ -1088,7 +1088,19 @@ def route_for_download(provider: Any, artifact: Any) -> Optional[Dict[str, str]]
     return dict(found) if found else None
 
 
-def catalog_id_for(provider: Any, artifact: Any) -> Optional[str]:
+@functools.lru_cache(maxsize=1)
+def _canonical_catalog_index() -> Dict[str, List[str]]:
+    from ..architectures.detection import resolve_registered_model_name
+
+    index: Dict[str, List[str]] = {}
+    for row in _load_seed_cached().get("rows") or []:
+        canonical = resolve_registered_model_name(str(row.get("capabilities_key") or ""))
+        if canonical:
+            index.setdefault(canonical, []).append(row["id"])
+    return index
+
+
+def catalog_id_for(provider: Any, artifact: Any, *, metadata: Optional[Mapping[str, Any]] = None) -> Optional[str]:
     """The curated row id an installed artifact belongs to, or None.
 
     Tolerant the same way presence is: `qwen/qwen3.5-9b` (the id LM Studio
@@ -1100,6 +1112,25 @@ def catalog_id_for(provider: Any, artifact: Any) -> Optional[str]:
 
     pid = _norm(provider)
     ref = _norm(artifact)
+    # Engine metadata names the actual checkpoint; an engine's short alias can
+    # omit Instruct/QAT or even the publisher. Prefer that provenance, and never
+    # use capability lookup's permissive base-model partial-match ladder here.
+    from ..architectures.detection import resolve_registered_model_name
+
+    sources = []
+    if pid == "lmstudio" and metadata:
+        for key in ("location", "lms_path"):
+            path = str(metadata.get(key) or "").replace("\\", "/")
+            parts = path.rstrip("/").split("/")
+            if parts:
+                sources.extend(["/".join(parts[-2:]), parts[-1]])
+                if parts[-1].lower().endswith(".gguf"):
+                    sources.append("/".join(parts[-3:-1]))
+    for source in sources:
+        canonical = resolve_registered_model_name(source)
+        matches = _canonical_catalog_index().get(canonical, []) if canonical else []
+        if len(matches) == 1:
+            return matches[0]
     index = _artifact_index()
     if (pid, ref) in index:
         return index[(pid, ref)]
@@ -1112,7 +1143,9 @@ def catalog_id_for(provider: Any, artifact: Any) -> Optional[str]:
             return rid
         if pid in _HF_REPO_PROVIDERS and _norm(mm.hf_artifact_parts(a)[0]) == ref:
             return rid
-    return None
+    canonical = resolve_registered_model_name(ref)
+    matches = _canonical_catalog_index().get(canonical, []) if canonical else []
+    return matches[0] if len(matches) == 1 else None
 
 
 # ---------------------------------------------------------------------------
@@ -1412,6 +1445,8 @@ def _build_artifact(
     support: Mapping[str, Mapping[str, Any]],
     hub: Optional[Dict[str, Any]],
     installed_sizes: Mapping[Tuple[str, str], int],
+    *,
+    installed: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     from ..utils.model_fit import bits_for_quant, estimate_fit
     from . import model_materializer as mm
@@ -1424,7 +1459,8 @@ def _build_artifact(
     params = row.get("params_total")
     params_source = "catalog"
 
-    presence = mm.probe(provider, artifact)
+    presence = mm.ModelPresence(provider=provider, artifact=artifact, status=mm.PRESENCE_INSTALLED,
+                                evidence="engine inventory", location=installed.get("location")) if installed else mm.probe(provider, artifact)
     installed_size = installed_sizes.get((provider, _norm(artifact)))
     if presence.status == mm.PRESENCE_INSTALLED and isinstance(installed_size, int):
         size, size_source = installed_size, "engine"
@@ -1924,22 +1960,45 @@ def catalog(
         installed_engines = {}
 
     installed_sizes: Dict[Tuple[str, str], int] = {}
+    installed_rows: List[Dict[str, Any]] = []
     rows_out: List[Dict[str, Any]] = []
     with mm.presence_sweep():
         try:
             inst = mm.list_installed(None, include_loaded=False)
+            installed_rows = [r for r in inst["rows"] if r.get("provider") and r.get("artifact")]
             for r in inst["rows"]:
                 if isinstance(r.get("size_bytes"), int):
                     installed_sizes[(r["provider"], _norm(r["artifact"]))] = r["size_bytes"]
         except Exception:
             pass
+        installed_by_pair = {(r["provider"], _norm(r["artifact"])): r for r in installed_rows}
+        installed_by_catalog: Dict[str, List[Dict[str, Any]]] = {}
+        for r in installed_rows:
+            rid = catalog_id_for(r["provider"], r["artifact"], metadata=r)
+            if rid:
+                installed_by_catalog.setdefault(rid, []).append(r)
         for seed_row in seed_rows:
             caps = _capabilities(seed_row.get("capabilities_key"), seed_row.get("capabilities_override"), seed_row.get("tags") or [])
-            arts = [
-                _build_artifact(seed_row, a, caps, profile, support, hub_ctx, installed_sizes)
-                for a in seed_row["artifacts"]
-                if eng is None or a["provider"] == eng or _engine_for(a["provider"], a.get("quant")) == eng
-            ]
+            arts = []
+            for spec in seed_row["artifacts"]:
+                if eng is not None and spec["provider"] != eng and _engine_for(spec["provider"], spec.get("quant")) != eng:
+                    continue
+                local = installed_by_pair.get((spec["provider"], _norm(spec["artifact"])))
+                effective = dict(spec, quant=local.get("quant") or spec.get("quant")) if local else spec
+                arts.append(_build_artifact(seed_row, effective, caps, profile, support, hub_ctx,
+                                            installed_sizes, installed=local))
+            # Preserve each exact engine identifier and precision. Registry
+            # identity groups models; it is never proof that two builds share files.
+            known_pairs = {(a["provider"], _norm(a["artifact"])) for a in arts}
+            for local in installed_by_catalog.get(seed_row["id"], []):
+                pair = (local["provider"], _norm(local["artifact"]))
+                if pair in known_pairs or (eng is not None and local["provider"] != eng and _engine_for(local["provider"], local.get("quant")) != eng):
+                    continue
+                arts.append(_build_artifact(seed_row, {"provider": local["provider"], "artifact": local["artifact"],
+                    "quant": local.get("quant"), "download_bytes": local.get("size_bytes"),
+                    "note": "Installed variant reported by the engine."}, caps, profile, support, hub_ctx,
+                    installed_sizes, installed=local))
+                known_pairs.add(pair)
             if extended and hub_ctx is not None and (eng is None or eng in ("huggingface", "llamacpp")):
                 arts += _extended_quant_artifacts(seed_row, arts, caps, profile, support, hub_ctx, installed_sizes)
             row = {

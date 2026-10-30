@@ -403,7 +403,7 @@ def test_a_hub_gguf_this_llamacpp_cannot_load_is_flagged_before_download(host, t
         search={"gguf:4b": ["XHToken/Spark-X2.6-4B-GGUF", "someone/Cool-4B-GGUF", "other/Plain-4B-GGUF"], "mlx:4b": []},
     )
     payload = mc.catalog("4b", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
-    arts = {r["artifacts"][0]["artifact"].split(":")[0]: r["artifacts"][0] for r in payload["rows"] if r["source"] == "hf_search"}
+    arts = {a["artifact"].split(":")[0]: a for r in payload["rows"] for a in r["artifacts"] if a["provider"] == "huggingface"}
     spark = arts["XHToken/Spark-X2.6-4B-GGUF"]
     assert spark["gguf_architecture"] == "spark2_5" and spark["loadable"] is False
     assert spark["unloadable_reason"].startswith("This computer's llama.cpp (llama-cpp-python")
@@ -418,7 +418,7 @@ def test_a_hub_gguf_this_llamacpp_cannot_load_is_flagged_before_download(host, t
     # Unknown to the check (None): offered, never refused.
     monkeypatch.setattr(model_cache, "llamacpp_knows_architecture", lambda arch: None)
     again = mc.catalog("4b", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
-    spark2 = next(r["artifacts"][0] for r in again["rows"] if r["id"] == "hf:xhtoken/spark-x2.6-4b-gguf")
+    spark2 = next(a for r in again["rows"] for a in r["artifacts"] if a["artifact"].split(":")[0] == "XHToken/Spark-X2.6-4B-GGUF")
     assert spark2["loadable"] is None and spark2["downloadable"] is True
 
 
