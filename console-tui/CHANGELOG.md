@@ -4,6 +4,11 @@ All notable changes, one entry per build wave, each with its gate line
 (build/test/clippy state at the wave's close). Charter:
 `LAUNCH-PROMPT.md`.
 
+## [Unreleased]
+
+- Raise the AbstractTUI floor to 0.7.1 so embedding consoles share one reactive
+  runtime with the new chat components.
+
 ## [0.8.0] — 2026-10-04
 
 Released with AbstractCore 2.25.0. No screen or key changes: the crate is
