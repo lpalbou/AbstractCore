@@ -9,9 +9,9 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 38
+- Planned: 36
 - Proposed: 28
-- Completed: 42
+- Completed: 44
 - Deprecated: 3
 - Recurrent: 0
 
@@ -201,6 +201,8 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 | Original path | Final path | Completed | Outcome | Comment | Key validation |
 | --- | --- | --- | --- | --- | --- |
+| `planned/0873_installed_model_catalog_identity.md` | [completed/0873_installed_model_catalog_identity.md](completed/0873_installed_model_catalog_identity.md) | 2026-10-30 | Done, unreleased | Registry-backed installed variants / primary-source metadata; Core `62581e63`/`8afe7771`. | 132 deployed Core tests; 23 LM Studio mappings; Gateway 36 tests / 214 browser assertions; `abstractgateway/design/model-library-catalog-0998/REVIEW.md`. |
+| `planned/0874_local_model_registry_completion.md` | [completed/0874_local_model_registry_completion.md](completed/0874_local_model_registry_completion.md) | 2026-10-30 | Done, unreleased | Registry-backed installed variants / primary-source metadata; Core `62581e63`/`8afe7771`. | 132 deployed Core tests; 23 LM Studio mappings; Gateway 36 tests / 214 browser assertions; `abstractgateway/design/model-library-catalog-0998/REVIEW.md`. |
 | `planned/2026-05-06_unified-multimodal-generate-api.md` | `completed/2026-05-06_unified-multimodal-generate-api.md` | 2026-05-06 | Done | Unified multimodal generation API landed. | Backlog completion report + targeted tests recorded in item. |
 | `planned/2026-05-07_public-output-selector-contract.md` | `completed/2026-05-07_public-output-selector-contract.md` | 2026-05-07 | Done | Public output-selector helpers exposed for runtimes. | `tests/test_output_specs.py` and related validation recorded in item. |
 | `planned/2026-05-07_task-only-text-generation-output-normalization.md` | `completed/2026-05-07_task-only-text-generation-output-normalization.md` | 2026-05-07 | Done | Task-only text-generation selectors normalized correctly. | Item records targeted pytest, compile, lint, and package checks. |
@@ -242,5 +244,5 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 2026-10-30 operator catalogue follow-up:
 
-- [0873 Robust installed-model identity and catalogue integration](planned/0873_installed_model_catalog_identity.md)
-- [0874 Complete local model capabilities and architecture metadata](planned/0874_local_model_registry_completion.md)
+- [0873 Robust installed-model identity and catalogue integration](completed/0873_installed_model_catalog_identity.md)
+- [0874 Complete local model capabilities and architecture metadata](completed/0874_local_model_registry_completion.md)
