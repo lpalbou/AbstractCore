@@ -9,7 +9,7 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 36
+- Planned: 37
 - Proposed: 28
 - Completed: 45
 - Deprecated: 3
@@ -249,3 +249,5 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 - [0874 Complete local model capabilities and architecture metadata](completed/0874_local_model_registry_completion.md)
 
 2026-10-30: [0875 Discovered cached assets in the catalogue](completed/0875_discovered_cached_assets_in_catalog.md), operator follow-up for the remaining HF cache inventory.
+
+2026-10-30: [0876 Adapter catalogue metadata](planned/0876_adapter_catalogue_metadata.md), operator correction to the model/adapter distinction.
