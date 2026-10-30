@@ -1523,7 +1523,8 @@ def _build_artifact(
     supported = bool((support.get(engine) or {}).get("supported", True)) if engine else True
     if not supported:
         fit["notes"] = list(fit.get("notes") or []) + [f"the {engine} engine does not run on this host"]
-    downloadable = supported and provider in mm.supported_providers() and presence.status != mm.PRESENCE_NOT_APPLICABLE
+    providers = mm._cached_listing("catalog:supported-providers", mm.supported_providers)
+    downloadable = supported and provider in providers and presence.status != mm.PRESENCE_NOT_APPLICABLE
     # A GGUF whose architecture this computer's llama.cpp does not know (Hub `gguf.architecture`,
     # checked against libllama, utils.model_cache) would download and then fail at its first call:
     # it is not offered for download and says why (backlog 0868; the installed row says so too, 0867).
@@ -1532,8 +1533,8 @@ def _build_artifact(
     if engine == "llamacpp" and gguf_architecture:
         from ..utils.model_cache import gguf_unloadable_reason, llamacpp_update_for
 
-        unloadable_reason = gguf_unloadable_reason(gguf_architecture)
-        llamacpp_update = llamacpp_update_for(gguf_architecture) if unloadable_reason else None
+        unloadable_reason = mm._cached_listing("catalog:llama-reason:" + gguf_architecture, lambda: gguf_unloadable_reason(gguf_architecture))
+        llamacpp_update = mm._cached_listing("catalog:llama-update:" + gguf_architecture, lambda: llamacpp_update_for(gguf_architecture)) if unloadable_reason else None
     if unloadable_reason:
         downloadable = False
         fit["notes"] = list(fit.get("notes") or []) + [unloadable_reason]
@@ -1608,8 +1609,9 @@ def _build_artifact(
 
 def _llamacpp_known(arch: str) -> bool:
     from ..utils.model_cache import llamacpp_knows_architecture
+    from .model_materializer import _cached_listing
 
-    return llamacpp_knows_architecture(arch) is True
+    return _cached_listing("catalog:llama-known:" + arch, lambda: llamacpp_knows_architecture(arch)) is True
 
 
 # A GGUF file's quant label: `Model-UD-Q4_K_XL.gguf`, `Q8_0/Model-Q8_0-00001-of-00002.gguf`, `model-iq4_xs.gguf`.

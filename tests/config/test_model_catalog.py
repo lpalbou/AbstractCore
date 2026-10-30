@@ -366,6 +366,28 @@ def test_hub_search_adds_hf_rows_with_a_picked_quant(host, tmp_path):
     assert hf_rows[0]["id"] == "hf:someone/cool-7b-gguf"
 
 
+def test_architecture_checks_share_one_snapshot_per_catalog_sweep(monkeypatch):
+    from abstractcore.config import model_materializer as mm
+    from abstractcore.utils import model_cache
+
+    calls = []
+    known = True
+
+    def check(arch):
+        calls.append(arch)
+        return known
+
+    monkeypatch.setattr(model_cache, "llamacpp_knows_architecture", check)
+    with mm.presence_sweep():
+        for _ in range(1000):
+            assert mc._llamacpp_known("qwen3") is True
+    assert calls == ["qwen3"]
+    known = False  # Library update: next payload must check again.
+    with mm.presence_sweep():
+        assert mc._llamacpp_known("qwen3") is False
+    assert calls == ["qwen3", "qwen3"]
+
+
 def test_a_hub_gguf_this_llamacpp_cannot_load_is_flagged_before_download(host, tmp_path, monkeypatch):
     """Backlog 0868 (OVH: XHToken/Spark-X2.6-4B-GGUF downloaded, then failed at Test: `spark2_5`). The
     Hub's `gguf.architecture` is checked against this computer's llama.cpp before anything downloads."""
