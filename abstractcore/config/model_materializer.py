@@ -1488,6 +1488,13 @@ def _hf_cache_dirs() -> List[Path]:
     download weights the generator can already see.
     """
 
+    # Resolving workspace/cache roots walks the filesystem. Thousands of
+    # artifact probes in one catalog must share that resolution, just as they
+    # share provider listings. A new sweep (or a lone probe) resolves afresh.
+    return list(_cached_listing("hf:cache-dirs", _read_hf_cache_dirs))
+
+
+def _read_hf_cache_dirs() -> List[Path]:
     try:
         from ..capabilities.vision_catalog import _default_hf_hub_cache_dirs  # type: ignore
 

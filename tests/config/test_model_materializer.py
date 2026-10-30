@@ -650,6 +650,33 @@ def test_a_remote_ollama_is_never_answered_by_the_local_cli(monkeypatch):
         assert mm.probe("ollama", "local-only:1b", base_url=url).status == mm.PRESENCE_INSTALLED
 
 
+def test_a_sweep_resolves_hf_cache_roots_once_and_next_sweep_is_fresh(monkeypatch, tmp_path):
+    from abstractcore.capabilities import vision_catalog
+
+    calls = []
+    roots = [tmp_path / "first"]
+
+    def resolve():
+        calls.append(True)
+        return roots[:]
+
+    monkeypatch.setattr(vision_catalog, "_default_hf_hub_cache_dirs", resolve)
+    with mm.presence_sweep():
+        for _ in range(1000):
+            assert mm._hf_cache_dirs() == roots
+        mm._hf_cache_dirs().clear()  # callers cannot mutate the shared snapshot
+        with mm.presence_sweep():
+            assert mm._hf_cache_dirs() == roots
+    assert len(calls) == 1
+    roots[:] = [tmp_path / "second"]
+    with mm.presence_sweep():
+        assert mm._hf_cache_dirs() == roots
+    assert len(calls) == 2
+    mm._hf_cache_dirs()
+    mm._hf_cache_dirs()
+    assert len(calls) == 4  # isolated probes never retain a stale root
+
+
 def test_a_sweep_reads_each_provider_listing_once(monkeypatch):
     """A wedged `lms ls` must cost its timeout ONCE per payload, not once per row.
 
