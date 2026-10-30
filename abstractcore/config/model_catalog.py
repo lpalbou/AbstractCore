@@ -1194,6 +1194,71 @@ def _capabilities(key: Optional[str], override: Optional[Mapping[str, Any]], tag
     return caps
 
 
+def _local_asset_kind(local: Mapping[str, Any]) -> str:
+    if local.get("role") == "mtp_companion" or local.get("kind") in ("encoder", "component"):
+        return "component"
+    if local.get("kind") == "adapter":
+        return "adapter"
+    return "model" if local.get("kind") in ("model", "embedding") else "unknown"
+
+
+def _inventory_descriptor(local: Mapping[str, Any], presence: Mapping[str, Any]) -> Dict[str, Any]:
+    return {"present": True, "complete": presence.get("status") == "installed",
+            "kind": _local_asset_kind(local), "tasks": list(local.get("tasks") or []),
+            "tasks_source": local.get("tasks_source"), "files": local.get("nb_files"),
+            "incomplete_files": local.get("incomplete_files", 0), "missing_shards": local.get("missing_shards", 0),
+            "bytes": local.get("size_bytes")}
+
+
+def _discovered_asset(local: Mapping[str, Any], profile: Mapping[str, Any], support: Mapping[str, Any],
+                      installed_sizes: Mapping[Tuple[str, str], int]) -> Dict[str, Any]:
+    """A first-class local catalogue row, without inventing a curated registry entry.
+
+    Identity is the exact provider/reference. Capabilities are evidence from the
+    registry or local metadata; adapters and components never become chat models.
+    """
+    from ..architectures.detection import resolve_registered_model_name
+
+    provider, ref = str(local["provider"]), str(local["artifact"])
+    kind = _local_asset_kind(local)
+    canonical = resolve_registered_model_name(ref)
+    tasks = set(local.get("tasks") or [])
+    tags = ["cached", kind] + sorted(tasks)
+    caps = _capabilities(canonical, None, tags)
+    if kind == "model" and not canonical:
+        caps.update(text=local.get("text_default_supported") is True or (provider in ("lmstudio", "ollama") and "text_generation" in tasks),
+                    embedding=local.get("kind") == "embedding" or "text_embedding" in tasks,
+                    vision=True if "image_to_text" in tasks else None,
+                    audio=True if "speech_to_text" in tasks else None,
+                    speech_synthesis=True if "text_to_speech" in tasks else None,
+                    image_generation=True if tasks.intersection({"text_to_image", "image_to_image", "image_text_to_image"}) else None,
+                    video_generation=True if tasks.intersection({"text_to_video", "image_to_video", "image_text_to_video"}) else None,
+                    source=local.get("tasks_source"))
+    if kind != "model" or caps.get("embedding") or caps.get("speech_synthesis"):
+        caps["text"] = False
+    if kind != "model":
+        for key in ("vision", "audio", "speech_synthesis", "image_generation", "video_generation", "thinking"):
+            caps[key] = None
+        caps["tools"] = None
+    row = {"id": "installed:" + provider + ":" + ref.lower(), "family": canonical or ref,
+           "display_name": local.get("display_name") or ref.rsplit("/", 1)[-1],
+           "vendor": ref.split("/", 1)[0] if "/" in ref else provider,
+           "params_total": local.get("params_total") if kind == "model" else None,
+           "params_active": local.get("params_active") if kind == "model" else None,
+           "license": None, "capabilities": caps, "source": "installed", "asset_kind": kind,
+           "tags": tags, "starter": False, "notes": "Discovered from local engine/cache metadata.", "artifacts": []}
+    art = _build_artifact(row, {"provider":provider, "artifact":ref, "quant":local.get("quant"),
+        "download_bytes":local.get("size_bytes")}, caps, profile, support, None, installed_sizes, installed=local)
+    # A local cache size is not an independently runnable memory requirement.
+    # Keep a fit only for a known/observed text decoder; no false Fits on LoRAs.
+    if kind != "model" or not caps.get("text") or not art["inventory"]["complete"]:
+        art["fit"] = {"verdict":"unknown", "need_bytes":None, "ceiling_bytes":None, "free_now_bytes":None,
+                      "fits_now":None, "disk_ok":None, "max_context":None, "confidence":"unknown", "notes":[]}
+    art.update(downloadable=False, recommended=False, asset_kind=kind)
+    row["artifacts"] = [art]
+    return row
+
+
 # ---------------------------------------------------------------------------
 # Hugging Face hub (opt-in, cached)
 # ---------------------------------------------------------------------------
@@ -1466,6 +1531,9 @@ def _build_artifact(
                                     evidence="engine inventory", location=installed.get("location"))
     else:
         presence = mm.probe(provider, artifact)
+        if installed and (installed.get("has_weights") is False or installed.get("missing_shards") or installed.get("checkpoint_index_valid") is False) and presence.status == mm.PRESENCE_INSTALLED:
+            presence = mm.ModelPresence(provider=provider, artifact=artifact, status=mm.PRESENCE_ABSENT,
+                                        evidence="cache checkpoint incomplete or unverified", location=installed.get("location"))
     installed_size = installed_sizes.get((provider, _norm(artifact)))
     if presence.status == mm.PRESENCE_INSTALLED and isinstance(installed_size, int):
         size, size_source = installed_size, "engine"
@@ -1631,7 +1699,7 @@ def _build_artifact(
         "larger_canvas": larger,
         "presence": {
             "status": presence.status,
-            "location": presence.location,
+            "location": presence.location or (installed.get("location") if installed else None),
             "evidence": presence.evidence or presence.detail or None,
         },
         "fit": fit,
@@ -1645,6 +1713,7 @@ def _build_artifact(
         "recommended": bool(art.get("recommended")),
         "verified": bool(art.get("verified")),
         "cli_download": f"abstractcore models download {provider} {artifact}",
+        **({"inventory": _inventory_descriptor(installed, {"status": presence.status})} if installed else {}),
     }
 
 
@@ -2034,6 +2103,29 @@ def catalog(
                 _order_for_installed_engines(row, installed_engines)
             rows_out.append(row)
 
+        # Every cached asset belongs to the catalogue, including adapters and
+        # components without a curated generation recipe. Never fetch remote
+        # facts just to classify local inventory or confuse a cache with a model.
+        represented = {(a["provider"], _norm(a["artifact"])) for row in rows_out for a in row["artifacts"]}
+        represented_repos = {
+            _norm(mm.hf_artifact_parts(a["artifact"])[0]) for row in rows_out for a in row["artifacts"]
+            if a["provider"] in _HF_REPO_PROVIDERS and
+            ((a.get("presence") or {}).get("status") == "installed" or (a.get("inventory") or {}).get("present"))
+        }
+        for local in installed_rows:
+            provider, ref = local["provider"], _norm(local["artifact"])
+            if (provider, ref) in represented or (provider in _HF_REPO_PROVIDERS and ref in represented_repos):
+                continue
+            if eng is not None and provider != eng and _engine_for(provider, local.get("quant")) != eng:
+                continue
+            discovered = _discovered_asset(local, profile, support, installed_sizes)
+            if (query and not _matches_query(discovered, query)) or not all(t in discovered["tags"] for t in want_tags):
+                continue
+            rows_out.append(discovered)
+            represented.add((provider, ref))
+            if provider in _HF_REPO_PROVIDERS:
+                represented_repos.add(ref)
+
         seen_repos = {
             mm.hf_artifact_parts(a["artifact"])[0].lower()
             for r in rows_out
@@ -2123,7 +2215,8 @@ def catalog(
     # 2026-10-29: "on Linux never offer MLX"), and a row left with none is not listed.
     if support.get("mlx", {}).get("supported") is False:
         for r in rows_out:
-            r["artifacts"] = [a for a in r["artifacts"] if _engine_for(a["provider"], a.get("quant")) != "mlx"]
+            r["artifacts"] = [a for a in r["artifacts"] if _engine_for(a["provider"], a.get("quant")) != "mlx"
+                              or (a.get("inventory") or {}).get("present")]
     rows_out = [r for r in rows_out if r["artifacts"]]
 
     return {
@@ -2136,6 +2229,7 @@ def catalog(
             "rows": len(rows_out),
             "artifacts": sum(len(r["artifacts"]) for r in rows_out),
             "installed": sum(1 for r in rows_out for a in r["artifacts"] if a["presence"]["status"] == "installed"),
+            "discovered": sum(1 for r in rows_out if r["source"] == "installed"),
         },
         "rows": rows_out,
         "generated_at": utc_now_iso(),

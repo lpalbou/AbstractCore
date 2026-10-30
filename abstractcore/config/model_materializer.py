@@ -4994,6 +4994,28 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
         names = {p.name for p in snap.iterdir()}
     except Exception:
         return unknown
+    try:
+        files = [p for p in snap.rglob("*") if p.is_file()]
+        has_weights = any(p.suffix.lower() in {".safetensors", ".bin", ".gguf", ".pt", ".pth", ".ckpt", ".onnx", ".npz"} for p in files)
+    except OSError:
+        files = []
+        has_weights = None
+    missing_shards = set()
+    index_valid = True
+    for index in files:
+        if not index.name.endswith((".safetensors.index.json", ".bin.index.json")):
+            continue
+        try:
+            weight_map = json.loads(index.read_text(encoding="utf-8"))["weight_map"]
+            if not isinstance(weight_map, dict) or not weight_map:
+                raise ValueError("empty or invalid weight map")
+            for name in set(weight_map.values()):
+                if not isinstance(name, str) or Path(name).is_absolute() or ".." in Path(name).parts:
+                    raise ValueError("invalid shard path")
+                if not (index.parent / name).is_file():
+                    missing_shards.add(str(index.parent / name))
+        except (OSError, ValueError, KeyError, TypeError):
+            index_valid = False
     card = _hf_card_front_matter(snap / "README.md") if "README.md" in names else {}
     tags = [t for t in card.get("tags") or [] if isinstance(t, str)]
     config: Dict[str, Any] = {}
@@ -5005,6 +5027,7 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
             config = {}
     archs = [str(a) for a in (config.get("architectures") or []) if isinstance(a, str)]
     model_type = str(config.get("model_type") or "").lower()
+    config_class = str(config.get("_class_name") or "")
 
     tasks: List[str] = []
     source: Optional[str] = None
@@ -5022,7 +5045,15 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
     lora_weights = any(n.lower().endswith(".safetensors") and "lora" in n.lower() for n in names)
 
     kind: Optional[str] = None
-    if "adapter_config.json" in names:
+    if "ControlNet" in config_class:
+        kind = "adapter"
+        source = source or "config"
+    elif config_class and "model_index.json" not in names and (
+        config_class.endswith("Model") or "Autoencoder" in config_class
+    ):
+        kind = "component"
+        source = source or "config"
+    elif "adapter_config.json" in names:
         kind = "adapter"
         if not tasks:
             try:
@@ -5051,14 +5082,22 @@ def _hf_local_kind_tasks(repo_path: Optional[Path]) -> Dict[str, Any]:
             tasks = ["text_generation"] + (["image_to_text"] if isinstance(config.get("vision_config"), dict) else [])
         if tasks:
             source = "config"
+    # A speech-generation checkpoint may contain a causal text decoder, but
+    # that does not make the complete checkpoint a default chat model.
+    if model_type == "qwen3_tts":
+        tasks, source = ["text_to_speech"], "config"
     if not tasks and kind == "model" and not archs:
         # A GGUF-only repo (the download fetched the quant file, no config or card): the file's own
         # `general.architecture`, read from its header, and the repo's name (operator QA 2026-10-28
         # (c): a model outside the catalog was not offered as the default text model).
         gguf = _gguf_kind_tasks(snap, repo_path)
         if gguf is not None:
-            return gguf
-    return {"kind": kind, "tasks": tasks, "tasks_source": source}
+            return dict(gguf, has_weights=has_weights, missing_shards=len(missing_shards), checkpoint_index_valid=index_valid)
+    standalone_text = kind == "model" and "text_generation" in tasks and any(
+        a.endswith(("ForCausalLM", "LMHeadModel")) for a in archs
+    )
+    return {"kind": kind, "tasks": tasks, "tasks_source": source, "text_default_supported": standalone_text,
+            "has_weights": has_weights, "missing_shards": len(missing_shards), "checkpoint_index_valid": index_valid}
 
 
 # GGUF `general.architecture` values of the text models the catalog's GGUF repos ship, read from the
