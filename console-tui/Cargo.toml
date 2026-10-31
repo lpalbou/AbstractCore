@@ -53,7 +53,7 @@ path = "src/main.rs"
 # gateway crate mounts this crate's Models/Engines screens, so both must
 # resolve ONE abstracttui (one reactive runtime, one widget set); the
 # lockfile pins 0.3.6 exactly like the gateway's.
-abstracttui = "0.7.1"
+abstracttui = { version = "0.7.1", features = ["avatar"] }
 # JSON: the config file IS JSON, and `abstractcore config ... --json`
 # emits the derived views. Battle-tested parsing; unknown keys must be
 # PRESERVED on rewrite (serde_json::Value round-trip, never a typed
