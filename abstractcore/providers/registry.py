@@ -14,10 +14,41 @@ from typing import List, Dict, Any, Optional, Type, Callable
 from dataclasses import dataclass, field
 from abc import ABC
 import logging
-from ..utils.structured_logging import get_logger
 from ..utils.install_settings import LIGHT_INSTALL, local_engines_setting, not_available_here, setting_install_command
 
-logger = get_logger("provider_registry")
+
+class _LazyLogger:
+    """A structured logger created on first use, not at import.
+
+    The config store validates a profile's provider family against this
+    registry (``config.provider_profiles``), and the FIRST config load runs
+    inside ``utils.structured_logging``'s own import (its ``LogConfig()``).
+    Importing ``get_logger`` here at module load would then fail on the
+    partially initialised module, and the config loader reads that failure
+    as a corrupt file (falls back to defaults). Resolved at first log call;
+    while ``structured_logging`` is still importing (the registry built for
+    that first load logs each registration), the call goes to the stdlib
+    logger of the same name and resolution is retried on the next call.
+    """
+
+    def __init__(self, name: str):
+        self._name = name
+        self._logger = None
+
+    def __getattr__(self, attr: str):
+        if attr.startswith("_"):
+            raise AttributeError(attr)
+        if self._logger is None:
+            partial = sys.modules.get("abstractcore.utils.structured_logging")
+            if partial is not None and not hasattr(partial, "get_logger"):
+                return getattr(logging.getLogger(self._name), attr)
+            from ..utils.structured_logging import get_logger
+
+            self._logger = get_logger(self._name)
+        return getattr(self._logger, attr)
+
+
+logger = _LazyLogger("provider_registry")
 
 # Bounded pool for the provider-status fan-out. Discovery must not spawn a
 # thread per provider on a box that is also running inference.
@@ -154,7 +185,7 @@ class ProviderRegistry:
 
     def __init__(self):
         self._providers: Dict[str, ProviderInfo] = {}
-        self._logger = get_logger("ProviderRegistry")
+        self._logger = _LazyLogger("ProviderRegistry")
         self._register_all_providers()
 
     def _has_configured_base_url(self, provider_name: str, *, env_var: str) -> bool:
@@ -579,6 +610,23 @@ class ProviderRegistry:
                 import_path=family_info.import_path,
             )
         return self._providers.get(provider_key)
+
+    def endpoint_provider_families(self) -> List[str]:
+        """Registered providers an endpoint profile (``endpoint:<id>``) may name as its family.
+
+        Every provider reached over HTTP: the ones the light install covers
+        (``installation_extras`` None) and not an in-process engine (MLX,
+        local HuggingFace), which has no endpoint to store. Derived from the
+        registrations, so a provider added here is a valid profile family
+        without a second list to keep in step (the System One providers were
+        rejected by a hard-coded list on 2026-11-01). Reads the registrations
+        only, never the config (whose profiles are validated against this).
+        """
+        return sorted(
+            name
+            for name, info in self._providers.items()
+            if info.installation_extras is None and not info.local_engines
+        )
 
     def list_provider_names(self) -> List[str]:
         """Get list of all registered provider names."""
