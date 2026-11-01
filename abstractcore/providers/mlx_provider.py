@@ -143,6 +143,22 @@ def _mlx_model_sharing_enabled(kwargs: Optional[Dict[str, Any]] = None) -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def _decision_model_runs_on_mlx(model_name: str) -> bool:
+    """True for a cached decision model the MLX engine can load: a Kev / Lev adapter whose base
+    checkpoint is on disk, or a merged decision conversion saved for mlx."""
+    try:
+        from ..decision.loader import describe_decision_model
+
+        info = describe_decision_model(model_name, "mlx")
+    except Exception:
+        return False
+    if info is None:
+        return False
+    if info.layout == "adapter":
+        return info.kind in ("kev", "lev") and bool(info.base_path)
+    return info.layout == "merged" and info.runtime == "mlx"
+
+
 class MLXProvider(BaseProvider):
     """MLX provider for Apple Silicon models with full integration"""
 
@@ -6752,6 +6768,10 @@ class MLXProvider(BaseProvider):
                         # refuses it. Offering it puts a model in the picker that
                         # cannot answer a single turn.
                         if is_mlx_model(model_name, local_path=item) and has_local_weights(item):
+                            model_set.add(model_name)
+                        elif _decision_model_runs_on_mlx(model_name):
+                            # A Kev / Lev adapter (head + LoRA on a base checkpoint on disk) or a
+                            # merged decision conversion: not an MLX-format repo, but mlx-lm runs it.
                             model_set.add(model_name)
 
             lmstudio_models = Path.home() / ".lmstudio" / "models"

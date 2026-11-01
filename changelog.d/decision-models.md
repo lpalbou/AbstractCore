@@ -33,3 +33,5 @@
   `process:decision:<provider>:<model>` rows of `/acore/models/loaded`); catalog rows carry a `decision` capability
   flag; `/v1/decisions` accepts the question shorthand; the decision provider is recorded as
   `metadata.decision_provider`.
+  The mlx provider lists the decision models it can run from the local caches (Kev / Lev adapters whose base
+  checkpoint is on disk, merged decision conversions), so pickers filtered on `output.decision` offer them.
