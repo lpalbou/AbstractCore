@@ -713,3 +713,12 @@ def _isolate_shared_embedding_models():
     except Exception:
         pass
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_decision_pool():
+    """The decision pool is process-wide state; no test may leave a resident model behind."""
+    yield
+    from abstractcore.decision import pool
+
+    pool._reset_for_tests()

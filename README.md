@@ -52,6 +52,7 @@ First-class support for:
 - session memory, prompt caching, durable memory bloc cache artifacts, events, tracing, and retry-aware reliability hooks
 - media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
 - optional capability plugins (`core.voice/core.audio/core.vision/core.music/core.scene3d/core.camera`) for deterministic TTS/STT, generative vision, music, 3D generation, and real-camera piloting (via packages such as `abstractvoice`, `abstractvision`, `abstractmusic`, `abstract3d`, and `abstractcamera`)
+- decision models (text in, calibrated typed decisions out): `generate(document, output="decision", questions=...)` with one abstraction over hosted Jev (`typesafe`), any System One host (`systemone`), and local Kev / Lev / Laya checkpoints on MLX, transformers or GGUF; the server speaks the System One API (`POST /v1/decisions`); see [Decision Models](docs/decision-models.md)
 - glyph visual-text compression for long documents (**)
 - optional OpenAI-compatible `/v1` gateway server (multi-provider, including `response_format`
   structured outputs validated against your schema) and single-model endpoint

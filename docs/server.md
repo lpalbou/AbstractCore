@@ -351,6 +351,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Chat | POST | `/{provider}/v1/chat/completions` | Provider-scoped chat route where body model is unprefixed | path `provider`, body `model`, `messages`, chat parameters |
 | Responses | POST | `/v1/responses` | OpenAI Responses API (`object:"response"`) + legacy chat fallback | `model`, `input` or `messages`, `stream`, generation parameters, `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_binding` |
 | Embeddings | POST | `/v1/embeddings` | OpenAI-compatible embedding vectors | `model`, `input`, `dimensions`, `encoding_format`, `user`, `base_url` |
+| Decisions | POST | `/v1/decisions` | Typed questions (choice / noul / score) about a state, answered by a local or hosted decision model with calibrated probabilities (System One request/answer shape) | `model`, `state`, `questions`, `truncate` |
+| Decisions | POST | `/{provider}/v1/decisions` | Provider-scoped decisions route where the body model is unprefixed | path `provider`, body `model`, `state`, `questions`, `truncate` |
 | Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `seeds`, `steps`, `guidance_scale`, `seed`, `lora_adapters`, `quality`, `extra` |
 | Images | POST | `/{provider}/v1/images/generations` | Provider-scoped text-to-image route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, image generation parameters |
 | Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, repeatable `reference_images`, `model`, `provider`, `base_url`, `n`, `seeds`, `size`, `steps`, `guidance_scale`, `seed`, `lora_adapters_json`, `extra_json` |
@@ -1792,6 +1794,53 @@ response = requests.post(
 result = response.json()
 print(result["choices"][0]["message"]["content"])
 ```
+
+---
+
+### Decisions
+
+**Endpoint:** `POST /v1/decisions`
+
+Answer typed questions about a document with a decision model: the System One request and answer
+shape, the format every decision-model host shares. Nothing is generated;
+every answer is a calibrated probability distribution over the options you supply.
+
+**Request:**
+```json
+{
+  "model": "mlx/jaredpalmer/kev-4b",
+  "state": "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+  "questions": {
+    "department": {"type": "choice", "instructions": "Which team should handle this?",
+                   "criteria": {"returns": "Exchanges, refunds, wrong or damaged items",
+                                "shipping": "Delivery status, delays, lost packages",
+                                "billing": "Charges, invoices, payment problems"}},
+    "escalate":   {"type": "noul",  "instructions": "Does this need urgent human attention?"},
+    "frustration": {"type": "score", "instructions": "How frustrated is the customer?",
+                    "criteria": ["Calm", "Frustrated", "Very angry"]}
+  }
+}
+```
+
+**Response:** `answers` by question name (`choice` + `probabilities` + `confidence`; `noul`;
+`score` + `legend` + `probabilities` + `confidence`), `usage`, `latency_ms`.
+
+**Models:** `typesafe/jev-latest` (hosted Jev, `TYPESAFE_API_KEY`), `mlx/jaredpalmer/kev-4b` (Apple silicon),
+`huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M` (llama.cpp), `huggingface/ggml-org/lev-GGUF:Q8_0`,
+`huggingface/convaiinnovations/laya`, `huggingface/jaredpalmer/kev-4b` (transformers). A bare handle picks the local engine;
+`kev-latest` / `jev-latest` reuse the decision model loaded most recently, else the configured
+`output.decision` capability default. The first request loads the model and later ones reuse it; the
+two most recently used decision models stay resident.
+Errors: 400 invalid request, 404 model not downloaded, 422 state over the context limit. See
+[Decision Models](decision-models.md).
+
+**Discovery and the OpenAI routes:** `GET /v1/models?output_type=decision` lists decision models; every
+`/v1/models` entry carries an additive `capabilities` object (`input` / `output` modalities from the
+registry) and a decision model also a `decision` object (`endpoint: "/v1/decisions"`, `kind`,
+`question_types`, `generates_text: false`). OpenAI clients ignore the extra fields. A chat completion or
+`/v1/responses` call against a decision model answers 400 (`code: "decision_model"`, with the endpoint
+in the error), never a silent empty completion: there is no OpenAI-compatible shape for calibrated typed
+decisions, and the System One request/response is the format every decision-model host shares.
 
 ---
 

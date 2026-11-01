@@ -1321,7 +1321,27 @@ class HuggingFaceProvider(BaseProvider):
             if not is_gguf:
                 self._reject_silent_gguf_substitution(model)
 
-        if is_gguf:
+        # Decision models (Kev family: text in, calibrated decisions out) have no text
+        # lane: nothing is generated, so the ordinary weights are never loaded. The
+        # handle keeps its artifact class (a decision GGUF runs on llama.cpp, an
+        # adapter or merged checkpoint on transformers) under `_decision_artifact`.
+        self._decision_model = None
+        self._decision_artifact: Optional[str] = None
+        if self._is_decision_model_handle(model):
+            self.model_type = "decision"
+            if is_gguf:
+                if not LLAMACPP_AVAILABLE:
+                    raise ImportError("llama-cpp-python not installed. " + llama_cpp_hint("GGUF decision models (llama.cpp)"))
+                self._decision_artifact = "gguf"
+                prepare_llama_cpp_import()
+                self._setup_device_gguf()
+            else:
+                if not TRANSFORMERS_AVAILABLE:
+                    raise ImportError("Transformers not installed. " + _engine_install_hint("Hugging Face Transformers decision models"))
+                self._decision_artifact = "transformers"
+                self._setup_device_transformers()
+            self.decision_model()
+        elif is_gguf:
             if not LLAMACPP_AVAILABLE:
                 raise ImportError("llama-cpp-python not installed. " + llama_cpp_hint("GGUF models (llama.cpp)"))
             self.model_type = "gguf"
@@ -1335,6 +1355,27 @@ class HuggingFaceProvider(BaseProvider):
             self.model_type = "transformers"
             self._setup_device_transformers()
             self._load_transformers_model()
+
+    @staticmethod
+    def _is_decision_model_handle(model: str) -> bool:
+        from ..decision import is_decision_model
+
+        return is_decision_model(model)
+
+    def _decision_load_kwargs(self) -> Dict[str, Any]:
+        kwargs: Dict[str, Any] = {"device": self.device}
+        dtype = self.transformers_kwargs.get("torch_dtype")
+        if dtype is not None:
+            kwargs["dtype"] = str(dtype).replace("torch.", "").replace("bfloat16", "bf16").replace("float32", "fp32").replace("float16", "fp16")
+        if self.transformers_kwargs.get("quantization_config") is not None:
+            kwargs["quantization_config"] = self.transformers_kwargs["quantization_config"]
+        if self.transformers_kwargs.get("attn_implementation") is not None:
+            kwargs["attn_implementation"] = self.transformers_kwargs["attn_implementation"]
+        if getattr(self, "n_gpu_layers", None) is not None:
+            kwargs["n_gpu_layers"] = int(self.n_gpu_layers)
+        if self.max_tokens:
+            kwargs["n_ctx"] = int(self.max_tokens)
+        return kwargs
 
     # Artifact classes this provider can load. `model_type=` selects between them
     # when the handle alone is ambiguous; there is no third option and no other flag.
@@ -1892,6 +1933,10 @@ class HuggingFaceProvider(BaseProvider):
         this RAISE (nothing freed) instead of crashing the process.
         """
         self._stop_inflight_before_unload(model_name, refuse_if_running=True)
+        decision = self.__dict__.get("_decision_model")
+        if decision is not None:
+            decision.unload()
+            self._decision_model = None
         if self.__dict__.get("_gguf_scheduler") is not None:
             # A holder of the model's slot pool owns no context: it detaches (never through a
             # slot: an unload must not queue behind other holders' generations).
@@ -8403,6 +8448,12 @@ class HuggingFaceProvider(BaseProvider):
         structured lane and custom `infer()` models (checked before start)."""
         return True
 
+    def _refuse_text_generation_on_decision_model(self) -> None:
+        if getattr(self, "model_type", None) == "decision":
+            from ..exceptions import DecisionModelError
+
+            raise DecisionModelError(self.model, "huggingface")
+
     def _generate_internal(self,
                           prompt: str,
                           messages: Optional[List[Dict[str, str]]] = None,
@@ -8413,6 +8464,7 @@ class HuggingFaceProvider(BaseProvider):
                           response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using appropriate backend"""
+        self._refuse_text_generation_on_decision_model()
 
         cancel_event = as_cancel_event(kwargs.pop(CANCEL_KWARG, None))
         from .generation_progress import PROGRESS_KWARG, TextProgressEmitter

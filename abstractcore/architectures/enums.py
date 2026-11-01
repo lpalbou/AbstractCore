@@ -30,6 +30,7 @@ class ModelType(Enum):
     CODE = "code"                       # Code-specialized models
     VISION = "vision"                   # Vision/multimodal models
     EMBEDDING = "embedding"             # Embedding models
+    DECISION = "decision"               # Decision models (text in, calibrated typed decisions out)
     UNKNOWN = "unknown"                 # Unknown type
 
 
@@ -75,6 +76,9 @@ class ArchitectureFamily(Enum):
     # GLM variants
     GLM4 = "glm4"                       # Zhipu GLM-4 family
     GLM4_MOE = "glm4_moe"               # Zhipu GLM-4.5+ MoE family
+
+    # Decision models
+    KEV = "kev"                         # Kev family: pointer-head decision models on Qwen3.5 (Jared Palmer, 2026)
 
     # Other families
     PHI = "phi"                         # Microsoft Phi family

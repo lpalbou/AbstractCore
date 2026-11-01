@@ -159,6 +159,9 @@ apple = [
     "torchaudio>=2.1.0",
     "sentencepiece>=0.1.99,<1.0.0",
     "llama-cpp-python>=0.3.23,<1.0.0",
+    # COMPAT: derives a backbone copy of a pointer-head decision GGUF for a llama.cpp older than
+    # ggml-org/llama.cpp#29818; drop with abstractcore/decision/gguf_compat.py once abetlen/llama-cpp-python#2398 ships (MIT).
+    "gguf>=0.10.0,<1.0.0",
     "accelerate>=1.0.0",
     "sentence-transformers>=5.1.0,<6.0.0",
     "numpy>=2.1.0,<3.0.0",
@@ -190,6 +193,7 @@ gpu = [
     "sentencepiece>=0.1.99,<1.0.0",
     # Windows: not from PyPI (source build only); install.ps1 installs the prebuilt wheel.
     "llama-cpp-python>=0.3.23,<1.0.0; sys_platform != 'win32'",
+    "gguf>=0.10.0,<1.0.0",
     "sentence-transformers>=5.1.0,<6.0.0",
     "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",

@@ -644,6 +644,14 @@ def test_every_upstream_artifact_is_eight_bit_or_a_tier_or_a_reverified_id():
         "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
         "mlx-community/whisper-large-v3-turbo",
     }
+    # Decision models (text in, calibrated decisions out): the official llama.cpp Q4_K_M
+    # of Kev-4B measured on the public dev set 2026-11-01 (accuracy 0.845 vs 0.846 bf16,
+    # argmax agreement 0.981; docs/decision-models.md). The plain 4-bit MLX recipe does
+    # not pass that bar and is not in the catalog.
+    # The bf16 adapter (full precision: the reference every quantization is measured against).
+    # Laya (fp32, 421M) and the Lev bf16 adapter are full precision as well.
+    reverified |= {"ggml-org/Kev-4B-GGUF:Q4_K_M", "jaredpalmer/kev-4b", "interfaze-ai/lev", "convaiinnovations/laya",
+                   "AbstractFramework/kev-4b-mlx-4bit", "AbstractFramework/kev-0.8b-mlx-4bit", "jaredpalmer/kev-0.8b"}
     for r in mc.load_seed()["rows"]:
         for a in r["artifacts"]:
             if "upstream" not in a:

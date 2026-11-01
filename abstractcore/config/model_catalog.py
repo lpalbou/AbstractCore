@@ -1162,6 +1162,7 @@ def _capabilities(key: Optional[str], override: Optional[Mapping[str, Any]], tag
         "thinking": None,
         "max_tokens": None,
         "embedding": "embedding" in set(tags),
+        "decision": "decision" in set(tags),
         "source": None,
     }
     registry: Optional[Dict[str, Any]] = None
@@ -1176,6 +1177,8 @@ def _capabilities(key: Optional[str], override: Optional[Mapping[str, Any]], tag
         routes = registry.get("capability_routes") or {}
         outputs = routes.get("output") if isinstance(routes, dict) else None
         caps["text"] = ("text" in outputs) if isinstance(outputs, list) else True
+        if isinstance(outputs, list) and "decision" in outputs:
+            caps["decision"] = True
         caps["vision"] = bool(registry.get("vision_support"))
         caps["audio"] = bool(registry.get("audio_support"))
         tool = str(registry.get("tool_support") or "").strip().lower()

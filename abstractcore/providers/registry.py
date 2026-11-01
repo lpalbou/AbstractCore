@@ -316,6 +316,32 @@ class ProviderRegistry:
             import_path="..providers.openrouter_provider"
         ))
 
+        # TypeSafe (hosted Jev) and generic System One endpoints: decision models only.
+        self.register_provider(ProviderInfo(
+            name="typesafe",
+            display_name="TypeSafe (Jev)",
+            provider_class=None,
+            description="TypeSafe's hosted Jev decision model over the System One API (POST /v1/systemone); decisions only, no text generation",
+            default_model="jev-latest",
+            supported_features=["decision"],
+            authentication_required=True,
+            local_provider=False,
+            installation_extras=None,
+            import_path="..providers.typesafe_provider"
+        ))
+        self.register_provider(ProviderInfo(
+            name="systemone",
+            display_name="System One endpoint",
+            provider_class=None,
+            description="Any host that speaks the System One decision API (POST /v1/systemone): a kev.serve / lev serve process, DigitalOcean, another AbstractCore server; decisions only",
+            default_model="kev-latest",
+            supported_features=["decision"],
+            authentication_required=False,
+            local_provider=False,
+            installation_extras=None,
+            import_path="..providers.typesafe_provider"
+        ))
+
         # Portkey Provider
         self.register_provider(ProviderInfo(
             name="portkey",
@@ -630,6 +656,12 @@ class ProviderRegistry:
             elif provider_info.name == "portkey":
                 from ..providers.portkey_provider import PortkeyProvider
                 return PortkeyProvider
+            elif provider_info.name == "typesafe":
+                from ..providers.typesafe_provider import TypeSafeProvider
+                return TypeSafeProvider
+            elif provider_info.name == "systemone":
+                from ..providers.typesafe_provider import SystemOneProvider
+                return SystemOneProvider
             else:
                 raise ImportError(f"No import logic for provider: {provider_info.name}")
         except ImportError as e:

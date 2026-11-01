@@ -139,6 +139,8 @@ completed/ in a hygiene pass.)
 
 P2: [0857 — voice library: clone language, deploy to a library, per-request voice stores](planned/0857_voice_library_personal_stores_language_and_deploy.md); follows AbstractVoice 0.19.0 and AbstractRuntime 0.13.0.
 
+P3: [0878 — train Kev-2B, the missing rung between Kev-0.8B and Kev-4B](planned/0878_kev_2b_decision_model_training.md); the author's public recipe on Qwen3.5-2B-Base, on the operator's 5070 Ti, then the 0877 conversion / measurement / Hub pipeline.
+
 Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0856_streaming_mcp_wire_alias_restoration.md).
 
 | Native inference item | Scope |
@@ -201,6 +203,7 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 | Original path | Final path | Completed | Outcome | Comment | Key validation |
 | --- | --- | --- | --- | --- | --- |
+| `completed/0877_decision_models_output_modality.md` | [completed/0877_decision_models_output_modality.md](completed/0877_decision_models_output_modality.md) | 2026-11-01 | Done, unreleased | Decision models (Kev family) as the `decision` output modality: `generate(..., output="decision")`, `/v1/decisions`, MLX / transformers / GGUF backends, registry entries, conversion tool. | `tests/decision/` (18), capability and catalog suites; real-weights parity across the three engines and the public dev set (`untracked/decision-eval/`). |
 | `planned/0876_adapter_catalogue_metadata.md` | [completed/0876_adapter_catalogue_metadata.md](completed/0876_adapter_catalogue_metadata.md) | 2026-10-30 | Done, unreleased | Separate schema-backed adapter metadata; existing Vision inference registry preserved. | Core `0062fa69` / deployed `449aefce`; 168 Core checks, 38 Gateway checks, 248 browser assertions; live evidence in `abstractgateway/design/model-types-1001/REVIEW.md`. |
 | `planned/0875_discovered_cached_assets_in_catalog.md` | [completed/0875_discovered_cached_assets_in_catalog.md](completed/0875_discovered_cached_assets_in_catalog.md) | 2026-10-30 | Done, unreleased | First-class discovered cache assets; Core `17662521` deployed as `8f2fd00b`. | 161 Core checks, 35 Gateway checks, 240 browser assertions; all 162 live inventory entries covered; `abstractgateway/design/catalog-assets-1000/REVIEW.md`. |
 | `planned/0873_installed_model_catalog_identity.md` | [completed/0873_installed_model_catalog_identity.md](completed/0873_installed_model_catalog_identity.md) | 2026-10-30 | Done, unreleased | Registry-backed installed variants / primary-source metadata; Core `62581e63`/`8afe7771`. | 132 deployed Core tests; 23 LM Studio mappings; Gateway 36 tests / 214 browser assertions; `abstractgateway/design/model-library-catalog-0998/REVIEW.md`. |

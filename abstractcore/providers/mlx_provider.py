@@ -286,7 +286,17 @@ class MLXProvider(BaseProvider):
         self._append_stash_lock = threading.RLock()
         self._shared_model: Optional[_SharedMLXModel] = None
         self._share_loaded_model = _mlx_model_sharing_enabled(kwargs)
-        self._load_model()
+        # Decision models (Kev family) have no text lane: the decision runtime is
+        # the only thing loaded, and text generation is refused with a pointer.
+        self._decision_model = None
+        self.model_type = "mlx"
+        from ..decision import is_decision_model
+
+        if is_decision_model(model):
+            self.model_type = "decision"
+            self.decision_model()
+        else:
+            self._load_model()
 
     def supports_concurrent_generation(self) -> bool:
         """The native scheduler, not ordinary thread submission, owns concurrency."""
@@ -4552,6 +4562,10 @@ class MLXProvider(BaseProvider):
         # every gateway/runtime call carries its effect's event). A call that
         # does not stop by the deadline makes the unload RAISE, nothing freed.
         self._stop_inflight_before_unload(model_name, refuse_if_running=True)
+        decision = getattr(self, "_decision_model", None)
+        if decision is not None:
+            decision.unload()
+            self._decision_model = None
         runtime = getattr(self, "_native_runtime", None)
         session = getattr(self, "_native_session", None)
         if runtime is not None:
@@ -4825,6 +4839,10 @@ class MLXProvider(BaseProvider):
         request's drafter/cache state. Resolving per-call controls happens only
         after ownership is acquired, not when a lazy iterator is constructed.
         """
+        if getattr(self, "model_type", None) == "decision":
+            from ..exceptions import DecisionModelError
+
+            raise DecisionModelError(self.model, "mlx")
         call = dict(messages=messages, system_prompt=system_prompt, tools=tools,
                     media=media, stream=stream, response_model=response_model, **kwargs)
         if getattr(self, "_native_runtime", None) is not None:

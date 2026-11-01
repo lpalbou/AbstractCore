@@ -43,6 +43,9 @@ OUTPUT_STRING_VALUES = {
     "text_to_scene3d",
     "image_to_scene3d",
     "scene3d_generation",
+    "decision",
+    "decisions",
+    "decide",
 }
 
 OUTPUT_DICT_VALUES = {
@@ -90,6 +93,9 @@ OUTPUT_DICT_VALUES = {
     "mesh",
     "glb",
     "obj",
+    "decision",
+    "decisions",
+    "decide",
 }
 
 OUTPUT_MODALITY_ALIASES = {
@@ -133,6 +139,10 @@ OUTPUT_MODALITY_ALIASES = {
     "i23d": ("scene3d", "image_to_scene3d"),
     "image_to_scene3d": ("scene3d", "image_to_scene3d"),
     "scene3d_generation": ("scene3d", "scene3d_generation"),
+    # Decision models: text in, calibrated typed decisions out (choice / noul / score).
+    "decision": ("decision", "decision"),
+    "decisions": ("decision", "decision"),
+    "decide": ("decision", "decision"),
 }
 
 OUTPUT_TASK_ALIASES = {
@@ -178,6 +188,7 @@ OUTPUT_TASK_MODALITIES = {
     "scene3d_generation": "scene3d",
     "text_to_scene3d": "scene3d",
     "image_to_scene3d": "scene3d",
+    "decision": "decision",
 }
 
 OUTPUT_PLUGIN_EXCLUDE_KEYS = {
@@ -192,6 +203,8 @@ OUTPUT_PLUGIN_EXCLUDE_KEYS = {
     "media",
     "input_media",
     "role",
+    "questions",
+    "state",
 }
 
 RUNTIME_OUTPUT_METADATA_KEYS = {
@@ -266,6 +279,9 @@ def output_has_generated_media(value: Any) -> bool:
         modality = str(spec.get("modality") or "").strip().lower()
         task = str(spec.get("task") or "").strip().lower()
         if modality == "voice" and task == "voice_clone":
+            continue
+        if modality == "decision":
+            # Typed answers (probabilities), never bytes: no artifact store needed.
             continue
         if modality != "text":
             return True

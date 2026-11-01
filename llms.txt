@@ -54,6 +54,7 @@ executes calls. For durable agent orchestration, use [AbstractRuntime](https://g
 - [Local models](docs/models.md): catalog/fit, exact artifacts, downloads, jobs, deletion and verification.
 - [Knowledge-graph extraction models](docs/knowledge-graph-extraction-models.md): measured local vs hosted model comparison for ontology-constrained extraction, prompt rules and second-pass strategies.
 - [Recommended models](docs/recommended-models.md): capability choices by platform and memory.
+- [Decision models](docs/decision-models.md): text in, calibrated typed decisions out (`output="decision"`, choice / noul / score questions, `POST /v1/systemone`), the Kev family on MLX, transformers or GGUF, conversion and measured quality per precision.
 - [Engines](docs/engines.md): inventory, install plans and platform support.
 - [Configuration](docs/centralized-config.md): persistent routes, endpoint profiles, credentials and timeouts.
 - [Server](docs/server.md): optional multi-provider /v1 serving, Core authentication and managed listener lifecycle.

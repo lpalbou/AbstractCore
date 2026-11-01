@@ -277,7 +277,12 @@ cross-field invariants.
   ```
 
   - Allowed kinds: `input`, `output`, `embedding`, `rerank`.
-  - Allowed modalities: `text`, `image`, `video`, `voice`, `sound`, `music`, `scene3d`.
+  - Allowed modalities: `text`, `image`, `video`, `voice`, `sound`, `music`, `scene3d`, `decision`.
+  - `decision` is an output-only modality: a decision model (`kev-*`, `lev`, `laya`, `openjev` entries;
+    `architecture` kev / lev / laya / openjev) reads text and returns calibrated typed decisions, never text
+    (`max_output_tokens: 0`). Its `decision` block records the checkpoint facts the runtime needs, starting with
+    `kind` (the readout mechanism: kev = pointer head, lev / openjev = label logits, laya = marker scorer), which
+    the loader uses to pick the engine for a handle that carries no marker file.
   - `audio` is accepted by route filters as an alias, but registry entries store
     the canonical `sound` modality. Use `voice` for speech and `music` for music.
   - Explicit route metadata is precise. For example, an audio-only captioner can

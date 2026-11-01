@@ -615,6 +615,9 @@ def _infer_output_specs(request: GenerateRequest, output: Any) -> list[dict[str,
         if modality == "music" and not task:
             spec["task"] = "music_generation"
             continue
+        if modality == "decision" and not task:
+            spec["task"] = "decision"
+            continue
         if modality == "scene3d" and not task:
             spec["task"] = "image_to_scene3d" if has_source_image else "scene3d_generation"
     return specs

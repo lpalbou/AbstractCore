@@ -31,6 +31,8 @@ _LAZY_ATTRS: Dict[str, Tuple[str, str]] = {
     "OpenAICompatibleProvider": ("abstractcore.providers.openai_compatible_provider", "OpenAICompatibleProvider"),
     "OpenRouterProvider": ("abstractcore.providers.openrouter_provider", "OpenRouterProvider"),
     "PortkeyProvider": ("abstractcore.providers.portkey_provider", "PortkeyProvider"),
+    "TypeSafeProvider": ("abstractcore.providers.typesafe_provider", "TypeSafeProvider"),
+    "SystemOneProvider": ("abstractcore.providers.typesafe_provider", "SystemOneProvider"),
 
     # Host-injected endpoint-profile resolution context (stdlib-only module;
     # hosts like AbstractRuntime import these around tool execution).
