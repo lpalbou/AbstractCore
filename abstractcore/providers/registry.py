@@ -362,9 +362,9 @@ class ProviderRegistry:
         ))
         self.register_provider(ProviderInfo(
             name="systemone",
-            display_name="System One endpoint",
+            display_name="System One-compatible endpoint",
             provider_class=None,
-            description="Any host that speaks the System One decision API (POST /v1/systemone): a kev.serve / lev serve process, DigitalOcean, another AbstractCore server; decisions only",
+            description="Any server speaking the System One decision API (a self-hosted Kev or Lev process, or another host)",
             default_model="kev-latest",
             supported_features=["decision"],
             authentication_required=False,
