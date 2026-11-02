@@ -354,7 +354,10 @@ packages = [
     "abstractcore.console",
     "abstractcore.comms",
     "abstractcore.comms.email",
-    "abstractcore.testing"
+    "abstractcore.testing",
+    "abstractcore.decision",
+    "abstractcore.decision.backends",
+    "abstractcore.decision.engines"
 ]
 
 [tool.setuptools.dynamic]
