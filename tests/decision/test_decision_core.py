@@ -167,6 +167,7 @@ def test_pointer_head_matches_projected_form_and_temperature():
 
 
 def test_pointer_head_round_trips_through_safetensors(tmp_path):
+    pytest.importorskip("safetensors")  # installed by the local-engine settings, not the light install
     rng = np.random.default_rng(1)
     head = PointerHead(rng.standard_normal((2, 3)), rng.standard_normal(2), rng.standard_normal((2, 3)), rng.standard_normal(2), temperature=1.7)
     head.save(str(tmp_path), {"base": "x/y"})
