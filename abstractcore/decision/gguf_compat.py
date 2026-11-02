@@ -91,8 +91,8 @@ def derive_backbone(path: Path, out_dir: Optional[Path] = None) -> Tuple[Path, P
         from gguf.quants import dequantize
     except ImportError as e:
         raise ImportError(
-            "running a pointer-head decision GGUF on this llama-cpp-python needs the `gguf` package "
-            f"(pip install gguf) until {UPSTREAM_PR} ships"
+            "running a pointer-head decision GGUF on this llama-cpp-python needs the `gguf` package, "
+            f"which abstractcore[apple] and abstractcore[gpu] install (until {UPSTREAM_PR} ships)"
         ) from e
 
     path = Path(path)

@@ -121,7 +121,7 @@ def _validate_audio_input_capabilities(label: str, capabilities: Any) -> None:
 
 
 _CAPABILITY_ROUTE_KINDS = {"input", "output", "embedding", "rerank"}
-_CAPABILITY_ROUTE_MODALITIES = {"text", "image", "video", "voice", "sound", "music", "scene3d"}
+_CAPABILITY_ROUTE_MODALITIES = {"text", "image", "video", "voice", "sound", "music", "scene3d", "decision"}
 
 
 def _validate_capability_routes(label: str, routes: Any, cfg: Mapping[str, Any]) -> None:
@@ -326,6 +326,7 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         "transformers_version_min",
         "trust_remote_code",
         "ui_generation",
+        "decision",
         "unsupported_parameters",
         "video_support",
         "vision_encoder",
@@ -372,8 +373,9 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         max_output_tokens = _require_int(max_output_tokens_raw, name=f"{label}.max_output_tokens")
         assert max_output_tokens >= 0, f"{label}.max_output_tokens must be >= 0"
         if max_output_tokens == 0:
-            assert cfg.get("model_type") == "embedding", (
-                f"{label}.max_output_tokens==0 is only allowed for embedding models (model_type='embedding')"
+            # Embedding and decision models generate no text.
+            assert cfg.get("model_type") in ("embedding", "decision"), (
+                f"{label}.max_output_tokens==0 is only allowed for embedding and decision models"
             )
 
     tool_support = cfg.get("tool_support")

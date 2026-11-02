@@ -137,6 +137,7 @@ def test_architecture_entries_conform_to_v0_template():
         "reasoning_levels",
         "inference_parameters",
         "prompt_cache_position_strategy",
+        "decision",
     }
     allowed_keys = required_keys | prefix_suffix_keys | optional_keys
 

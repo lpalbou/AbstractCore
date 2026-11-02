@@ -292,7 +292,7 @@ class TestLayer3Stress:
             # (llama-4 has 10M, smallest models have ~2K). Classic BERT-family
             # embedders legitimately cap at 256/512 tokens, so their real
             # window uses a lower, model-type-aware floor.
-            floor = 128 if model_data.get("model_type") == "embedding" else 1000
+            floor = 128 if model_data.get("model_type") in ("embedding", "decision") else 1000
             if max_tokens < floor or max_tokens > 10000000:
                 unreasonable_values.append((model_name, max_tokens))
 
