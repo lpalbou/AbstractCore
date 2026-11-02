@@ -248,8 +248,11 @@ decided.decisions["department"].choice         # "returns"
 decided.decisions["escalate"].noul             # 0.72
 ```
 
-Decision output needs a decision model on the `mlx` or `huggingface` provider
-(`create_llm("mlx", model="jaredpalmer/kev-4b")`); see [Decision Models](decision-models.md).
+Decision output needs a decision model: a local one on the `mlx` or `huggingface` provider
+(`create_llm("mlx", model="jaredpalmer/kev-4b")`), a hosted one on `typesafe` or `systemone`, or,
+from any other provider, the `output.decision` capability default
+(`abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b`);
+see [Decision Models](decision-models.md).
 
 Text-only `generate(...)` is unchanged. Ambiguous media cases require explicit
 roles, for example `role="source"` and `role="mask"` for image edits with masks.

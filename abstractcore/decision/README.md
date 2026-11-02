@@ -2,7 +2,7 @@
 
 Decision models: a document (the *state*) in, calibrated typed decisions out. This package runs the
 Kev family (Jev-like decision models: a LoRA adapter plus a pointer head on a Qwen3.5 base) without
-any text generation, and is what `generate(..., output="decision")` and `POST /v1/systemone` call.
+any text generation, and is what `generate(..., output="decision")` and the server's `POST /v1/decisions` call.
 
 ```
 decision/

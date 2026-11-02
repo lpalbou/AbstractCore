@@ -6138,7 +6138,7 @@
         "small"
       ],
       "starter": false,
-      "notes": "Decision model (text in, calibrated choice / noul / score decisions out; no text generation). Use with generate(..., output='decision', questions=...) or POST /v1/systemone. The AbstractFramework MLX conversions load directly; the huggingface adapter artifact needs its base, Qwen/Qwen3.5-4B-Base (9.3 GB), downloaded too; the GGUF artifacts are self-contained and need a llama-cpp-python bundling llama.cpp from 2026-10-02 or later.",
+      "notes": "Decision model (text in, calibrated choice / noul / score decisions out; no text generation). Use with generate(..., output='decision', questions=...) or POST /v1/decisions. The AbstractFramework MLX conversions load directly; the huggingface adapter artifact needs its base, Qwen/Qwen3.5-4B-Base (9.3 GB), downloaded too; the GGUF artifacts are self-contained and need a llama-cpp-python bundling llama.cpp from 2026-10-02 or later.",
       "artifacts": [
         {
           "provider": "huggingface",

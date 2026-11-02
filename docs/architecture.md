@@ -44,6 +44,8 @@ graph TD
     G --> MM[vLLM Provider]
     G --> MN[OpenRouter Provider]
     G --> MP[Portkey Provider]
+    G --> MT[TypeSafe Provider: decisions]
+    G --> MS[System One-compatible endpoint: decisions]
 
     H --> N[OpenAI API]
     HH --> NN[OpenAI-Compatible /v1 Endpoint]
@@ -55,6 +57,8 @@ graph TD
     MM --> RR[vLLM Server]
     MN --> RO[OpenRouter API]
     MP --> RP[Portkey API Gateway]
+    MT --> RT[TypeSafe Jev API]
+    MS --> RS[System One decision API host]
 
     style B fill:#e1f5fe
     style BB fill:#4caf50
@@ -1044,6 +1048,37 @@ graph TD
 
 Discovery only reads public HTTPS and DNS answers and returns server settings; it never stores
 anything. See [Email](email.md).
+
+### 13. Decision Models
+
+`abstractcore.decision` turns a document (the *state*) and typed questions (`choice`, `noul`,
+`score`) into calibrated answers, without generating text. Every caller goes through one
+`DecisionRequest` / `DecisionResponse` contract, and every engine answers it, so callers never depend
+on the model behind it.
+
+```mermaid
+graph TD
+    GEN["generate(state, output='decision', questions=...)"] --> ROUTE{"route on the output spec"}
+    ROUTE -->|"the provider is a decision model"| OWN["provider.decision_model()"]
+    ROUTE -->|"output.decision default or explicit provider/model"| POOL
+    HTTP["POST /v1/decisions, /{provider}/v1/decisions"] --> POOL["decision.pool: at most 2 resident decision providers, LRU, shared per process"]
+    LOADS["/acore/models/load | unload, task=decision"] --> POOL
+    POOL -->|"one provider instance per resident model"| OWN
+    OWN --> LOADER["decision.loader: detect kind and layout (adapter, merged, GGUF, registry)"]
+    LOADER --> KEV["runtime.DecisionModel (kev pointer head, state-prefix cache)"]
+    LOADER --> LABELS["engines.labels (lev, openjev label logits, shared-prefix reuse)"]
+    LOADER --> LAYA["engines.laya (ModernBERT marker scorer, windowed long states)"]
+    LOADER --> REMOTE["engines.remote (typesafe, systemone over HTTP)"]
+    KEV --> BACK["backends: transformers, mlx-lm, llama.cpp"]
+    LABELS --> BACK
+    LAYA --> TF["transformers"]
+    REMOTE --> HOST["hosted System One API"]
+```
+
+`render` turns the state and questions into text and the probabilities into answers (confidence
+follows the System One conventions); `kinds` holds each kind's prompt layout, so every runtime
+renders the same prompt. A decision model refuses text generation and a chat completion against it
+answers 400 with a pointer to `/v1/decisions`. See [Decision Models](decision-models.md).
 
 ## Architecture Benefits
 

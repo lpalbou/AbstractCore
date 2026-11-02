@@ -104,7 +104,7 @@ Stop at the first authentication failure and fix configuration before another re
 | Typed output | `response_model=`, `FeedbackRetry` | Integration recipes |
 | Media inputs and outputs | `media=`, `request=`, `output=`; `llm.voice/audio/vision/music/scene3d/camera` | Integration recipes |
 | Embeddings | `abstractcore.embeddings.EmbeddingManager` | Integration recipes; explicitly select a route/model |
-| Decisions: classify, route, score with probabilities | `generate(document, output="decision", questions=...)`, `llm.decision_model().decide(...)`, `POST /v1/decisions` | One abstraction over hosted Jev (`typesafe`, `TYPESAFE_API_KEY`), any System One host (`systemone`, `base_url=`) and local Kev / Lev / Laya checkpoints on `mlx` or `huggingface`; questions are `choice` (named options), `noul` (yes/no probability) or `score` (ordered levels); the model never generates text and only scores the options given |
+| Decisions: classify, route, score with probabilities | `generate(document, output="decision", questions=...)`, `llm.decision_model().decide(...)`, `POST /v1/decisions` | One abstraction over hosted Jev (`typesafe`, `TYPESAFE_API_KEY`), any System One-compatible endpoint (`systemone`, `base_url=`) and local Kev / Lev / Laya checkpoints on `mlx` or `huggingface`; questions are `choice` (named options), `noul` (yes/no probability) or `score` (ordered levels); the model never generates text and only scores the options given |
 | Summarize, extract, classify | `BasicSummarizer`, `BasicExtractor`; `abstractcore-summarizer/extractor/judge/intent/deepsearch` | [Operations](references/operations.md) |
 | Local models, engines, configuration | `abstractcore models`, `engines`, `config`, `--status` | Operations |
 | HTTP and chat | `abstractcore serve`, `abstractcore-endpoint`, `abstractcore-chat` | Operations |
@@ -214,7 +214,11 @@ Python, shell text or an arbitrary function name.
   `kev-4b-mlx-4bit`, `kev-0.8b-mlx-8bit`, `kev-0.8b-mlx-4bit`; an adapter (`jaredpalmer/kev-4b`, `interfaze-ai/lev`) needs its base
   model downloaded too; Kev's and Lev's GGUFs run on every released llama-cpp-python (Kev's
   through a derived backbone copy made on first load).
-  Hosted: `typesafe` needs `TYPESAFE_API_KEY`; `systemone` needs `base_url=`.
+  Hosted: `typesafe` needs `TYPESAFE_API_KEY`; `systemone` (any System One-compatible endpoint)
+  needs `base_url=`. From a text provider, `output="decision"` runs the `output.decision`
+  capability default (`abstractcore config set-default output.decision --provider mlx --model
+  jaredpalmer/kev-4b`); with no default it raises naming that command. A chat completion against a
+  decision model answers 400 `decision_model`; use `/v1/decisions`.
 
 ## When things fail
 

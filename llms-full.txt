@@ -96,14 +96,17 @@ The linked source pages are canonical. Fenced examples retain their source forma
 Unified LLM Interface
 > Write once, run everywhere
 
+What's new in 2.32.0: decision models, text in and calibrated typed decisions out
+(`generate(document, output="decision", questions=...)`, `POST /v1/decisions`) over hosted Jev, any
+System One-compatible endpoint and local Kev / Lev / Laya checkpoints; one llama.cpp weights instance
+per GGUF with a per-model slot pool for concurrent requests; the reserved context computed from free
+memory and settable per model; and every cached asset (adapters included) listed in the catalogue.
+See the [changelog](CHANGELOG.md#2320---2026-11-02).
+
 What's new in 2.31.1: `/v1/chat/completions` reuses a model already resident in the process (a host's
 runtime pool) instead of loading a second llama.cpp copy per request; the download catalog lists the
 LFM2 and LFM2.5 families (GGUF and MLX, the 24B-A2B models included). See the
 [changelog](CHANGELOG.md#2311---2026-10-28).
-
-What's new in 2.31.0: streamed tool calls carry the declared MCP tool name, the MLX prefix cache
-survives per-call system riders in tool loops, and `POST /v1/voice/clone` takes `language`. See the
-[changelog](CHANGELOG.md#2310---2026-10-27).
 
 AbstractCore is an offline-capable, open-source-first LLM infrastructure layer
 for Python applications. It gives you one `create_llm(...)` API across local
@@ -5613,6 +5616,8 @@ graph TD
     G --> MM[vLLM Provider]
     G --> MN[OpenRouter Provider]
     G --> MP[Portkey Provider]
+    G --> MT[TypeSafe Provider: decisions]
+    G --> MS[System One-compatible endpoint: decisions]
 
     H --> N[OpenAI API]
     HH --> NN[OpenAI-Compatible /v1 Endpoint]
@@ -5624,6 +5629,8 @@ graph TD
     MM --> RR[vLLM Server]
     MN --> RO[OpenRouter API]
     MP --> RP[Portkey API Gateway]
+    MT --> RT[TypeSafe Jev API]
+    MS --> RS[System One decision API host]
 
     style B fill:#e1f5fe
     style BB fill:#4caf50
@@ -6613,6 +6620,37 @@ graph TD
 
 Discovery only reads public HTTPS and DNS answers and returns server settings; it never stores
 anything. See [Email](docs/email.md).
+
+### 13. Decision Models
+
+`abstractcore.decision` turns a document (the *state*) and typed questions (`choice`, `noul`,
+`score`) into calibrated answers, without generating text. Every caller goes through one
+`DecisionRequest` / `DecisionResponse` contract, and every engine answers it, so callers never depend
+on the model behind it.
+
+```mermaid
+graph TD
+    GEN["generate(state, output='decision', questions=...)"] --> ROUTE{"route on the output spec"}
+    ROUTE -->|"the provider is a decision model"| OWN["provider.decision_model()"]
+    ROUTE -->|"output.decision default or explicit provider/model"| POOL
+    HTTP["POST /v1/decisions, /{provider}/v1/decisions"] --> POOL["decision.pool: at most 2 resident decision providers, LRU, shared per process"]
+    LOADS["/acore/models/load | unload, task=decision"] --> POOL
+    POOL -->|"one provider instance per resident model"| OWN
+    OWN --> LOADER["decision.loader: detect kind and layout (adapter, merged, GGUF, registry)"]
+    LOADER --> KEV["runtime.DecisionModel (kev pointer head, state-prefix cache)"]
+    LOADER --> LABELS["engines.labels (lev, openjev label logits, shared-prefix reuse)"]
+    LOADER --> LAYA["engines.laya (ModernBERT marker scorer, windowed long states)"]
+    LOADER --> REMOTE["engines.remote (typesafe, systemone over HTTP)"]
+    KEV --> BACK["backends: transformers, mlx-lm, llama.cpp"]
+    LABELS --> BACK
+    LAYA --> TF["transformers"]
+    REMOTE --> HOST["hosted System One API"]
+```
+
+`render` turns the state and questions into text and the probabilities into answers (confidence
+follows the System One conventions); `kinds` holds each kind's prompt layout, so every runtime
+renders the same prompt. A decision model refuses text generation and a chat completion against it
+answers 400 with a pointer to `/v1/decisions`. See [Decision Models](docs/decision-models.md).
 
 ## Architecture Benefits
 
@@ -16655,9 +16693,10 @@ Decision models answer typed questions about a document with calibrated probabil
 generating text. AbstractCore surfaces them as the `decision` output modality — **text in,
 decisions out** — behind one abstraction that does not depend on any single model or vendor:
 
-- **Hosted**: TypeSafe's Jev (`typesafe` provider) and any host that speaks the public System One
-  API (`systemone` provider: DigitalOcean, a `kev.serve` / `lev serve` process, another
-  AbstractCore server). Nothing but `httpx`; the light install is enough.
+- **Hosted**: TypeSafe's Jev (`typesafe` provider) and any System One-compatible endpoint, that is
+  any server speaking the public System One decision API (`systemone` provider: a self-hosted Kev or
+  Lev process, another AbstractCore server, or another host). Nothing but `httpx`; the light install
+  is enough.
 - **Local**: the Kev family (pointer head on Qwen3.5), Lev (label logits on Qwen3.5-4B) and Laya
   (ModernBERT encoder with a marker scorer), all Apache-2.0, on the `mlx` provider (Apple silicon)
   and the `huggingface` provider (transformers, or a GGUF through llama.cpp). OpenJev-style
@@ -16858,7 +16897,7 @@ request, 404 when the model is not downloaded, 422 when the state is over the co
 llm = create_llm("typesafe", model="jev-latest")           # TYPESAFE_API_KEY in the environment
 result = llm.generate(ticket, output="decision", questions=questions)
 
-# Any System One host (here a kev.serve process on this machine).
+# Any System One-compatible endpoint (here a self-hosted Kev server on this machine).
 llm = create_llm("systemone", model="kev-latest", base_url="http://localhost:8009")
 
 # Local models: the same call.
@@ -16882,7 +16921,8 @@ probabilities are read, and differs only in weights and calibration:
   0–8 rating. The adapter runs at a quarter of its trained strength, as released. The tokens every
   prompt of a request shares (system text and state) run once and are reused for every question
   and option order, on transformers, mlx-lm and llama.cpp alike.
-- **openjev** — the same mechanism with one letter per option and fixed temperatures.
+- **openjev** — the same mechanism with one letter per option (up to 52 options) and fixed
+  temperatures.
 - **laya** — one bidirectional ModernBERT pass per question (`[CLS] question [SEP] [MASK] option …
   [SEP] state [SEP]`, 512 tokens), a two-layer head and a scorer at each `[MASK]`. A state longer
   than the room the questions leave is scanned in overlapping windows (half-window stride) and the
@@ -17106,8 +17146,9 @@ of milliseconds.
   than 0.10 against bf16, so prefer 8-bit when you threshold probabilities. The plain 4-bit
   recipe (every linear at 4 bits, group 64) loses a point of accuracy and moves a tenth of the
   answers by more than 0.10; it is not offered.
-- The published Kev-4B figures (new-source accuracy 0.82–0.84, trained-source 0.87) are on the
-  author's frozen suites; the public pool above mixes both kinds of source.
+- The Kev model card reports its own figures for Kev-4B (new-source accuracy 0.82–0.84,
+  trained-source 0.87) on the author's evaluation suites; they are not reproduced here. The tables
+  above are measured on the public pool, which mixes trained and new sources.
 
 ## Limits
 
@@ -19701,8 +19742,11 @@ decided.decisions["department"].choice         # "returns"
 decided.decisions["escalate"].noul             # 0.72
 ```
 
-Decision output needs a decision model on the `mlx` or `huggingface` provider
-(`create_llm("mlx", model="jaredpalmer/kev-4b")`); see [Decision Models](docs/decision-models.md).
+Decision output needs a decision model: a local one on the `mlx` or `huggingface` provider
+(`create_llm("mlx", model="jaredpalmer/kev-4b")`), a hosted one on `typesafe` or `systemone`, or,
+from any other provider, the `output.decision` capability default
+(`abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b`);
+see [Decision Models](docs/decision-models.md).
 
 Text-only `generate(...)` is unchanged. Ambiguous media cases require explicit
 roles, for example `role="source"` and `role="mask"` for image edits with masks.

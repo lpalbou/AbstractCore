@@ -4,9 +4,10 @@ Decision models answer typed questions about a document with calibrated probabil
 generating text. AbstractCore surfaces them as the `decision` output modality — **text in,
 decisions out** — behind one abstraction that does not depend on any single model or vendor:
 
-- **Hosted**: TypeSafe's Jev (`typesafe` provider) and any host that speaks the public System One
-  API (`systemone` provider: DigitalOcean, a `kev.serve` / `lev serve` process, another
-  AbstractCore server). Nothing but `httpx`; the light install is enough.
+- **Hosted**: TypeSafe's Jev (`typesafe` provider) and any System One-compatible endpoint, that is
+  any server speaking the public System One decision API (`systemone` provider: a self-hosted Kev or
+  Lev process, another AbstractCore server, or another host). Nothing but `httpx`; the light install
+  is enough.
 - **Local**: the Kev family (pointer head on Qwen3.5), Lev (label logits on Qwen3.5-4B) and Laya
   (ModernBERT encoder with a marker scorer), all Apache-2.0, on the `mlx` provider (Apple silicon)
   and the `huggingface` provider (transformers, or a GGUF through llama.cpp). OpenJev-style
@@ -207,7 +208,7 @@ request, 404 when the model is not downloaded, 422 when the state is over the co
 llm = create_llm("typesafe", model="jev-latest")           # TYPESAFE_API_KEY in the environment
 result = llm.generate(ticket, output="decision", questions=questions)
 
-# Any System One host (here a kev.serve process on this machine).
+# Any System One-compatible endpoint (here a self-hosted Kev server on this machine).
 llm = create_llm("systemone", model="kev-latest", base_url="http://localhost:8009")
 
 # Local models: the same call.
@@ -231,7 +232,8 @@ probabilities are read, and differs only in weights and calibration:
   0–8 rating. The adapter runs at a quarter of its trained strength, as released. The tokens every
   prompt of a request shares (system text and state) run once and are reused for every question
   and option order, on transformers, mlx-lm and llama.cpp alike.
-- **openjev** — the same mechanism with one letter per option and fixed temperatures.
+- **openjev** — the same mechanism with one letter per option (up to 52 options) and fixed
+  temperatures.
 - **laya** — one bidirectional ModernBERT pass per question (`[CLS] question [SEP] [MASK] option …
   [SEP] state [SEP]`, 512 tokens), a two-layer head and a scorer at each `[MASK]`. A state longer
   than the room the questions leave is scanned in overlapping windows (half-window stride) and the
@@ -455,8 +457,9 @@ of milliseconds.
   than 0.10 against bf16, so prefer 8-bit when you threshold probabilities. The plain 4-bit
   recipe (every linear at 4 bits, group 64) loses a point of accuracy and moves a tenth of the
   answers by more than 0.10; it is not offered.
-- The published Kev-4B figures (new-source accuracy 0.82–0.84, trained-source 0.87) are on the
-  author's frozen suites; the public pool above mixes both kinds of source.
+- The Kev model card reports its own figures for Kev-4B (new-source accuracy 0.82–0.84,
+  trained-source 0.87) on the author's evaluation suites; they are not reproduced here. The tables
+  above are measured on the public pool, which mixes trained and new sources.
 
 ## Limits
 
