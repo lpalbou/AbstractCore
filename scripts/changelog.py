@@ -8,7 +8,9 @@ file, which never conflicts.
 A fragment is Keep a Changelog markdown: one or more `### Added` / `### Changed` / `### Deprecated` /
 `### Removed` / `### Fixed` / `### Security` headings, each followed by its entries.
 
-    python scripts/changelog.py check [--base origin/main]   # CI: a PR touching abstractcore/ adds a fragment
+    python scripts/changelog.py check [--base origin/main]   # CI: a PR touching abstractcore/ adds a fragment,
+        # unless it is the release PR: the version source bumped to X.Y.Z, CHANGELOG.md gaining its dated
+        # `## [X.Y.Z] - <date>` section, and no fragment left in changelog.d/ (all assembled)
     python scripts/changelog.py preview                      # the assembled section, printed
     python scripts/changelog.py assemble X.Y.Z [--date YYYY-MM-DD]
         # release step: writes `## [X.Y.Z] - <date>` under `## [Unreleased]` from every fragment,
@@ -30,6 +32,8 @@ CHANGELOG = ROOT / "CHANGELOG.md"
 SECTIONS = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 SOURCE_PREFIXES = ("abstractcore/",)
 UNRELEASED = "## [Unreleased]"
+VERSION_FILE = "abstractcore/utils/version.py"
+_VERSION_RE = re.compile(r"""^__version__\s*=\s*["']([^"']+)["']""", re.M)
 
 
 def fragment_files(directory: Path = FRAGMENTS) -> List[Path]:
@@ -106,8 +110,57 @@ def changed_files(base: str) -> Tuple[List[str], List[str]]:
     return _git("diff", "--name-only", mb, "HEAD"), _git("diff", "--name-only", "--diff-filter=A", mb, "HEAD")
 
 
+def _git_out(*args: str) -> str:
+    return subprocess.run(["git", *args], cwd=ROOT, check=True, capture_output=True, text=True).stdout
+
+
+def _version_in(text: str) -> str | None:
+    m = _VERSION_RE.search(text or "")
+    return m.group(1) if m else None
+
+
+def _release_section_re(version: str) -> re.Pattern:
+    return re.compile(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}\s*$", re.M)
+
+
+def release_version(base: str, changed: List[str]) -> str | None:
+    """The version this pull request releases, or None when it is not a release.
+
+    A release bumps `VERSION_FILE` and adds `CHANGELOG.md`'s dated section for that version
+    (`## [X.Y.Z] - YYYY-MM-DD`, absent at the merge base). Whether its fragments were all assembled
+    is the caller's check, so a release that left one behind is refused by name."""
+    if VERSION_FILE not in changed or "CHANGELOG.md" not in changed:
+        return None
+    mb = _git_out("merge-base", base, "HEAD").strip()
+    try:
+        before = _version_in(_git_out("show", f"{mb}:{VERSION_FILE}"))
+    except subprocess.CalledProcessError:
+        before = None
+    after = _version_in((ROOT / VERSION_FILE).read_text(encoding="utf-8"))
+    if not after or after == before:
+        return None
+    section = _release_section_re(after)
+    try:
+        had_section = bool(section.search(_git_out("show", f"{mb}:CHANGELOG.md")))
+    except subprocess.CalledProcessError:
+        had_section = False
+    if had_section or not section.search((ROOT / "CHANGELOG.md").read_text(encoding="utf-8")):
+        return None
+    return after
+
+
 def check(base: str) -> int:
     changed, added = changed_files(base)
+    version = release_version(base, changed)
+    if version is not None:
+        left = [p.name for p in fragment_files(ROOT / "changelog.d")]
+        if left:
+            print(f"Release {version}: changelog.d/ still holds {len(left)} fragment(s) ({', '.join(left[:8])}"
+                  f"{' ...' if len(left) > 8 else ''}). `python scripts/changelog.py assemble {version}` writes them "
+                  "into CHANGELOG.md and removes them; remove the ones already assembled.")
+            return 1
+        print(f"changelog: release {version}, CHANGELOG.md has its section and every fragment is assembled")
+        return 0
     for f in [p for p in added if p.startswith("changelog.d/") and p.endswith(".md") and not p.lower().endswith("readme.md")]:
         parse((ROOT / f).read_text(encoding="utf-8"), name=f)  # a malformed fragment fails here
     src = [p for p in changed if p.startswith(SOURCE_PREFIXES)]
