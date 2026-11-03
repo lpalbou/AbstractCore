@@ -36,6 +36,7 @@ from .provider_profiles import (
     normalize_provider_family,
     normalize_string_list,
     profile_id_from_virtual_provider,
+    provider_profile_from_dict,
     provider_profiles_from_dict,
     split_api_key_value,
 )
@@ -1289,8 +1290,10 @@ class ConfigurationManager:
           - `capability_defaults` keys other than version/routes/seeded, and
             route keys this version cannot parse (a future modality); a route
             row's unknown fields already survive as `options`;
-          - `provider_profiles` keys other than `profiles`, and unknown columns
-            of a profile row that is still present (a deleted row stays deleted).
+          - `provider_profiles` keys other than `profiles`, profile rows this
+            version cannot load (a provider family it does not know), and
+            unknown columns of a profile row that is still present (a deleted
+            row stays deleted).
 
         Known keys are never carried: a known row or field absent from `mine`
         is a deliberate delete (`clear-default`, `delete-provider`) or a value
@@ -1345,6 +1348,12 @@ class ConfigurationManager:
             if isinstance(mine_rows, dict):
                 known_columns = {f.name for f in fields(ProviderProfile)}
                 for profile_id, raw_row in raw_profiles["profiles"].items():
+                    if profile_id not in mine_rows:
+                        try:
+                            provider_profile_from_dict(str(profile_id), raw_row)
+                        except (ValueError, TypeError):
+                            mine_rows[profile_id] = copy.deepcopy(raw_row)  # not loaded: kept as stored
+                        continue
                     mine_row = mine_rows.get(profile_id)
                     if not isinstance(raw_row, dict) or not isinstance(mine_row, dict):
                         continue
