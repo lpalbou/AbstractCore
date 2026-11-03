@@ -26149,6 +26149,11 @@ provider-loaded state.
   `base_url` with the default local/plugin path.
 - `X-AbstractCore-Provider-API-Key` overrides only the requested upstream
   provider for that request. It does not replace the AbstractCore server token.
+- On the capability discovery routes (`/v1/capabilities...`, `/v1/audio/music/providers|models|provider-details`)
+  the key reaches one provider only: the one named with `?provider=<id>` (voice: `openai` or an OpenAI-compatible
+  server; music: a backend such as `acemusic`), the configured music backend, or the single vision endpoint. A
+  request that sends the key without naming one provider (for example `GET /v1/capabilities`) is refused with
+  400 instead of handing the key to every provider it checks.
 - Provider keys in request bodies remain disabled; use `X-AbstractCore-Provider-API-Key`
   for per-request upstream overrides. Select discovery endpoints accept an `api_key`
   query parameter for tooling/Swagger UI convenience.
