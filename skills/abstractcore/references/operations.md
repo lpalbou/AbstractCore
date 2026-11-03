@@ -77,7 +77,9 @@ abstractcore-chat --help
 token under the config directory and prints a one-time console claim link. Keep the link/token
 private. Binding a non-loopback host requires `ABSTRACTCORE_AUTH_TOKEN`. In authenticated mode,
 `Authorization: Bearer ...` is the server token; `X-AbstractCore-Provider-API-Key` optionally
-overrides the selected upstream provider's key. Never interchange those credentials.
+overrides the selected upstream provider's key. Never interchange those credentials. On the
+capability discovery routes that key reaches one provider only: name it with `?provider=<id>`;
+a key sent without one named provider is refused (400).
 
 The universal server routes `POST /v1/chat/completions` using model IDs such as
 `ollama/<model>`; the single-model `abstractcore-endpoint` hosts one provider/model.
@@ -99,6 +101,10 @@ Native framework clients continue through Gateway runs and Runtime's ledger. See
   This is process-local; independent servers, arbitrary plugins and raw engine constructors
   own their resources. See the
   [sharing rules](https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/memory-management.md#one-resident-artifact-per-process).
+- A local model no call has used for 60 minutes is unloaded (`process_residency.set_idle_unload(seconds)`;
+  `0` or `None` turns it off). A locked (Keep loaded) model, one in use and one still loading are
+  never unloaded, and no call is cancelled; the next call reloads the model. See
+  [idle unload](https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/memory-management.md#idle-unload-60-minutes-by-default).
 - `llm.get_prompt_cache_capabilities()` describes `none`, `keyed`, or `local_control_plane`.
   `llm.prompt_cache_supports_operation(...)` gates controls. Unsupported operations raise
   structured cache errors with `operation`, `code` and `capabilities`.

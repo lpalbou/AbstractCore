@@ -10,6 +10,70 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ## [Unreleased]
 
+## [2.34.0] - 2026-11-03
+
+### Added
+
+- **A model no call has used for 60 minutes is unloaded; a kept-loaded model never is** (`providers/process_residency.py`,
+  core ADR 0012, root backlog 1115).
+  - **Scope:** HuggingFace (transformers and GGUF), MLX and in-process embedding models are unloaded by the
+    process-wide eject (every holder, `gc`, the allocator cache) after the idle-unload time. The default is 60
+    minutes (`DEFAULT_IDLE_UNLOAD_S = 3600`).
+  - **Setting:** `set_idle_unload(seconds)` sets the time for the process (`0` or `None`: off); `get_idle_unload()`
+    reads it.
+  - **What keeps a model:** never a locked model (Keep loaded), never one a call runs on, never one a claimant is
+    still building.
+  - **Never cancels:** new calls to the model wait during the unload, the model is checked again with them held, and
+    a call that started in between keeps it. A waiting call then reloads the model on demand. No check runs while
+    a model loads.
+  - **Log and timer:** each unload logs `unloaded <model> after <N> min idle; freed <X.Y GB>` (seconds under two minutes). The timer starts with
+    the first load in the process; one reaper thread runs per process.
+  - **Rows:** `resident_model_states()` covers MLX and embeddings too (also for the ADR 0010 fit failsafe), with
+    `last_used_at`, `in_use`, `locked_by` and `idle_unload_at`.
+
+### Changed
+
+- **Docs and the agent skill describe 2.34.0** (`skills/abstractcore/`, `llms.txt`, `docs/native-mlx-runtime.md`).
+  The skill (`package-version` 2.34.0) teaches the idle unload and the one-provider rule for a caller's key on the
+  discovery routes; `docs/native-mlx-runtime.md` no longer calls the shipped AbstractRuntime integration unreleased.
+
+### Fixed
+
+- **The release-PR changelog check refuses an empty release section, and sees every fragment**
+  (`scripts/changelog.py`). A release PR whose `## [X.Y.Z] - <date>` section had no entries passed when its
+  fragments were deleted without being assembled; only the tag-time validation would have caught it. It now fails,
+  naming the version. `fragment_files` reads `changelog.d/**/*.md` in any case (README excluded), so a fragment left
+  in a subfolder or named `fix.MD` is listed by `check` and written by `assemble`, no longer invisible. On an
+  ordinary PR, only such a `.md` file counts as the fragment a source change needs: a `notes.txt` under
+  `changelog.d/` used to satisfy the check, and `assemble` would never have read it. Entries are `- ` bullets.
+- **The web console's theme copy is re-synced to ui-kit 0.9.14 and a stale copy fails CI everywhere**
+  (`console/theme_sync.py`, `console/themes.py`, core backlog 0869).
+  - `themes.py` records the ui-kit version it was generated from (`KIT_SOURCE_PROVENANCE["kit_version"]`), and a test
+    compares it with `theme_sync.KIT_THEME_FLOOR` (0.9.14) without the abstractuic checkout. Before, the only check
+    was the byte-for-byte drift test, which skips when the kit source is absent (as in CI).
+  - The responsive token layer copies only bare `:root` (or `:root[attr]`) rules. A component rule written under
+    `:root` (`:root .af-session-card.af-automation-card`, new in ui-kit 0.9.14) is no longer taken for a token.
+- **Every call counts as in use and stamps the model's last use** (`providers/generation_cancel.py`).
+  - Before, a call without a cancel event was not registered and did not stamp `last_used_at`, so it could look
+    idle while it ran.
+  - MLX now gives every call a private cancel event, as HuggingFace does.
+  - Embedding managers stamp their last encode.
+  - The MLX `ttl_s` / `keep_alive` warning names the process-wide idle unload.
+
+### Security
+
+- **A caller's provider key on a discovery route reaches only the provider the request names** (`server/app.py`,
+  root backlog 0955).
+  - Before, `X-AbstractCore-Provider-API-Key` on `/v1/capabilities` and the capability and music discovery routes
+    was handed to every key slot the capability has (OpenAI and the OpenAI-compatible server for voice, AceMusic and
+    ElevenLabs for music, all of them on `/v1/capabilities`), so a key meant for one vendor could reach another.
+  - Now the key goes to one provider: the one named with `?provider=<id>` (voice: `openai` or an OpenAI-compatible
+    server; music: a backend such as `acemusic`, and the request's registry uses only that backend), else the
+    configured music backend, or the single vision endpoint.
+  - A request that sends the key without naming one provider (`GET /v1/capabilities`,
+    `GET /v1/capabilities/voice/providers`, an unknown music provider) is refused with 400 and the key reaches
+    nobody. Authenticate to the server and leave the key out to list every provider.
+
 ## [2.33.0] - 2026-11-03
 
 GGUF prompt-cache snapshots without their unused `scores` copy and under a byte budget, a typed

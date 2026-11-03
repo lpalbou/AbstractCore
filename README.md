@@ -9,6 +9,12 @@
 Unified LLM Interface
 > Write once, run everywhere
 
+What's new in 2.34.0: a local model that no call has used for 60 minutes is unloaded from memory and loads
+again on its next call; a model kept loaded (Keep loaded) never is, and no running call is interrupted
+(`process_residency.set_idle_unload(seconds)`, `0` turns it off). A provider key you send to the server's discovery
+routes now reaches only the provider you name, never every provider those routes check. The web console's themes
+match ui-kit 0.9.14. See the [changelog](CHANGELOG.md#2340---2026-11-03).
+
 What's new in 2.33.0: GGUF prompt-cache snapshots drop an unused 0.5 GB copy each, stay under a byte budget
 (`gguf_prompt_cache_max_gb`), and are never evicted under a prefill that is reading them; a model that is not
 downloaded raises `ModelNotDownloadedError` naming it; an OpenAI-compatible key check refuses a wrong key even where
@@ -16,13 +22,6 @@ the model list is public (OVH); hosted decision models (`typesafe`, `systemone`)
 routed as decision models, and a local decision model answers its own decisions; a provider profile this version
 cannot read is kept and reported instead of resetting the whole config. See the
 [changelog](CHANGELOG.md#2330---2026-11-03).
-
-What's new in 2.32.0: decision models, text in and calibrated typed decisions out
-(`generate(document, output="decision", questions=...)`, `POST /v1/decisions`) over hosted Jev, any
-System One-compatible endpoint and local Kev / Lev / Laya checkpoints; one llama.cpp weights instance
-per GGUF with a per-model slot pool for concurrent requests; the reserved context computed from free
-memory and settable per model; and every cached asset (adapters included) listed in the catalogue.
-See the [changelog](CHANGELOG.md#2320---2026-11-02).
 
 AbstractCore is an offline-capable, open-source-first LLM infrastructure layer
 for Python applications. It gives you one `create_llm(...)` API across local
