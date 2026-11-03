@@ -261,7 +261,11 @@ _LOAD_LOCK = _threading.RLock()
 
 
 def load_lock() -> "_threading.RLock":
-    """One in-process load at a time; initial loads may build nested context slots."""
+    """One in-process load at a time; initial loads may build nested context slots.
+
+    Every in-process load takes it, so it also starts the idle-unload reaper (ADR 0012) the
+    first time a model is loaded in this process."""
+    _ensure_idle_reaper()
     return _LOAD_LOCK
 
 
@@ -368,12 +372,97 @@ def _hf_holder_state(holder: Any) -> Dict[str, Any]:
             "scheduler_id": row.get("scheduler_id")}
 
 
+def _registries_state(holders: List[Any]) -> "tuple[bool, Optional[float]]":
+    """(in use, newest last-used) over provider instances' in-flight registries. An unreadable
+    holder counts as in use: it is never unloaded on a guess."""
+    in_use, last = False, None
+    for holder in holders:
+        get = getattr(holder, "_inflight_generations", None)
+        if not callable(get):
+            continue
+        try:
+            registry = get()
+            in_use = in_use or int(registry.active()) > 0
+            if getattr(registry, "last_used_at", None):
+                last = max(float(last or 0.0), float(registry.last_used_at))
+        except Exception:  # noqa: BLE001
+            in_use = True
+    return in_use, last
+
+
+def _mlx_model_states() -> List[Dict[str, Any]]:
+    """Every MLX model resident now (mlx-lm and mlx-vlm lanes folded per model name)."""
+    if not _backend_loaded("mlx"):
+        return []
+    from . import mlx_residency
+
+    by_model: Dict[str, Dict[str, Any]] = {}
+    for row in mlx_residency.resident_models():
+        if not row.get("weights_alive"):
+            continue
+        names = [str(n) for n in (row.get("models") or []) if str(n).strip()]
+        name = names[0] if names else str(row.get("model_path") or "")
+        if not name:
+            continue
+        holders = mlx_residency._holders_for(name, row.get("model_path") or None)
+        in_use, last = _registries_state(holders)
+        cur = by_model.setdefault(name, {"backend": "mlx", "provider": "mlx", "model": name, "held_bytes": 0,
+                                         "last_used_at": None, "in_use": False, "holders": 0})
+        cur["held_bytes"] += int(row.get("held_bytes") or 0)
+        cur["holders"] += int(row.get("holders") or 0)
+        cur["in_use"] = cur["in_use"] or in_use
+        if last is not None:
+            cur["last_used_at"] = max(float(cur["last_used_at"] or 0.0), last)
+    return list(by_model.values())
+
+
+def _embedding_model_states() -> List[Dict[str, Any]]:
+    """Every in-process embedding model resident now; in use while an encode runs on a manager."""
+    if not _backend_loaded("embeddings"):
+        return []
+    module = sys.modules[_EMBEDDINGS_MODULE]
+    managers = list(module.registered_embedding_managers())
+    out = []
+    for row in module.resident_embedding_models():
+        name = str((row.get("models") or [""])[0] or "")
+        if not name:
+            continue
+        in_use, last = False, None
+        for manager in managers:
+            try:
+                if str(manager.get_residency().get("model") or "") != name:
+                    continue
+                in_use = in_use or int(getattr(manager, "_inflight_encodes", 0) or 0) > 0
+                stamp = getattr(manager, "_last_used_at", None)
+                if stamp:
+                    last = max(float(last or 0.0), float(stamp))
+            except Exception:  # noqa: BLE001 - an unreadable manager is never unloaded on a guess
+                in_use = True
+        out.append({"backend": "embeddings", "provider": "huggingface", "task": "embedding", "model": name,
+                    "held_bytes": int(row.get("held_bytes") or 0), "last_used_at": last, "in_use": in_use,
+                    "holders": int(row.get("holders") or 0)})
+    return out
+
+
 def resident_model_states() -> List[Dict[str, Any]]:
-    """Every in-process HuggingFace model resident now, with what the failsafe
-    decides on: `held_bytes`, `last_used_at` (newest over its instances),
-    `in_use` (a generation running on any instance), `locked_by` (the readable
-    owners whose claim locks it). MLX and embeddings are not evicted by the
-    failsafe yet (ADR 0010: adopted lane by lane)."""
+    """Every in-process model resident now (HuggingFace, MLX, embeddings), with what the
+    failsafe (ADR 0010) and the idle unload (ADR 0012) decide on: `held_bytes`,
+    `last_used_at` (newest over its instances), `in_use` (a generation running on any
+    instance, or a claimant still building it), `locked_by` (the readable owners whose claim
+    locks it)."""
+    states = _hf_model_states() + _mlx_model_states() + _embedding_model_states()
+    now = _time.time()
+    for state in states:
+        claims = claims_for(state["provider"], state["model"], task=state.get("task"))
+        state["locked_by"] = sorted({str(c.get("owner_label") or "another owner in this process")
+                                     for c in claims if c.get("locked")})
+        if any(str(c.get("kind") or "") == "building" for c in claims):
+            state["in_use"] = True  # a model still loading is in use
+        state["idle_unload_at"] = idle_unload_at(state, now)
+    return states
+
+
+def _hf_model_states() -> List[Dict[str, Any]]:
     if not _backend_loaded("huggingface"):
         return []
     from .hf_residency import _holder_alive, registered_providers
@@ -413,10 +502,6 @@ def resident_model_states() -> List[Dict[str, Any]]:
         cur["in_use"] = cur["in_use"] or st["inflight"] > 0
         if st["last_used_at"] is not None:
             cur["last_used_at"] = max(float(cur["last_used_at"] or 0.0), float(st["last_used_at"]))
-    for state in by_model.values():
-        claims = claims_for("huggingface", state["model"])
-        state["locked_by"] = sorted({str(c.get("owner_label") or "another owner in this process")
-                                     for c in claims if c.get("locked")})
     return list(by_model.values())
 
 
@@ -477,6 +562,170 @@ def make_room(needed_bytes: int, free_bytes: Any, *, provider: Optional[str] = N
             elif s["in_use"]:
                 kept.append(f"{s['model']} (in use)")
     return {"fits": free >= int(needed_bytes), "free_bytes": free, "evicted": evicted, "kept": kept}
+
+
+# ---------------------------------------------------------------------------
+# Idle unload (core ADR 0012, amending 0010): a model no call has used for the
+# idle-unload time is unloaded, under 0010's rule (never a locked model, never
+# one in use or still loading). Core owns the mechanism and the default; a host
+# sets the time (`set_idle_unload`; AbstractRuntime relays its setting).
+# ---------------------------------------------------------------------------
+import logging as _logging
+import time as _time
+
+_idle_log = _logging.getLogger("abstractcore.residency")
+
+#: The default idle-unload time: 60 minutes (operator ruling 2026-11-03).
+DEFAULT_IDLE_UNLOAD_S = 3600.0
+
+_IDLE_UNLOAD_S: Optional[float] = DEFAULT_IDLE_UNLOAD_S
+# (backend, model) -> when the reaper first saw it resident: the idle clock of a model no
+# call has used yet (a load that is never followed by a call).
+_FIRST_SEEN: Dict[Any, float] = {}
+_REAPER: Optional[_threading.Thread] = None
+_REAPER_START_LOCK = _threading.Lock()
+_REAPER_WAKE = _threading.Event()
+
+
+def set_idle_unload(seconds: Optional[float]) -> Optional[float]:
+    """Set the idle-unload time in seconds for this process; `None` or `0` turns it off.
+    Returns the value now in effect. A negative or non-numeric value is refused."""
+    global _IDLE_UNLOAD_S
+    if seconds is None:
+        value = None
+    else:
+        try:
+            value = float(seconds)
+        except (TypeError, ValueError):
+            raise ValueError(f"idle unload must be a number of seconds (0 or None turns it off), got {seconds!r}")
+        if value != value or value < 0:
+            raise ValueError(f"idle unload must be 0 or more seconds, got {seconds!r}")
+        value = value or None
+    _IDLE_UNLOAD_S = value
+    _REAPER_WAKE.set()  # a shorter time applies at once, not at the next tick of the old one
+    return value
+
+
+def get_idle_unload() -> Optional[float]:
+    """The idle-unload time in effect (seconds), or None when it is off."""
+    return _IDLE_UNLOAD_S
+
+
+def _idle_since(state: Dict[str, Any], now: float) -> float:
+    key = (state["backend"], state["model"])
+    return max(float(state.get("last_used_at") or 0.0), float(_FIRST_SEEN.get(key, now)))
+
+
+def idle_unload_at(state: Dict[str, Any], now: Optional[float] = None) -> Optional[float]:
+    """When a `resident_model_states()` row will be unloaded for idleness (epoch seconds), or
+    None: the setting is off, the model is locked, or it is in use."""
+    idle = _IDLE_UNLOAD_S
+    if not idle or state.get("locked_by") or state.get("in_use"):
+        return None
+    return _idle_since(state, _time.time() if now is None else now) + idle
+
+
+def _gated_holders(state: Dict[str, Any]) -> List[Any]:
+    """The provider instances whose in-flight registry gates new calls during an idle eject."""
+    if state["backend"] == "huggingface":
+        from .hf_residency import _holders_for
+
+        return list(_holders_for(state["model"], None))
+    if state["backend"] == "mlx":
+        from .mlx_residency import _holders_for
+
+        return list(_holders_for(state["model"], None))
+    return []  # embeddings: `EmbeddingManager.unload` waits for running encodes, it never cancels them
+
+
+def _idle_eject(state: Dict[str, Any], idle_s: float, now: float) -> Optional[Dict[str, Any]]:
+    """Eject one idle model without ever cancelling a call: every holder's gate closes only
+    while nothing runs on it, the state is checked again, and calls that begin meanwhile wait
+    for the gates to reopen (then reload the model on demand). None when it is not idle any more."""
+    closed = []
+    try:
+        for holder in _gated_holders(state):
+            get = getattr(holder, "_inflight_generations", None)
+            if not callable(get):
+                continue
+            registry = get()
+            if not registry.close_for_idle():
+                return None  # a call started since the check: it is in use, and never cancelled
+            closed.append(registry)
+        again = next((s for s in resident_model_states()
+                      if s["backend"] == state["backend"] and s["model"] == state["model"]), None)
+        if again is None or again["in_use"] or again["locked_by"] or now - _idle_since(again, now) < idle_s:
+            return None
+        report = eject(state["backend"], state["model"], reason="idle")
+        _release_torch_device_cache()
+    finally:
+        for registry in closed:
+            registry.reopen_after_idle()
+    freed = report.get("freed_bytes")
+    freed_b = int(freed) if isinstance(freed, int) and freed > 0 else int(state.get("held_bytes") or 0)
+    minutes = (now - _idle_since(state, now)) / 60.0
+    if report.get("ok", True):
+        _idle_log.info(f"unloaded {state['model']} after {minutes:.0f} min idle; freed {_fmt_gb(freed_b)}")
+    else:
+        _idle_log.warning(f"idle unload of {state['model']} after {minutes:.0f} min did not free everything: "
+                          f"{report.get('holders_refused') or report.get('residual')}")
+    _FIRST_SEEN.pop((state["backend"], state["model"]), None)
+    return {"model": state["model"], "backend": state["backend"], "idle_s": round(now - _idle_since(state, now), 1),
+            "freed_bytes": freed_b, "ok": bool(report.get("ok", True))}
+
+
+def reap_idle(now: Optional[float] = None) -> List[Dict[str, Any]]:
+    """Unload every resident model idle for the idle-unload time (ADR 0012). Skipped while a
+    load runs in this process (`load_lock`); never a locked model, never one in use or loading.
+    Returns `[{model, backend, idle_s, freed_bytes, ok}]`."""
+    idle = _IDLE_UNLOAD_S
+    if not idle:
+        return []
+    if not _LOAD_LOCK.acquire(blocking=False):
+        return []  # a model is loading: never decide while memory is moving
+    try:
+        with _RESIDENCY_LOCK:
+            t = _time.time() if now is None else float(now)
+            states = resident_model_states()
+            present = {(st["backend"], st["model"]) for st in states}
+            for key in list(_FIRST_SEEN):
+                if key not in present:
+                    _FIRST_SEEN.pop(key, None)
+            for key in present:
+                _FIRST_SEEN.setdefault(key, t)
+            out = []
+            for st in states:
+                if st["locked_by"] or st["in_use"] or t - _idle_since(st, t) < idle:
+                    continue
+                done = _idle_eject(st, idle, t)
+                if done is not None:
+                    out.append(done)
+            return out
+    finally:
+        _LOAD_LOCK.release()
+
+
+def _reaper_loop() -> None:
+    while True:
+        idle = _IDLE_UNLOAD_S
+        _REAPER_WAKE.wait(min(60.0, max(1.0, idle / 4.0)) if idle else 60.0)
+        _REAPER_WAKE.clear()
+        try:
+            reap_idle()
+        except Exception:  # noqa: BLE001 - the reaper must outlive one failed tick, and say so
+            _idle_log.exception("idle unload tick failed")
+
+
+def _ensure_idle_reaper() -> None:
+    """Start the reaper thread once per process (lazily: the first in-process load)."""
+    global _REAPER
+    if _REAPER is not None and _REAPER.is_alive():
+        return
+    with _REAPER_START_LOCK:
+        if _REAPER is not None and _REAPER.is_alive():
+            return
+        _REAPER = _threading.Thread(target=_reaper_loop, name="abstractcore-idle-unload", daemon=True)
+        _REAPER.start()
 
 
 def smaller_suggestions(model: str, budget_bytes: int, *, provider: str = "huggingface",

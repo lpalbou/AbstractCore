@@ -936,6 +936,8 @@ class EmbeddingManager:
         self._load_lock = threading.RLock()
         self._model_cv = threading.Condition(self._load_lock)
         self._inflight_encodes = 0
+        # When an encode last began or ended on this manager: the idle unload's clock (ADR 0012).
+        self._last_used_at: Optional[float] = None
         if self.provider == "huggingface":
             self._load_model()
 
@@ -1287,11 +1289,13 @@ class EmbeddingManager:
         with self._model_cv:
             model = self._ensure_local_model()
             self._inflight_encodes += 1
+            self._last_used_at = time.time()
         try:
             yield model
         finally:
             with self._model_cv:
                 self._inflight_encodes -= 1
+                self._last_used_at = time.time()
                 self._model_cv.notify_all()
 
     def _sentence_transformers_source(self) -> "tuple[str, Dict[str, Any]]":

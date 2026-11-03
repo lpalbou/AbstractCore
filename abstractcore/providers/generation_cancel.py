@@ -239,11 +239,16 @@ import weakref as _weakref
 #: expiry is logged at ERROR and refuses the unload.
 DEFAULT_EJECT_DRAIN_TIMEOUT_S = 30.0
 
+#: How long a call that begins while an idle unload holds this instance's gate
+#: waits for it (core ADR 0012). The unload itself takes seconds; reaching this
+#: bound means something is stuck, and the call fails loudly instead of hanging.
+IDLE_GATE_WAIT_S = 120.0
+
 
 class _InflightCall:
     __slots__ = ("event", "started", "done", "__weakref__")
 
-    def __init__(self, event: threading.Event) -> None:
+    def __init__(self, event: Optional[threading.Event]) -> None:
         self.event = event
         self.started = _time.monotonic()
         self.done = threading.Event()
@@ -252,26 +257,51 @@ class _InflightCall:
 class InflightGenerations:
     """Registry of the generations currently running on one provider instance.
 
-    Only calls that carry a cancel event are registered (the host's, or a
-    private one the provider creates, see BaseProvider). Entries are weakly
+    Every call is registered and stamps `last_used_at`, with or without a cancel
+    event (the host's, or a private one the provider creates, see BaseProvider);
+    only a call with an event can be cancelled by an eject. Entries are weakly
     held: an abandoned, garbage-collected stream disappears by itself.
+
+    The idle gate (core ADR 0012): an idle unload closes it only while nothing
+    runs (`close_for_idle`), so the unload never cancels a call; a call that
+    begins while it is closed waits for `reopen_after_idle` and then runs (the
+    provider reloads its model on demand).
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._gate = threading.Condition(self._lock)
+        self._closed_for_idle = False
         self._calls: "_weakref.WeakSet[_InflightCall]" = _weakref.WeakSet()
         # Wall-clock time a generation last began or ended on this instance: the
-        # "least recently used" of the residency failsafe (core ADR 0010).
+        # "least recently used" of the residency failsafe (core ADR 0010) and of
+        # the idle unload (ADR 0012).
         self.last_used_at: Optional[float] = None
 
-    def begin(self, event: Optional[threading.Event]) -> Optional[_InflightCall]:
-        if event is None:
-            return None
+    def begin(self, event: Optional[threading.Event]) -> _InflightCall:
         call = _InflightCall(event)
-        with self._lock:
+        with self._gate:
+            if self._closed_for_idle and not self._gate.wait_for(lambda: not self._closed_for_idle,
+                                                                 timeout=IDLE_GATE_WAIT_S):
+                raise RuntimeError(
+                    f"this model has been unloading for idleness for more than {IDLE_GATE_WAIT_S:.0f}s; "
+                    "the call was not started (send it again)")
             self._calls.add(call)
             self.last_used_at = _time.time()
         return call
+
+    def close_for_idle(self) -> bool:
+        """Close the gate for an idle unload, only if no call is running (True when closed)."""
+        with self._gate:
+            if self._calls:
+                return False
+            self._closed_for_idle = True
+            return True
+
+    def reopen_after_idle(self) -> None:
+        with self._gate:
+            self._closed_for_idle = False
+            self._gate.notify_all()
 
     def end(self, call: Optional[_InflightCall]) -> None:
         if call is None:
@@ -301,7 +331,8 @@ class InflightGenerations:
                     "drain_timeout_s": timeout}
         t0 = _time.monotonic()
         for call in calls:
-            call.event.set()
+            if call.event is not None:  # a call without an event cannot be stopped: it is waited for
+                call.event.set()
         _log.warning(
             "%s/%s: %s — cancelled %d in-flight generation(s); waiting up to %.1fs for them to stop",
             provider, model, reason, len(calls), timeout,
@@ -327,6 +358,7 @@ class InflightGenerations:
 __all__ = [
     "CANCEL_KWARG",
     "DEFAULT_EJECT_DRAIN_TIMEOUT_S",
+    "IDLE_GATE_WAIT_S",
     "HttpCancelGuard",
     "InflightGenerations",
     "WATCH_EXIT_SLICE_S",
