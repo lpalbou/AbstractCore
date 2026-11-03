@@ -855,6 +855,14 @@ class ModelNotFoundError(AbstractCoreError):
     """Model not found error."""
 ```
 
+#### ModelNotDownloadedError
+```python
+class ModelNotDownloadedError(ModelNotFoundError):
+    """The model is not on this computer, and loading never downloads (offline_first)."""
+    model: str | None     # the id to download
+    provider: str | None  # the provider that serves it
+```
+
 #### AuthenticationError
 ```python
 class AuthenticationError(ProviderAPIError):

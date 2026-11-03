@@ -347,12 +347,13 @@ def resolve_native_drafter_path(path_or_repo: str) -> str:
         from ..config.manager import get_config_manager
         name = str(path_or_repo)
         if get_config_manager().is_offline_first():
-            from ..exceptions import ModelNotFoundError
-            raise ModelNotFoundError(
+            from ..exceptions import ModelNotDownloadedError
+            raise ModelNotDownloadedError(
                 f"MLX drafter {name!r} is not in the local Hugging Face cache, and offline_first "
                 f"is on, so loading never downloads it. Download it first: "
                 f"`abstractcore models download mlx {name}` (or turn `offline.offline_first` off "
-                "in the AbstractCore config to allow on-demand downloads)."
+                "in the AbstractCore config to allow on-demand downloads).",
+                model=name, provider="mlx",
             )
         import logging
         logging.getLogger("abstractcore.providers.mlx").warning(

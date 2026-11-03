@@ -1304,7 +1304,7 @@ class EmbeddingManager:
         so nothing asks the Hub -- not even for a `refs/main` a pinned download
         may lack. A bare legacy name (`all-MiniLM-L6-v2`) is also looked up as
         `sentence-transformers/<name>`, as sentence-transformers itself does.
-        Not cached -> ModelNotFoundError with the plain "download it first".
+        Not cached -> ModelNotDownloadedError (a ModelNotFoundError) with the plain "download it first".
         Otherwise the id is passed through and may download on first use.
         """
         try:
@@ -1334,13 +1334,14 @@ class EmbeddingManager:
                 return str(snapshot), {"local_files_only": True}
 
         from ..config.manager import hf_download_first_hint
-        from ..exceptions import ModelNotFoundError
+        from ..exceptions import ModelNotDownloadedError
 
         looked_in = ", ".join(str(d) for d in cache_dirs) or "no cache directory found"
-        raise ModelNotFoundError(
+        raise ModelNotDownloadedError(
             f"Embedding model {names[0]!r} is not in the local Hugging Face cache (looked in: {looked_in}); "
             + hf_download_first_hint(names[0])
-            + "."
+            + ".",
+            model=names[0], provider=self.provider,
         )
 
     def _select_backend(self) -> EmbeddingBackend:

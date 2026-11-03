@@ -89,11 +89,14 @@ class TestGGUFBasicFunctionality:
 
     def test_gguf_not_found_error(self):
         """Test graceful handling when GGUF model not found"""
-        with pytest.raises(RuntimeError) as exc_info:
+        from abstractcore.exceptions import ModelNotDownloadedError
+
+        with pytest.raises(ModelNotDownloadedError) as exc_info:
             create_llm("huggingface",
                       model="nonexistent/GGUF-Model",
                       debug=False)
 
+        assert exc_info.value.model == "nonexistent/GGUF-Model"
         error_message = str(exc_info.value)
         assert "GGUF model" in error_message
         assert "not found in local caches" in error_message

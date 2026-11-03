@@ -187,6 +187,19 @@ class ModelNotFoundError(ProviderError):
     pass
 
 
+class ModelNotDownloadedError(ModelNotFoundError):
+    """The named model is not on this computer, and loading never downloads (`offline.offline_first`).
+
+    A state, not a fault: the remedy is a download. `model` is the id to download and `provider`
+    the provider that serves it (`abstractcore models download <provider> <model>`). Callers read
+    these attributes; the message is for people, and its wording is not a contract."""
+
+    def __init__(self, message: str, *, model: "str | None" = None, provider: "str | None" = None):
+        super().__init__(message)
+        self.model = model
+        self.provider = provider
+
+
 class UnknownProviderError(ModelNotFoundError, ValueError):
     """The provider part of a provider/model id names no registered provider.
 
@@ -314,6 +327,7 @@ __all__ = [
     'SessionError',
     'ConfigurationError',
     'ModelNotFoundError',
+    'ModelNotDownloadedError',
     'UnknownProviderError',
     'ModelArtifactMismatchError',
     'format_model_error',
