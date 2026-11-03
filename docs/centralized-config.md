@@ -400,6 +400,26 @@ abstractcore --set-local-models-cache-dir ~/.abstractcore/models
 - HuggingFace cache: `~/.cache/huggingface`
 - Local models: `~/.abstractcore/models`
 
+### Model Memory
+
+Two top-level keys in `abstractcore.json` bound the memory a local model takes:
+
+```json
+{
+  "model_memory_buffer": 0.05,
+  "gguf_prompt_cache_max_gb": 4
+}
+```
+
+- **model_memory_buffer**: the fraction of free memory kept free when a GGUF context is sized (default `0.05`; see
+  [Memory management](memory-management.md)).
+- **gguf_prompt_cache_max_gb**: the byte budget, in GiB, for the GGUF prompt-cache snapshots of one model, all keys
+  together. When a new snapshot takes the total past it, the least recently used keys are evicted; the snapshot just
+  written is kept even when it alone is larger. Unset: min(8 GiB, a quarter of physical RAM). The environment
+  variable `ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB` overrides it. A value that is not a positive number is refused.
+  The budget and the bytes held are in `get_prompt_cache_stats()["gguf"]` (`prompt_cache_budget_bytes`,
+  `prompt_cache_total_bytes`).
+
 ### Logging Configuration
 
 Control logging behavior across all AbstractCore components:
