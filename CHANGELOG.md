@@ -73,6 +73,8 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
   - A request that sends the key without naming one provider (`GET /v1/capabilities`,
     `GET /v1/capabilities/voice/providers`, an unknown music provider) is refused with 400 and the key reaches
     nobody. Authenticate to the server and leave the key out to list every provider.
+  - Keys the server holds follow their own rule, unchanged: a request without its own key spends them only when it is
+    server-authenticated (otherwise 401 while the server holds a key the route could spend).
 
 ## [2.33.0] - 2026-11-03
 
