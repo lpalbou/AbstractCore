@@ -1321,7 +1321,27 @@ class HuggingFaceProvider(BaseProvider):
             if not is_gguf:
                 self._reject_silent_gguf_substitution(model)
 
-        if is_gguf:
+        # Decision models (Kev family: text in, calibrated decisions out) have no text
+        # lane: nothing is generated, so the ordinary weights are never loaded. The
+        # handle keeps its artifact class (a decision GGUF runs on llama.cpp, an
+        # adapter or merged checkpoint on transformers) under `_decision_artifact`.
+        self._decision_model = None
+        self._decision_artifact: Optional[str] = None
+        if self._is_decision_model_handle(model):
+            self.model_type = "decision"
+            if is_gguf:
+                if not LLAMACPP_AVAILABLE:
+                    raise ImportError("llama-cpp-python not installed. " + llama_cpp_hint("GGUF decision models (llama.cpp)"))
+                self._decision_artifact = "gguf"
+                prepare_llama_cpp_import()
+                self._setup_device_gguf()
+            else:
+                if not TRANSFORMERS_AVAILABLE:
+                    raise ImportError("Transformers not installed. " + _engine_install_hint("Hugging Face Transformers decision models"))
+                self._decision_artifact = "transformers"
+                self._setup_device_transformers()
+            self.decision_model()
+        elif is_gguf:
             if not LLAMACPP_AVAILABLE:
                 raise ImportError("llama-cpp-python not installed. " + llama_cpp_hint("GGUF models (llama.cpp)"))
             self.model_type = "gguf"
@@ -1335,6 +1355,27 @@ class HuggingFaceProvider(BaseProvider):
             self.model_type = "transformers"
             self._setup_device_transformers()
             self._load_transformers_model()
+
+    @staticmethod
+    def _is_decision_model_handle(model: str) -> bool:
+        from ..decision import is_decision_model
+
+        return is_decision_model(model)
+
+    def _decision_load_kwargs(self) -> Dict[str, Any]:
+        kwargs: Dict[str, Any] = {"device": self.device}
+        dtype = self.transformers_kwargs.get("torch_dtype")
+        if dtype is not None:
+            kwargs["dtype"] = str(dtype).replace("torch.", "").replace("bfloat16", "bf16").replace("float32", "fp32").replace("float16", "fp16")
+        if self.transformers_kwargs.get("quantization_config") is not None:
+            kwargs["quantization_config"] = self.transformers_kwargs["quantization_config"]
+        if self.transformers_kwargs.get("attn_implementation") is not None:
+            kwargs["attn_implementation"] = self.transformers_kwargs["attn_implementation"]
+        if getattr(self, "n_gpu_layers", None) is not None:
+            kwargs["n_gpu_layers"] = int(self.n_gpu_layers)
+        if self.max_tokens:
+            kwargs["n_ctx"] = int(self.max_tokens)
+        return kwargs
 
     # Artifact classes this provider can load. `model_type=` selects between them
     # when the handle alone is ambiguous; there is no third option and no other flag.
@@ -1742,10 +1783,9 @@ class HuggingFaceProvider(BaseProvider):
             "generations on one weights instance)."
         )
 
-    def _gguf_attach(self, sched: Any) -> None:
-        """Use the model's resident slot pool: no context of this instance's own, no second copy."""
-        st = sched.attach_state
-        resident_layers = st.get("n_gpu_layers")
+    def _gguf_adopt_resident_placement(self, sched: Any) -> None:
+        """Use the file's resident placement, or refuse an explicit conflicting load."""
+        resident_layers = sched.attach_state.get("n_gpu_layers")
         adopted = resident_layers is not None and self.n_gpu_layers != resident_layers
         if adopted and getattr(self, "_n_gpu_layers_explicit", False):
             raise InvalidRequestError(
@@ -1756,7 +1796,16 @@ class HuggingFaceProvider(BaseProvider):
             self.logger.info(
                 f"GGUF {self.model}: this instance resolved n_gpu_layers={self.n_gpu_layers}, the resident model "
                 f"runs with {resident_layers}; adopting the resident setting (no second copy).")
-        self._adopted_gpu_layers_from_resident_pool = bool(adopted)
+        self._adopted_gpu_layers_from_resident_pool = bool(
+            adopted or getattr(self, "_adopted_gpu_layers_from_resident_pool", False)
+        )
+        if resident_layers is not None:
+            self.n_gpu_layers = int(resident_layers)
+
+    def _gguf_attach(self, sched: Any) -> None:
+        """Use the model's resident slot pool: no context of this instance's own, no second copy."""
+        st = sched.attach_state
+        self._gguf_adopt_resident_placement(sched)
         self.__dict__["_llm_own"] = None
         self.__dict__["_gguf_scheduler"] = sched
         _gguf_slots_mod().attach(sched, self)
@@ -1886,6 +1935,10 @@ class HuggingFaceProvider(BaseProvider):
         this RAISE (nothing freed) instead of crashing the process.
         """
         self._stop_inflight_before_unload(model_name, refuse_if_running=True)
+        decision = self.__dict__.get("_decision_model")
+        if decision is not None:
+            decision.unload()
+            self._decision_model = None
         if self.__dict__.get("_gguf_scheduler") is not None:
             # A holder of the model's slot pool owns no context: it detaches (never through a
             # slot: an unload must not queue behind other holders' generations).
@@ -7020,6 +7073,30 @@ class HuggingFaceProvider(BaseProvider):
         plain "download it first" message when a local-only load has no cache."""
         source = _resolve_transformers_load_source(self.model, local_only=_hf_load_is_local_only())
         self._transformers_source = source
+        from .process_residency import refuse_other_backend_artifact
+
+        refuse_other_backend_artifact(source.model, backend="huggingface")
+        from .hf_residency import registered_providers
+
+        def artifact(value: str) -> str:
+            path = Path(value).expanduser()
+            cached = path if path.exists() else _get_local_model_path(value)
+            return str(Path(cached).resolve()) if cached else str(value).strip()
+
+        identity = artifact(source.model)
+        for holder in registered_providers():
+            if holder is self or (
+                getattr(holder, "model_instance", None) is None
+                and getattr(getattr(holder, "pipeline", None), "model", None) is None
+            ):
+                continue
+            other = getattr(holder, "_transformers_source", None)
+            if other is not None and artifact(other.model) == identity:
+                raise InvalidRequestError(
+                    f"Transformers model '{source.model}' is already loaded in this process. "
+                    "Reuse the resident provider, or unload it before changing its configuration; "
+                    "a second copy is never loaded."
+                )
         if source.adapter:
             # Before the base model's weights are read: an adapter that cannot be
             # attached must not cost a full base load first.
@@ -7344,6 +7421,12 @@ class HuggingFaceProvider(BaseProvider):
 
     def _load_transformers_model(self):
         """Load standard HuggingFace transformers model"""
+        from .process_residency import load_lock
+
+        with load_lock():
+            return self._load_transformers_model_unlocked()
+
+    def _load_transformers_model_unlocked(self):
         try:
             import torch  # type: ignore
             from transformers import (  # type: ignore
@@ -7944,6 +8027,11 @@ class HuggingFaceProvider(BaseProvider):
             if not Path(model_path).exists():
                 raise FileNotFoundError(f"GGUF model file not found: {model_path}")
 
+            embedding_module = sys.modules.get("abstractcore.embeddings.manager")
+            refuse_embedding = getattr(embedding_module, "_refuse_resident_gguf_embedding", None)
+            if refuse_embedding is not None:
+                refuse_embedding(model_path)
+
             gguf_arch: str | None = None
             try:
                 from ..utils.model_cache import read_gguf_architecture
@@ -8040,6 +8128,13 @@ class HuggingFaceProvider(BaseProvider):
                 requested_n_ctx_i = 16384
 
             self._gguf_requested_context = int(requested_n_ctx_i)
+            # Contexts have separate KV, but every context of this file must use the
+            # same weights placement. Check ALL resident contexts before filtering
+            # by a caller's pinned n_ctx; otherwise another context could load a
+            # second CPU/GPU copy and bypass _gguf_attach's placement refusal.
+            _resident = _gguf_slots.find_for_file(model_path)
+            if _resident is not None:
+                self._gguf_adopt_resident_placement(_resident)
             _wkey = _gguf_shared.weights_key(model_path, n_gpu_layers=self.n_gpu_layers, use_mmap=use_mmap)
             # THE MODEL IS ALREADY RESIDENT (another pool, a gateway client, a server request):
             # attach to its slot pool -- no context, no weights, no fit check. A pinned context
@@ -8322,6 +8417,8 @@ class HuggingFaceProvider(BaseProvider):
 
         except ModelDoesNotFitError:
             raise  # ADR 0010: the typed refusal reaches the caller as itself
+        except InvalidRequestError:
+            raise  # Conflicting resident placement is a request refusal, not a load failure.
         except ModelArtifactMismatchError:
             # ADR 0009 Enforcement: an artifact-fidelity refusal must reach the caller
             # as itself. Wrapping it in RuntimeError here made the contract type
@@ -8506,6 +8603,12 @@ class HuggingFaceProvider(BaseProvider):
         structured lane and custom `infer()` models (checked before start)."""
         return True
 
+    def _refuse_text_generation_on_decision_model(self) -> None:
+        if getattr(self, "model_type", None) == "decision":
+            from ..exceptions import DecisionModelError
+
+            raise DecisionModelError(self.model, "huggingface")
+
     def _generate_internal(self,
                           prompt: str,
                           messages: Optional[List[Dict[str, str]]] = None,
@@ -8516,6 +8619,7 @@ class HuggingFaceProvider(BaseProvider):
                           response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using appropriate backend"""
+        self._refuse_text_generation_on_decision_model()
 
         cancel_event = as_cancel_event(kwargs.pop(CANCEL_KWARG, None))
         from .generation_progress import PROGRESS_KWARG, TextProgressEmitter

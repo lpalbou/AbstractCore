@@ -333,6 +333,7 @@ class ApiKeysConfig:
     openai: Optional[str] = None
     anthropic: Optional[str] = None
     openrouter: Optional[str] = None
+    typesafe: Optional[str] = None
     portkey: Optional[str] = None
     openai_compatible: Optional[str] = None
     vllm: Optional[str] = None
@@ -760,6 +761,7 @@ class ConfigurationManager:
             "anthropic": "ANTHROPIC_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
             "portkey": "PORTKEY_API_KEY",
+            "typesafe": "TYPESAFE_API_KEY",
             "openai_compatible": "OPENAI_API_KEY",
             "vllm": "VLLM_API_KEY",
             "google": "GOOGLE_API_KEY",

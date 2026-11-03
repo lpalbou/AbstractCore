@@ -9,14 +9,17 @@
 Unified LLM Interface
 > Write once, run everywhere
 
+What's new in 2.32.0: decision models, text in and calibrated typed decisions out
+(`generate(document, output="decision", questions=...)`, `POST /v1/decisions`) over hosted Jev, any
+System One-compatible endpoint and local Kev / Lev / Laya checkpoints; one llama.cpp weights instance
+per GGUF with a per-model slot pool for concurrent requests; the reserved context computed from free
+memory and settable per model; and every cached asset (adapters included) listed in the catalogue.
+See the [changelog](CHANGELOG.md#2320---2026-11-02).
+
 What's new in 2.31.1: `/v1/chat/completions` reuses a model already resident in the process (a host's
 runtime pool) instead of loading a second llama.cpp copy per request; the download catalog lists the
 LFM2 and LFM2.5 families (GGUF and MLX, the 24B-A2B models included). See the
 [changelog](CHANGELOG.md#2311---2026-10-28).
-
-What's new in 2.31.0: streamed tool calls carry the declared MCP tool name, the MLX prefix cache
-survives per-call system riders in tool loops, and `POST /v1/voice/clone` takes `language`. See the
-[changelog](CHANGELOG.md#2310---2026-10-27).
 
 AbstractCore is an offline-capable, open-source-first LLM infrastructure layer
 for Python applications. It gives you one `create_llm(...)` API across local
@@ -52,6 +55,7 @@ First-class support for:
 - session memory, prompt caching, durable memory bloc cache artifacts, events, tracing, and retry-aware reliability hooks
 - media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
 - optional capability plugins (`core.voice/core.audio/core.vision/core.music/core.scene3d/core.camera`) for deterministic TTS/STT, generative vision, music, 3D generation, and real-camera piloting (via packages such as `abstractvoice`, `abstractvision`, `abstractmusic`, `abstract3d`, and `abstractcamera`)
+- decision models (text in, calibrated typed decisions out): `generate(document, output="decision", questions=...)` with one abstraction over hosted Jev (`typesafe`), any System One host (`systemone`), and local Kev / Lev / Laya checkpoints on MLX, transformers or GGUF; the server speaks the System One API (`POST /v1/decisions`); see [Decision Models](docs/decision-models.md)
 - glyph visual-text compression for long documents (**)
 - optional OpenAI-compatible `/v1` gateway server (multi-provider, including `response_format`
   structured outputs validated against your schema) and single-model endpoint

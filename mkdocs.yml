@@ -43,6 +43,7 @@ nav:
   - Memory Blocs: memory-blocs.md
   - Media: media-handling-system.md
   - Embeddings: embeddings.md
+  - Decision Models: decision-models.md
   - Local Models: models.md
   - Recommended Models: recommended-models.md
   - Local Engines: engines.md

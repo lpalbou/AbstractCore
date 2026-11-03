@@ -45,7 +45,8 @@
           "voice",
           "sound",
           "music",
-          "scene3d"
+          "scene3d",
+          "decision"
         ]
       }
     },

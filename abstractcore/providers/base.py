@@ -8,6 +8,7 @@ import uuid
 import asyncio
 import warnings
 import base64
+import contextlib
 import json
 import re
 import socket
@@ -740,6 +741,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
     def __init__(self, model: str, **kwargs):
         AbstractCoreInterface.__init__(self, model, **kwargs)
         self.provider = None
+        self._decision_options = {k[len("decision_"):]: v for k, v in kwargs.items() if k.startswith("decision_") and k != "decision_model"}
         from .speculation import normalize_speculation_value
         self._speculation_constructor_default = normalize_speculation_value(kwargs.get("speculation"))
         self._abstractcore_config_file = kwargs.get("_abstractcore_config_file")
@@ -2955,7 +2957,156 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 result=result, spec=spec, media=media, artifact_store=artifact_store
             )
             return
+        if modality == "decision":
+            self._run_decision_output(result=result, spec=spec, prompt=prompt)
+            return
         raise ValueError(f"Unsupported multimodal output modality: {modality!r}")
+
+    # ------------------------------------------------------------------
+    # Decision output (text in -> calibrated typed decisions out)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _bind_decision_questions(specs: List[Dict[str, Any]], kwargs: Dict[str, Any]) -> None:
+        """``generate(state, output="decision", questions={...})``: move the top-level
+        ``questions`` (and an optional ``state``) into the decision spec so the call
+        reads naturally and the text lane never sees them."""
+        decision_specs = [s for s in specs if str(s.get("modality") or "").lower() == "decision"]
+        if not decision_specs:
+            return
+        questions = kwargs.pop("questions", None)
+        state = kwargs.pop("state", None)
+        for spec in decision_specs:
+            if questions is not None and "questions" not in spec:
+                spec["questions"] = questions
+            if state is not None and "state" not in spec:
+                spec["state"] = state
+
+    def _decision_load_kwargs(self) -> Dict[str, Any]:
+        """Provider-specific options for ``load_decision_model`` (device, precision...)."""
+        return {}
+
+    def decision_model(self) -> Any:
+        """The loaded decision model behind this provider (``abstractcore.decision.DecisionModel``).
+
+        Built on first use from the provider's own model handle; only the local
+        providers (huggingface: transformers or GGUF; mlx) can run one."""
+        existing = getattr(self, "_decision_model", None)
+        if existing is not None:
+            return existing
+        from ..decision import is_decision_model, load_decision_model
+
+        builder = getattr(self, "_build_decision_model", None)
+        if callable(builder):
+            self._decision_model = builder()
+            return self._decision_model
+        provider = str(getattr(self, "provider", "") or "").lower()
+        if provider not in {"huggingface", "mlx"}:
+            raise ValueError(
+                "output='decision' needs a decision model and none is configured: set the default once with "
+                "`abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b` "
+                "(or huggingface + ggml-org/Kev-4B-GGUF:Q4_K_M, or typesafe + jev-latest), or pass "
+                f"model='provider/model' on the request; the {provider or self.__class__.__name__!r} text provider cannot run one itself."
+            )
+        if not is_decision_model(self.model):
+            raise ValueError(
+                f"{self.model!r} is not a decision model. Decision output needs a Kev-family checkpoint "
+                "(a LoRA adapter with head.pt, an AbstractCore decision conversion, or a decision GGUF), "
+                "for example jaredpalmer/kev-4b or ggml-org/Kev-4B-GGUF:Q4_K_M."
+            )
+        options = dict(self._decision_load_kwargs())
+        # `decision_<option>=` constructor kwargs reach the decision loader (prefix_cache_size, n_ctx,
+        # temperature, adapter_scale, truncate_states, ...): create_llm("mlx", model=..., decision_prefix_cache_size=0).
+        options.update(getattr(self, "_decision_options", {}) or {})
+        self._decision_model = load_decision_model(provider, self.model, **options)
+        return self._decision_model
+
+    def _decision_route(self, spec: Dict[str, Any]) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+        """`(provider, model, load options)` of the resident decision model a spec asks for,
+        or None when this provider's own decision model is meant.
+
+        A `model` written as `provider/model` names its own provider (it wins over the
+        provider the route resolver copied from the `output.decision` default); a bare
+        model picks the local engine (`decision.pool.parse_handle`); `kev-latest` /
+        `jev-latest` reuse the most recently used resident model.
+        """
+        from ..decision.pool import ALIASES, latest, parse_handle, split_handle
+
+        route_provider = str(spec.get("provider") or "").strip().lower()
+        route_model = str(spec.get("model") or "").strip()
+        own_provider = str(getattr(self, "provider", "") or "").strip().lower()
+        own_model = str(getattr(self, "model", "") or "").strip()
+        if route_model.lower() in ALIASES:
+            resident = latest()
+            if resident is None:
+                raise ValueError(
+                    f"model={route_model!r} names no resident decision model yet; pass provider/model "
+                    "(for example mlx/jaredpalmer/kev-4b) or configure the output.decision default."
+                )
+            route_provider, route_model = resident
+        elif route_model:
+            handle_provider, handle_model = split_handle(route_model)
+            if handle_provider:
+                route_provider, route_model = handle_provider, handle_model
+            elif not route_provider:
+                route_provider, route_model = parse_handle(route_model)
+        if not route_model:
+            if route_provider and route_provider != own_provider:
+                raise ValueError(
+                    f"output.decision names provider {route_provider!r} without a model; set the default with "
+                    "`abstractcore config set-default output.decision --provider <provider> --model <model>` "
+                    "or pass model= on the request."
+                )
+            return None
+        if route_provider == own_provider and route_model == own_model:
+            return None
+        # Route options land flat on the spec (`decision_prefix_cache_size`, `decision_n_ctx`, ...).
+        options = {key: value for key, value in spec.items() if isinstance(key, str) and key.startswith("decision_")}
+        return route_provider, route_model, options
+
+    @contextlib.contextmanager
+    def _decision_model_in_use(self, spec: Dict[str, Any]) -> Iterator[Any]:
+        """The decision model a spec asks for (`_decision_route`), held in use for the request
+        so the pool defers evictions and unloads until the block ends."""
+        from ..decision.pool import use
+
+        route = self._decision_route(spec)
+        if route is None:
+            yield self.decision_model()
+            return
+        provider, model, options = route
+        with use(provider, model, **options) as llm:
+            yield llm.decision_model()
+
+    def _run_decision_output(
+        self,
+        *,
+        result: MultimodalGenerateResponse,
+        spec: Dict[str, Any],
+        prompt: str,
+    ) -> None:
+        questions = spec.get("questions")
+        if not questions:
+            raise ValueError(
+                "output='decision' needs questions=: a mapping of question name to a question "
+                "({'type': 'choice'|'noul'|'score', 'instructions': ..., 'criteria': ...}, or the "
+                "shorthand: a string for a yes/no question, a list of option names for a choice)."
+            )
+        state = spec.get("state")
+        if state is None:
+            state = prompt
+        if state is None or (isinstance(state, str) and not state.strip()):
+            raise ValueError("output='decision' needs a state: the document the questions are about (the prompt).")
+        with self._decision_model_in_use(spec) as model:
+            response = model.decide(state, questions, truncate=spec.get("truncate"))
+        result.decision = response
+        wire = response.to_systemone()
+        result.metadata["decision"] = wire
+        result.metadata["content"] = json.dumps(wire["answers"], ensure_ascii=False)
+        result.metadata["model"] = response.model
+        result.metadata["decision_provider"] = response.provider
+        result.metadata["decision_backend"] = response.backend
+        result.metadata["decision_precision"] = response.precision
 
     def _run_image_output(
         self,
@@ -3696,6 +3847,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 kwargs.pop("output", None)
                 is_acore_output = False
             else:
+                self._bind_decision_questions(maybe_specs, kwargs)
                 kwargs["output"] = maybe_specs[0] if len(maybe_specs) == 1 else maybe_specs
 
         if is_acore_output:
@@ -9538,6 +9690,7 @@ Please provide a structured response."""
                 kwargs.pop("output", None)
                 is_acore_output = False
             else:
+                self._bind_decision_questions(maybe_specs, kwargs)
                 kwargs["output"] = maybe_specs[0] if len(maybe_specs) == 1 else maybe_specs
 
         if is_acore_output:

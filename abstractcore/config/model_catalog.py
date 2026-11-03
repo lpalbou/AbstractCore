@@ -1088,7 +1088,19 @@ def route_for_download(provider: Any, artifact: Any) -> Optional[Dict[str, str]]
     return dict(found) if found else None
 
 
-def catalog_id_for(provider: Any, artifact: Any) -> Optional[str]:
+@functools.lru_cache(maxsize=1)
+def _canonical_catalog_index() -> Dict[str, List[str]]:
+    from ..architectures.detection import resolve_registered_model_name
+
+    index: Dict[str, List[str]] = {}
+    for row in _load_seed_cached().get("rows") or []:
+        canonical = resolve_registered_model_name(str(row.get("capabilities_key") or ""))
+        if canonical:
+            index.setdefault(canonical, []).append(row["id"])
+    return index
+
+
+def catalog_id_for(provider: Any, artifact: Any, *, metadata: Optional[Mapping[str, Any]] = None) -> Optional[str]:
     """The curated row id an installed artifact belongs to, or None.
 
     Tolerant the same way presence is: `qwen/qwen3.5-9b` (the id LM Studio
@@ -1100,6 +1112,25 @@ def catalog_id_for(provider: Any, artifact: Any) -> Optional[str]:
 
     pid = _norm(provider)
     ref = _norm(artifact)
+    # Engine metadata names the actual checkpoint; an engine's short alias can
+    # omit Instruct/QAT or even the publisher. Prefer that provenance, and never
+    # use capability lookup's permissive base-model partial-match ladder here.
+    from ..architectures.detection import resolve_registered_model_name
+
+    sources = []
+    if pid == "lmstudio" and metadata:
+        for key in ("location", "lms_path"):
+            path = str(metadata.get(key) or "").replace("\\", "/")
+            parts = path.rstrip("/").split("/")
+            if parts:
+                sources.extend(["/".join(parts[-2:]), parts[-1]])
+                if parts[-1].lower().endswith(".gguf"):
+                    sources.append("/".join(parts[-3:-1]))
+    for source in sources:
+        canonical = resolve_registered_model_name(source)
+        matches = _canonical_catalog_index().get(canonical, []) if canonical else []
+        if len(matches) == 1:
+            return matches[0]
     index = _artifact_index()
     if (pid, ref) in index:
         return index[(pid, ref)]
@@ -1112,7 +1143,9 @@ def catalog_id_for(provider: Any, artifact: Any) -> Optional[str]:
             return rid
         if pid in _HF_REPO_PROVIDERS and _norm(mm.hf_artifact_parts(a)[0]) == ref:
             return rid
-    return None
+    canonical = resolve_registered_model_name(ref)
+    matches = _canonical_catalog_index().get(canonical, []) if canonical else []
+    return matches[0] if len(matches) == 1 else None
 
 
 # ---------------------------------------------------------------------------
@@ -1129,6 +1162,7 @@ def _capabilities(key: Optional[str], override: Optional[Mapping[str, Any]], tag
         "thinking": None,
         "max_tokens": None,
         "embedding": "embedding" in set(tags),
+        "decision": "decision" in set(tags),
         "source": None,
     }
     registry: Optional[Dict[str, Any]] = None
@@ -1143,6 +1177,8 @@ def _capabilities(key: Optional[str], override: Optional[Mapping[str, Any]], tag
         routes = registry.get("capability_routes") or {}
         outputs = routes.get("output") if isinstance(routes, dict) else None
         caps["text"] = ("text" in outputs) if isinstance(outputs, list) else True
+        if isinstance(outputs, list) and "decision" in outputs:
+            caps["decision"] = True
         caps["vision"] = bool(registry.get("vision_support"))
         caps["audio"] = bool(registry.get("audio_support"))
         tool = str(registry.get("tool_support") or "").strip().lower()
@@ -1159,6 +1195,72 @@ def _capabilities(key: Optional[str], override: Optional[Mapping[str, Any]], tag
     for k, v in dict(override or {}).items():
         caps[k] = v
     return caps
+
+
+def _local_asset_kind(local: Mapping[str, Any]) -> str:
+    if local.get("role") == "mtp_companion" or local.get("kind") in ("encoder", "component"):
+        return "component"
+    if local.get("kind") == "adapter":
+        return "adapter"
+    return "model" if local.get("kind") in ("model", "embedding") else "unknown"
+
+
+def _inventory_descriptor(local: Mapping[str, Any], presence: Mapping[str, Any]) -> Dict[str, Any]:
+    return {"present": True, "complete": presence.get("status") == "installed",
+            "kind": _local_asset_kind(local), "tasks": list(local.get("tasks") or []),
+            "tasks_source": local.get("tasks_source"), "files": local.get("nb_files"),
+            "incomplete_files": local.get("incomplete_files", 0), "missing_shards": local.get("missing_shards", 0),
+            "bytes": local.get("size_bytes"),
+            **({"adapter": local["adapter"]} if local.get("adapter") else {})}
+
+
+def _discovered_asset(local: Mapping[str, Any], profile: Mapping[str, Any], support: Mapping[str, Any],
+                      installed_sizes: Mapping[Tuple[str, str], int]) -> Dict[str, Any]:
+    """A first-class local catalogue row, without inventing a curated registry entry.
+
+    Identity is the exact provider/reference. Capabilities are evidence from the
+    registry or local metadata; adapters and components never become chat models.
+    """
+    from ..architectures.detection import resolve_registered_model_name
+
+    provider, ref = str(local["provider"]), str(local["artifact"])
+    kind = _local_asset_kind(local)
+    canonical = resolve_registered_model_name(ref)
+    tasks = set(local.get("tasks") or [])
+    tags = ["cached", kind] + sorted(tasks)
+    caps = _capabilities(canonical, None, tags)
+    if kind == "model" and not canonical:
+        caps.update(text=local.get("text_default_supported") is True or (provider in ("lmstudio", "ollama") and "text_generation" in tasks),
+                    embedding=local.get("kind") == "embedding" or "text_embedding" in tasks,
+                    vision=True if "image_to_text" in tasks else None,
+                    audio=True if "speech_to_text" in tasks else None,
+                    speech_synthesis=True if "text_to_speech" in tasks else None,
+                    image_generation=True if tasks.intersection({"text_to_image", "image_to_image", "image_text_to_image"}) else None,
+                    video_generation=True if tasks.intersection({"text_to_video", "image_to_video", "image_text_to_video"}) else None,
+                    source=local.get("tasks_source"))
+    if kind != "model" or caps.get("embedding") or caps.get("speech_synthesis"):
+        caps["text"] = False
+    if kind != "model":
+        for key in ("vision", "audio", "speech_synthesis", "image_generation", "video_generation", "thinking"):
+            caps[key] = None
+        caps["tools"] = None
+    row = {"id": "installed:" + provider + ":" + ref.lower(), "family": canonical or ref,
+           "display_name": local.get("display_name") or ref.rsplit("/", 1)[-1],
+           "vendor": ref.split("/", 1)[0] if "/" in ref else provider,
+           "params_total": local.get("params_total") if kind == "model" else None,
+           "params_active": local.get("params_active") if kind == "model" else None,
+           "license": None, "capabilities": caps, "source": "installed", "asset_kind": kind,
+           "tags": tags, "starter": False, "notes": "Discovered from local engine/cache metadata.", "artifacts": []}
+    art = _build_artifact(row, {"provider":provider, "artifact":ref, "quant":local.get("quant"),
+        "download_bytes":local.get("size_bytes")}, caps, profile, support, None, installed_sizes, installed=local)
+    # A local cache size is not an independently runnable memory requirement.
+    # Keep a fit only for a known/observed text decoder; no false Fits on LoRAs.
+    if kind != "model" or not caps.get("text") or not art["inventory"]["complete"]:
+        art["fit"] = {"verdict":"unknown", "need_bytes":None, "ceiling_bytes":None, "free_now_bytes":None,
+                      "fits_now":None, "disk_ok":None, "max_context":None, "confidence":"unknown", "notes":[]}
+    art.update(downloadable=False, recommended=False, asset_kind=kind)
+    row["artifacts"] = [art]
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -1357,6 +1459,14 @@ def _hub_handle_hit(facts: Mapping[str, Any], repo_id: str) -> Optional[Dict[str
     return {"repo_id": repo_id, "provider": provider, "downloads": None, "exact": True}
 
 
+def _hub_asset_kind(facts: Mapping[str, Any]) -> str:
+    """Recognize explicit adapter packaging even in already-cached Hub facts."""
+    names = {str(n).lower() for n, _size in facts.get("siblings") or []}
+    return "adapter" if "adapter_config.json" in names or (
+        {"adapter_model.safetensors", "adapter_model.bin"} & names and not {"config.json", "model_index.json"} & names
+    ) else "model"
+
+
 # ---------------------------------------------------------------------------
 # Row assembly
 # ---------------------------------------------------------------------------
@@ -1412,6 +1522,8 @@ def _build_artifact(
     support: Mapping[str, Mapping[str, Any]],
     hub: Optional[Dict[str, Any]],
     installed_sizes: Mapping[Tuple[str, str], int],
+    *,
+    installed: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     from ..utils.model_fit import bits_for_quant, estimate_fit
     from . import model_materializer as mm
@@ -1424,7 +1536,16 @@ def _build_artifact(
     params = row.get("params_total")
     params_source = "catalog"
 
-    presence = mm.probe(provider, artifact)
+    # Server engine inventories are authoritative. An HF cache directory can
+    # still be incomplete, so cached checkpoints retain the normal file probe.
+    if installed and provider in ("lmstudio", "ollama"):
+        presence = mm.ModelPresence(provider=provider, artifact=artifact, status=mm.PRESENCE_INSTALLED,
+                                    evidence="engine inventory", location=installed.get("location"))
+    else:
+        presence = mm.probe(provider, artifact)
+        if installed and (installed.get("has_weights") is False or installed.get("missing_shards") or installed.get("checkpoint_index_valid") is False) and presence.status == mm.PRESENCE_INSTALLED:
+            presence = mm.ModelPresence(provider=provider, artifact=artifact, status=mm.PRESENCE_ABSENT,
+                                        evidence="cache checkpoint incomplete or unverified", location=installed.get("location"))
     installed_size = installed_sizes.get((provider, _norm(artifact)))
     if presence.status == mm.PRESENCE_INSTALLED and isinstance(installed_size, int):
         size, size_source = installed_size, "engine"
@@ -1523,7 +1644,8 @@ def _build_artifact(
     supported = bool((support.get(engine) or {}).get("supported", True)) if engine else True
     if not supported:
         fit["notes"] = list(fit.get("notes") or []) + [f"the {engine} engine does not run on this host"]
-    downloadable = supported and provider in mm.supported_providers() and presence.status != mm.PRESENCE_NOT_APPLICABLE
+    providers = mm._cached_listing("catalog:supported-providers", mm.supported_providers)
+    downloadable = supported and provider in providers and presence.status != mm.PRESENCE_NOT_APPLICABLE
     # A GGUF whose architecture this computer's llama.cpp does not know (Hub `gguf.architecture`,
     # checked against libllama, utils.model_cache) would download and then fail at its first call:
     # it is not offered for download and says why (backlog 0868; the installed row says so too, 0867).
@@ -1532,8 +1654,8 @@ def _build_artifact(
     if engine == "llamacpp" and gguf_architecture:
         from ..utils.model_cache import gguf_unloadable_reason, llamacpp_update_for
 
-        unloadable_reason = gguf_unloadable_reason(gguf_architecture)
-        llamacpp_update = llamacpp_update_for(gguf_architecture) if unloadable_reason else None
+        unloadable_reason = mm._cached_listing("catalog:llama-reason:" + gguf_architecture, lambda: gguf_unloadable_reason(gguf_architecture))
+        llamacpp_update = mm._cached_listing("catalog:llama-update:" + gguf_architecture, lambda: llamacpp_update_for(gguf_architecture)) if unloadable_reason else None
     if unloadable_reason:
         downloadable = False
         fit["notes"] = list(fit.get("notes") or []) + [unloadable_reason]
@@ -1589,7 +1711,7 @@ def _build_artifact(
         "larger_canvas": larger,
         "presence": {
             "status": presence.status,
-            "location": presence.location,
+            "location": presence.location or (installed.get("location") if installed else None),
             "evidence": presence.evidence or presence.detail or None,
         },
         "fit": fit,
@@ -1603,13 +1725,15 @@ def _build_artifact(
         "recommended": bool(art.get("recommended")),
         "verified": bool(art.get("verified")),
         "cli_download": f"abstractcore models download {provider} {artifact}",
+        **({"inventory": _inventory_descriptor(installed, {"status": presence.status})} if installed else {}),
     }
 
 
 def _llamacpp_known(arch: str) -> bool:
     from ..utils.model_cache import llamacpp_knows_architecture
+    from .model_materializer import _cached_listing
 
-    return llamacpp_knows_architecture(arch) is True
+    return _cached_listing("catalog:llama-known:" + arch, lambda: llamacpp_knows_architecture(arch)) is True
 
 
 # A GGUF file's quant label: `Model-UD-Q4_K_XL.gguf`, `Q8_0/Model-Q8_0-00001-of-00002.gguf`, `model-iq4_xs.gguf`.
@@ -1922,22 +2046,45 @@ def catalog(
         installed_engines = {}
 
     installed_sizes: Dict[Tuple[str, str], int] = {}
+    installed_rows: List[Dict[str, Any]] = []
     rows_out: List[Dict[str, Any]] = []
     with mm.presence_sweep():
         try:
             inst = mm.list_installed(None, include_loaded=False)
+            installed_rows = [r for r in inst["rows"] if r.get("provider") and r.get("artifact")]
             for r in inst["rows"]:
                 if isinstance(r.get("size_bytes"), int):
                     installed_sizes[(r["provider"], _norm(r["artifact"]))] = r["size_bytes"]
         except Exception:
             pass
+        installed_by_pair = {(r["provider"], _norm(r["artifact"])): r for r in installed_rows}
+        installed_by_catalog: Dict[str, List[Dict[str, Any]]] = {}
+        for r in installed_rows:
+            rid = catalog_id_for(r["provider"], r["artifact"], metadata=r)
+            if rid:
+                installed_by_catalog.setdefault(rid, []).append(r)
         for seed_row in seed_rows:
             caps = _capabilities(seed_row.get("capabilities_key"), seed_row.get("capabilities_override"), seed_row.get("tags") or [])
-            arts = [
-                _build_artifact(seed_row, a, caps, profile, support, hub_ctx, installed_sizes)
-                for a in seed_row["artifacts"]
-                if eng is None or a["provider"] == eng or _engine_for(a["provider"], a.get("quant")) == eng
-            ]
+            arts = []
+            for spec in seed_row["artifacts"]:
+                if eng is not None and spec["provider"] != eng and _engine_for(spec["provider"], spec.get("quant")) != eng:
+                    continue
+                local = installed_by_pair.get((spec["provider"], _norm(spec["artifact"])))
+                effective = dict(spec, quant=local.get("quant") or spec.get("quant")) if local else spec
+                arts.append(_build_artifact(seed_row, effective, caps, profile, support, hub_ctx,
+                                            installed_sizes, installed=local))
+            # Preserve each exact engine identifier and precision. Registry
+            # identity groups models; it is never proof that two builds share files.
+            known_pairs = {(a["provider"], _norm(a["artifact"])) for a in arts}
+            for local in installed_by_catalog.get(seed_row["id"], []):
+                pair = (local["provider"], _norm(local["artifact"]))
+                if pair in known_pairs or (eng is not None and local["provider"] != eng and _engine_for(local["provider"], local.get("quant")) != eng):
+                    continue
+                arts.append(_build_artifact(seed_row, {"provider": local["provider"], "artifact": local["artifact"],
+                    "quant": local.get("quant"), "download_bytes": local.get("size_bytes"),
+                    "note": "Installed variant reported by the engine."}, caps, profile, support, hub_ctx,
+                    installed_sizes, installed=local))
+                known_pairs.add(pair)
             if extended and hub_ctx is not None and (eng is None or eng in ("huggingface", "llamacpp")):
                 arts += _extended_quant_artifacts(seed_row, arts, caps, profile, support, hub_ctx, installed_sizes)
             row = {
@@ -1968,6 +2115,29 @@ def catalog(
                 _order_for_installed_engines(row, installed_engines)
             rows_out.append(row)
 
+        # Every cached asset belongs to the catalogue, including adapters and
+        # components without a curated generation recipe. Never fetch remote
+        # facts just to classify local inventory or confuse a cache with a model.
+        represented = {(a["provider"], _norm(a["artifact"])) for row in rows_out for a in row["artifacts"]}
+        represented_repos = {
+            _norm(mm.hf_artifact_parts(a["artifact"])[0]) for row in rows_out for a in row["artifacts"]
+            if a["provider"] in _HF_REPO_PROVIDERS and
+            ((a.get("presence") or {}).get("status") == "installed" or (a.get("inventory") or {}).get("present"))
+        }
+        for local in installed_rows:
+            provider, ref = local["provider"], _norm(local["artifact"])
+            if (provider, ref) in represented or (provider in _HF_REPO_PROVIDERS and ref in represented_repos):
+                continue
+            if eng is not None and provider != eng and _engine_for(provider, local.get("quant")) != eng:
+                continue
+            discovered = _discovered_asset(local, profile, support, installed_sizes)
+            if (query and not _matches_query(discovered, query)) or not all(t in discovered["tags"] for t in want_tags):
+                continue
+            rows_out.append(discovered)
+            represented.add((provider, ref))
+            if provider in _HF_REPO_PROVIDERS:
+                represented_repos.add(ref)
+
         seen_repos = {
             mm.hf_artifact_parts(a["artifact"])[0].lower()
             for r in rows_out
@@ -1984,6 +2154,7 @@ def catalog(
             artifact = hit["repo_id"]
             quant = None
             facts = (hub_ctx or {}).get("facts", {}).get(artifact) or {}
+            asset_kind = _hub_asset_kind(facts)
             if provider == "huggingface":
                 quant = _pick_gguf_quant(facts)
                 if quant:
@@ -2011,6 +2182,7 @@ def catalog(
             name = hit["repo_id"].rsplit("/", 1)[-1]
             row = {
                 "id": "hf:" + hit["repo_id"].lower(),
+                "asset_kind": asset_kind,
                 "family": name.lower(),
                 "display_name": name,
                 "vendor": hit["repo_id"].split("/", 1)[0],
@@ -2030,6 +2202,9 @@ def catalog(
                 "exact": bool(hit.get("exact")),
                 "artifacts": [art],
             }
+            if asset_kind == "adapter":
+                art["asset_kind"] = "adapter"
+                art["fit"] = {"verdict":"unknown", "notes":[]}
             _pick_recommended(row, accelerator, installed_engines)
             _order_for_installed_engines(row, installed_engines)
             rows_out.append(row)
@@ -2057,7 +2232,8 @@ def catalog(
     # 2026-10-29: "on Linux never offer MLX"), and a row left with none is not listed.
     if support.get("mlx", {}).get("supported") is False:
         for r in rows_out:
-            r["artifacts"] = [a for a in r["artifacts"] if _engine_for(a["provider"], a.get("quant")) != "mlx"]
+            r["artifacts"] = [a for a in r["artifacts"] if _engine_for(a["provider"], a.get("quant")) != "mlx"
+                              or (a.get("inventory") or {}).get("present")]
     rows_out = [r for r in rows_out if r["artifacts"]]
 
     return {
@@ -2070,6 +2246,7 @@ def catalog(
             "rows": len(rows_out),
             "artifacts": sum(len(r["artifacts"]) for r in rows_out),
             "installed": sum(1 for r in rows_out for a in r["artifacts"] if a["presence"]["status"] == "installed"),
+            "discovered": sum(1 for r in rows_out if r["source"] == "installed"),
         },
         "rows": rows_out,
         "generated_at": utc_now_iso(),

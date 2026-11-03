@@ -9,6 +9,7 @@ Imports are lazy so other providers do not require Apple Silicon packages.
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import threading
 import weakref
@@ -205,10 +206,31 @@ def _load_embedded_drafter(source: Path, config: dict):
 
 def load_qwen4_session(path: str, *, mtp: bool, ple_offload: bool = True) -> Qwen4Session:
     """Load the existing checkpoint in-process without a second weight copy."""
+    from .process_residency import load_lock, refuse_other_backend_artifact
+
+    with load_lock():
+        refuse_other_backend_artifact(path, backend="mlx")
+        return _load_qwen4_session_locked(path, mtp=mtp, ple_offload=ple_offload)
+
+
+def _load_qwen4_session_locked(path: str, *, mtp: bool, ple_offload: bool) -> Qwen4Session:
     key = (str(Path(path).resolve()), ple_offload)
     with _LOAD_LOCK:
         session = _SESSIONS.get(key)
         if session is None:
+            from ..exceptions import InvalidRequestError
+
+            native = sys.modules.get(__package__ + ".mlx_native_session")
+            plain = sys.modules.get(__package__ + ".mlx_provider")
+            if (
+                any(k[0] == key[0] for k in _SESSIONS)
+                or any(key[0] in k[:2] for k in getattr(native, "_SESSIONS", ()))
+                or key[0] in getattr(plain, "_SHARED_MLX_MODELS", ())
+            ):
+                raise InvalidRequestError(
+                    f"MLX artifact '{key[0]}' is already loaded with another lane or PLE profile. "
+                    "Reuse its settings or unload it first; a second copy is never loaded."
+                )
             session = _create_qwen4_session(path, mtp=mtp, ple_offload=ple_offload)
             _SESSIONS[key] = session
         elif mtp:

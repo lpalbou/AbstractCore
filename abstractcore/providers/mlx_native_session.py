@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 import weakref
+import sys
 from pathlib import Path
 
 _SESSIONS = weakref.WeakValueDictionary()
@@ -368,14 +369,60 @@ def resolve_native_drafter_path(path_or_repo: str) -> str:
 
 def load_native_session(path: str, drafter_path=None):
     """Load one exact target/head pair once; callers configure ownership next."""
+    from .process_residency import load_lock, refuse_other_backend_artifact
+
+    with load_lock():
+        refuse_other_backend_artifact(path, backend="mlx")
+        return _load_native_session_locked(path, drafter_path)
+
+
+def _load_native_session_locked(path: str, drafter_path=None):
     target = str(Path(path).resolve())
     from .weights_fingerprint import weights_fingerprint_for_dir
     head = resolve_native_drafter_path(str(drafter_path)) if drafter_path else None
+    if head:
+        from .process_residency import refuse_other_backend_artifact
+
+        refuse_other_backend_artifact(head, backend="mlx")
     head_fingerprint = weights_fingerprint_for_dir(head) if head else ""
     key = (target, head, head_fingerprint)
     with _LOAD_LOCK:
         session = _SESSIONS.get(key)
         if session is None:
+            from ..exceptions import InvalidRequestError
+
+            qwen4 = sys.modules.get(__package__ + ".mlx_qwen4")
+            if any(k[0] in (target, head) for k in getattr(qwen4, "_SESSIONS", ())):
+                raise InvalidRequestError(
+                    "This target or drafter is already loaded through Qwen4 native MLX. "
+                    "Unload it before changing lanes; a second copy is never loaded."
+                )
+            if any(k[0] == target for k in _SESSIONS):
+                raise InvalidRequestError(
+                    f"MLX model '{target}' is already loaded with a different drafter configuration. "
+                    "A second copy is never loaded: reuse its configuration or unload it first."
+                )
+            if head == target or any(
+                target == k[1] or (head is not None and head in k[:2]) for k in _SESSIONS
+            ):
+                raise InvalidRequestError(
+                    "An MLX target or drafter artifact is already loaded in another target/head role. "
+                    "Unload it before changing roles; a second copy is never loaded."
+                )
+            # The plain mlx-lm lane and native mlx-vlm lane cannot share the
+            # same target object. Their existing registries share this load lock
+            # so a simultaneous first load cannot allocate both representations.
+            plain = sys.modules.get(__package__ + ".mlx_provider")
+            plain_lock = getattr(plain, "_SHARED_MLX_MODELS_LOCK", None)
+            plain_models = getattr(plain, "_SHARED_MLX_MODELS", None)
+            if plain_lock is not None and plain_models is not None:
+                with plain_lock:
+                    if target in plain_models or head in plain_models:
+                        raise InvalidRequestError(
+                            f"MLX target or drafter for '{target}' is already loaded through mlx-lm. "
+                            "Unload it before selecting the native mlx-vlm configuration; "
+                            "a second copy is never loaded."
+                        )
             from mlx_vlm import load
             session = NativeSession()
             session.drafter_path = head

@@ -54,14 +54,15 @@ executes calls. For durable agent orchestration, use [AbstractRuntime](https://g
 - [Local models](docs/models.md): catalog/fit, exact artifacts, downloads, jobs, deletion and verification.
 - [Knowledge-graph extraction models](docs/knowledge-graph-extraction-models.md): measured local vs hosted model comparison for ontology-constrained extraction, prompt rules and second-pass strategies.
 - [Recommended models](docs/recommended-models.md): capability choices by platform and memory.
+- [Decision models](docs/decision-models.md): text in, calibrated typed decisions out (`output="decision"`, choice / noul / score questions, `POST /v1/decisions`), hosted Jev and System One-compatible endpoints, the Kev / Lev / Laya families on MLX, transformers or GGUF, conversion and measured quality per precision.
 - [Engines](docs/engines.md): inventory, install plans and platform support.
 - [Configuration](docs/centralized-config.md): persistent routes, endpoint profiles, credentials and timeouts.
-- [Server](docs/server.md): multi-provider /v1 endpoints, authentication and control planes.
+- [Server](docs/server.md): optional multi-provider /v1 serving, Core authentication and managed listener lifecycle.
 - [Endpoint](docs/endpoint.md): one provider/model per HTTP worker.
 - [Web console](docs/console.md): model/engine/config management through the browser.
 - [Terminal console](docs/console-tui.md): terminal host management.
 - [Chat CLI](docs/acore-cli.md): interactive conversations.
-- [Memory and residency](docs/memory-management.md): loaded models, ownership, unload and memory accounting.
+- [Memory and residency](docs/memory-management.md): process-local artifact sharing/refusals, loaded models, ownership, unload and memory accounting.
 - [Memory blocs](docs/memory-blocs.md): text snapshots and native KV artifacts with live-binding checks.
 - [Cancellation](docs/generation-cancel.md): cancel_event, per-lane support and safe eject.
 - [HF compatibility](docs/huggingface-model-compatibility.md): Transformers/GGUF artifacts and loading limits.

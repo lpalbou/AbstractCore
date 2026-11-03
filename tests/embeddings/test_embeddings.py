@@ -112,9 +112,12 @@ class TestEmbeddingManagerInit:
             mock_find_spec.return_value = None  # Simulate onnxruntime not available
             manager = EmbeddingManager(cache_dir=self.cache_dir, backend="auto")
             # Should fall back to PyTorch
+        # One loaded copy per (model, device, backend): release it before asking for another backend.
+        manager.unload()
 
         # Test explicit backend
         manager = EmbeddingManager(cache_dir=self.cache_dir, backend="pytorch")
+        manager.unload()
 
 
 class TestEmbeddingGeneration:

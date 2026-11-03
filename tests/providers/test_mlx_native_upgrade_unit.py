@@ -316,18 +316,24 @@ def test_sidecar_alias_resolves_before_load_and_revision_changes_runtime_key(mon
     monkeypatch.setitem(sys.modules, "mlx_vlm", vlm)
     monkeypatch.setitem(sys.modules, "mlx_vlm.speculative.drafters", drafters)
     first = native.load_native_session(str(tmp_path / "target"), "publisher/head")
-    selected[0] = second_dir
-    second = native.load_native_session(str(tmp_path / "target"), "publisher/head")
-    assert first is not second
-    assert loaded_heads == [str(first_dir.resolve()), str(second_dir.resolve())]
-    assert first.drafter_weights_fingerprint == "weights-revision:" + "a" * 40
-    assert second.drafter_weights_fingerprint == "weights-revision:" + "b" * 40
     assert native.load_native_session(str(tmp_path / "target"), str(first_dir)) is first
     def namespace(session):
         return NativeCacheStore({"weights_fingerprint": "target-revision", "head": {
             "path": session.drafter_path, "weights_fingerprint": session.drafter_weights_fingerprint,
         }}).namespace
-    assert namespace(first) != namespace(second)
+    first_namespace = namespace(first)
+    assert first.drafter_weights_fingerprint == "weights-revision:" + "a" * 40
+    selected[0] = second_dir
+    from abstractcore.exceptions import InvalidRequestError
+    with pytest.raises(InvalidRequestError, match="different drafter"):
+        native.load_native_session(str(tmp_path / "target"), "publisher/head")
+    assert loaded_heads == [str(first_dir.resolve())], "the active target is never loaded twice"
+    del first
+    gc.collect()
+    second = native.load_native_session(str(tmp_path / "target"), "publisher/head")
+    assert loaded_heads == [str(first_dir.resolve()), str(second_dir.resolve())]
+    assert second.drafter_weights_fingerprint == "weights-revision:" + "b" * 40
+    assert first_namespace != namespace(second)
 
 
 @_requires_mlx_stack

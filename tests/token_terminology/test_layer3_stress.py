@@ -77,7 +77,8 @@ class TestAll85Models:
 
         for model_name, model_data in models.items():
             max_tokens = model_data["max_tokens"]
-            floor = MIN_EMBEDDING_TOKENS if model_data.get("model_type") == "embedding" else MIN_TOKENS
+            # Encoder decision models (Laya: ModernBERT, 512 tokens) share the embedder floor.
+            floor = MIN_EMBEDDING_TOKENS if model_data.get("model_type") in ("embedding", "decision") else MIN_TOKENS
             if max_tokens < floor or max_tokens > MAX_TOKENS:
                 out_of_range.append(
                     f"{model_name}: max_tokens={max_tokens} (valid range: {floor}-{MAX_TOKENS})"

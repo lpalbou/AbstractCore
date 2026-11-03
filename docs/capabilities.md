@@ -232,7 +232,27 @@ music = llm.generate(
 # when the selected AbstractVoice backend supports local or remote cloning.
 clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
 voice_id = clone.resources["voice"][0].resource_id
+
+# Decision models (Kev family): text in, calibrated typed decisions out. The prompt is the
+# state; questions are choice / noul (yes-no probability) / score. See decision-models.md.
+decided = llm.generate(
+    "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+    output="decision",
+    questions={
+        "department": {"type": "choice", "instructions": "Which team should handle this?",
+                       "criteria": {"returns": None, "shipping": None, "billing": None}},
+        "escalate": "Does this need urgent human attention?",
+    },
+)
+decided.decisions["department"].choice         # "returns"
+decided.decisions["escalate"].noul             # 0.72
 ```
+
+Decision output needs a decision model: a local one on the `mlx` or `huggingface` provider
+(`create_llm("mlx", model="jaredpalmer/kev-4b")`), a hosted one on `typesafe` or `systemone`, or,
+from any other provider, the `output.decision` capability default
+(`abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b`);
+see [Decision Models](decision-models.md).
 
 Text-only `generate(...)` is unchanged. Ambiguous media cases require explicit
 roles, for example `role="source"` and `role="mask"` for image edits with masks.

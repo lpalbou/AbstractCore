@@ -1,0 +1,232 @@
+[
+  {
+    "provider": "lmstudio",
+    "artifact": "spark-x2.6-4b",
+    "quant": "q4_k_m",
+    "size_bytes": 3543441312,
+    "params_total": 4400000000,
+    "location": "~/.lmstudio/models/XHToken/Spark-X2.6-4B-GGUF/Spark-X2.6-4B-Q4_K_M.gguf",
+    "lms_path": "XHToken/Spark-X2.6-4B-GGUF/Spark-X2.6-4B-Q4_K_M.gguf",
+    "expected_catalog_id": "spark-x2.6-4b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "lfm3-1.7b",
+    "quant": "q8_0",
+    "size_bytes": 1846237696,
+    "params_total": 1700000000,
+    "location": "~/.lmstudio/models/lmstudio-community/LFM3-1.7B-GGUF/LFM3-1.7B-Q8_0.gguf",
+    "lms_path": "lmstudio-community/LFM3-1.7B-GGUF/LFM3-1.7B-Q8_0.gguf",
+    "expected_catalog_id": "lfm3-1.7b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "qwen3.8-27b",
+    "quant": "q3_k_xl",
+    "size_bytes": 14074004752,
+    "params_total": 27000000000,
+    "location": "~/.lmstudio/models/unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf",
+    "lms_path": "unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf",
+    "expected_catalog_id": "qwen3.8-27b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "liquid/lfm2-24b-a2b@q4_k_m",
+    "quant": "q4_k_m",
+    "size_bytes": 14415550507,
+    "params_total": 83200000000,
+    "location": "~/.lmstudio/models/lmstudio-community/LFM2-24B-A2B-GGUF",
+    "lms_path": "liquid/lfm2-24b-a2b",
+    "expected_catalog_id": "lfm2-24b-a2b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "google/gemma-4-26b-a4b-qat@4bit",
+    "quant": "4bit",
+    "size_bytes": 15641333028,
+    "params_total": 26000000000,
+    "location": "~/.lmstudio/models/lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit",
+    "lms_path": "google/gemma-4-26b-a4b-qat",
+    "expected_catalog_id": "gemma-4-26b-a4b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "google/gemma-4-12b-qat@q4_0",
+    "quant": "q4_0",
+    "size_bytes": 7151067268,
+    "params_total": 12000000000,
+    "location": "~/.lmstudio/models/lmstudio-community/gemma-4-12B-it-QAT-GGUF",
+    "lms_path": "google/gemma-4-12b-qat",
+    "expected_catalog_id": "gemma-4-12b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "prism-ml/bonsai-27b@2bit",
+    "quant": "2bit",
+    "size_bytes": 8521076756,
+    "params_total": 27000000000,
+    "location": "~/.lmstudio/models/lmstudio-community/Bonsai-27B-GGUF",
+    "lms_path": "prism-ml/bonsai-27b",
+    "expected_catalog_id": "bonsai-27b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "lfm2.5-24b-a2b",
+    "quant": "q4_0",
+    "size_bytes": 13578190880,
+    "params_total": 89600000000,
+    "location": "~/.lmstudio/models/LiquidAI/LFM2.5-24B-A2B-GGUF/LFM2.5-24B-A2B-QAD-Q4_0.gguf",
+    "lms_path": "LiquidAI/LFM2.5-24B-A2B-GGUF/LFM2.5-24B-A2B-QAD-Q4_0.gguf",
+    "expected_catalog_id": "lfm2.5-24b-a2b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "openai/gpt-oss-20b@mxfp4",
+    "quant": "mxfp4",
+    "size_bytes": 12104314420,
+    "params_total": 20000000000,
+    "location": "~/.lmstudio/models/mlx-community/gpt-oss-20b-MXFP4-Q8",
+    "lms_path": "openai/gpt-oss-20b",
+    "expected_catalog_id": "gpt-oss-20b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "qwen/qwen3.5-9b@q4_k_m",
+    "quant": "q4_k_m",
+    "size_bytes": 6548927711,
+    "params_total": 9000000000,
+    "location": "~/.lmstudio/models/lmstudio-community/Qwen3.5-9B-GGUF",
+    "lms_path": "qwen/qwen3.5-9b",
+    "expected_catalog_id": "qwen3.5-9b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "google/gemma-4-e4b@q4_k_m",
+    "quant": "q4_k_m",
+    "size_bytes": 6326918619,
+    "params_total": 7500000000,
+    "location": "~/.lmstudio/models/lmstudio-community/gemma-4-E4B-it-GGUF",
+    "lms_path": "google/gemma-4-e4b",
+    "expected_catalog_id": "gemma-4-e4b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "google/gemma-4-e2b@q4_k_m",
+    "quant": "q4_k_m",
+    "size_bytes": 4414788475,
+    "params_total": 4600000000,
+    "location": "~/.lmstudio/models/lmstudio-community/gemma-4-E2B-it-GGUF",
+    "lms_path": "google/gemma-4-e2b",
+    "expected_catalog_id": "gemma-4-e2b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive",
+    "quant": "q4_k_m",
+    "size_bytes": 22066041088,
+    "params_total": 35000000000,
+    "location": "~/.lmstudio/models/HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+    "lms_path": "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+    "expected_catalog_id": "qwen3.6-35b-a3b-hauhaucs-aggressive"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "qwen3-embedding-0.6b@8bit",
+    "quant": "8bit",
+    "size_bytes": 649086541,
+    "params_total": 600000000,
+    "location": "~/.lmstudio/models/mlx-community/Qwen3-Embedding-0.6B-8bit",
+    "lms_path": "mlx-community/Qwen3-Embedding-0.6B-8bit",
+    "expected_catalog_id": "qwen3-embedding-0.6b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "qwen3-embedding-0.6b@mxfp8",
+    "quant": "mxfp8",
+    "size_bytes": 628761813,
+    "params_total": 600000000,
+    "location": "~/.lmstudio/models/mlx-community/Qwen3-Embedding-0.6B-mxfp8",
+    "lms_path": "mlx-community/Qwen3-Embedding-0.6B-mxfp8",
+    "expected_catalog_id": "qwen3-embedding-0.6b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "all-minilm-l6-v2@4bit",
+    "quant": "4bit",
+    "size_bytes": 13853144,
+    "params_total": null,
+    "location": "~/.lmstudio/models/mlx-community/all-MiniLM-L6-v2-4bit",
+    "lms_path": "mlx-community/all-MiniLM-L6-v2-4bit",
+    "expected_catalog_id": "all-minilm-l6-v2"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "all-minilm-l6-v2@8bit",
+    "quant": "8bit",
+    "size_bytes": 25194258,
+    "params_total": null,
+    "location": "~/.lmstudio/models/mlx-community/all-MiniLM-L6-v2-8bit",
+    "lms_path": "mlx-community/all-MiniLM-L6-v2-8bit",
+    "expected_catalog_id": "all-minilm-l6-v2"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "text-embedding-qwen3-embedding-4b",
+    "quant": "q4_k_m",
+    "size_bytes": 2496703776,
+    "params_total": 4000000000,
+    "location": "~/.lmstudio/models/Qwen/Qwen3-Embedding-4B-GGUF/Qwen3-Embedding-4B-Q4_K_M.gguf",
+    "lms_path": "Qwen/Qwen3-Embedding-4B-GGUF/Qwen3-Embedding-4B-Q4_K_M.gguf",
+    "expected_catalog_id": "qwen3-embedding-4b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "text-embedding-qwen3-embedding-0.6b",
+    "quant": "q8_0",
+    "size_bytes": 639150592,
+    "params_total": 600000000,
+    "location": "~/.lmstudio/models/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf",
+    "lms_path": "Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf",
+    "expected_catalog_id": "qwen3-embedding-0.6b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "bge-small-en-v1.5",
+    "quant": "8bit",
+    "size_bytes": 36512994,
+    "params_total": null,
+    "location": "~/.lmstudio/models/mlx-community/bge-small-en-v1.5-8bit",
+    "lms_path": "mlx-community/bge-small-en-v1.5-8bit",
+    "expected_catalog_id": "bge-small-en-v1.5"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "text-embedding-all-minilm-l6-v2",
+    "quant": "q8_0",
+    "size_bytes": 25008587,
+    "params_total": 22000000,
+    "location": "~/.lmstudio/models/stratalab-org/all-MiniLM-L6-v2-GGUF/all-MiniLM-L6-v2.Q8_0.gguf",
+    "lms_path": "stratalab-org/all-MiniLM-L6-v2-GGUF/all-MiniLM-L6-v2.Q8_0.gguf",
+    "expected_catalog_id": "all-minilm-l6-v2"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "qwen/qwen3-vl-4b@4bit",
+    "quant": "4bit",
+    "size_bytes": 3109915433,
+    "params_total": 4000000000,
+    "location": "~/.lmstudio/models/lmstudio-community/Qwen3-VL-4B-Instruct-MLX-4bit",
+    "lms_path": "qwen/qwen3-vl-4b",
+    "expected_catalog_id": "qwen3-vl-4b"
+  },
+  {
+    "provider": "lmstudio",
+    "artifact": "text-embedding-nomic-embed-text-v1.5",
+    "quant": "q4_k_m",
+    "size_bytes": 84106624,
+    "params_total": null,
+    "location": null,
+    "lms_path": "nomic-ai/nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.Q4_K_M.gguf",
+    "expected_catalog_id": "nomic-embed-text-v1.5"
+  }
+]

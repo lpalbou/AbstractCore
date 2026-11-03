@@ -104,6 +104,7 @@ Stop at the first authentication failure and fix configuration before another re
 | Typed output | `response_model=`, `FeedbackRetry` | Integration recipes |
 | Media inputs and outputs | `media=`, `request=`, `output=`; `llm.voice/audio/vision/music/scene3d/camera` | Integration recipes |
 | Embeddings | `abstractcore.embeddings.EmbeddingManager` | Integration recipes; explicitly select a route/model |
+| Decisions: classify, route, score with probabilities | `generate(document, output="decision", questions=...)`, `llm.decision_model().decide(...)`, `POST /v1/decisions` | One abstraction over hosted Jev (`typesafe`, `TYPESAFE_API_KEY`), any System One-compatible endpoint (`systemone`, `base_url=`) and local Kev / Lev / Laya checkpoints on `mlx` or `huggingface`; questions are `choice` (named options), `noul` (yes/no probability) or `score` (ordered levels); the model never generates text and only scores the options given |
 | Summarize, extract, classify | `BasicSummarizer`, `BasicExtractor`; `abstractcore-summarizer/extractor/judge/intent/deepsearch` | [Operations](references/operations.md) |
 | Local models, engines, configuration | `abstractcore models`, `engines`, `config`, `--status` | Operations |
 | HTTP and chat | `abstractcore serve`, `abstractcore-endpoint`, `abstractcore-chat` | Operations |
@@ -198,9 +199,26 @@ Python, shell text or an arbitrary function name.
 - Native MLX batching/MTP is opt-in and checkpoint-specific (`mlx_batching=True`, `speculation`).
   Inspect `metadata["speculation"]["used"]` and execution metadata; accepting an option is not
   evidence it ran. The shared contract does not enable HuggingFace/GGUF MTP.
+- Managed local loaders share compatible resident artifacts or refuse a conflicting second
+  allocation before loading. Reuse the resident configuration; Transformers callers reuse the
+  provider. Finish work and unload holders before changing engines, placement or head profiles.
+  This is process-local; arbitrary plugins/raw engines and independent servers own their pools.
+- A host's optional Core HTTP listener uses Core's token and configuration. Stopping the
+  listener retains resident weights. Native framework clients use Gateway runs and Runtime's
+  ledger; they do not need this listener. See the operations reference for lifecycle guidance.
 - When editing AbstractCore itself, read repository instructions and `CONTRIBUTING.md`, then
   the relevant public docs and tests. Keep local-engine imports lazy and use the existing
   three install settings. Route contributor work to those docs; do not invent private APIs.
+- Decision models never generate text and score only the options you pass. Local ones run on
+  `mlx` or `huggingface`; the ready-to-run MLX checkpoints are `AbstractFramework/kev-4b-mlx-8bit`,
+  `kev-4b-mlx-4bit`, `kev-0.8b-mlx-8bit`, `kev-0.8b-mlx-4bit`; an adapter (`jaredpalmer/kev-4b`, `interfaze-ai/lev`) needs its base
+  model downloaded too; Kev's and Lev's GGUFs run on every released llama-cpp-python (Kev's
+  through a derived backbone copy made on first load).
+  Hosted: `typesafe` needs `TYPESAFE_API_KEY`; `systemone` (any System One-compatible endpoint)
+  needs `base_url=`. From a text provider, `output="decision"` runs the `output.decision`
+  capability default (`abstractcore config set-default output.decision --provider mlx --model
+  jaredpalmer/kev-4b`); with no default it raises naming that command. A chat completion against a
+  decision model answers 400 `decision_model`; use `/v1/decisions`.
 
 ## When things fail
 
@@ -209,6 +227,7 @@ Python, shell text or an arbitrary function name.
 | 401/403 or `AuthenticationError` | Stop; check the endpoint's own key and server-vs-upstream token distinction. Never retry login blindly. |
 | Connection refused/timeout | Start the intended server; check host, port, `/v1` and explicit timeout. Do not switch providers silently. |
 | Model missing/artifact mismatch | List installed/backend models; download the exact authorized artifact. Specify quantization rather than substituting another build. |
+| Already loaded / second copy refused | Reuse the resident settings/provider, or finish work and unload its holders before changing configuration. Do not repeat the same conflicting request. |
 | Empty text, `length`, unparsed call | Inspect reasoning/tools and finish metadata. Treat cutoff as incomplete; adjust budgets and retry only within the task's policy. |
 | Import error, validation or media failure | Install the matching engine setting, simplify the schema, or select a supported media policy/model; see the recipes and troubleshooting. |
 

@@ -29,6 +29,24 @@ assets/
 └── OCRBL.ttf                    (21.7 KB) - OCR-B Light monospace font
 ```
 
+## Adapter catalogue metadata
+
+`adapter_metadata.schema.json` describes the `adapter` object reported by local
+inventory and catalogue artifact `inventory` entries. Core reads declared adapter
+type, exact base checkpoints, tasks, trigger words, target modules and rank from
+cached `adapter_config.json` and model-card front matter. Each claim carries its
+source; missing declarations remain empty/null. File presence and reported base
+names are not proof of runtime compatibility. No backend is imported or remote
+card fetched for this metadata.
+
+This complements the existing AbstractVision
+`assets/vision_adapter_capabilities.json` and `adapter_capabilities.py`, which own
+vision-specific base/weight compatibility and inference recommendations. Do not
+copy those runtime rules into the full-model capability database. Full fine-tuned
+checkpoints remain models; a base-model reference alone does not make an adapter.
+Adapters/components are available to advanced catalogue filters, not the ordinary
+full-model list. Core retains all inventory so clients can manage local files.
+
 ## Assets Overview
 
 ### 1. architecture_formats.json
@@ -259,7 +277,12 @@ cross-field invariants.
   ```
 
   - Allowed kinds: `input`, `output`, `embedding`, `rerank`.
-  - Allowed modalities: `text`, `image`, `video`, `voice`, `sound`, `music`, `scene3d`.
+  - Allowed modalities: `text`, `image`, `video`, `voice`, `sound`, `music`, `scene3d`, `decision`.
+  - `decision` is an output-only modality: a decision model (`kev-*`, `lev`, `laya`, `openjev` entries;
+    `architecture` kev / lev / laya / openjev) reads text and returns calibrated typed decisions, never text
+    (`max_output_tokens: 0`). Its `decision` block records the checkpoint facts the runtime needs, starting with
+    `kind` (the readout mechanism: kev = pointer head, lev / openjev = label logits, laya = marker scorer), which
+    the loader uses to pick the engine for a handle that carries no marker file.
   - `audio` is accepted by route filters as an alias, but registry entries store
     the canonical `sound` modality. Use `voice` for speech and `music` for music.
   - Explicit route metadata is precise. For example, an audio-only captioner can

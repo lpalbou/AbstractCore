@@ -1387,6 +1387,232 @@
       "patterns": [
         "__abstractcore_generic_fallback__"
       ]
+    },
+    "lfm3": {
+      "description": "Liquid AI LFM3 text tri-hybrid: im_start/end messages and Qwen3-Coder XML tools (official LFM3-1.7B chat template, 2026-10-30).",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "output_wrappers": {
+        "end": "<|im_end|>"
+      },
+      "tool_format": "xml",
+      "tool_prefix": "<tool_call>",
+      "tool_calling_format": "qwen3_coder",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "assistant_prefill_disable": "<think>\n\n</think>\n\n"
+      },
+      "reasoning_support": true,
+      "patterns": [
+        "lfm3-",
+        "lfm3:"
+      ]
+    },
+    "bonsai": {
+      "description": "Prism Bonsai-27B low-bit Qwen3.6 derivative; parent chat template, separate model identity.",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "output_wrappers": {
+        "end": "<|im_end|>"
+      },
+      "tool_format": "xml",
+      "tool_prefix": "<tool_call>",
+      "tool_calling_format": "qwen3_coder",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "assistant_prefill_disable": "<think>\n\n</think>\n\n"
+      },
+      "reasoning_support": true,
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "patterns": [
+        "bonsai-27b"
+      ]
+    },
+    "spark2_5": {
+      "description": "XHToken Spark X2.5/X2.6: sentence-delimited System/User/Bot roles, thinking controls and GLM-style arg_key/arg_value tools; official Spark-X2.6-4B template (2026-10-30).",
+      "message_format": "special_tokens",
+      "system_prefix": "<｜start▁of▁sentence｜><|System|>\n",
+      "system_suffix": "<｜end▁of▁sentence｜>",
+      "user_prefix": "<｜start▁of▁sentence｜><|User|>",
+      "user_suffix": "<｜end▁of▁sentence｜>",
+      "assistant_prefix": "<｜start▁of▁sentence｜><|Bot|>",
+      "assistant_suffix": "<｜end▁of▁sentence｜>",
+      "output_wrappers": {
+        "end": "<｜end▁of▁sentence｜>"
+      },
+      "tool_format": "glm_xml",
+      "tool_prefix": "<tool_call>",
+      "tool_calling_format": "<tool_call>function_name<arg_key>key</arg_key><arg_value>value</arg_value></tool_call>",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "effort_template_kwarg": "reasoning_effort"
+      },
+      "reasoning_support": true,
+      "patterns": [
+        "spark-x2.6-",
+        "spark-x2.5-",
+        "spark2_5"
+      ]
+    },
+    "minilm": {
+      "description": "Sentence-transformers MiniLM embedding encoder (not a conversational model).",
+      "message_format": "basic",
+      "tool_format": "none",
+      "patterns": [
+        "all-minilm-l6-v2"
+      ],
+      "system_prefix": "",
+      "system_suffix": "",
+      "user_prefix": "",
+      "user_suffix": "",
+      "assistant_prefix": "",
+      "assistant_suffix": ""
+    },
+    "kev": {
+      "description": "Kev decision models (Jared Palmer, Kev 1.0, September 2026): a rank-16 LoRA plus a pointer head on a Qwen3.5 base. Text in, calibrated typed decisions out (choice / noul / score); never generates text, so no chat template applies.",
+      "message_format": "decision_pack",
+      "system_prefix": "",
+      "system_suffix": "",
+      "user_prefix": "",
+      "user_suffix": "",
+      "assistant_prefix": "",
+      "assistant_suffix": "",
+      "tool_format": "none",
+      "reasoning_support": false,
+      "decision": {
+        "kind": "kev",
+        "pack": "<|fim_prefix|>{state} then per question <|fim_middle|>{instructions} (<|box_start|>{option}<|box_end|>)* <|fim_suffix|>",
+        "delimiters": {
+          "state": "<|fim_prefix|>",
+          "question": "<|fim_middle|>",
+          "option": "<|box_start|>",
+          "end_option": "<|box_end|>",
+          "decide": "<|fim_suffix|>"
+        },
+        "readout": "pointer head: softmax over k(h_end_option) . q(h_decide) / sqrt(head_dim) / temperature",
+        "question_types": [
+          "choice",
+          "noul",
+          "score"
+        ],
+        "max_options": 255,
+        "max_state_tokens": 65536,
+        "max_question_tokens": 8192,
+        "base_family": "qwen3_5"
+      },
+      "patterns": [
+        "kev-0.8b",
+        "kev-4b",
+        "kev-9b",
+        "kev-27b",
+        "jaredpalmer/kev",
+        "/kev-",
+        "abstractframework/kev"
+      ]
+    },
+    "lev": {
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "description": "Lev decision model (interfaze-ai, 2026): a LoRA on Qwen3.5-4B read through next-token label logits; never generates text.",
+      "tool_format": "none",
+      "reasoning_support": false,
+      "decision": {
+        "kind": "lev",
+        "readout": "label logits",
+        "question_types": [
+          "choice",
+          "noul",
+          "score"
+        ]
+      },
+      "patterns": [
+        "interfaze-ai/lev",
+        "/lev-gguf",
+        "lev-gguf"
+      ]
+    },
+    "openjev": {
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "description": "OpenJev decision model (2026): a Qwen3.5 fine-tune read through letter logits; never generates text; weights CC-BY-NC-4.0.",
+      "tool_format": "none",
+      "reasoning_support": false,
+      "decision": {
+        "kind": "openjev",
+        "readout": "letter logits",
+        "question_types": [
+          "choice",
+          "noul",
+          "score"
+        ]
+      },
+      "patterns": [
+        "openjev"
+      ]
+    },
+    "laya": {
+      "description": "Laya decision model (Convai Innovations, 2026): ModernBERT-large encoder with a typed-decision head; never generates text.",
+      "message_format": "decision_pack",
+      "system_prefix": "",
+      "system_suffix": "",
+      "user_prefix": "",
+      "user_suffix": "",
+      "assistant_prefix": "",
+      "assistant_suffix": "",
+      "tool_format": "none",
+      "reasoning_support": false,
+      "decision": {
+        "kind": "laya",
+        "pack": "[CLS] <type> question: <instructions> [SEP] ([MASK] option)* [SEP] state [SEP]",
+        "readout": "marker scorer",
+        "question_types": [
+          "choice",
+          "noul",
+          "score"
+        ],
+        "max_state_tokens": 512
+      },
+      "patterns": [
+        "convaiinnovations/laya",
+        "laya-gguf",
+        "/laya"
+      ]
     }
   },
   "message_formats": {
@@ -1400,7 +1626,8 @@
     "glm_special_tokens": "GLM format with <|system|>, <|user|>, <|assistant|> tokens",
     "gemma_turn": "Gemma 4 turn format with <|turn>role and <turn|> delimiters",
     "harmony": "OpenAI harmony response format for GPT-OSS models",
-    "laguna_tags": "Poolside Laguna format with <system>, <user>, <assistant> and <tool_response> tag pairs"
+    "laguna_tags": "Poolside Laguna format with <system>, <user>, <assistant> and <tool_response> tag pairs",
+    "decision_pack": "Decision packing (Kev): <state> document, then per question <q> instructions <opt> option </opt>... <decide>; a pointer head scores the options, nothing is generated"
   },
   "tool_formats": {
     "pythonic": "Python function call syntax: [func(arg=val)]",

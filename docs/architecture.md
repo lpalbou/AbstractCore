@@ -44,6 +44,8 @@ graph TD
     G --> MM[vLLM Provider]
     G --> MN[OpenRouter Provider]
     G --> MP[Portkey Provider]
+    G --> MT[TypeSafe Provider: decisions]
+    G --> MS[System One-compatible endpoint: decisions]
 
     H --> N[OpenAI API]
     HH --> NN[OpenAI-Compatible /v1 Endpoint]
@@ -55,6 +57,8 @@ graph TD
     MM --> RR[vLLM Server]
     MN --> RO[OpenRouter API]
     MP --> RP[Portkey API Gateway]
+    MT --> RT[TypeSafe Jev API]
+    MS --> RS[System One decision API host]
 
     style B fill:#e1f5fe
     style BB fill:#4caf50
@@ -288,9 +292,12 @@ and powers `abstractcore.utils.context_estimate.estimate_context_fit()` — an a
 context-fit answer that never loads weights.
 See [Memory and Model Residency](memory-management.md).
 
-`unload_model()` releases one instance's hold. Several holders can keep the same model alive
-in one process (MLX instances share weights; HuggingFace and embedding instances each hold a full
-copy), so `abstractcore.providers.process_residency` gives one door to every in-process backend:
+`unload_model()` releases one instance's hold. Several compatible holders can keep one model's
+weights alive in a process. Managed local loaders share supported configurations or refuse a
+conflicting second allocation, using the existing backend registries and one process load lock.
+Transformers callers reuse the resident provider; a second provider for its base artifact is
+refused. See [sharing rules and scope](memory-management.md#one-resident-artifact-per-process).
+`abstractcore.providers.process_residency` gives one door to the managed in-process backends:
 `resident_rows()` lists every model alive in the process, `eject()` unloads every holder, and
 `eject_unclaimed()` ejects only when no registered owner (the server's managed runtimes,
 AbstractRuntime clients) still pools, locks or is loading the model. The claim check and the eject
@@ -855,6 +862,25 @@ graph LR
 
 The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
 
+Python applications and native framework workflows can call Core without HTTP. A host can
+start Core's optional listener in its execution-owner process through
+[`start_managed_server`](server.md#managed-listener-in-an-execution-owner). The listener uses
+Core authentication and the same process-local resource admission as Python callers. Starting
+or stopping it does not create or eject model resources. A fatal execution-owner process
+failure still affects every inference in that process; a supervising Gateway can restart it.
+
+```mermaid
+flowchart LR
+    Native["Native framework clients"] --> GW["Gateway run APIs / Runtime ledger"]
+    GW --> RPC["Execution-owner Python client"]
+    Direct["Optional OpenAI-compatible clients"] --> HTTP["Core HTTP listener / Core token"]
+    subgraph Owner["One execution-owner process"]
+        RPC --> Core["Core provider calls"]
+        HTTP --> Core
+        Core --> Admission["Existing loader admission and resident resources"]
+    end
+```
+
 ```mermaid
 graph TD
     A[HTTP Client] --> B[FastAPI Server]
@@ -1022,6 +1048,37 @@ graph TD
 
 Discovery only reads public HTTPS and DNS answers and returns server settings; it never stores
 anything. See [Email](email.md).
+
+### 13. Decision Models
+
+`abstractcore.decision` turns a document (the *state*) and typed questions (`choice`, `noul`,
+`score`) into calibrated answers, without generating text. Every caller goes through one
+`DecisionRequest` / `DecisionResponse` contract, and every engine answers it, so callers never depend
+on the model behind it.
+
+```mermaid
+graph TD
+    GEN["generate(state, output='decision', questions=...)"] --> ROUTE{"route on the output spec"}
+    ROUTE -->|"the provider is a decision model"| OWN["provider.decision_model()"]
+    ROUTE -->|"output.decision default or explicit provider/model"| POOL
+    HTTP["POST /v1/decisions, /{provider}/v1/decisions"] --> POOL["decision.pool: at most 2 resident decision providers, LRU, shared per process"]
+    LOADS["/acore/models/load | unload, task=decision"] --> POOL
+    POOL -->|"one provider instance per resident model"| OWN
+    OWN --> LOADER["decision.loader: detect kind and layout (adapter, merged, GGUF, registry)"]
+    LOADER --> KEV["runtime.DecisionModel (kev pointer head, state-prefix cache)"]
+    LOADER --> LABELS["engines.labels (lev, openjev label logits, shared-prefix reuse)"]
+    LOADER --> LAYA["engines.laya (ModernBERT marker scorer, windowed long states)"]
+    LOADER --> REMOTE["engines.remote (typesafe, systemone over HTTP)"]
+    KEV --> BACK["backends: transformers, mlx-lm, llama.cpp"]
+    LABELS --> BACK
+    LAYA --> TF["transformers"]
+    REMOTE --> HOST["hosted System One API"]
+```
+
+`render` turns the state and questions into text and the probabilities into answers (confidence
+follows the System One conventions); `kinds` holds each kind's prompt layout, so every runtime
+renders the same prompt. A decision model refuses text generation and a chat completion against it
+answers 400 with a pointer to `/v1/decisions`. See [Decision Models](decision-models.md).
 
 ## Architecture Benefits
 

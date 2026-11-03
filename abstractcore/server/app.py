@@ -23,6 +23,7 @@ Media Support:
 """
 
 import os
+import asyncio
 import json
 import time
 import uuid
@@ -76,7 +77,7 @@ from ..embeddings.models import (
     list_available_providers as _list_embedding_providers,
     list_direct_embedding_providers as _list_direct_embedding_providers,
 )
-from ..exceptions import AuthenticationError, GenerationCancelledError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
+from ..exceptions import AuthenticationError, DecisionModelError, GenerationCancelledError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 from ..providers.base import PromptCacheError
 from ..providers.model_capabilities import modalities_for_model
 from ..utils.structured_logging import get_logger, configure_logging
@@ -5046,6 +5047,9 @@ def _normalize_model_residency_task(task: Optional[str]) -> str:
         "embedding": "embedding",
         "embeddings": "embedding",
         "text_embedding": "embedding",
+        "decision": "decision",
+        "decisions": "decision",
+        "decide": "decision",
     }
     if raw not in aliases:
         raise HTTPException(
@@ -5163,7 +5167,83 @@ def _normalize_model_residency_loaded_fields(runtime: Dict[str, Any]) -> Dict[st
     return out
 
 
+def _decision_residency_record(provider: str, model: str, *, loaded: bool = True) -> Dict[str, Any]:
+    """A listing row for a decision model of the process-wide pool (`abstractcore.decision.pool`)."""
+    return {
+        "runtime_id": f"process:decision:{provider}:{model}",
+        "task": "decision",
+        "provider": provider,
+        "model": model,
+        "state": "loaded" if loaded else "unloaded",
+        "loaded": loaded,
+        "resident": loaded,
+        "isolation": "in_process",
+        "source": "abstractcore.decision.pool",
+    }
+
+
+def _decision_residency_load(payload: Dict[str, Any]) -> Dict[str, Any]:
+    from ..decision.pool import resident, split_handle
+
+    provider = str(payload.get("provider") or "").strip().lower()
+    model = str(payload.get("model") or "").strip()
+    if model and not provider:
+        handle_provider, model = split_handle(model)
+        provider = handle_provider or ""
+    if not provider or not model:
+        raise HTTPException(status_code=400, detail={"error": {"message": "provider and model are required", "type": "invalid_request"}})
+    was_resident = (provider, model) in resident()
+    try:
+        _decision_runtime(provider, model).decision_model()  # load the weights now, not on the first request
+    except ValueError as e:  # not a decision model: refused before anything loaded
+        raise HTTPException(status_code=400, detail={"error": {"message": str(e), "type": "invalid_request", "task": "decision"}}) from e
+    except Exception as e:
+        raise _capability_residency_error(e, task="decision") from e
+    record = _decision_residency_record(provider, model)
+    return {"ok": True, "success": True, "loaded_new": not was_resident, "runtime": record, "affected_models": [record]}
+
+
+def _decision_residency_unload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    from ..decision.pool import release, split_handle
+
+    provider = str(payload.get("provider") or "").strip().lower()
+    model = str(payload.get("model") or "").strip()
+    runtime_id = str(payload.get("runtime_id") or "")
+    if not model and runtime_id.startswith("process:decision:"):
+        _, _, rest = runtime_id.partition("process:decision:")
+        provider, _, model = rest.partition(":")
+    if model and not provider:
+        handle_provider, model = split_handle(model)
+        provider = handle_provider or ""
+    if not provider or not model:
+        raise HTTPException(status_code=400, detail={"error": {
+            "message": "Provide provider+model (or the listing's runtime_id) to unload a decision model.", "type": "invalid_request"}})
+    unloaded, deferred = release(provider, model)
+    if unloaded + deferred == 0:
+        raise HTTPException(status_code=404, detail={"error": {
+            "message": f"Decision model {provider}/{model} is not resident in this process.", "type": "not_found"}})
+    record = _decision_residency_record(provider, model, loaded=False)
+    if deferred:
+        # A request is using it: the weights go when that request ends.
+        record.update({"state": "unloading", "loaded": True, "resident": True})
+    return {"ok": True, "success": True, "runtime": record, "unloaded": not deferred, "affected_models": [record]}
+
+
+def _decision_residency_loaded(filters: Dict[str, Any]) -> list[Dict[str, Any]]:
+    from ..decision.pool import resident
+
+    provider_filter = str(filters.get("provider") or "").strip().lower()
+    model_filter = str(filters.get("model") or "").strip()
+    return [
+        _decision_residency_record(provider, model)
+        for provider, model in resident()
+        if (not provider_filter or provider == provider_filter) and (not model_filter or model == model_filter)
+    ]
+
+
 def _capability_residency_load(task: str, payload: Dict[str, Any], http_request: Request) -> Dict[str, Any]:
+    if task == "decision":
+        return _decision_residency_load(payload)
     if task in _VISION_RESIDENCY_TASKS:
         from . import vision_endpoints as _vision_endpoints
 
@@ -5237,10 +5317,13 @@ def _capability_residency_loaded(task: Optional[str], filters: Dict[str, Any], h
         from . import vision_endpoints as _vision_endpoints
 
         records.extend(_vision_endpoints.list_server_vision_loaded_models(filters))
-        tasks = ["tts", "stt"]
+        tasks = ["tts", "stt", "decision"]
     else:
         tasks = [task]
     for item_task in tasks:
+        if item_task == "decision":
+            records.extend(_decision_residency_loaded(filters))
+            continue
         if item_task in _VISION_RESIDENCY_TASKS:
             from . import vision_endpoints as _vision_endpoints
 
@@ -5284,6 +5367,8 @@ def _capability_residency_loaded(task: Optional[str], filters: Dict[str, Any], h
 
 
 def _capability_residency_unload(task: str, payload: Dict[str, Any], http_request: Request) -> Dict[str, Any]:
+    if task == "decision":
+        return _decision_residency_unload(payload)
     if task in _VISION_RESIDENCY_TASKS:
         from . import vision_endpoints as _vision_endpoints
 
@@ -5832,6 +5917,8 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
             payload.setdefault(k, v)
     if task == "embedding" or str(req.runtime_id or "").startswith("process:embedding:"):
         return _embedding_residency_unload(req)
+    if task == "decision" or str(req.runtime_id or "").startswith("process:decision:"):
+        return _decision_residency_unload(payload)
     if task and task != "text_generation":
         payload["task"] = task
         return _capability_residency_unload(task, payload, http_request)
@@ -8262,6 +8349,35 @@ def _model_reasoning_discovery(model_name: str) -> Optional[Dict[str, Any]]:
     return block
 
 
+def _model_capability_annotations(model: str) -> Dict[str, Any]:
+    """Additive fields on a /v1/models entry: what the model takes and produces (from the capability
+    registry), and for a decision model the endpoint that serves it. OpenAI clients ignore them."""
+    try:
+        from ..providers.model_capabilities import capability_routes_to_profile, get_model_capability_routes
+
+        routes = get_model_capability_routes(model)
+    except Exception:
+        return {}
+    if not routes:
+        return {}
+    profile = capability_routes_to_profile(routes)
+    out: Dict[str, Any] = {"capabilities": {"input": list(profile.get("input", [])), "output": list(profile.get("output", []))}}
+    if "output.decision" in routes:
+        try:
+            from ..architectures.detection import get_model_capabilities
+
+            block = (get_model_capabilities(model) or {}).get("decision") or {}
+        except Exception:
+            block = {}
+        out["decision"] = {
+            "endpoint": "/v1/decisions",
+            "kind": block.get("kind"),
+            "question_types": block.get("question_types", ["choice", "noul", "score"]),
+            "generates_text": False,
+        }
+    return out
+
+
 @app.get("/v1/models", tags=["models"])
 async def list_models(
     http_request: Request,
@@ -8423,6 +8539,7 @@ async def list_models(
                 reasoning_info = _model_reasoning_discovery(model)
                 if reasoning_info is not None:
                     entry["reasoning"] = reasoning_info
+                entry.update(_model_capability_annotations(model))
                 models_data.append(entry)
 
             filter_parts = []
@@ -8464,6 +8581,7 @@ async def list_models(
                     reasoning_info = _model_reasoning_discovery(model)
                     if reasoning_info is not None:
                         entry["reasoning"] = reasoning_info
+                    entry.update(_model_capability_annotations(model))
                     models_data.append(entry)
 
             filter_parts = []
@@ -9670,6 +9788,196 @@ def validate_media_files(files: List[str]) -> None:
                 detail={"error": {"message": "Total file size exceeds 32MB limit", "type": "total_size_exceeded"}}
             )
 
+
+# ---------------------------------------------------------------------------
+# Decision models: POST /v1/decisions (System One request/answer shape)
+# ---------------------------------------------------------------------------
+
+class SystemOneRequest(BaseModel):
+    """A System One decision request: one state, typed questions about it."""
+
+    state: Any = Field(
+        description="The document the questions are about: a string, or a JSON object/array rendered as labelled text.",
+        example="Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+    )
+    model: str = Field(
+        default="kev-latest",
+        description=(
+            "Decision model to use, as provider/model: `mlx/jaredpalmer/kev-4b`, "
+            "`huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M`, `huggingface/jaredpalmer/kev-4b`. "
+            "`typesafe/jev-latest` for the hosted model. A bare decision handle picks the local engine "
+            "(mlx on Apple silicon, else huggingface); `kev-latest` / `jev-latest` reuse the decision model loaded most recently by this server."
+        ),
+        example="mlx/jaredpalmer/kev-4b",
+    )
+    questions: Dict[str, Any] = Field(
+        description=(
+            "Named questions. Each is {type: 'choice'|'noul'|'score', instructions, criteria}: "
+            "choice criteria = {option: description|null}, score criteria = [level, ...] lowest first, "
+            "noul criteria optional {true: ..., false: ...}. AbstractCore's shorthand is accepted too: "
+            "a string is a yes/no (noul) question, a list of option names a choice."
+        ),
+        example={
+            "department": {"type": "choice", "instructions": "Which team should handle this?",
+                           "criteria": {"returns": "Exchanges, refunds, wrong or damaged items",
+                                        "shipping": "Delivery status, delays, lost packages",
+                                        "billing": "Charges, invoices, payment problems"}},
+            "escalate": {"type": "noul", "instructions": "Does this need urgent human attention?"},
+            "frustration": {"type": "score", "instructions": "How frustrated is the customer?",
+                            "criteria": ["Calm", "Frustrated", "Very angry"]},
+        },
+    )
+    truncate: Optional[bool] = Field(
+        default=None,
+        description="Read only the first 65,536 tokens of an over-long state instead of refusing it (the response then says truncated: true).",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "model": "mlx/jaredpalmer/kev-4b",
+                "state": "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+                "questions": {
+                    "department": {"type": "choice", "instructions": "Which team should handle this?",
+                                   "criteria": {"returns": "Exchanges, refunds, wrong or damaged items",
+                                                "shipping": "Delivery status, delays, lost packages",
+                                                "billing": "Charges, invoices, payment problems"}},
+                    "escalate": {"type": "noul", "instructions": "Does this need urgent human attention?"},
+                    "frustration": {"type": "score", "instructions": "How frustrated is the customer?",
+                                    "criteria": ["Calm", "Frustrated", "Very angry"]},
+                },
+            }
+        }
+
+
+def _decision_factory(provider_id: str, model_id: str) -> Any:
+    """Builds the provider instance for a decision model: a model loaded through the
+    management API when it is one, else a fresh provider."""
+    llm = _resident_provider_for_request(provider_id, model_id, {})
+    if llm is not None and getattr(llm, "model_type", None) == "decision":
+        return llm
+    return create_llm(provider_id, model=model_id)
+
+
+def _decision_runtime(provider: str, model: str) -> Any:
+    """The provider instance holding this decision model, from the process-wide resident
+    pool (at most `abstractcore.decision.pool.MAX_RESIDENT` decision models stay loaded;
+    a handle that is not a decision model is refused before anything loads)."""
+    from ..decision.pool import decision_provider
+
+    return decision_provider(provider, model, factory=_decision_factory)
+
+
+def _configured_decision_route() -> Optional[Tuple[str, str]]:
+    """The `output.decision` capability default (provider, model), when one is configured."""
+    try:
+        from ..config.manager import get_config_manager
+
+        row = get_config_manager().get_capability_default("output", "decision")
+    except Exception:  # noqa: BLE001 - an unreadable config is "not configured"
+        return None
+    if not isinstance(row, dict):
+        return None
+    provider = str(row.get("provider") or "").strip().lower()
+    model = str(row.get("model") or "").strip()
+    if not provider or not model:
+        return None
+    return provider, model
+
+
+def _resolve_decision_alias(model: str) -> Tuple[str, str]:
+    from ..decision.pool import ALIASES, latest, parse_handle
+
+    text = str(model or "").strip()
+    if text.lower() in ALIASES or not text:
+
+        resident = latest()
+        if resident is not None:
+            return resident
+        configured = _configured_decision_route()
+        if configured is not None:
+            return configured
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {
+                "message": (
+                    f"model={text!r} names no loaded decision model and no output.decision default is configured. "
+                    "Pass provider/model, for example 'mlx/jaredpalmer/kev-4b' or 'huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M'; "
+                    "after the first request 'kev-latest' reuses it, or set the default: "
+                    "abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b"
+                ),
+                "type": "invalid_request",
+            }},
+        )
+    return parse_handle(text)
+
+
+@app.post("/v1/decisions", tags=["decisions"])
+async def decisions(request: SystemOneRequest, http_request: Request):
+    """
+    Answer typed questions about a document with a decision model.
+
+    A decision model (Kev family, Jev-like) reads the `state` and returns, for every
+    question, a calibrated probability distribution over the options you supply —
+    in one forward pass, without generating text:
+
+    - **choice**: the most likely of 1..255 named options, with `probabilities` and `confidence`
+    - **noul**: the probability (`noul`) that the statement in `instructions` is true
+    - **score**: the expected level index (`score`) over 1..255 ordered levels, with `legend`, `probabilities`, `confidence`
+
+    The body and the answers use the System One shape (`state`, typed `questions`, answers
+    keyed by question name), the format every decision-model host shares, so one request serves
+    a local Kev / Lev / Laya checkpoint or a hosted model behind the `typesafe` provider.
+
+    **Models:** `mlx/jaredpalmer/kev-4b` (Apple silicon), `huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M`
+    (llama.cpp), `huggingface/jaredpalmer/kev-4b` (transformers). The first request loads the
+    model; later ones reuse it, and a repeated `state` only pays for its questions.
+
+    **Errors:** 400 invalid request, 404 model not downloaded, 422 state over the context limit.
+    """
+    from ..decision import ContextOverflow, DecisionRequest
+
+    request_id = f"s1-{uuid.uuid4().hex[:12]}"
+    try:
+        decision_request = DecisionRequest(state=request.state, questions=request.questions)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail={"error": {"message": f"invalid questions: {exc}", "type": "invalid_request"}})
+    provider, model = _resolve_decision_alias(request.model)
+    def _decide() -> Any:
+        from ..decision.pool import use
+
+        with use(provider, model, factory=_decision_factory) as llm:
+            return llm.decision_model().decide(request=decision_request, truncate=request.truncate)
+
+    try:
+        response = await asyncio.to_thread(_decide)
+    except HTTPException:
+        raise
+    except ModelNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"error": {"message": str(exc), "type": "model_not_found"}}) from exc
+    except ContextOverflow as exc:
+        raise HTTPException(status_code=422, detail={"error": {"message": str(exc), "type": "context_overflow"}}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"error": {"message": str(exc), "type": "invalid_request"}}) from exc
+    body = response.to_systemone()
+    body["model"] = f"{provider}/{model}"
+    logger.info("🧭 Decision request", request_id=request_id, provider=provider, model=model,
+                questions=len(decision_request.questions), latency_ms=response.latency_ms,
+                prefix_cache_hit=response.usage.prefix_cache_hit)
+    return JSONResponse(content=body, headers={"x-request-id": request_id, "x-typesafe-request-id": request_id})
+
+
+@app.post("/{provider}/v1/decisions", tags=["decisions"])
+async def provider_decisions(
+    provider: Annotated[str, FastAPIPath(description="Provider route prefix: `mlx`, `huggingface`, `typesafe`, `systemone`.")],
+    request: SystemOneRequest,
+    http_request: Request,
+):
+    """Provider-scoped decisions route where the body `model` is unprefixed (same body and answers as `/v1/decisions`)."""
+    scoped = request.model_copy(update={"model": f"{provider}/{request.model}"})
+    return await decisions(scoped, http_request)
+
+
 @app.post("/v1/chat/completions", tags=["chat"])
 async def chat_completions(request: ChatCompletionRequest, http_request: Request):
     """
@@ -10174,6 +10482,14 @@ async def process_chat_completion(
             # OpenAI layout: an unknown provider or model is the caller's 404.
             return JSONResponse(status_code=404, content={"error": {
                 "message": str(e), "type": "invalid_request_error", "param": "model", "code": "model_not_found"}})
+        if isinstance(e, DecisionModelError):
+            # A decision model has no text lane: the caller's 400, pointing at the System One endpoint.
+            return JSONResponse(status_code=400, content={"error": {
+                "message": str(e), "type": "invalid_request_error", "param": "model", "code": "decision_model",
+                "endpoint": "/v1/decisions"}})
+        if isinstance(e, InvalidRequestError):
+            return JSONResponse(status_code=400, content={"error": {
+                "message": str(e), "type": "invalid_request_error", "code": "invalid_request"}})
         if "llm" in locals() and supports_concurrent_generation(llm):
             return JSONResponse(status_code=getattr(e, "http_status", 500), content={"error": {
                 "message": str(e), "type": "native_runtime_error",

@@ -84,8 +84,21 @@ The universal server routes `POST /v1/chat/completions` using model IDs such as
 `response_format` enables JSON/schema validation over HTTP. `/console` manages the host.
 Do not start another server on an occupied port or treat a help command as proof of health.
 
+A host that already owns inference can use `abstractcore.server.managed.start_managed_server`
+to start Core's optional HTTP listener in that process. It uses Core's server host/port and
+token; import alone starts no service. The returned handle provides `url`, `is_running`,
+`last_error`, `status()` and repeatable `stop()`. Stopping the listener retains resident models.
+Native framework clients continue through Gateway runs and Runtime's ledger. See the
+[listener lifecycle](https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/server.md#managed-listener-in-an-execution-owner).
+
 ## Memory, caches, cancellation and diagnostics
 
+- Managed local loaders share compatible resident artifacts or refuse conflicting allocations
+  before loading. Reuse the resident configuration; Transformers callers reuse the provider.
+  Finish work and unload holders before changing engines, placement or native head profiles.
+  This is process-local; independent servers, arbitrary plugins and raw engine constructors
+  own their resources. See the
+  [sharing rules](https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/memory-management.md#one-resident-artifact-per-process).
 - `llm.get_prompt_cache_capabilities()` describes `none`, `keyed`, or `local_control_plane`.
   `llm.prompt_cache_supports_operation(...)` gates controls. Unsupported operations raise
   structured cache errors with `operation`, `code` and `capabilities`.

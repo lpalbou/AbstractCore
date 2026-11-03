@@ -65,6 +65,14 @@ class MultimodalGenerateResponse:
     metadata: Dict[str, Any] = field(default_factory=dict)
     warnings: List[GenerationIssue] = field(default_factory=list)
     errors: List[GenerationIssue] = field(default_factory=list)
+    # ``generate(..., output="decision")``: the typed answers of a decision model
+    # (an ``abstractcore.decision.DecisionResponse``); None for every other output.
+    decision: Optional[Any] = None
+
+    @property
+    def decisions(self) -> Dict[str, Any]:
+        """Decision answers keyed by question name (empty when no decision was requested)."""
+        return dict(self.decision.answers) if self.decision is not None else {}
 
     @property
     def content(self) -> Optional[str]:

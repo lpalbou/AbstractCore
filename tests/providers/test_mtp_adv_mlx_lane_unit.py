@@ -92,6 +92,14 @@ class _LoadRecorder:
             "abstractcore.providers.mlx_native_session.resolve_native_drafter_path",
             lambda path: str(path),
         )
+        # Each test starts with no resident native session: a session another
+        # test left alive (same target, other drafter) is refused by design.
+        import weakref
+
+        monkeypatch.setattr(
+            "abstractcore.providers.mlx_native_session._SESSIONS",
+            weakref.WeakValueDictionary(),
+        )
 
         def vlm_load(path, *a, **k):
             recorder.calls.append("target")

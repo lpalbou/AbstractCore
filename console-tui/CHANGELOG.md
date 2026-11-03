@@ -4,6 +4,16 @@ All notable changes, one entry per build wave, each with its gate line
 (build/test/clippy state at the wave's close). Charter:
 `LAUNCH-PROMPT.md`.
 
+## [Unreleased]
+
+## [0.8.1] — 2026-11-02
+
+Released with AbstractCore 2.32.0.
+
+- Raise the AbstractTUI floor to 0.7.1 (with its `avatar` feature) so embedding
+  consoles share one reactive runtime with the new chat components. The
+  lockfile resolves AbstractTUI 0.7.1 and AbstractAvatar 0.1.0 from crates.io.
+
 ## [0.8.0] — 2026-10-04
 
 Released with AbstractCore 2.25.0. No screen or key changes: the crate is

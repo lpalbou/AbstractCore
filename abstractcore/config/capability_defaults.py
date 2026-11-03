@@ -15,7 +15,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 CAPABILITY_DEFAULTS_VERSION = 1
 
 CAPABILITY_KINDS = ("input", "output", "embedding", "rerank")
-CAPABILITY_MODALITIES = ("text", "image", "video", "voice", "sound", "music", "scene3d")
+CAPABILITY_MODALITIES = ("text", "image", "video", "voice", "sound", "music", "scene3d", "decision")
 CAPABILITY_ROUTE_TASKS = (
     "text_to_image",
     "image_to_image",
@@ -181,7 +181,7 @@ def normalize_modality(value: Any) -> str:
     if raw not in CAPABILITY_MODALITIES:
         raise ValueError(
             f"Unknown capability modality: {value!r}. "
-            "Expected text, image, video, voice, sound, music, or scene3d."
+            "Expected text, image, video, voice, sound, music, scene3d, or decision."
         )
     return raw
 
@@ -1409,6 +1409,7 @@ def iter_capability_default_specs() -> Iterable[CapabilityDefaultSpec]:
         ("output", "scene3d", "3D Scene Output", "scene3d_generation", "abstract3d", {}),
         ("output", "scene3d.text_to_scene3d", "Text To 3D", "text_to_scene3d", "abstract3d", {}),
         ("output", "scene3d.image_to_scene3d", "Image To 3D", "image_to_scene3d", "abstract3d", {}),
+        ("output", "decision", "Decision Output", "decision", "abstractcore.decision (kev / lev / laya) or the typesafe provider", {}),
         ("embedding", "text", "Text Embeddings", "text_embedding", "abstractcore.embeddings", {"device": "gpu"}),
         ("embedding", "image", "Image Embeddings", "image_embedding", "abstractcore.embeddings or abstractvision", {}),
         ("rerank", "text", "Text Rerank", "text_rerank", "future reranker manager", {}),
@@ -1608,6 +1609,9 @@ _OUTPUT_ROUTE_TABLE: Tuple[Tuple[str, Tuple[str, ...], str, Optional[str]], ...]
     ("music", ("text_to_audio", "sound_generation", "text_to_sound", "sfx", "sound_effect"), "output.sound", None),
     ("music", ("", "music_generation", "text_to_music", "t2m"), "output.music", None),
     ("sound", ("", "sound_generation", "text_to_sound", "sfx", "sound_effect"), "output.sound", None),
+    # Decision models: one route, no sub-task (the question types are request
+    # content, not routes). A decision never carries a source image.
+    ("decision", ("", "decision", "decide", "decisions"), "output.decision", None),
     ("scene3d", ("image_to_scene3d", "i23d", "image_to_3d"), "output.scene3d.image_to_scene3d", None),
     (
         "scene3d",
