@@ -276,6 +276,20 @@ def provider_profiles_from_dict(data: Any) -> ProviderProfilesConfig:
 
     profiles: Dict[str, ProviderProfile] = {}
     for raw_id, raw_profile in rows.items():
-        profile = provider_profile_from_dict(str(raw_id), raw_profile)
+        try:
+            profile = provider_profile_from_dict(str(raw_id), raw_profile)
+        except (ValueError, TypeError) as exc:
+            # A row this Core cannot load (a provider family it does not know, written by a
+            # newer Core, 2026-11-03: `typesafe` read by 2.31) is skipped and said, never fatal:
+            # raising here made the whole config read as corrupt (a `.corrupt-*.bak` copy and
+            # DEFAULTS for the session). The save keeps the row as stored
+            # (`ConfigurationManager._carry_unknown_store_keys`).
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "provider profile %r is not loaded by this AbstractCore (%s); it stays in the config file unchanged",
+                str(raw_id), exc,
+            )
+            continue
         profiles[profile.id.lower()] = profile
     return ProviderProfilesConfig(profiles=profiles)
