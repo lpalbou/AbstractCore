@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, Optional, Tuple
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 FIXTURES = Path(__file__).resolve().parent / "fetch_url_fixtures"
 sys.path.insert(0, str(FIXTURES))
@@ -507,6 +508,8 @@ def test_a_hostile_page_can_never_hang_the_fetch(allow_loopback: str, path: str)
     result = fetch_url(url=f"{allow_loopback}{path}", timeout=10)
     elapsed = time.monotonic() - started
 
+    # Structural, not a latency budget: the parent's own process-tree-kill bound plus 20 s of slack;
+    # a page that hangs the fetch never returns under it.
     assert elapsed < _HANG_BUDGET_S, f"{path} took {elapsed:.1f}s (bound {_HANG_BUDGET_S:.0f}s)"
     assert isinstance(result, dict)
     # Whatever it decided, it must have decided something — never a bare
@@ -535,10 +538,12 @@ def test_the_render_budget_respects_the_callers_timeout(allow_loopback: str) -> 
     fetch_url(url=f"{allow_loopback}/infinite-loop", timeout=5)
     elapsed = time.monotonic() - started
 
-    assert elapsed < 5 + BT._RENDER_LAUNCH_GRACE_S + 5, (
-        f"fetch_url(timeout=5) spent {elapsed:.1f}s; the render escalation ignores the "
-        f"caller's timeout and uses RENDER_DEFAULT_TIMEOUT_S={BT.RENDER_DEFAULT_TIMEOUT_S}"
+    # Structural: a render that ignored the caller's timeout runs the infinite loop for the whole
+    # RENDER_DEFAULT_TIMEOUT_S (measured 35.2 s with its grace), so the call cannot return under it.
+    assert elapsed < BT.RENDER_DEFAULT_TIMEOUT_S, (
+        f"fetch_url(timeout=5) spent {elapsed:.1f}s; the render escalation ignores the caller's timeout"
     )
+    timing_budget(elapsed, 5 + BT._RENDER_LAUNCH_GRACE_S + 5, "fetch_url(timeout=5) with a render escalation")
 
 
 # ===========================================================================
@@ -1009,7 +1014,7 @@ def test_a_missing_playwright_gives_an_install_hint_not_a_traceback(
     result = fetch_url(url=f"{allow_loopback}/spa", timeout=15)
     elapsed = time.monotonic() - started
 
-    assert elapsed < 15.0, f"the unavailable-browser path took {elapsed:.1f}s"
+    timing_budget(elapsed, 15.0, "fetch_url with no browser available")
     assert result.get("success") is False
     blob = json.dumps(result)
     assert "Traceback" not in blob

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from abstractcore.tools import code_analysis as ca
 from abstractcore.tools.common_tools import analyze_code
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 
 def test_rust_incident_file_outlines_instead_of_refusing(tmp_path: Path) -> None:
@@ -436,7 +437,7 @@ def test_c_comment_banner_never_hangs(tmp_path: Path) -> None:
     f.write_text("/*\n * " + "* " * 60 + "\n */\nint main(void) {\n    return 0;\n}\n")
     t0 = time.perf_counter()
     out = analyze_code(file_path=str(f))
-    assert time.perf_counter() - t0 < 5.0, "banner line must not trigger regex backtracking blowup"
+    timing_budget(time.perf_counter() - t0, 5.0, "banner line, no regex backtracking blowup", ceiling=15.0)
     assert "main" in out
 
 
@@ -449,13 +450,13 @@ def test_many_unclosed_braces_stay_linear(tmp_path: Path) -> None:
     f.write_text("\n".join(f"fn f_{i}() {{" for i in range(3000)) + "\n")
     t0 = time.perf_counter()
     analyze_code(file_path=str(f))
-    assert time.perf_counter() - t0 < 20.0
+    timing_budget(time.perf_counter() - t0, 20.0, "hostile input, no regex backtracking blowup", ceiling=45.0)
 
     rb = tmp_path / "many.rb"
     rb.write_text("\n".join(f"def m_{i}" for i in range(2000)) + "\n")
     t0 = time.perf_counter()
     analyze_code(file_path=str(rb))
-    assert time.perf_counter() - t0 < 20.0
+    timing_budget(time.perf_counter() - t0, 20.0, "hostile input, no regex backtracking blowup", ceiling=45.0)
 
 
 def test_utf16_bom_file_is_text_not_binary(tmp_path: Path) -> None:

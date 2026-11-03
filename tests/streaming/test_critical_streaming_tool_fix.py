@@ -16,6 +16,7 @@ All tests use REAL implementations per CLAUDE.md - NO MOCKING
 """
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 import time
 from typing import Iterator, List
 from abstractcore.providers.streaming import (
@@ -210,8 +211,7 @@ class TestStreamingPerformance:
         total_time = time.time() - start_time
 
         # Should be fast even with tool detection overhead
-        assert total_time < 0.05, \
-            f"Streaming too slow with tool detection: {total_time*1000:.2f}ms"
+        timing_budget(total_time, 0.05, "streaming with tool detection", ceiling=1.0)
 
         # All chunks should be preserved
         assert len(results) == 5

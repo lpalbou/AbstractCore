@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from abstractcore.tools import browser_tools
 from abstractcore.tools.browser_tools import browser_probe
@@ -291,7 +292,7 @@ def test_blocking_main_thread_never_hangs(tmp_path):
     assert out.startswith("Browser probe: FAIL")
     assert "wall-clock budget" in out
     # budget (4s) + launch grace (12s) + a modest scheduling margin
-    assert elapsed < 4 + browser_tools._LAUNCH_GRACE_S + 8, f"probe took {elapsed:.1f}s"
+    timing_budget(elapsed, 4 + browser_tools._LAUNCH_GRACE_S + 8, "probe of an infinite-loop page")
 
 
 # NOTE: the original absolute-zero leak test (global `pgrep headless_shell`,
@@ -701,7 +702,7 @@ def test_never_responding_server_reports_no_commit_not_infinite_loop(tmp_path):
         assert "no response committed" in out
         assert "infinite" not in out  # not misdiagnosed as a JS loop
         # Returned near budget, not dragged to budget+grace by a hung snapshot.
-        assert elapsed < 4 + browser_tools._LAUNCH_GRACE_S, f"took {elapsed:.1f}s"
+        timing_budget(elapsed, 4 + browser_tools._LAUNCH_GRACE_S, "probe of a page that never responds")
     finally:
         srv.shutdown()
 

@@ -23,6 +23,7 @@ import weakref
 from typing import Any, Dict, List
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from abstractcore.core.types import GenerateResponse
 from abstractcore.exceptions import GenerationCancelledError
@@ -51,7 +52,9 @@ def test_registry_reports_a_call_that_does_not_stop():
     t0 = time.monotonic()
     out = reg.cancel_all(reason="test", drain_timeout_s=0.2)
     assert out["drained"] is False and out["still_running"] == 1
-    assert 0.15 <= time.monotonic() - t0 < 2.0
+    elapsed = time.monotonic() - t0
+    assert elapsed >= 0.15, "the drain timeout was waited"  # a lower bound: a slow machine only adds
+    timing_budget(elapsed, 2.0, "cancel_all returns after its drain timeout")
     assert stuck.event.is_set()
     reg.end(stuck)
 

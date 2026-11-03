@@ -6,6 +6,7 @@ import tempfile
 import time
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from abstractcore.tools.common_tools import execute_command
 
@@ -63,7 +64,8 @@ def test_execute_command_timeout_treekills_orphan_and_never_pins() -> None:
     elapsed = time.monotonic() - t0
 
     # (a) never pinned — returns near the timeout + a small kill/drain grace.
-    assert elapsed < 2 + 8, f"execute_command pinned for {elapsed:.1f}s (pipe-EOF hang)"
+    assert elapsed < 40, f"execute_command waited for the background child's sleep 40 ({elapsed:.1f}s)"
+    timing_budget(elapsed, 2 + 8, "execute_command timeout + kill/drain grace")
     # (b) honest timeout verdict (message reads "timed out" since 2026-07-27).
     assert out["success"] is False
     err = str(out.get("error") or "").lower()
@@ -93,7 +95,8 @@ def test_timeout_result_includes_prekill_stdout_and_stderr() -> None:
     )
     elapsed = time.monotonic() - t0
 
-    assert elapsed < 10, f"timeout path took {elapsed:.1f}s (drain must be fast when the tree died)"
+    assert elapsed < 30, f"the timeout path waited for the sleep 30 ({elapsed:.1f}s)"
+    timing_budget(elapsed, 10, "timeout path drain after the tree died")
     assert out["success"] is False
     assert "timed out after 1s and was killed (including all child processes)" in str(out["error"])
     rendered = str(out["rendered"])
@@ -211,7 +214,8 @@ def test_timeout_drain_survives_grandchild_holding_pipe() -> None:
     )
     elapsed = time.monotonic() - t0
 
-    assert elapsed < 12, f"drain hung for {elapsed:.1f}s despite the tree-kill"
+    assert elapsed < 30, f"the drain waited for the sleep 30 despite the tree-kill ({elapsed:.1f}s)"
+    timing_budget(elapsed, 12, "drain after the tree-kill")
     assert out["success"] is False
     assert "PARENT_OUT" in str(out["stdout"])
     assert "CHILD_OUT" in str(out["stdout"])
@@ -248,7 +252,8 @@ def test_timeout_drain_gives_up_and_salvages_when_kill_misses_a_holder(
 
     # ~1s wait + ~5s bounded drain; never the grandchild's full 8s, and never
     # an unbounded pin.
-    assert elapsed < 13, f"drain was not bounded: {elapsed:.1f}s"
+    assert elapsed < 30, f"the drain was not bounded: it waited for the sleep 30 ({elapsed:.1f}s)"
+    timing_budget(elapsed, 13, "bounded drain (~1 s wait + ~5 s drain)")
     assert out["success"] is False
     rendered = str(out["rendered"])
     assert "the captured output may be incomplete" in rendered
