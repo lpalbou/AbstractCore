@@ -452,6 +452,8 @@ process_residency.set_idle_unload(0)     # off: models stay until they are eject
 - The timer starts with the first model this process loads, and checks every `min(60 s, idle / 4)`.
 - A model's idle time counts from its last call, or from when it was first seen resident if no call has used it
   yet. Every call counts, with or without a cancel event.
+- Idle time is measured on the wall clock by design: `last_used_at` and `idle_unload_at` are epoch times a host
+  can show, and time the machine spends asleep counts as unused time.
 - What keeps a model loaded is the same rule as the residency failsafe: a lock (Keep loaded), a call running on any
   instance of it, or a claimant still building it. A runtime pool or a configured default does not.
 - No check runs while another model loads. Before unloading, new calls to that model wait. The model is checked
