@@ -20,6 +20,24 @@ from ..core.types import GenerateResponse
 from ..decision.engines.remote import TYPESAFE_BASE_URL, RemoteSystemOneModel
 from .base import BaseProvider
 
+# What every model behind a System One endpoint is: text in, typed decisions out.
+DECISION_ROUTES = ("input.text", "output.decision")
+
+
+def decision_filter_matches(kwargs: Dict[str, Any]) -> bool:
+    """Whether a model-discovery filter (``capability_routes`` / ``input_capabilities`` /
+    ``output_capabilities``) admits a decision model, so a text, image or embedding listing
+    never offers one."""
+    from .model_capabilities import normalize_capability_route_filter
+
+    if any(route not in DECISION_ROUTES for route in normalize_capability_route_filter(kwargs.get("capability_routes"))):
+        return False
+
+    def names(items: Any) -> set:
+        return {str(getattr(item, "value", item)).strip().lower() for item in (items or ())}
+
+    return not (names(kwargs.get("input_capabilities")) - {"text"}) and not (names(kwargs.get("output_capabilities")) - {"decision"})
+
 
 class TypeSafeProvider(BaseProvider):
     API_KEY_ENV_VAR = "TYPESAFE_API_KEY"
@@ -83,6 +101,8 @@ class TypeSafeProvider(BaseProvider):
         return ["decision"]
 
     def list_available_models(self, **kwargs: Any) -> List[str]:
+        if not decision_filter_matches(kwargs):
+            return []
         models = self.decision_model().list_models()
         return models or [self.model]
 
@@ -104,4 +124,4 @@ class SystemOneProvider(TypeSafeProvider):
         super().__init__(model=model, base_url=base_url, api_key=api_key, provider_name="systemone", **kwargs)
 
 
-__all__ = ["TypeSafeProvider", "SystemOneProvider"]
+__all__ = ["DECISION_ROUTES", "TypeSafeProvider", "SystemOneProvider", "decision_filter_matches"]

@@ -116,6 +116,39 @@ def test_models_listing_annotates_capabilities_and_decision_endpoint():
     assert "decision" not in server_app._model_capability_annotations("unknown-model-xyz")
 
 
+def test_models_listing_annotates_every_model_of_a_decision_only_provider():
+    # The hosted alias is in no capability registry: the provider says what it serves.
+    server_app = importlib.import_module("abstractcore.server.app")
+    for provider in ("typesafe", "systemone"):
+        jev = server_app._model_capability_annotations("jev-latest", provider)
+        assert jev["capabilities"] == {"input": ["text"], "output": ["decision"]}
+        assert jev["decision"]["endpoint"] == "/v1/decisions" and jev["decision"]["kind"] == "systemone"
+        assert jev["decision"]["generates_text"] is False
+    assert server_app._model_capability_annotations("gpt-4", "openai")["capabilities"]["output"] == ["text"]
+    assert "decision" not in server_app._model_capability_annotations("jev-latest")
+
+
+def test_a_decision_only_provider_lists_its_models_only_for_a_decision_filter():
+    from abstractcore.providers.model_capabilities import ModelInputCapability, ModelOutputCapability
+    from abstractcore.providers.typesafe_provider import SystemOneProvider
+
+    class _Remote:
+        def list_models(self):
+            return ["kev-latest"]
+
+    provider = SystemOneProvider(base_url="http://127.0.0.1:9")
+    provider._decision_model = _Remote()
+    assert provider.list_available_models() == ["kev-latest"]
+    assert provider.list_available_models(capability_routes=["output.decision"]) == ["kev-latest"]
+    assert provider.list_available_models(capability_routes="input.text,output.decision") == ["kev-latest"]
+    assert provider.list_available_models(output_capabilities=[ModelOutputCapability.DECISION]) == ["kev-latest"]
+    assert provider.list_available_models(input_capabilities=[ModelInputCapability.TEXT]) == ["kev-latest"]
+    for refused in ({"capability_routes": ["output.text"]}, {"capability_routes": ["input.image"]},
+                    {"capability_routes": ["output.embeddings"]}, {"output_capabilities": [ModelOutputCapability.TEXT]},
+                    {"input_capabilities": [ModelInputCapability.IMAGE]}):
+        assert provider.list_available_models(**refused) == [], refused
+
+
 def test_chat_completions_on_a_decision_model_is_a_400_pointing_at_systemone(server):
     server_app, client, created = server
     from abstractcore.exceptions import DecisionModelError
