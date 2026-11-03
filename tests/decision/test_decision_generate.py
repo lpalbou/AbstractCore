@@ -324,3 +324,34 @@ def test_pool_never_unloads_a_model_between_hand_out_and_use(monkeypatch):
     t1.start(); t2.start(); t2.join(); stop.set(); t1.join()
     assert errors == []
     assert len(pool.resident()) <= pool.MAX_RESIDENT
+
+
+def test_a_decision_model_answers_itself_never_the_hosted_default(fake_runtime, monkeypatch):
+    """Review of #41, Q1: with an output.decision default of `typesafe` + `jev-latest`, a local Kev
+    instance asked for output='decision' with no route answers itself; the document never goes to
+    the hosted service because of a global setting. A route the request names still wins, and a
+    text model (which cannot decide) still uses the default."""
+    from abstractcore.decision import pool
+
+    hosted = []
+    monkeypatch.setattr(pool, "_acquire", lambda key, hold, factory, options: hosted.append(key[:2]) or (_ for _ in ()).throw(
+        AssertionError(f"routed to {key[:2]}")))
+    default = {"output.decision": {"provider": "typesafe", "model": "jev-latest"}}
+    questions = {"escalate": "Does this need urgent human attention?"}
+
+    kev = _LocalProvider(provider="mlx", model="fake/kev-4b")
+    kev._abstractcore_capability_defaults = dict(default)
+    result = kev.generate("Shoes arrived late.", output="decision", questions=questions)
+    assert result.metadata["decision_provider"] == "mlx" and hosted == []
+    assert fake_runtime == [("mlx", "fake/kev-4b", {})]
+
+    with pytest.raises(AssertionError, match="routed to"):
+        kev.generate("Shoes arrived late.", output={"modality": "decision", "provider": "typesafe", "model": "jev-latest"},
+                     questions=questions)
+    assert hosted == [("typesafe", "jev-latest")]
+
+    text = _LocalProvider(provider="ollama", model="qwen3.5:9b")
+    text._abstractcore_capability_defaults = dict(default)
+    with pytest.raises(AssertionError, match="routed to"):
+        text.generate("Shoes arrived late.", output="decision", questions=questions)
+    assert hosted == [("typesafe", "jev-latest"), ("typesafe", "jev-latest")]

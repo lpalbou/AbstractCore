@@ -16798,8 +16798,11 @@ A decision model has no text lane: `generate("hello")` on it raises with a point
 
 ### From any provider, through the default route
 
-Set the `output.decision` capability default once and every provider instance can answer
-`output="decision"`, the way `output="voice"` runs the configured voice engine:
+Set the `output.decision` capability default once and every provider instance that cannot decide
+itself (a text model) can answer `output="decision"`, the way `output="voice"` runs the configured
+voice engine. An instance whose own model is a decision model (a local Kev, or a `typesafe` /
+`systemone` instance) always answers itself unless the request names a route, so a hosted default
+never receives a document a local decision model was asked about:
 
 ```bash
 abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b

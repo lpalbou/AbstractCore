@@ -2982,6 +2982,45 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if state is not None and "state" not in spec:
                 spec["state"] = state
 
+    def _answers_decisions_itself(self) -> bool:
+        """True when this instance's own model is a decision model (a local Kev / Lev / Laya
+        checkpoint on huggingface or mlx, or a decisions-only provider such as `typesafe`)."""
+        if getattr(self, "_decision_model", None) is not None or callable(getattr(self, "_build_decision_model", None)):
+            return True
+        from ..decision import is_decision_model
+        from ..decision.pool import serves_decisions_only
+
+        provider = str(getattr(self, "provider", "") or "").strip().lower()
+        if serves_decisions_only(provider):
+            return True
+        model = str(getattr(self, "model", "") or "").strip()
+        return provider in {"huggingface", "mlx"} and bool(model) and is_decision_model(model, provider)
+
+    def _decisions_stay_on_this_model(self, specs: List[Dict[str, Any]], output_routes: List[Any]) -> None:
+        """A decision model answers its own decisions: the `output.decision` default is for
+        instances that cannot decide (a text model). When the request names no decision
+        provider or model and this instance's model is a decision model, the default's
+        provider, model, endpoint and options are taken back off the spec, so
+        `_decision_route` picks this model (a `typesafe` default no longer sends a local Kev
+        instance's document to the hosted service). A route the request names still wins."""
+        decision_specs = [s for s in specs if str(s.get("modality") or "").lower() == "decision"]
+        decision_routes = [r for r in output_routes if getattr(r, "route_key", None) == "output.decision"]
+        if not decision_specs or len(decision_specs) != len(decision_routes):
+            return
+        if not self._answers_decisions_itself():
+            return
+        for spec, route in zip(decision_specs, decision_routes):
+            sources = dict(getattr(route, "field_sources", {}) or {})
+            if sources.get("provider") == "explicit" or sources.get("model") == "explicit":
+                continue
+            for key in ("provider", "model", "base_url"):
+                if sources.get(key) not in (None, "explicit"):
+                    spec.pop(key, None)
+            if sources.get("options") not in (None, "explicit"):
+                for key, value in dict(getattr(route, "options", {}) or {}).items():
+                    if spec.get(key) == value:  # the default's option, applied to the spec
+                        spec.pop(key, None)
+
     def _decision_load_kwargs(self) -> Dict[str, Any]:
         """Provider-specific options for ``load_decision_model`` (device, precision...)."""
         return {}
@@ -3850,6 +3889,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 is_acore_output = False
             else:
                 self._bind_decision_questions(maybe_specs, kwargs)
+                self._decisions_stay_on_this_model(maybe_specs, resolved_generate_route.output_routes)
                 kwargs["output"] = maybe_specs[0] if len(maybe_specs) == 1 else maybe_specs
 
         if is_acore_output:
@@ -9693,6 +9733,7 @@ Please provide a structured response."""
                 is_acore_output = False
             else:
                 self._bind_decision_questions(maybe_specs, kwargs)
+                self._decisions_stay_on_this_model(maybe_specs, resolved_generate_route.output_routes)
                 kwargs["output"] = maybe_specs[0] if len(maybe_specs) == 1 else maybe_specs
 
         if is_acore_output:
