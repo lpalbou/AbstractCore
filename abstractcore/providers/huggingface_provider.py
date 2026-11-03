@@ -80,6 +80,7 @@ from ..exceptions import (
     InvalidRequestError,
     ModelArtifactMismatchError,
     ModelDoesNotFitError,
+    ModelNotDownloadedError,
     ModelNotFoundError,
     ProviderError,
     format_model_error,
@@ -986,11 +987,12 @@ def _resolve_transformers_load_source(model: str, *, local_only: bool, _depth: i
     if snapshot is None:
         if not local_only:
             return _online()
-        raise ModelNotFoundError(
+        raise ModelNotDownloadedError(
             f"HuggingFace model {name!r} is not in the local Hugging Face cache "
             f"(looked in: {', '.join(str(d) for d in _hf_load_cache_dirs()) or 'no cache directory found'}); "
             + _hf_download_hint(name)
-            + "."
+            + ".",
+            model=name, provider="huggingface",
         )
 
     info = describe_hf_snapshot(snapshot)
@@ -1032,9 +1034,10 @@ def _resolve_transformers_load_source(model: str, *, local_only: bool, _depth: i
     if not local_only and not is_local_dir:
         return _online()
     if kind == "config_only":
-        raise ModelNotFoundError(
+        raise ModelNotDownloadedError(
             f"HuggingFace model {name!r} is only partly on disk: {snapshot} has config.json but no "
-            f"weight file ({shown_files}). The download did not finish; " + _hf_download_hint(name) + "."
+            f"weight file ({shown_files}). The download did not finish; " + _hf_download_hint(name) + ".",
+            model=name, provider="huggingface",
         )
     raise ModelNotFoundError(
         f"HuggingFace model {name!r} is not a transformers model on this disk: {snapshot} holds "
@@ -8426,6 +8429,8 @@ class HuggingFaceProvider(BaseProvider):
             # ModelArtifactMismatchError saw a generic load failure instead, which is
             # the same information loss the ADR exists to prevent.
             raise
+        except ModelNotDownloadedError:
+            raise  # a model that is not downloaded reaches the caller as itself, with its id
         except Exception as e:
             raise RuntimeError(f"Failed to load GGUF model {self.model}: {str(e)}")
 
@@ -8463,7 +8468,7 @@ class HuggingFaceProvider(BaseProvider):
         ])
 
         error_message = "\n".join(error_parts)
-        raise ModelNotFoundError(error_message)
+        raise ModelNotDownloadedError(error_message, model=self.model, provider="huggingface")
 
     def _suggest_correct_repo_format(self, model_name: str) -> str:
         """Suggest the correct repository format"""

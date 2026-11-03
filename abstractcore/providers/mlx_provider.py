@@ -46,7 +46,9 @@ from ..architectures.response_postprocessing import (
 from ..core.types import GenerateResponse
 from .base import PromptCacheStore
 from .generation_progress import PREFILL_PROGRESS_KWARG
-from ..exceptions import InvalidRequestError, ProviderAPIError, ModelNotFoundError, format_model_error
+from ..exceptions import (
+    InvalidRequestError, ModelNotDownloadedError, ModelNotFoundError, ProviderAPIError, format_model_error,
+)
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -4286,6 +4288,8 @@ class MLXProvider(BaseProvider):
                 if hint_lines:
                     msg += "\n" + "\n".join(hint_lines) + "\n"
                 msg += "\nTip: download explicitly (e.g. with `huggingface-cli download ...`) or pass a local model directory path."
+                if load_dir is None:
+                    raise ModelNotDownloadedError(msg, model=clean_model_name, provider="mlx")
                 raise ModelNotFoundError(msg)
 
             load_target = str(load_dir)
@@ -4515,6 +4519,8 @@ class MLXProvider(BaseProvider):
             # below would destroy both the type and the machine-readable reason
             # the caller asked for.
             raise
+        except ModelNotDownloadedError:
+            raise  # names the model to download; the generic handler below would replace it
         except ProviderAPIError:
             # Already names the model and the reason (e.g. an MTP-preserving
             # checkpoint whose mlx-vlm load failed). The generic handler below

@@ -5454,6 +5454,14 @@ class ModelNotFoundError(AbstractCoreError):
     """Model not found error."""
 ```
 
+#### ModelNotDownloadedError
+```python
+class ModelNotDownloadedError(ModelNotFoundError):
+    """The model is not on this computer, and loading never downloads (offline_first)."""
+    model: str | None     # the id to download
+    provider: str | None  # the provider that serves it
+```
+
 #### AuthenticationError
 ```python
 class AuthenticationError(ProviderAPIError):
@@ -24935,7 +24943,7 @@ embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 
 With the default offline settings, loading never downloads: the model must already be in the local Hugging Face cache
 (`abstractcore models download huggingface <repo>`), otherwise the manager raises
-`ModelNotFoundError` with that command. It looks in every hub cache AbstractCore reads (the
+`ModelNotDownloadedError` (a `ModelNotFoundError`) with that command; its `model` attribute is the id to download. It looks in every hub cache AbstractCore reads (the
 one `huggingface_hub` uses, then the `cache.huggingface_cache_dir` setting) and loads the
 cached snapshot directory directly; a local model directory can be passed as `model`. It
 changes no process environment variable. The `offline_first` and `force_local_files_only`
