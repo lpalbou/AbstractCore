@@ -15759,7 +15759,7 @@ process_residency.set_idle_unload(0)     # off: models stay until they are eject
 - No check runs while another model loads. Before unloading, new calls to that model wait. The model is checked
   again, and kept if a call started in between: an idle unload never cancels a call.
 - The unload is the process-wide eject (every holder, then `gc` and the allocator cache). It logs
-  `unloaded <model> after <N> min idle; freed <X.Y GB>` on the `abstractcore.residency` logger.
+  `unloaded <model> after <N> min idle; freed <X.Y GB>` (seconds under two minutes) on the `abstractcore.residency` logger.
 - `process_residency.resident_model_states()` shows, per model, `last_used_at`, `in_use`, `locked_by` and
   `idle_unload_at` (None when off, locked or in use). `reap_idle()` runs one check now.
 - After an unload, the next call pays the load and a full prefill: the in-memory prompt caches go with the weights.

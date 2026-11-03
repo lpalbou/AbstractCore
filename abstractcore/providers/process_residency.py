@@ -666,11 +666,11 @@ def _idle_eject(state: Dict[str, Any], idle_s: float, now: float) -> Optional[Di
     freed = report.get("freed_bytes")
     freed_b = int(freed) if isinstance(freed, int) and freed > 0 else int(state.get("held_bytes") or 0)
     idle_for = now - _idle_since(state, now)
-    minutes = idle_for / 60.0
+    took = f"{idle_for / 60.0:.0f} min" if idle_for >= 120 else f"{idle_for:.0f} s"
     if report.get("ok", True):
-        _idle_log.info(f"unloaded {state['model']} after {minutes:.0f} min idle; freed {_fmt_gb(freed_b)}")
+        _idle_log.info(f"unloaded {state['model']} after {took} idle; freed {_fmt_gb(freed_b)}")
     else:
-        _idle_log.warning(f"idle unload of {state['model']} after {minutes:.0f} min did not free everything: "
+        _idle_log.warning(f"idle unload of {state['model']} after {took} did not free everything: "
                           f"{report.get('holders_refused') or report.get('residual')}")
     _FIRST_SEEN.pop((state["backend"], state["model"]), None)
     return {"model": state["model"], "backend": state["backend"], "idle_s": round(idle_for, 1),

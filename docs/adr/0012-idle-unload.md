@@ -38,7 +38,7 @@ it or the process restarted. The facts an idle rule needs already live in Core: 
    - Embeddings are not gated: `EmbeddingManager.unload` waits for running encodes and never cancels them.
 5. **The eject is the process-wide one.** It unloads every holder, then garbage-collects and returns the backend's
    allocator cache (`mx.clear_cache`, torch's caches), with `reason="idle"`. Each unload is logged by
-   `abstractcore.residency` at INFO: `unloaded <model> after <N> min idle; freed <X.Y GB>`. When something is left
+   `abstractcore.residency` at INFO: `unloaded <model> after <N> min idle; freed <X.Y GB>` (seconds under two minutes). When something is left
    resident, the line is a WARNING with the holders that refused.
 6. **Where it runs.** One daemon thread per process starts on the first in-process load and ticks every
    `min(60 s, idle / 4)`. `reap_idle(now=None)` runs one pass and returns

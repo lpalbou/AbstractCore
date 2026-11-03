@@ -12,7 +12,7 @@
   - **Never cancels:** new calls to the model wait during the unload, the model is checked again with them held, and
     a call that started in between keeps it. A waiting call then reloads the model on demand. No check runs while
     a model loads.
-  - **Log and timer:** each unload logs `unloaded <model> after <N> min idle; freed <X.Y GB>`. The timer starts with
+  - **Log and timer:** each unload logs `unloaded <model> after <N> min idle; freed <X.Y GB>` (seconds under two minutes). The timer starts with
     the first load in the process.
   - **Rows:** `resident_model_states()` covers MLX and embeddings too (also for the ADR 0010 fit failsafe), with
     `last_used_at`, `in_use`, `locked_by` and `idle_unload_at`.
