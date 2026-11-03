@@ -38,6 +38,18 @@ decisions), and a config that keeps a provider profile it cannot read instead of
   `RuntimeError("Failed to load GGUF model ...")` wrapping it; the message is the same "not found in local caches"
   text without that prefix. An MLX model that is not downloaded keeps its own message (the caches searched and the
   download tip) instead of the generic "Model not found for MLX provider" list.
+- **The test suite never fails on a slow machine** (`tests/timing.py`, `ABSTRACTCORE_TIMING_STRICT`). Every
+  elapsed-time assertion in `tests/` was audited. A "did not block" check became an event or state check:
+  - the slot pool's dropped holder: the blocked work is still running when `gc.collect()` returns;
+  - the cancelled slot request: at most one token after the cancel;
+  - `execute_command`'s drains: below the child's own `sleep 30/40`, the wait the code must not do;
+  - the retry that fails fast: below the 30 s backoff.
+
+  Latency budgets (cancel promptness, ReDoS guards, streaming overheads, live-provider response times) go through
+  `timing_budget`: one `[timing]` line on stderr by default, asserted only with `ABSTRACTCORE_TIMING_STRICT=1`,
+  mirroring the gateway's `tests/timing.py`. The session's terminal summary lists every measure ("timing budgets",
+  over-budget first), so the numbers are in every CI log. A blowup guard also passes `ceiling=`: a generous bound
+  asserted always (a ReDoS regression is never a slow green). Test-only.
 
 ### Fixed
 
@@ -108,6 +120,13 @@ decisions), and a config that keeps a provider profile it cannot read instead of
   and a later save keeps the row exactly as stored (the same carry that keeps a newer Core's route keys and columns).
   The same applies to any profile row that does not validate. `typesafe` and `systemone` are profile families since
   2.32.0, derived from the provider registry.
+- **The MLX owner-retirement tests prove "the GC callback did not block" with events, not a stopwatch**
+  (`tests/providers/test_mlx_native_owner_retirement_unit.py`). Three tests asserted that a whole `gc.collect()` took
+  under 0.5 s. In the Local-model CI job, a full collection alone takes about 0.55 s (torch and transformers loaded,
+  thousands of tests' objects alive), so `main` went red at 9d46642 and de1f9c85 with no MLX change. The tests now
+  check that the blocked CPU backend, or the blocked close hook, has not returned when `gc.collect()` returns: a
+  callback that waited for it could only return after it. There is no wall-clock bound, and the intent is unchanged.
+  A mutant whose GC callback joins the worker turns all three red. Test-only.
 
 ## [2.32.0] - 2026-11-02
 
