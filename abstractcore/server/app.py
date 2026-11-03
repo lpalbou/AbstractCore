@@ -8349,9 +8349,32 @@ def _model_reasoning_discovery(model_name: str) -> Optional[Dict[str, Any]]:
     return block
 
 
-def _model_capability_annotations(model: str) -> Dict[str, Any]:
+def _decision_only_provider(provider: Optional[str]) -> bool:
+    """A provider that serves decision models only (``typesafe``, ``systemone`` and endpoint profiles of
+    those families): every model it lists is one, whatever the capability registry knows of its name."""
+    if not provider:
+        return False
+    try:
+        from ..providers.registry import get_provider_info
+
+        info = get_provider_info(provider)
+    except Exception:
+        return False
+    return info is not None and list(info.supported_features or []) == ["decision"]
+
+
+def _model_capability_annotations(model: str, provider: Optional[str] = None) -> Dict[str, Any]:
     """Additive fields on a /v1/models entry: what the model takes and produces (from the capability
-    registry), and for a decision model the endpoint that serves it. OpenAI clients ignore them."""
+    registry, or the provider when it serves decision models only), and for a decision model the
+    endpoint that serves it. OpenAI clients ignore them."""
+    if _decision_only_provider(provider):
+        from ..decision.engines.remote import RemoteSystemOneModel
+
+        return {
+            "capabilities": {"input": ["text"], "output": ["decision"]},
+            "decision": {"endpoint": "/v1/decisions", "kind": RemoteSystemOneModel.kind,
+                         "question_types": ["choice", "noul", "score"], "generates_text": False},
+        }
     try:
         from ..providers.model_capabilities import capability_routes_to_profile, get_model_capability_routes
 
@@ -8539,7 +8562,7 @@ async def list_models(
                 reasoning_info = _model_reasoning_discovery(model)
                 if reasoning_info is not None:
                     entry["reasoning"] = reasoning_info
-                entry.update(_model_capability_annotations(model))
+                entry.update(_model_capability_annotations(model, provider_norm))
                 models_data.append(entry)
 
             filter_parts = []
@@ -8581,7 +8604,7 @@ async def list_models(
                     reasoning_info = _model_reasoning_discovery(model)
                     if reasoning_info is not None:
                         entry["reasoning"] = reasoning_info
-                    entry.update(_model_capability_annotations(model))
+                    entry.update(_model_capability_annotations(model, prov))
                     models_data.append(entry)
 
             filter_parts = []
