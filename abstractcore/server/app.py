@@ -7934,37 +7934,76 @@ class _ServerCapabilityOwner:
         raise RuntimeError("Server capability discovery owner does not expose text generation.")
 
 
-# Capability discovery surfaces whose plugins authenticate with a key, and the
-# owner-config keys a caller's own key is handed over as (the plugins read
-# them before their env fallbacks). A capability not listed here gets no
-# caller key, so a caller key never exempts it from the guard.
-def _discovery_caller_key_config() -> Dict[str, tuple]:
-    from .credentials import MUSIC_SERVER_KEYS
-
-    voice = ("voice_openai_api_key", "voice_remote_api_key")
-    return {"voice": voice, "audio": voice, "vision": ("vision_api_key",), "music": tuple(MUSIC_SERVER_KEYS.values())}
+# Capability discovery and caller keys (backlog 0955): a caller's own key
+# (X-AbstractCore-Provider-API-Key) reaches ONE provider only, the one the request
+# names, and never another vendor. It is handed over as that provider's owner-config
+# key (the plugins read it before their env fallbacks). A capability or provider not
+# listed here gets no caller key, so a caller key never exempts it from the guard.
+_VOICE_CALLER_KEY_SLOT = {"openai": "voice_openai_api_key", "openai-compatible": "voice_remote_api_key"}
 
 
-def _server_capability_registry(http_request: Request, capability: Optional[str]) -> CapabilityRegistry:
+def _discovery_caller_key_target(cap: Optional[str], provider: Optional[str], config: Dict[str, Any]) -> Dict[str, Any]:
+    """`{owner-config key: True, ...overrides}` for the one provider a discovery request's
+    caller key may reach, or {} when the request names none.
+
+    - vision: one key slot, one configured endpoint;
+    - voice / audio: the named remote engine (`openai` or an OpenAI-compatible server);
+    - music: the named backend, else the configured one; the request's registry is pinned
+      to that backend so no other music vendor is consulted.
+    """
+    from .audio_endpoints import _music_backend_selector, _voice_engine_spends_server_keys
+    from .credentials import MUSIC_BACKEND_KEY_CONFIG
+
+    if cap == "vision":
+        return {"vision_api_key": True}
+    if cap in ("voice", "audio"):
+        if not str(provider or "").strip():
+            return {}
+        canonical, remote = _voice_engine_spends_server_keys(str(provider).strip())
+        slot = _VOICE_CALLER_KEY_SLOT.get(canonical) if remote else None
+        return {slot: True} if slot else {}
+    if cap == "music":
+        named = str(provider or "").strip()
+        # A named provider is the only destination: an unknown name never falls back to the configured one.
+        backend = _music_backend_selector(named) if named else _music_backend_selector(config.get("music_backend"))
+        slot = MUSIC_BACKEND_KEY_CONFIG.get(backend) if backend else None
+        return {slot: True, "music_backend": backend} if slot else {}
+    return {}
+
+
+def _server_capability_registry(
+    http_request: Request, capability: Optional[str], provider: Optional[str] = None
+) -> CapabilityRegistry:
     """The capability registry one discovery request may read (`capability`:
-    the capability it asks about, None for all of them).
+    the capability it asks about, None for all of them; `provider`: the provider
+    it names, when the route takes one).
 
     Discovery calls into the plugins, which spend the keys they read (the
     server's OpenAI key, ACEMUSIC_API_KEY, ...), so every route reading the
     registry is guarded by the shared rule (`credentials`): a request that is
     not server-authenticated is refused while the server holds a key the
-    capability could spend, unless it brings its own key, which is then the
-    only key those plugins see (a registry built for this request).
+    capability could spend, unless it brings its own key. That key goes to the
+    one provider the request names (`_discovery_caller_key_target`), in a
+    registry built for this request; a caller key on a request that names no
+    single provider is refused (400), never handed to every provider checked.
     """
     from .audio_endpoints import _capability_config, _get_capability_core
     from .credentials import guard_catalog_credentials, guard_music_credentials
 
     cap = str(capability or "").strip().lower() or None
-    key_config = _discovery_caller_key_config()
     caller_key = _provider_api_key_from_request(http_request)
-    forwarded = key_config if cap is None else ({cap: key_config[cap]} if cap in key_config else {})
-    explicit = bool(caller_key) and bool(forwarded)
     config = _capability_config()
+    target = _discovery_caller_key_target(cap, provider, config) if caller_key else {}
+    if caller_key and not target:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "X-AbstractCore-Provider-API-Key is sent to one provider only, and this request does not name one. "
+                "Name the provider (GET /v1/capabilities/<capability>/models?provider=<id>, or "
+                "GET /v1/audio/music/models?provider=<id>), or authenticate to the server and leave the key out."
+            ),
+        )
+    explicit = bool(target)
     if cap in (None, "music"):
         guard_music_credentials(request=http_request, explicit_provider_key=explicit, config=config)
     if cap != "music":
@@ -7973,8 +8012,8 @@ def _server_capability_registry(http_request: Request, capability: Optional[str]
         if explicit:
             from .capability_generation import create_capability_generation_core
 
-            keys = {name: caller_key for names in forwarded.values() for name in names}
-            core = create_capability_generation_core(**{**config, **keys})
+            overrides = {name: (caller_key if value is True else value) for name, value in target.items()}
+            core = create_capability_generation_core(**{**config, **overrides})
         else:
             core = _get_capability_core()
         capabilities = getattr(core, "capabilities", None)
@@ -8234,7 +8273,7 @@ def list_capability_models(
     task: Optional[str] = Query(None, description="Optional canonical task filter."),
     provider: Optional[str] = Query(None, description="Optional provider filter."),
 ):
-    registry = _server_capability_registry(http_request, capability)
+    registry = _server_capability_registry(http_request, capability, provider)
     try:
         return {
             "ok": True,
@@ -8281,7 +8320,7 @@ def list_music_models(
     task: Optional[str] = Query("text_to_music", description="Optional music task filter."),
     provider: Optional[str] = Query(None, description="Optional provider filter."),
 ):
-    registry = _server_capability_registry(http_request, "music")
+    registry = _server_capability_registry(http_request, "music", provider)
     try:
         return {
             "ok": True,
