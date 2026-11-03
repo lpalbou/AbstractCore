@@ -36,8 +36,17 @@ VERSION_FILE = "abstractcore/utils/version.py"
 _VERSION_RE = re.compile(r"""^__version__\s*=\s*["']([^"']+)["']""", re.M)
 
 
+def _is_fragment_path(path: str) -> bool:
+    """`changelog.d/**/<name>.md`, any case, except a README."""
+    low = path.replace("\\", "/").lower()
+    return low.startswith("changelog.d/") and low.endswith(".md") and not low.endswith("readme.md")
+
+
 def fragment_files(directory: Path = FRAGMENTS) -> List[Path]:
-    return sorted(p for p in directory.glob("*.md") if p.name.lower() != "readme.md")
+    """Every fragment under `directory`, in subfolders too and whatever the case of `.md` (a
+    `fix.MD` or `sub/fix.md` left behind must be seen by `check` and `assemble`)."""
+    return sorted(p for p in directory.rglob("*") if p.is_file() and p.suffix.lower() == ".md"
+                  and p.name.lower() != "readme.md")
 
 
 def parse(text: str, *, name: str = "fragment") -> List[Tuple[str, str]]:
@@ -149,27 +158,47 @@ def release_version(base: str, changed: List[str]) -> str | None:
     return after
 
 
+def release_section_entries(version: str) -> List[str]:
+    """The `- ` entries of CHANGELOG.md's `## [version] - <date>` section (up to the next `## [`).
+
+    Only `- ` bullets count: `parse` copies fragment bodies as written and every fragment, like the
+    Keep a Changelog sections before them, uses `- `; a `* ` list is not an entry here."""
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    m = _release_section_re(version).search(text)
+    if not m:
+        return []
+    nxt = re.search(r"^## \[", text[m.end():], flags=re.M)
+    body = text[m.end(): m.end() + nxt.start()] if nxt else text[m.end():]
+    return [line for line in body.splitlines() if line.lstrip().startswith("- ")]
+
+
 def check(base: str) -> int:
     changed, added = changed_files(base)
     version = release_version(base, changed)
     if version is not None:
-        left = [p.name for p in fragment_files(ROOT / "changelog.d")]
+        fragments_dir = ROOT / "changelog.d"
+        left = [p.relative_to(fragments_dir).as_posix() for p in fragment_files(fragments_dir)]
         if left:
             print(f"Release {version}: changelog.d/ still holds {len(left)} fragment(s) ({', '.join(left[:8])}"
                   f"{' ...' if len(left) > 8 else ''}). `python scripts/changelog.py assemble {version}` writes them "
                   "into CHANGELOG.md and removes them; remove the ones already assembled.")
             return 1
+        if not release_section_entries(version):
+            print(f"Release {version}: its CHANGELOG.md section `## [{version}] - <date>` has no `- ` entries "
+                  "(the fragments were removed without being assembled?): `python scripts/changelog.py assemble "
+                  f"{version}` writes them.")
+            return 1
         print(f"changelog: release {version}, CHANGELOG.md has its section and every fragment is assembled")
         return 0
-    for f in [p for p in added if p.startswith("changelog.d/") and p.endswith(".md") and not p.lower().endswith("readme.md")]:
+    for f in [p for p in added if _is_fragment_path(p)]:
         parse((ROOT / f).read_text(encoding="utf-8"), name=f)  # a malformed fragment fails here
     src = [p for p in changed if p.startswith(SOURCE_PREFIXES)]
-    frags = [p for p in added if p.startswith("changelog.d/") and not p.lower().endswith("readme.md")]
+    frags = [p for p in added if _is_fragment_path(p)]  # only what `assemble` reads: changelog.d/**/*.md
     if "CHANGELOG.md" in changed and src and not frags:
         print("CHANGELOG.md was edited: add the entry as changelog.d/<pr-or-slug>.md instead (see changelog.d/README.md)")
         return 1
     if src and not frags:
-        print(f"This pull request changes {SOURCE_PREFIXES[0]} but adds no changelog fragment: add changelog.d/<pr-or-slug>.md "
+        print(f"This pull request changes {SOURCE_PREFIXES[0]} but adds no changelog fragment (a .md file): add changelog.d/<pr-or-slug>.md "
               "(see changelog.d/README.md).\n  changed: " + ", ".join(src[:8]) + (" ..." if len(src) > 8 else ""))
         return 1
     print(f"changelog: {len(frags)} fragment(s) for {len(src)} changed source file(s)")

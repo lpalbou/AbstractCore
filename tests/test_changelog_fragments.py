@@ -134,3 +134,44 @@ def test_without_both_a_version_bump_and_its_section_it_is_an_ordinary_pr(tmp_pa
     assert cl.check("main") == 1
     out = capsys.readouterr().out
     assert "adds no changelog fragment" in out or "CHANGELOG.md was edited" in out
+
+
+def test_a_release_pr_whose_section_has_no_entries_fails_naming_the_version(tmp_path: Path, monkeypatch, capsys) -> None:
+    """Fragments deleted, the header written alone: a release with nothing in it is refused at PR time."""
+    repo = _release_repo(tmp_path, monkeypatch, pending=False)
+    (repo / cl.VERSION_FILE).write_text('__version__ = "1.1.0"\n')
+    text = (repo / "CHANGELOG.md").read_text()
+    (repo / "CHANGELOG.md").write_text(text.replace("## [Unreleased]\n", "## [Unreleased]\n\n## [1.1.0] - 2026-11-03\n\n", 1))
+    _git(repo, "commit", "-qam", "release 1.1.0, empty section")
+    assert cl.check("main") == 1
+    assert "Release 1.1.0: its CHANGELOG.md section `## [1.1.0] - <date>` has no `- ` entries" in capsys.readouterr().out
+
+
+def test_a_fragment_in_a_subfolder_or_with_an_upper_case_suffix_is_seen(tmp_path: Path, monkeypatch, capsys) -> None:
+    """check and assemble read the same list: `changelog.d/**/*.md`, any case, README excluded."""
+    repo = _release_repo(tmp_path, monkeypatch, pending=False)
+    (repo / "changelog.d" / "late").mkdir()
+    (repo / "changelog.d" / "late" / "fix.md").write_text("### Fixed\n\n- **a late fix**\n")
+    (repo / "changelog.d" / "LOUD.MD").write_text("### Added\n\n- **a loud addition**\n")
+    (repo / "changelog.d" / "late" / "README.md").write_text("# not a fragment\n")
+    assert [p.relative_to(repo / "changelog.d").as_posix() for p in cl.fragment_files(repo / "changelog.d")] == [
+        "LOUD.MD", "late/fix.md"]
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "leftovers")
+    _bump(repo, "1.1.0", section=True)
+    _git(repo, "commit", "-qam", "release 1.1.0")
+    assert cl.check("main") == 1
+    assert "still holds 2 fragment(s) (LOUD.MD, late/fix.md)" in capsys.readouterr().out
+
+
+def test_a_non_markdown_file_under_changelog_d_is_not_a_fragment(tmp_path: Path, monkeypatch, capsys) -> None:
+    """`assemble` reads only `changelog.d/**/*.md`: a `notes.txt` must not satisfy the source rule, or its entry
+    would be lost at release."""
+    repo = _release_repo(tmp_path, monkeypatch, pending=False)
+    (repo / "abstractcore" / "a.py").write_text("x = 1\n")
+    (repo / "changelog.d" / "notes.txt").write_text("### Fixed\n\n- **a fix**\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "source change with a .txt note")
+    assert cl.check("main") == 1
+    assert "adds no changelog fragment (a .md file)" in capsys.readouterr().out
+    assert cl.fragment_files(repo / "changelog.d") == []
