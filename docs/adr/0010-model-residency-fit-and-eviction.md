@@ -1,6 +1,7 @@
 # ADR 0010: Model residency failsafe — fit before load, evict unlocked LRU, refuse with a typed error
 
-Status: Accepted (2026-10-29).
+Status: Accepted (2026-10-29). Amended by [ADR 0012: Idle unload](0012-idle-unload.md) (idle is a second eviction
+trigger under this ADR's rule: never a locked model, never one in use).
 
 ## Context
 

@@ -149,6 +149,7 @@ def test_a_running_call_is_never_cancelled_and_its_model_is_kept(hf):
     pr._FIRST_SEEN[("huggingface", "busy/A")] = now - 10 * 3600
     event = threading.Event()
     call = holder._reg.begin(event)
+    holder._reg.last_used_at = now - 10 * 3600  # begin() stamped "now": make only the running call keep it
     try:
         assert pr.reap_idle(now=now) == []
     finally:

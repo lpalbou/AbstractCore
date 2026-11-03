@@ -191,6 +191,24 @@ def test_theme_copy_comes_from_the_declared_kit_floor() -> None:
     )
 
 
+def test_the_responsive_layer_takes_only_bare_root_rules() -> None:
+    """No abstractuic checkout needed: `:root` and `:root[attr]` rules are tokens; a component
+    rule under `:root` (ui-kit 0.9.14's `:root .af-session-card...`) and a theme rule are not."""
+    css = (
+        "html {\n  text-size-adjust: 100%;\n}\n"
+        ":root {\n  --tap-min: 32px;\n  --vh-full: 100vh;\n}\n"
+        ":root[data-density=\"dense\"] {\n  --row-pad-y: 4px;\n}\n"
+        "@media (pointer: coarse) {\n  :root {\n    --tap-min: 44px;\n  }\n}\n"
+        "@media (max-width: 400px) {\n  :root .af-x {\n    --gap: 1px;\n  }\n}\n"
+        ":root .af-session-card.af-automation-card { --af-session-new: var(--warning); }\n"
+        ":root.theme-light {\n  --bg: #fff;\n}\n"
+    )
+    out = theme_sync.parse_responsive_token_css(css)
+    assert "--tap-min: 32px" in out and 'data-density="dense"' in out and "--tap-min: 44px" in out
+    assert ".af-" not in out, "MUTANT: a component rule under :root copied as a token -> RED"
+    assert ".theme-" not in out
+
+
 def test_every_kit_theme_is_offered_and_styled() -> None:
     ids = [s["id"] for s in KIT_THEME_SPECS]
     assert len(ids) >= 20 and len(set(ids)) == len(ids)
