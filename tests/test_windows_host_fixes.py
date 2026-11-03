@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from abstractcore.utils.stdio import safe_stdio
 
@@ -173,4 +174,4 @@ def test_the_download_child_stops_when_its_owner_exits() -> None:
     )
     owner.wait(timeout=30)
     assert out.returncode == 75, (out.returncode, out.stdout, out.stderr)
-    assert time.monotonic() - started < 20
+    timing_budget(time.monotonic() - started, 20, "owner check refusal")

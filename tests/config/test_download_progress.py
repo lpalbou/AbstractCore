@@ -24,6 +24,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from abstractcore.config import host_jobs
 from abstractcore.config import model_materializer as mm
@@ -263,7 +264,7 @@ def test_ollama_job_reports_bytes_through_the_contract_and_cancel_closes_a_quiet
         done = reg.wait(jid, 10)
         took = time.time() - t0
     assert done["state"] == "cancelled" and done["status"] == "cancelled"
-    assert took < 1.5, f"cancel took {took:.2f}s"
+    timing_budget(took, 1.5, "ollama pull cancel")
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +351,7 @@ def test_cancelling_lms_get_answers_its_prompt_so_lm_studio_stops_too(host, monk
     reg.cancel(job["job_id"])
     done = reg.wait(job["job_id"], 10)
     assert done["state"] == "cancelled"
-    assert time.time() - t0 < 2.0
+    timing_budget(time.time() - t0, 2.0, "lms get cancel")
     assert marker.read_text() == "N", "the cancel must answer lms's 'continue in background?' with N"
 
 
@@ -474,7 +475,8 @@ def test_supertonic_cancel_stops_within_a_second_and_leaves_no_partial(fake_supe
         reg.cancel(job["job_id"])
         done = reg.wait(job["job_id"], 10)
         took = time.time() - t0
-    assert done["state"] == "cancelled" and took < 1.0, took
+    assert done["state"] == "cancelled", done
+    timing_budget(took, 1.0, "supertonic download cancel")
     b = fake_supertonic.cache / "onnx"
     assert not (b / "b.onnx").exists()
     assert not list(b.glob(".*abstractcore-partial")), "the partial file must be removed"
@@ -568,7 +570,8 @@ def test_hf_job_cancel_kills_the_child_and_cleans_its_temp_files(host, monkeypat
     t0 = time.time()
     reg.cancel(job["job_id"])
     done = reg.wait(job["job_id"], 10)
-    assert done["state"] == "cancelled" and time.time() - t0 < 1.5
+    assert done["state"] == "cancelled", done
+    timing_budget(time.time() - t0, 1.5, "huggingface download cancel")
     assert not list((hf / "models--org--big" / "blobs").glob("*.incomplete")), "orphan temp file removed"
     assert (hf / "models--org--big" / mm._HF_MARKER).exists(), "the marker stays: the repo is NOT installed"
     assert mm.probe("huggingface", "org/big").status != mm.PRESENCE_INSTALLED

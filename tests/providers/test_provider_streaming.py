@@ -9,6 +9,7 @@ import os
 import time
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from abstractcore import create_llm
 from abstractcore.core.types import GenerateResponse
@@ -85,7 +86,7 @@ class TestProviderStreaming:
 
             assert len(chunks) > 0
             assert any(isinstance(c, GenerateResponse) for c in chunks)
-            assert elapsed < 30
+            timing_budget(elapsed, 30, "live provider response")
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")

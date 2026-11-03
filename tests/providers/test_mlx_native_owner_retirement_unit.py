@@ -2,7 +2,6 @@
 import gc
 import sys
 import threading
-import time
 import weakref
 from types import SimpleNamespace
 
@@ -15,14 +14,19 @@ from abstractcore.providers.mlx_provider import MLXProvider
 
 @pytest.fixture
 def harness(monkeypatch):
-    gate, entered = threading.Event(), threading.Event()
+    # `returned`: the CPU backend came back from its blocked call. A GC callback that waited for the
+    # backend could only return after it, so "not returned yet" proves the callback did not block.
+    gate, entered, returned = threading.Event(), threading.Event(), threading.Event()
     calls, closes, unraisable, runtimes = [], [], [], []
     monkeypatch.setattr(sys, "unraisablehook", unraisable.append)
 
     def generate(model, processor, prompt, **kwargs):
         calls.append(prompt)
         entered.set()
-        assert gate.wait(3), "CPU backend gate must be released"
+        try:
+            assert gate.wait(3), "CPU backend gate must be released"
+        finally:
+            returned.set()
         yield SimpleNamespace(text="OK", token=1, generation_tokens=1,
                               prompt_tokens=1, finish_reason="stop")
 
@@ -41,7 +45,7 @@ def harness(monkeypatch):
         runtimes.append(session.runtime)
         return session
 
-    yield SimpleNamespace(make=make, gate=gate, entered=entered, calls=calls,
+    yield SimpleNamespace(make=make, gate=gate, entered=entered, returned=returned, calls=calls,
                           closes=closes, unraisable=unraisable)
     gate.set()
     for runtime in runtimes:
@@ -83,9 +87,8 @@ def test_collected_last_owner_closes_after_cancelled_backend_returns(harness, qu
     handle.close()
     session_ref, holder_ref = weakref.ref(session), weakref.ref(holder)
     del session, holder, busy
-    before = time.monotonic()
     gc.collect()
-    assert time.monotonic() - before < .5, "GC callback blocked waiting for backend"
+    assert not harness.returned.is_set(), "GC callback blocked waiting for backend"
     assert holder_ref() is None and not harness.unraisable
     assert session_ref() is not None, "weak registry session must survive live cancelled tensors"
     assert runtime.stats()["owners"] == runtime.stats()["retiring_owners"] == 1
@@ -131,17 +134,20 @@ def test_retiring_one_owner_does_not_cancel_or_close_sibling(harness):
 
 
 def test_idle_gc_starts_shutdown_without_waiting_for_close_hook(harness):
-    close_entered, finish_close = threading.Event(), threading.Event()
+    close_entered, finish_close, close_returned = threading.Event(), threading.Event(), threading.Event()
     def close_hook():
         close_entered.set()
-        assert finish_close.wait(3)
+        try:
+            assert finish_close.wait(3)
+        finally:
+            close_returned.set()
     session = harness.make(close_hook)
     holder = attach(session)
     runtime, session_ref = session.runtime, weakref.ref(session)
     del holder, session
-    before = time.monotonic()
     gc.collect()
-    assert time.monotonic() - before < .5
+    # A GC callback that waited for the close hook could only return after it.
+    assert not close_returned.is_set(), "GC callback waited for the close hook"
     try:
         assert close_entered.wait(1)
         assert runtime.stats()["owners"] == 0 and runtime._thread.is_alive()

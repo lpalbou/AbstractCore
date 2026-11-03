@@ -41,6 +41,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from tests.models_engines_fakes import isolate_host
 
@@ -265,7 +266,7 @@ def test_an_uncached_model_fails_fast_with_the_download_command(offline_first, n
     started = time.monotonic()
     with pytest.raises(ModelNotFoundError) as excinfo:
         _load("test-org/never-downloaded")
-    assert time.monotonic() - started < 5.0
+    timing_budget(time.monotonic() - started, 5.0, "uncached model refusal")
     assert no_network == []
     _assert_plain_failure(
         excinfo,

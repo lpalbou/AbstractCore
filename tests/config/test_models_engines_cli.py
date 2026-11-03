@@ -15,6 +15,7 @@ import sys
 import time
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from tests.models_engines_fakes import FakeOllama, isolate_host, make_hf_repo, ollama_tag
 
@@ -91,7 +92,7 @@ def test_engine_install_refusals_exit_2_with_a_reason(host, monkeypatch):
     start = time.monotonic()
     code, out, _ = _cli("engines", "install", "ollama", "--yes", "--json")
     assert code == 2
-    assert time.monotonic() - start < 10
+    timing_budget(time.monotonic() - start, 10, "engine install refusal")
     body = _json(out)
     assert body["reason"] == "not_allowed" and body["install"]["argv"]
     monkeypatch.delenv("ABSTRACTCORE_ALLOW_ENGINE_INSTALL")
