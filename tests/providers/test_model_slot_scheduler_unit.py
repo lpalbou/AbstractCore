@@ -290,10 +290,11 @@ def test_a_holder_dropped_while_its_pool_works_frees_the_pool_when_the_work_ends
     t.start()
     started.wait(5)
     first = pool.first_llm
-    t0 = time.time()
     del a
     gc.collect()
-    assert time.time() - t0 < 1.0, "a dropped holder never waits inside garbage collection"
+    # The work blocks on `gate` (set only below): a collection that waited for it could only
+    # return once the work ended, so the work still running proves the GC callback did not wait.
+    assert t.is_alive(), "a dropped holder never waits inside garbage collection"
     assert not first.closed and pool not in gguf_slots.all_schedulers()
     gate.set()
     t.join(5)
@@ -330,6 +331,7 @@ def test_cancelling_one_of_four_active_requests_stops_only_it():
     pool = _pool(max_concurrent=4)
     events = [threading.Event() for _ in range(4)]
     started = threading.Barrier(5)
+    progress = [0, 0, 0, 0]  # tokens each call has produced so far
 
     def decode(i):
         def call():
@@ -339,6 +341,7 @@ def test_cancelling_one_of_four_active_requests_stops_only_it():
                 if events[i].is_set():
                     raise GenerationCancelledError("cancelled", generated_tokens=len(out))
                 out.append(tok)
+                progress[i] = len(out)
                 time.sleep(0.02)
             return out
         return call
@@ -349,11 +352,12 @@ def test_cancelling_one_of_four_active_requests_stops_only_it():
     [t.start() for t in ts]
     started.wait(5)
     time.sleep(0.05)
-    t_cancel = time.time()
+    at_cancel = progress[1]
     events[1].set()
     ts[1].join(5)
-    assert time.time() - t_cancel < 0.2, "stopped within about one token"
     [t.join(10) for t in ts]
     assert isinstance(results[1], GenerationCancelledError)
+    # The loop checks the event before every token: at most the token in flight follows the cancel.
+    assert results[1].generated_tokens <= at_cancel + 1, ("stopped within about one token", at_cancel, results[1].generated_tokens)
     assert all(results[i] == list(range(20)) for i in (0, 2, 3))
     assert pool.state()["active"] == 0 and pool.run(lambda: "slot returned") == "slot returned"

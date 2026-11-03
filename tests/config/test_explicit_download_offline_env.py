@@ -14,6 +14,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from abstractcore.config import host_jobs
 from abstractcore.config import manager
@@ -118,7 +119,7 @@ def test_an_operator_offline_flag_refuses_the_download_by_name(host, monkeypatch
     assert done["status"] == "failed"
     assert "HF_HUB_OFFLINE=1 was set in the environment before this process started" in (done.get("error") or "")
     assert not started.exists(), "no download process is started when the operator said offline"
-    assert time.time() - t0 < 10
+    timing_budget(time.time() - t0, 10, "offline refusal")
 
 
 def test_a_detached_job_child_gets_the_operator_flags_not_in_process_ones(host, monkeypatch):

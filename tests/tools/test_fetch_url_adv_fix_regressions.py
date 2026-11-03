@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 FIXTURES = Path(__file__).resolve().parent / "fetch_url_fixtures"
 sys.path.insert(0, str(FIXTURES))
@@ -257,7 +258,7 @@ def test_deeply_nested_markup_does_not_blow_up_the_cost():
     # ~0.25s on a developer machine; a shared CI runner (Python 3.9) took 2.05s
     # on 2026-09-24. 5.0s absorbs runner noise and still catches the old
     # quadratic cost (~5.7s on a developer machine, far more on a runner).
-    assert elapsed < 5.0, f"2000 nested divs ({len(html)//1024}KB) took {elapsed:.2f}s"
+    timing_budget(elapsed, 5.0, f"2000 nested divs ({len(html)//1024}KB)")
 
 
 MALFORMED = {

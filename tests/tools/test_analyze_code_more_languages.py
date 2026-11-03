@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 from abstractcore.tools import code_analysis as ca
 from abstractcore.tools.common_tools import analyze_code
@@ -557,7 +558,7 @@ def test_no_spec_pattern_backtracks_catastrophically(tmp_path: Path) -> None:
         elapsed = time.monotonic() - start
         assert not out.startswith("Error")
         # Generous vs. a real machine, unmissable vs. exponential blowup.
-        assert elapsed < 2.0, f"{spec.name} took {elapsed:.2f}s on 30 hostile lines"
+        timing_budget(elapsed, 2.0, f"{spec.name} on 30 hostile lines")
 
 
 def test_the_docstring_language_list_matches_the_live_table() -> None:

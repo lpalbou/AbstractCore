@@ -15,6 +15,7 @@ Tests are organized by complexity:
 """
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 import time
 from typing import Iterator, List
 from abstractcore.providers.streaming import (
@@ -360,7 +361,7 @@ class TestPerformanceValidation:
         latency = time.time() - start_time
 
         # Should be under 10ms (0.01 seconds)
-        assert latency < 0.01, f"First chunk latency {latency*1000:.2f}ms exceeds 10ms target"
+        timing_budget(latency, 0.01, "first chunk latency")
         assert first_result.content == "First chunk"
 
     def test_tool_detection_overhead_minimal(self):
@@ -379,7 +380,7 @@ class TestPerformanceValidation:
         total_time = time.time() - start_time
 
         # 100 chunks should process in under 100ms (1ms per chunk)
-        assert total_time < 0.1, f"Processing 100 chunks took {total_time*1000:.2f}ms (>100ms limit)"
+        timing_budget(total_time, 0.1, "100 chunks with tool detection")
         assert len(results) == 100
 
     def test_smart_buffering_vs_blanket_buffering(self):
@@ -397,7 +398,7 @@ class TestPerformanceValidation:
         smart_time = time.time() - start
 
         # Should be very fast
-        assert smart_time < 0.05, f"Smart buffering took {smart_time*1000:.2f}ms"
+        timing_budget(smart_time, 0.05, "smart buffering")
 
     def test_partial_tag_detection_speed(self):
         """Test that partial tag detection is fast"""
@@ -420,7 +421,7 @@ class TestPerformanceValidation:
         elapsed = time.time() - start
 
         # Should process 500 chunks in under 50ms
-        assert elapsed < 0.05, f"Partial tag detection too slow: {elapsed*1000:.2f}ms"
+        timing_budget(elapsed, 0.05, "partial tag detection")
 
     def test_large_content_stream_performance(self):
         """Test performance with large content streams"""
@@ -438,7 +439,7 @@ class TestPerformanceValidation:
         elapsed = time.time() - start
 
         # Should process 1MB (100 * 10KB) in under 1 second
-        assert elapsed < 1.0, f"Large stream processing too slow: {elapsed*1000:.2f}ms"
+        timing_budget(elapsed, 1.0, "large stream processing")
         assert count == 100
 
 

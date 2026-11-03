@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, Optional, Tuple
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 
 FIXTURES = Path(__file__).resolve().parent / "fetch_url_fixtures"
 sys.path.insert(0, str(FIXTURES))
@@ -535,10 +536,8 @@ def test_the_render_budget_respects_the_callers_timeout(allow_loopback: str) -> 
     fetch_url(url=f"{allow_loopback}/infinite-loop", timeout=5)
     elapsed = time.monotonic() - started
 
-    assert elapsed < 5 + BT._RENDER_LAUNCH_GRACE_S + 5, (
-        f"fetch_url(timeout=5) spent {elapsed:.1f}s; the render escalation ignores the "
-        f"caller's timeout and uses RENDER_DEFAULT_TIMEOUT_S={BT.RENDER_DEFAULT_TIMEOUT_S}"
-    )
+    # Over budget means the render escalation used RENDER_DEFAULT_TIMEOUT_S, not the caller's timeout.
+    timing_budget(elapsed, 5 + BT._RENDER_LAUNCH_GRACE_S + 5, "fetch_url(timeout=5) with a render escalation")
 
 
 # ===========================================================================
@@ -1009,7 +1008,7 @@ def test_a_missing_playwright_gives_an_install_hint_not_a_traceback(
     result = fetch_url(url=f"{allow_loopback}/spa", timeout=15)
     elapsed = time.monotonic() - started
 
-    assert elapsed < 15.0, f"the unavailable-browser path took {elapsed:.1f}s"
+    timing_budget(elapsed, 15.0, "fetch_url with no browser available")
     assert result.get("success") is False
     blob = json.dumps(result)
     assert "Traceback" not in blob

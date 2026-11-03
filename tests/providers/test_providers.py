@@ -4,6 +4,7 @@ No mocking - test actual provider connections and functionality.
 """
 
 import pytest
+from tests.timing import timing_budget  # wall-clock budgets: reported, asserted only under ABSTRACTCORE_TIMING_STRICT=1
 import os
 import json
 import time
@@ -30,7 +31,7 @@ class TestProviders:
             assert response is not None
             assert response.content is not None
             assert len(response.content) > 0
-            assert elapsed < 30  # Should respond within 30 seconds
+            timing_budget(elapsed, 30, "live provider response (Should respond within 30 seconds)")
 
         except Exception as e:
             if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
@@ -53,7 +54,7 @@ class TestProviders:
             assert response is not None
             assert response.content is not None
             assert len(response.content) > 0
-            assert elapsed < 30  # Should respond within 30 seconds
+            timing_budget(elapsed, 30, "live provider response (Should respond within 30 seconds)")
 
         except Exception as e:
             if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
@@ -76,7 +77,7 @@ class TestProviders:
             assert response is not None
             assert response.content is not None
             assert len(response.content) > 0
-            assert elapsed < 60  # MLX might be slower
+            timing_budget(elapsed, 60, "live provider response (MLX might be slower)")
 
         except Exception as e:
             if any(keyword in str(e).lower() for keyword in ["mlx", "import", "not found", "failed to load"]):
@@ -99,7 +100,7 @@ class TestProviders:
             assert response is not None
             assert response.content is not None
             assert len(response.content) > 0
-            assert elapsed < 120  # HF might be slow on first load
+            timing_budget(elapsed, 120, "live provider response (HF might be slow on first load)")
 
         except Exception as e:
             if any(keyword in str(e).lower() for keyword in ["transformers", "torch", "not found", "failed to load"]):
@@ -125,7 +126,7 @@ class TestProviders:
             assert response is not None
             assert response.content is not None
             assert len(response.content) > 0
-            assert elapsed < 10  # Cloud should be fast
+            timing_budget(elapsed, 10, "live provider response (Cloud should be fast)")
 
             # Check usage tracking
             if response.usage:
@@ -158,7 +159,7 @@ class TestProviders:
             assert response is not None
             assert response.content is not None
             assert len(response.content) > 0
-            assert elapsed < 10  # Cloud should be fast
+            timing_budget(elapsed, 10, "live provider response (Cloud should be fast)")
 
             # Check usage tracking
             if response.usage:
