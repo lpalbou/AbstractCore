@@ -558,7 +558,7 @@ def test_no_spec_pattern_backtracks_catastrophically(tmp_path: Path) -> None:
         elapsed = time.monotonic() - start
         assert not out.startswith("Error")
         # Generous vs. a real machine, unmissable vs. exponential blowup.
-        timing_budget(elapsed, 2.0, f"{spec.name} on 30 hostile lines")
+        timing_budget(elapsed, 2.0, f"{spec.name} on 30 hostile lines", ceiling=20.0)
 
 
 def test_the_docstring_language_list_matches_the_live_table() -> None:

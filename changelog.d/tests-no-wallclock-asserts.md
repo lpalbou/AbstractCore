@@ -9,4 +9,6 @@
 
   Latency budgets (cancel promptness, ReDoS guards, streaming overheads, live-provider response times) go through
   `timing_budget`: one `[timing]` line on stderr by default, asserted only with `ABSTRACTCORE_TIMING_STRICT=1`,
-  mirroring the gateway's `tests/timing.py`. Test-only.
+  mirroring the gateway's `tests/timing.py`. The session's terminal summary lists every measure ("timing budgets",
+  over-budget first), so the numbers are in every CI log. A blowup guard also passes `ceiling=`: a generous bound
+  asserted always (a ReDoS regression is never a slow green). Test-only.

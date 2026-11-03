@@ -136,6 +136,7 @@ def test_cancel_during_backoff_is_observed_fast_and_labeled():
         manager.execute_with_retry(failing, provider_key="ep:m", cancel_event=cancel)
     elapsed = time.monotonic() - start
 
+    assert elapsed < 60, f"the 60 s backoff was waited ({elapsed:.1f}s)"  # the wait a cancel must cut
     timing_budget(elapsed, 2.0, "retry cancel observed (~1 s backoff slice + margin)")
     assert "[retry cancelled by host]" in str(exc_info.value)
     assert isinstance(exc_info.value.last_error, ProviderAPIError)

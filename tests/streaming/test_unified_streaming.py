@@ -1036,7 +1036,7 @@ class TestPerformanceBenchmarks:
         first_chunk_latency = time.time() - start
 
         # Should be immediate (< 10ms for processing overhead)
-        timing_budget(first_chunk_latency, 0.01, "first chunk processing overhead")
+        timing_budget(first_chunk_latency, 0.01, "first chunk processing overhead", ceiling=0.5)
         assert first_result.content == "First"
 
     def test_tool_detection_overhead(self):

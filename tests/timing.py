@@ -11,6 +11,13 @@ thing the code must not wait for (a child's `sleep 40`). Its latency budget goes
 - with `ABSTRACTCORE_TIMING_STRICT=1` in the environment it asserts the budget (a quiet machine,
   measuring a latency change on purpose).
 
+A guard against a blowup (ReDoS, quadratic cost, a render that ignores its deadline) passes
+`ceiling=`: a generous bound asserted ALWAYS, far above any slow machine and below the broken
+cost, so a regression is never a slow green.
+
+Every measure is collected in `REPORT`; the test session prints them in its terminal summary
+("timing budgets", over-budget lines first), so they are visible in CI logs, not only on failure.
+
 `patient(timeout_s)` is for a wait whose expiry fails the test (`Event.wait`, `join`, a registry
 `wait`): x5 unless strict, so a slow machine waits longer instead of failing.
 """
@@ -21,6 +28,7 @@ import sys
 
 STRICT_ENV = "ABSTRACTCORE_TIMING_STRICT"
 PATIENCE = 5.0
+REPORT: list = []  # (ok, line), read by tests/conftest.py's terminal summary
 
 
 def timing_strict() -> bool:
@@ -35,11 +43,16 @@ def _fmt(value: float, unit: str) -> str:
     return f"{value:g} {unit}"
 
 
-def timing_budget(actual: float, limit: float, what: str, *, unit: str = "s", inclusive: bool = False) -> bool:
+def timing_budget(actual: float, limit: float, what: str, *, unit: str = "s", inclusive: bool = False,
+                  ceiling: "float | None" = None) -> bool:
     """`actual < limit` (`<=` when `inclusive`): asserted under ABSTRACTCORE_TIMING_STRICT=1, otherwise
-    reported on stderr. Returns whether the budget held."""
+    reported (stderr and the session summary). `actual < ceiling` is asserted always. Returns whether
+    the budget held."""
+    if ceiling is not None:
+        assert actual < ceiling, f"[timing] {what}: {_fmt(actual, unit)} is past the ceiling {_fmt(ceiling, unit)}"
     ok = actual <= limit if inclusive else actual < limit
     line = f"[timing] {what}: {_fmt(actual, unit)} vs limit {_fmt(limit, unit)}{'' if ok else ' (OVER)'}"
+    REPORT.append((ok, line))
     if timing_strict():
         assert ok, line
     print(line, file=sys.stderr, flush=True)

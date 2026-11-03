@@ -352,8 +352,8 @@ def test_cancelling_one_of_four_active_requests_stops_only_it():
     [t.start() for t in ts]
     started.wait(5)
     time.sleep(0.05)
-    at_cancel = progress[1]
     events[1].set()
+    at_cancel = progress[1]  # read after the cancel: only the token in flight can follow
     ts[1].join(5)
     [t.join(10) for t in ts]
     assert isinstance(results[1], GenerationCancelledError)

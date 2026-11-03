@@ -705,6 +705,20 @@ def pytest_addoption(parser):
 
 def pytest_terminal_summary(terminalreporter):
     _hermetic_terminal_summary(terminalreporter)
+    _timing_terminal_summary(terminalreporter)
+
+
+def _timing_terminal_summary(terminalreporter):
+    """The wall-clock budgets measured this session (`tests/timing.py`), over-budget first: reported,
+    never failed, unless ABSTRACTCORE_TIMING_STRICT=1."""
+    from tests.timing import REPORT, STRICT_ENV
+
+    if not REPORT:
+        return
+    over = [line for ok, line in REPORT if not ok]
+    terminalreporter.section(f"timing budgets ({len(over)} over of {len(REPORT)}; {STRICT_ENV}=1 asserts them)")
+    for line in over + [line for ok, line in REPORT if ok]:
+        terminalreporter.write_line(line)
 
 
 def pytest_sessionfinish(session, exitstatus):

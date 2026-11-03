@@ -211,7 +211,7 @@ class TestStreamingPerformance:
         total_time = time.time() - start_time
 
         # Should be fast even with tool detection overhead
-        timing_budget(total_time, 0.05, "streaming with tool detection")
+        timing_budget(total_time, 0.05, "streaming with tool detection", ceiling=1.0)
 
         # All chunks should be preserved
         assert len(results) == 5

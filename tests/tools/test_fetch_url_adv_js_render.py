@@ -508,6 +508,8 @@ def test_a_hostile_page_can_never_hang_the_fetch(allow_loopback: str, path: str)
     result = fetch_url(url=f"{allow_loopback}{path}", timeout=10)
     elapsed = time.monotonic() - started
 
+    # Structural, not a latency budget: the parent's own process-tree-kill bound plus 20 s of slack;
+    # a page that hangs the fetch never returns under it.
     assert elapsed < _HANG_BUDGET_S, f"{path} took {elapsed:.1f}s (bound {_HANG_BUDGET_S:.0f}s)"
     assert isinstance(result, dict)
     # Whatever it decided, it must have decided something — never a bare
@@ -536,7 +538,11 @@ def test_the_render_budget_respects_the_callers_timeout(allow_loopback: str) -> 
     fetch_url(url=f"{allow_loopback}/infinite-loop", timeout=5)
     elapsed = time.monotonic() - started
 
-    # Over budget means the render escalation used RENDER_DEFAULT_TIMEOUT_S, not the caller's timeout.
+    # Structural: a render that ignored the caller's timeout runs the infinite loop for the whole
+    # RENDER_DEFAULT_TIMEOUT_S (measured 35.2 s with its grace), so the call cannot return under it.
+    assert elapsed < BT.RENDER_DEFAULT_TIMEOUT_S, (
+        f"fetch_url(timeout=5) spent {elapsed:.1f}s; the render escalation ignores the caller's timeout"
+    )
     timing_budget(elapsed, 5 + BT._RENDER_LAUNCH_GRACE_S + 5, "fetch_url(timeout=5) with a render escalation")
 
 

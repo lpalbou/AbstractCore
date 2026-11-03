@@ -240,9 +240,8 @@ def test_extraction_of_a_large_real_page_is_bounded(gold_key: str):
     start = time.perf_counter()
     _extract_main_content(html, GOLD[gold_key]["url"], keep_links=True)
     elapsed = time.perf_counter() - start
-    assert elapsed < MAX_EXTRACTION_SECONDS, (
-        f"{gold_key} ({len(html)//1024}KB) took {elapsed:.2f}s"
-    )
+    timing_budget(elapsed, MAX_EXTRACTION_SECONDS, f"{gold_key} ({len(html)//1024}KB) extraction",
+                  ceiling=5 * MAX_EXTRACTION_SECONDS)
 
 
 def test_deeply_nested_markup_does_not_blow_up_the_cost():
@@ -258,7 +257,7 @@ def test_deeply_nested_markup_does_not_blow_up_the_cost():
     # ~0.25s on a developer machine; a shared CI runner (Python 3.9) took 2.05s
     # on 2026-09-24. 5.0s absorbs runner noise and still catches the old
     # quadratic cost (~5.7s on a developer machine, far more on a runner).
-    timing_budget(elapsed, 5.0, f"2000 nested divs ({len(html)//1024}KB)")
+    timing_budget(elapsed, 5.0, f"2000 nested divs ({len(html)//1024}KB)", ceiling=15.0)
 
 
 MALFORMED = {
