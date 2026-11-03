@@ -14033,7 +14033,6 @@ accepts `False` or a native-MTP control object, and `params.thinking` accepts bo
 on/off or a reasoning level. The remote client forwards these controls to Core HTTP
 and preserves actual execution/speculation metadata. Head loading and scheduler
 configuration remain load-time choices; forwarding a request does not load a head.
-These integration changes are unreleased; update both Core and Runtime together.
 Applications can inherit the configured MTP policy or override it per run or node;
 see the default policy below.
 
