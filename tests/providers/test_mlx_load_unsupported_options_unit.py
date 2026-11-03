@@ -31,7 +31,8 @@ def test_ttl_and_keep_alive_are_reported_as_not_applied():
     out = p.load_model("fake/model", ttl_s=20, keep_alive="20s", pin=True)
     assert calls == [1] and out["action"] == "loaded"
     assert out["unsupported_options"] == ["keep_alive", "ttl_s"]
-    assert any("no idle/TTL unload" in w and "ttl_s" in w for w in out["warnings"])
+    assert any("no per-load idle/TTL unload" in w and "ttl_s" in w and "process-wide idle unload" in w
+               for w in out["warnings"])
 
 
 def test_already_loaded_still_reports_the_option_as_not_applied():

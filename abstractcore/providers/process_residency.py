@@ -639,9 +639,10 @@ def _gated_holders(state: Dict[str, Any]) -> List[Any]:
 
 
 def _idle_eject(state: Dict[str, Any], idle_s: float, now: float) -> Optional[Dict[str, Any]]:
-    """Eject one idle model without ever cancelling a call: every holder's gate closes only
-    while nothing runs on it, the state is checked again, and calls that begin meanwhile wait
-    for the gates to reopen (then reload the model on demand). None when it is not idle any more."""
+    """Eject one idle model without ever cancelling a call: every holder's gate closes (new
+    calls wait), the state is checked again with the gates closed, and only a model still idle,
+    unlocked and unused is ejected. Waiting calls then run and reload it on demand. None when it
+    is not idle any more."""
     closed = []
     try:
         for holder in _gated_holders(state):
@@ -649,9 +650,10 @@ def _idle_eject(state: Dict[str, Any], idle_s: float, now: float) -> Optional[Di
             if not callable(get):
                 continue
             registry = get()
-            if not registry.close_for_idle():
-                return None  # a call started since the check: it is in use, and never cancelled
+            registry.close_for_idle()
             closed.append(registry)
+        # With the gates closed no call can start: a call that began since the first check is
+        # seen here as in use, and the model is kept (never cancelled).
         again = next((s for s in resident_model_states()
                       if s["backend"] == state["backend"] and s["model"] == state["model"]), None)
         if again is None or again["in_use"] or again["locked_by"] or now - _idle_since(again, now) < idle_s:
@@ -663,14 +665,15 @@ def _idle_eject(state: Dict[str, Any], idle_s: float, now: float) -> Optional[Di
             registry.reopen_after_idle()
     freed = report.get("freed_bytes")
     freed_b = int(freed) if isinstance(freed, int) and freed > 0 else int(state.get("held_bytes") or 0)
-    minutes = (now - _idle_since(state, now)) / 60.0
+    idle_for = now - _idle_since(state, now)
+    minutes = idle_for / 60.0
     if report.get("ok", True):
         _idle_log.info(f"unloaded {state['model']} after {minutes:.0f} min idle; freed {_fmt_gb(freed_b)}")
     else:
         _idle_log.warning(f"idle unload of {state['model']} after {minutes:.0f} min did not free everything: "
                           f"{report.get('holders_refused') or report.get('residual')}")
     _FIRST_SEEN.pop((state["backend"], state["model"]), None)
-    return {"model": state["model"], "backend": state["backend"], "idle_s": round(now - _idle_since(state, now), 1),
+    return {"model": state["model"], "backend": state["backend"], "idle_s": round(idle_for, 1),
             "freed_bytes": freed_b, "ok": bool(report.get("ok", True))}
 
 

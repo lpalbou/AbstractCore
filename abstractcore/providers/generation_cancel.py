@@ -262,10 +262,10 @@ class InflightGenerations:
     only a call with an event can be cancelled by an eject. Entries are weakly
     held: an abandoned, garbage-collected stream disappears by itself.
 
-    The idle gate (core ADR 0012): an idle unload closes it only while nothing
-    runs (`close_for_idle`), so the unload never cancels a call; a call that
-    begins while it is closed waits for `reopen_after_idle` and then runs (the
-    provider reloads its model on demand).
+    The idle gate (core ADR 0012): an idle unload closes it (`close_for_idle`), then
+    checks again that nothing runs before it ejects, so it never cancels a call; a
+    call that begins while it is closed waits for `reopen_after_idle` and then runs
+    (the provider reloads its model on demand).
     """
 
     def __init__(self) -> None:
@@ -290,13 +290,10 @@ class InflightGenerations:
             self.last_used_at = _time.time()
         return call
 
-    def close_for_idle(self) -> bool:
-        """Close the gate for an idle unload, only if no call is running (True when closed)."""
+    def close_for_idle(self) -> None:
+        """Close the gate for an idle unload: calls that begin from now wait for the reopen."""
         with self._gate:
-            if self._calls:
-                return False
             self._closed_for_idle = True
-            return True
 
     def reopen_after_idle(self) -> None:
         with self._gate:
