@@ -1,6 +1,10 @@
 # 0869 — The console's theme copy re-syncs to ui-kit 0.9.6, with a CI-visible pin
 
 **Status**: planned · **Priority**: P2 · **Created**: 2026-10-29
+**Progress (2026-11-03)**: in a PR (branch `fix/backlog-sweep-2.34`, AbstractCore 2.34): `themes.py` regenerated from
+ui-kit 0.9.14 (the kit moved past 0.9.6) and records `kit_version`; `theme_sync.KIT_THEME_FLOOR` plus
+`test_theme_copy_comes_from_the_declared_kit_floor` fail CI on an older copy without the abstractuic checkout (checked
+once with a 0.9.6 copy). Left: the operator-instance check below, after release.
 **Cross-package**: AbstractUIC 0.8.5 (ui-kit 0.9.6), on npm 2026-10-29.
 > Root link: AbstractFramework release-closing wave 2026-10-29 (the lead's order, via the merge desk).
 
