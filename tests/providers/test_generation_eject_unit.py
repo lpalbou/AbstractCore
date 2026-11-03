@@ -66,7 +66,7 @@ def test_registry_forgets_garbage_collected_calls():
     del call
     gc.collect()
     assert reg.active() == 0
-    assert reg.begin(None) is None
+    assert reg.begin(None) is not None and reg.active() == 1  # every call is counted (ADR 0012)
 
 
 def _provider(stream_hold: threading.Event | None = None):

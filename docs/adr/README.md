@@ -20,6 +20,7 @@ that future work must respect.
 | [0009](0009-model-handle-fidelity.md) | Accepted | Model handle fidelity | Forbids loading a different model artifact than the handle names; amends 0001. |
 | [0010](0010-model-residency-fit-and-eviction.md) | Accepted | Model residency fit and eviction | A load checks weights + KV against free memory, evicts unlocked LRU models, else refuses with a typed error and smaller suggestions. |
 | [0011](0011-shared-weights-and-concurrent-requests.md) | Proposed | Shared weights and concurrent requests | One weights object per model per process for every request path; a per-model slot scheduler (bounded, fair FIFO, visible queued state, per-request cancel) in the process that holds the weights; slots fit-checked under 0010, never a silent context reduction. |
+| [0012](0012-idle-unload.md) | Accepted | Idle unload | A model no call has used for the idle-unload time (60 min by default, host-set, 0 = never) is unloaded under 0010's rule: never a locked one, never one in use or loading, never cancelling a call; amends 0010. |
 
 ## How To Use This Set
 
