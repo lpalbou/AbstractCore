@@ -2105,6 +2105,44 @@ class OpenAICompatibleProvider(BaseProvider):
 
         return handler
 
+    # A key check proves the KEY only when the route it lists answers per key. Some services list
+    # their models publicly (OVH AI Endpoints: GET /v1/models answers 200 with no key and with a
+    # wrong one, measured 2026-10-29). False on a subclass that verifies the key its own way
+    # (OpenRouter: GET /key).
+    PUBLIC_MODELS_KEY_PROBE = True
+    # A model id no service has: the probe asks for it, so nothing is ever generated.
+    KEY_PROBE_MODEL = "abstractcore-key-check"
+
+    def _raise_if_key_refused_by_probe(self, base_url: str) -> None:
+        """Raise AuthenticationError when this key is refused, although /models listed models.
+
+        Only when there is a key to check and /models is public (it also answers WITHOUT the key):
+        then one chat request for a model that does not exist. A service that authenticates first
+        refuses a wrong key (OVH AI Endpoints: 403 "authentication failed"); with a valid key the
+        answer is "model not found" (404/400) and nothing runs. Any answer but 401/403 keeps the key.
+        """
+        if not getattr(self, "PUBLIC_MODELS_KEY_PROBE", True):
+            return
+        api_key = None if self.api_key is None else str(self.api_key).strip()
+        if not api_key or api_key.upper() == "EMPTY":
+            return
+        anonymous = {k: v for k, v in self._get_headers().items() if k.lower() != "authorization"}
+        try:
+            public = self.client.get(f"{base_url}/models", headers=anonymous, timeout=5.0)
+        except Exception:
+            return
+        if getattr(public, "status_code", None) != 200:
+            return  # /models needs the key: the listing already proved it
+        probe = self.client.post(
+            f"{base_url}/chat/completions",
+            headers=self._get_headers(),
+            json={"model": self.KEY_PROBE_MODEL, "messages": [{"role": "user", "content": "key check"}], "max_tokens": 1},
+            timeout=5.0,
+        )
+        status = getattr(probe, "status_code", None)
+        if isinstance(status, int) and status in (401, 403):
+            self._raise_for_status(probe, request_url=f"{base_url}/chat/completions")
+
     def list_available_models(self, **kwargs) -> List[str]:
         """
         List available models from OpenAI-compatible server.
@@ -2130,6 +2168,9 @@ class OpenAICompatibleProvider(BaseProvider):
                 data = response.json()
                 models = [model["id"] for model in data.get("data", [])]
                 models = sorted(models)
+                if raise_on_error:
+                    # A key check (the gateway's Connect): a PUBLIC /models proves nothing about the key.
+                    self._raise_if_key_refused_by_probe(base_url)
 
                 # Apply capability filtering if provided
                 input_capabilities = kwargs.get('input_capabilities')

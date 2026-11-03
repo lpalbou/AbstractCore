@@ -29,6 +29,8 @@ class OpenRouterProvider(OpenAICompatibleProvider):
     BASE_URL_ENV_VAR = "OPENROUTER_BASE_URL"
     API_KEY_ENV_VAR = "OPENROUTER_API_KEY"
     DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+    # The key is verified by GET /key (`_api_key_refused`), not by the generic public-/models probe.
+    PUBLIC_MODELS_KEY_PROBE = False
 
     def __init__(
         self,
