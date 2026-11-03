@@ -430,9 +430,39 @@ embeddings that are running on the manager; if one is still running after `drain
 Ollama, LM Studio or another server hold nothing in this process, so `unload()` leaves them
 untouched and says so (`in_process: false`).
 
-MLX has no idle or time-based unload. `load_model()` on MLX does not apply `ttl_s` or
-`keep_alive`; the response lists them under `unsupported_options` with a warning, and the model
-stays loaded until it is ejected.
+`load_model()` on MLX does not apply a per-load `ttl_s` or `keep_alive`; the response lists them under
+`unsupported_options` with a warning. The process-wide idle unload below applies instead.
+
+### Idle unload: 60 minutes by default
+
+A model loaded in this process that no call has used for the idle-unload time is unloaded from memory. The default
+is 60 minutes. A model kept loaded (locked, see below) is never unloaded this way. A call running on the model, or a
+model still loading, is never interrupted. The next call loads the model again. Covered: HuggingFace (transformers
+and GGUF), MLX and in-process embedding models
+([ADR 0012](adr/0012-idle-unload.md)).
+
+```python
+from abstractcore.providers import process_residency
+
+process_residency.get_idle_unload()      # 3600.0 (seconds); None when off
+process_residency.set_idle_unload(1800)  # 30 minutes for this process
+process_residency.set_idle_unload(0)     # off: models stay until they are ejected
+```
+
+- The timer starts with the first model this process loads, and checks every `min(60 s, idle / 4)`.
+- A model's idle time counts from its last call, or from when it was first seen resident if no call has used it
+  yet. Every call counts, with or without a cancel event.
+- What keeps a model loaded is the same rule as the residency failsafe: a lock (Keep loaded), a call running on any
+  instance of it, or a claimant still building it. A runtime pool or a configured default does not.
+- No check runs while another model loads. Before unloading, new calls to that model wait. The model is checked
+  again, and kept if a call started in between: an idle unload never cancels a call.
+- The unload is the process-wide eject (every holder, then `gc` and the allocator cache). It logs
+  `unloaded <model> after <N> min idle; freed <X.Y GB>` (seconds under two minutes) on the `abstractcore.residency` logger.
+- `process_residency.resident_model_states()` shows, per model, `last_used_at`, `in_use`, `locked_by` and
+  `idle_unload_at` (None when off, locked or in use). `reap_idle()` runs one check now.
+- After an unload, the next call pays the load and a full prefill: the in-memory prompt caches go with the weights.
+
+A gateway sets this time for its process. External servers (Ollama, LM Studio) keep their own TTLs.
 
 To size and inspect the session caches themselves — per-key `token_count` and best-effort `bytes` —
 use `get_prompt_cache_stats()`; see

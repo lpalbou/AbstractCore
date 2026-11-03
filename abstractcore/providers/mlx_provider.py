@@ -330,6 +330,10 @@ class MLXProvider(BaseProvider):
         """
         return True
 
+    # Eject safety and the idle unload (core ADR 0010 / 0012): every MLX call carries an event,
+    # so it is counted in flight (never unloaded under) and stamps the model's last use.
+    _PRIVATE_CANCEL_EVENT_FOR_EJECT = True
+
     def supports_generation_cancel(self) -> bool:
         """True on every MLX lane: each decodes token by token in-process.
 
@@ -4546,8 +4550,9 @@ class MLXProvider(BaseProvider):
         session when configured). One instance serves ONE model; the MTP
         drafter is loaded again on the first speculative call, as at start.
 
-        MLX has no idle/TTL unload: `ttl_s`, `keep_alive` (and any other load
-        option) are NOT applied, and the response says so in `warnings` and
+        A per-load `ttl_s` / `keep_alive` is not supported: the process-wide idle unload
+        (`process_residency.set_idle_unload`, 60 min by default, ADR 0012) applies instead.
+        Those options (and any other load option) are NOT applied, and the response says so in `warnings` and
         `unsupported_options` instead of accepting them silently. `pin` is the
         caller's own residency lock and is not a provider option."""
         unsupported = sorted(k for k, v in kwargs.items() if k != "pin" and v is not None)
@@ -4557,8 +4562,9 @@ class MLXProvider(BaseProvider):
             other = [k for k in unsupported if k not in ("ttl_s", "keep_alive")]
             if timed:
                 warnings.append(
-                    f"MLX has no idle/TTL unload: {', '.join(timed)} not applied; "
-                    "the model stays resident until it is ejected"
+                    f"MLX has no per-load idle/TTL unload: {', '.join(timed)} not applied "
+                    "(the process-wide idle unload, 60 min by default, applies); "
+                    "the model stays resident until it is ejected or unused for that long"
                 )
             if other:
                 warnings.append(f"MLX load does not support option(s) {', '.join(other)}; not applied")
