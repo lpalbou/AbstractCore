@@ -217,6 +217,24 @@ def test_kev_latest_reuses_the_resident_model_or_explains(monkeypatch):
     assert seen == [("mlx", "jaredpalmer/kev-0.8b")]
 
 
+def test_a_hosted_route_keeps_its_own_model_name_never_the_resident_alias(monkeypatch):
+    """The output.decision default `typesafe` + `jev-latest` is TypeSafe's hosted Jev: the name is the
+    endpoint's own, not the alias of whatever local model was used last."""
+    from abstractcore.decision import pool
+
+    pool._reset_for_tests()
+    monkeypatch.setattr(pool, "latest", lambda: ("mlx", "jaredpalmer/kev-0.8b"))
+    seen = []
+    monkeypatch.setattr(pool, "_acquire", lambda key, hold, factory, options: seen.append(key) or _PoolLLM())
+    owner = _LocalProvider(provider="ollama", model="qwen3.5:9b")
+    _in_use(owner, {"modality": "decision", "provider": "typesafe", "model": "jev-latest"})
+    _in_use(owner, {"modality": "decision", "provider": "systemone", "model": "kev-latest"})
+    _in_use(owner, {"modality": "decision", "provider": "mlx", "model": "kev-latest"})  # a local route: the alias
+    assert seen == [("typesafe", "jev-latest"), ("systemone", "kev-latest"), ("mlx", "jaredpalmer/kev-0.8b")]
+    assert pool.serves_decisions_only("typesafe") and pool.serves_decisions_only("systemone")
+    assert not any(pool.serves_decisions_only(p) for p in ("mlx", "huggingface", "ollama", "", None))
+
+
 def test_pool_refuses_a_non_decision_model_before_loading(monkeypatch):
     from abstractcore.decision import loader, pool
 

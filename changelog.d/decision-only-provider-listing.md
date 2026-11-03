@@ -7,3 +7,9 @@
   `systemone` providers now list their models only for a filter a decision model satisfies (`input.text`,
   `output.decision`), and `/v1/models` gives their entries `capabilities: {input: [text], output: [decision]}` and
   `decision: {endpoint: /v1/decisions, kind: systemone, ...}`, like the local Kev, Lev and Laya models.
+- **An `output.decision` default on the hosted Jev runs the hosted Jev** (`providers/base.py`, `decision/pool.py`).
+  With the default set to provider `typesafe` and model `jev-latest`, a decision from a workflow (or any
+  `generate(..., output="decision")` on a text provider) read `jev-latest` as the alias of the most recently used
+  local decision model: it ran that local model instead, or failed with "names no resident decision model yet" when
+  none was loaded. `kev-latest` / `jev-latest` are aliases only on a local route; on `typesafe` and `systemone` they
+  are the hosted model's own name.

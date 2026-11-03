@@ -2999,15 +2999,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
         A `model` written as `provider/model` names its own provider (it wins over the
         provider the route resolver copied from the `output.decision` default); a bare
         model picks the local engine (`decision.pool.parse_handle`); `kev-latest` /
-        `jev-latest` reuse the most recently used resident model.
+        `jev-latest` reuse the most recently used resident model, unless the route names a
+        provider that serves decisions only (`typesafe`, `systemone`): there they are the
+        hosted model's own name (`typesafe` + `jev-latest` is TypeSafe's Jev).
         """
-        from ..decision.pool import ALIASES, latest, parse_handle, split_handle
+        from ..decision.pool import ALIASES, latest, parse_handle, serves_decisions_only, split_handle
 
         route_provider = str(spec.get("provider") or "").strip().lower()
         route_model = str(spec.get("model") or "").strip()
         own_provider = str(getattr(self, "provider", "") or "").strip().lower()
         own_model = str(getattr(self, "model", "") or "").strip()
-        if route_model.lower() in ALIASES:
+        if route_model.lower() in ALIASES and not serves_decisions_only(route_provider):
             resident = latest()
             if resident is None:
                 raise ValueError(
