@@ -29,6 +29,11 @@ decisions), and a config that keeps a provider profile it cannot read instead of
 ### Changed
 
 - **AbstractVoice floor 0.20.0** (`pyproject.toml`: the base install, `[apple]` and `[gpu]`; `ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR`).
+- **The changelog check recognises a release pull request** (`scripts/changelog.py check`). A PR that bumps
+  `abstractcore/utils/version.py` to X.Y.Z, adds `CHANGELOG.md`'s dated `## [X.Y.Z] - YYYY-MM-DD` section and leaves
+  no fragment in `changelog.d/` passes. Before, every release PR was red, because it edits `CHANGELOG.md` and source
+  without adding a fragment. A release that leaves a fragment behind fails and names it. Any other PR that touches
+  `abstractcore/` still needs a fragment.
 - **A GGUF model that is not downloaded now reaches the caller as `ModelNotDownloadedError`**, not as a
   `RuntimeError("Failed to load GGUF model ...")` wrapping it; the message is the same "not found in local caches"
   text without that prefix. An MLX model that is not downloaded keeps its own message (the caches searched and the
