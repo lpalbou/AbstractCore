@@ -159,7 +159,10 @@ def release_version(base: str, changed: List[str]) -> str | None:
 
 
 def release_section_entries(version: str) -> List[str]:
-    """The `- ` entries of CHANGELOG.md's `## [version] - <date>` section (up to the next `## [`)."""
+    """The `- ` entries of CHANGELOG.md's `## [version] - <date>` section (up to the next `## [`).
+
+    Only `- ` bullets count: `parse` copies fragment bodies as written and every fragment, like the
+    Keep a Changelog sections before them, uses `- `; a `* ` list is not an entry here."""
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     m = _release_section_re(version).search(text)
     if not m:
@@ -181,7 +184,7 @@ def check(base: str) -> int:
                   "into CHANGELOG.md and removes them; remove the ones already assembled.")
             return 1
         if not release_section_entries(version):
-            print(f"Release {version}: its CHANGELOG.md section `## [{version}] - <date>` has no entries "
+            print(f"Release {version}: its CHANGELOG.md section `## [{version}] - <date>` has no `- ` entries "
                   "(the fragments were removed without being assembled?): `python scripts/changelog.py assemble "
                   f"{version}` writes them.")
             return 1
@@ -190,12 +193,12 @@ def check(base: str) -> int:
     for f in [p for p in added if _is_fragment_path(p)]:
         parse((ROOT / f).read_text(encoding="utf-8"), name=f)  # a malformed fragment fails here
     src = [p for p in changed if p.startswith(SOURCE_PREFIXES)]
-    frags = [p for p in added if p.lower().startswith("changelog.d/") and not p.lower().endswith("readme.md")]
+    frags = [p for p in added if _is_fragment_path(p)]  # only what `assemble` reads: changelog.d/**/*.md
     if "CHANGELOG.md" in changed and src and not frags:
         print("CHANGELOG.md was edited: add the entry as changelog.d/<pr-or-slug>.md instead (see changelog.d/README.md)")
         return 1
     if src and not frags:
-        print(f"This pull request changes {SOURCE_PREFIXES[0]} but adds no changelog fragment: add changelog.d/<pr-or-slug>.md "
+        print(f"This pull request changes {SOURCE_PREFIXES[0]} but adds no changelog fragment (a .md file): add changelog.d/<pr-or-slug>.md "
               "(see changelog.d/README.md).\n  changed: " + ", ".join(src[:8]) + (" ..." if len(src) > 8 else ""))
         return 1
     print(f"changelog: {len(frags)} fragment(s) for {len(src)} changed source file(s)")
