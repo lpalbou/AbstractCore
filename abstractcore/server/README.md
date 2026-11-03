@@ -248,7 +248,9 @@ curl http://localhost:8000/v1/voice/clone/providers
 
 `base_url` can target a local or remote OpenAI-compatible media endpoint. It
 uses the same loopback-by-default / allowlist policy as generation routes.
-Provider-key overrides use `X-AbstractCore-Provider-API-Key`.
+Provider-key overrides use `X-AbstractCore-Provider-API-Key`. On discovery routes the key
+reaches only the provider named with `?provider=<id>` (or the configured music backend, or the vision
+endpoint); without one, the request is refused (400).
 
 ---
 

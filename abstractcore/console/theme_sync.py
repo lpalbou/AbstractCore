@@ -26,6 +26,24 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 GENERATED_MODULE = "themes.py"
 
+#: The ui-kit release the console's theme copy must come from at least (backlog 0869).
+#: `themes.py` records the kit version it was generated from; a test compares the two
+#: without the abstractuic checkout, so a stale copy fails CI everywhere. Raise this
+#: with every re-sync.
+KIT_THEME_FLOOR = "0.9.14"
+
+
+def kit_version(kit_src: Path) -> str:
+    """The ui-kit version beside ``ui-kit/src`` (``ui-kit/package.json``); refuses to guess."""
+    package = kit_src.parent / "package.json"
+    try:
+        version = str(json.loads(package.read_text(encoding="utf-8"))["version"]).strip()
+    except (OSError, ValueError, KeyError) as e:
+        raise ValueError(f"cannot read the ui-kit version from {package}: {e}") from e
+    if not version:
+        raise ValueError(f"{package} has an empty version")
+    return version
+
 _SPEC_RE = re.compile(
     r"\{\s*id:\s*\"(?P<id>[a-z0-9-]+)\",\s*label:\s*\"(?P<label>[^\"]+)\",\s*"
     r"group:\s*\"(?P<group>dark|light)\",\s*swatches:\s*\[(?P<swatches>[^\]]*)\]",
@@ -102,14 +120,19 @@ def parse_theme_css_blocks(theme_css_text: str) -> List[Tuple[str, str]]:
     return blocks
 
 
+# `:root` alone or with attribute qualifiers (`:root[data-density="dense"]`): a token rule.
+# `:root .af-session-card` (a descendant) or `:root.theme-x` is a component or theme rule.
+_TOKEN_ROOT_RE = re.compile(r":root(\[[^\]]*\])*")
+
+
 def _is_token_block(selector: str, body: str) -> bool:
-    """A responsive-token block: ``html {...}``, a non-theme ``:root...{...}``,
+    """A responsive-token block: ``html {...}``, a bare ``:root`` (or ``:root[attr]``) ``{...}``,
     or an ``@media``/``@supports`` block holding only such ``:root`` rules."""
-    if selector == "html" or (selector.startswith(":root") and ".theme-" not in selector):
+    if selector == "html" or _TOKEN_ROOT_RE.fullmatch(selector):
         return "{" not in body
     if selector.startswith(("@media", "@supports")):
         inner = [sel.strip() for sel in re.findall(r"([^{}]+)\{", body)]
-        return bool(inner) and all(sel.startswith(":root") and ".theme-" not in sel for sel in inner)
+        return bool(inner) and all(_TOKEN_ROOT_RE.fullmatch(sel) for sel in inner)
     return False
 
 
@@ -240,6 +263,7 @@ def generate_themes_module(kit_src: Path) -> str:
     light_ids = [s["id"] for s in specs if s["group"] == "light"]
     css_text = "\n\n".join(block for _, block in blocks)
     provenance = {
+        "kit_version": kit_version(kit_src),
         "theme_ts_sha256": hashlib.sha256(theme_ts.encode("utf-8")).hexdigest(),
         "theme_css_sha256": hashlib.sha256(theme_css.encode("utf-8")).hexdigest(),
     }

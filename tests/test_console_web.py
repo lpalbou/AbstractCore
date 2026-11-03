@@ -174,6 +174,23 @@ def test_theme_module_matches_the_kit_source_exactly() -> None:
     )
 
 
+def _version(text: str) -> tuple:
+    return tuple(int(part) for part in str(text).split("."))
+
+
+def test_theme_copy_comes_from_the_declared_kit_floor() -> None:
+    """Runs without the abstractuic checkout (backlog 0869): the copy records the kit version
+    it was generated from, and a copy older than `KIT_THEME_FLOOR` fails CI everywhere."""
+    from abstractcore.console.themes import KIT_SOURCE_PROVENANCE
+
+    generated_from = KIT_SOURCE_PROVENANCE.get("kit_version")
+    assert generated_from, "themes.py records no kit version; run `python -m abstractcore.console.theme_sync`"
+    assert _version(generated_from) >= _version(theme_sync.KIT_THEME_FLOOR), (
+        f"abstractcore/console/themes.py was generated from ui-kit {generated_from}, older than the floor "
+        f"{theme_sync.KIT_THEME_FLOOR}; run `ABSTRACTUIC_SRC=<abstractuic>/ui-kit/src python -m abstractcore.console.theme_sync`"
+    )
+
+
 def test_every_kit_theme_is_offered_and_styled() -> None:
     ids = [s["id"] for s in KIT_THEME_SPECS]
     assert len(ids) >= 20 and len(set(ids)) == len(ids)
