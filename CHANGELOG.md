@@ -10,20 +10,16 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ## [Unreleased]
 
+## [2.32.0] - 2026-11-02
 
-### Changed
-
-- **The model catalog never offers MLX off Apple silicon** (operator 2026-10-29: "on Linux never offer MLX"): the
-  mlx / mlx-gen / mlx-vlm artifacts are left out on a host whose engine registry says MLX cannot run (they were
-  listed, not downloadable), and a row with only MLX builds (the Wan video rows) is not listed there.
-- **`sse-starlette>=1.8,<4`** (was `<2.0.0`): AbstractCore never imports it (the server streams with Starlette's
-  `StreamingResponse`), and `mcp` 2.3 requires `sse-starlette>=3`, so every environment holding both ended in a pip
-  conflict. Checked with sse-starlette 3.6.0 (starlette 0.52.1, fastapi 0.136.1): the server app starts and
-  `tests/server` passes as with 1.8.2; `uv pip compile` resolves abstractcore + sse-starlette 3.6.0 + mcp 2.3.0.
+Decision models (text in, calibrated typed decisions out: `output="decision"`, `POST /v1/decisions`),
+one llama.cpp weights instance per GGUF with a per-model slot pool for concurrent requests, a reserved
+context computed from free memory and settable per model, shared embedding models, and a catalogue
+that lists every installed or cached asset by its exact identity.
 
 ### Added
 
-- **Every quant of a model, on demand** (backlog 0865; operator QA batch item b, "All" quants).
+- **Every quant of a model, on demand** (backlog 0865).
   `catalog(hub=True, extended=True)` and `?extended=true` list, per row, every quant its own GGUF repos ship (UD-IQ1_S
   to Q8_0, BF16), each with its exact size and its fit, marked `extended: true` and never pre-selected. Labels the
   download pattern cannot fetch exactly are left out. `gguf_quant_labels(facts)` is the enumeration.
@@ -36,16 +32,135 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
   9.2 GB is free on the GPU (kept: Y (locked by the runtime of account default/admin)). Choose a smaller model, for
   example ..."). The CPU fallback is checked against available RAM the same way. `InflightGenerations.last_used_at`
   and `_residency_registered_at` give the order.
+- **Every cached asset appears in the catalogue** (backlog 0875; `catalog()`, `/acore/models/catalog`). A local
+  repository or engine model that matches no curated row is listed as a discovered row (`source: "installed"`,
+  id `installed:<provider>:<reference>`), with its exact reference, size, kind, tasks and their source, so local
+  files stay manageable from one list. Each row carries `asset_kind` (`model`, `adapter`, `component`, `unknown`) and
+  each artifact an `inventory` object (`present`, `complete`, `kind`, `tasks`, `files`, `incomplete_files`,
+  `missing_shards`, `bytes`). Adapters, components and incomplete downloads are never offered as runnable chat
+  models: their fit is `unknown`, they are not downloadable and never recommended. The catalogue summary counts them
+  as `discovered`. No remote metadata is fetched to classify local files.
+- **Adapter metadata, separate from full models** (backlog 0876; `assets/adapter_metadata.schema.json`). A cached
+  adapter's `inventory.adapter` object reports its declared adapter type, exact base checkpoints, tasks, trigger
+  words, target modules and rank, read from `adapter_config.json` and the model card's front matter, each value with
+  its source; undeclared values stay empty. A Hugging Face search hit packaged as an adapter carries
+  `asset_kind: "adapter"`. Declared bases describe the adapter; they are not a compatibility guarantee. Full
+  fine-tuned checkpoints remain models.
+- **Installed models land on their catalogue card by exact identity** (backlog 0873; `config/model_catalog.py`,
+  `architectures.detection.resolve_registered_model_name`). An installed build (an LM Studio, Ollama, MLX or
+  Hugging Face artifact) joins the card of the registry model it is, read from explicit registry aliases and, for
+  LM Studio, from the engine's own model path, and appears as its own artifact with its exact engine identifier,
+  presence, size and quantization. Fine-tunes, QAT builds and precisions stay distinct: an unknown fine-tune is never
+  grouped under its base model by a partial name match. Quantization suffixes such as `IQ2_XXS`, `TQ1_0`, `1bit` and
+  Unsloth's `UD-` prefix are recognised as variant tags.
+- **Registry entries for more local models** (backlog 0874; `assets/model_capabilities.json`,
+  `assets/architecture_formats.json`, `assets/model_downloads_catalog.json`): Spark X2.6 4B, LFM3 1.7B, Bonsai 27B,
+  Qwen3.6-35B-A3B HauhauCS Aggressive and all-MiniLM-L6-v2, with their architecture formats, plus download rows for
+  the Gemma E2B / 12B instruction and QAT builds. Facts come from the models' own cards, configs and chat templates.
+- **Decision models: text in, calibrated typed decisions out** (`abstractcore/decision/`, `generate(..., output="decision")`,
+  `POST /v1/decisions`). One abstraction over every decision model AbstractCore can reach: hosted Jev through the new
+  `typesafe` provider and any System One-compatible host through `systemone` (HTTP only, light install), and local
+  checkpoints on `mlx` and `huggingface` (transformers or GGUF): the Kev family (pointer head on Qwen3.5), Lev (label
+  logits on Qwen3.5-4B) and Laya (ModernBERT encoder with a marker scorer), all Apache-2.0; OpenJev-style checkpoints
+  run through the same label-logit engine. Questions are `choice` (1–255 named options), `noul` (the probability a
+  statement is true) and `score` (ordered levels); answers carry calibrated probabilities and confidence in the public
+  System One request/answer shape, the format every decision-model host shares. The Kev state prefix is cached across calls.
+  `MultimodalGenerateResponse.decision` / `.decisions` carry the answers; a decision model refuses text generation with
+  a pointer to `output="decision"`. `python -m abstractcore.decision.convert` folds a Kev adapter into a merged
+  transformers or mlx-lm checkpoint (bf16, 8-bit, or the measured mixed 4-bit recipe). Registry: `kev-0.8b/4b/9b/27b`,
+  `lev`, `laya`, `openjev` in `model_capabilities.json` (`capability_routes.output: ["decision"]`, the new `decision`
+  route modality, a `decision.kind` block), the `kev` / `lev` / `laya` / `openjev` architectures, download-catalog rows.
+  A pointer-head GGUF runs on every released llama-cpp-python: when the bundled llama.cpp predates
+  ggml-org/llama.cpp#29818, AbstractCore derives a backbone copy once and applies the head itself (`gguf_compat.py`,
+  removed with abetlen/llama-cpp-python#2398). `/v1/models` entries carry additive `capabilities` (input / output
+  modalities) and, for decision models, a `decision` object naming `/v1/decisions`; a chat completion against a
+  decision model is a 400 (`code: decision_model`) with that pointer (`DecisionModelError`). The label-logit engine reuses
+  the prompt prefix every question of a request shares (the state runs once; transformers, mlx-lm, llama.cpp); Laya scans a
+  long state in overlapping windows as its runtime does. Kev-0.8B joins the registry and catalog; the AbstractFramework Hub
+  collection *Decision models* carries `kev-4b-mlx-8bit`, `kev-4b-mlx-4bit`, `kev-0.8b-mlx-8bit`, `kev-0.8b-mlx-4bit`.
+  Docs: `docs/decision-models.md`.
+- **`output.decision` capability default and a shared decision pool.** `abstractcore config set-default
+  output.decision --provider mlx --model jaredpalmer/kev-4b` names the decision model every provider
+  instance uses for `output="decision"` (the route resolver puts it on the spec; an explicit route on the
+  spec wins). `abstractcore.decision.pool` keeps at most two decision models resident per process, shared
+  by `generate(output="decision")` and `/v1/decisions`; `model: "kev-latest"` on the server falls back to
+  the configured default when nothing is loaded yet. `output_has_generated_media` is False for a decision
+  (typed answers, never bytes), so hosts need no artifact store for it.
+  Decision models also have residency: `POST /acore/models/load` / `unload` with `task: "decision"` (listed as
+  `process:decision:<provider>:<model>` rows of `/acore/models/loaded`); catalog rows carry a `decision` capability
+  flag; `/v1/decisions` accepts the question shorthand; the decision provider is recorded as
+  `metadata.decision_provider`.
+  The mlx provider lists the decision models it can run from the local caches (Kev / Lev adapters whose base
+  checkpoint is on disk, merged decision conversions), so pickers filtered on `output.decision` offer them.
+- **The reserved context is explicit and the person's** (ADR 0010 point 8). Residency claims
+  of a loaded GGUF carry `advertised_context_length` and `context_source` (`memory`: the fit rule / allocation ladder
+  chose it; `configured`: a person set it; `explicit`: the caller passed `max_tokens`) beside `context_length`, so the
+  Models page can say "Context 65,536 (model advertises 262,144; limited by memory)". A person sets a model's context
+  with `abstractcore.config.model_contexts.set_model_context(provider, model, tokens)` (config key `model_contexts`):
+  it is loaded as is and refused with the readable sentence when it does not fit, never shrunk. A request longer than
+  the loaded context still fails with `ContextWindowExceededError`; nothing is cut.
+- **Concurrent generations on one weights instance: a per-model slot pool** (`providers/gguf_slots.py`, ADR 0011).
+  - A slot is one llama.cpp context with its own KV, at the model's reserved context. Every slot of a pool has the same n_ctx.
+  - Provider instances own no context. A generation borrows a slot for its duration, and the provider's `llm` is that slot while the call runs.
+  - Bounds: 4 slots on a GPU or Metal and 1 on CPU-only by default. `model_concurrency` (`config/model_contexts.py`) sets the bound per model: the slots are built at load, or the load is refused with the numbers.
+  - Extra slots are built lazily, only when their KV fits free memory now. A slot never evicts another model and never gets a smaller context; when it does not fit, the request waits and the reason is kept.
+  - The queue is FIFO and bounded. `ModelQueueFullError` (503) and `ModelQueueTimeoutError` (504) are request-local and carry a Retry-After. A cancel while queued is a `GenerationCancelledError`.
+  - Idle extra slots are freed after 300 s.
+  - The queued state is visible in a new progress phase `queued` (with `queue_position`) and on the residency rows: `slots`, `slots_max`, `active`, `queued`, `slot_refusal_reason`, `slot_bytes`. A pool with work running or waiting counts as in use (never evicted).
+  - Measured on Metal with Qwen3.5-4B Q4_K_M: RSS was 3.14 GiB for one holder, 3.14 GiB for two and 3.86 GiB with 4 slots. A short request completed in 0.10 s during a 3.95 s decode. Four equal decodes took 0.94 x the serial wall clock (separate contexts do not batch weight reads; batched decode is backlog 0871).
+- **A GGUF the installed llama.cpp cannot load says whether updating llama.cpp fixes it.** AbstractCore ships the
+  architecture table of the newest llama-cpp-python release (`assets/llamacpp_known_architectures.json`: 0.3.36,
+  153 architectures from the vendored llama.cpp's `LLM_ARCH_NAMES`, spark2_5 included). An installed or catalog
+  GGUF whose architecture the installed llama.cpp does not know but 0.3.36 does carries `llamacpp_update`
+  (`{architecture, installed, update_to}`) and the sentence "... cannot load the spark2_5 architecture;
+  llama-cpp-python 0.3.36 can: update llama.cpp." (the console offers "Update llama.cpp"); only an architecture no
+  release knows stays greyed ("No llama.cpp release supports the X architecture yet"). Every catalog GGUF's Hub
+  architecture (86 repos, 28 architectures, checked 2026-10-29) is in the 0.3.36 table.
+- Start and stop an authenticated Core HTTP listener with `abstractcore.server.managed.start_managed_server` while retaining its host's resident model resources. The listener uses Core's server configuration and first-run token handling.
+
+### Changed
+
+- **`abstractvoice>=0.19.5`** (base install, `[apple]` and `[gpu]`; `ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR`):
+  each `tts_stream` audio event carries at most 2 s of audio, so a client on a slow link starts playing a long
+  sentence before the whole segment has downloaded, and every Qwen3-TTS generation of a cloned reply is scored
+  against the clone before its audio is delivered: a reply is spoken in one voice or fails with
+  `ClonedVoiceNotAppliedError`.
+- **The model catalog never offers MLX off Apple silicon**: the
+  mlx / mlx-gen / mlx-vlm artifacts are left out on a host whose engine registry says MLX cannot run (they were
+  listed, not downloadable), and a row with only MLX builds (the Wan video rows) is not listed there.
+- **`sse-starlette>=1.8,<4`** (was `<2.0.0`): AbstractCore never imports it (the server streams with Starlette's
+  `StreamingResponse`), and `mcp` 2.3 requires `sse-starlette>=3`, so every environment holding both ended in a pip
+  conflict. Checked with sse-starlette 3.6.0 (starlette 0.52.1, fastapi 0.136.1): the server app starts and
+  `tests/server` passes as with 1.8.2; `uv pip compile` resolves abstractcore + sse-starlette 3.6.0 + mcp 2.3.0.
+- **Faster catalogue and presence sweeps.** One catalogue build checks engine compatibility and provider support once
+  per sweep, a presence sweep resolves the Hugging Face cache roots once, and whether the installed llama.cpp knows a
+  GGUF architecture is cached per installed library.
+- **Changelog entries are fragments** (`changelog.d/`, `scripts/changelog.py`). A pull request adds
+  `changelog.d/<pr-or-slug>.md` instead of editing `CHANGELOG.md`'s `[Unreleased]` section, which conflicted on every
+  merge of main; the release assembles the fragments (`python scripts/changelog.py assemble X.Y.Z`) and CI fails a pull
+  request that changes `abstractcore/` without one. The `[Unreleased]` section as of 2026-10-29 is the first fragment.
+- **The embedding model's device is the person's choice**. `EmbeddingManager(device=...)`
+  or the embedding route's `options.device` ("gpu" / "cpu"; the route's option example is `{"device": "gpu"}`); unset
+  means the GPU when there is room. On the GGUF lane "cpu" stays all on the CPU (no KV or compute buffers on the
+  card), "gpu" that does not fit is refused with the sentence ("... could not be placed on the GPU ...; free GPU
+  memory or set its Device to CPU"), and the default falls back to the CPU and says so (`device_note`). The GGUF
+  embedder measures what it took on the GPU (`device_bytes` on its residency claim).
+- **A GGUF reserves the maximum context that fits, computed**. The smaller of the advertised
+  context and the largest whose weights + KV + compute fit the free device memory minus a 5 % safety buffer
+  (`model_memory_buffer`), by inverting the KV-size formula; an allocation that still fails halves the context. This
+  replaces the "KV at most half of the free memory" rule and the fixed 131,072 / 65,536 / ... rungs, and the
+  calibration seed no longer shrinks a load. Measured numbers for Kimi-9B on the 16 GB card: about 135k of 262,144
+  (was 65,536). Logged, and on the claim as `context_reservation`.
 
 ### Fixed
 
-- **A GGUF this computer's llama.cpp cannot load says so before it is chosen** (backlog 0867, operator QA item f).
+- **A GGUF this computer's llama.cpp cannot load says so before it is chosen** (backlog 0867).
   XHToken/Spark-X2.6-4B (architecture `spark2_5`) downloaded fine and failed only at its first call. An installed
   GGUF's row now carries `architecture`, and, when this install's llama-cpp-python does not name that architecture,
   `loadable: false` with `unloadable_reason`: "This computer's llama.cpp (llama-cpp-python 0.3.x) cannot load the
   spark2_5 architecture. Update llama-cpp-python, or choose another model." The check reads llama.cpp's own table of
   architecture names in `libllama`, without importing it (`llamacpp_knows_architecture`).
-- **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866, operator QA item c). The repos the
+- **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866). The repos the
   catalog downloads hold only the quant file, with no config or card, so `models list` reported them as an unknown
   model with no task. The kind and tasks now come from the file's own `general.architecture`:
   - an architecture the catalog's GGUF repos use (`qwen35`, `gemma4`, `llama`, `lfm2`, ...): text generation; any
@@ -95,6 +210,93 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
   it against llama-cpp-python's `libllama`. A build it cannot load carries `loadable: false`, `unloadable_reason`
   (the sentence) and `downloadable: false`, is never the pre-selection, and says why in its fit notes. A known
   architecture is `loadable: true`. When it cannot be told, the value is `null` and the build stays offered.
+- **A partially downloaded Hugging Face checkpoint reads as not installed in the catalogue.** When the local inventory
+  lists a repository whose weights, shards or checkpoint index are incomplete, the checkpoint probe stays
+  authoritative and the artifact reads absent ("cache checkpoint incomplete or unverified").
+- **A first model load never waits on a provider module that is still importing** (`providers/process_residency.py`).
+  The residency admission check skips a model registry whose module has not finished initializing (it cannot hold
+  weights yet), so a load that runs while another thread imports the embeddings or MLX modules proceeds instead of
+  failing or blocking on that import.
+- **A text longer than the embedding model reads is refused, never cut** (framework ADR 0026). The GGUF embedding lane
+  had a 4,096-token context and llama-cpp-python's `embed()` truncated by default; it now loads at the model's own
+  sequence length (8,192 for Qwen3-Embedding-0.6B), embeds with `truncate=False`, and a longer text raises
+  `ContextWindowExceededError` ("This text is N tokens, but the embedding model X reads at most M; split it before
+  embedding it (nothing was cut).").
+- **The sentence-transformers embedding lane never cuts a text either.** The library truncated every text at its
+  `max_seq_length` (model-defined, often 512) silently, and a non-strict manager turned failures into zero vectors. The
+  model now reads its full length (the catalog's `max_sequence_length`, e.g. 8,192 for Qwen3-Embedding), a text one token
+  over raises `ContextWindowExceededError` with the same sentence (counted with the model's own tokenizer, specials
+  included), and that error is never replaced by a zero vector.
+- **A GGUF embedding repository id is served by llama.cpp** (`embeddings/manager.py`). `/v1/embeddings` with `huggingface/Qwen/Qwen3-Embedding-0.6B-GGUF` used to reach sentence-transformers, which cannot read a GGUF, and answered 500 "Unrecognized model". A `-GGUF` id now goes straight to the llama.cpp lane.
+- **The GGUF embedder reserves the largest input that fits, and says so.** With n_batch = n_ubatch = n_ctx, llama.cpp's compute buffers grow with the input length squared. At 8,192 tokens the 0.6B Qwen3 embedder held 6.6 GB of GPU memory on a 16 GB card, leaving no room for a second LLM slot, and its row read `device_bytes: None`.
+  - On a CUDA GPU the encoder now reserves the largest input (a multiple of 256, at most the model's maximum) whose weights, KV and compute buffers fit the free memory minus the safety buffer (`model_memory_buffer`, 5 %). It logs the choice.
+  - The row carries `context_length`, `advertised_context_length`, `context_source` (`memory` / `configured`), `memory_buffer` and `context_reservation`, the same fields as an LLM context row.
+  - A maximum input an admin set (`model_contexts`, the same per-model setting as an LLM context) is used exactly. On a GPU-only device that cannot hold it, the load is refused in words.
+  - A longer text is refused with "split it before embedding it", never cut.
+  - `device_bytes` is measured through NVML when torch has no CUDA context, as in the gateway's model host.
+- **The GGUF embedder reads long inputs in 512-token micro-batches.** With n_ubatch = 8,192, llama.cpp reserved a 5.1 GB compute buffer: the output projection for every token of the micro-batch, 8,192 × 151,669 vocabulary × 4 bytes, plus the attention scratch. A causal embedder (`<arch>.attention.causal`, or a decoder architecture: Qwen3-Embedding) now reads its full input (n_ctx = n_batch = the model's maximum, 8,192) in 512-token micro-batches with flash attention. A bidirectional encoder keeps the whole input in one micro-batch.
+  - Measured with Qwen3-Embedding-0.6B Q8_0 at 8,192 tokens, the same buffer sizes on a 16 GB CUDA card (llama-cpp-python 0.3.36) and on an Apple Silicon Mac (Metal, 0.3.35). Compute buffer 5,092 → 306 MiB; model 604 MiB and f16 KV 896 MiB unchanged. Total GPU memory on the CUDA card went from 6,710 to 1,808 MB.
+  - Vectors are equivalent: minimum cosine against the previous path over 20 texts (up to 7,581 tokens) is 0.99958 on CUDA and 0.999999 on Metal.
+  - With flash attention the default reservation is the model's full maximum. The fit, set-value and refusal logic above remains the safety net.
+  - The row now also says which build serves it (`quant`: `Q8_0`, `model_file`) and carries `flash_attn` and `micro_batch`.
+- **The residency failsafe never evicts a model it cannot replace** (ADR 0010). On a busy GPU host the unlocked
+  text model was evicted for a 14B load that was then refused anyway (the free memory after the eviction was still
+  short), leaving neither model. `make_room` now plans first: it evicts only when the free memory plus what the
+  evictable models hold covers the need; otherwise it refuses with everything kept.
+- **The GGUF embedding lane runs entirely on the CPU.** With `n_gpu_layers=0` llama.cpp's CUDA build still placed the
+  KV cache and the `n_ubatch`-sized compute buffers on the GPU (`offload_kqv` defaults on): 4.9 GiB of device memory
+  for `Qwen3-Embedding-0.6B-GGUF`, shown on no Models row (gateway backlog 0966). Now `offload_kqv=False` (and
+  `op_offload=False` where supported) and the context is bounded at 4,096 tokens; measured on the same server, the
+  embedder process holds 118 MiB of GPU (the CUDA context) instead of failing to allocate next to the text model.
+- **The GGUF architecture gate never refuses a model over a value that is not an architecture** (`utils/model_cache.py`). `llamacpp_knows_architecture` / `gguf_unloadable_reason` answer only for a GGUF `general.architecture` token, read from the INSTALLED `libllama`. Anything else (a model id such as `unsloth/Qwen3.5-4B-GGUF`, a file name) is "cannot be told" (None). Before, a model id passed in read as "No llama.cpp release supports the unsloth/Qwen3.5-4B-GGUF architecture yet", although the installed llama.cpp loads that model (qwen35, gemma4 and qwen2vl all load on this Mac's 0.3.35 Metal build). New real-file test: every GGUF in the account's hub cache that the installed llama.cpp opens (`vocab_only`) is never refused by the gate.
+- **One llama.cpp weights instance per GGUF model in a process** (`providers/gguf_shared.py`, ADR 0011). Before, every provider instance of a resident GGUF loaded the weights again: a second account's runtime pool, a gateway-side client (run summary, Ask, sandbox, entity chat) or a server request each held a full copy. The 2026-10-29 audit measured 11.8, then 23.3, then 34.9 GB RSS for three holders of one 4B model, and the residency failsafe then refused the extra copies. Now every llama.cpp context of a model borrows the one resident `LlamaModel`. The weights are freed with the last context.
+- **A key check says whether the KEY works** (`openrouter_provider.py`, `anthropic_provider.py`; the gateway's setup
+  guide checks a pasted key by listing models with `raise_on_error=True`). OpenRouter's `GET /models` is public: it
+  answered 200 with the whole catalogue for a wrong key (measured 2026-10-29), so the check said "Key works · N models"
+  to a typo. `OpenRouterProvider.list_available_models` now asks the authenticated `GET /key` first: a 401/403 lists
+  nothing, and with `raise_on_error=True` raises `AuthenticationError` with OpenRouter's reason ("User not found.").
+  Any other answer (a proxy `base_url` without `/key`) falls through to the listing as before. Anthropic's listing
+  returned `[]` with no reason for a wrong key even with `raise_on_error=True`; it now raises `AuthenticationError`
+  ("Anthropic API error (401): invalid x-api-key"), or `ProviderAPIError` for another status. Without
+  `raise_on_error` both keep their old answer (`[]`). Tests: `tests/providers/test_key_check_listing_unit.py`.
+- Managed local loaders reuse compatible resident artifacts or refuse conflicting second allocations across MLX, HuggingFace and embedding paths. Explicit incompatible placement, native target/head or Qwen4 PLE settings require unloading first; Transformers callers reuse the resident provider.
+- Pinned GGUF concurrency can construct its context slots within a model load while preserving serialization between concurrent loaders.
+- **Endpoint profiles accept every provider the registry reaches over HTTP** (`config/provider_profiles.py`,
+  `providers/registry.py`). The profile validator kept its own list of eight families, so the new decision
+  providers were refused on save ("Unsupported provider family 'typesafe'") although `create_llm("typesafe")`
+  worked. The accepted families are now `ProviderRegistry.endpoint_provider_families()`: every registered
+  provider the light install covers that is not an in-process engine (MLX, local HuggingFace stay refused). The
+  registry's logger is created on first use: the first config load runs inside `utils.structured_logging`'s
+  import, and building the registry there to validate a stored profile would otherwise be an import cycle,
+  which the loader reads as a corrupt config (defaults for the session). Tests:
+  `tests/config/test_provider_profiles_config.py`.
+- **One loaded embedding model per (model, device, backend) in a process** (`embeddings/manager.py`). Before, every `EmbeddingManager` loaded the weights again: each account's runtime service held its own full copy of the embedder. Now a manager whose model is already loaded adopts it, and stays a cheap facade (its caches, output dims and provider settings are its own). Unloading one manager detaches it. The weights go with the last manager that holds them, whether it unloads or is dropped. An eject still unloads every manager. The residency rows count the weights once (`copies` = distinct models, `holders` = managers, `shared_weights`). The GGUF encoder already serializes its own encodes, so sharing it is safe.
+- **`/v1/embeddings` reuses the loaded embedding model**. The route built a new `EmbeddingManager` for every request, and the manager loads the weights
+  in its constructor, so each request was a full load of the embedding model and another copy beside the previous
+  request's (measured on the residency probe: 4 managers alive after 2 requests). The server now keeps one manager per
+  (provider, model, dimensions, provider settings) for the life of the process; an ejected model reloads on its next
+  call as before, and the residency listing and eject see the same manager.
+
+### Migration
+
+- **Embeddings are never truncated.** A text longer than the embedding model reads raises
+  `ContextWindowExceededError` on both the GGUF and the sentence-transformers lanes, and a non-strict
+  `EmbeddingManager` no longer turns that error into a zero vector. Split long texts before embedding them.
+- **A GGUF reserves the largest context that fits** the free device memory (minus a 5 % buffer), instead of
+  the earlier half-of-free-memory rule and fixed rungs. To keep a specific context, set it per model with
+  `abstractcore.config.model_contexts.set_model_context(provider, model, tokens)`; a set value is used exactly
+  or refused, never shrunk.
+- **Conflicting local allocations are refused.** A second allocation of a resident artifact with an
+  incompatible placement (another backend, device, native target/head or Qwen4 PLE setting) raises instead of
+  loading a second copy: unload the resident model first. Compatible callers reuse the resident one.
+- **Key checks raise on a wrong key.** `OpenRouterProvider.list_available_models(raise_on_error=True)` and the
+  Anthropic listing raise `AuthenticationError` for a rejected key; without `raise_on_error` they still
+  return `[]`.
+- **Chat completions against a decision model answer 400** (`code: "decision_model"`) with a pointer to
+  `/v1/decisions`; `generate()` without `output="decision"` on a decision model raises `DecisionModelError`.
+- **`sse-starlette>=1.8,<4`**: environments that also install `mcp` 2.3 resolve without a conflict.
+- **The catalogue lists discovered assets.** Clients that render every catalogue row should filter on
+  `asset_kind` (`model` for runnable models) or `source` when they want curated or full-model rows only.
 
 ## [2.31.1] - 2026-10-28
 

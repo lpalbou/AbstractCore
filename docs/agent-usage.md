@@ -502,8 +502,18 @@ The universal server routes `POST /v1/chat/completions` using model IDs such as
 `response_format` enables JSON/schema validation over HTTP. `/console` manages the host.
 Do not start another server on an occupied port or treat a help command as proof of health.
 
+A framework execution owner can start the optional Core HTTP listener with
+`abstractcore.server.managed.start_managed_server`; stopping that listener retains its resident
+models. It uses Core's own token and configuration. Native framework clients continue through
+Gateway run APIs and Runtime's ledger. See [Server](server.md#managed-listener-in-an-execution-owner).
+
 ### Memory, caches, cancellation and diagnostics
 
+- Managed local loaders share compatible resident artifacts or refuse conflicting allocations
+  before loading. Reuse the resident configuration; Transformers callers reuse the provider.
+  Finish work and unload holders before changing engines, placement or native head profiles.
+  This contract is process-local and excludes arbitrary plugins/raw engine constructors and
+  independent external servers. See [sharing scope](memory-management.md#one-resident-artifact-per-process).
 - `llm.get_prompt_cache_capabilities()` describes `none`, `keyed`, or `local_control_plane`.
   `llm.prompt_cache_supports_operation(...)` gates controls. Unsupported operations raise
   structured cache errors with `operation`, `code` and `capabilities`.

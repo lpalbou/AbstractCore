@@ -243,8 +243,8 @@ have task rows: `text_to_image`, `image_to_image`, `image_upscale`,
 Setting the modality row is the simple path, and it is what the fresh-install
 seed writes: one `output.image` value makes generate, edit and upscale all work.
 
-The other output modalities — `output.voice`, `output.sound`, `output.music` —
-have **no** task rows at all, so their modality row is the primary key rather
+The other output modalities — `output.voice`, `output.sound`, `output.music`,
+`output.decision` — have **no** task rows at all, so their modality row is the primary key rather
 than a fallback. The same is true of every `input.*`, `embedding.*` and
 `rerank.*` route.
 

@@ -139,7 +139,7 @@ def test_catalog_payload_follows_contract_c(host):
     for row in payload["rows"]:
         assert _ROW_KEYS <= set(row), row["id"]
         assert row["source"] == "curated"
-        assert {"text", "vision", "audio", "tools", "thinking", "max_tokens", "embedding"} <= set(row["capabilities"])
+        assert {"text", "vision", "audio", "tools", "thinking", "max_tokens", "embedding", "decision"} <= set(row["capabilities"])
         assert sum(1 for a in row["artifacts"] if a["recommended"]) <= 1
         for art in row["artifacts"]:
             assert _ART_KEYS <= set(art)
@@ -366,6 +366,28 @@ def test_hub_search_adds_hf_rows_with_a_picked_quant(host, tmp_path):
     assert hf_rows[0]["id"] == "hf:someone/cool-7b-gguf"
 
 
+def test_architecture_checks_share_one_snapshot_per_catalog_sweep(monkeypatch):
+    from abstractcore.config import model_materializer as mm
+    from abstractcore.utils import model_cache
+
+    calls = []
+    known = True
+
+    def check(arch):
+        calls.append(arch)
+        return known
+
+    monkeypatch.setattr(model_cache, "llamacpp_knows_architecture", check)
+    with mm.presence_sweep():
+        for _ in range(1000):
+            assert mc._llamacpp_known("qwen3") is True
+    assert calls == ["qwen3"]
+    known = False  # Library update: next payload must check again.
+    with mm.presence_sweep():
+        assert mc._llamacpp_known("qwen3") is False
+    assert calls == ["qwen3", "qwen3"]
+
+
 def test_a_hub_gguf_this_llamacpp_cannot_load_is_flagged_before_download(host, tmp_path, monkeypatch):
     """Backlog 0868 (OVH: XHToken/Spark-X2.6-4B-GGUF downloaded, then failed at Test: `spark2_5`). The
     Hub's `gguf.architecture` is checked against this computer's llama.cpp before anything downloads."""
@@ -381,7 +403,7 @@ def test_a_hub_gguf_this_llamacpp_cannot_load_is_flagged_before_download(host, t
         search={"gguf:4b": ["XHToken/Spark-X2.6-4B-GGUF", "someone/Cool-4B-GGUF", "other/Plain-4B-GGUF"], "mlx:4b": []},
     )
     payload = mc.catalog("4b", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
-    arts = {r["artifacts"][0]["artifact"].split(":")[0]: r["artifacts"][0] for r in payload["rows"] if r["source"] == "hf_search"}
+    arts = {a["artifact"].split(":")[0]: a for r in payload["rows"] for a in r["artifacts"] if a["provider"] == "huggingface"}
     spark = arts["XHToken/Spark-X2.6-4B-GGUF"]
     assert spark["gguf_architecture"] == "spark2_5" and spark["loadable"] is False
     assert spark["unloadable_reason"].startswith("This computer's llama.cpp (llama-cpp-python")
@@ -396,7 +418,7 @@ def test_a_hub_gguf_this_llamacpp_cannot_load_is_flagged_before_download(host, t
     # Unknown to the check (None): offered, never refused.
     monkeypatch.setattr(model_cache, "llamacpp_knows_architecture", lambda arch: None)
     again = mc.catalog("4b", hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
-    spark2 = next(r["artifacts"][0] for r in again["rows"] if r["id"] == "hf:xhtoken/spark-x2.6-4b-gguf")
+    spark2 = next(a for r in again["rows"] for a in r["artifacts"] if a["artifact"].split(":")[0] == "XHToken/Spark-X2.6-4B-GGUF")
     assert spark2["loadable"] is None and spark2["downloadable"] is True
 
 
@@ -546,3 +568,11 @@ def test_an_extended_quant_is_never_the_preselection():
     row = {"id": "r", "artifacts": [art("r:Q4_K_M", "too_large"), art("r:UD-IQ1_S", "fits", extended=True)]}
     mc._pick_recommended(row, "cuda", {"llamacpp": True})
     assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["r:Q4_K_M"]
+
+
+def test_decision_rows_carry_the_decision_capability_flag(host):
+    rows = {r["id"]: r for r in mc.catalog(host=synthetic_host("metal128"))["rows"]}
+    for key in ("kev-4b", "kev-0.8b", "lev", "laya"):
+        assert rows[key]["capabilities"]["decision"] is True, key
+        assert rows[key]["capabilities"]["text"] is False, key
+    assert rows["nomic-embed-text-v1.5"]["capabilities"]["decision"] is False

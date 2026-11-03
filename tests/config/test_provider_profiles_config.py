@@ -304,3 +304,79 @@ def test_endpoint_profile_can_back_embedding_manager(monkeypatch, tmp_path) -> N
     assert isinstance(embeddings._provider_instance, OpenAICompatibleProvider)
     assert embeddings._provider_instance.base_url == "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
     assert embeddings._provider_instance.api_key == "stored-secret"
+
+
+def test_profile_families_follow_the_provider_registry(monkeypatch, tmp_path) -> None:
+    """The families a profile may name ARE the registry's HTTP-reachable providers: a provider
+    registered there is accepted with no second list to edit; an in-process engine and a bogus
+    name are refused, and the refusal lists what is accepted."""
+    _reset_global_config(monkeypatch, tmp_path / "core" / "abstractcore.json")
+    import abstractcore.providers.registry as registry_module
+    from abstractcore.config.provider_profiles import supported_provider_families
+    from abstractcore.providers.registry import ProviderInfo
+
+    registry = registry_module.get_provider_registry()
+    families = supported_provider_families()
+    assert {"typesafe", "systemone", "openai", "openai-compatible", "lmstudio"} <= families
+    assert not {"mlx", "huggingface"} & families
+
+    registry.register_provider(ProviderInfo(name="acme-http", display_name="Acme", provider_class=None, description="test"))
+    manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
+    assert manager.set_provider_profile("acme", provider_family="acme-http", base_url="https://acme.test").provider_family == "acme-http"
+
+    for bad in ("not-a-provider", "mlx"):
+        try:
+            manager.set_provider_profile("bad", provider_family=bad)
+        except ValueError as exc:
+            assert "Unsupported provider family" in str(exc)
+            assert "typesafe" in str(exc) and "acme-http" in str(exc)
+        else:
+            raise AssertionError(f"{bad!r} should be refused")
+
+
+def test_typesafe_and_systemone_profiles_build_their_providers_with_the_stored_key(monkeypatch, tmp_path) -> None:
+    config_file = tmp_path / "core" / "abstractcore.json"
+    _reset_global_config(monkeypatch, config_file)
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+
+    from abstractcore.config import get_config_manager
+    from abstractcore.providers.typesafe_provider import SystemOneProvider, TypeSafeProvider
+
+    manager = get_config_manager()
+    manager.set_provider_profile("typesafe-key", provider_family="typesafe", api_key="apikey_test_only")
+    manager.set_provider_profile("office-s1", provider_family="systemone", base_url="http://127.0.0.1:8000/")
+
+    typesafe = create_llm("endpoint:typesafe-key", model="jev-latest")
+    assert isinstance(typesafe, TypeSafeProvider) and typesafe.provider == "typesafe"
+    assert typesafe.api_key == "apikey_test_only"
+
+    systemone = create_llm("endpoint:office-s1", model="kev-latest")
+    assert isinstance(systemone, SystemOneProvider)
+    assert systemone.base_url == "http://127.0.0.1:8000"
+    assert not systemone.api_key
+
+
+def test_a_stored_typesafe_profile_loads_on_the_first_config_read(tmp_path) -> None:
+    """The first config load runs inside `utils.structured_logging`'s import; validating a
+    profile's family builds the provider registry right then. That must not be an import
+    cycle, which the loader reads as a corrupt file (defaults for the session, file backed up)."""
+    import subprocess
+
+    config_file = tmp_path / "abstractcore.json"
+    config_file.write_text(json.dumps({"provider_profiles": {"profiles": {
+        "typesafe-key": {"id": "typesafe-key", "provider_family": "typesafe", "api_key": "apikey_test_only"},
+    }}}))
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ABSTRACTCORE_")}
+    env.update({"HOME": str(tmp_path), "ABSTRACTCORE_CONFIG_FILE": str(config_file)})
+    proc = subprocess.run(
+        [sys.executable, "-c", (
+            "import abstractcore\n"
+            "from abstractcore.config import get_config_manager\n"
+            "print([p['provider_family'] for p in get_config_manager().list_provider_profiles(include_disabled=True)])\n"
+        )],
+        env=env, capture_output=True, text=True, timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "could not be parsed" not in proc.stderr
+    assert proc.stdout.strip().splitlines()[-1] == "['typesafe']"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["abstractcore.json"]

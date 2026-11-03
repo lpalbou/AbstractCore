@@ -787,10 +787,18 @@ def llamacpp_knows_architecture(arch: Optional[str]) -> Optional[bool]:
     data = _llama_library_bytes()
     if data is None:
         return None
+    # A catalog can ask this thousands of times. Cache the membership answers,
+    # not just the bytes: rescanning libllama for every quant is CPU intensive.
+    # _llama_library_bytes replaces the bytes when path/mtime/size changes, so
+    # identity invalidates both positive and negative answers after an update.
+    scan = _LLAMA_LIB_CACHE.get("architectures")
+    if scan is None or scan["data"] is not data:
+        scan = {"data": data, "trusted": all((s + b"\x00") in data for s in _LLAMA_ARCH_SENTINELS), "names": {}}
+        _LLAMA_LIB_CACHE["architectures"] = scan
     # The table is trusted only when names every llama.cpp build carries are found the same way:
     # a library laid out differently (stripped, a stub, another build) must not turn every GGUF
     # into "cannot load" (merge desk review).
-    if not all((sentinel + b"\x00") in data for sentinel in _LLAMA_ARCH_SENTINELS):
+    if not scan["trusted"]:
         if not _LLAMA_LIB_CACHE.get("sentinel_logged"):
             _LLAMA_LIB_CACHE["sentinel_logged"] = True
             import logging
@@ -801,7 +809,13 @@ def llamacpp_knows_architecture(arch: Optional[str]) -> Optional[bool]:
     # longer one ("qwen2" lives inside another string in the server's libllama). So the test is
     # "a string ends with the name": a false "known" only leaves a model offered (fail-safe), never
     # a false "cannot load".
-    return (name.encode("utf-8") + b"\x00") in data
+    names = scan["names"]
+    if name in names:
+        return names[name]
+    known = (name.encode("utf-8") + b"\x00") in data
+    if len(names) < 256:  # Bound memory even for arbitrary incoming tokens.
+        names[name] = known
+    return known
 
 
 def newest_llamacpp_architectures() -> Optional[Dict[str, Any]]:

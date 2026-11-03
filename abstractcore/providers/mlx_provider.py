@@ -9,6 +9,7 @@ import uuid
 import inspect
 import os
 import threading
+import sys
 import weakref
 from datetime import datetime
 from typing import List, Dict, Any, Callable, Optional, Tuple, Union, Iterator, Type, TYPE_CHECKING
@@ -45,7 +46,7 @@ from ..architectures.response_postprocessing import (
 from ..core.types import GenerateResponse
 from .base import PromptCacheStore
 from .generation_progress import PREFILL_PROGRESS_KWARG
-from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
+from ..exceptions import InvalidRequestError, ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -134,12 +135,28 @@ def _installed_mlx_versions() -> str:
 
 
 def _mlx_model_sharing_enabled(kwargs: Optional[Dict[str, Any]] = None) -> bool:
-    """On by default. `share_loaded_model=False` or ABSTRACTCORE_MLX_SHARE_MODELS=0 opts out."""
+    """Read legacy sharing flags so disabled sharing can be refused before allocation."""
     explicit = (kwargs or {}).get("share_loaded_model")
     if isinstance(explicit, bool):
         return explicit
     raw = str(os.environ.get("ABSTRACTCORE_MLX_SHARE_MODELS", "") or "").strip().lower()
     return raw not in {"0", "false", "no", "off"}
+
+
+def _decision_model_runs_on_mlx(model_name: str) -> bool:
+    """True for a cached decision model the MLX engine can load: a Kev / Lev adapter whose base
+    checkpoint is on disk, or a merged decision conversion saved for mlx."""
+    try:
+        from ..decision.loader import describe_decision_model
+
+        info = describe_decision_model(model_name, "mlx")
+    except Exception:
+        return False
+    if info is None:
+        return False
+    if info.layout == "adapter":
+        return info.kind in ("kev", "lev") and bool(info.base_path)
+    return info.layout == "merged" and info.runtime == "mlx"
 
 
 class MLXProvider(BaseProvider):
@@ -285,7 +302,17 @@ class MLXProvider(BaseProvider):
         self._append_stash_lock = threading.RLock()
         self._shared_model: Optional[_SharedMLXModel] = None
         self._share_loaded_model = _mlx_model_sharing_enabled(kwargs)
-        self._load_model()
+        # Decision models (Kev family) have no text lane: the decision runtime is
+        # the only thing loaded, and text generation is refused with a pointer.
+        self._decision_model = None
+        self.model_type = "mlx"
+        from ..decision import is_decision_model
+
+        if is_decision_model(model):
+            self.model_type = "decision"
+            self.decision_model()
+        else:
+            self._load_model()
 
     def supports_concurrent_generation(self) -> bool:
         """The native scheduler, not ordinary thread submission, owns concurrency."""
@@ -447,9 +474,34 @@ class MLXProvider(BaseProvider):
         weights it was computed on, so the two travel together. The first provider's
         store (its size bound, TTL and eviction hook) becomes the shared one.
         """
+        from pathlib import Path
+        from .process_residency import load_lock, refuse_other_backend_artifact
+
         if not getattr(self, "_share_loaded_model", True):
-            return loader()
-        with _SHARED_MLX_MODELS_LOCK:  # also serializes two 15 GB loads of one model
+            raise InvalidRequestError(
+                "MLX model sharing cannot be disabled: share_loaded_model=False and "
+                "ABSTRACTCORE_MLX_SHARE_MODELS=0 would permit duplicate weights."
+            )
+        key = str(Path(key).resolve())
+        with load_lock():
+            refuse_other_backend_artifact(key, backend="mlx")
+            return self._load_or_adopt_shared_model_locked(key, loader)
+
+    def _load_or_adopt_shared_model_locked(self, key: str, loader: Any) -> Tuple[Any, Any]:
+        from . import mlx_native_session
+
+        with mlx_native_session._LOAD_LOCK, _SHARED_MLX_MODELS_LOCK:
+            qwen4 = sys.modules.get(__package__ + ".mlx_qwen4")
+            if any(k[0] == key for k in getattr(qwen4, "_SESSIONS", ())):
+                raise InvalidRequestError(
+                    f"MLX model '{key}' is already loaded through Qwen4 native MLX. "
+                    "Unload it before changing lanes; a second copy is never loaded."
+                )
+            if any(key in k[:2] for k in mlx_native_session._SESSIONS):
+                raise InvalidRequestError(
+                    f"MLX model '{key}' is already loaded through native mlx-vlm. "
+                    "Unload it before selecting the mlx-lm configuration; a second copy is never loaded."
+                )
             shared = _SHARED_MLX_MODELS.get(key)
             if shared is None:
                 llm, tokenizer = loader()
@@ -3494,6 +3546,8 @@ class MLXProvider(BaseProvider):
                     session = load_native_session(str(load_target), drafter_id)
                     drafter, kind = session.drafter, session.draft_kind
                     model, processor = session.model, session.processor
+        except InvalidRequestError:
+            raise  # A resident-profile refusal must never fall back to another weights load.
         except Exception as exc:
             if drafter_id is None:
                 why = plan.get("why") or "this lane loads through mlx-vlm"
@@ -4453,6 +4507,8 @@ class MLXProvider(BaseProvider):
                 f"(AbstractCore requires mlx>=0.32.2, mlx-lm>=0.31.3, mlx-vlm>=0.7.1). "
                 f"Fix with: pip install -U \"abstractcore[apple]\""
             ) from e
+        except InvalidRequestError:
+            raise  # Keep resident-profile and sharing-policy refusals actionable.
         except SpeculationUnavailableError:
             # `require_acceleration=True` is an explicit "fail rather than run
             # slow". Re-flattening it into a generic "Failed to load MLX model"
@@ -4522,6 +4578,10 @@ class MLXProvider(BaseProvider):
         # every gateway/runtime call carries its effect's event). A call that
         # does not stop by the deadline makes the unload RAISE, nothing freed.
         self._stop_inflight_before_unload(model_name, refuse_if_running=True)
+        decision = getattr(self, "_decision_model", None)
+        if decision is not None:
+            decision.unload()
+            self._decision_model = None
         runtime = getattr(self, "_native_runtime", None)
         session = getattr(self, "_native_session", None)
         if runtime is not None:
@@ -4795,6 +4855,10 @@ class MLXProvider(BaseProvider):
         request's drafter/cache state. Resolving per-call controls happens only
         after ownership is acquired, not when a lazy iterator is constructed.
         """
+        if getattr(self, "model_type", None) == "decision":
+            from ..exceptions import DecisionModelError
+
+            raise DecisionModelError(self.model, "mlx")
         call = dict(messages=messages, system_prompt=system_prompt, tools=tools,
                     media=media, stream=stream, response_model=response_model, **kwargs)
         if getattr(self, "_native_runtime", None) is not None:
@@ -6704,6 +6768,10 @@ class MLXProvider(BaseProvider):
                         # refuses it. Offering it puts a model in the picker that
                         # cannot answer a single turn.
                         if is_mlx_model(model_name, local_path=item) and has_local_weights(item):
+                            model_set.add(model_name)
+                        elif _decision_model_runs_on_mlx(model_name):
+                            # A Kev / Lev adapter (head + LoRA on a base checkpoint on disk) or a
+                            # merged decision conversion: not an MLX-format repo, but mlx-lm runs it.
                             model_set.add(model_name)
 
             lmstudio_models = Path.home() / ".lmstudio" / "models"

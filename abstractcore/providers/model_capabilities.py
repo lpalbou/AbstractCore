@@ -59,6 +59,7 @@ class ModelOutputCapability(Enum):
     SOUND = "sound"
     MUSIC = "music"
     SCENE3D = "scene3d"
+    DECISION = "decision"  # calibrated typed decisions (choice / noul / score), never text
     RERANK = "rerank"
 
 
@@ -110,6 +111,7 @@ _OUTPUT_ROUTE_CAPABILITY_MAP = {
     "output.sound": ModelOutputCapability.SOUND,
     "output.music": ModelOutputCapability.MUSIC,
     "output.scene3d": ModelOutputCapability.SCENE3D,
+    "output.decision": ModelOutputCapability.DECISION,
 }
 
 _INPUT_CAPABILITY_ORDER = (
@@ -132,6 +134,7 @@ _OUTPUT_CAPABILITY_ORDER = (
     ModelOutputCapability.SOUND,
     ModelOutputCapability.MUSIC,
     ModelOutputCapability.SCENE3D,
+    ModelOutputCapability.DECISION,
     ModelOutputCapability.RERANK,
 )
 

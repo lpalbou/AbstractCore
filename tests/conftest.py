@@ -403,8 +403,21 @@ from abstractcore.media.capabilities import is_vision_model
 
 @pytest.fixture(autouse=True)
 def allow_unauthenticated_server_in_tests(monkeypatch):
-    """Keep existing server unit tests explicit about using unauthenticated local mode."""
+    """Keep existing server unit tests explicit about using unauthenticated local mode.
+
+    Server first-run auth (`prepare_server_auth`, reached through `serve` and
+    `start_managed_server`) exports the token into the process environment by
+    design; restore it after each test so a later test's app is not left
+    requiring that token (every request answering 401).
+    """
+    saved = {k: os.environ.get(k) for k in ("ABSTRACTCORE_AUTH_TOKEN", "ABSTRACTCORE_SERVER_TOKEN_SOURCE")}
     monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
+    yield
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 @pytest.fixture(autouse=True)
@@ -713,3 +726,12 @@ def _isolate_shared_embedding_models():
     except Exception:
         pass
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_decision_pool():
+    """The decision pool is process-wide state; no test may leave a resident model behind."""
+    yield
+    from abstractcore.decision import pool
+
+    pool._reset_for_tests()

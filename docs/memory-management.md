@@ -14,6 +14,35 @@ Related pages:
 - [Native MLX Runtime](native-mlx-runtime.md) — shared native weights, request-owner leases, bounded queues and RAM/SSD prefix storage
 - [Server](server.md) — the HTTP routes (`/acore/memory`, `/acore/models/loaded`, `/acore/models/unload`, `/acore/prompt_cache/*`)
 
+## One resident artifact per process
+
+Core's managed local loaders identify an artifact by its resolved file or cached snapshot
+directory. A symlink or repository ID that resolves to the same snapshot does not select a
+second copy. Different snapshots or quantized artifacts remain distinct models.
+
+Loading is serialized across the supported local loaders. Compatible holders reuse resident
+weights; a configuration that cannot share them raises `InvalidRequestError` before allocating
+another copy. Provider wrappers retain their own request and account state.
+
+| Loader | Sharing and conflict behavior |
+| --- | --- |
+| HuggingFace GGUF chat | Contexts can have separate KV allocations while sharing the same file's weights. An explicit GPU-layer placement that conflicts with the resident placement is refused, including when the requested context differs. |
+| MLX plain and native | Compatible holders share their existing model/session. Changing native target/head configuration or Qwen4 PLE placement requires unloading first. A target or drafter cannot also be loaded in a conflicting engine or target/head role. |
+| HuggingFace Transformers | Reuse the resident provider. Constructing a second provider for the same base artifact is refused; Core does not merge mutable provider state. |
+| Local embeddings | Compatible device/backend/trust settings share the encoder. Automatic settings can adopt a compatible resident entry; conflicting explicit settings are refused. |
+
+The same artifact cannot be loaded separately through these managed chat and embedding paths,
+or through incompatible supported engines. This is a **process-local** contract: separate Core
+processes, external servers such as Ollama or LM Studio, direct engine constructors and arbitrary
+capability-plugin loaders have their own resource ownership. Keep framework-managed inference
+in one execution owner when all clients must use one pool. Starting a separate standalone Core
+server does not join another process's pool.
+
+If a request is refused, reuse the resident configuration or finish active work and unload its
+holders before selecting a different configuration. Do not retry the same incompatible request
+or disable MLX model sharing. See [eject safety](generation-cancel.md) and the
+[Python residency API](api.md#memory-and-model-residency).
+
 ## Host memory snapshot
 
 `abstractcore.utils.memory.get_memory_snapshot()` reports system RAM, this process, and the
@@ -97,8 +126,9 @@ Shape:
 - `resident` lists every model whose weights are alive in this process across backends — MLX,
   the HuggingFace provider (transformers and GGUF) and in-process embedding models — one row per
   model with `backend`, `holders`, `weights_bytes`, `cache_bytes`, `held_bytes` and
-  `shared_weights`. HuggingFace and embedding instances do not share weights, so each holder is a
-  full copy (`shared_weights: false`). A GGUF row whose cache figure includes the f16 KV estimate
+  `shared_weights`. Holder count is not a count of physical weight copies: compatible GGUF,
+  MLX and embedding holders can share weights. Read the row's sharing fields rather than
+  multiplying weights by holder count. A GGUF row whose cache figure includes the f16 KV estimate
   carries `kv_bytes_estimated: true`. Reading the snapshot never loads a backend that the process
   has not loaded already.
 - `device.host_in_use_bytes` (Metal only, else `null`) is the **accelerator heap across
@@ -334,11 +364,10 @@ ejected instance reloads it on demand (logged). See
 
 ### Ejecting a model from the whole process
 
-On MLX, several provider instances in one process can share the same weights, and
-`unload_model()` releases only the calling instance's hold. With the HuggingFace provider and
-embedding models it is the other way round: each instance has its own full copy, so another
-instance (a summarizer, an older client) keeps its copy after yours is unloaded. To free a model
-completely, eject it from the whole process. One call covers every in-process backend:
+Several compatible holders can share weights in one process, and `unload_model()` releases
+only the calling holder's resources. Another instance or owner can keep the model alive after
+yours is unloaded. To free a model completely, eject its holders from the whole process. One
+call covers the managed in-process backends:
 
 ```python
 from abstractcore.providers.process_residency import eject, resident_rows

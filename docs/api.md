@@ -29,7 +29,7 @@ resp = llm.generate("Hello!")
 print(resp.content)
 ```
 
-Provider IDs (common): `openai`, `anthropic`, `openrouter`, `portkey`, `ollama`, `lmstudio`, `vllm`, `openai-compatible`, `huggingface`, `mlx`.
+Provider IDs (common): `openai`, `anthropic`, `openrouter`, `portkey`, `ollama`, `lmstudio`, `vllm`, `openai-compatible`, `huggingface`, `mlx`; decision-only: `typesafe` (hosted Jev) and `systemone` (any System One host), see [Decision Models](decision-models.md).
 
 ### Native MLX scheduling and MTP
 
@@ -373,14 +373,37 @@ music = llm.generate(
 # resource id when the selected AbstractVoice backend supports cloning.
 clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
 voice_id = clone.resources["voice"][0].resource_id
+
+# Decision models (Kev family): text in, calibrated typed decisions out. The prompt is the
+# state; questions are choice / noul (yes-no probability) / score. See decision-models.md.
+decided = llm.generate(
+    "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+    output="decision",
+    questions={
+        "department": {"type": "choice", "instructions": "Which team should handle this?",
+                       "criteria": {"returns": None, "shipping": None, "billing": None}},
+        "escalate": "Does this need urgent human attention?",
+    },
+)
+decided.decisions["department"].choice         # "returns"
+decided.decisions["escalate"].noul             # 0.72
 ```
 
 `generate(..., output=...)` returns `MultimodalGenerateResponse` for non-text
 outputs. Binary artifacts are grouped under `outputs`, while reusable resources
-such as cloned voices are grouped under `resources`. Plain `output="text"` with
+such as cloned voices are grouped under `resources`. A decision request fills
+`decision` (a `DecisionResponse`: `answers`, `usage`, `latency_ms`,
+`to_systemone()`) and the `decisions` property (answers by question name); see
+[Decision Models](decision-models.md). Plain `output="text"` with
 a prompt preserves the normal `GenerateResponse` path for compatibility.
 
 ## Memory and model residency
+
+Managed local loaders reuse compatible resident weights or raise `InvalidRequestError` before
+a conflicting second allocation. Transformers callers must reuse the resident provider;
+creating another provider for the same base artifact is refused. The contract covers the
+supported Core loaders in one process, not independent servers or arbitrary plugin/raw-engine
+allocations. See [sharing rules](memory-management.md#one-resident-artifact-per-process).
 
 `get_memory_snapshot()` reports host RAM, this process and the accelerator in one call;
 `device["process_held_bytes"]` is the accelerator memory this process holds across MLX, torch and
@@ -467,6 +490,20 @@ abstractcore serve
 ```
 
 See **[Server](server.md)**.
+
+### Managed HTTP listener
+
+`abstractcore.server.managed.start_managed_server(*, host=None, port=None, timeout_s=15.0)`
+starts Core's authenticated app in the calling execution-owner process. Omitted host/port use
+Core's server configuration (default `127.0.0.1:8000`); `port=0` selects an available port.
+Importing the helper starts no listener and imports no HTTP app.
+
+It returns a `CoreHTTPServer` handle with `url`, `is_running`, `last_error`, `status()`
+(`running`, `url`, `error`) and `stop(*, timeout_s=6.0)`. Stopping is repeatable and retains
+resident models; a listener that fails to stop raises rather than reporting success.
+Timeouts must be finite, nonnegative numbers. The host owns supervision, and Core's
+authentication and bind-sensitive engine-install policy remain in force. See
+[managed listener lifecycle](server.md#managed-listener-in-an-execution-owner).
 
 ## Request-scoped server authentication
 

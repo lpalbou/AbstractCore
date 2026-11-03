@@ -19,16 +19,18 @@ VIRTUAL_PROVIDER_PREFIX = "endpoint:"
 
 _PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
 _ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-SUPPORTED_PROVIDER_FAMILIES = {
-    "anthropic",
-    "lmstudio",
-    "ollama",
-    "openai",
-    "openai-compatible",
-    "openrouter",
-    "portkey",
-    "vllm",
-}
+
+
+def supported_provider_families() -> frozenset[str]:
+    """The provider families a profile may name: the registry's HTTP-reachable providers.
+
+    Read from ``ProviderRegistry.endpoint_provider_families`` (imported here,
+    not at module load: the registry reads the config package), never a list
+    kept in this module.
+    """
+    from ..providers.registry import get_provider_registry
+
+    return frozenset(get_provider_registry().endpoint_provider_families())
 
 
 def utc_now_iso() -> str:
@@ -62,8 +64,9 @@ def profile_id_from_virtual_provider(provider: str) -> Optional[str]:
 
 def normalize_provider_family(value: Optional[str]) -> str:
     raw = str(value or "openai-compatible").strip().lower().replace("_", "-")
-    if raw not in SUPPORTED_PROVIDER_FAMILIES:
-        supported = ", ".join(sorted(SUPPORTED_PROVIDER_FAMILIES))
+    families = supported_provider_families()
+    if raw not in families:
+        supported = ", ".join(sorted(families))
         raise ValueError(f"Unsupported provider family {raw!r}. Supported: {supported}")
     return raw
 

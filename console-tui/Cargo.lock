@@ -3,8 +3,14 @@
 version = 4
 
 [[package]]
+name = "abstractavatar"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaa5925d278d4b58aa9e9bde068eea3de548cb0fec75c5e20ef23a10b39c1868"
+
+[[package]]
 name = "abstractcore-console"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "abstracttui",
  "libc",
@@ -14,10 +20,11 @@ dependencies = [
 
 [[package]]
 name = "abstracttui"
-version = "0.3.6"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3731f6ef439a6e948f91dcb0f1f200e34d788c3e91da39b41adb19efc0869cb9"
+checksum = "71b58967e5dd8843ba426f9bc8c4a7094546732fa70e69fd3de35581ce7eed87"
 dependencies = [
+ "abstractavatar",
  "libc",
  "miniz_oxide",
  "unicode-segmentation",

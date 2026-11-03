@@ -2,7 +2,7 @@
 
 > Canonical user documentation in one file. The linked source pages remain authoritative; source code determines behavior.
 
-Package version: 2.31.1
+Package version: 2.32.0
 
 Start with the [agent skill](skills/abstractcore/SKILL.md) for a portable operating procedure,
 or [llms.txt](llms.txt) for a short index. Register the complete skill folder with its references.
@@ -49,12 +49,12 @@ or [llms.txt](llms.txt) for a short index. Register the complete skill folder wi
 - [Recommended models](docs/recommended-models.md): capability choices by platform and memory.
 - [Engines](docs/engines.md): inventory, install plans and platform support.
 - [Configuration](docs/centralized-config.md): persistent routes, endpoint profiles, credentials and timeouts.
-- [Server](docs/server.md): multi-provider /v1 endpoints, authentication and control planes.
+- [Server](docs/server.md): optional multi-provider /v1 serving, Core authentication and managed listener lifecycle.
 - [Endpoint](docs/endpoint.md): one provider/model per HTTP worker.
 - [Web console](docs/console.md): model/engine/config management through the browser.
 - [Terminal console](docs/console-tui.md): terminal host management.
 - [Chat CLI](docs/acore-cli.md): interactive conversations.
-- [Memory and residency](docs/memory-management.md): loaded models, ownership, unload and memory accounting.
+- [Memory and residency](docs/memory-management.md): process-local artifact sharing/refusals, loaded models, ownership, unload and memory accounting.
 - [Memory blocs](docs/memory-blocs.md): text snapshots and native KV artifacts with live-binding checks.
 - [Cancellation](docs/generation-cancel.md): cancel_event, per-lane support and safe eject.
 - [HF compatibility](docs/huggingface-model-compatibility.md): Transformers/GGUF artifacts and loading limits.
@@ -96,14 +96,17 @@ The linked source pages are canonical. Fenced examples retain their source forma
 Unified LLM Interface
 > Write once, run everywhere
 
+What's new in 2.32.0: decision models, text in and calibrated typed decisions out
+(`generate(document, output="decision", questions=...)`, `POST /v1/decisions`) over hosted Jev, any
+System One-compatible endpoint and local Kev / Lev / Laya checkpoints; one llama.cpp weights instance
+per GGUF with a per-model slot pool for concurrent requests; the reserved context computed from free
+memory and settable per model; and every cached asset (adapters included) listed in the catalogue.
+See the [changelog](CHANGELOG.md#2320---2026-11-02).
+
 What's new in 2.31.1: `/v1/chat/completions` reuses a model already resident in the process (a host's
 runtime pool) instead of loading a second llama.cpp copy per request; the download catalog lists the
 LFM2 and LFM2.5 families (GGUF and MLX, the 24B-A2B models included). See the
 [changelog](CHANGELOG.md#2311---2026-10-28).
-
-What's new in 2.31.0: streamed tool calls carry the declared MCP tool name, the MLX prefix cache
-survives per-call system riders in tool loops, and `POST /v1/voice/clone` takes `language`. See the
-[changelog](CHANGELOG.md#2310---2026-10-27).
 
 AbstractCore is an offline-capable, open-source-first LLM infrastructure layer
 for Python applications. It gives you one `create_llm(...)` API across local
@@ -139,6 +142,7 @@ First-class support for:
 - session memory, prompt caching, durable memory bloc cache artifacts, events, tracing, and retry-aware reliability hooks
 - media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
 - optional capability plugins (`core.voice/core.audio/core.vision/core.music/core.scene3d/core.camera`) for deterministic TTS/STT, generative vision, music, 3D generation, and real-camera piloting (via packages such as `abstractvoice`, `abstractvision`, `abstractmusic`, `abstract3d`, and `abstractcamera`)
+- decision models (text in, calibrated typed decisions out): `generate(document, output="decision", questions=...)` with one abstraction over hosted Jev (`typesafe`), any System One host (`systemone`), and local Kev / Lev / Laya checkpoints on MLX, transformers or GGUF; the server speaks the System One API (`POST /v1/decisions`); see [Decision Models](docs/decision-models.md)
 - glyph visual-text compression for long documents (**)
 - optional OpenAI-compatible `/v1` gateway server (multi-provider, including `response_format`
   structured outputs validated against your schema) and single-model endpoint
@@ -1245,8 +1249,18 @@ The universal server routes `POST /v1/chat/completions` using model IDs such as
 `response_format` enables JSON/schema validation over HTTP. `/console` manages the host.
 Do not start another server on an occupied port or treat a help command as proof of health.
 
+A framework execution owner can start the optional Core HTTP listener with
+`abstractcore.server.managed.start_managed_server`; stopping that listener retains its resident
+models. It uses Core's own token and configuration. Native framework clients continue through
+Gateway run APIs and Runtime's ledger. See [Server](docs/server.md#managed-listener-in-an-execution-owner).
+
 ### Memory, caches, cancellation and diagnostics
 
+- Managed local loaders share compatible resident artifacts or refuse conflicting allocations
+  before loading. Reuse the resident configuration; Transformers callers reuse the provider.
+  Finish work and unload holders before changing engines, placement or native head profiles.
+  This contract is process-local and excludes arbitrary plugins/raw engine constructors and
+  independent external servers. See [sharing scope](docs/memory-management.md#one-resident-artifact-per-process).
 - `llm.get_prompt_cache_capabilities()` describes `none`, `keyed`, or `local_control_plane`.
   `llm.prompt_cache_supports_operation(...)` gates controls. Unsupported operations raise
   structured cache errors with `operation`, `code` and `capabilities`.
@@ -3451,6 +3465,15 @@ For quantized transformers checkpoints, see
 
 ## Server Issues
 
+### Issue: Managed listener is unavailable while native inference works
+
+The optional Core HTTP listener and native framework execution have separate readiness.
+Inspect the listener handle's `status()` and `last_error`, or its supervising host's service
+status. Check the configured bind, a port collision and Core's own token; a Gateway token is
+not a direct Core credential. Fix the listener configuration before asking the host to retry.
+Stopping or restarting HTTP serving does not require unloading the execution owner's models.
+See [managed listeners](docs/server.md#managed-listener-in-an-execution-owner).
+
 ### Issue: Server Won't Start
 
 **Symptoms:**
@@ -3466,12 +3489,13 @@ Port 8000 is already allocated
 lsof -i :8000  # Linux/Mac
 netstat -ano | findstr :8000  # Windows
 
-# Kill process on port
-kill -9 $(lsof -t -i:8000)  # Linux/Mac
-
 # Use different port
 uvicorn abstractcore.server.app:app --port 3000
 ```
+
+Identify the process holding the port before changing it. Reuse the intended service or choose
+an available port; a separate server process has its own model pool. Direct uvicorn serving
+requires explicit Core authentication configuration; see [Server](docs/server.md).
 
 ### Issue: Client complains about missing API key
 
@@ -3804,6 +3828,19 @@ response = llm.generate(
 )
 ```
 
+### Issue: Model is already loaded with another configuration
+
+`InvalidRequestError` messages that say a second copy is never loaded are deterministic
+resource-admission refusals. Keep the resident device, backend, GPU-layer placement or MLX
+target/head/PLE configuration, or finish active work and unload all holders before changing
+it. Transformers callers reuse the existing provider rather than constructing another for
+the same base artifact. A retry of the same conflicting request will not help.
+
+List `resident_rows()` or the host's loaded-models surface to find the owner; do not disable
+model sharing or launch another standalone server to bypass the refusal. Separate contexts
+can legitimately allocate separate KV while sharing GGUF weights. See
+[managed-loader sharing rules](docs/memory-management.md#one-resident-artifact-per-process).
+
 ### Issue: High Memory Usage
 
 **Solutions:**
@@ -3824,9 +3861,8 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 **Symptoms:** `unload_model()` or `POST /acore/models/unload` succeeds, but the process still holds
 the model's memory.
 
-**Causes:** another holder in the same process keeps the model (MLX instances share weights;
-HuggingFace and embedding instances each hold a full copy), or another owner (a managed runtime, an
-AbstractRuntime client) still uses it.
+**Causes:** another compatible holder or owner (a managed runtime, an AbstractRuntime client)
+still uses the resident model. Holder count does not imply a separate weight copy.
 
 **Check:**
 
@@ -4063,7 +4099,7 @@ resp = llm.generate("Hello!")
 print(resp.content)
 ```
 
-Provider IDs (common): `openai`, `anthropic`, `openrouter`, `portkey`, `ollama`, `lmstudio`, `vllm`, `openai-compatible`, `huggingface`, `mlx`.
+Provider IDs (common): `openai`, `anthropic`, `openrouter`, `portkey`, `ollama`, `lmstudio`, `vllm`, `openai-compatible`, `huggingface`, `mlx`; decision-only: `typesafe` (hosted Jev) and `systemone` (any System One host), see [Decision Models](docs/decision-models.md).
 
 ### Native MLX scheduling and MTP
 
@@ -4407,14 +4443,37 @@ music = llm.generate(
 # resource id when the selected AbstractVoice backend supports cloning.
 clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
 voice_id = clone.resources["voice"][0].resource_id
+
+# Decision models (Kev family): text in, calibrated typed decisions out. The prompt is the
+# state; questions are choice / noul (yes-no probability) / score. See decision-models.md.
+decided = llm.generate(
+    "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+    output="decision",
+    questions={
+        "department": {"type": "choice", "instructions": "Which team should handle this?",
+                       "criteria": {"returns": None, "shipping": None, "billing": None}},
+        "escalate": "Does this need urgent human attention?",
+    },
+)
+decided.decisions["department"].choice         # "returns"
+decided.decisions["escalate"].noul             # 0.72
 ```
 
 `generate(..., output=...)` returns `MultimodalGenerateResponse` for non-text
 outputs. Binary artifacts are grouped under `outputs`, while reusable resources
-such as cloned voices are grouped under `resources`. Plain `output="text"` with
+such as cloned voices are grouped under `resources`. A decision request fills
+`decision` (a `DecisionResponse`: `answers`, `usage`, `latency_ms`,
+`to_systemone()`) and the `decisions` property (answers by question name); see
+[Decision Models](docs/decision-models.md). Plain `output="text"` with
 a prompt preserves the normal `GenerateResponse` path for compatibility.
 
 ## Memory and model residency
+
+Managed local loaders reuse compatible resident weights or raise `InvalidRequestError` before
+a conflicting second allocation. Transformers callers must reuse the resident provider;
+creating another provider for the same base artifact is refused. The contract covers the
+supported Core loaders in one process, not independent servers or arbitrary plugin/raw-engine
+allocations. See [sharing rules](docs/memory-management.md#one-resident-artifact-per-process).
 
 `get_memory_snapshot()` reports host RAM, this process and the accelerator in one call;
 `device["process_held_bytes"]` is the accelerator memory this process holds across MLX, torch and
@@ -4501,6 +4560,20 @@ abstractcore serve
 ```
 
 See **[Server](docs/server.md)**.
+
+### Managed HTTP listener
+
+`abstractcore.server.managed.start_managed_server(*, host=None, port=None, timeout_s=15.0)`
+starts Core's authenticated app in the calling execution-owner process. Omitted host/port use
+Core's server configuration (default `127.0.0.1:8000`); `port=0` selects an available port.
+Importing the helper starts no listener and imports no HTTP app.
+
+It returns a `CoreHTTPServer` handle with `url`, `is_running`, `last_error`, `status()`
+(`running`, `url`, `error`) and `stop(*, timeout_s=6.0)`. Stopping is repeatable and retains
+resident models; a listener that fails to stop raises rather than reporting success.
+Timeouts must be finite, nonnegative numbers. The host owns supervision, and Core's
+authentication and bind-sensitive engine-install policy remain in force. See
+[managed listener lifecycle](docs/server.md#managed-listener-in-an-execution-owner).
 
 ## Request-scoped server authentication
 
@@ -5543,6 +5616,8 @@ graph TD
     G --> MM[vLLM Provider]
     G --> MN[OpenRouter Provider]
     G --> MP[Portkey Provider]
+    G --> MT[TypeSafe Provider: decisions]
+    G --> MS[System One-compatible endpoint: decisions]
 
     H --> N[OpenAI API]
     HH --> NN[OpenAI-Compatible /v1 Endpoint]
@@ -5554,6 +5629,8 @@ graph TD
     MM --> RR[vLLM Server]
     MN --> RO[OpenRouter API]
     MP --> RP[Portkey API Gateway]
+    MT --> RT[TypeSafe Jev API]
+    MS --> RS[System One decision API host]
 
     style B fill:#e1f5fe
     style BB fill:#4caf50
@@ -5787,9 +5864,12 @@ and powers `abstractcore.utils.context_estimate.estimate_context_fit()` — an a
 context-fit answer that never loads weights.
 See [Memory and Model Residency](docs/memory-management.md).
 
-`unload_model()` releases one instance's hold. Several holders can keep the same model alive
-in one process (MLX instances share weights; HuggingFace and embedding instances each hold a full
-copy), so `abstractcore.providers.process_residency` gives one door to every in-process backend:
+`unload_model()` releases one instance's hold. Several compatible holders can keep one model's
+weights alive in a process. Managed local loaders share supported configurations or refuse a
+conflicting second allocation, using the existing backend registries and one process load lock.
+Transformers callers reuse the resident provider; a second provider for its base artifact is
+refused. See [sharing rules and scope](docs/memory-management.md#one-resident-artifact-per-process).
+`abstractcore.providers.process_residency` gives one door to the managed in-process backends:
 `resident_rows()` lists every model alive in the process, `eject()` unloads every holder, and
 `eject_unclaimed()` ejects only when no registered owner (the server's managed runtimes,
 AbstractRuntime clients) still pools, locks or is loading the model. The claim check and the eject
@@ -6354,6 +6434,25 @@ graph LR
 
 The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
 
+Python applications and native framework workflows can call Core without HTTP. A host can
+start Core's optional listener in its execution-owner process through
+[`start_managed_server`](docs/server.md#managed-listener-in-an-execution-owner). The listener uses
+Core authentication and the same process-local resource admission as Python callers. Starting
+or stopping it does not create or eject model resources. A fatal execution-owner process
+failure still affects every inference in that process; a supervising Gateway can restart it.
+
+```mermaid
+flowchart LR
+    Native["Native framework clients"] --> GW["Gateway run APIs / Runtime ledger"]
+    GW --> RPC["Execution-owner Python client"]
+    Direct["Optional OpenAI-compatible clients"] --> HTTP["Core HTTP listener / Core token"]
+    subgraph Owner["One execution-owner process"]
+        RPC --> Core["Core provider calls"]
+        HTTP --> Core
+        Core --> Admission["Existing loader admission and resident resources"]
+    end
+```
+
 ```mermaid
 graph TD
     A[HTTP Client] --> B[FastAPI Server]
@@ -6521,6 +6620,37 @@ graph TD
 
 Discovery only reads public HTTPS and DNS answers and returns server settings; it never stores
 anything. See [Email](docs/email.md).
+
+### 13. Decision Models
+
+`abstractcore.decision` turns a document (the *state*) and typed questions (`choice`, `noul`,
+`score`) into calibrated answers, without generating text. Every caller goes through one
+`DecisionRequest` / `DecisionResponse` contract, and every engine answers it, so callers never depend
+on the model behind it.
+
+```mermaid
+graph TD
+    GEN["generate(state, output='decision', questions=...)"] --> ROUTE{"route on the output spec"}
+    ROUTE -->|"the provider is a decision model"| OWN["provider.decision_model()"]
+    ROUTE -->|"output.decision default or explicit provider/model"| POOL
+    HTTP["POST /v1/decisions, /{provider}/v1/decisions"] --> POOL["decision.pool: at most 2 resident decision providers, LRU, shared per process"]
+    LOADS["/acore/models/load | unload, task=decision"] --> POOL
+    POOL -->|"one provider instance per resident model"| OWN
+    OWN --> LOADER["decision.loader: detect kind and layout (adapter, merged, GGUF, registry)"]
+    LOADER --> KEV["runtime.DecisionModel (kev pointer head, state-prefix cache)"]
+    LOADER --> LABELS["engines.labels (lev, openjev label logits, shared-prefix reuse)"]
+    LOADER --> LAYA["engines.laya (ModernBERT marker scorer, windowed long states)"]
+    LOADER --> REMOTE["engines.remote (typesafe, systemone over HTTP)"]
+    KEV --> BACK["backends: transformers, mlx-lm, llama.cpp"]
+    LABELS --> BACK
+    LAYA --> TF["transformers"]
+    REMOTE --> HOST["hosted System One API"]
+```
+
+`render` turns the state and questions into text and the probabilities into answers (confidence
+follows the System One conventions); `kinds` holds each kind's prompt layout, so every runtime
+renders the same prompt. A decision model refuses text generation and a chat completion against it
+answers 400 with a pointer to `/v1/decisions`. See [Decision Models](docs/decision-models.md).
 
 ## Architecture Benefits
 
@@ -15175,6 +15305,35 @@ Related pages:
 - [Native MLX Runtime](docs/native-mlx-runtime.md) — shared native weights, request-owner leases, bounded queues and RAM/SSD prefix storage
 - [Server](docs/server.md) — the HTTP routes (`/acore/memory`, `/acore/models/loaded`, `/acore/models/unload`, `/acore/prompt_cache/*`)
 
+## One resident artifact per process
+
+Core's managed local loaders identify an artifact by its resolved file or cached snapshot
+directory. A symlink or repository ID that resolves to the same snapshot does not select a
+second copy. Different snapshots or quantized artifacts remain distinct models.
+
+Loading is serialized across the supported local loaders. Compatible holders reuse resident
+weights; a configuration that cannot share them raises `InvalidRequestError` before allocating
+another copy. Provider wrappers retain their own request and account state.
+
+| Loader | Sharing and conflict behavior |
+| --- | --- |
+| HuggingFace GGUF chat | Contexts can have separate KV allocations while sharing the same file's weights. An explicit GPU-layer placement that conflicts with the resident placement is refused, including when the requested context differs. |
+| MLX plain and native | Compatible holders share their existing model/session. Changing native target/head configuration or Qwen4 PLE placement requires unloading first. A target or drafter cannot also be loaded in a conflicting engine or target/head role. |
+| HuggingFace Transformers | Reuse the resident provider. Constructing a second provider for the same base artifact is refused; Core does not merge mutable provider state. |
+| Local embeddings | Compatible device/backend/trust settings share the encoder. Automatic settings can adopt a compatible resident entry; conflicting explicit settings are refused. |
+
+The same artifact cannot be loaded separately through these managed chat and embedding paths,
+or through incompatible supported engines. This is a **process-local** contract: separate Core
+processes, external servers such as Ollama or LM Studio, direct engine constructors and arbitrary
+capability-plugin loaders have their own resource ownership. Keep framework-managed inference
+in one execution owner when all clients must use one pool. Starting a separate standalone Core
+server does not join another process's pool.
+
+If a request is refused, reuse the resident configuration or finish active work and unload its
+holders before selecting a different configuration. Do not retry the same incompatible request
+or disable MLX model sharing. See [eject safety](docs/generation-cancel.md) and the
+[Python residency API](docs/api.md#memory-and-model-residency).
+
 ## Host memory snapshot
 
 `abstractcore.utils.memory.get_memory_snapshot()` reports system RAM, this process, and the
@@ -15258,8 +15417,9 @@ Shape:
 - `resident` lists every model whose weights are alive in this process across backends — MLX,
   the HuggingFace provider (transformers and GGUF) and in-process embedding models — one row per
   model with `backend`, `holders`, `weights_bytes`, `cache_bytes`, `held_bytes` and
-  `shared_weights`. HuggingFace and embedding instances do not share weights, so each holder is a
-  full copy (`shared_weights: false`). A GGUF row whose cache figure includes the f16 KV estimate
+  `shared_weights`. Holder count is not a count of physical weight copies: compatible GGUF,
+  MLX and embedding holders can share weights. Read the row's sharing fields rather than
+  multiplying weights by holder count. A GGUF row whose cache figure includes the f16 KV estimate
   carries `kv_bytes_estimated: true`. Reading the snapshot never loads a backend that the process
   has not loaded already.
 - `device.host_in_use_bytes` (Metal only, else `null`) is the **accelerator heap across
@@ -15495,11 +15655,10 @@ ejected instance reloads it on demand (logged). See
 
 ### Ejecting a model from the whole process
 
-On MLX, several provider instances in one process can share the same weights, and
-`unload_model()` releases only the calling instance's hold. With the HuggingFace provider and
-embedding models it is the other way round: each instance has its own full copy, so another
-instance (a summarizer, an older client) keeps its copy after yours is unloaded. To free a model
-completely, eject it from the whole process. One call covers every in-process backend:
+Several compatible holders can share weights in one process, and `unload_model()` releases
+only the calling holder's resources. Another instance or owner can keep the model alive after
+yours is unloaded. To free a model completely, eject its holders from the whole process. One
+call covers the managed in-process backends:
 
 ```python
 from abstractcore.providers.process_residency import eject, resident_rows
@@ -16526,6 +16685,496 @@ For any of them:
 
 ---
 
+### Inlined: `docs/decision-models.md`
+
+# Decision Models
+
+Decision models answer typed questions about a document with calibrated probabilities instead of
+generating text. AbstractCore surfaces them as the `decision` output modality — **text in,
+decisions out** — behind one abstraction that does not depend on any single model or vendor:
+
+- **Hosted**: TypeSafe's Jev (`typesafe` provider) and any System One-compatible endpoint, that is
+  any server speaking the public System One decision API (`systemone` provider: a self-hosted Kev or
+  Lev process, another AbstractCore server, or another host). Nothing but `httpx`; the light install
+  is enough.
+- **Local**: the Kev family (pointer head on Qwen3.5), Lev (label logits on Qwen3.5-4B) and Laya
+  (ModernBERT encoder with a marker scorer), all Apache-2.0, on the `mlx` provider (Apple silicon)
+  and the `huggingface` provider (transformers, or a GGUF through llama.cpp). OpenJev-style
+  checkpoints run through the same label-logit engine (their weights are CC-BY-NC-4.0).
+
+The request, the answers and the HTTP surface (`POST /v1/decisions`) are the same for every one of
+them, so you switch models and providers without changing your code. Use a decision model when you
+classify, route, triage, score, or check documents and need probabilities you can threshold —
+send the uncertain cases to a human, automate the rest. Kev-4B answers several questions about a
+support ticket in about 100 ms on Apple silicon; Laya in about 50 ms on a laptop CPU/GPU; no prompt
+engineering and no output parsing.
+
+## What a decision model returns
+
+One request carries one **state** (the document: a string, or a JSON object/array rendered as
+labelled text) and any number of named **questions**. Each question has one of three types:
+
+| Type | You supply | You get |
+|---|---|---|
+| `choice` | 1–255 named options, each with an optional description | the most likely option (`choice`), `probabilities` per option, `confidence` |
+| `noul` | a statement in `instructions` (optional `criteria` describing `true` / `false`) | `noul`: the probability that the statement is true |
+| `score` | 1–255 ordered levels, lowest first | `score`: the expected level index, `probabilities` per level, `legend`, `confidence` |
+
+Questions never influence one another: every question is scored against the state alone. The model
+only ever scores the options you give it; it never writes an option of its own. Confidence is
+derived from the distribution (0 at uniform, 1 at certainty) and follows the System One reference
+conventions, so answers are comparable across hosted and local decision models.
+
+## Quick start
+
+Download the model once (no silent downloads: AbstractCore loads only what is on disk):
+
+```bash
+# Apple silicon (MLX) or transformers: the adapter + its base model
+abstractcore models download mlx jaredpalmer/kev-4b
+abstractcore models download mlx Qwen/Qwen3.5-4B-Base
+# or the self-contained GGUF (llama.cpp), 3 GB
+abstractcore models download huggingface "ggml-org/Kev-4B-GGUF:Q4_K_M"
+```
+
+Then ask:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("mlx", model="jaredpalmer/kev-4b")   # or ("huggingface", model="ggml-org/Kev-4B-GGUF:Q4_K_M")
+
+ticket = "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card."
+result = llm.generate(ticket, output="decision", questions={
+    "department": {"type": "choice", "instructions": "Which team should handle this?",
+                   "criteria": {"returns": "Exchanges, refunds, wrong or damaged items",
+                                "shipping": "Delivery status, delays, lost packages",
+                                "billing": "Charges, invoices, payment problems"}},
+    "escalate":   {"type": "noul", "instructions": "Does this need urgent human attention?"},
+    "frustration": {"type": "score", "instructions": "How frustrated is the customer?",
+                    "criteria": ["Calm", "Frustrated", "Very angry"]},
+})
+
+result.decisions["department"].choice          # "returns"
+result.decisions["department"].probabilities   # {"returns": 0.51, "shipping": 0.36, "billing": 0.13}
+result.decisions["escalate"].noul              # 0.72
+result.decisions["frustration"].score          # 1.30  (between "Frustrated" and "Very angry")
+result.decision.to_systemone()                 # the System One response body
+```
+
+The document is read once per request and reused for every question in it, and the last four
+documents stay cached, so consecutive requests about the same document only pay for their questions
+(Kev-4B 8-bit on an M5 Max: a 6,300-token contract costs 1.4 s the first time and 0.1 s again; a
+100-token ticket 95 ms then 45 ms). `create_llm(..., decision_prefix_cache_size=0)` disables the cache,
+a larger value keeps more documents; every `decision_<option>=` kwarg reaches the decision loader.
+
+`generate(..., output="decision")` returns a `MultimodalGenerateResponse` whose `decision` is a
+`DecisionResponse` (`answers`, `usage`, `latency_ms`) and whose `decisions` property is the answers
+keyed by question name. `result.content` is the answers as JSON, so sessions and logs that read
+text still see something meaningful. The state is the prompt; pass `state=` (any JSON) to render an
+object instead.
+
+Python shorthand is accepted for questions: a string is a `noul` statement, a list of names is a
+`choice` with no descriptions, `{"instructions": ..., "levels": [...]}` is a `score`:
+
+```python
+llm.generate(ticket, output="decision", questions={
+    "team": ["returns", "shipping", "billing"],
+    "urgent": "Does this need urgent human attention?",
+    "mood": {"instructions": "How frustrated is the customer?", "levels": ["Calm", "Frustrated", "Very angry"]},
+})
+```
+
+A decision model has no text lane: `generate("hello")` on it raises with a pointer to
+`output="decision"`. Text generation on other models is unchanged.
+
+### From any provider, through the default route
+
+Set the `output.decision` capability default once and every provider instance can answer
+`output="decision"`, the way `output="voice"` runs the configured voice engine:
+
+```bash
+abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b
+```
+
+```python
+llm = create_llm("ollama", model="qwen3.5:9b")           # a text model
+result = llm.generate(ticket, output="decision", questions={...})   # answered by the configured Kev
+```
+
+The route resolver puts the configured provider and model on the output spec; the decision lane
+runs them through the process-wide pool (`abstractcore.decision.pool`): at most two decision
+models stay loaded, the least recently used is unloaded, and the server's `/v1/decisions` shares
+the same pool, and a model a request is using is never unloaded under it. An explicit route on the
+spec wins over the default: `output={"modality": "decision", "provider": "mlx", "model":
+"jaredpalmer/kev-0.8b"}`, or a `provider/model` handle in `model` (`"huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M"`),
+while a bare `model` picks the local engine (a GGUF on huggingface, else mlx when mlx-lm is installed)
+and `kev-latest` reuses the most recently used resident model. `decision_*` route options
+(`decision_prefix_cache_size`, `decision_n_ctx`, ...) reach the loader. With no route and no
+default, a provider that is not itself a decision model raises an error that names the
+`set-default` command. The answers' `model` is always `provider/model`.
+
+### Without a provider object
+
+```python
+from abstractcore.decision import load_decision_model
+
+model = load_decision_model("mlx", "jaredpalmer/kev-4b")
+response = model.decide(ticket, {"urgent": "Does this need urgent human attention?"})
+response["urgent"].noul
+```
+
+`load_decision_model(provider, model)` is cache-only; pass `allow_download=True` to fetch the
+snapshot (and the base model of an adapter) first.
+
+## Over HTTP: `POST /v1/decisions`
+
+The AbstractCore server answers decisions at `POST /v1/decisions` with the System One request and
+answer shape (the format every decision-model host shares; `/{provider}/v1/decisions` takes an
+unprefixed model). The Python shorthand works on this route too (a string question is a noul, a
+list of option names a choice); hosted System One servers take only the typed form:
+
+```bash
+curl -s http://localhost:8000/v1/decisions -H 'content-type: application/json' -d '{
+  "model": "mlx/jaredpalmer/kev-4b",
+  "state": "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+  "questions": {
+    "department": {"type": "choice", "instructions": "Which team should handle this?",
+                   "criteria": {"returns": "Exchanges, refunds, wrong or damaged items",
+                                "shipping": "Delivery status, delays, lost packages",
+                                "billing": "Charges, invoices, payment problems"}},
+    "escalate":   {"type": "noul", "instructions": "Does this need urgent human attention?"},
+    "frustration": {"type": "score", "instructions": "How frustrated is the customer?",
+                    "criteria": ["Calm", "Frustrated", "Very angry"]}
+  }}'
+```
+
+```json
+{"model": "mlx/jaredpalmer/kev-4b",
+ "answers": {
+   "department": {"type": "choice", "choice": "returns", "confidence": 0.2681,
+                  "probabilities": {"returns": 0.5121, "shipping": 0.3554, "billing": 0.1326}},
+   "escalate": {"type": "noul", "noul": 0.7242},
+   "frustration": {"type": "score", "score": 1.3023, "confidence": 0.422,
+                   "legend": {"0": "Calm", "1": "Frustrated", "2": "Very angry"},
+                   "probabilities": {"0": 0.0415, "1": 0.6146, "2": 0.3438}}},
+ "usage": {"input_tokens": 101, "output_tokens": 181}, "latency_ms": 43.4}
+```
+
+`GET /v1/models?output_type=decision` lists the decision models the server can reach; each entry
+carries `capabilities` (`input` / `output`) and a `decision` object naming this endpoint. A chat
+completion against a decision model is refused with a 400 that points here: OpenAI has no shape for
+calibrated typed decisions, and the System One format is the one every decision-model host shares.
+
+`model` takes `provider/model` (`mlx/jaredpalmer/kev-4b`, `huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M`,
+`huggingface/jaredpalmer/kev-4b`). A bare handle picks the local engine (mlx on Apple silicon when
+mlx-lm is installed, otherwise huggingface); `kev-latest` and `jev-latest` reuse the decision model
+this server loaded most recently, else the configured `output.decision` default. The first request
+loads the model, later ones reuse it, and the server keeps the two most recently used decision
+models resident (the same pool `generate(output="decision")` uses in that process). The pool is part of
+the model residency API: `POST /acore/models/load` with `{"task": "decision", "model": "mlx/jaredpalmer/kev-4b"}`
+loads a decision model ahead of the first request, `GET /acore/models/loaded?task=decision` lists the
+resident ones (`process:decision:<provider>:<model>` rows), and `POST /acore/models/unload` releases one. Errors: 400 for an invalid
+request, 404 when the model is not downloaded, 422 when the state is over the context limit.
+
+## Providers, models and formats
+
+| Provider | Model handle | Kind | Engine | Needs |
+|---|---|---|---|---|
+| `typesafe` | `jev-latest` (also `jev-preview`) | hosted System One | HTTP | `TYPESAFE_API_KEY` |
+| `systemone` | any id the host serves (`base_url=` required) | hosted System One | HTTP | the host's key, if any |
+| `mlx` | `AbstractFramework/kev-4b-mlx-8bit`, `AbstractFramework/kev-4b-mlx-4bit` (ready-to-run conversions) or `jaredpalmer/kev-4b` (+ base `Qwen/Qwen3.5-4B-Base`) | kev (pointer head) | mlx-lm | `abstractcore[apple]` |
+| `mlx` | `AbstractFramework/kev-0.8b-mlx-8bit`, `AbstractFramework/kev-0.8b-mlx-4bit` or `jaredpalmer/kev-0.8b` (+ base `Qwen/Qwen3.5-0.8B-Base`) | kev | mlx-lm | the small, fast member of the family |
+| `huggingface` | `jaredpalmer/kev-4b` (+ base), a conversion | kev | transformers | `abstractcore[apple]` / `[gpu]` |
+| `huggingface` | `ggml-org/Kev-4B-GGUF:Q4_K_M` / `Q8_0` | kev | llama.cpp | any released llama-cpp-python (see below) |
+| `huggingface` | `ggml-org/lev-GGUF:Q8_0` / `Q4_K_M` | lev (label logits) | llama.cpp | any released llama-cpp-python |
+| `mlx` / `huggingface` | `interfaze-ai/lev` (+ base `Qwen/Qwen3.5-4B`) | lev | mlx-lm / transformers | the base model on disk |
+| `huggingface` | `convaiinnovations/laya` (also `.../multilingual`, `.../typed-decisions`) | laya (marker scorer) | transformers | `abstractcore[apple]` / `[gpu]`; long states scanned in overlapping 512-token windows |
+| `mlx` / `huggingface` | `openjev/openjev-MLX-4bit`, `ggml-org/OpenJev-GGUF:Q4_K_M`, `openjev/openjev` | openjev (letter logits) | mlx-lm / llama.cpp / transformers | weights are CC-BY-NC-4.0 |
+
+```python
+# Hosted Jev: the light install, nothing local.
+llm = create_llm("typesafe", model="jev-latest")           # TYPESAFE_API_KEY in the environment
+result = llm.generate(ticket, output="decision", questions=questions)
+
+# Any System One-compatible endpoint (here a self-hosted Kev server on this machine).
+llm = create_llm("systemone", model="kev-latest", base_url="http://localhost:8009")
+
+# Local models: the same call.
+llm = create_llm("huggingface", model="convaiinnovations/laya")
+llm = create_llm("huggingface", model="ggml-org/lev-GGUF:Q8_0")
+```
+
+The hosted route also serves `POST /v1/decisions` on the AbstractCore server with
+`"model": "typesafe/jev-latest"`, so one server can front local and hosted decision models.
+
+### Decision kinds
+
+A *kind* is a readout mechanism; every checkpoint of a kind shares its prompt layout and how the
+probabilities are read, and differs only in weights and calibration:
+
+- **kev** — five delimiter tokens pack the state and each question; a pointer head scores every
+  option's end token against the question's decide token. The state is computed once and cached;
+  each question only pays for its own tokens.
+- **lev** — a chat prompt lists the options under letters; the answer is read from the next-token
+  logits of the label tokens. A choice is read in two option orders and averaged; a yes/no is a
+  0–8 rating. The adapter runs at a quarter of its trained strength, as released. The tokens every
+  prompt of a request shares (system text and state) run once and are reused for every question
+  and option order, on transformers, mlx-lm and llama.cpp alike.
+- **openjev** — the same mechanism with one letter per option (up to 52 options) and fixed
+  temperatures.
+- **laya** — one bidirectional ModernBERT pass per question (`[CLS] question [SEP] [MASK] option …
+  [SEP] state [SEP]`, 512 tokens), a two-layer head and a scorer at each `[MASK]`. A state longer
+  than the room the questions leave is scanned in overlapping windows (half-window stride) and the
+  windows are combined as Laya's own runtime does: a yes/no is the maximum P(true) over windows, a
+  choice or score is the most confident window's distribution (`long_state="truncate"` reads the
+  start only). The number read is the deciding window's, not a calibration over the whole document.
+- **systemone** — a remote endpoint; the host decides.
+
+### Artifact layouts
+
+- **Adapter** (`jaredpalmer/kev-4b`, `interfaze-ai/lev`): the published LoRA; needs its base model
+  on disk (download both). AbstractCore folds the adapter into the base at load (about a minute
+  for a 4B model).
+- **Merged** (an AbstractCore conversion, or a complete checkpoint such as `convaiinnovations/laya`):
+  loads directly, in transformers or mlx-lm layout, bf16 or quantized.
+- **GGUF** (`ggml-org/Kev-4B-GGUF`, `ggml-org/lev-GGUF`, `ggml-org/OpenJev-GGUF`): llama.cpp's
+  conversions. Lev and OpenJev read ordinary logits and run on every released llama-cpp-python.
+  Kev's GGUF carries its pointer head inside the file. On a llama-cpp-python that bundles
+  llama.cpp from 2026-10-02 or later (ggml-org/llama.cpp#29818) it loads as is; on every
+  current release AbstractCore derives once, next to its model cache, a backbone copy of the file
+  without the head (every other tensor copied byte for byte) and applies the head itself, with
+  the same numbers. Nothing to install beyond `abstractcore[apple]` / `[gpu]`; the first load of a
+  file takes a few seconds longer. (This bridge goes away with abetlen/llama-cpp-python#2398.)
+  Laya's GGUF needs llama.cpp's decision graph and is not run by AbstractCore yet; use the
+  transformers checkpoint.
+
+The AbstractFramework conversions on the Hub (collection *Decision models*) are these recipes applied
+to Kev-4B and Kev-0.8B: `kev-4b-mlx-8bit` (4.2 GB), `kev-4b-mlx-4bit` (3.0 GB), `kev-0.8b-mlx-8bit`
+(0.8 GB), `kev-0.8b-mlx-4bit`. Convert a Kev adapter yourself with:
+
+```bash
+python -m abstractcore.decision.convert jaredpalmer/kev-4b --runtime mlx --bits 8 --out ./kev-4b-mlx-8bit
+python -m abstractcore.decision.convert jaredpalmer/kev-4b --runtime mlx --bits 4 --group-size 32 \
+    --upgrade '{"linear_attn.in_proj_qkv": 8, "linear_attn.in_proj_z": 8, "linear_attn.in_proj_a": 8, "linear_attn.in_proj_b": 8, "linear_attn.out_proj": 8}' \
+    --out ./kev-4b-mlx-4bit
+python -m abstractcore.decision.convert jaredpalmer/kev-4b --runtime transformers --out ./kev-4b
+# Kev-0.8B is more sensitive: keep the MLP gate/up projections at 8-bit as well
+python -m abstractcore.decision.convert jaredpalmer/kev-0.8b --runtime mlx --bits 4 --group-size 32 \
+    --upgrade '{"linear_attn.in_proj_qkv": 8, "linear_attn.in_proj_z": 8, "linear_attn.in_proj_a": 8, "linear_attn.in_proj_b": 8, "linear_attn.out_proj": 8, "mlp.gate_proj": 8, "mlp.up_proj": 8}' \
+    --out ./kev-0.8b-mlx-4bit
+```
+
+The second command is the measured 4-bit recipe (group size 32, the Gated DeltaNet projections at
+8 bits): a plain 4-bit conversion of a decision model loses accuracy and shifts probabilities;
+this one keeps the accuracy and most of the calibration (table below). When calibration matters
+more than size, use 8-bit: it is indistinguishable from bf16. A converted folder is a plain model handle:
+`create_llm("mlx", model="./kev-4b-mlx-4bit")`.
+
+## Measured quality and speed
+
+Public development set of the Kev evaluation suite (`public-pool-v6`: 1,328 records, 1,592
+questions over banking77, AG News, MNLI, TREC, DBpedia, ARC, OpenBookQA, CommonsenseQA, BoolQ,
+SST-5 and Yelp), Kev-4B, Apple M5 Max. Accuracy is argmax accuracy over all questions; Brier and
+NLL are per question (lower is better); ECE uses 10 bins. "Agreement" and "max |Δp|" compare each
+run with the bf16 MLX reference on the same questions.
+
+| Runtime | Precision | Size | Accuracy | Brier | ECE | Agreement with bf16 | max / mean |Δp| | ms per record |
+|---|---|---|---|---|---|---|---|---|
+| mlx | bf16 (adapter merged at load) | 7.9 GB | 0.846 | 0.227 | 0.024 | — | — | 117 |
+| mlx | bf16 (merged checkpoint) | 7.9 GB | 0.846 | 0.227 | 0.024 | 1.000 | 0.000 / 0.000 | 169 |
+| mlx | 8-bit (group 64) | 4.2 GB | 0.846 | 0.227 | 0.025 | 0.997 | 0.07 / 0.004 | 136 |
+| mlx | 4-bit (group 64, every linear) | 2.2 GB | 0.837 | 0.232 | 0.026 | 0.954 | 0.92 / 0.038 | 117 |
+| llama.cpp | Q4_K_M | 3.0 GB | 0.845 | 0.225 | 0.025 | 0.981 | 0.30 / 0.018 | 398 |
+| mlx | 4-bit mixed (group 32, DeltaNet projections 8-bit) | 3.0 GB | 0.847 | 0.226 | 0.024 | 0.973 | 0.34 / 0.023 | 113 |
+| llama.cpp | Q8_0 | 4.5 GB | 0.844 | 0.227 | 0.022 | 0.995 | 0.07 / 0.003 | 225 |
+| transformers | bf16 (MPS, 300 records) | 7.9 GB | 0.909* | 0.154* | 0.019* | 1.000* | 0.06 / 0.002* | 755 |
+| Kev-0.8B mlx | bf16 | 1.6 GB | 0.763 | 0.321 | 0.030 | — | — | 30 |
+| Kev-0.8B mlx | 8-bit | 0.8 GB | 0.761 | 0.321 | 0.025 | 0.990 (vs its bf16) | 0.006 / — | 24 |
+| Kev-0.8B mlx | 4-bit mixed (group 32, DeltaNet and MLP gate/up at 8-bit) | 0.65 GB | 0.754 | 0.331 | 0.024 | 0.960 (vs its bf16) | 0.028 / — | 24 |
+
+Rows marked * were measured on the first 300 records (460 questions) of the same set; on that
+subset the full-set runs read: bf16 0.909 accuracy; 8-bit 0.909 / agreement 1.000; plain 4-bit
+0.902 / 0.972 / mean |Δp| 0.030; Q4_K_M 0.904 / 0.991 / 0.014.
+
+"ms per record" is the whole request for a new state (its tokens plus one to three questions);
+a repeated state only pays for its questions (Kev-4B on MLX: about 45 ms for three questions).
+Latency on transformers reflects PyTorch's reference Gated DeltaNet kernels on MPS; on CUDA with
+the fused kernels installed it is several times faster.
+
+### Small benchmark: Kev, Lev, Laya and hosted Jev on the same questions
+
+A source-balanced slice of the same public pool: the first 10 records of each of its 13 sources
+(130 records, 160 questions: 115 choice, 30 noul, 15 score; banking77, BoolQ, AG News, MNLI, SST-5,
+Yelp, TREC, DBpedia, Amazon, IMDb, ARC, OpenBookQA, CommonsenseQA). States are short: median 30
+tokens, mean 59, maximum 313 (see the length ladder below for long documents). Every model
+answered the same requests through AbstractCore; Jev through the `typesafe` provider (model `jev-1.14.0` on
+2026-11-01). Accuracy is argmax accuracy; Brier, NLL and ECE (10 bins) are per question, lower is
+better. Keep in mind that several of these sources are in Kev's and Lev's training data and that
+130 records is a small sample (one question is 0.6 points).
+
+| Model | Provider / precision | Accuracy | Brier | NLL | ECE | choice / noul / score accuracy | ms per record |
+|---|---|---|---|---|---|---|---|
+| Jev (hosted) | typesafe, `jev-1.14.0` | 0.844 | 0.267 | 1.076 | 0.099 | 0.86 / 0.88 / 0.73 | 164 (network included) |
+| Kev-4B | mlx 4-bit mixed | 0.825 | 0.255 | 0.549 | 0.066 | 0.88 / 0.92 / 0.53 | 113 |
+| Lev | llama.cpp Q4_K_M | 0.825 | 0.295 | 0.701 | 0.098 | 0.88 / 0.88 / 0.60 | 180 |
+| Kev-4B | llama.cpp Q4_K_M | 0.812 | 0.257 | 0.554 | 0.064 | 0.85 / 0.92 / 0.53 | 398 |
+| Lev | mlx bf16 | 0.812 | 0.304 | 0.719 | 0.104 | 0.85 / 0.86 / 0.63 | 711 |
+| Kev-4B | mlx bf16 | 0.806 | 0.259 | 0.564 | 0.070 | 0.85 / 0.90 / 0.53 | 117 |
+| Kev-4B | mlx 8-bit | 0.806 | 0.260 | 0.564 | 0.076 | 0.85 / 0.90 / 0.53 | 136 |
+| Kev-0.8B | mlx bf16 | 0.762 | 0.326 | 0.643 | 0.053 | 0.75 / 0.92 / 0.53 | 30 |
+| Laya | transformers fp32 (start of the state only) | 0.656 | 0.553 | 1.905 | 0.188 | 0.55 / 0.86 / 0.60 | 49 |
+
+What the numbers say: the hosted model is the most accurate and the strongest on ordinal
+(`score`) questions; the 4B local models are within two points of it on choice and yes/no questions
+and are better calibrated (lower Brier and NLL); Laya is six times faster and much smaller but
+weakens on long option lists (its 512-token sequence caps each option at a few tokens when a
+question has dozens of them). On a slice dominated by 77-way intent questions (the pool's first 100
+records) Laya drops to 0.46 while Kev and Lev score 0.89 and Jev 0.84.
+
+The same support ticket, every model:
+
+| Model | department (returns / shipping / billing) | escalate | frustration (expected level) |
+|---|---|---|---|
+| Jev (hosted) | returns 0.66 / 0.11 / 0.23 | 0.68 | 1.01 |
+| Kev-4B (mlx bf16) | returns 0.51 / 0.36 / 0.13 | 0.72 | 1.30 |
+| Lev (llama.cpp Q4_K_M) | shipping 0.25 / 0.72 / 0.03 | 0.99 | 1.78 |
+| Lev (mlx bf16, full strength) | returns 0.51 / 0.45 / 0.04 | 0.99 | 1.81 |
+| Laya (transformers) | shipping 0.28 / 0.40 / 0.32 | 0.12 | 1.10 |
+
+Lev's release manifest applies its adapter at a quarter of its trained strength (the author's
+benchmark setting) while llama.cpp's GGUF conversion merges it at full strength; on this pool the
+full-strength weights score higher (0.89 vs 0.80 on the first 100 records), so the `mlx` /
+`huggingface` adapter path accepts `adapter_scale=` (default: the manifest's 0.25; pass 1.0 to
+match the GGUF). Parity checks against the authors' own runtimes: Kev within 0.006 on the example
+and 0.028 max over 40 questions; Laya identical on the example and 0.056 max over 30 questions.
+
+### Length ladder: 1k to 16k-token documents
+
+Two document types, each with its own questions, bucketed by how long the document is:
+
+- **Contracts** (CUAD: real commercial contracts with expert clause annotations): "does this contract
+  contain a clause of type X?" (yes/no, one present and one absent per contract) and "which of these
+  four clause types is present?" (choice). Buckets of 1k, 2k, 4k, 8k and 16k tokens.
+- **Reading** (QuALITY: long articles with multiple-choice comprehension questions written for them):
+  two 4-option questions per article. Buckets of 2k, 4k and 8k tokens.
+
+The summary first (mean accuracy over the buckets of each task; seconds per document, all its questions
+in one request; Jev over the network, local models on an M5 Max). Every local row runs with the state
+cache described above: within a request the document is read once for all its questions, on every
+engine and backend (Kev on transformers, mlx-lm and llama.cpp; Lev on the same three); the ladder
+measures first requests, so these are cold costs, and a second request about the same document costs
+only its questions. Laya is a bidirectional encoder with nothing to cache; its long-state mode is the
+windowed scan.
+
+| Model | Contracts, accuracy | Reading, accuracy | Seconds per document at 2k / 8k / 16k |
+|---|---|---|---|
+| Jev hosted (jev-1.14.0) | 0.88 | 0.94 | 0.2 / 0.2 / 0.3 |
+| Kev-4B (mlx bf16) | 0.88 | 0.78 | 0.7 / 3.6 / 5.2 |
+| Kev-4B (mlx 4-bit) | 0.87 | 0.78 | 1.1 / 3.4 / 7.6 |
+| Kev-4B (llama.cpp Q4_K_M) | 0.87 | 0.80 | 1.5 / 4.9 / 11.1 |
+| Lev (llama.cpp Q4_K_M) | 0.84 | 0.78 | 1.3 / 4.2 / 8.7 |
+| Kev-0.8B (mlx bf16) | 0.77 | 0.51 | 0.1 / 0.6 / 1.3 |
+| Kev-0.8B (mlx 4-bit) | 0.76 | 0.48 | 0.1 / 0.4 / 0.9 |
+| Laya (windowed) | 0.48 | 0.26 | 3.4 / 10.0 / 26.1 |
+| Laya (start of the document only) | 0.40 | 0.26 | 0.1 / 0.1 / 0.2 |
+
+In one sentence each: the hosted model is the only one that reads long articles well and it answers in
+a fraction of a second whatever the length; the 4B local models equal it on contract clauses up to 16k
+tokens but pay one to eleven seconds to read a long document (once per document, see the cache below);
+Kev-0.8B is the fast local option, good on contract clauses, weak on reading comprehension; Laya does not
+handle long documents. The detailed per-bucket tables follow.
+
+
+The small benchmark above uses short states (median 30 tokens, maximum 313). This one uses whole
+documents bucketed by their natural token length, nothing padded or truncated: CUAD contracts
+(CC-BY-4.0, expert clause annotations) at 1k, 2k, 4k, 8k and 16k tokens with, per contract, one
+present-clause and one absent-clause yes/no question and a 4-way "which clause type is present"
+question; and QuALITY articles (CC-BY-4.0, Project Gutenberg texts) at 2k, 4k and 8k tokens with
+two 4-option comprehension questions each. 87 documents, 229 questions (7 to 12 documents per
+bucket; bucket bands 500–1.3k, 1.3k–2.6k, 3k–4.3k, 6.2k–8.6k, 12.5k–17k state tokens). Accuracy /
+Brier / milliseconds per document (every question of the document in one request; Jev over the
+network). Laya is listed in both of its modes: reading the start of the document only (512 tokens), and
+scanning it in overlapping windows as its runtime does; neither reaches the decoder models on
+these tasks, and the windowed scan costs about one forward pass per 150 tokens per question.
+
+Contract clause questions (CUAD):
+
+| Model | 1k (21 q) | 2k (36 q) | 4k (36 q) | 8k (36 q) | 16k (36 q) |
+|---|---|---|---|---|---|
+| Jev hosted (jev-1.14.0) | 0.95 / 0.05 / 155 | 0.89 / 0.14 / 157 | 0.89 / 0.19 / 184 | 0.75 / 0.33 / 223 | 0.94 / 0.09 / 307 |
+| Kev-4B (mlx bf16) | 0.95 / 0.14 / 301 | 0.86 / 0.20 / 643 | 0.83 / 0.25 / 1236 | 0.83 / 0.27 / 2236 | 0.94 / 0.18 / 5222 |
+| Laya (transformers, start of the state only) | 0.48 / 0.70 / 190 | 0.47 / 0.65 / 149 | 0.36 / 0.72 / 151 | 0.36 / 0.75 / 153 | 0.31 / 0.74 / 248 |
+| Lev (llama.cpp Q4_K_M) | 0.90 / 0.19 / 843 | 0.92 / 0.14 / 1204 | 0.75 / 0.41 / 1972 | 0.78 / 0.36 / 3584 | 0.86 / 0.16 / 8747 |
+| Kev-4B (mlx 4-bit) | 0.95 / 0.13 / 594 | 0.86 / 0.20 / 1039 | 0.81 / 0.26 / 1923 | 0.81 / 0.29 / 3446 | 0.94 / 0.17 / 7583 |
+| Kev-0.8B (mlx bf16) | 0.86 / 0.31 / 121 | 0.75 / 0.33 / 119 | 0.81 / 0.39 / 308 | 0.64 / 0.44 / 697 | 0.81 / 0.40 / 1342 |
+| Kev-0.8B (mlx 4-bit) | 0.81 / 0.32 / 74 | 0.78 / 0.32 / 112 | 0.81 / 0.38 / 193 | 0.61 / 0.45 / 375 | 0.78 / 0.40 / 945 |
+| Laya (transformers, windowed) | 0.52 / 0.52 / 1916 | 0.50 / 0.68 / 4034 | 0.47 / 0.71 / 7010 | 0.50 / 0.77 / 11898 | 0.42 / 0.88 / 26119 |
+| Kev-4B (llama.cpp Q4_K_M, released binding) | 0.86 / 0.15 / 757 | 0.92 / 0.19 / 1474 | 0.83 / 0.25 / 2593 | 0.81 / 0.29 / 4570 | 0.92 / 0.18 / 11060 |
+
+Reading comprehension (QuALITY):
+
+| Model | 2k (16 q) | 4k (24 q) | 8k (24 q) |
+|---|---|---|---|
+| Jev hosted (jev-1.14.0) | 1.00 / 0.01 / 233 | 0.92 / 0.13 / 218 | 0.92 / 0.09 / 188 |
+| Kev-4B (mlx bf16) | 0.94 / 0.18 / 787 | 0.71 / 0.34 / 1923 | 0.71 / 0.48 / 5540 |
+| Laya (transformers, start of the state only) | 0.19 / 0.85 / 133 | 0.38 / 0.76 / 105 | 0.21 / 0.79 / 108 |
+| Lev (llama.cpp Q4_K_M) | 0.88 / 0.17 / 1453 | 0.75 / 0.44 / 2574 | 0.71 / 0.49 / 5160 |
+| Kev-4B (mlx 4-bit) | 0.94 / 0.17 / 1142 | 0.71 / 0.36 / 1709 | 0.71 / 0.48 / 3353 |
+| Kev-0.8B (mlx bf16) | 0.69 / 0.48 / 203 | 0.50 / 0.61 / 268 | 0.33 / 0.77 / 544 |
+| Kev-0.8B (mlx 4-bit) | 0.69 / 0.52 / 150 | 0.42 / 0.63 / 207 | 0.33 / 0.77 / 430 |
+| Laya (transformers, windowed) | 0.19 / 0.90 / 2003 | 0.29 / 0.90 / 3088 | 0.29 / 0.93 / 7113 |
+| Kev-4B (llama.cpp Q4_K_M, released binding) | 0.94 / 0.17 / 1639 | 0.75 / 0.32 / 2676 | 0.71 / 0.51 / 5286 |
+
+What the ladder says: the hosted model holds its accuracy across the whole range and stays flat in
+latency; the 4B local models match it on clause presence up to 16k tokens (within the noise of a
+few dozen questions) but lose reading comprehension beyond 4k, where their authors' training states
+stopped. Kev-0.8B is four times faster than Kev-4B at every length (1.3 s for a 16k-token contract)
+and keeps most of the clause-presence accuracy, but not reading comprehension past 2k. On every
+local engine the state is read once per request and reused for all its questions and option orders
+(the pointer-head cache for Kev, the shared prompt prefix for Lev), so a second request about the
+same document only pays for its questions; Kev-4B's 4-bit checkpoint keeps the bf16 accuracy at a
+somewhat higher prefill cost on MLX. Local latency grows linearly with the document: a 16k-token contract costs
+about five seconds on an M5 Max, once per document, after which more questions about it cost tens
+of milliseconds.
+
+### How to read the numbers
+
+- Argmax agreement with the bf16 run is what a classifier or router sees; |Δp| is what a
+  threshold sees. 8-bit (MLX or Q8_0) is indistinguishable from bf16. The official Q4_K_M GGUF
+  and the mixed MLX 4-bit recipe keep the accuracy; a few percent of their answers move by more
+  than 0.10 against bf16, so prefer 8-bit when you threshold probabilities. The plain 4-bit
+  recipe (every linear at 4 bits, group 64) loses a point of accuracy and moves a tenth of the
+  answers by more than 0.10; it is not offered.
+- The Kev model card reports its own figures for Kev-4B (new-source accuracy 0.82–0.84,
+  trained-source 0.87) on the author's evaluation suites; they are not reproduced here. The tables
+  above are measured on the public pool, which mixes trained and new sources.
+
+## Limits
+
+- Kev and Lev are English only (Laya ships a multilingual checkpoint); knowledge questions are bounded by the 4B base (the author reports MMLU-Pro 0.59
+  for Kev-9B against 0.84 for Jev).
+- A state may hold up to 65,536 tokens and each question row 8,192 tokens more; an over-long state
+  is refused (`ContextOverflow`, HTTP 422) unless you ask to `truncate`. The author trained on
+  states up to 7,552 tokens, so accuracy on much longer documents is not characterised.
+- Changing the order of a question's options can change its answer; keep option order stable
+  when you compare runs.
+- Calibration is the author's: one temperature per checkpoint for Kev (2.41 for Kev-4B), per
+  question type and option count for Lev and Laya; a temperature never changes which option ranks
+  first. A hosted model's calibration is the host's.
+- Decision models never generate text: `response_model=`, tools, streaming and media inputs do
+  not apply to `output="decision"`.
+
+## Related
+
+- [Capabilities](docs/capabilities.md) — the other `generate(..., output=...)` modalities
+- [API (Python)](docs/api.md) — `generate`, `MultimodalGenerateResponse`
+- [Server](docs/server.md) — `POST /v1/decisions`
+- [Local Models](docs/models.md) — downloading and listing weights
+- `abstractcore/assets/model_capabilities.json` — the `kev-*` entries (`capability_routes.output: ["decision"]`)
+
+---
+
 ### Inlined: `docs/recommended-models.md`
 
 # Recommended models
@@ -17237,8 +17886,8 @@ have task rows: `text_to_image`, `image_to_image`, `image_upscale`,
 Setting the modality row is the simple path, and it is what the fresh-install
 seed writes: one `output.image` value makes generate, edit and upscale all work.
 
-The other output modalities — `output.voice`, `output.sound`, `output.music` —
-have **no** task rows at all, so their modality row is the primary key rather
+The other output modalities — `output.voice`, `output.sound`, `output.music`,
+`output.decision` — have **no** task rows at all, so their modality row is the primary key rather
 than a fallback. The same is true of every `input.*`, `embedding.*` and
 `rerank.*` route.
 
@@ -19077,7 +19726,27 @@ music = llm.generate(
 # when the selected AbstractVoice backend supports local or remote cloning.
 clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
 voice_id = clone.resources["voice"][0].resource_id
+
+# Decision models (Kev family): text in, calibrated typed decisions out. The prompt is the
+# state; questions are choice / noul (yes-no probability) / score. See decision-models.md.
+decided = llm.generate(
+    "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+    output="decision",
+    questions={
+        "department": {"type": "choice", "instructions": "Which team should handle this?",
+                       "criteria": {"returns": None, "shipping": None, "billing": None}},
+        "escalate": "Does this need urgent human attention?",
+    },
+)
+decided.decisions["department"].choice         # "returns"
+decided.decisions["escalate"].noul             # 0.72
 ```
+
+Decision output needs a decision model: a local one on the `mlx` or `huggingface` provider
+(`create_llm("mlx", model="jaredpalmer/kev-4b")`), a hosted one on `typesafe` or `systemone`, or,
+from any other provider, the `output.decision` capability default
+(`abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b`);
+see [Decision Models](docs/decision-models.md).
 
 Text-only `generate(...)` is unchanged. Ambiguous media cases require explicit
 roles, for example `role="source"` and `role="mask"` for image edits with masks.
@@ -24968,17 +25637,52 @@ If you want a dedicated **single-model** `/v1` server (one provider/model per wo
 
 ## Serving through AbstractGateway
 
-AbstractGateway can expose Core's OpenAI-compatible serving routes at
-`<gateway-url>/core/v1`. Its console controls enablement, token access, and
-local-network open access. The endpoint uses the Gateway listener and Network
-policy; its Core token is separate from Gateway user tokens and credentials
-used to connect to a remote Core server. Gateway controls the exposed route
-allowlist; Core implements inference and provider credential checks.
+Native framework clients use Gateway run APIs and replay Runtime's ledger. They do not need an
+OpenAI-compatible endpoint. Gateway can optionally start Core's direct listener in the existing
+execution owner: its address and authentication come from Core's server configuration, and
+requests are handled by Core without Gateway/Runtime run orchestration. The direct listener is
+disabled by default and has a separate lifecycle from native execution.
 
-Open access does not authorize use of server-held cloud provider credentials.
-Clients using a cloud provider must supply their own
-`X-AbstractCore-Provider-API-Key`, or authenticate with the endpoint's Core token.
-See [Operator control and server trust boundary](docs/adr/0004-operator-control-and-server-trust-boundary.md).
+Gateway also offers a separate compatibility API at `<gateway-url>/v1` (the deprecated
+`/core/v1` prefix redirects there). That API uses Gateway account admission, named OpenAI API
+keys and its network policy. Its credentials are distinct from a direct Core listener's token.
+See [Gateway's OpenAI API guide](https://github.com/lpalbou/abstractgateway/blob/main/docs/openai-api.md)
+for its configuration and key rules. Core continues to own inference and upstream credential
+policy. See [Operator control and server trust boundary](docs/adr/0004-operator-control-and-server-trust-boundary.md).
+
+### Managed listener in an execution owner
+
+Hosts that already own Core inference can explicitly start its authenticated HTTP app without
+launching another model-owning process:
+
+```python
+from abstractcore.server.managed import start_managed_server
+
+listener = start_managed_server()  # Core's configured server host/port
+try:
+    print(listener.url)
+    print(listener.status())
+    # Keep the host's normal service loop running here.
+finally:
+    listener.stop()
+```
+
+The default address is `127.0.0.1:8000`; explicit `host=` and `port=` override the persisted
+server configuration, and `port=0` selects an available port. Importing the helper does not
+import the HTTP application or bind a socket. Starting it uses Core's existing first-run token
+handling and authentication; it does not accept Gateway credentials as Core credentials.
+The actual listener bind controls the default engine-install policy, independently for each
+concurrent listener. An explicit `ABSTRACTCORE_ALLOW_ENGINE_INSTALL` setting still wins.
+
+`status()` returns `running`, `url` and `error`; `is_running` and `last_error` are also available.
+Startup is bounded by `timeout_s` (15 seconds by default); invalid timeouts and failed binds
+raise before serving. `stop(timeout_s=6.0)` is repeatable and stops HTTP serving without
+unloading resident weights or restarting the execution owner. It raises if the listener cannot
+stop, so hosts can report and retry cleanup. Hosts own supervision and service recovery.
+
+The listener shares process resources with Python callers under the
+[managed-loader sharing rules](docs/memory-management.md#one-resident-artifact-per-process).
+Launching `abstractcore serve` separately creates an independent process and pool.
 
 ### Embedding Core in an ASGI host
 
@@ -25278,6 +25982,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Chat | POST | `/{provider}/v1/chat/completions` | Provider-scoped chat route where body model is unprefixed | path `provider`, body `model`, `messages`, chat parameters |
 | Responses | POST | `/v1/responses` | OpenAI Responses API (`object:"response"`) + legacy chat fallback | `model`, `input` or `messages`, `stream`, generation parameters, `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_binding` |
 | Embeddings | POST | `/v1/embeddings` | OpenAI-compatible embedding vectors | `model`, `input`, `dimensions`, `encoding_format`, `user`, `base_url` |
+| Decisions | POST | `/v1/decisions` | Typed questions (choice / noul / score) about a state, answered by a local or hosted decision model with calibrated probabilities (System One request/answer shape) | `model`, `state`, `questions`, `truncate` |
+| Decisions | POST | `/{provider}/v1/decisions` | Provider-scoped decisions route where the body model is unprefixed | path `provider`, body `model`, `state`, `questions`, `truncate` |
 | Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `seeds`, `steps`, `guidance_scale`, `seed`, `lora_adapters`, `quality`, `extra` |
 | Images | POST | `/{provider}/v1/images/generations` | Provider-scoped text-to-image route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, image generation parameters |
 | Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, repeatable `reference_images`, `model`, `provider`, `base_url`, `n`, `seeds`, `size`, `steps`, `guidance_scale`, `seed`, `lora_adapters_json`, `extra_json` |
@@ -26719,6 +27425,53 @@ response = requests.post(
 result = response.json()
 print(result["choices"][0]["message"]["content"])
 ```
+
+---
+
+### Decisions
+
+**Endpoint:** `POST /v1/decisions`
+
+Answer typed questions about a document with a decision model: the System One request and answer
+shape, the format every decision-model host shares. Nothing is generated;
+every answer is a calibrated probability distribution over the options you supply.
+
+**Request:**
+```json
+{
+  "model": "mlx/jaredpalmer/kev-4b",
+  "state": "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+  "questions": {
+    "department": {"type": "choice", "instructions": "Which team should handle this?",
+                   "criteria": {"returns": "Exchanges, refunds, wrong or damaged items",
+                                "shipping": "Delivery status, delays, lost packages",
+                                "billing": "Charges, invoices, payment problems"}},
+    "escalate":   {"type": "noul",  "instructions": "Does this need urgent human attention?"},
+    "frustration": {"type": "score", "instructions": "How frustrated is the customer?",
+                    "criteria": ["Calm", "Frustrated", "Very angry"]}
+  }
+}
+```
+
+**Response:** `answers` by question name (`choice` + `probabilities` + `confidence`; `noul`;
+`score` + `legend` + `probabilities` + `confidence`), `usage`, `latency_ms`.
+
+**Models:** `typesafe/jev-latest` (hosted Jev, `TYPESAFE_API_KEY`), `mlx/jaredpalmer/kev-4b` (Apple silicon),
+`huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M` (llama.cpp), `huggingface/ggml-org/lev-GGUF:Q8_0`,
+`huggingface/convaiinnovations/laya`, `huggingface/jaredpalmer/kev-4b` (transformers). A bare handle picks the local engine;
+`kev-latest` / `jev-latest` reuse the decision model loaded most recently, else the configured
+`output.decision` capability default. The first request loads the model and later ones reuse it; the
+two most recently used decision models stay resident.
+Errors: 400 invalid request, 404 model not downloaded, 422 state over the context limit. See
+[Decision Models](docs/decision-models.md).
+
+**Discovery and the OpenAI routes:** `GET /v1/models?output_type=decision` lists decision models; every
+`/v1/models` entry carries an additive `capabilities` object (`input` / `output` modalities from the
+registry) and a decision model also a `decision` object (`endpoint: "/v1/decisions"`, `kind`,
+`question_types`, `generates_text: false`). OpenAI clients ignore the extra fields. A chat completion or
+`/v1/responses` call against a decision model answers 400 (`code: "decision_model"`, with the endpoint
+in the error), never a silent empty completion: there is no OpenAI-compatible shape for calibrated typed
+decisions, and the System One request/response is the format every decision-model host shares.
 
 ---
 

@@ -257,12 +257,80 @@ def eject_unclaimed(provider: str, model: str, *, task: Optional[str] = None, pa
 # used first, one at a time), and otherwise refuses with a typed error.
 # ---------------------------------------------------------------------------
 _GB = 1000 ** 3
-_LOAD_LOCK = _threading.Lock()
+_LOAD_LOCK = _threading.RLock()
 
 
-def load_lock() -> "_threading.Lock":
-    """One in-process model load at a time (ADR 0010): fit check + allocation."""
+def load_lock() -> "_threading.RLock":
+    """One in-process load at a time; initial loads may build nested context slots."""
     return _LOAD_LOCK
+
+
+def refuse_other_backend_artifact(path: Any, *, backend: str) -> None:
+    """Under ``load_lock``, refuse a second engine for an already resident artifact.
+
+    Read existing registries only; do not import engines or maintain another ownership map.
+    Backends keep their own compatible-sharing and profile admission rules.
+    """
+    from pathlib import Path
+    from ..utils.model_cache import resolve_hf_load_snapshot
+
+    def identity(value: Any) -> str:
+        candidate = Path(str(value)).expanduser()
+        if candidate.exists():
+            return str(candidate.resolve())
+        snapshot = resolve_hf_load_snapshot(str(value))
+        return str(Path(snapshot).resolve()) if snapshot else str(value)
+
+    wanted = identity(path)
+    residents = []
+    # sys.modules exposes a module before its import finishes. Registries not
+    # initialized yet cannot hold managed weights; never wait for that import
+    # while holding the process load lock (the importer may need this lock).
+    hf = sys.modules.get("abstractcore.providers.hf_residency")
+    registered = getattr(hf, "registered_providers", None)
+    if backend != "huggingface" and registered is not None:
+        for provider in registered():
+            source = getattr(provider, "_transformers_source", None)
+            if source is not None and (
+                getattr(provider, "model_instance", None) is not None
+                or getattr(getattr(provider, "pipeline", None), "model", None) is not None
+            ):
+                residents.append(("huggingface", source.model))
+    embeddings = sys.modules.get(_EMBEDDINGS_MODULE)
+    embedding_lock = getattr(embeddings, "_SHARED_EMBEDDING_LOCK", None)
+    embedding_models = getattr(embeddings, "_SHARED_EMBEDDING_MODELS", None)
+    if backend != "embeddings" and embedding_lock is not None and embedding_models is not None:
+        with embedding_lock:
+            for entry in list(embedding_models.values()):
+                if entry.model is not None:
+                    residents.append(("embeddings", getattr(entry.model, "model_name_or_path", None) or entry.model_id))
+    if backend != "mlx":
+        plain = sys.modules.get("abstractcore.providers.mlx_provider")
+        plain_lock = getattr(plain, "_SHARED_MLX_MODELS_LOCK", None)
+        plain_models = getattr(plain, "_SHARED_MLX_MODELS", None)
+        if plain_lock is not None and plain_models is not None:
+            with plain_lock:
+                residents.extend(("mlx", key) for key in list(plain_models))
+        native = sys.modules.get("abstractcore.providers.mlx_native_session")
+        native_lock = getattr(native, "_LOAD_LOCK", None)
+        native_sessions = getattr(native, "_SESSIONS", None)
+        if native_lock is not None and native_sessions is not None:
+            with native_lock:
+                residents.extend(("mlx", path) for key in list(native_sessions) for path in key[:2] if path)
+        qwen4 = sys.modules.get("abstractcore.providers.mlx_qwen4")
+        qwen4_lock = getattr(qwen4, "_LOAD_LOCK", None)
+        qwen4_sessions = getattr(qwen4, "_SESSIONS", None)
+        if qwen4_lock is not None and qwen4_sessions is not None:
+            with qwen4_lock:
+                residents.extend(("mlx", key[0]) for key in list(qwen4_sessions))
+    for owner, artifact in residents:
+        if identity(artifact) == wanted:
+            from ..exceptions import InvalidRequestError
+
+            raise InvalidRequestError(
+                f"Model artifact '{path}' is already loaded by {owner}. Unload it before "
+                f"selecting {backend}; a second copy is never loaded."
+            )
 
 
 def _release_torch_device_cache() -> None:

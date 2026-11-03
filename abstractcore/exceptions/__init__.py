@@ -124,6 +124,23 @@ class ModelDoesNotFitError(ProviderError):
                 "evicted": self.evicted, "suggestions": self.suggestions}
 
 
+class DecisionModelError(InvalidRequestError):
+    """A text-generation call reached a decision model (text in, typed decisions out).
+
+    Decision models never generate text: ask them with ``generate(state, output="decision",
+    questions=...)`` in Python, or ``POST /v1/decisions`` over HTTP."""
+
+    def __init__(self, model: str, provider: str = ""):
+        handle = f"{provider}/{model}" if provider else model
+        super().__init__(
+            f"{handle!r} is a decision model: it answers typed questions (choice / noul / score) with calibrated "
+            "probabilities and does not generate text. Use generate(state_text, output='decision', questions={...}) "
+            "in Python, or POST /v1/decisions over HTTP."
+        )
+        self.model = model
+        self.provider = provider
+
+
 class ContextWindowExceededError(InvalidRequestError):
     """The request needs more tokens than the context the model is loaded with.
 

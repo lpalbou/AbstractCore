@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import ipaddress
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
@@ -39,11 +41,22 @@ router = APIRouter(tags=["models & engines"])
 
 BIND_HOST_ENV = "ABSTRACTCORE_SERVER_BIND_HOST"
 ALLOW_ENGINE_INSTALL_ENV = "ABSTRACTCORE_ALLOW_ENGINE_INSTALL"
+_server_bind_host: ContextVar[Optional[str]] = ContextVar("abstractcore_server_bind_host", default=None)
 
 
 # ---------------------------------------------------------------------------
 # Policy
 # ---------------------------------------------------------------------------
+
+
+@contextmanager
+def use_server_bind_host(host: str):
+    """Scope bind-sensitive policy to one listener's complete ASGI request."""
+    token = _server_bind_host.set(host)
+    try:
+        yield
+    finally:
+        _server_bind_host.reset(token)
 
 
 def _is_loopback_host(host: Optional[str]) -> bool:
@@ -61,8 +74,8 @@ def _is_loopback_host(host: Optional[str]) -> bool:
 def server_allows_engine_install() -> bool:
     """`ABSTRACTCORE_ALLOW_ENGINE_INSTALL` when set; else True only on a loopback bind.
 
-    The bind host is recorded by `run_server_with_args` in
-    `ABSTRACTCORE_SERVER_BIND_HOST`; an unknown bind counts as NOT loopback.
+    Managed listeners scope their actual bind per request. Standalone serving
+    uses `ABSTRACTCORE_SERVER_BIND_HOST`; an unknown bind is NOT loopback.
     """
 
     raw = str(os.getenv(ALLOW_ENGINE_INSTALL_ENV) or "").strip().lower()
@@ -70,7 +83,7 @@ def server_allows_engine_install() -> bool:
         return True
     if raw in {"0", "false", "no", "off"}:
         return False
-    return _is_loopback_host(os.getenv(BIND_HOST_ENV))
+    return _is_loopback_host(_server_bind_host.get() or os.getenv(BIND_HOST_ENV))
 
 
 def _require_host_principal(request: Request) -> None:
