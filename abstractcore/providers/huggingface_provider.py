@@ -1291,7 +1291,9 @@ class HuggingFaceProvider(BaseProvider):
         self.model_instance = None
         self.pipeline = None
         self.llm = None  # For GGUF models
-        self._gguf_prompt_cache_lock = threading.Lock()
+        # Reentrant: the save site holds it while the budget eviction it triggers runs the store
+        # hooks, which take it too (they also run from `prompt_cache_fork`/`set` on other threads).
+        self._gguf_prompt_cache_lock = threading.RLock()
         self._gguf_prompt_cache_default_capacity_bytes = self._coerce_gguf_prompt_cache_capacity_bytes(
             kwargs.get("prompt_cache_capacity_bytes", None)
         )
@@ -1856,7 +1858,7 @@ class HuggingFaceProvider(BaseProvider):
                     on_set=self._prompt_cache_store_after_set)
             except Exception:  # noqa: BLE001
                 pass
-            self._gguf_prompt_cache_lock = threading.Lock()
+            self._gguf_prompt_cache_lock = threading.RLock()
         return still_used
 
     def _gguf_rebuild_current_slot(self) -> bool:
@@ -5282,7 +5284,10 @@ class HuggingFaceProvider(BaseProvider):
         snapshots of every key together must stay under the byte budget."""
         gguf_cache = self._gguf_prompt_cache_unwrap(cache_value)
         if gguf_cache is not None:
-            self._gguf_enforce_prompt_cache_budget(keep=gguf_cache)
+            # Under the prompt-cache lock: an eviction clears another key's `cache_state`, which a
+            # prefill holding the lock may be iterating (review of #37, M1).
+            with self._gguf_prompt_cache_lock:
+                self._gguf_enforce_prompt_cache_budget(keep=gguf_cache)
 
     def _prompt_cache_store_evicted(self, key: str, cache_value: Any) -> None:
         """Store LRU/TTL-evicted `key`: its `_TransformersPromptCacheValue`
@@ -5307,10 +5312,13 @@ class HuggingFaceProvider(BaseProvider):
         if gguf_cache is not None:
             state_map = getattr(gguf_cache, "cache_state", None)
             if hasattr(state_map, "clear"):
-                try:
-                    state_map.clear()
-                except Exception:
-                    pass
+                # Never while a prefill holding the lock iterates this map (an eviction can come
+                # from `store.set` on another thread: `prompt_cache_fork`/`set`).
+                with self._gguf_prompt_cache_lock:
+                    try:
+                        state_map.clear()
+                    except Exception:
+                        pass
 
     def _transformers_pool_release_threshold_bytes(self) -> int:
         """Pooled-but-unused MPS bytes above which the text lanes release the

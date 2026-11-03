@@ -37,6 +37,22 @@ _LOAD_LOCKS: Dict[Key, threading.Lock] = {}
 _LOCK = threading.Lock()
 
 
+def serves_decisions_only(provider: Optional[str]) -> bool:
+    """Whether a provider serves decision models only (``typesafe``, ``systemone`` and endpoint
+    profiles of those families). Its model names (``jev-latest``) are the endpoint's own: never
+    one of the ``ALIASES`` of a resident model, and always decision models."""
+    name = str(provider or "").strip().lower()
+    if not name:
+        return False
+    try:
+        from ..providers.registry import get_provider_info
+
+        info = get_provider_info(name)
+    except Exception:
+        return False
+    return info is not None and list(info.supported_features or []) == ["decision"]
+
+
 def split_handle(handle: str) -> Tuple[Optional[str], str]:
     """``(provider, model)`` of a decision handle: the provider when the handle starts with
     one (``mlx/jaredpalmer/kev-4b``), else ``None`` and the handle whole."""

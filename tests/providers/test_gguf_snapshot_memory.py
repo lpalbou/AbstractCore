@@ -6,6 +6,7 @@ CPU-only, model-free; `llama_cpp` is needed for the real `LlamaState`/`LlamaRAMC
 from __future__ import annotations
 
 import logging
+import threading
 
 import numpy as np
 import pytest
@@ -29,6 +30,7 @@ def _provider(store: PromptCacheStore | None = None) -> hf.HuggingFaceProvider:
     p.__dict__["_llm_own"] = None
     p._default_prompt_cache_key = None
     p._prompt_cache_store = store if store is not None else PromptCacheStore(max_entries=32)
+    p._gguf_prompt_cache_lock = threading.RLock()
     if store is not None:
         store.set_on_evict(p._prompt_cache_store_evicted)
     return p
@@ -288,3 +290,44 @@ def test_a_restore_from_a_compacted_snapshot_re_evaluates_the_last_prompt_token(
     assert fed and fed[-1] == prompt[-1], f"the last prompt token was not decoded after the restore: {fed[-5:]}"
     assert llm.n_tokens == len(prompt)
     assert loads == [(1, N_VOCAB)], "the compacted snapshot was not the one restored"
+
+
+def test_an_eviction_from_another_thread_waits_for_the_prefill_iterating_that_cache():
+    """Review of #37, M1: `prompt_cache_fork`/`set` call `store.set` on a caller thread; its after-set
+    budget check evicts the oldest key, whose eviction clears that key's `cache_state`. A prefill
+    holding `_gguf_prompt_cache_lock` may be iterating it (the longest-prefix lookup). The hooks take
+    the lock, so the clear waits for the iteration (red without: "mutated during iteration")."""
+    mb = 1 << 20
+    store = PromptCacheStore(max_entries=32)
+    p = _provider(store)
+    store.set_on_set(p._prompt_cache_store_after_set)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB", str(1.5 * mb / (1 << 30)))
+        busy = _cache_with(p, "busy", mb)
+        busy[(1, 2, 99)] = p._gguf_clone_llama_state(_saved_state(3000, 10))  # two entries to iterate
+        iterating, set_returned = threading.Event(), threading.Event()
+        errors: list = []
+
+        def prefill():
+            with p._gguf_prompt_cache_lock:
+                try:
+                    walk = iter(busy.cache_state.keys())
+                    next(walk)
+                    iterating.set()
+                    set_returned.wait(timeout=0.5)  # without the lock the clear lands here
+                    list(walk)
+                except RuntimeError as exc:
+                    errors.append(exc)
+
+        def fork():
+            iterating.wait(timeout=5)
+            _cache_with(p, "fork", mb)  # store.set -> budget -> evicts "busy" -> clears it
+            set_returned.set()
+
+        threads = [threading.Thread(target=prefill), threading.Thread(target=fork)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+    assert errors == []
+    assert store.keys() == ["fork"] and len(busy.cache_state) == 0  # the eviction still happened, after
