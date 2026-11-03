@@ -713,6 +713,8 @@ def _reaper_loop() -> None:
         idle = _IDLE_UNLOAD_S
         _REAPER_WAKE.wait(min(60.0, max(1.0, idle / 4.0)) if idle else 60.0)
         _REAPER_WAKE.clear()
+        if _REAPER is not _threading.current_thread():
+            return  # one reaper per process: a thread no longer registered as the reaper stops
         try:
             reap_idle()
         except Exception:  # noqa: BLE001 - the reaper must outlive one failed tick, and say so

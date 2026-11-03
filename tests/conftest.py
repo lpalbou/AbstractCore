@@ -402,6 +402,27 @@ from abstractcore.media.capabilities import is_vision_model
 
 
 @pytest.fixture(autouse=True)
+def retire_the_idle_unload_reaper(monkeypatch):
+    """No live idle-unload reaper ticks during a test (core ADR 0012).
+
+    The reaper thread starts with the first in-process load and reaps every model idle
+    for the idle-unload time (60 min by default). Unit tests register FAKE models with old
+    `last_used_at` values: a live reaper (started by an earlier test in this process) would
+    unload them under the test. The registered reaper is unset for the test; woken, the
+    thread sees it is no longer the reaper and stops (`_reaper_loop`); it is joined first.
+    A later real load starts a fresh one. Tests call `reap_idle` themselves.
+    """
+    from abstractcore.providers import process_residency
+
+    live = process_residency._REAPER
+    monkeypatch.setattr(process_residency, "_REAPER", None)
+    if live is not None and live.is_alive():
+        process_residency._REAPER_WAKE.set()
+        live.join(10)
+        assert not live.is_alive(), "the idle-unload reaper thread did not stop"
+
+
+@pytest.fixture(autouse=True)
 def allow_unauthenticated_server_in_tests(monkeypatch):
     """Keep existing server unit tests explicit about using unauthenticated local mode.
 

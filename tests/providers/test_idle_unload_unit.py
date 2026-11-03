@@ -306,3 +306,14 @@ def test_the_reaper_thread_starts_with_the_first_load(monkeypatch):
     with pr.load_lock():
         pass
     assert started == ["abstractcore-idle-unload"], "MUTANT: no lazy start / started twice -> RED"
+
+
+def test_a_thread_that_is_no_longer_the_reaper_stops(monkeypatch):
+    ticks = []
+    monkeypatch.setattr(pr, "reap_idle", lambda now=None: ticks.append(1) or [])
+    thread = threading.Thread(target=pr._reaper_loop, name="a superseded reaper", daemon=True)
+    monkeypatch.setattr(pr, "_REAPER", None)  # the registered reaper is not this thread
+    thread.start()
+    pr._REAPER_WAKE.set()
+    thread.join(5)
+    assert not thread.is_alive() and ticks == [], "MUTANT: two reapers tick in one process -> RED"
