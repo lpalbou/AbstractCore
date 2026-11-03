@@ -10,6 +10,100 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ## [Unreleased]
 
+## [2.33.0] - 2026-11-03
+
+GGUF prompt-cache snapshots without their unused `scores` copy and under a byte budget, a typed
+`ModelNotDownloadedError`, an OpenAI-compatible key check that refuses a wrong key where the model list is
+public, hosted decision models listed and routed as decision models (and a decision model that answers its own
+decisions), and a config that keeps a provider profile it cannot read instead of resetting itself.
+
+### Added
+
+- **A model that is not downloaded raises `ModelNotDownloadedError`, which names it** (`abstractcore.exceptions`).
+  A subclass of `ModelNotFoundError` with `model` (the id to download) and `provider` (the provider that serves
+  it) as attributes, so a host says "download X" without parsing the message (the gateway recovered the embedding
+  model's id from the message text). The messages keep their wording. Raised where a local-only load finds
+  nothing on this computer: embeddings (`EmbeddingManager`), transformers (not cached, or a download that did not
+  finish), GGUF, MLX, and an MLX drafter. Existing `except ModelNotFoundError` handlers still catch it.
+
+### Changed
+
+- **AbstractVoice floor 0.20.0** (`pyproject.toml`: the base install, `[apple]` and `[gpu]`; `ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR`).
+- **A GGUF model that is not downloaded now reaches the caller as `ModelNotDownloadedError`**, not as a
+  `RuntimeError("Failed to load GGUF model ...")` wrapping it; the message is the same "not found in local caches"
+  text without that prefix. An MLX model that is not downloaded keeps its own message (the caches searched and the
+  download tip) instead of the generic "Model not found for MLX provider" list.
+
+### Fixed
+
+- **A key check on an OpenAI-compatible endpoint with a public model list checks the KEY**
+  (`openai_compatible_provider.py`). OVH AI Endpoints answers `GET /v1/models` with 200 for no key and for a wrong
+  one (measured 2026-10-29), so the gateway's Connect said "Connected · N models" to a wrong key. With
+  `raise_on_error=True` (a key check) and a key set, when `/models` also answers WITHOUT the key, the listing now
+  asks `POST /chat/completions` for a model that does not exist (`abstractcore-key-check`, nothing is generated):
+  401/403 raises `AuthenticationError` with the service's reason (OVH: 403 "authentication failed"); any other
+  answer (404 "model not found") keeps the key. An endpoint whose `/models` needs the key (Mistral, Groq, …) is not
+  probed; plain listing is unchanged; OpenRouter keeps its `GET /key` check (`PUBLIC_MODELS_KEY_PROBE = False`).
+  Tests: `tests/providers/test_compatible_key_probe_unit.py`.
+- **Hosted decision models are listed as decision models, and only there** (`providers/typesafe_provider.py`,
+  `server/app.py`). `GET /v1/models` showed `typesafe/jev-latest` (and any `systemone` model) as a text model
+  (`capabilities.output: ["text"]`, no `decision` block), and listed it under every capability filter, so text,
+  image and embedding model pickers offered it and a chat on it then failed with `decision_model`. The `typesafe` and
+  `systemone` providers now list their models only for a filter a decision model satisfies (`input.text`,
+  `output.decision`), and `/v1/models` gives their entries `capabilities: {input: [text], output: [decision]}` and
+  `decision: {endpoint: /v1/decisions, kind: systemone, ...}`, like the local Kev, Lev and Laya models.
+- **An `output.decision` default on the hosted Jev runs the hosted Jev** (`providers/base.py`, `decision/pool.py`).
+  With the default set to provider `typesafe` and model `jev-latest`, a decision from a workflow (or any
+  `generate(..., output="decision")` on a text provider) read `jev-latest` as the alias of the most recently used
+  local decision model: it ran that local model instead, or failed with "names no resident decision model yet" when
+  none was loaded. `kev-latest` / `jev-latest` are aliases only on a local route; on `typesafe` and `systemone` they
+  are the hosted model's own name.
+- **A decision model answers its own decisions; the `output.decision` default is for models that cannot decide**
+  (`providers/base.py` `_decisions_stay_on_this_model`). Before, with a default of `typesafe` + `jev-latest`, a local
+  Kev instance (`create_llm("mlx", model="…kev…").generate(doc, output="decision", questions=…)`, no route) sent the
+  document to the hosted Jev because of a global setting. Now an instance whose own model is a decision model (a
+  local Kev / Lev / Laya checkpoint on mlx or huggingface, or a `typesafe` / `systemone` instance) answers itself when
+  the request names no decision provider or model. A route the request names still wins, and a text model still
+  uses the default. Review of #41, Q1.
+- **A GGUF prompt-cache eviction no longer clears a cache that a prefill is reading** (`huggingface_provider.py`).
+  `prompt_cache_fork` / `prompt_cache_set` store a cache from the caller's thread. The store's after-set hook enforces
+  the snapshot byte budget, and evicting a key clears that key's `cache_state`. Neither took the GGUF prompt-cache
+  lock, so a prefill holding the lock on another thread could fail with "OrderedDict mutated during iteration" or
+  miss its restore. The count-based LRU eviction had the same gap. Both store hooks now take
+  `_gguf_prompt_cache_lock`, now a reentrant lock (the save site holds it while the eviction it triggers runs the
+  hooks). Review of #37, M1.
+- **A GGUF prompt-cache snapshot no longer carries half a gigabyte it never uses, and the snapshots stay under a byte
+  budget** (8080 pass four, 2026-10-29: the model host child grew 1.65 GB per basic-agent run, 4.60 to 9.57 GB in
+  three runs). `Llama.save_state` copies a `scores` array of `n_batch x n_vocab` float32 into every snapshot, 508 MB
+  for a Qwen3.5 vocabulary. With `logits_all=False` llama.cpp never writes or reads that array, and nothing counted
+  it, so the stats showed 0.42 GB of caches per run while 1.5 GB more stayed resident. A stored snapshot now keeps
+  one zero row, which `load_state` broadcasts; with `logits_all=True` the array is kept whole. Per-key `bytes` and
+  `cache_state_total_bytes` count the arrays too. The snapshots of every key together are held to
+  `gguf_prompt_cache_max_gb` in the AbstractCore config (GiB; the environment variable
+  `ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB` overrides it; default min(8 GiB, a quarter of physical RAM), the MLX prefix
+  cache's rule; documented in `docs/centralized-config.md`, Model Memory). The least recently used keys are evicted on every insert path through a new `PromptCacheStore` `on_set`
+  hook and `evict()`, and `get_prompt_cache_stats()["gguf"]` reports `prompt_cache_budget_bytes` and
+  `prompt_cache_total_bytes`. Measured on a Mac with `unsloth/Qwen3.5-4B-GGUF` through a real gateway
+  (`--model-host process`), ten basic-agent runs:
+  - before: child RSS 14.77 to 29.95 GB, +1.69 GB a run;
+  - after: 13.28 to 15.69 GB, +0.27 GB a run while keys accumulate;
+  - with a 1.5 GiB budget: the caches hold at 1.61 GB from run 5 to run 15, and RSS stays within 11.2 to 13.5 GB.
+
+  A restore from a compacted snapshot answers token for token like a cold prefill
+  (`tests/providers/test_gguf_snapshot_restore_real.py`, opt-in `ABSTRACTCORE_RUN_GGUF_TESTS=1`): the provider never
+  samples from restored logits, because a restore covering the whole prompt is rolled back one token and that token is
+  decoded (the zero-feed guard in `_gguf_prefill_prompt_cache`, pinned by a unit test).
+- **A provider profile whose family this AbstractCore does not know no longer makes the whole config read as
+  corrupt** (`config/provider_profiles.py`, `config/manager.py`). 2026-11-03: the abstractcore 2.31 installs in the
+  gateway and assistant environments (whose family list predates `typesafe`/`systemone`, added in 2.32.0) read a
+  config holding a TypeSafe connection. The row's "Unsupported provider family 'typesafe'" error quarantined the file
+  (a `.corrupt-<stamp>.bak` copy on every import) and ran the session on DEFAULTS, without any of the other profiles
+  or settings. Such a row is now skipped with one WARNING naming it ("provider profile 'typesafe-key' is not loaded by
+  this AbstractCore (...); it stays in the config file unchanged"). The rest of the config loads, nothing is written,
+  and a later save keeps the row exactly as stored (the same carry that keeps a newer Core's route keys and columns).
+  The same applies to any profile row that does not validate. `typesafe` and `systemone` are profile families since
+  2.32.0, derived from the provider registry.
+
 ## [2.32.0] - 2026-11-02
 
 Decision models (text in, calibrated typed decisions out: `output="decision"`, `POST /v1/decisions`),

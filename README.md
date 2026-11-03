@@ -9,12 +9,13 @@
 Unified LLM Interface
 > Write once, run everywhere
 
-What's new in 2.33.0: GGUF prompt-cache snapshots drop an unused 0.5 GB copy each and stay under a byte budget
-(`gguf_prompt_cache_max_gb`); a model that is not downloaded raises `ModelNotDownloadedError` naming it; an
-OpenAI-compatible key check refuses a wrong key even where the model list is public (OVH); hosted decision models
-(`typesafe`, `systemone`) are listed and routed as decision models, and a local decision model answers its own
-decisions; a provider profile this version cannot read no longer resets the whole config. See the
-[changelog](CHANGELOG.md#2330---DATE).
+What's new in 2.33.0: GGUF prompt-cache snapshots drop an unused 0.5 GB copy each, stay under a byte budget
+(`gguf_prompt_cache_max_gb`), and are never evicted under a prefill that is reading them; a model that is not
+downloaded raises `ModelNotDownloadedError` naming it; an OpenAI-compatible key check refuses a wrong key even where
+the model list is public (OVH); hosted decision models (`typesafe`, `systemone`) are connection families, listed and
+routed as decision models, and a local decision model answers its own decisions; a provider profile this version
+cannot read is kept and reported instead of resetting the whole config. See the
+[changelog](CHANGELOG.md#2330---2026-11-03).
 
 What's new in 2.32.0: decision models, text in and calibrated typed decisions out
 (`generate(document, output="decision", questions=...)`, `POST /v1/decisions`) over hosted Jev, any
