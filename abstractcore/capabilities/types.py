@@ -341,6 +341,12 @@ class AudioCapability(Protocol):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str: ...
 
+    # Optional (round 18): ``transcribe`` plus the spoken-language facts —
+    # ``{"text": str, "language": str | None, "detected_language": str | None}`` where ``language``
+    # is what the engine was told (``None`` = it detected the language) and ``detected_language``
+    # what it reported. A backend without it reports neither; ``generate(...)`` uses it when present.
+    # def transcribe_detailed(self, audio, *, language=None, artifact_store=None, metadata=None) -> Dict[str, Any]: ...
+
 
 class VisionCapability(Protocol):
     backend_id: str
