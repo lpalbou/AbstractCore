@@ -2,8 +2,8 @@
 
 ## Metadata
 - Created: 2026-08-21
-- Status: Planned
-- Completed: N/A
+- Status: Completed
+- Completed: 2026-11-07
 
 ## ADR status
 - Governing ADRs: `0001` (no silent degradation), `0003` (provider/capability boundaries),
@@ -237,3 +237,17 @@ to defend a default, run a real spatial/OCR benchmark first.
 
 **The two embeddings are interchangeable but the memory cost is not.** Use mlx-lm's `embed_tokens`.
 Calling mlx-vlm's produces identical values and materialises a second 248320×5120 table.
+
+## Completion report (2026-11-07)
+
+- Summary: shipped in 2.13.41 (see `CHANGELOG.md`). `abstractcore/providers/mlx_vision_addon.py` is the mlx-vlm
+  vision encoder add-on; `MLXProvider` constructs it lazily under `_vision_addon_lock` and reports it through
+  `vision_status` (`mlx_provider.py` ~200, ~4354); the `mlx-vision` extra exists in `pyproject.toml` (~244).
+- Tests: `tests/providers/test_mlx_media_delivery_contract.py` and the MLX provider suites.
+- Progress checklist: every implementation box above is done in the code; the two remaining items are carried
+  below.
+- Residual / follow-ups: (1) the M-RoPE precision gap is not documented in the MLX provider docs (no page
+  mentions it); a documentation note is owed. (2) Upstream ml-explore/mlx-lm#1768 (`position_ids` for M-RoPE)
+  is informational only; nothing here depends on it.
+- Closed by the 2026-11-07 hygiene pass after a code audit; the checklist boxes were never ticked when the work
+  landed.

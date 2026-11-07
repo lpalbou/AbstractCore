@@ -4,7 +4,7 @@
 > Created: 2026-10-29 (OVH 8080 pass four; filed by the merge desk on the lead's ruling)
 > Priority: high (before the release wave's server pass five)
 > Labels: residency, embeddings, llama.cpp, gpu-memory, fit
-> Links: [ADR 0011](../../adr/0011-shared-weights-and-concurrent-requests.md), [ADR 0010](../../adr/0010-model-residency-fit-and-eviction.md), [0870](0870_per_model_slot_scheduler_and_shared_gguf_weights.md), core PR #34 (R5: the GGUF embedder reserves the largest input that fits)
+> Links: [ADR 0011](../../adr/0011-shared-weights-and-concurrent-requests.md), [ADR 0010](../../adr/0010-model-residency-fit-and-eviction.md), [0870](../completed/0870_per_model_slot_scheduler_and_shared_gguf_weights.md), core PR #34 (R5: the GGUF embedder reserves the largest input that fits)
 
 ## Why
 Core PR #34 (amended, 2026-10-29) first made the GGUF embedder's reservation cheap — flash attention and 512-token

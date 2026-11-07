@@ -4,7 +4,7 @@
 Add first-class inbound authentication for the AbstractCore server with per-tenant API keys, quotas, and rate limiting.
 
 ## Why
-The server currently accepts unauthenticated requests and relies on external proxies for protection. That is risky for production: it enables abuse, uncontrolled spend, and unpredictable load. The server docs already list rate limiting and multi-tenancy as future enhancements, and these are foundational for any public or shared deployment.
+The server requires a bearer token on its routes (`server/app.py`; a loopback server mints its own on first run, ADR 0004), so the open gap is narrower than this item first stated: there are no per-tenant keys, quotas, rate limits or usage accounting, which a shared or public deployment needs to bound abuse, spend and load. The server docs already list rate limiting and multi-tenancy as future enhancements, and these are foundational for any public or shared deployment.
 
 ## Scope
 ### In scope
@@ -94,3 +94,7 @@ Add ADR defining server auth boundary and fallback rules.
 
 ## ADR note
 If approved, add an ADR clarifying the server security boundary (first-party auth vs reverse-proxy-only).
+
+## Note (2026-11-07)
+
+- Code audit: inbound bearer-token auth is in place (`server/app.py`, `server/first_run.py`, ADR 0004). This item keeps the tenant, quota and rate-limit scope only.

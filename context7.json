@@ -1,0 +1,31 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "AbstractCore",
+  "description": "Unified LLM interface for Python: one create_llm() API across local runtimes (MLX, llama.cpp, Transformers, Ollama, LM Studio), cloud APIs and OpenAI-compatible gateways, with tool calling, structured output, media input and generation, embeddings, prompt caching and a /v1 server.",
+  "folders": ["docs"],
+  "excludeFolders": [
+    "docs/backlog",
+    "docs/adr",
+    "docs/reports",
+    "docs/research",
+    "docs/archive",
+    "docs/known_bugs",
+    "docs/assets",
+    "abstractcore",
+    "tests",
+    "console-tui",
+    "scripts",
+    "examples",
+    "untracked",
+    "changelog.d",
+    ".github"
+  ],
+  "excludeFiles": [
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "ACKNOWLEDGEMENTS.md",
+    "CONTRIBUTING.md",
+    "mkdocs.yml"
+  ]
+}

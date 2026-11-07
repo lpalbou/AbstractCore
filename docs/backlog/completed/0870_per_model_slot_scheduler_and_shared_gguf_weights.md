@@ -6,6 +6,8 @@
 > Labels: residency, concurrency, llama.cpp, mlx, scheduler, memory
 > Links: [ADR 0011](../../adr/0011-shared-weights-and-concurrent-requests.md), [ADR 0010](../../adr/0010-model-residency-fit-and-eviction.md), [0847](0847_shared_in_process_model_pool.md) (the MLX sharing this generalises), [0871](0871_continuous_batching_llamacpp_and_mlx_lm.md) (the later half), gateway ADR 0002, root backlog 1064
 
+> Status: Completed · Completed: 2026-11-07
+
 ## Summary
 
 Implement ADR 0011's decision in Core: one weights object per (provider, artifact, load parameters)
@@ -80,3 +82,17 @@ batch API; the mlx-lm lane on `BatchGenerator`); transformers' continuous batchi
 - [ ] No `n_ctx` is ever lowered to fit a slot; a person's `model_concurrency` is used exactly or
       refused with the sentence.
 - [ ] Release report: the numbers of ADR 0011 Validation per engine.
+
+## Completion report (2026-11-07)
+
+- Summary: shipped in 2.32.0 (`CHANGELOG.md`: "Concurrent generations on one weights instance: a per-model slot
+  pool"). Shared GGUF weights live in `abstractcore/providers/gguf_shared.py`; the per-model slot scheduler in
+  `abstractcore/providers/gguf_slots.py` (the item's provisional name `model_scheduler.py` was never used).
+- Tests: `tests/providers/test_gguf_shared_weights_unit.py`, `tests/providers/test_model_slot_scheduler_unit.py`.
+- Acceptance: one weights copy per model per process and the bounded, cancellable slot pool with visible queued
+  state are in the code and its tests. Not evidenced here: the N = 4 wall-clock number (< 0.7 x serial) and the
+  per-engine release report of ADR 0011 Validation.
+- Follow-ups (tracked in proposed `0879`): the three test files ADR 0011 Enforcement names are missing
+  (`test_shared_weights_every_path_unit.py`, the scheduler stream test, `test_slot_fit_check_unit.py`); ADR 0011
+  is still marked Proposed although round 1 shipped; the release numbers. `0871` keeps the batching half.
+- Closed by the 2026-11-07 hygiene pass after a code audit.

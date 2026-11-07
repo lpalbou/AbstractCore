@@ -2,12 +2,12 @@
 
 ## Metadata
 - Created: 2026-07-10
-- Status: IMPLEMENTED (built 2026-07-10 on laurent's c398 approval; both reviewer
+- Status: Completed
   asks were discharged pre-build — runtime c260, agency 0015/082837Z). Shipped as
   designed incl. the c365 rename (`endpoint_damping`); 16 tests in
   `tests/core/test_retry_collapse_c3.py`; full suite 1850/0. Uncommitted per the
   standing rule.
-- Completed: 2026-07-10
+- Completed: 2026-11-07
 
 ## ADR status
 - Governing ADRs: `docs/adr/0001-engineering-guardrails-and-no-silent-degradation.md`
@@ -151,3 +151,11 @@ covers its half; this section is the seam statement both build against.
   generates against a stub endpoint returning 503s — WITHOUT shared damping:
   8×3 requests; WITH: first trip stops the rest (assert total requests bounded);
   wall-clock bounded by cancellable backoff.
+
+## Completion report (2026-11-07)
+
+- Summary: implemented 2026-07-10 as the item's own status records (cancellable backoff, Retry-After honouring
+  for 429/503, shared endpoint damping, double-stack collapse); `abstractcore/core/retry.py` (~329, ~477-481).
+- Tests: `tests/core/test_retry_collapse_c3.py` (16 tests).
+- Lifecycle: the overview had asked for this move since the 0817/0818 pass; moved from `proposed/` to
+  `completed/` in the 2026-11-07 hygiene pass.

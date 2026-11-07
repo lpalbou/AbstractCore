@@ -90,7 +90,7 @@ Legend: ✅ captured+checked · ⚠️ captured, not fully validity-safe · ❌ 
 | **model-config hash (rope/sliding)** | ✅ **(0817 axis 3, 2026-07-20)** | `model_config_fingerprint` (curated rope/window/position geometry keys, top-level + `text_config`) recorded at compile + in artifact meta; ensure-gate recompiles on mismatch, MLX load-gate raises with the model live; irrelevant config churn (versions/dtype/names) deliberately outside the subject; absent → labeled #FALLBACK; unloaded current → abstain |
 | **weights identity (revision/digest)** | ✅ **(0817 axis 4, 2026-07-20)** | `weights_fingerprint` (tiered cheap subjects: hub revision / fileset+safetensors-header digests / GGUF header slice) recorded at compile + in artifact meta; ensure-gate recompiles on mismatch, MLX load-gate raises; GGUF does NOT abstain (this axis owns the in-file tokenizer/config signals axes 2-3 deferred); full-content hashing deliberately out of scope |
 | **cache dtype** | ✅ **(0817 axis 5, 2026-07-21)** | `quantization` request param on ensure/load (+ HTTP proxies): "fp"/"q8"; stored≠requested recompiles AT the requested dtype (#FALLBACK); unknown stored dtype refuses (never guess a layout from another build); q8 against a writer without an explicit `q8` param raises (silent fp-under-q8-label kill); pre-axis manifests read as "fp" — corpus stays valid |
-| position offset | ❌ | implicit 0 everywhere |
+| position offset | ✅ **(axis 6)** | `start_offset` recorded in the manifest; `bloc_kv_composition_verdict` runs before every composed load (`bloc_kv.py` ~441-470); pre-axis artifacts read as position unknown |
 
 Adjacent defects (same pass): `has_kv_cache` = bare `Path.exists()` (existence ≠
 validity); artifact path slugs the AS-GIVEN model id (alias spellings duplicate
@@ -262,3 +262,16 @@ artifact's identity, and fp/q8 artifacts of one bloc are distinct bindings.
 - Per-axis mismatch tests (wrong model / wrong quant / mutated template / bumped
   engine version) all refuse with named reasons.
 - A held-out valid artifact still loads and generates (no false refusals).
+
+## Status (2026-11-07)
+
+- All six validity axes are shipped and tested (engine, tokenizer/template, model-config geometry, weights,
+  cache dtype, position). Remaining work in this item, in order:
+  1. `has_kv_cache` (`core/file_blocs.py` ~769) answers only "the file exists"; nothing calls it today. Either
+     make it answer validity (manifest tier) or remove it.
+  2. Artifact paths slug the model id as given (`bloc_kv.py` ~161); key them by the resolved id so alias
+     spellings stop duplicating GB-scale artifacts.
+  3. A cheap manifest + size/mtime tier for `_validate_existing_manifest`, full hash only at load.
+  4. ADR 0007 does not record the validity key (no fingerprint or `start_offset` terms); write it before closing.
+- The code comment in `bloc_kv.py` that attributed the composition axis to `0803` now names `0817` (this item)
+  and `0818` (composability).

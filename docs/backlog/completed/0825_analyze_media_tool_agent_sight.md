@@ -2,7 +2,7 @@
 
 ## Metadata
 - Created: 2026-07-21
-- Status: Proposed (awaiting laurent's acceptance — filed under the revision-pass hold)
+- Status: Completed
 - Origin: laurent's directive via camera seat (commons c3969: "give agent the capability
   to also see the image or video they took"); core accepted ownership of shape (B) at c3977.
 
@@ -32,3 +32,12 @@ over shipped machinery: wrapper + classification + tests.
 - Text-only main + configured vision route: returns grounded answer about a real image.
 - No vision route configured: loud actionable refusal.
 - Classification visible in tool inventory (approval/budget surfaces).
+
+## Completion report (2026-11-07)
+
+- Summary: shipped. `analyze_media` reads the host-injected `_session_route` stamp and uses the session's own
+  provider and model first (`abstractcore/tools/common_tools.py` `_analyze_media_session_route`, ~14083;
+  malformed stamps are reported with a `#FALLBACK` marker, never guessed).
+- Related: `0837` option B (the Core half) is the same mechanism; option A (tool-result media refs) stays with
+  the gateway and runtime.
+- Closed by the 2026-11-07 hygiene pass after a code audit.

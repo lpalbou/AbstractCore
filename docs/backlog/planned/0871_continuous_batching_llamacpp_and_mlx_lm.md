@@ -4,7 +4,7 @@
 > Created: 2026-10-29
 > Priority: high (after 0870 ships)
 > Labels: concurrency, llama.cpp, mlx, batching, throughput
-> Links: [ADR 0011](../../adr/0011-shared-weights-and-concurrent-requests.md) §3, [0870](0870_per_model_slot_scheduler_and_shared_gguf_weights.md), `docs/native-mlx-runtime.md` (the native lane, the reference shape), root backlog 1064
+> Links: [ADR 0011](../../adr/0011-shared-weights-and-concurrent-requests.md) §3, [0870](../completed/0870_per_model_slot_scheduler_and_shared_gguf_weights.md), `docs/native-mlx-runtime.md` (the native lane, the reference shape), root backlog 1064
 
 ## Summary
 

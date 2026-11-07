@@ -19,8 +19,9 @@ The original proposal and August update below are preserved as history.
 
 ## Metadata
 - Created: 2026-05-18
-- Status: Largely implemented 2026-08-29 — see `docs/speculative-decoding.md`
+- Status: Deprecated
 - Completed: N/A (layers 1-3 shipped; layer 4 partially)
+- Deprecated: 2026-11-07
 
 ## Update 2026-08-29 — what shipped, and which premises turned out wrong
 
@@ -230,3 +231,8 @@ than relying on model names or repo descriptions. In particular:
 - verify whether MLX runtimes consume or discard `mtp.` weights;
 - verify whether GGUF runtimes expose native MTP through the Python binding in use;
 - prefer real measured acceleration over catalog-level assumptions.
+
+## Deprecation report (2026-11-07)
+
+- Historical umbrella, as its own 2026-09-20 update says: layers 1-3 shipped (`docs/speculative-decoding.md`), the remaining committed scope is the native inference track `planned/native_inference/` (0848-0853). Kept for history.
+- Renamed from `2026-05-18_native-mtp-and-speculative-decoding-support.md` to a numbered id in the 2026-11-07 hygiene pass (date-prefixed names are not valid item ids).

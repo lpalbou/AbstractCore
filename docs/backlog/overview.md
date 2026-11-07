@@ -9,11 +9,22 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 36
-- Proposed: 28
-- Completed: 46
-- Deprecated: 3
+- Planned: 31
+- Proposed: 26
+- Completed: 53
+- Deprecated: 6
 - Recurrent: 0
+
+2026-11-07 hygiene pass (code audit by two reviewers, verified in the repository): completed `0233`, `0840`, `0842`,
+`0870`, `0816`, `0825` (all shipped earlier, never closed); deprecated and renumbered three date-named items
+(`0880` llama-cpp `chat_template_kwargs`, overtaken; `0881` MLX continuous batching, superseded by the native
+runtime and `0871`; `0882` the MTP umbrella, historical); renumbered `792` to `0883` (the id was shared with
+`0792`); corrected `789` (the server does require a bearer token); narrowed `0817` to its remaining four
+points; filed proposed `0879` (ADR 0011 enforcement follow-ups from `0870`). Counts reconciled to disk.
+Items that were missing from the ledgers are listed now. Top recommendations below reordered to the verified
+defects: `0830`, `0833`, `0872`, `0838`, `0824`, `0839`, `0855`. Untracked signals worth an item: the MLX,
+transformers and embedding loads skip the ADR 0010 memory-fit check (only GGUF has it); `0858`'s
+`CHECKPOINT_ENTRIES = 8` evicts the turn anchor in tool loops of nine or more calls.
 
 2026-10-28 (2.31.1): filed and completed `0859` (`/v1/chat/completions` reuses the model resident in the process instead of a second llama.cpp copy per request).
 2026-10-28 (2.31.1): filed and completed `0860` (the LFM2 and LFM2.5 families in the download catalog, GGUF and MLX, operator QA).
@@ -102,40 +113,38 @@ completed/ in a hygiene pass.)
 
 ## Next recommended work
 
-1. `planned/0839_import_cycle_architectures_utils_media.md`
-   Found 2026-08-21: a real dependency cycle
-   `tools → architectures → utils → media → architectures`, latent only because
-   `abstractcore/__init__.py:30` imports `.utils.version` first and so fixes the
-   order. Surfaces as a partially-initialized `ImportError` whenever the package
-   root is skipped (verified: namespace-package shadowing when running Python
-   from the framework root). Invisible to CI because `tests/conftest.py` imports
-   the package root at collection. Decide whether the cycle is intended, then
-   break it or make the invariant explicit and tested — the project's stated
-   intent is no circular imports, so this needs clarifying rather than papering
-   over with another import in `__init__.py`.
-2. `planned/0817_kv_artifact_invalidation_key_audit.md`
-   Operator mandate (2026-07-13): enumerate the full KV-artifact validity key
-   (model/quant/engine/tokenizer-template/position/attention-arch) against what
-   save/load actually checks; close the silently-wrong-cache class (adversary
-   confirmed the gap list: tokenizer fingerprint, config hash, engine version,
-   cache dtype, position; plus has_kv_cache validity tiering and resolved-id
-   path keying). Gates the bloc-composability lane (0818).
-3. `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md`
-   The first route-object implementation is landed. The next step is the second-wave parity pass:
-   direct Core, Runtime, and server entrypoints must all consume the same resolved-route semantics
-   and denial behavior before more topology-specific routing code grows back.
-4. `planned/0809_generate_request_object_and_output_contract.md`
-   The first `request=` implementation is landed. The next step is to extend docs/examples and
-   finish broader parity coverage without breaking prompt-first compatibility.
-5. `planned/789_server-auth-rate-limits.md`
-   The server now sits on real credentials (remote providers, media endpoints). Tightening inbound
-   auth and limiting is the next practical safety boundary for shared or public deployments.
-6. `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
-   Optional, opt-in response caching is now the highest-leverage server performance/cost feature,
-   but it must be done with strict keying and tenant/auth namespace rules.
-7. `planned/2026-05-18_mlx-provider-continuous-batching.md`
-   Improve local text throughput and latency via continuous batching/scheduler safety for MLX.
+1. `proposed/0830_execute_command_program_name_denial.md`
+   The command safety check blocks harmless text (`grep reboot notes.txt`) and lets `rm -fr`, `git reset
+   --hard` and `git push --force` through; `require_confirmation` only logs and runs the command. Shared by the
+   runtime and agent tools. Promote to planned.
+2. `proposed/0833_atomic_writes_and_overwrite_disclosure.md`
+   `write_file` and `edit_file` write in place (`tools/common_tools.py` ~4248, ~12757, ~13401): a crash or a full
+   disk truncates the user's file. Promote to planned.
+3. `planned/0872_reservation_order_embedder_leaves_room_for_the_text_default.md`
+   The embedder sizes its input against the memory free at its own load time; the configured text default is
+   not reserved, so load order decides whether the text model keeps its second slot.
+4. `proposed/0838_tool_param_descriptions_reach_models.md`
+   About 12 of 79 tool parameters carry a description on the wire; the rest reach the model as a bare type.
+5. `planned/0824_finish_reason_truthfulness_and_output_cap_followups.md`
+   Ollama and Anthropic streaming hardcode `finish_reason="stop"` (`ollama_provider.py` ~827, ~1072;
+   `anthropic_provider.py` ~986-1011), so a stream cut by the output budget never triggers the truncation
+   warning. MLX and HuggingFace already report `length`; the item is narrower than written.
+6. `planned/0839_import_cycle_architectures_utils_media.md`
+   The cycle `tools → architectures → utils → media → architectures` is still in the code, hidden only because
+   the package root imports `utils.version` first.
+7. `proposed/0855_detect_tool_calls_disagrees_with_parse_tool_calls.md`
+   Eleven mismatches across four model families at HEAD; public API, one hour.
+8. `planned/0817_kv_artifact_invalidation_key_audit.md`
+   Four small remaining points (see its 2026-11-07 status); gates `0818`.
+9. `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md` and
+   `planned/0809_generate_request_object_and_output_contract.md`
+   Second-wave parity passes, unchanged.
+10. `planned/789_server-auth-rate-limits.md`
+   Tenant keys, quotas and rate limits on top of the existing bearer-token auth.
+
 ## Planned ledger
+
+P2: [0883 — A top-level `abstractcore.generate()` so image, voice and music generation need no unused text model.](planned/0883_generation_entry_point_without_a_text_model.md)
 
 P2: [0857 — voice library: clone language, deploy to a library, per-request voice stores](planned/0857_voice_library_personal_stores_language_and_deploy.md); follows AbstractVoice 0.19.0 and AbstractRuntime 0.13.0.
 
@@ -154,7 +163,6 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 | Item | Notes |
 | --- | --- |
-| `planned/0870_per_model_slot_scheduler_and_shared_gguf_weights.md` | ADR 0011, this wave: one weights object per model for every request path (shared llama.cpp weights, R1-R3) and a per-model slot scheduler (bounded, fair FIFO, visible queued state, per-request cancel, slots fit-checked under ADR 0010); the test files of ADR 0011 Enforcement. |
 | `planned/0871_continuous_batching_llamacpp_and_mlx_lm.md` | ADR 0011, later: N sequences in one llama.cpp context (`n_seq_max`, `kv_unified`, low-level batch API) and the mlx-lm lane on `BatchGenerator`; same contract and tests as 0870, more throughput on the same memory. |
 | `planned/0872_reservation_order_embedder_leaves_room_for_the_text_default.md` | ADR 0011 follow-up (OVH 8080 pass four): core #34 (flash attention + micro-batches, 6.7 → 1.8 GB) keeps a fit check that only yields when the LLM loads first; an embedder loading on an empty card still takes its whole reservation and can decide the text default's second slot on a tight card. The fit must leave room for the configured text default plus one slot, in either load order (two-order test). |
 | `planned/0869_console_theme_copy_resyncs_to_ui_kit_0_9_6.md` | The console's generated theme copy (`themes.py`) is behind ui-kit 0.9.6: its drift pin fails against the sibling checkout and skips in CI. Re-sync it and add a CI-visible provenance pin. |
@@ -162,14 +170,12 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 | `planned/0847_shared_in_process_model_pool.md` | MLX model+prompt-cache sharing landed 2026-09-17 (one 15 GB model was resident 4x in one gateway); extend to the HuggingFace/GGUF lanes and decide the tenancy of a process-shared cache store. |
 | `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md` | In progress: Core now has `ResolvedGenerateRoute`; remaining work is cross-topology/server parity and stricter denial semantics. |
 | `planned/0809_generate_request_object_and_output_contract.md` | In progress: `request=` now normalizes into the shared Core route substrate without breaking prompt-first callers; broader parity/docs follow-ups remain. |
-| `planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md` | Upstream GGUF thinking-toggle prerequisite for clean Qwen reasoning control. |
 | `planned/2026-03-30_qwen3-5_lfm2_nemotron_capabilities_and_thinking_controls.md` | Model-capability and reasoning-control coverage for newer model families. |
 | `planned/2026-05-04_unified-lora-adapter-serving.md` | First-class text adapter lifecycle and hot-switch routing across providers. |
 | `planned/2026-05-04_vllm-base-model-swap-orchestration.md` | Separate admin flow for switching the served vLLM base model. |
 | `planned/2026-05-06_consensus-generate.md` | Consensus-generation orchestration work. |
 | `planned/2026-05-06_robust-fallback-generate.md` | Stronger fallback behavior for generation paths. |
 | `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md` | Multimodal generation plus deterministic cache behavior. |
-| `planned/2026-05-18_mlx-provider-continuous-batching.md` | Shared MLX runtime and batching scheduler. |
 | `planned/789_server-auth-rate-limits.md` | Server auth and rate-limit controls. |
 | `planned/791_server-metrics-otel.md` | Server metrics and OpenTelemetry work. |
 | `planned/0817_kv_artifact_invalidation_key_audit.md` | Operator-mandated audit of the KV-artifact validity key (model/quant/engine/tokenizer-template/position/attention-arch); per-axis mismatch tests must refuse loudly; gates 0818. |
@@ -182,10 +188,16 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 | Item | Promotion criteria |
 | --- | --- |
+| `proposed/0879_adr_0011_enforcement_tests_and_status.md` | Promote with the next residency/concurrency change or before a release wave touching `gguf_slots.py`. |
+| `proposed/0837_delegated_sight_session_route_and_first_run_seeding.md` | Core half (option B, session route) shipped with `0825`; option A (tool-result media refs) belongs to runtime and gateway. |
+| `proposed/0843_media_aware_prompt_cache_prefix_reuse.md` | Deliberately deferred media-aware cache reuse; promote when media-bearing turns need prefix reuse. |
+| `proposed/0826_behavior_env_to_config_migration.md` | Promote when the env-to-config migration is scheduled. |
+| `proposed/0832_bound_unbounded_reads_edit_file_analyze_code.md` | Promote with the next tools pass (bounded reads in `edit_file` / `analyze_code`). |
+| `proposed/0836_batch_and_multi_file_edit.md` | Promote when batch / multi-file edit is requested by an app. |
+| `proposed/0841_model_vs_provider_capability_clarification.md` | Capability keyed on model name alone advertises image input for transports that cannot carry it; delete the `['vision','vl','visual']` name guess in `media/capabilities.py` first (one hour). |
 | `proposed/2026-05-06_docs-site-publishing-strategy.md` | Promote when docs deployment scope and ownership are committed. |
 | `proposed/2026-05-06_remote-prompt-cache-session-parity.md` | Promote when endpoint/session parity becomes blocking for runtime users. |
 | `proposed/2026-05-08_dual-server-docker-image-profiles.md` | Promote when packaging/deployment scope becomes active. |
-| `proposed/2026-05-18_native-mtp-and-speculative-decoding-support.md` | Historical umbrella; current remaining committed scope is split into planned 0848–0853. |
 | `proposed/2026-05-20_composable-prompt-cache-recipes-for-immutable-memory-clusters.md` | Keep proposed until real workloads show stable superbloc reuse beyond single-bloc caches and the work is narrowed to one deterministic exact-prefix recipe per target backend. |
 | `proposed/2026-05-20_audio-capability-matrix-consumption-from-abstractvoice.md` | Promote when Core needs truthful audio feature filtering, validation, or UI behavior beyond legacy `controls` booleans. |
 | `proposed/0792_hf_transformers_metal_quantization_on_apple.md` | Promote after `Qwen/Qwen3.5-4B` proves MPS `MetalConfig(bits=4)` load/generation/cache correctness with optional `kernels`, clear failure modes, and measured memory/performance deltas. |
@@ -196,13 +208,18 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 | `proposed/0811_optional_trafilatura_html_extractor_for_web_tools.md` | Promote when a live benchmark shows better HTML/article extraction quality or lower token footprint than the current extractor, without making `trafilatura` a required default dependency. |
 | `proposed/0814_reasoning_control_capture_followups.md` | Promote per item: async `thinking=` no-op and async normalization bypass are HIGH (promote when async providers are actively used with reasoning models); OpenRouter `reasoning` object mapping when hosted-route thinking control is needed; streaming default + vLLM gating need an asset/decision pass first. |
 | `proposed/0815_system_message_handling_followups.md` | Promote per item: Opus 4.8 native mid-stream `system` when registry-gated placement validation is worth it; developer-role position awareness only with parity tests (current hoist is load-bearing); CachedSession replay verification opportunistically. |
-| `proposed/0816_retry_collapse_cancellable_backoff_and_herd_budgets.md` | IMPLEMENTED 2026-07-10 per item status (16 tests green); move to completed/ with a completion report in the next hygiene pass. |
 | `proposed/0818_bloc_composability_framework_contract.md` | Promote when the private composability branch lands (defines the link/repair step) AND the 0817 audit closes; the designed contract lives in agora commons fs `research/cache-composability.md`. |
 | `proposed/0855_detect_tool_calls_disagrees_with_parse_tool_calls.md` | Promote when a public-API caller gates on `detect_tool_calls` (it answers False for raw-JSON / `<|tool_call|>` / `<function_call>` / Gemma4 payloads the parser extracts, and for Qwen3's `<tool_call>{json}`); self-contained repro and RED-first test spec in the item. |
 ## Completed ledger
 
 | Original path | Final path | Completed | Outcome | Comment | Key validation |
 | --- | --- | --- | --- | --- | --- |
+| `planned/0233_real_run_cancellation.md` | [completed/0233_real_run_cancellation.md](completed/0233_real_run_cancellation.md) | 2026-11-07 | Done (closed in hygiene) | Real run cancellation: in-flight registry, provider cancel support, unload cancels first. | `tests/providers/test_generation_cancel_*` (3 files); `docs/generation-cancel.md`. |
+| `planned/0840_mlx_native_vision_via_vision_addon_encoder.md` | [completed/0840_mlx_native_vision_via_vision_addon_encoder.md](completed/0840_mlx_native_vision_via_vision_addon_encoder.md) | 2026-11-07 | Done (closed in hygiene) | MLX sight through the mlx-vlm vision add-on encoder; `mlx-vision` extra. | `tests/providers/test_mlx_media_delivery_contract.py`; CHANGELOG 2.13.41. |
+| `planned/0842_positive_media_delivery_assertion.md` | [completed/0842_positive_media_delivery_assertion.md](completed/0842_positive_media_delivery_assertion.md) | 2026-11-07 | Done (closed in hygiene) | Positive media-delivery record; `vision_fallback` gate reads it. | `tests/providers/test_mlx_media_delivery_contract.py`; CHANGELOG 2.13.41. |
+| `planned/0870_per_model_slot_scheduler_and_shared_gguf_weights.md` | [completed/0870_per_model_slot_scheduler_and_shared_gguf_weights.md](completed/0870_per_model_slot_scheduler_and_shared_gguf_weights.md) | 2026-11-07 | Done (closed in hygiene) | Shared GGUF weights and the per-model slot scheduler (2.32.0); ADR 0011 enforcement follow-ups in `0879`. | `tests/providers/test_gguf_shared_weights_unit.py`, `test_model_slot_scheduler_unit.py`; CHANGELOG 2.32.0. |
+| `proposed/0816_retry_collapse_cancellable_backoff_and_herd_budgets.md` | [completed/0816_retry_collapse_cancellable_backoff_and_herd_budgets.md](completed/0816_retry_collapse_cancellable_backoff_and_herd_budgets.md) | 2026-11-07 | Done (closed in hygiene) | Retry collapse: cancellable backoff, Retry-After, endpoint damping, double-stack collapse. | `tests/core/test_retry_collapse_c3.py` (16). |
+| `proposed/0825_analyze_media_tool_agent_sight.md` | [completed/0825_analyze_media_tool_agent_sight.md](completed/0825_analyze_media_tool_agent_sight.md) | 2026-11-07 | Done (closed in hygiene) | `analyze_media` uses the session's own route via the `_session_route` stamp. | `common_tools.py` `_analyze_media_session_route`; code audit 2026-11-07. |
 | `completed/0877_decision_models_output_modality.md` | [completed/0877_decision_models_output_modality.md](completed/0877_decision_models_output_modality.md) | 2026-11-01 | Done, unreleased | Decision models (Kev family) as the `decision` output modality: `generate(..., output="decision")`, `/v1/decisions`, MLX / transformers / GGUF backends, registry entries, conversion tool. | `tests/decision/` (18), capability and catalog suites; real-weights parity across the three engines and the public dev set (`untracked/decision-eval/`). |
 | `planned/0876_adapter_catalogue_metadata.md` | [completed/0876_adapter_catalogue_metadata.md](completed/0876_adapter_catalogue_metadata.md) | 2026-10-30 | Done, unreleased | Separate schema-backed adapter metadata; existing Vision inference registry preserved. | Core `0062fa69` / deployed `449aefce`; 168 Core checks, 38 Gateway checks, 248 browser assertions; live evidence in `abstractgateway/design/model-types-1001/REVIEW.md`. |
 | `planned/0875_discovered_cached_assets_in_catalog.md` | [completed/0875_discovered_cached_assets_in_catalog.md](completed/0875_discovered_cached_assets_in_catalog.md) | 2026-10-30 | Done, unreleased | First-class discovered cache assets; Core `17662521` deployed as `8f2fd00b`. | 161 Core checks, 35 Gateway checks, 240 browser assertions; all 162 live inventory entries covered; `abstractgateway/design/catalog-assets-1000/REVIEW.md`. |
@@ -235,6 +252,9 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 | Item | Reason |
 | --- | --- |
+| `deprecated/0880_llama_cpp_python_chat_template_kwargs.md` | Overtaken: AbstractCore renders the model's own chat template itself and drives the `enable_thinking` switch and effort from the registry (`abstractcore/providers/huggingface_provider.py`, the asset-driven thinking controls around lines 1505-1580), so the per-request toggle no longer depends on llama-cpp-python exposing `chat_template_kwargs`. An upstream change remains welcome but is not AbstractCore work. |
+| `deprecated/0881_mlx_provider_continuous_batching.md` | Superseded: the native MLX runtime already batches on mlx-vlm's `BatchGenerator` (`abstractcore/providers/mlx_runtime.py` ~191); the remaining mlx-lm lane and the llama.cpp `n_seq_max` work are `planned/0871`. The code description in this item (one request at a time, per-request provider instances) is out of date. |
+| `deprecated/0882_native_mtp_and_speculative_decoding_umbrella.md` | Historical umbrella, as its own 2026-09-20 update says: layers 1-3 shipped (`docs/speculative-decoding.md`), the remaining committed scope is the native inference track `planned/native_inference/` (0848-0853). Kept for history. |
 | `deprecated/2026-05-20_transformers-and-gguf-prompt-cache-parity-for-exact-blocs-and-superblocs.md` | Superseded by completed unified API, transformers, and GGUF provider-specific items. |
 | `deprecated/790_server-response-cache.md` | Superseded by `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md` (single cache source of truth with safer eligibility/keying requirements). |
 | `deprecated/2026-05-07_runtime-ready-multimodal-generation-abstraction.md` | Core-side multimodal generation/capability catalog work is already implemented; remaining durable Runtime integration belongs in `../abstractruntime/`. |

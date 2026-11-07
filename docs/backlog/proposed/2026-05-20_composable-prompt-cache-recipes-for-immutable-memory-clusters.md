@@ -51,7 +51,7 @@ Core.
 - [`docs/prompt-caching.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/prompt-caching.md:192) documents module caches and file boxes as stable prefix reuse, not arbitrary cache composition.
 - [`docs/memory-blocs.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/memory-blocs.md:41) documents bloc KV artifacts as optional per-model derived artifacts and explicitly points to the MLX bloc compiler/loader.
 - [`docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md:52) already records the key constraint: KV caches are exact prefix artifacts, not reusable blocks that can be merged in arbitrary order.
-- [`docs/backlog/planned/2026-05-18_mlx-provider-continuous-batching.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/backlog/planned/2026-05-18_mlx-provider-continuous-batching.md:303) intentionally limits batched MLX v1 to keyed reuse and explicitly says not to attempt arbitrary cache composition there.
+- [`docs/backlog/deprecated/0881_mlx_provider_continuous_batching.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/backlog/deprecated/0881_mlx_provider_continuous_batching.md:303) intentionally limits batched MLX v1 to keyed reuse and explicitly says not to attempt arbitrary cache composition there.
 
 ## Problem or opportunity
 
@@ -158,7 +158,7 @@ backend is strong enough to deserve equal priority.
 ## Related
 
 - `docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`
-- `docs/backlog/planned/2026-05-18_mlx-provider-continuous-batching.md`
+- `docs/backlog/deprecated/0881_mlx_provider_continuous_batching.md`
 - `docs/backlog/completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
 - `docs/backlog/completed/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
 - `docs/backlog/completed/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`

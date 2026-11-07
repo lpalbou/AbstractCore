@@ -2,8 +2,9 @@
 
 ## Metadata
 - Created: 2026-05-18
-- Status: Planned
+- Status: Deprecated
 - Completed: N/A
+- Deprecated: 2026-11-07
 
 ## Context
 
@@ -548,3 +549,8 @@ that:
 Use `BatchGenerator` first because the installed runtime already supports the key per-request hooks.
 Drop lower to custom step scheduling only if tests or benchmarks prove that `BatchGenerator` is not
 enough for fairness, constrained decoding, or cache behavior.
+
+## Deprecation report (2026-11-07)
+
+- Superseded: the native MLX runtime already batches on mlx-vlm's `BatchGenerator` (`abstractcore/providers/mlx_runtime.py` ~191); the remaining mlx-lm lane and the llama.cpp `n_seq_max` work are `planned/0871`. The code description in this item (one request at a time, per-request provider instances) is out of date.
+- Renamed from `2026-05-18_mlx-provider-continuous-batching.md` to a numbered id in the 2026-11-07 hygiene pass (date-prefixed names are not valid item ids).

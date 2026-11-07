@@ -2,8 +2,8 @@
 
 ## Metadata
 - Created: 2026-08-21
-- Status: Planned
-- Completed: N/A
+- Status: Completed
+- Completed: 2026-11-07
 
 ## ADR status
 - Governing ADRs: `0001` (no silent degradation — directly authoritative), `0002` (validation and
@@ -165,3 +165,13 @@ degraded path, and callers already read it. The change is to add a positive chan
 **Resist making structured output carry images.** It looks like the natural fix and it is a trap:
 the Outlines MLX adapter re-encodes a prompt string with the plain tokenizer, so image placeholder
 expansion cannot survive. A named refusal is the honest outcome.
+
+## Completion report (2026-11-07)
+
+- Summary: shipped in 2.13.41 (see `CHANGELOG.md`). `abstractcore/media/delivery.py` records positive media
+  delivery; the `vision_fallback` gate reads the positive record (`vision_fallback.py` ~267) instead of treating
+  absence as success.
+- Tests: `tests/providers/test_mlx_media_delivery_contract.py`.
+- Residual / follow-ups: the checklist item "audit the other providers; file follow-ups" has no recorded
+  evidence; an audit of the non-MLX providers' media delivery records is owed when they next change.
+- Closed by the 2026-11-07 hygiene pass after a code audit.

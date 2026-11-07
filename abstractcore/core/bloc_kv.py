@@ -438,7 +438,7 @@ class BlocKVArtifactManifest:
     # (recompile), absent (pre-axis artifact) accepts with a labeled
     # #FALLBACK, unavailable CURRENT state abstains (load-time gate re-checks).
     weights_fingerprint: str = ""
-    # ---- Composition position (bloc composability, 0803, axis 5) ----------
+    # ---- Composition position (bloc composability: 0817 position axis, 0818 link lane) ----------
     #
     # A cached K tensor is POSITION-ENCODED: rotary embeddings are applied at
     # compile time, at the absolute offsets the tokens occupied then. Nothing in
@@ -1651,7 +1651,7 @@ def load_bloc_kv_artifact(
         quantization=quantization,
     )
 
-    # COMPOSITION GATE (0803, axis 5). Cached K tensors are rotary-position-
+    # COMPOSITION GATE (0817 position axis, 0818 link lane). Cached K tensors are rotary-position-
     # encoded at compile time and nothing here re-applies them, so an artifact
     # is only valid at the offset it was compiled at, behind the predecessors it
     # was compiled behind. Refuse before `prompt_cache_load` puts the tensors

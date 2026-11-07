@@ -1,4 +1,4 @@
-# 792 — A generation entry point that does not need a text model
+# 0883 — A generation entry point that does not need a text model
 
 > Type: task
 > Created: 2026-09-29
@@ -40,3 +40,7 @@ Keep `llm.generate(...)` unchanged; the new entry point uses the same routing co
 - [ ] An image, voice or music call without a text model, with defaults and with an explicit
       output dict; a text call still requires a text route.
 - [ ] Docs and the website examples use it where it removes the unused instance.
+
+## Note (2026-11-07)
+
+- Renumbered from `792` to `0883`: `792` was shared with `proposed/0792_hf_transformers_metal_quantization_on_apple.md`.

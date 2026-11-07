@@ -1,5 +1,7 @@
 # 2026-03-30 — llama-cpp-python: expose `chat_template_kwargs` / `enable_thinking` for clean Qwen3/Qwen3.5 thinking toggle
 
+> Status: Deprecated · Deprecated: 2026-11-07
+
 ## Goal
 
 Expose a **backend-native**, per-request switch to enable/disable Qwen3/Qwen3.5 “thinking” in **llama-cpp-python** (GGUF) without relying on prompt/message injection.
@@ -87,3 +89,7 @@ This removes the need for the current “marker fallback”:
 - This proposal intentionally targets llama-cpp-python’s **Python API**, not only the `llama_cpp.server`.
 - It should be safe for non-Qwen models: template kwargs are ignored unless referenced by the template.
 
+## Deprecation report (2026-11-07)
+
+- Overtaken: AbstractCore renders the model's own chat template itself and drives the `enable_thinking` switch and effort from the registry (`abstractcore/providers/huggingface_provider.py`, the asset-driven thinking controls around lines 1505-1580), so the per-request toggle no longer depends on llama-cpp-python exposing `chat_template_kwargs`. An upstream change remains welcome but is not AbstractCore work.
+- Renamed from `2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md` to a numbered id in the 2026-11-07 hygiene pass (date-prefixed names are not valid item ids).
