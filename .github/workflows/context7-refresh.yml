@@ -1,0 +1,59 @@
+name: Context7 refresh
+
+# Manual re-index of this repository's user docs on Context7 (context7.com), the same step the release
+# workflow runs after a PyPI publish. Run it from the Actions tab or `gh workflow run context7-refresh.yml`
+# after a docs-only change on main. The credential CONTEXT7_API_KEY lives in the GitHub environment
+# "context7"; required reviewers on that environment make this an approved step.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  context7-refresh:
+    name: Refresh Context7 docs
+    runs-on: ubuntu-latest
+    environment:
+      name: context7
+      url: https://context7.com/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trigger the Context7 refresh
+        env:
+          CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
+          LIBRARY: /${{ github.repository }}
+          VERSION: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json, os, sys, time, urllib.error, urllib.request
+
+          key = os.environ.get("CONTEXT7_API_KEY", "")
+          if not key:
+              print("::warning::the context7 environment has no CONTEXT7_API_KEY credential; "
+                    "Context7 was not refreshed for this release")
+              sys.exit(0)
+          library = os.environ["LIBRARY"]
+          body = json.dumps({"libraryName": library}).encode()
+
+          def attempt():
+              req = urllib.request.Request(
+                  "https://context7.com/api/v1/refresh", data=body, method="POST",
+                  headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      return response.status, response.read().decode("utf-8", "replace"), {}
+              except urllib.error.HTTPError as exc:
+                  return exc.code, exc.read().decode("utf-8", "replace"), dict(exc.headers)
+
+          status, text, headers = attempt()
+          if status == 429:
+              wait = int(float(headers.get("Retry-After", "0") or 0))
+              if 0 < wait <= 300:
+                  print(f"Context7 rate limit: waiting {wait}s once as asked, then retrying")
+                  time.sleep(wait)
+                  status, text, headers = attempt()
+          if status != 200:
+              sys.exit(f"Context7 refresh of {library} for {os.environ['VERSION']} failed: HTTP {status} {text.strip()}")
+          print(f"Context7 refresh of {library} started for {os.environ['VERSION']}: {text.strip()}")
+          PY
+
