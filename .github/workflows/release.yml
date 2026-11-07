@@ -349,17 +349,18 @@ jobs:
           files: dist/*
           fail_on_unmatched_files: true
 
-  # Optional: ask Context7 (context7.com) to re-index this repository's docs after the release is on PyPI,
-  # so coding agents reading AbstractCore through the Context7 MCP see the version just published.
-  # Off by default. Turn it on with the repository variable CONTEXT7_REFRESH=true and the repository secret
-  # CONTEXT7_API_KEY (Settings -> Secrets and variables -> Actions). One refresh per release; a 429 from
-  # Context7 is honoured once through Retry-After and otherwise fails the job visibly, never silently.
+  # Ask Context7 (context7.com) to re-index this repository's docs after the release is on PyPI, so coding
+  # agents reading AbstractCore through the Context7 MCP see the version just published. The parameter is
+  # the committed context7.json (remove the file to stop refreshing); the only secret is the credential
+  # CONTEXT7_API_KEY (Settings -> Secrets and variables -> Actions). Without the credential the job reports a
+  # warning and does nothing. One refresh per release; a 429 from Context7 is honoured once through
+  # Retry-After and otherwise fails the job visibly, never silently.
   context7-refresh:
     name: Refresh Context7 docs
     runs-on: ubuntu-latest
     needs: [build, publish-pypi]
-    if: vars.CONTEXT7_REFRESH == 'true'
     steps:
+      - uses: actions/checkout@v4
       - name: Trigger the Context7 refresh
         env:
           CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
@@ -369,9 +370,14 @@ jobs:
           python - <<'PY'
           import json, os, sys, time, urllib.error, urllib.request
 
+          if not os.path.exists("context7.json"):
+              print("::notice::no context7.json in the repository; Context7 refresh not configured")
+              sys.exit(0)
           key = os.environ.get("CONTEXT7_API_KEY", "")
           if not key:
-              sys.exit("CONTEXT7_REFRESH is on but the CONTEXT7_API_KEY secret is empty; add the key or unset the variable")
+              print("::warning::context7.json is present but the CONTEXT7_API_KEY credential is not set; "
+                    "Context7 was not refreshed for this release")
+              sys.exit(0)
           library = os.environ["LIBRARY"]
           body = json.dumps({"libraryName": library}).encode()
 
