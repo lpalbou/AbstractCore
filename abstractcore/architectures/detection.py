@@ -54,10 +54,26 @@ _VARIANT_TOKEN_RE = re.compile(
     r"(?i)^(?:"
     r"gguf|mlx|awq|gptq|bnb|quant|quantized|"
     r"(?:nv|mx)?fp\d+|bf\d+|f(?:16|32|64)|int\d+|uint\d+|nf4|"
-    r"[1-9]bit|(?:i|t)?q[1-8](?:_[a-z0-9]+)*"
+    r"[1-9]bit|(?:i|t)?q[1-8](?:_[a-z0-9]+)*|"
+    # MLX quantizer markers: mlx-community "OptiQ" (always followed by "-Nbit") and the
+    # "oQ4e"/"oQ2e" mixed-affine tags used by Jundot and mlx-community conversions.
+    r"optiq|oq[1-8]e?|"
+    # mradermacher imatrix markers ("-i1-GGUF", "-imatrix").
+    r"i1|imatrix|"
+    # Google QAT / compressed-tensors packagings ("-it-qat-q4_0-gguf", "-it-qat-w4a16-ct",
+    # "-it-qat-q4_0-unquantized", "-it-qat-mobile-transformers").
+    r"qat|unquantized|ct|mobile|transformers|w\d+a\d+(?:c\d+)?"
     r")$"
 )
+# A quant tag after a colon: Ollama / LM Studio / `hf.co/org/repo:TAG` ids such as
+# "unsloth/Qwen3.8-27B-GGUF:Q4_K_M", "...-GGUF:UD-Q4_K_XL" or "...:latest". Stripped before
+# the trailing-token walk so the repo name is normalized like any other variant.
+_COLON_QUANT_TAG_RE = re.compile(r"(?i):(?:ud-)?(?:(?:i|t)?q[1-8](?:_[a-z0-9]+)*|(?:nv|mx)?fp\d+|bf\d+|f(?:16|32)|[1-9]bit|latest)$")
+# bartowski / mradermacher style "Org_Model-GGUF": the upstream org folded into the repo
+# name with an underscore. Only a plain org-looking head is split off.
+_UNDERSCORED_ORG_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z0-9.-]{1,40})_(?=[A-Za-z0-9])")
 _TRAILING_VARIANT_SEGMENT_RE = re.compile(r"(?i)([-_.@])([a-z0-9_]+)$")
+_MAX_TRAILING_VARIANT_TOKENS = 6
 _FORMAT_VARIANT_TOKENS = {
     "gguf",
     "safetensors",
@@ -102,6 +118,10 @@ def _variant_normalizations(name: str) -> List[str]:
     _add(s)
 
     working = s
+    tag_match = _COLON_QUANT_TAG_RE.search(working)
+    if tag_match:
+        working = working[:tag_match.start()]
+        _add(working)
     trailing_tokens_reversed: List[tuple[str, str]] = []
 
     extension_match = _VARIANT_EXTENSION_RE.search(working)
@@ -118,6 +138,10 @@ def _variant_normalizations(name: str) -> List[str]:
         # removed precision suffix; a model/fine-tune ending in UD is not a quant.
         ud_quant = token.lower() == "ud" and any(re.match(r"(?i)^(?:i|t)?q[1-8]", t) for _, t in trailing_tokens_reversed)
         if not _is_variant_token(token) and not ud_quant:
+            break
+        if len(trailing_tokens_reversed) >= _MAX_TRAILING_VARIANT_TOKENS:
+            # The subset walk below is 2^n; real repo names carry at most four or
+            # five tags, and an adversarial name must not stall capability lookup.
             break
         trailing_tokens_reversed.append((match.group(1), token))
         working = working[:match.start()].rstrip(".-_@")
@@ -396,12 +420,28 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
                 continue
             for normalized in _variant_normalizations(s):
                 out.append(normalized)
-                out.extend(_colon_variants(normalized))
+                for colon_variant in _colon_variants(normalized):
+                    out.extend(_variant_normalizations(colon_variant))
                 t = _tail(normalized)
                 if t:
                     for tail_normalized in _variant_normalizations(t):
                         out.append(tail_normalized)
-                        out.extend(_colon_variants(tail_normalized))
+                        for colon_variant in _colon_variants(tail_normalized):
+                            out.extend(_variant_normalizations(colon_variant))
+        # "Org_Model" repo names (bartowski, mradermacher) also resolve as "Org/Model" and
+        # as the bare model name. Alias matching is a set intersection, so these compete
+        # with the other candidates on equal terms; only the canonical-key fallback walks
+        # the list in order.
+        for s in list(out):
+            if "/" in s or "_" not in s:
+                continue
+            m = _UNDERSCORED_ORG_PREFIX_RE.match(s)
+            if not m:
+                continue
+            rest = s[m.end():]
+            if rest:
+                out.append(f"{m.group(1)}/{rest}")
+                out.append(rest)
         # Deduplicate while preserving order
         uniq: List[str] = []
         seen: set[str] = set()
@@ -451,6 +491,10 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
         if not isinstance(aliases, list) or not aliases:
             continue
         alias_set = {str(a).strip().lower() for a in aliases if isinstance(a, str) and str(a).strip()}
+        # A declared "org/Model" alias also answers to the bare "Model" tail, so a
+        # re-packaged repo ("unsloth/Model-GGUF", "mlx-community/Model-4bit") that
+        # strips to the tail still finds it. Only aliases with exactly one "/" qualify.
+        alias_set |= {a.split("/", 1)[1] for a in alias_set if a.count("/") == 1 and a.split("/", 1)[1]}
         if alias_set and cand_set and alias_set.intersection(cand_set):
             alias_matches.append(canonical_name)
 

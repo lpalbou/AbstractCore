@@ -10,6 +10,44 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ## [Unreleased]
 
+## [2.35.0] - 2026-11-07
+
+### Added
+
+- **Current vendor lineups are in the capability registry** (`assets/model_capabilities.json`,
+  `assets/architecture_formats.json`), so an `input.image`, `input.video` or `input.voice` route can name them instead
+  of the text-only architecture default. New entries, each read from the vendor page or Hugging Face card on 2026-11-07:
+  - OpenAI `gpt-6-astra`, `gpt-6-sol`, `gpt-6.1-sol`, `gpt-6.1-terra`.
+  - Anthropic `claude-fable-5-1`, `claude-mythos-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`.
+  - xAI `grok-4.7`, `grok-4.6`, `grok-4.5`, `grok-4.3`, `grok-4.20-0309-reasoning`, `grok-4.20-0309-non-reasoning`,
+    `grok-4.20-multi-agent-0309`, `grok-build-0.1` (alias `grok-code-fast-1`), with the published alias lists.
+  - Qwen `qwen3.8-2.4t-a95b` (open weights), hosted `qwen3.8-max`, `qwen3.8-flash`, `qwen3.8-omni-flash`.
+  - Liquid AI `lfm3-vl-2b`, `lfm3-audio-2b`, `lfm3-omni-2b`; Spark `spark-x2.5-4b`, `spark-x2.5-1.7b`, `spark-x2.6-1.7b`,
+    and the complete official XHToken repo, Ollama tag and GGUF aliases on every Spark X2.5/X2.6 size.
+  - DeepSeek `deepseek-v4.1-flash`, `deepseek-v4.1-flash-1017` (alias `deepseek-flash`); Z.ai `glm-5.3`, `glm-5.3-flash`
+    (alias `glm-5.3-flashx`); MiniMax `minimax-m2.7`, `minimax-m3.1-flash`, with `minimax-m3` gaining video input and
+    every MiniMax M2/M2.1/M2.5/M3 entry its official, unsloth, lmstudio-community, bartowski and NVIDIA repo aliases.
+  - Moonshot `kimi-k3`, `kimi-k3.1-pro`, `kimi-k2.7-code`, `kimi-k2.5`; Baidu `ernie-5.5-flash-base`, `unlimited-ocr-2`.
+  - Prism `ternary-bonsai-27b`, the Bonsai 2 family (`ternary-bonsai-2-27b/9b/4b/2b`), the 1-bit `bonsai-8b/4b/1.7b` and
+    `ternary-bonsai-8b/4b/1.7b`, each with its gguf, mlx and unpacked repo aliases.
+  - NVIDIA `nemotron-3-ultra-550b-a55b`, `nemotron-3.5-lightning-30b-a3b`, `nemotron-3.5-bolt-74b-a9b`,
+    `nemotron-3.5-bolt-e4b`, `nemotron-3.5-super-vl-120b-a12b`, `nemotron-nano-9b-v2`, `nemotron-nano-12b-v2-vl`,
+    the `nemotron-3-embed-1b` and `nemotron-3.5-embed-1b` embedders, `nemotron-3.5-transcribe-30b-a4b` (voice in),
+    `nemotron-3.5-parse` and `nemotron-parse-2.0` (document OCR).
+  - Gemma 4 `-it` entries alias Google's `-it-assistant` and QAT (`q4_0-gguf`, `w4a16-ct`, `unquantized`) repos, and the
+    `qat`, `unquantized`, `ct`, `mobile`, `transformers` and `wNaM` packaging tokens strip like any other variant suffix.
+- Transcription language facts: `generate(..., output={"task": "transcription"})` records `language` (what the engine was told; `None` = it detected the language) and `detected_language` (what it reported) in the transcript's metadata, through the audio facade's `transcribe_detailed` (`AudioCapability` may implement it — AbstractVoice does; a backend with `transcribe` only reports neither). `POST /v1/audio/transcriptions` on a local engine answers `{text, language, detected_language}`.
+
+### Fixed
+
+- **GGUF and MLX re-packagings of a registered model resolve to its entry** (`architectures/detection.py`). An
+  Ollama or LM Studio quant tag after the repo name (`unsloth/Qwen3.8-27B-GGUF:Q4_K_M`, `hf.co/...:UD-Q4_K_XL`,
+  `...:latest`), the `OptiQ-4bit`, `oQ4e` and `i1` quantizer markers, bartowski's and mradermacher's `Org_Model-GGUF`
+  repo names, and a re-packaged tail whose base alias is declared only as `org/Model` (the dated Mistral and
+  Devstral names) all resolved to nothing and fell back to the text-only architecture default. They now reach the
+  registry entry of the model they wrap; a dedicated FP8 or GGUF entry still wins over its parent, and a
+  speculative-decoding drafter still does not inherit its target.
+
 ## [2.34.0] - 2026-11-03
 
 ### Added

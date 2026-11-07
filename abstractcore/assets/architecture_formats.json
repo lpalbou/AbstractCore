@@ -285,7 +285,13 @@
         "qwen3-32b",
         "qwen3:",
         "qwen3-4b-thinking",
-        "qwen3-4b-instruct"
+        "qwen3-4b-instruct",
+        "bonsai-8b",
+        "bonsai-4b",
+        "bonsai-1.7b",
+        "ternary-bonsai-8b",
+        "ternary-bonsai-4b",
+        "ternary-bonsai-1.7b"
       ]
     },
     "qwen3_5": {
@@ -449,7 +455,6 @@
       },
       "patterns": [
         "qwen3.8-flash-next",
-        "qwen3.8-flash",
         "flash-next",
         "qwen4exp",
         "qwen4-exp",
@@ -750,7 +755,8 @@
         "gemma4",
         "gemma4_unified",
         "gemma4-unified",
-        "google/gemma-4"
+        "google/gemma-4",
+        "nemotron-3.5-bolt-e4b"
       ]
     },
     "gemma2": {
@@ -951,7 +957,13 @@
         "kimi-k2.6",
         "moonshotai/kimi-k2.6",
         "kimi-k2",
-        "kimi_k25"
+        "kimi_k25",
+        "kimi-k3",
+        "moonshotai/kimi-k3",
+        "kimi_k3",
+        "kimi_k31",
+        "kimi-k2.7",
+        "kimi-k2.5"
       ]
     },
     "deepseek": {
@@ -1011,7 +1023,10 @@
         "minimax/minimax-m2.5",
         "minimax-m2",
         "minimaxai/minimax-m2",
-        "minimax/minimax-m2"
+        "minimax/minimax-m2",
+        "minimax-m2.7",
+        "minimaxai/minimax-m2.7",
+        "minimax/minimax-m2.7"
       ]
     },
     "lfm2": {
@@ -1085,7 +1100,12 @@
         "claude-opus-4-8",
         "claude-sonnet-5",
         "claude-fable-5",
-        "claude-mythos-5"
+        "claude-mythos-5",
+        "claude-haiku-5-5",
+        "claude-fable-5-1",
+        "claude-mythos-5-1",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5"
       ]
     },
     "gpt": {
@@ -1099,7 +1119,14 @@
         "gpt-5.6",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
-        "gpt-5.6-luna"
+        "gpt-5.6-luna",
+        "gpt-6",
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-6.1",
+        "gpt-6.1-sol",
+        "gpt-6.1-terra"
       ]
     },
     "gpt_oss": {
@@ -1151,7 +1178,12 @@
         "nemotron-cascade-2",
         "nemotron-labs",
         "nvidia/nemotron",
-        "nvidia-nemotron"
+        "nvidia-nemotron",
+        "nemotron-3-ultra",
+        "nemotron-3.5-lightning",
+        "nemotron-3.5-bolt-74b",
+        "nemotron-3.5-super-vl",
+        "nemotron-3.5-transcribe"
       ]
     },
     "qwen3_5_agentic": {
@@ -1207,7 +1239,10 @@
         "zai-org/glm-5.1",
         "zai-org/glm-5.2",
         "z-ai/glm-5.1",
-        "z-ai/glm-5.2"
+        "z-ai/glm-5.2",
+        "glm-5.3",
+        "zai-org/glm-5.3",
+        "z-ai/glm-5.3"
       ]
     },
     "minimax_m3": {
@@ -1227,7 +1262,10 @@
       "patterns": [
         "minimax-m3",
         "minimaxai/minimax-m3",
-        "minimax/minimax-m3"
+        "minimax/minimax-m3",
+        "minimax-m3.1",
+        "minimaxai/minimax-m3.1-flash",
+        "minimax/minimax-m3.1-flash"
       ]
     },
     "hunyuan3": {
@@ -1418,7 +1456,7 @@
       ]
     },
     "bonsai": {
-      "description": "Prism Bonsai-27B low-bit Qwen3.6 derivative; parent chat template, separate model identity.",
+      "description": "Prism Bonsai low-bit Qwen3.5/3.6/3.8 derivatives (Bonsai-27B, Ternary-Bonsai-27B, Bonsai 2); parent chat template, separate model identities. The Qwen3-derived Bonsai-8B/4B/1.7B and Ternary-Bonsai-8B/4B/1.7B use the qwen3 block.",
       "message_format": "im_start_end",
       "system_prefix": "<|im_start|>system\n",
       "system_suffix": "<|im_end|>\n",
@@ -1447,7 +1485,13 @@
         "top_k": 20
       },
       "patterns": [
-        "bonsai-27b"
+        "bonsai-27b",
+        "bonsai-2-",
+        "ternary-bonsai-2-",
+        "ternary-bonsai-27b",
+        "prism-ml/bonsai-27b",
+        "prism-ml/ternary-bonsai-27b",
+        "prism-ml/ternary-bonsai-2-"
       ]
     },
     "spark2_5": {

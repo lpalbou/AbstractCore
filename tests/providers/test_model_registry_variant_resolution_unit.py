@@ -252,3 +252,34 @@ def test_granite_and_nemotron_architecture_formats_match_upstream_tool_transcrip
     assert omnicoder_format.get("tool_format") == "xml"
     assert omnicoder_format.get("tool_prefix") == "<tool_call>"
     assert omnicoder_format.get("output_wrappers") == {"end": "<|im_end|>"}
+
+
+def test_gguf_and_mlx_packaging_names_resolve_for_every_family() -> None:
+    """Common re-packaging ids must reach the registry entry of the model they wrap.
+
+    Each form below failed before the resolver learned colon quant tags, the OptiQ /
+    oQ4e / i1 markers, bartowski's "Org_Model" repo names and org-less alias tails.
+    """
+    models = architecture_detection._model_capabilities["models"] if architecture_detection._model_capabilities else None
+    if models is None:
+        architecture_detection._load_json_assets()
+        models = architecture_detection._model_capabilities["models"]
+    resolve = architecture_detection.resolve_model_alias
+
+    # Ollama / LM Studio quant tag after the repo name, with and without the hf.co prefix.
+    assert resolve("unsloth/Qwen3.8-27B-GGUF:Q4_K_M", models) == "qwen3.8-27b"
+    assert resolve("hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL", models) == "qwen3.8-27b"
+    assert resolve("Qwen3.8-27B-GGUF:latest", models) == "qwen3.8-27b"
+    # MLX quantizer markers.
+    assert resolve("mlx-community/Spark-X2.5-1.7B-OptiQ-4bit", models) == "spark-x2.5-1.7b"
+    assert resolve("Jundot/GLM-5.3-oQ4e", models) == "glm-5.3"
+    # Underscored upstream org (bartowski, mradermacher) and the imatrix marker.
+    assert resolve("bartowski/MiniMaxAI_MiniMax-M2.5-GGUF", models) == "minimax-m2.5"
+    assert resolve("mradermacher/XHToken_Spark-X2.6-4B-i1-GGUF", models) == "spark-x2.6-4b"
+    # The base alias is declared only as "org/Model": the re-packaged tail still finds it.
+    assert resolve("unsloth/Mistral-Small-3.1-24B-Instruct-2503-GGUF", models) == "mistral-small-3.1-24b-instruct"
+    assert resolve("mlx-community/Devstral-Small-2-24B-Instruct-2512-4bit", models) == "devstral-small-2-24b"
+    # A dedicated FP8 / GGUF entry still wins over its BF16 parent.
+    assert resolve("Qwen/Qwen3.8-27B-FP8", models) == "qwen3.8-27b-fp8"
+    # A speculative-decoding drafter is a different artifact and must NOT inherit its target.
+    assert resolve("mlx-community/Qwen3.8-27B-MTP-4bit", models) not in {"qwen3.8-27b"}

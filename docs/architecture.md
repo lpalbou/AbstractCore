@@ -262,6 +262,16 @@ AbstractCore's model capability routing and architecture formatting are driven b
 
 When a new model or architecture is released (or an existing one changes), update these files first. See `abstractcore/assets/README.md` for field requirements and update rules.
 
+A model name reaches its registry entry through its canonical key, a declared alias, or the
+re-packaging rules in `abstractcore/architectures/detection.py`: a provider prefix (`lmstudio/...`),
+a Hugging Face cache path, trailing precision and format tags (`-GGUF`, `-4bit`, `-Q4_K_M.gguf`,
+`-FP8`, `-NVFP4`, `-OptiQ-4bit`, `-i1-GGUF`, `-qat-q4_0-gguf`), an Ollama or LM Studio quant tag after a
+colon (`unsloth/Qwen3.8-27B-GGUF:Q4_K_M`, `hf.co/...:UD-Q4_K_XL`), a re-packager's underscored
+upstream org (`bartowski/MiniMaxAI_MiniMax-M2.7-GGUF`), and the bare tail of an `org/Model` alias.
+A name the registry does not know stays unknown rather than inheriting a base model: a fine-tune, a
+speculative-decoding drafter, or a quantization with its own entry (`qwen3.8-27b-fp8`) keeps its own
+identity. `resolve_registered_model_name()` answers that question without the partial-match ladder.
+
 #### Memory Management
 
 The `unload_model(model_name)` method is a **best-effort resource cleanup hook**.

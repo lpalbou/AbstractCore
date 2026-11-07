@@ -17,7 +17,7 @@ def test_reported_installed_variants_have_unambiguous_catalog_identity(row):
     assert mc.catalog_id_for(row['provider'], row['artifact'], metadata=row) == row['expected_catalog_id']
 
 
-@pytest.mark.parametrize('name', ['qwen3.8-27b-my-finetune', 'qwen3.8-27b-ud', 'qwen3.6-35b-a3b-unlisted-tune', 'lfm3-1.7b-base', 'ternary-bonsai-27b', 'bonsai-2-27b', 'gemma-4-12b-custom'])
+@pytest.mark.parametrize('name', ['qwen3.8-27b-my-finetune', 'qwen3.8-27b-ud', 'qwen3.6-35b-a3b-unlisted-tune', 'lfm3-1.7b-base', 'ternary-bonsai-27b-my-finetune', 'bonsai-2-27b', 'gemma-4-12b-custom'])
 def test_unknown_derivatives_do_not_silently_become_the_original(name):
     assert resolve_registered_model_name(name) is None
     assert mc.catalog_id_for('lmstudio', name) is None

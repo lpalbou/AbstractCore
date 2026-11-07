@@ -1124,6 +1124,174 @@
         ]
       }
     },
+    "claude-fable-5-1": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "thinking_disable_supported": false,
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Anthropic's most capable widely released model (released 2026-09-01), successor of Claude Fable 5 in the same tier at the same $10/$50 per MTok with cache reads at $0.25 (a quarter of Fable 5). Adaptive thinking is always on: thinking:{type:disabled} and budget_tokens return 400, omit the thinking parameter instead; default effort high. Official docs: text and image input, text output, 1M context, 128K max output, reliable knowledge cutoff June 2026, effort levels low|medium|high|xhigh|max (max is not in the unified thinking vocabulary, see max_effort_supported). No assistant prefill; the raw chain of thought is never returned (display summarized/omitted); safety classifiers can end a response with stop_reason refusal; forced tool_choice any/tool returns 400 (use auto); thinking blocks are bound to the producing model and to the conversation (preserved thinking: editing earlier turns invalidates them). Same tokenizer as Opus 4.7/4.8. Requires 30-day data retention (ZDR only if expressly authorized). Listed by the airelay relay as claude-fable-5-1 (model list read 2026-11-07).",
+      "source": "Anthropic docs: platform.claude.com/docs/en/models/fable-5-1/overview, /docs/en/models/fable-5-1/whats-new-fable-5-1 and /docs/en/about-claude/models/overview (accessed 2026-11-07)",
+      "canonical_name": "claude-fable-5-1",
+      "aliases": [
+        "anthropic/claude-fable-5-1"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "claude-mythos-5-1": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "thinking_disable_supported": false,
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Same model, specifications, pricing and API behaviour as Claude Fable 5.1 (released 2026-09-01); available only to organizations verified through Anthropic's verification programs (for example the Cyber Verification Program) on the Claude API, Amazon Bedrock, Google Cloud and Microsoft Foundry. Adaptive thinking is always on (thinking:{type:disabled} returns 400); default effort high. Official docs: text and image input, text output, 1M context, 128K max output, reliable knowledge cutoff June 2026, effort levels low|medium|high|xhigh|max (max is not in the unified thinking vocabulary, see max_effort_supported). No assistant prefill; the raw chain of thought is never returned (display summarized/omitted); safety classifiers can end a response with stop_reason refusal; forced tool_choice any/tool returns 400 (use auto); thinking blocks are bound to the producing model and to the conversation (preserved thinking: editing earlier turns invalidates them). Use claude-fable-5-1 unless the org is verified.",
+      "source": "Anthropic docs: platform.claude.com/docs/en/models/mythos-5-1/overview and /docs/en/models/fable-5-1/overview (accessed 2026-11-07)",
+      "canonical_name": "claude-mythos-5-1",
+      "aliases": [
+        "anthropic/claude-mythos-5-1"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "claude-opus-5-5": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "thinking_disable_supported": false,
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Current Anthropic Opus (released 2026-09-22), successor of Claude Opus 5 at a lower price: $4/$20 per MTok, cache reads $0.20. Built for long-running agentic coding, vision-heavy workflows and computer use. Adaptive thinking is always on and cannot be turned off (thinking:{type:disabled} and budget_tokens return 400 at every effort level); default effort medium, one level below Opus 5, so set it explicitly. Official docs: text and image input, text output, 1M context, 128K max output, reliable knowledge cutoff June 2026, effort levels low|medium|high|xhigh|max (max is not in the unified thinking vocabulary, see max_effort_supported). No assistant prefill; the raw chain of thought is never returned (display summarized/omitted); safety classifiers can end a response with stop_reason refusal; forced tool_choice any/tool returns 400 (use auto); thinking blocks are bound to the producing model and to the conversation (preserved thinking: editing earlier turns invalidates them). Computer use on the Claude API only through computer_toolset_20260801. Fast mode on the Claude API at $8/$40. 300K output tokens on the Message Batches API with the output-300k-2026-03-24 beta header; 512-token prompt-cache minimum. Listed by the airelay relay as claude-opus-5-5 (model list read 2026-11-07).",
+      "source": "Anthropic docs: platform.claude.com/docs/en/models/opus-5-5/overview and /docs/en/about-claude/models/overview (accessed 2026-11-07)",
+      "canonical_name": "claude-opus-5-5",
+      "aliases": [
+        "anthropic/claude-opus-5-5"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "claude-sonnet-5-5": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "thinking_disable_supported": false,
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Current Anthropic Sonnet (released 2026-09-28), successor of Claude Sonnet 5 at the same $2/$10 per MTok, cache reads $0.10. Adaptive thinking is on by default; thinking:{type:disabled} returns 400, the lowest setting is thinking:{type:between_tools} (turns off up-front thinking, accepted at effort high or below, takes no other field), which the unified thinking vocabulary cannot express, so thinking=off omits the thinking parameter and runs adaptive. Default effort high with levels recalibrated from Sonnet 5. Setting temperature, top_p or top_k returns 400. Official docs: text and image input, text output, 1M context, 128K max output, reliable knowledge cutoff June 2026, effort levels low|medium|high|xhigh|max (max is not in the unified thinking vocabulary, see max_effort_supported). No assistant prefill; the raw chain of thought is never returned (display summarized/omitted); safety classifiers can end a response with stop_reason refusal; forced tool_choice any/tool returns 400 (use auto); thinking blocks are bound to the producing model and to the conversation (preserved thinking: editing earlier turns invalidates them). 300K output tokens on the Message Batches API with the output-300k-2026-03-24 beta header; 512-token prompt-cache minimum. Listed by the airelay relay as claude-sonnet-5-5 (model list read 2026-11-07).",
+      "source": "Anthropic docs: platform.claude.com/docs/en/models/sonnet-5-5/overview and /docs/en/about-claude/models/overview (accessed 2026-11-07)",
+      "canonical_name": "claude-sonnet-5-5",
+      "aliases": [
+        "anthropic/claude-sonnet-5-5"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "cogito:3b": {
       "max_output_tokens": 4096,
       "tool_support": "native",
@@ -3206,13 +3374,17 @@
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 E2B instruction-tuned multimodal model (text, image, audio, video input; text output), 128K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Model-card max_new_tokens=512/1024 values are examples, not limits.",
+      "notes": "Gemma 4 E2B instruction-tuned multimodal model (text, image, audio, video input; text output), 128K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Model-card max_new_tokens=512/1024 values are examples, not limits. Official google/ variants aliased 2026-11-07: -it-assistant (assistant-tuned post-training), -it-qat-q4_0-gguf, -it-qat-w4a16-ct and -it-qat-q4_0-unquantized (QAT checkpoints); the E2B/E4B -it-qat-mobile-ct and -mobile-transformers repos resolve through the variant-suffix rules.",
       "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-E2B-it, accessed 2026-06-04). Context length: 128K / raw max_position_embeddings 131072. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-e2b-it",
       "aliases": [
         "google/gemma-4-E2B-it",
         "gemma-4-E2B-it",
-        "lmstudio-community/gemma-4-E2B-it-GGUF"
+        "lmstudio-community/gemma-4-E2B-it-GGUF",
+        "google/gemma-4-E2B-it-assistant",
+        "google/gemma-4-E2B-it-qat-q4_0-gguf",
+        "google/gemma-4-E2B-it-qat-w4a16-ct",
+        "google/gemma-4-E2B-it-qat-q4_0-unquantized"
       ],
       "max_tokens": 131072,
       "max_tools": -1,
@@ -3247,13 +3419,17 @@
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 E4B instruction-tuned multimodal model (text, image, audio, video input; text output), 128K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Model-card max_new_tokens=512/1024 values are examples, not limits.",
+      "notes": "Gemma 4 E4B instruction-tuned multimodal model (text, image, audio, video input; text output), 128K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Model-card max_new_tokens=512/1024 values are examples, not limits. Official google/ variants aliased 2026-11-07: -it-assistant (assistant-tuned post-training), -it-qat-q4_0-gguf, -it-qat-w4a16-ct and -it-qat-q4_0-unquantized (QAT checkpoints); the E2B/E4B -it-qat-mobile-ct and -mobile-transformers repos resolve through the variant-suffix rules.",
       "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-E4B-it, accessed 2026-06-04). Context length: 128K / raw max_position_embeddings 131072. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-e4b-it",
       "aliases": [
         "google/gemma-4-E4B-it",
         "gemma-4-E4B-it",
-        "lmstudio-community/gemma-4-E4B-it-GGUF"
+        "lmstudio-community/gemma-4-E4B-it-GGUF",
+        "google/gemma-4-E4B-it-assistant",
+        "google/gemma-4-E4B-it-qat-q4_0-gguf",
+        "google/gemma-4-E4B-it-qat-w4a16-ct",
+        "google/gemma-4-E4B-it-qat-q4_0-unquantized"
       ],
       "max_tokens": 131072,
       "max_tools": -1,
@@ -3290,7 +3466,7 @@
       "thinking_support": true,
       "architecture": "gemma4",
       "model_type": "gemma4_unified",
-      "notes": "Gemma 4 12B instruction-tuned unified multimodal model (text, image, audio, video input; text output). Official model cards list the 12B Unified context length as 256K tokens; current raw config exposes text_config.max_position_embeddings=131072 with proportional RoPE. No separate hard completion cap is published, so the registry records the card-level context-bounded model output maximum. Model-card max_new_tokens=512/1024 values are examples, not limits.",
+      "notes": "Gemma 4 12B instruction-tuned unified multimodal model (text, image, audio, video input; text output). Official model cards list the 12B Unified context length as 256K tokens; current raw config exposes text_config.max_position_embeddings=131072 with proportional RoPE. No separate hard completion cap is published, so the registry records the card-level context-bounded model output maximum. Model-card max_new_tokens=512/1024 values are examples, not limits. Official google/ variants aliased 2026-11-07: -it-assistant (assistant-tuned post-training), -it-qat-q4_0-gguf, -it-qat-w4a16-ct and -it-qat-q4_0-unquantized (QAT checkpoints); the E2B/E4B -it-qat-mobile-ct and -mobile-transformers repos resolve through the variant-suffix rules.",
       "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-12B-it, accessed 2026-06-04). Model card context length: 256K. Raw config text_config.max_position_embeddings: 131072. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-12b-it",
       "aliases": [
@@ -3299,7 +3475,11 @@
         "yuxinlu1/gemma-4-12B-agentic-fable5-composer2.5-v2-3.5x-tau2-GGUF",
         "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF",
         "lmstudio-community/gemma-4-12B-it-QAT-GGUF",
-        "google/gemma-4-12b-qat"
+        "google/gemma-4-12b-qat",
+        "google/gemma-4-12B-it-assistant",
+        "google/gemma-4-12B-it-qat-q4_0-gguf",
+        "google/gemma-4-12B-it-qat-w4a16-ct",
+        "google/gemma-4-12B-it-qat-q4_0-unquantized"
       ],
       "max_tokens": 262144,
       "max_tools": -1,
@@ -3343,7 +3523,7 @@
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 26B A4B instruction-tuned MoE multimodal model (text, image, video input; text output), 256K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Provider route caps vary from 8K to 262K, so provider discovery should clamp lower when a route advertises a smaller limit.",
+      "notes": "Gemma 4 26B A4B instruction-tuned MoE multimodal model (text, image, video input; text output), 256K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Provider route caps vary from 8K to 262K, so provider discovery should clamp lower when a route advertises a smaller limit. Official google/ variants aliased 2026-11-07: -it-assistant (assistant-tuned post-training), -it-qat-q4_0-gguf and -it-qat-q4_0-unquantized (QAT checkpoints; Google publishes no w4a16-ct repo for this size); the E2B/E4B -it-qat-mobile-ct and -mobile-transformers repos resolve through the variant-suffix rules.",
       "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-26B-A4B-it, accessed 2026-06-04), plus OpenRouter endpoint metadata for provider-route cap variance. Context length: 256K / raw max_position_embeddings 262144. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-26b-a4b-it",
       "aliases": [
@@ -3351,7 +3531,10 @@
         "google/gemma-4-26B-A4B-it",
         "gemma-4-26B-A4B-it",
         "lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit",
-        "google/gemma-4-26b-a4b-qat"
+        "google/gemma-4-26b-a4b-qat",
+        "google/gemma-4-26B-A4B-it-assistant",
+        "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
+        "google/gemma-4-26B-A4B-it-qat-q4_0-unquantized"
       ],
       "max_tokens": 262144,
       "max_tools": -1,
@@ -3380,12 +3563,16 @@
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 31B instruction-tuned dense multimodal model (text, image, video input; text output), 256K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Provider route caps vary from 8K to 262K, so provider discovery should clamp lower when a route advertises a smaller limit.",
+      "notes": "Gemma 4 31B instruction-tuned dense multimodal model (text, image, video input; text output), 256K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Provider route caps vary from 8K to 262K, so provider discovery should clamp lower when a route advertises a smaller limit. Official google/ variants aliased 2026-11-07: -it-assistant (assistant-tuned post-training), -it-qat-q4_0-gguf, -it-qat-w4a16-ct and -it-qat-q4_0-unquantized (QAT checkpoints); the E2B/E4B -it-qat-mobile-ct and -mobile-transformers repos resolve through the variant-suffix rules.",
       "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-31B-it, accessed 2026-06-04), plus OpenRouter endpoint metadata for provider-route cap variance. Context length: 256K / raw max_position_embeddings 262144. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-31b-it",
       "aliases": [
         "google/gemma-4-31B-it",
-        "gemma-4-31B-it"
+        "gemma-4-31B-it",
+        "google/gemma-4-31B-it-assistant",
+        "google/gemma-4-31B-it-qat-q4_0-gguf",
+        "google/gemma-4-31B-it-qat-w4a16-ct",
+        "google/gemma-4-31B-it-qat-q4_0-unquantized"
       ],
       "max_tokens": 262144,
       "max_tools": -1,
@@ -3851,6 +4038,115 @@
         ]
       }
     },
+    "deepseek-v4.1-flash": {
+      "max_output_tokens": 393216,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "reasoning_levels": [
+        "none",
+        "low",
+        "high"
+      ],
+      "max_effort_supported": true,
+      "architecture": "deepseek_v4",
+      "total_parameters": "763B",
+      "active_parameters": "16B",
+      "experts": 384,
+      "experts_activated": 6,
+      "shared_experts": 1,
+      "transformer_layers": 40,
+      "attention_mechanism": "hybrid compressed sparse attention",
+      "quantization_method": "FP8 weights, FP4 experts",
+      "notes": "DeepSeek-V4.1-Flash (released 2026-09-10, 'Pushing the Limits of KV Cache Compression'), the first V4.1 Flash checkpoint; superseded on the API by DeepSeek-V4.1-Flash-1017, which the deepseek-flash model name now serves. HF config: model_type deepseek_v41 (text deepseek_v41_text) with a 32-layer deepseek_v41_vision encoder, 40 layers, hidden size 5120, 384 routed + 1 shared experts with 6 activated, 3 MTP layers (num_nextn_predict_layers), YaRN factor 16 over 65,536 original positions to max_position_embeddings 1,048,576, FP8 weights with FP4 experts. Safetensors report 763B parameters; the card describes a 552B backbone with 8B active per token at prefill and 16B at decode. Native interleaved image + text input, text output. No Jinja chat template ships; prompts are built by the reference encoding.py (thinking mode, numeric reasoning effort 1-100, mid-conversation system messages, tool calling), so local tool use stays prompted. DeepSeek API (OpenAI-compatible): thinking on by default with reasoning_effort none|low|high|max (default high; minimal maps to low, medium and xhigh to high), thinking:{type:enabled|disabled} takes precedence, chain of thought returned in reasoning_content and it must be passed back when tools are used; max_tokens 1 to 393,216 (defaults 8K non-thinking, 64K thinking, 128K at max); temperature and penalties have no effect in thinking mode. Card sampling: temperature 1.0, top_p 0.95 or 1.0, max_tokens >= 256K.",
+      "source": "Hugging Face model card and config.json (deepseek-ai/DeepSeek-V4.1-Flash, accessed 2026-11-07); DeepSeek API docs: news timeline, thinking-mode guide and create-chat-completion reference (accessed 2026-11-07)",
+      "canonical_name": "deepseek-v4.1-flash",
+      "aliases": [
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+        "DeepSeek-V4.1-Flash",
+        "nvidia/DeepSeek-V4.1-Flash-NVFP4"
+      ],
+      "max_tokens": 1048576,
+      "release_date": "2026-09-10",
+      "license": "MIT",
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "deepseek-v4.1-flash-1017": {
+      "max_output_tokens": 393216,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "reasoning_levels": [
+        "none",
+        "low",
+        "high"
+      ],
+      "max_effort_supported": true,
+      "architecture": "deepseek_v4",
+      "total_parameters": "763B",
+      "active_parameters": "16B",
+      "experts": 384,
+      "experts_activated": 6,
+      "shared_experts": 1,
+      "transformer_layers": 40,
+      "attention_mechanism": "hybrid compressed sparse attention",
+      "quantization_method": "FP8 weights, FP4 experts",
+      "notes": "DeepSeek-V4.1-Flash-1017 (released 2026-10-17): a minor update of DeepSeek-V4.1-Flash with the same architecture, trained with self-feedback reinforcement learning for stronger benchmarks, faster task completion and shorter outputs. It is the model behind the DeepSeek API name deepseek-flash, and the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp (registered under the deepseek-v4-flash entry) are now served by it too. The DeepSeek endpoint on OpenRouter lists 1,048,576 context, 393,216 max completion tokens, $0.15/$0.60 per MTok (cached input $0.003). HF config: model_type deepseek_v41 (text deepseek_v41_text) with a 32-layer deepseek_v41_vision encoder, 40 layers, hidden size 5120, 384 routed + 1 shared experts with 6 activated, 3 MTP layers (num_nextn_predict_layers), YaRN factor 16 over 65,536 original positions to max_position_embeddings 1,048,576, FP8 weights with FP4 experts. Safetensors report 763B parameters; the card describes a 552B backbone with 8B active per token at prefill and 16B at decode. Native interleaved image + text input, text output. No Jinja chat template ships; prompts are built by the reference encoding.py (thinking mode, numeric reasoning effort 1-100, mid-conversation system messages, tool calling), so local tool use stays prompted. DeepSeek API (OpenAI-compatible): thinking on by default with reasoning_effort none|low|high|max (default high; minimal maps to low, medium and xhigh to high), thinking:{type:enabled|disabled} takes precedence, chain of thought returned in reasoning_content and it must be passed back when tools are used; max_tokens 1 to 393,216 (defaults 8K non-thinking, 64K thinking, 128K at max); temperature and penalties have no effect in thinking mode. Card sampling: temperature 1.0, top_p 0.95 or 1.0, max_tokens >= 256K.",
+      "source": "Hugging Face model card and config.json (deepseek-ai/DeepSeek-V4.1-Flash-1017, accessed 2026-11-07); DeepSeek API docs: news 2026-10-17, models page, thinking-mode guide and create-chat-completion reference (accessed 2026-11-07); OpenRouter deepseek/deepseek-v4.1-flash-1017 endpoints (accessed 2026-11-07)",
+      "canonical_name": "deepseek-v4.1-flash-1017",
+      "aliases": [
+        "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "DeepSeek-V4.1-Flash-1017",
+        "deepseek-flash",
+        "deepseek/deepseek-v4.1-flash-1017",
+        "unsloth/DeepSeek-V4.1-Flash-1017-GGUF",
+        "nvidia/DeepSeek-V4.1-Flash-1017-NVFP4",
+        "mlx-community/DeepSeek-V4.1-Flash-1017-oQ4e-ngram-mtp",
+        "mlx-community/DeepSeek-V4.1-Flash-1017-oQ2e-ngram-mtp"
+      ],
+      "max_tokens": 1048576,
+      "release_date": "2026-10-17",
+      "license": "MIT",
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "kimi-k2.6": {
       "max_output_tokens": 98304,
       "tool_support": "native",
@@ -3898,6 +4194,197 @@
         ]
       }
     },
+    "kimi-k3": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "thinking_support": true,
+      "thinking_output_field": "reasoning_content",
+      "reasoning_levels": [
+        "low",
+        "high"
+      ],
+      "max_effort_supported": true,
+      "architecture": "kimi_k2",
+      "total_parameters": "2.8T",
+      "active_parameters": "104B",
+      "experts": 896,
+      "experts_activated": 16,
+      "shared_experts": 2,
+      "expert_hidden_size": 3072,
+      "transformer_layers": 93,
+      "attention_mechanism": "KDA + Gated MLA",
+      "vision_encoder": "MoonViT-V2",
+      "quantization_method": "MXFP4 (compressed-tensors)",
+      "release_date": "2026-07-16",
+      "license": "kimi-k3",
+      "notes": "Moonshot Kimi K3 flagship MoE (launch coverage dates the API 2026-07-16 and the open weights 2026-07-27 under the Kimi K3 License; the card states no date and the Hugging Face repo was created 2026-06-13): 2.8T total / 104B activated, about 2.5x the scaling efficiency of Kimi K2, 1,048,576-token context. HF config: KimiK3ForConditionalGeneration / model_type kimi_k3 with a kimi_linear text config, 93 layers (1 dense), hidden size 7168, 896 routed experts with 16 selected per token and 2 shared experts (expert hidden 3072), 69 Kimi Delta Attention (KDA) layers and 24 Gated MLA layers, MoonViT-V2 (401M) vision encoder, max_position_embeddings 1,048,576; shipped as mxfp4-pack-quantized compressed-tensors. API (platform.kimi.ai, model id kimi-k3): thinking is always on and cannot be disabled (no instant mode, so thinking_control is absent), reasoning_effort low|high|max with default max (max is not in the unified vocabulary, see max_effort_supported), reasoning returned in reasoning_content and it must be passed back together with tool_calls in multi-turn and tool-call conversations. The spec table lists text and image input while the key-features text also claims video; this registry declares image input with frame-based video. Card sampling: temperature 1.0, top_p 0.95 (1.0 for agentic tasks). No completion cap is published, so max_output_tokens is null.",
+      "source": "Hugging Face model card and config.json (moonshotai/Kimi-K3, accessed 2026-11-07); release dates per launch coverage",
+      "canonical_name": "kimi-k3",
+      "aliases": [
+        "moonshotai/Kimi-K3",
+        "Kimi-K3"
+      ],
+      "max_tokens": 1048576,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "kimi-k3.1-pro": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "thinking_support": true,
+      "thinking_output_field": "reasoning_content",
+      "reasoning_levels": [
+        "low",
+        "high"
+      ],
+      "max_effort_supported": true,
+      "architecture": "kimi_k2",
+      "total_parameters": "2.8T",
+      "active_parameters": "104B",
+      "experts": 896,
+      "experts_activated": 16,
+      "shared_experts": 2,
+      "expert_hidden_size": 3072,
+      "transformer_layers": 93,
+      "attention_mechanism": "KDA + Gated DSA",
+      "vision_encoder": "MoonViT-V2",
+      "quantization_method": "MXFP4 (compressed-tensors)",
+      "release_date": "2026-10-23",
+      "license": "kimi-k3.1-pro",
+      "notes": "Moonshot Kimi K3.1 Pro, post-trained from Kimi K3 with a much larger joint reinforcement-learning budget (launch coverage dates the API 2026-10-23, with kimi-k3.1-pro-highspeed as the faster variant, and the open weights early November 2026 under the Kimi K3.1 Pro License; the Hugging Face repo was created 2026-11-02 and the card states no date or price). Same 2.8T / 104B MoE, 1,048,576-token context, text and image input through MoonViT-V2 (401M); the full-attention Gated MLA layers are replaced by Gated DeepSeek Sparse Attention (Gated DSA): 69 KDA + 24 Gated DSA layers, 96 attention heads. HF config: KimiK31ForConditionalGeneration / model_type kimi_k31 with a kimi_linear text config, 93 layers (1 dense), hidden size 7168, 896 routed experts with 16 selected per token and 2 shared experts (expert hidden 3072), MoonViT-V2 vision encoder, max_position_embeddings 1,048,576; shipped as mxfp4-pack-quantized compressed-tensors. API (platform.kimi.ai, model id kimi-k3.1-pro, $2/$10 per MTok per launch coverage): thinking is always on and cannot be disabled (no instant mode, so thinking_control is absent), reasoning_effort low|high|max with default max (max is not in the unified vocabulary, see max_effort_supported), reasoning returned in reasoning_content and it must be passed back together with tool_calls in multi-turn and tool-call conversations. Text and image input; video is treated as frames. Card sampling: temperature 1.0, top_p 0.95 (1.0 for agentic tasks). No completion cap is published, so max_output_tokens is null.",
+      "source": "Hugging Face model card and config.json (moonshotai/Kimi-K3.1-Pro, accessed 2026-11-07); release dates and price per launch coverage",
+      "canonical_name": "kimi-k3.1-pro",
+      "aliases": [
+        "moonshotai/Kimi-K3.1-Pro",
+        "Kimi-K3.1-Pro",
+        "kimi-k3.1-pro-highspeed",
+        "kimi-k3-1-pro"
+      ],
+      "max_tokens": 1048576,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "kimi-k2.7-code": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "thinking_support": true,
+      "thinking_output_field": "reasoning_content",
+      "architecture": "kimi_k2",
+      "total_parameters": "1T",
+      "active_parameters": "32B",
+      "experts": 384,
+      "experts_activated": 8,
+      "shared_experts": 1,
+      "expert_hidden_size": 2048,
+      "transformer_layers": 61,
+      "attention_mechanism": "MLA",
+      "vision_encoder": "MoonViT",
+      "quantization_method": "INT4",
+      "release_date": "2026-06-12",
+      "license": "modified-mit",
+      "notes": "Moonshot Kimi K2.7 Code, a coding-focused agentic model built on Kimi K2.6 with the same Kimi-K2.5/K2.6 architecture (launch coverage dates it 2026-06-12): 1T total / 32B activated, 61 layers (1 dense), 384 experts with 8 selected plus 1 shared (expert hidden 2048), MLA attention with 64 heads, hidden 7168, 160K vocabulary, native INT4 weights, MoonViT (400M) image input with video documented as experimental and official-API-only (treated as frames here). 262,144-token context. Thinking and preserve_thinking are forced on and instant mode is not supported, so thinking_control is absent; interleaved thinking with multi-step tool calls as in K2 Thinking; reasoning in reasoning_content. About 30% fewer thinking tokens than K2.6. Card sampling: temperature 1.0, top_p 0.95. Modified MIT license. Moonshot's pricing page closes the K2 series to new API users from 2026-10-31 (weights stay published).",
+      "source": "Hugging Face model card (moonshotai/Kimi-K2.7-Code, accessed 2026-11-07); release date per OpenRouter and launch coverage",
+      "canonical_name": "kimi-k2.7-code",
+      "aliases": [
+        "moonshotai/Kimi-K2.7-Code",
+        "Kimi-K2.7-Code",
+        "kimi-k2.7-code-highspeed",
+        "kimi-k2-7-code"
+      ],
+      "max_tokens": 262144,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "kimi-k2.5": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "thinking_support": true,
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "template_kwarg": "thinking"
+      },
+      "architecture": "kimi_k2",
+      "total_parameters": "1T",
+      "active_parameters": "32B",
+      "experts": 384,
+      "experts_activated": 8,
+      "shared_experts": 1,
+      "attention_mechanism": "MLA",
+      "vision_encoder": "MoonViT",
+      "release_date": "2026-01-27",
+      "license": "modified-mit",
+      "notes": "Moonshot Kimi K2.5, the multimodal upgrade of Kimi K2 (released 2026-01-27 per launch coverage; changelog on the card dated 2026-01-29): 1T total / 32B activated MoE, 256K (262,144-token) context, MoonViT (400M) image input with video input documented as experimental and official-API-only (treated as frames here). Thinking mode by default and an instant mode selected with chat_template_kwargs thinking=false; interleaved thinking with multi-step tool calls as in K2 Thinking; reasoning in reasoning_content. Card sampling: temperature 1.0 in thinking mode, 0.6 in instant mode, top_p 0.95. Modified MIT license. No longer served by Moonshot's API; weights stay published.",
+      "source": "Hugging Face model card (moonshotai/Kimi-K2.5, accessed 2026-11-07); release date per launch coverage",
+      "canonical_name": "kimi-k2.5",
+      "aliases": [
+        "moonshotai/Kimi-K2.5",
+        "Kimi-K2.5",
+        "kimi-k2-5"
+      ],
+      "max_tokens": 262144,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "grok-4": {
       "max_output_tokens": null,
       "tool_support": "native",
@@ -3925,6 +4412,344 @@
       ],
       "max_tokens": 256000,
       "release_date": "2025-07",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "grok-4.7": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "reasoning_output": false,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "unsupported_parameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "notes": "xAI flagship for coding, agentic tasks and knowledge work, successor of Grok 4.6 (OpenRouter lists it 2026-09-21; knowledge cutoff May 2026 per the xAI models page). Official xAI model page: text+image input, text output, function calling, structured outputs, Batch API (20% discount), 500,000-token context; prompts of 200,000 tokens or more are billed at the higher tier for every token ($2/$6 per MTok below, $4/$12 at or above; cached input $0.50/$1). Reasoning is always on and cannot be disabled; reasoning_effort low|medium|high|xhigh, default high. Reasoning summaries are exposed on the Responses API and encrypted reasoning is always returned there; Chat Completions returns no reasoning text, hence reasoning_output=false. presence_penalty/frequency_penalty/stop are rejected on reasoning models; logprobs are ignored on grok-4.20 and newer. No hard completion cap is published, so max_output_tokens is null per registry rules.",
+      "source": "xAI docs: docs.x.ai/docs/models/grok-4.7, docs.x.ai/docs/models and docs.x.ai/docs/guides/reasoning (accessed 2026-11-07); OpenRouter x-ai/grok-4.7 endpoints (created 2026-09-21, accessed 2026-11-07)",
+      "canonical_name": "grok-4.7",
+      "aliases": [
+        "x-ai/grok-4.7",
+        "xai/grok-4.7"
+      ],
+      "max_tokens": 500000,
+      "release_date": "2026-09",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "grok-4.6": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "reasoning_output": false,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "unsupported_parameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "notes": "xAI frontier model preceding Grok 4.7 (press coverage dates it 2026-08-12). Official xAI model page: text+image input, text output, function calling, structured outputs, Batch API (20% discount), 500,000-token context; $2/$6 per MTok below 200,000 prompt tokens, $4/$12 at or above (cached input $0.50/$1). Reasoning is always on and cannot be disabled; reasoning_effort low|medium|high|xhigh, default high (xhigh is supported from grok-4.6 on). No reasoning text on Chat Completions (reasoning_output=false); presence_penalty/frequency_penalty/stop are rejected on reasoning models. No published completion cap, so max_output_tokens is null.",
+      "source": "xAI docs: docs.x.ai/docs/models/grok-4.6 and docs.x.ai/docs/guides/reasoning (accessed 2026-11-07)",
+      "canonical_name": "grok-4.6",
+      "aliases": [
+        "x-ai/grok-4.6",
+        "xai/grok-4.6"
+      ],
+      "max_tokens": 500000,
+      "release_date": "2026-08",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "grok-4.5": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "reasoning_output": false,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "unsupported_parameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "notes": "xAI frontier model preceding Grok 4.6 (OpenRouter lists it 2026-07-08). Official xAI model page: text+image input, text output, function calling, structured outputs, Batch API (20% discount), 500,000-token context; $2/$6 per MTok below 200,000 prompt tokens, $4/$12 at or above (cached input $0.30/$0.60). Reasoning is always on and cannot be disabled; reasoning_effort low|medium|high, default high: the model page also lists xhigh but the reasoning guide states xhigh is treated as high on grok-4.5, so the registry stops at high. No reasoning text on Chat Completions (reasoning_output=false); presence_penalty/frequency_penalty/stop are rejected on reasoning models. The xAI page lists grok-build-latest as an alias of this model. No published completion cap, so max_output_tokens is null.",
+      "source": "xAI docs: docs.x.ai/docs/models/grok-4.5 and docs.x.ai/docs/guides/reasoning (accessed 2026-11-07)",
+      "canonical_name": "grok-4.5",
+      "aliases": [
+        "grok-4.5-latest",
+        "grok-build-latest",
+        "x-ai/grok-4.5",
+        "xai/grok-4.5"
+      ],
+      "max_tokens": 500000,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-07"
+    },
+    "grok-4.3": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "reasoning_output": false,
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "unsupported_parameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "notes": "xAI reasoning model for agentic workflows and high factual accuracy at a lower price tier (OpenRouter lists it 2026-04-30). Official xAI model page: text+image input, text output, function calling, structured outputs, Batch API (20% discount), 1,000,000-token context; $1.25/$2.50 per MTok below 200,000 prompt tokens, $2.50/$5 at or above (cached input $0.20/$0.40). reasoning_effort none|low|medium|high|xhigh with default low per the model page (none turns reasoning off for the request). No reasoning text on Chat Completions (reasoning_output=false); presence_penalty/frequency_penalty/stop are rejected on reasoning models. OpenRouter advertises a 900,000-token completion ceiling, but xAI publishes no cap, so max_output_tokens stays null.",
+      "source": "xAI docs: docs.x.ai/docs/models/grok-4.3 (accessed 2026-11-07); OpenRouter x-ai/grok-4.3 endpoints (accessed 2026-11-07)",
+      "canonical_name": "grok-4.3",
+      "aliases": [
+        "grok-4.3-latest",
+        "x-ai/grok-4.3",
+        "xai/grok-4.3"
+      ],
+      "max_tokens": 1000000,
+      "release_date": "2026-04",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "grok-4.20-0309-reasoning": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "reasoning_output": false,
+      "unsupported_parameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "notes": "xAI Grok 4.20 reasoning snapshot of 2026-03-09, the model the bare grok-4.20 alias resolves to. Official xAI model page: text+image input, text output, function calling, structured outputs, Batch API (20% discount), 1,000,000-token context; $1.25/$2.50 per MTok below 200,000 prompt tokens, $2.50/$5 at or above (cached input $0.20/$0.40). The model page lists Reasoning: Yes but no reasoning_effort levels, so reasoning_levels is deliberately absent and providers never send reasoning_effort; no reasoning text on Chat Completions (reasoning_output=false); presence_penalty/frequency_penalty/stop are rejected on reasoning models; logprobs are ignored. No published completion cap, so max_output_tokens is null.",
+      "source": "xAI docs: docs.x.ai/docs/models/grok-4.20-0309-reasoning (accessed 2026-11-07)",
+      "canonical_name": "grok-4.20-0309-reasoning",
+      "aliases": [
+        "grok-4.20",
+        "grok-4.20-reasoning",
+        "grok-4.20-reasoning-latest",
+        "grok-4.20-0309",
+        "grok-4.20-beta",
+        "grok-4.20-beta-0309",
+        "grok-4.20-beta-latest",
+        "grok-4.20-beta-0309-reasoning",
+        "grok-4.20-beta-reasoning",
+        "grok-4.20-beta-latest-reasoning",
+        "grok-4.20-experimental-beta-0304",
+        "grok-4.20-experimental-beta-0304-reasoning",
+        "grok-4.20-experimental-beta-latest",
+        "grok-4.20-experimental-beta-reasoning-latest",
+        "grok-4.20-reasoning-gv2",
+        "x-ai/grok-4.20",
+        "x-ai/grok-4.20-beta"
+      ],
+      "max_tokens": 1000000,
+      "release_date": "2026-03-09",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "grok-4.20-0309-non-reasoning": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": false,
+      "notes": "xAI Grok 4.20 non-reasoning snapshot of 2026-03-09 (Reasoning: No on the model page). Official xAI model page: text+image input, text output, function calling, structured outputs, Batch API (20% discount), 1,000,000-token context; $1.25/$2.50 per MTok below 200,000 prompt tokens, $2.50/$5 at or above (cached input $0.20/$0.40). logprobs are ignored on grok-4.20 and newer. No published completion cap, so max_output_tokens is null.",
+      "source": "xAI docs: docs.x.ai/docs/models/grok-4.20-0309-non-reasoning (accessed 2026-11-07)",
+      "canonical_name": "grok-4.20-0309-non-reasoning",
+      "aliases": [
+        "grok-4.20-non-reasoning",
+        "grok-4.20-non-reasoning-latest",
+        "grok-4.20-beta-non-reasoning",
+        "grok-4.20-beta-latest-non-reasoning",
+        "grok-4.20-beta-0309-non-reasoning",
+        "grok-4.20-experimental-beta-0304-non-reasoning",
+        "grok-4.20-experimental-beta-non-reasoning-latest",
+        "grok-4.20-non-reasoning-gv2"
+      ],
+      "max_tokens": 1000000,
+      "release_date": "2026-03-09",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "grok-4.20-multi-agent-0309": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "reasoning_output": false,
+      "unsupported_parameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "notes": "xAI Grok 4.20 multi-agent snapshot of 2026-03-09: multiple agents collaborate in parallel on deep-research tasks. Official xAI model page: text+image input, text output, function calling, structured outputs, Batch API (20% discount), 1,000,000-token context; $1.25/$2.50 per MTok below 200,000 prompt tokens, $2.50/$5 at or above (cached input $0.20/$0.40); rate limit 9 requests per second. The reasoning guide states reasoning.effort on this model selects how many agents collaborate (4 or 16) rather than reasoning depth, so reasoning_levels is deliberately absent; no reasoning text on Chat Completions (reasoning_output=false). No published completion cap, so max_output_tokens is null.",
+      "source": "xAI docs: docs.x.ai/docs/models/grok-4.20-multi-agent-0309 and docs.x.ai/docs/guides/reasoning (accessed 2026-11-07)",
+      "canonical_name": "grok-4.20-multi-agent-0309",
+      "aliases": [
+        "grok-4.20-multi-agent",
+        "grok-4.20-multi-agent-latest",
+        "grok-4.20-multi-agent-beta-latest",
+        "grok-4.20-multi-agent-beta-0309",
+        "grok-4.20-multi-agent-experimental-beta-0304",
+        "grok-4.20-multi-agent-experimental-beta-latest",
+        "x-ai/grok-4.20-multi-agent",
+        "x-ai/grok-4.20-multi-agent-beta"
+      ],
+      "max_tokens": 1000000,
+      "release_date": "2026-03-09",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "grok-build-0.1": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "reasoning_output": false,
+      "unsupported_parameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "notes": "xAI coding model for agentic software, engineering and workflow tasks; the model page lists grok-code-fast-1, grok-code-fast and grok-code-fast-1-0825 as its aliases. Official page: text+image input, text output, function calling, structured outputs, Batch API NOT supported, 256,000-token context; $1/$2 per MTok below 200,000 prompt tokens, $2/$4 at or above (cached input $0.20/$0.40). Reasoning: Yes with no published reasoning_effort levels, so reasoning_levels is deliberately absent; no reasoning text on Chat Completions (reasoning_output=false); presence_penalty/frequency_penalty/stop are rejected on reasoning models. No published completion cap, so max_output_tokens is null.",
+      "source": "xAI docs: docs.x.ai/docs/models/grok-build-0.1 (accessed 2026-11-07)",
+      "canonical_name": "grok-build-0.1",
+      "aliases": [
+        "grok-code-fast-1",
+        "grok-code-fast",
+        "grok-code-fast-1-0825",
+        "x-ai/grok-build-0.1",
+        "x-ai/grok-code-fast-1"
+      ],
+      "max_tokens": 256000,
       "capability_routes": {
         "input": [
           "text",
@@ -4818,6 +5643,173 @@
       },
       "notes": "Mixed affine Q4 MLX conversion with embedded MTP, 106.32 GB checkpoint. AbstractCore mlx uses mlx-vlm>=0.7.1 in-process; no inference server. Default PLE mmap keeps the 29.8 GiB n-gram table on disk and reads required rows. Native prefix caching requires full messages. Non-neutral logits penalties require target-only decoding; strict MTP refuses unsupported combinations. IQ4_XS is a GGUF quantization, not this MLX format.",
       "source": "Hugging Face artifact config, index and model card; native AbstractCore execution on M5 Max 128 GiB, 2026-09-20."
+    },
+    "qwen3.8-2.4t-a95b": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "architecture": "qwen3_8",
+      "total_parameters": "2.4T",
+      "active_parameters": "95B",
+      "experts": 512,
+      "shared_experts": 1,
+      "experts_activated": 10,
+      "transformer_layers": 92,
+      "notes": "Qwen3.8-2.4T-A95B open-weight text-only MoE reasoning model (released 2026-08-12), the open checkpoint behind the hosted Qwen3.8-Max: 2.4T total / 95B activated, 92 layers laid out as 23 x (3 x (Gated DeltaNet -> MoE) then 1 x (Gated Attention -> MoE)) with hidden size 8192, 512 routed experts + 1 shared with 10 activated (HF model_type qwen3_5_moe_text, architecture Qwen3_5MoeForCausalLM), one MTP layer (mtp_num_hidden_layers=1). 262,144-token native context, extensible to about 1,010,000 tokens. Multimodal inputs are NOT supported by this checkpoint (vision only in the hosted Qwen3.8-Max). Thinking is always on: the card says enable_thinking cannot be turned off, so thinking_control is deliberately absent; reasoning_effort xhigh (default) | medium | low, preserve_thinking on by default; Qwen3-Coder XML tool calls (qwen3_coder parser). Card output budgets: 131,072 final response, 262,144 reasoning. Thinking-mode sampling: temperature 1.0, top_p 0.95, top_k 20, min_p 0, presence_penalty 0. Shipped under the qwen3.8-max license, not Apache-2.0.",
+      "source": "Hugging Face model card and config.json (Qwen/Qwen3.8-2.4T-A95B, accessed 2026-11-07); QwenLM/Qwen3.8 GitHub news (2026-08-12)",
+      "canonical_name": "qwen3.8-2.4t-a95b",
+      "aliases": [
+        "Qwen/Qwen3.8-2.4T-A95B",
+        "Qwen/Qwen3.8-2.4T-A95B-FP8",
+        "qwen3.8:2.4t-a95b",
+        "unsloth/Qwen3.8-2.4T-A95B-GGUF"
+      ],
+      "max_tokens": 262144,
+      "license": "qwen3.8-max",
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      }
+    },
+    "qwen3.8-max": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "thinking_support": true,
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "total_parameters": "2.4T",
+      "active_parameters": "95B",
+      "notes": "Qwen3.8-Max, Alibaba's hosted flagship (launch coverage dates the production release 2026-08-03; the qwen3.8-max-0902 snapshot, alias qwen3.8-max-2026-09-02, dates from 2026-09-02). Model Studio publishes no parameter count; the open Qwen/Qwen3.8-2.4T-A95B card states vision input is available only in the hosted Qwen3.8-Max, which is why this entry carries that checkpoint's 2.4T/95B figures and its reasoning_effort levels. Hosted on Alibaba Cloud Model Studio (OpenAI-compatible endpoint): 1,000,000-token context window, max input 991,808 tokens (983,616 in thinking mode), max output 131,072, max chain-of-thought 262,144; image, text and video input, text output; function calling supported; hybrid thinking mode on by default (enable_thinking=false turns it off), thinking returned in reasoning_content. reasoning_effort xhigh|medium|low per that open checkpoint's card (the Model Studio page confirms adjustable effort but lists no values; the sibling qwen3.8-flash entry has no such open counterpart and therefore declares no levels). Pricing (Singapore / US scope) $2 input, $6 output, $0.25 cached input per MTok; other regions $1.65/$4.951. Also served by OpenRouter as qwen/qwen3.8-max-0902.",
+      "source": "Alibaba Cloud Model Studio qwen3.8-max page and thinking-mode guide (accessed 2026-11-07); OpenRouter qwen/qwen3.8-max-0902 endpoints (accessed 2026-11-07); Qwen/Qwen3.8-2.4T-A95B card for reasoning_effort values",
+      "canonical_name": "qwen3.8-max",
+      "aliases": [
+        "qwen3.8-max-0902",
+        "qwen3.8-max-2026-09-02",
+        "qwen/qwen3.8-max",
+        "qwen/qwen3.8-max-0902"
+      ],
+      "max_tokens": 1000000,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "qwen3.8-flash": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "thinking_support": true,
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "notes": "Qwen3.8-Flash, Alibaba's hosted fast and cost-effective Qwen3.8 tier. Hosted on Alibaba Cloud Model Studio (OpenAI-compatible endpoint): 1,000,000-token context window, max input 991,808 tokens (983,616 in thinking mode), max output 131,072, max chain-of-thought 262,144; image, text and video input, text output; function calling supported; hybrid thinking mode on by default (enable_thinking=false turns it off), thinking returned in reasoning_content. The Model Studio page confirms adjustable reasoning effort but publishes no level names, so reasoning_levels is deliberately absent and providers never send reasoning_effort. Pricing (Singapore / US scope) $0.15 input, $0.47 output, $0.016 cached input per MTok; global scope $0.113/$0.382.",
+      "source": "Alibaba Cloud Model Studio qwen3.8-flash page and thinking-mode guide (accessed 2026-11-07)",
+      "canonical_name": "qwen3.8-flash",
+      "aliases": [
+        "qwen/qwen3.8-flash"
+      ],
+      "max_tokens": 1000000,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "qwen3.8-omni-flash": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound"
+      ],
+      "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "thinking_support": true,
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "notes": "Qwen3.8-Omni-Flash, Alibaba's hosted omni model for audio/video analysis and text generation (the -realtime sibling adds speech-to-speech). Model Studio page: 1,000,000-token context window, max input 991,808 (983,616 in thinking mode), max output 131,072; text, images, audio and video input; text output only on this endpoint; custom tool calling and the built-in Responses web_search tool; thinking enabled by default with adjustable reasoning_effort whose level names are not published on the page, so reasoning_levels is deliberately absent. Audio understanding is documented as audio/video analysis, so speech and sound routes are declared; music is not claimed.",
+      "source": "Alibaba Cloud Model Studio qwen3.8-omni-flash page and models overview (accessed 2026-11-07)",
+      "canonical_name": "qwen3.8-omni-flash",
+      "aliases": [
+        "qwen/qwen3.8-omni-flash"
+      ],
+      "max_tokens": 1000000,
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "qwen3.8-flash-next": {
       "max_output_tokens": 131072,
@@ -5784,6 +6776,144 @@
       "notes": "GPT-6 family efficient model for focused, high-volume tasks (successor of gpt-5.6-luna). Official model page: 1,050,000-token context window, 922,000 max input, 128,000 max output; reasoning token support; reasoning.effort none|low|medium|high|xhigh|max, default medium (max is not in the unified thinking vocabulary, see max_effort_supported); knowledge cutoff 2026-05-18; text+image input, text output; streaming, structured outputs, function calling, prompt caching; Chat Completions, Responses and Batch endpoints. The page notes Chat Completions supports function calling only with reasoning_effort none and recommends the Responses API for tools. max_tokens records the published 1,050,000 window: the 400,000-token Codex-backend session ceiling wire-verified for gpt-5.6-sol is NOT verified for GPT-6. Observed via OpenAI-compatible proxy 2026-10-25: accepts reasoning_effort none|low|medium|high and rejects 'minimal'.",
       "source": "OpenAI model page developers.openai.com/api/docs/models/gpt-6-luna (accessed 2026-10-25); reasoning_effort acceptance observed via OpenAI-compatible proxy 2026-10-25",
       "canonical_name": "gpt-6-luna",
+      "aliases": [],
+      "max_tokens": 1050000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gpt-6-astra": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "max_effort_supported": true,
+      "notes": "GPT-6 family flagship (launch coverage dates it 2026-09-03, phased rollout; successor of gpt-5.6-sol at the top tier). reasoning.effort low|medium|high|xhigh|max with no 'none' level (max is not in the unified thinking vocabulary, see max_effort_supported); knowledge cutoff 2026-04-30; $10/$50 per MTok, cached input $1. Official model page: 1,050,000-token context window, 922,000 max input, 128,000 max output; text+image input, text output (audio and video input are not supported); reasoning token support; streaming, structured outputs, function calling, prompt caching; Chat Completions, Responses and Batch endpoints; hosted tools (web search, file search, computer use, code interpreter, MCP) are listed for the Responses API only. Prompts over 272,000 input tokens are billed 2x input and 1.5x output for the whole request. max_tokens records the published 1,050,000 window: the 400,000-token Codex-backend session ceiling wire-verified for gpt-5.6-sol is NOT verified for GPT-6. Listed by the airelay Codex relay as gpt-6-astra (model list read 2026-11-07); not wire-tested.",
+      "source": "OpenAI model page developers.openai.com/api/docs/models/gpt-6-astra and models overview (accessed 2026-11-07); launch date per openai.com/index/gpt-6-astra coverage (CNBC/Axios 2026-09-03)",
+      "canonical_name": "gpt-6-astra",
+      "aliases": [],
+      "max_tokens": 1050000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gpt-6-sol": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "max_effort_supported": true,
+      "notes": "GPT-6 family mid-tier (launch coverage dates API availability 2026-09-22, together with gpt-6-luna); the OpenAI model page points to gpt-6.1-sol as the newer Sol model, so prefer that for new work. reasoning.effort none|low|medium|high|xhigh|max, default medium (max is not in the unified thinking vocabulary, see max_effort_supported); knowledge cutoff 2026-04-20; $2/$10 per MTok, cached input $0.20. Official model page: 1,050,000-token context window, 922,000 max input, 128,000 max output; text+image input, text output (audio and video input are not supported); reasoning token support; streaming, structured outputs, function calling, prompt caching; Chat Completions, Responses and Batch endpoints; hosted tools (web search, file search, computer use, code interpreter, MCP) are listed for the Responses API only. Prompts over 272,000 input tokens are billed 2x input and 1.5x output for the whole request. max_tokens records the published 1,050,000 window: the 400,000-token Codex-backend session ceiling wire-verified for gpt-5.6-sol is NOT verified for GPT-6. The page states Chat Completions supports function calling only with reasoning_effort none and recommends the Responses API for tools. Listed by the airelay Codex relay as gpt-6-sol (model list read 2026-11-07); not wire-tested.",
+      "source": "OpenAI model page developers.openai.com/api/docs/models/gpt-6-sol (accessed 2026-11-07); API availability date 2026-09-22 per launch coverage",
+      "canonical_name": "gpt-6-sol",
+      "aliases": [],
+      "max_tokens": 1050000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gpt-6.1-sol": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "max_effort_supported": true,
+      "notes": "GPT-6.1 family mid-tier (launch coverage dates it 2026-09-29; upgrade of gpt-6-sol, near-Astra performance at one fifth of its price). reasoning.effort low|medium|high|xhigh|max with no 'none' level, default medium (max is not in the unified thinking vocabulary, see max_effort_supported); knowledge cutoff 2026-04-30; $2/$10 per MTok, cached input $0.10; in Codex and ChatGPT Work the default context window is 500,000 tokens with no long-context surcharge. Official model page: 1,050,000-token context window, 922,000 max input, 128,000 max output; text+image input, text output (audio and video input are not supported); reasoning token support; streaming, structured outputs, function calling, prompt caching; Chat Completions, Responses and Batch endpoints; hosted tools (web search, file search, computer use, code interpreter, MCP) are listed for the Responses API only. Prompts over 272,000 input tokens are billed 2x input and 1.5x output for the whole request. max_tokens records the published 1,050,000 window: the 400,000-token Codex-backend session ceiling wire-verified for gpt-5.6-sol is NOT verified for GPT-6. The page states tool calling requires the Responses API. Listed by the airelay Codex relay as gpt-6.1-sol (model list read 2026-11-07); not wire-tested.",
+      "source": "OpenAI model page developers.openai.com/api/docs/models/gpt-6.1-sol and models overview (accessed 2026-11-07); release date per DevDay 2026-09-29 coverage",
+      "canonical_name": "gpt-6.1-sol",
+      "aliases": [],
+      "max_tokens": 1050000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gpt-6.1-terra": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "max_effort_supported": true,
+      "notes": "GPT-6.1 family cost-efficient model (launch coverage dates it 2026-10-26; successor of gpt-5.6-terra at half its price, built for computer use and agentic work). reasoning.effort none|low|medium|high|xhigh|max, default medium (max is not in the unified thinking vocabulary, see max_effort_supported); knowledge cutoff 2026-06-01; $1/$5 per MTok, cached input $0.05. Official model page: 1,050,000-token context window, 922,000 max input, 128,000 max output; text+image input, text output (audio and video input are not supported); reasoning token support; streaming, structured outputs, function calling, prompt caching; Chat Completions, Responses and Batch endpoints; hosted tools (web search, file search, computer use, code interpreter, MCP) are listed for the Responses API only. Prompts over 272,000 input tokens are billed 2x input and 1.5x output for the whole request. max_tokens records the published 1,050,000 window: the 400,000-token Codex-backend session ceiling wire-verified for gpt-5.6-sol is NOT verified for GPT-6. The page states tool calling requires the Responses API; wire-verified 2026-11-07 through the airelay Codex relay on /v1/chat/completions: a base64 PNG image_url was read correctly with reasoning_effort low and none (24 prompt tokens, 0 reasoning tokens), and a function call with reasoning_effort low returned a well-formed tool_calls entry (the relay fronts the Codex backend and may translate to the Responses API, so this does not prove OpenAI's own Chat Completions endpoint accepts tools at that effort).",
+      "source": "OpenAI model page developers.openai.com/api/docs/models/gpt-6.1-terra and models overview (accessed 2026-11-07); release date per openai.com/index/introducing-gpt-6-1-terra coverage (2026-10-26); image input and tool calling wire-verified via airelay relay 2026-11-07",
+      "canonical_name": "gpt-6.1-terra",
       "aliases": [],
       "max_tokens": 1050000,
       "video_support": false,
@@ -7814,10 +8944,13 @@
         "unsloth/MiniMax-M2-GGUF",
         "minimax-m2-230b",
         "minimax-m2-10b-active",
-        "minimax/minimax-m2"
+        "minimax/minimax-m2",
+        "lmstudio-community/MiniMax-M2-MLX-4bit",
+        "lmstudio-community/MiniMax-M2-MLX-6bit",
+        "lmstudio-community/MiniMax-M2-MLX-8bit"
       ],
       "max_tokens": 208896,
-      "release_date": "2025-01",
+      "release_date": "2025-10-27",
       "license": "Apache-2.0",
       "inference_parameters": {
         "temperature": 1.0,
@@ -7852,17 +8985,18 @@
       "thinking_paradigm": "interleaved_thinking",
       "thinking_format": "<think>...</think>",
       "agentic_coding": true,
-      "notes": "MiniMax M2.1 enhanced MoE model (229B total/10B active) optimized for advanced coding, agentic workflows, and full-stack development. 200K token context window with massive 128K output capacity. Significant improvements over M2 in multilingual software engineering (SWE-bench Multilingual: 72.5%), achieving performance close to Claude Opus 4.5. Excels at full-stack development with VIBE average of 88.6 (Web: 91.5, Android: 89.7). Uses interleaved thinking with <think> tags. Achieves 74.0% on SWE-bench Verified, 47.9% on Terminal-bench 2.0. Supports complete native tool calling for agent workflows.",
+      "notes": "MiniMax M2.1 enhanced MoE model (229B total/10B active) optimized for advanced coding, agentic workflows, and full-stack development. 200K token context window with massive 128K output capacity. Significant improvements over M2 in multilingual software engineering (SWE-bench Multilingual: 72.5%), achieving performance close to Claude Opus 4.5. Excels at full-stack development with VIBE average of 88.6 (Web: 91.5, Android: 89.7). Uses interleaved thinking with <think> tags. Achieves 74.0% on SWE-bench Verified, 47.9% on Terminal-bench 2.0. Supports complete native tool calling for agent workflows. Released 2025-12-22 per the MiniMax platform release notes (the earlier 2024-12 release_date in this entry was wrong).",
       "source": "MiniMax official docs (platform.minimax.io, HuggingFace MiniMaxAI/MiniMax-M2.1)",
       "canonical_name": "minimax-m2.1",
       "aliases": [
         "MiniMaxAI/MiniMax-M2.1",
         "minimax-m2.1-229b",
         "minimax-m2.1-10b-active",
-        "minimax/minimax-m2.1"
+        "minimax/minimax-m2.1",
+        "unsloth/MiniMax-M2.1-GGUF"
       ],
       "max_tokens": 204800,
-      "release_date": "2024-12",
+      "release_date": "2025-12-22",
       "license": "Modified-MIT",
       "arxiv": "2509.06501",
       "benchmarks": {
@@ -7929,11 +9063,71 @@
       "canonical_name": "minimax-m2.5",
       "aliases": [
         "MiniMaxAI/MiniMax-M2.5",
-        "minimax/minimax-m2.5"
+        "minimax/minimax-m2.5",
+        "unsloth/MiniMax-M2.5-GGUF",
+        "lmstudio-community/MiniMax-M2.5-MLX-4bit",
+        "lmstudio-community/MiniMax-M2.5-MLX-6bit",
+        "lmstudio-community/MiniMax-M2.5-MLX-8bit",
+        "nvidia/MiniMax-M2.5-NVFP4",
+        "MiniMax-M2.5-highspeed"
       ],
       "max_tokens": 196608,
       "max_tools": -1,
       "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-02"
+    },
+    "minimax-m2.7": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_paradigm": "interleaved_thinking",
+      "architecture": "minimax_m2",
+      "total_parameters": "229B",
+      "active_parameters": "10B",
+      "experts": 256,
+      "experts_activated": 8,
+      "transformer_layers": 62,
+      "tensor_type": "FP8",
+      "notes": "MiniMax-M2.7 text MoE (API 2026-03-18 together with MiniMax-M2.7-highspeed; the Hugging Face repo was created 2026-04-09): 229B total per the Safetensors metadata (NVIDIA quotes 230B) with 10B activated per token, 62 layers, hidden size 3072, 256 routed experts with 8 activated and no shared expert, 204,800-token context (config max_position_embeddings), FP8 weights (float8_e4m3fn, 128x128 blocks). Same MiniMaxM2ForCausalLM architecture as M2.1/M2.5; MiniMax presents it as the first of its models that participated in its own evolution (SWE-Pro 56.22%, Terminal-Bench 2 57.0% per the launch post). Interleaved <think> reasoning (the generation prompt ends with an opening <think>); XML tool calls in <minimax:tool_call><invoke name=...><parameter name=...> blocks, parsed by vLLM/SGLang. No completion cap is published, so max_output_tokens is null. Card sampling temperature 1.0, top_p 0.95, top_k 40. MiniMax's pricing page no longer lists M2.7 (only M3 and M3.1 Flash), so no price is recorded. License: MiniMax model license (HF 'other').",
+      "source": "Hugging Face model card, config.json and docs/tool_calling_guide.md (MiniMaxAI/MiniMax-M2.7, accessed 2026-11-07); MiniMax platform release notes 2026-03-18 (accessed 2026-11-07); NVIDIA developer blog for the 230B/10B/256-expert summary",
+      "canonical_name": "minimax-m2.7",
+      "aliases": [
+        "MiniMaxAI/MiniMax-M2.7",
+        "MiniMax-M2.7",
+        "MiniMax-M2.7-highspeed",
+        "minimax/minimax-m2.7",
+        "unsloth/MiniMax-M2.7-GGUF",
+        "lmstudio-community/MiniMax-M2.7-GGUF",
+        "bartowski/MiniMaxAI_MiniMax-M2.7-GGUF",
+        "nvidia/MiniMax-M2.7-NVFP4"
+      ],
+      "max_tokens": 204800,
+      "release_date": "2026-03-18",
+      "license": "other",
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 40
+      },
       "capability_routes": {
         "input": [
           "text"
@@ -9741,6 +10935,111 @@
         ]
       }
     },
+    "glm-5.3": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "reasoning_levels": [
+        "low",
+        "high"
+      ],
+      "max_effort_supported": true,
+      "architecture": "glm5_dsa",
+      "total_parameters": "753B",
+      "active_parameters": "40B",
+      "experts": 256,
+      "shared_experts": 1,
+      "experts_activated": 8,
+      "transformer_layers": 78,
+      "license": "glm-5.3",
+      "release_date": "2026-08-14",
+      "notes": "GLM-5.3 frontier coding flagship (launch coverage dates the API 2026-08-14 and the open weights 2026-08-28 after a safety hold; the Hugging Face repo was created 2026-08-25 and Z.ai publishes no date; released under the bespoke GLM-5.3 license rather than MIT). HF config: GlmMoeDsaForCausalLM / model_type glm_moe_dsa, 78 layers, hidden size 6144, 256 routed + 1 shared experts with 8 activated, one MTP layer, max_position_embeddings 1,048,576, FP8 weights (BF16 in zai-org/GLM-5.3-BF16). Z.ai API: text-only input, 1M-token context, 128K max output, function calling and JSON structured output; reasoning is always on (thinking.type accepts only enabled, disabled fails the request), reasoning_effort low|high|max with default max (max is not in the unified thinking vocabulary, see max_effort_supported); the chat template's clear_thinking defaults to false. Because thinking cannot be turned off, thinking_control is deliberately absent. Z.ai pricing $1.40 input, $0.26 cached input, $4.40 output per MTok. Evaluation sampling on the card: temperature 1.0, top_p 0.95.",
+      "source": "Hugging Face model card and config.json (zai-org/GLM-5.3, accessed 2026-11-07); Z.ai docs docs.z.ai/guides/llm/glm-5.3 and pricing page (accessed 2026-11-07); release dates per launch coverage",
+      "canonical_name": "glm-5.3",
+      "aliases": [
+        "zai-org/GLM-5.3",
+        "zai-org/GLM-5.3-BF16",
+        "z-ai/glm-5.3",
+        "unsloth/GLM-5.3-GGUF"
+      ],
+      "max_tokens": 1048576,
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "glm-5.3-flash": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "reasoning_levels": [
+        "low",
+        "high"
+      ],
+      "max_effort_supported": true,
+      "architecture": "glm5_next",
+      "total_parameters": "320B",
+      "active_parameters": "18B",
+      "experts": 288,
+      "shared_experts": 1,
+      "experts_activated": 8,
+      "transformer_layers": 45,
+      "license": "MIT",
+      "release_date": "2026-08-26",
+      "notes": "GLM-5.3-Flash (released 2026-08-26, MIT): the first natively multimodal GLM-5 model, trained from a new base on a 30T-token multimodal corpus. HF config: Glm5NextForConditionalGeneration / model_type glm5_next (text glm5_next_text, vision glm5_next_vision), 45 layers, hidden size 4096, 288 routed + 1 shared experts with 8 activated, hybrid sparse + linear attention with Manifold-Constrained Hyper-Connections, one MTP layer, max_position_embeddings 1,048,576, FP8 weights (BF16 in zai-org/GLM-5.3-Flash-BF16). Chat conventions follow the GLM-5 family (architecture_formats glm5_dsa pattern), while the registry records the true HF model_type here. Z.ai API (glm-5.3-flash, and glm-5.3-flashx with identical weights served at up to 200 tokens/s): video, image, text and file input, text output, 1M context, 128K max output, function calling (tool_stream recommended when streaming) and JSON structured output; thinking.type accepts only enabled, recommended reasoning_effort max; the Flash page lists no other values, so low|high|max is carried over from the GLM-5.3 page (max is not in the unified vocabulary, see max_effort_supported) and thinking.clear_thinking false; thinking_control is deliberately absent because thinking cannot be turned off. Z.ai pricing $0.15/$0.50 per MTok (cached input $0.03); FlashX $0.37/$1.25. Recommended sampling temperature 1.0, top_p 0.95.",
+      "source": "Hugging Face model card and config.json (zai-org/GLM-5.3-Flash, accessed 2026-11-07); Z.ai docs docs.z.ai/guides/llm/glm-5.3-flash and pricing page (accessed 2026-11-07); release date per launch coverage",
+      "canonical_name": "glm-5.3-flash",
+      "aliases": [
+        "zai-org/GLM-5.3-Flash",
+        "zai-org/GLM-5.3-Flash-BF16",
+        "z-ai/glm-5.3-flash",
+        "glm-5.3-flashx",
+        "z-ai/glm-5.3-flashx",
+        "unsloth/GLM-5.3-Flash-GGUF",
+        "ggml-org/GLM-5.3-Flash-GGUF",
+        "nvidia/GLM-5.3-Flash-NVFP4",
+        "Jundot/GLM-5.3-Flash-oQ4e-mtp"
+      ],
+      "max_tokens": 1048576,
+      "max_tools": -1,
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "hy3": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
@@ -9856,7 +11155,7 @@
       "parallel_tools": false,
       "vision_support": true,
       "audio_support": false,
-      "video_support": false,
+      "video_support": true,
       "thinking_support": true,
       "thinking_tags": [
         "<mm:think>",
@@ -9866,14 +11165,17 @@
       "total_parameters": "428B",
       "active_parameters": "23B",
       "experts": 128,
-      "notes": "MiniMax-M3 multimodal MoE (~428B total / ~23B activated; 128 experts) with MiniMax Sparse Attention and a 1,048,576-token context per config (per-token attention compute reported at ~1/20 of dense at 1M). Vision-language input; interleaved thinking wrapped in <mm:think> tags; namespaced ']<]minimax[>[' special-token chat format (serve via an OpenAI-compatible stack rather than local prompt rendering). No separate output cap documented — 8,192 is a conservative default, raise per deployment.",
-      "source": "Hugging Face model card, config and chat template (MiniMaxAI/MiniMax-M3, accessed 2026-07-13)",
+      "notes": "MiniMax-M3 multimodal MoE (~428B total / ~23B activated; 128 experts) with MiniMax Sparse Attention and a 1,048,576-token context per config (per-token attention compute reported at ~1/20 of dense at 1M). Vision-language input; interleaved thinking wrapped in <mm:think> tags; namespaced ']<]minimax[>[' special-token chat format (serve via an OpenAI-compatible stack rather than local prompt rendering). No separate output cap documented — 8,192 is a conservative default, raise per deployment. Card update read 2026-11-07: text, image AND video input (mixed-modality training), 60 layers with 128 routed + 1 shared experts and 4 activated per token (config), image_size 2016 CLIP vision tower; thinking is set through the API thinking parameter with modes enabled (always reason), adaptive (model decides) and disabled. Released 2026-06-01 per the MiniMax platform release notes; MiniMaxAI/MiniMax-M3-MXFP8 is the official MXFP8 checkpoint.",
+      "source": "Hugging Face model card, config and chat template (MiniMaxAI/MiniMax-M3, accessed 2026-07-13); MiniMax platform release notes and Hugging Face config.json (accessed 2026-11-07)",
       "canonical_name": "minimax-m3",
       "aliases": [
         "MiniMaxAI/MiniMax-M3",
         "minimax/minimax-m3",
         "nvidia/MiniMax-M3-NVFP4",
-        "unsloth/MiniMax-M3-GGUF"
+        "unsloth/MiniMax-M3-GGUF",
+        "MiniMaxAI/MiniMax-M3-MXFP8",
+        "bartowski/MiniMax-M3-GGUF",
+        "MiniMax-M3"
       ],
       "max_tokens": 1048576,
       "inference_parameters": {
@@ -9881,11 +11183,75 @@
         "top_p": 0.95
       },
       "max_tools": -1,
-      "video_input_mode": "frames",
+      "video_input_mode": "native",
       "capability_routes": {
         "input": [
           "text",
-          "image"
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "experts_activated": 4,
+      "shared_experts": 1,
+      "transformer_layers": 60,
+      "release_date": "2026-06-01"
+    },
+    "minimax-m3.1-flash": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<mm:think>",
+        "</mm:think>"
+      ],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "max_effort_supported": true,
+      "architecture": "minimax_m3",
+      "total_parameters": "428B",
+      "active_parameters": "23B",
+      "experts": 128,
+      "experts_activated": 4,
+      "shared_experts": 1,
+      "transformer_layers": 60,
+      "quantization_method": "MXFP8 attention, NVFP4 experts",
+      "notes": "MiniMax-M3.1-Flash, the efficient successor of MiniMax-M3 (GA on the MiniMax platform 2026-10-19 as MiniMax-M3.1-Flash, preceded by a MiniMax-M3.1-Flash-Preview inside MiniMax Code per press coverage; open weights announced for 2026-10-23). Keeps M3's MoE (about 428B total / 23B activated; config: 60 layers, hidden size 6144, 128 routed + 1 shared experts with 4 activated, MiniMaxM3SparseForConditionalGeneration / model_type minimax_m3_vl) with three changes: the first three full-attention layers become MiniMax Sparse Attention, routed experts and attention paths are quantization-aware trained (shipped checkpoint: mxfp8 weights with nvfp4-packed experts), and DSpark replaces the EAGLE-style MTP head for speculative decoding. 1,048,576-token context (config), text, image and video input, text output, CLIP vision tower at 672 px. Reasoning depth is set with reasoning_effort low|medium|high|xhigh|max in the chat template (max is not in the unified thinking vocabulary, see max_effort_supported); thinking tags follow the M3 family (<mm:think>). No completion cap is published, so max_output_tokens is null. Card sampling temperature 1.0, top_p 0.95. Platform price $0.15/$0.60 per MTok, cache reads $0.015. License minimax-community.",
+      "source": "Hugging Face model card and config.json (MiniMaxAI/MiniMax-M3.1-Flash, accessed 2026-11-07); MiniMax platform release notes 2026-10-19 and launch coverage (accessed 2026-11-07)",
+      "canonical_name": "minimax-m3.1-flash",
+      "aliases": [
+        "MiniMaxAI/MiniMax-M3.1-Flash",
+        "MiniMax-M3.1-Flash",
+        "MiniMax-M3.1-Flash-Preview",
+        "minimax/minimax-m3.1-flash",
+        "unsloth/MiniMax-M3.1-Flash-GGUF",
+        "mlx-community/MiniMax-M3.1-Flash-Text-3bit"
+      ],
+      "max_tokens": 1048576,
+      "release_date": "2026-10-19",
+      "license": "minimax-community",
+      "max_tools": -1,
+      "video_input_mode": "native",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95
+      },
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
         ],
         "output": [
           "text"
@@ -10043,6 +11409,492 @@
         ]
       }
     },
+    "nemotron-3-ultra-550b-a55b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "550B",
+      "active_parameters": "55B",
+      "tool_calling_format": "xml",
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-06-04",
+      "notes": "NVIDIA Nemotron 3 Ultra (released 2026-06-04): 550B total / about 55B active hybrid MoE with interleaved Mamba-2 and MoE layers, select attention layers and MTP layers; text in, text out; up to 1M-token context (serving defaults to 256K, longer windows need an env var and a larger max-model-len). Thinking toggled with the chat-template kwarg enable_thinking (the API examples pass it explicitly as true) and a medium_effort=true kwarg for fewer reasoning tokens; a client-side reasoning_budget example caps the trace. Tool calls via the qwen3_coder parser (vLLM --enable-auto-tool-choice, SGLang needs force_nonempty_content with tools), reasoning parser nemotron_v3 / nano-v3. Examples use temperature 1.0, top_p 0.95. Hosted as nvidia/nemotron-3-ultra-550b-a55b on build.nvidia.com (the card's API example uses the served name nvidia/nemotron-3-ultra). The config's max_position_embeddings is 262,144; the 1M figure is the card's stated ceiling. OpenMDW License 1.1. No completion cap published; 8,192 mirrors the sibling Nemotron 3 registry convention.",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16, accessed 2026-11-07)",
+      "canonical_name": "nemotron-3-ultra-550b-a55b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16",
+        "NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16",
+        "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "nemotron-3-ultra"
+      ],
+      "max_tokens": 1000000,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-3.5-lightning-30b-a3b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "30B",
+      "active_parameters": "3B",
+      "tool_calling_format": "xml",
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-08-11",
+      "notes": "NVIDIA Nemotron 3.5 Lightning (GA 2026-08-11): 30B total / 3B active hybrid MoE (interleaved Mamba-2 and MoE layers, select attention layers, MTP layers, NVFP4 pre-training recipe); text in, text out; English plus Spanish, French, German, Italian, Japanese and code; up to 1M-token context per the card (256K on one H100 in BF16; the config's max_position_embeddings is 262,144). Thinking on by default, toggled with the chat-template kwarg enable_thinking; coding agents should pass force_nonempty_content=true. Tool calls via the qwen3_coder parser (vLLM --enable-auto-tool-choice; SGLang reasoning parser nemotron_3). Card sampling temperature 1.0, top_p 0.95. Speculative decoding through the separate NVFP4-DSpark and NVFP4-DFlash draft repos (not aliased here). Beats Nemotron 3 Nano on SWE-bench Verified (51.56 vs 34.08). OpenMDW License 1.1. No completion cap published; 8,192 mirrors the Nemotron 3 registry convention.",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16, accessed 2026-11-07)",
+      "canonical_name": "nemotron-3.5-lightning-30b-a3b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        "ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+        "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "nemotron-3.5-lightning"
+      ],
+      "max_tokens": 1000000,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-3.5-bolt-74b-a9b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "video_input_mode": "native",
+      "thinking_support": true,
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "74B",
+      "active_parameters": "9B",
+      "experts_activated": 9,
+      "vision_encoder": "C-RADIO v4-H",
+      "tool_calling_format": "xml",
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-10-15",
+      "notes": "NVIDIA Nemotron 3.5 Bolt 74B (released 2026-10-15): 74B total / 9B active Mamba2-Transformer hybrid MoE derived from the Nemotron 3.5 Super backbone by an architecture search (expert top-k 9, down from 22; per-layer routed-expert counts and MoE widths) with a C-RADIO v4-H vision encoder and MLP projector. Input text, images (JPEG/PNG) and video (MP4 up to 2 minutes, up to 1 fps / 128 frames at 1080p); text output; up to 256K tokens shared by prompt, images, history, tool results and output. Thinking via chat_template_kwargs enable_thinking true/false plus medium_effort=true; reasoning and answer share max_tokens. Tool calls via the qwen3_coder parser, reasoning parser ultra_v3 plugin; JSON output listed as supported. Text sampling temperature 1.0, top_p 0.95. The 24GB repos are native 2-bit quantizations sized to run beside other applications in 24 GB (search target below 24 GB at batch 1 and 128K context); the BF16 release is meant for post-training rather than production inference. OpenMDW-1.1.",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16, accessed 2026-11-07)",
+      "canonical_name": "nemotron-3.5-bolt-74b-a9b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16",
+        "NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16",
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB",
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-GGUF",
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr",
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr-GGUF",
+        "nemotron-3.5-bolt-74b"
+      ],
+      "max_tokens": 262144,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-3.5-bolt-e4b": {
+      "max_output_tokens": 65536,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "architecture": "gemma4",
+      "total_parameters": "8B",
+      "active_parameters": "4B",
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-10-23",
+      "notes": "NVIDIA Nemotron 3.5 Bolt E4B (released 2026-10-23): an 8B (4B effective) model on the Gemma-4-E4B architecture for fast local voice/device assistants and edge interfaces (Jetson Orin/Thor, DGX Spark, RTX). Text in, text out per the card (the repo tag says image-text-to-text, but the card lists text only, so no vision is declared); input up to 64K tokens and output up to 64K tokens. Thinking via enable_thinking=true/false plus a runtime thinking budget and a conversational_mode toggle. Native tools array with the gemma4 parser on vLLM (--enable-auto-tool-choice). Sampling temperature 1.0, top_p 0.95 in both modes. The 4GB repo is the Q4_K_M GGUF; a companion DFlash drafter exists for speculative decoding (not aliased). OpenMDW-1.1 (base Gemma 4 under Apache-2.0). Registry architecture gemma4 because the chat template is Gemma 4's, not the Nemotron hybrid one.",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16, accessed 2026-11-07)",
+      "canonical_name": "nemotron-3.5-bolt-e4b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
+        "NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB",
+        "nemotron-3.5-bolt-e4b"
+      ],
+      "max_tokens": 65536,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-3.5-super-vl-120b-a12b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "video_input_mode": "native",
+      "thinking_support": true,
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "120B",
+      "active_parameters": "12B",
+      "experts": 512,
+      "vision_encoder": "C-RADIO",
+      "tool_calling_format": "xml",
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-10-15",
+      "notes": "NVIDIA Nemotron 3.5 Super VL (released 2026-10-15): 120B total / 12B active hybrid MoE (interleaved Mamba-2, MoE and attention layers; 512 routed experts per MoE layer) with a C-RADIO vision encoder and vision-language connector. Input text, images (jpeg/png), video (mp4 up to 2 minutes) and documents as page images; text output; up to 1M-token context. Thinking via enable_thinking true/false with a medium level through medium_effort=true. Tool calls via the OpenAI-compatible tools parameter with the qwen3_coder parser (vLLM --enable-auto-tool-choice), reasoning parser nemotron_v3 / nemotron_3. Card sampling: text temperature 1.0, top_p 0.95; vision 0.6/0.95. OpenMDW-1.1. No completion cap published; 8,192 mirrors the Nemotron 3 registry convention.",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16, accessed 2026-11-07)",
+      "canonical_name": "nemotron-3.5-super-vl-120b-a12b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+        "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+        "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4",
+        "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4-LiLiCorr",
+        "nemotron-3.5-super-vl"
+      ],
+      "max_tokens": 1000000,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-nano-9b-v2": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "thinking_budget": true,
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "9B",
+      "attention_layers": 4,
+      "tool_calling_format": "json",
+      "license": "nvidia-open-model-license",
+      "release_date": "2025-08-18",
+      "inference_parameters": {
+        "temperature": 0.6,
+        "top_p": 0.95
+      },
+      "notes": "NVIDIA Nemotron Nano 9B v2 (released 2025-08-18): 9B dense Mamba2-Transformer hybrid (Nemotron-Hybrid) made mostly of Mamba-2 and MLP layers with four attention layers; text in, text out; up to 128K-token input and output. Reasoning is toggled with /think or /no_think in the system prompt (default on when no signal is given) and per turn in user messages; budget control with max_thinking_tokens (soft stop at the next newline, hard cut at budget + 500). Tool calls are a JSON list of name/arguments objects inside <TOOLCALL> tags with results in <TOOL_RESPONSE> (vLLM parser nemotron_json), so the registry tool format is json, not the XML of the Nemotron 3 family that shares its architecture block. Card sampling: reasoning on temperature 0.6, top_p 0.95; reasoning off greedy; max_new_tokens 1,024 or more with reasoning. NVIDIA Open Model License. The 12B sibling is NVIDIA-Nemotron-Nano-12B-v2.",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-Nano-9B-v2, accessed 2026-11-07)",
+      "canonical_name": "nemotron-nano-9b-v2",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
+        "NVIDIA-Nemotron-Nano-9B-v2",
+        "nvidia/NVIDIA-Nemotron-Nano-9B-v2-FP8",
+        "nvidia/NVIDIA-Nemotron-Nano-9B-v2-NVFP4",
+        "nemotron-nano-9b-v2"
+      ],
+      "max_tokens": 131072,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-nano-12b-v2-vl": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "thinking_support": true,
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "12.6B",
+      "vision_encoder": "CRadioV2-H",
+      "license": "nvidia-open-model-license",
+      "release_date": "2025-10-28",
+      "notes": "NVIDIA Nemotron Nano 12B v2 VL (released 2025-10-28): 12.6B multimodal document-intelligence model pairing the NVIDIA-Nemotron-Nano-12B-v2 hybrid language backbone with the CRadioV2-H vision encoder; input + output 128K tokens; English text. Images: up to 4 per request, minimum 32x32 px, tiled into up to 12 tiles of 512x512 (e.g. 2048x1536). Video: the model takes pre-extracted frames at 2 fps (8 to 128 frames; MP4/MKV/FLV/3GP must be decoded by the caller), so video is frame-based here. Examples use a '/no_think' system message and greedy decoding (max_new_tokens 1,024 for images, 128 for video); function calling appears only as a training dataset, so tool support is treated as prompted. NVIDIA Open Model License.",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16, accessed 2026-11-07)",
+      "canonical_name": "nemotron-nano-12b-v2-vl",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16",
+        "NVIDIA-Nemotron-Nano-12B-v2-VL-BF16",
+        "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-FP8",
+        "nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-NVFP4-QAD",
+        "nemotron-nano-12b-v2-vl"
+      ],
+      "max_tokens": 131072,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-3-embed-1b": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 2048,
+      "total_parameters": "1.14B",
+      "notes": "NVIDIA Nemotron 3 Embed 1B (released 2026-07-16): about 1.14B-parameter text embedding model pruned from Ministral-3-3B-Instruct-2512, bidirectional attention with average pooling, distilled from Nemotron-3-Embed-8B; 2048-dim vectors that can be sliced to 1024 or 512 and re-normalized; max sequence length 32,768 (evaluated at 4,096); 34 languages. Prefix queries with 'query: ' and documents with 'passage: ' (vLLM /v2/embed applies them via input_type). Not a text-generative model. OpenMDW-1.1.",
+      "source": "Hugging Face model card (nvidia/Nemotron-3-Embed-1B-BF16, accessed 2026-11-07)",
+      "canonical_name": "nemotron-3-embed-1b",
+      "aliases": [
+        "nvidia/Nemotron-3-Embed-1B-BF16",
+        "Nemotron-3-Embed-1B-BF16",
+        "nvidia/Nemotron-3-Embed-1B-NVFP4",
+        "nemotron-3-embed-1b"
+      ],
+      "max_tokens": 32768,
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "matryoshka_dims": [
+        2048,
+        1024,
+        512
+      ],
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-07-16"
+    },
+    "nemotron-3.5-embed-1b": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "embedding": [
+          "text",
+          "image"
+        ]
+      },
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 2048,
+      "total_parameters": "1.55B",
+      "notes": "NVIDIA Nemotron 3.5 Embed 1B (released 2026-10-20): 1.55B-parameter multimodal retrieval embedder, a Pixtral vision encoder from Ministral-3-3B-Instruct-2512 on the Nemotron-3-Embed-1B language model. Queries are text only; documents can be an image (default longest edge 1,120 px, up to 1,540), text, or image plus text (visual-document retrieval); 2048-dim vectors sliceable to 1024 or 512; max context 32,768 tokens. Prefix queries with 'query: ' and documents with 'passage: ' (vLLM input_type). Not a text-generative model. OpenMDW-1.1; an 8B sibling exists.",
+      "source": "Hugging Face model card (nvidia/Nemotron-3.5-Embed-1B-BF16, accessed 2026-11-07)",
+      "canonical_name": "nemotron-3.5-embed-1b",
+      "aliases": [
+        "nvidia/Nemotron-3.5-Embed-1B-BF16",
+        "Nemotron-3.5-Embed-1B-BF16",
+        "nvidia/Nemotron-3.5-Embed-1B-NVFP4",
+        "nemotron-3.5-embed-1b"
+      ],
+      "max_tokens": 32768,
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "matryoshka_dims": [
+        2048,
+        1024,
+        512
+      ],
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-10-20"
+    },
+    "nemotron-3.5-transcribe-30b-a4b": {
+      "max_output_tokens": null,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": 0,
+      "vision_support": false,
+      "audio_support": true,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "audio_input_capabilities": [
+        "speech"
+      ],
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "34B",
+      "active_parameters": "4.3B",
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-10-28",
+      "notes": "NVIDIA Nemotron 3.5 Transcribe (released 2026-10-28): 34B total / 4.3B active speech model, a roughly 600M transformer ASR encoder plus a 99M speaker encoder (Nemotron-3-Diarization) on the Nemotron 3.5 Lightning 30B-A3B Mamba-2/Transformer MoE backbone. Input 16 kHz mono audio (wav/flac/mp3/ogg, anything decodable to PCM) up to one hour; 65,536-token context. Output text with optional word timestamps, speaker tags and diarization segments (ctc_timestamps), and translation between English and the supported languages; 40 languages. Served through vLLM 0.32+ with NeMo Speech (OpenAI-compatible), NeMo ASRModel.transcribe, SGLang-Omni /v1/audio/transcriptions, or Transformers AutoModelForMultimodalLM; FP8 and NVFP4 post-training quantized variants; a separate DFlash2 draft model. The card lists a configurable reasoning mode through the chat template (enable_thinking true/false); no tool calling. OpenMDW-1.1.",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B, accessed 2026-11-07)",
+      "canonical_name": "nemotron-3.5-transcribe-30b-a4b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B",
+        "NVIDIA-Nemotron-3.5-Transcribe-30B-A4B",
+        "nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-NVFP4",
+        "nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-FP8",
+        "nemotron-3.5-transcribe"
+      ],
+      "max_tokens": 65536,
+      "capability_routes": {
+        "input": [
+          "voice"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      }
+    },
+    "nemotron-3.5-parse": {
+      "max_output_tokens": 8744,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": 0,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": false,
+      "image_resolutions": [
+        "up to 1664x2048"
+      ],
+      "total_parameters": "0.63B",
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-10-17",
+      "notes": "NVIDIA Nemotron 3.5 Parse (released 2026-10-17; DFlash2 speculative-decoding update 2026-11-04): about 0.63B-parameter document parser, C-RADIOv4-SO400M vision encoder (vit_so400m_patch16_224, dynamic rectangular NaViT preprocessing, 1D-convolution adapter) with a 10-layer mBART causal visual-prefix decoder (16 query / 8 KV heads) and one MTP head; optional 89.3M DFlash2 drafter. Input: RGB page images (render PDFs first, e.g. 150 DPI) up to 1664x2048 plus a task prompt; output: text with semantic classes, normalized bounding boxes and reading order, Markdown with HTML tables, convertible to LaTeX/HTML/Markdown/JSON/CSV; examples use max_new_tokens 8,744 and the config states max_position_embeddings 16,384. ParseBench 75.20 vs 63.91 for Parse 2.0. Served with Transformers (trust_remote_code), vLLM (--speculative-config for DFlash2), SGLang, the NVIDIA Build API or Baseten. No chat or tool calling. OpenMDW-1.1 (tokenizer MIT).",
+      "source": "Hugging Face model card (nvidia/Nemotron-3.5-Parse, accessed 2026-11-07)",
+      "canonical_name": "nemotron-3.5-parse",
+      "aliases": [
+        "nvidia/Nemotron-3.5-Parse",
+        "Nemotron-3.5-Parse"
+      ],
+      "max_tokens": 16384,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-parse-2.0": {
+      "max_output_tokens": 9000,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": 0,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": false,
+      "image_resolutions": [
+        "1024x1280 to 1664x2048"
+      ],
+      "total_parameters": "0.9B",
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-08-03",
+      "notes": "NVIDIA Nemotron Parse 2.0 (released 2026-08-03): sub-1B (0.9B) vision-encoder-decoder document parser, C-RADIO ViT-H encoder, 1D-convolution adapter and an mBART decoder (10 blocks per the card; the config's decoder num_hidden_layers is 12) with a 72,256-entry vocabulary (about 20K tokens added over v1.2, including a <class_Chart> token for chart-aware parsing). Input: an RGB document image (recommended 1024x1280 to 1664x2048) plus a task prompt, default '</s><s><predict_bbox><predict_classes><output_markdown><predict_no_text_in_pic>'; output: text with element classes and bounding boxes, convertible to LaTeX/HTML/Markdown/JSON/CSV; examples use max_tokens 8,192 to 9,000 and no context length is stated (16,384 recorded as a serving-sized window). ParseBench 0.6391 vs 0.5782 for v1.2; superseded by Nemotron-3.5-Parse. No chat or tool calling. OpenMDW-1.1 (tokenizer CC-BY-4.0).",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-Parse-2.0, accessed 2026-11-07)",
+      "canonical_name": "nemotron-parse-2.0",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-Parse-2.0",
+        "NVIDIA-Nemotron-Parse-2.0",
+        "nemotron-parse-2.0"
+      ],
+      "max_tokens": 16384,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "laguna-s-2.1": {
       "max_output_tokens": 131072,
       "tool_support": "native",
@@ -10117,6 +11969,79 @@
       "max_tokens": 32768,
       "max_tools": 0,
       "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "ernie-5.5-flash-base": {
+      "max_output_tokens": null,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": 0,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": false,
+      "total_parameters": "280B",
+      "active_parameters": "14B",
+      "experts": 512,
+      "experts_activated": 10,
+      "shared_experts": 1,
+      "transformer_layers": 43,
+      "attention_mechanism": "HCA + MLA",
+      "quantization_method": "FP8",
+      "license": "other",
+      "notes": "Baidu ERNIE-5.5-Flash-Base, the text-only MoE BASE checkpoint at the end of pre-training (no mid- or post-training, no chat template, served through the completions endpoint): 280B total / 14B activated, 43 layers (1 dense FFN + 42 Multi-Router Latent MoE), 512 routed experts top-10 plus 1 shared per MoE layer (latent and expert dim 2048), 37 Heavily Compressed Attention (HCA) layers and 6 MLA layers with 64 heads; HF config Ernie5_5_MoeForCausalLM / model_type ernie5_5_moe, hidden size 4096, YaRN factor 16 over 65,536 original positions to max_position_embeddings 1,048,576 (card: 128K max training context, 1M for fine-tuning and inference). Main repo FP8 (e4m3, 128x128 blocks); ERNIE-5.5-Flash-Base-BF16 is the BF16 variant. As a base model it has no thinking mode, tool calling or structured-output protocol. ERNIE 5.5 Flash Base Model License Agreement v1.0.",
+      "source": "Hugging Face model card and config.json (baidu/ERNIE-5.5-Flash-Base, accessed 2026-11-07)",
+      "canonical_name": "ernie-5.5-flash-base",
+      "aliases": [
+        "baidu/ERNIE-5.5-Flash-Base",
+        "baidu/ERNIE-5.5-Flash-Base-BF16",
+        "ERNIE-5.5-Flash-Base"
+      ],
+      "max_tokens": 1048576,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "unlimited-ocr-2": {
+      "max_output_tokens": 20000,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": 0,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": false,
+      "image_resolutions": [
+        "variable (dynamic tiling or 1024-px global view)"
+      ],
+      "total_parameters": "3B",
+      "license": "MIT",
+      "release_date": "2026-10-27",
+      "notes": "Baidu Unlimited OCR 2 document-parsing vision-language model (released 2026-10-27; paper arXiv 2610.39308): about 3B parameters, HF architecture UnlimitedOCRForCausalLM / model_type unlimited-ocr with a DeepseekOCRForCausalLM language config (12 layers, hidden 1280) and a 1024-px vision config; max_position_embeddings 131,072. Adds SR-SWA (a fixed-size set of working references, e.g. 512 tokens) so per-step latency and memory stay near-constant on multi-page and ultra-long documents. Input: page images (JPG/PNG) or PDFs rendered to images, several pages per request with the prompt '<PAGE><image>' repeated per page plus 'Multi page parsing.'; dynamic tiling ('gundam') or single global view ('base'). Output: text with one <PAGE> marker per page; the SGLang serving caps per-page output at 20,000 tokens and examples use 8,000. OpenAI-compatible chat via SGLang --chat-template unlimited-ocr; no tool calling. MIT license. Hugging Face lists 16 community quantizations usable in llama.cpp, Ollama and LM Studio.",
+      "source": "Hugging Face model card and config.json (baidu/Unlimited-OCR-2, accessed 2026-11-07)",
+      "canonical_name": "unlimited-ocr-2",
+      "aliases": [
+        "baidu/Unlimited-OCR-2",
+        "Unlimited-OCR-2"
+      ],
+      "max_tokens": 131072,
       "capability_routes": {
         "input": [
           "text",
@@ -10373,12 +12298,116 @@
         32
       ]
     },
+    "spark-x2.5-4b": {
+      "canonical_name": "spark-x2.5-4b",
+      "aliases": [
+        "XHToken/Spark-X2.5-4B",
+        "XHToken/Spark-X2.5-4B-GGUF",
+        "XHToken/Spark-X2.5-4B-INT8",
+        "XHToken/Spark-X2.5-4B-FP8",
+        "mlx-community/Spark-X2.5-4B-OptiQ-4bit",
+        "SparkLLM/Spark-X2.5-4B",
+        "spark-x2.5:4b"
+      ],
+      "max_tokens": 1048576,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "spark2_5",
+      "total_parameters": "4B",
+      "transformer_layers": 36,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "notes": "Text-only Spark X2.5 on-device agent model, 4B parameters (36 layers, hidden size 2560, vocab 131,072; config model_type spark2_5, architecture Spark2_5ForCausalLM: one full-attention layer per three sliding-window layers). Native context up to 1,048,576 tokens (config max_position_embeddings; the card's server example uses --context-length 1048576). Thinking is on by default and is turned off per request with chat_template_kwargs enable_thinking=false; the X2.5 cards document no reasoning_effort levels, so reasoning_levels is deliberately absent (the X2.6 successors add low|high). Native arg_key/arg_value tool calls (SGLang parser spark25, reasoning parser qwen3). Card sampling: temperature 1.0, top_p 0.95, top_k -1; max_tokens 131072 in the examples is a budget, not a hard completion limit. Series launched 2026-09-01 on Hugging Face, ModelScope and Ollama; Spark X2.6 keeps this exact architecture with improved post-training. The SparkLLM/... alias is the Ollama tag, not a Hugging Face repo. Apache-2.0.",
+      "source": "Hugging Face model card and config.json (XHToken/Spark-X2.5-4B, accessed 2026-11-07); github.com/XHToken/Spark-X2.6 news entry 2026-09-01; XHToken repo listing on the Hugging Face API (accessed 2026-11-07)",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "release_date": "2026-09-01",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95
+      }
+    },
+    "spark-x2.5-1.7b": {
+      "canonical_name": "spark-x2.5-1.7b",
+      "aliases": [
+        "XHToken/Spark-X2.5-1.7B",
+        "XHToken/Spark-X2.5-1.7B-GGUF",
+        "XHToken/Spark-X2.5-1.7B-INT8",
+        "XHToken/Spark-X2.5-1.7B-FP8",
+        "SparkLLM/Spark-X2.5-1.7B",
+        "spark-x2.5:1.7b"
+      ],
+      "max_tokens": 1048576,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "spark2_5",
+      "total_parameters": "1.7B",
+      "transformer_layers": 28,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "notes": "Text-only Spark X2.5 on-device agent model, 1.7B parameters (28 layers, hidden size 2048, vocab 131,072; config model_type spark2_5, architecture Spark2_5ForCausalLM: one full-attention layer per three sliding-window layers). Native context up to 1,048,576 tokens (config max_position_embeddings; the card's server example uses --context-length 1048576). Thinking is on by default and is turned off per request with chat_template_kwargs enable_thinking=false; the X2.5 cards document no reasoning_effort levels, so reasoning_levels is deliberately absent (the X2.6 successors add low|high). Native arg_key/arg_value tool calls (SGLang parser spark25, reasoning parser qwen3). Card sampling: temperature 1.0, top_p 0.95, top_k -1; max_tokens 131072 in the examples is a budget, not a hard completion limit. Series launched 2026-09-01 on Hugging Face, ModelScope and Ollama; Spark X2.6 keeps this exact architecture with improved post-training. The SparkLLM/... alias is the Ollama tag, not a Hugging Face repo. Apache-2.0.",
+      "source": "Hugging Face model card and config.json (XHToken/Spark-X2.5-1.7B, accessed 2026-11-07); github.com/XHToken/Spark-X2.6 news entry 2026-09-01; XHToken repo listing on the Hugging Face API (accessed 2026-11-07)",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "release_date": "2026-09-01",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95
+      }
+    },
     "spark-x2.6-4b": {
       "canonical_name": "spark-x2.6-4b",
       "aliases": [
         "XHToken/Spark-X2.6-4B",
         "XHToken/Spark-X2.6-4B-GGUF",
-        "mlx-community/Spark-X2.6-4B-OptiQ-4bit"
+        "XHToken/Spark-X2.6-4B-INT4",
+        "XHToken/Spark-X2.6-4B-INT8",
+        "XHToken/Spark-X2.6-4B-FP8",
+        "XHToken/Spark-X2.6-4B-DSpark-GGUF",
+        "bartowski/Spark-X2.6-4B-GGUF",
+        "mlx-community/Spark-X2.6-4B-OptiQ-4bit",
+        "SparkLLM/Spark-X2.6-4B",
+        "spark-x2.6:4b"
       ],
       "max_tokens": 1048576,
       "max_output_tokens": null,
@@ -10401,8 +12430,8 @@
           "text"
         ]
       },
-      "notes": "Text-only Spark X2.6 agent model, same architecture as Spark X2.5. Its template supports thinking on/off and low/high reasoning effort, plus native arg_key/arg_value tool calls. Example output budgets are not hard completion limits.",
-      "source": "https://huggingface.co/XHToken/Spark-X2.6-4B model card, config.json and chat_template.jinja, accessed 2026-10-30.",
+      "notes": "Text-only Spark X2.6 agent model, same architecture as Spark X2.5. Its template supports thinking on/off and low/high reasoning effort, plus native arg_key/arg_value tool calls. Example output budgets are not hard completion limits. 36 layers, hidden size 2560 (config). Released 2026-10-21 on Hugging Face, ModelScope and Ollama; the XHToken DSpark-GGUF repo is the speculative-decoding draft variant and SparkLLM/Spark-X2.6-4B is the Ollama tag.",
+      "source": "https://huggingface.co/XHToken/Spark-X2.6-4B model card, config.json and chat_template.jinja, accessed 2026-10-30. XHToken repo listing on the Hugging Face API and github.com/XHToken/Spark-X2.6 news (accessed 2026-11-07).",
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -10414,7 +12443,66 @@
       "reasoning_levels": [
         "low",
         "high"
-      ]
+      ],
+      "transformer_layers": 36,
+      "release_date": "2026-10-21",
+      "license": "Apache-2.0"
+    },
+    "spark-x2.6-1.7b": {
+      "canonical_name": "spark-x2.6-1.7b",
+      "aliases": [
+        "XHToken/Spark-X2.6-1.7B",
+        "XHToken/Spark-X2.6-1.7B-GGUF",
+        "XHToken/Spark-X2.6-1.7B-INT4",
+        "XHToken/Spark-X2.6-1.7B-INT8",
+        "XHToken/Spark-X2.6-1.7B-FP8",
+        "XHToken/Spark-X2.6-1.7B-DSpark-GGUF",
+        "bartowski/Spark-X2.6-1.7B-GGUF",
+        "SparkLLM/Spark-X2.6-1.7B",
+        "spark-x2.6:1.7b"
+      ],
+      "max_tokens": 1048576,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "spark2_5",
+      "total_parameters": "1.7B",
+      "transformer_layers": 28,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "notes": "Text-only Spark X2.6 on-device agent model, 1.7B parameters (28 layers, hidden size 2048, vocab 131,072; config model_type spark2_5, same architecture as Spark X2.5 and the 4B sibling). 1,048,576-token context (config max_position_embeddings; the card's server example uses --context-length 1048576 and warns it needs enough memory). Thinking is on by default with reasoning_effort high; chat_template_kwargs reasoning_effort low|high tunes depth and enable_thinking=false turns thinking off (the card's 'none' level). Native arg_key/arg_value tool calls (SGLang parser spark25; the card's vLLM example sets no parser flag). The SparkLLM/Spark-X2.6-1.7B alias is the Ollama tag, not a Hugging Face repo. Card sampling: temperature 1.0, top_p 0.95; max_new_tokens 131072 in the examples is a budget, not a hard completion limit. Released 2026-10-27 (global launch per the Spark-X2.6 GitHub news), Apache-2.0.",
+      "source": "Hugging Face model card and config.json (XHToken/Spark-X2.6-1.7B, accessed 2026-11-07); github.com/XHToken/Spark-X2.6 news entry 2026-10-27",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "effort_template_kwarg": "reasoning_effort"
+      },
+      "reasoning_levels": [
+        "low",
+        "high"
+      ],
+      "license": "Apache-2.0",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95
+      },
+      "release_date": "2026-10-27"
     },
     "lfm3-1.7b": {
       "canonical_name": "lfm3-1.7b",
@@ -10455,6 +12543,158 @@
       "thinking_control": {
         "template_kwarg": "enable_thinking"
       },
+      "license": "lfm1.0"
+    },
+    "lfm3-vl-2b": {
+      "canonical_name": "lfm3-vl-2b",
+      "aliases": [
+        "LiquidAI/LFM3-VL-2B",
+        "LiquidAI/LFM3-VL-2B-GGUF",
+        "LiquidAI/LFM3-VL-2B-MLX-4bit",
+        "LiquidAI/LFM3-VL-2B-MLX-8bit",
+        "LiquidAI/LFM3-VL-2B-MLX-bf16",
+        "LiquidAI/LFM3-VL-2B-FP8",
+        "LiquidAI/LFM3-VL-2B-NVFP4",
+        "LiquidAI/LFM3-VL-2B-ONNX"
+      ],
+      "max_tokens": 128000,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "video_input_mode": "native",
+      "thinking_support": true,
+      "architecture": "lfm3",
+      "model_type": "lfm3_vl",
+      "total_parameters": "1.92B",
+      "image_resolutions": [
+        "native resolution, 16x16 patches, each 2x2 patch block becomes one language token"
+      ],
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "notes": "Liquid AI LFM3-VL-2B vision-language model: the LFM3-1.7B tri-hybrid backbone (24 layers: 13 gated short convolutions, 5 sliding-window attention, 6 global attention) plus a 164M 14-layer vision encoder (8 gated depthwise 2D convolutions, 6 bidirectional attention, 2D rotary embeddings) and a 25M projector (HF architecture Lfm3VlForConditionalGeneration, model_type lfm3_vl). 128K-token context (input + output, config max_position_embeddings 128000). Image, video (sampled at 2 fps, 4 to 768 frames by default) and text input, text output. Reasoning on by default: the template opens with a <think> block, earlier reasoning is dropped unless preserve_thinking=True, enable_thinking per the LFM3 template convention. XML tool calls (<tool_call><function=...><parameter=...>), a superset of qwen3_coder. Card sampling: temperature 0.1, top_p 1.0, top_k 50, min_p 0, repetition_penalty 1.1. No hard completion cap published, so max_output_tokens is null. LFM Open License v1.0.",
+      "source": "Hugging Face model card and config.json (LiquidAI/LFM3-VL-2B, accessed 2026-11-07); LiquidAI LFM3 repo listing on the Hugging Face API (accessed 2026-11-07)",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "lfm1.0",
+      "inference_parameters": {
+        "temperature": 0.1,
+        "top_p": 1.0,
+        "top_k": 50,
+        "repeat_penalty": 1.1
+      }
+    },
+    "lfm3-audio-2b": {
+      "canonical_name": "lfm3-audio-2b",
+      "aliases": [
+        "LiquidAI/LFM3-Audio-2B",
+        "LiquidAI/LFM3-Audio-2B-GGUF",
+        "LiquidAI/LFM3-Audio-2B-MLX-4bit",
+        "LiquidAI/LFM3-Audio-2B-MLX-8bit",
+        "LiquidAI/LFM3-Audio-2B-MLX-bf16",
+        "LiquidAI/LFM3-Audio-2B-ONNX"
+      ],
+      "max_tokens": 32768,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "lfm3",
+      "model_type": "lfm3_audio",
+      "total_parameters": "2B",
+      "capability_routes": {
+        "input": [
+          "text",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text",
+          "voice"
+        ]
+      },
+      "notes": "Liquid AI LFM3-Audio-2B end-to-end audio model: LFM3 backbone, a causal 16 kHz audio encoder (sliding-window attention + short convolutions, config model_type lfm2) and the LiquidCodec tokenizer with a depthformer speech decoder (HF architecture Lfm3AudioForConditionalGeneration, model_type lfm3_audio). Text or 16 kHz audio input covering speech, music, background sounds and events; text, 24 kHz speech, or interleaved text and speech output. 32K-token context (input + output) per the card, although the text config carries max_position_embeddings 128000. Reasoning is chosen by prefill: <think> enables it, <think></think> answers directly; no enable_thinking kwarg is documented, so thinking_control is absent. XML <tool_call> blocks for function calling. Speech sampling per card: audio_temperature 1.0, audio_top_k 128, audio_repetition_penalty 1.1; text-only runs use suppress_mixed and suppress_audio_out. No hard completion cap published, so max_output_tokens is null. LFM Open License v1.0.",
+      "source": "Hugging Face model card and config.json (LiquidAI/LFM3-Audio-2B, accessed 2026-11-07)",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "license": "lfm1.0"
+    },
+    "lfm3-omni-2b": {
+      "canonical_name": "lfm3-omni-2b",
+      "aliases": [
+        "LiquidAI/LFM3-Omni-2B",
+        "LiquidAI/LFM3-Omni-2B-GGUF",
+        "LiquidAI/LFM3-Omni-2B-MLX-4bit",
+        "LiquidAI/LFM3-Omni-2B-MLX-8bit",
+        "LiquidAI/LFM3-Omni-2B-MLX-bf16",
+        "LiquidAI/LFM3-Omni-2B-ONNX"
+      ],
+      "max_tokens": 32768,
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": true,
+      "video_input_mode": "native",
+      "thinking_support": false,
+      "architecture": "lfm3",
+      "model_type": "lfm3_omni",
+      "total_parameters": "2.17B",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text",
+          "voice"
+        ]
+      },
+      "notes": "Liquid AI LFM3-Omni-2B any-to-text-or-speech model: LFM3 backbone with the LFM3 vision encoder (lfm3_vl_vision), the LFM3 causal audio encoder (lfm3_omni_encoder) and the LiquidCodec tokenizer plus depthformer speech decoder (HF architecture Lfm3OmniForConditionalGeneration, model_type lfm3_omni). Text, images, video with or without soundtrack, and 16 kHz audio input; text, 24 kHz speech, or interleaved text and speech output. 32K-token context (input + output) per the card. A non-reasoning model: enable_thinking=True is not supported and every assistant turn opens with an empty <think></think>. XML <tool_call> blocks for function calling, from spoken or written requests. Card decoding: greedy for text; audio_temperature 0.4, audio_repetition_penalty 1.2 for speech. No hard completion cap published, so max_output_tokens is null. LFM Open License v1.0.",
+      "source": "Hugging Face model card and config.json (LiquidAI/LFM3-Omni-2B, accessed 2026-11-07)",
       "license": "lfm1.0"
     },
     "bonsai-27b": {
@@ -10498,6 +12738,491 @@
       "thinking_control": {
         "template_kwarg": "enable_thinking"
       }
+    },
+    "ternary-bonsai-27b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "27.3B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Ternary-Bonsai-27B: Qwen3.6-27B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 27.3B ternary language weights plus 0.46B 27-block vision tower. GGUF Q2_0_g128 ternary weights with FP16 group scales, about 1.71 true bits per weight (2.125 deployed; about 5.9 GB ideal, 7.2 GB deployed; a group-64 pack of 7.59 GB is also published); 262K-token context; vision through an optional mmproj loaded only for image input (MMMU-Pro and OCRBench v2 reported). The quality-oriented operating point of the Bonsai 27B family versus the 1-bit Bonsai-27B phone-class build (80.49 vs 76.11 thinking-mode average). Benchmarks were run in thinking mode; no toggle is documented on the card beyond the parent Qwen3.6 template. Card sampling: temperature 0.7, top_p 0.95, top_k 20. Published July 2026 (collection updated 2026-07-15); MLX companion Ternary-Bonsai-27B-mlx-2bit. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Ternary-Bonsai-27B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "ternary-bonsai-27b",
+      "aliases": [
+        "prism-ml/Ternary-Bonsai-27B-gguf",
+        "prism-ml/Ternary-Bonsai-27B-mlx-2bit",
+        "prism-ml/Ternary-Bonsai-27B-unpacked",
+        "prism-ml/Ternary-Bonsai-27B-AWQ-4bit",
+        "Ternary-Bonsai-27B"
+      ],
+      "max_tokens": 262144,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-07",
+      "inference_parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "top_k": 20
+      }
+    },
+    "ternary-bonsai-2-27b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "27.36B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Ternary-Bonsai-2-27B: Qwen3.8-27B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 27.36B total (24.35B 64-block language backbone, 2.54B embedding/LM head, 0.46B 27-block vision tower). Ternary g128 weights with FP16 group scales, 1.72 true bits per weight (PTQ1_0 5.95 GB, PQ2_0 7.21 GB, stock llama.cpp Q2_0 7.63 GB); 262K-token context inherited from Qwen3.8-27B; vision through an optional Q8_0 mmproj (0.63 GB) loaded only for image input. Thinks by default with reasoning_effort xhigh (default) or medium; the card states low is not supported. BFCL v3 average 74.92. Card sampling: thinking temperature 1.0, top_p 0.95, top_k 20, min_p 0.05; instruct 0.7/0.80/20 with presence_penalty 1.5. Published September 2026 (collection updated 2026-09-17); MLX companion Ternary-Bonsai-2-27B-mlx-2bit, loads in the PrismML llama.cpp/mlx forks. Successor of Ternary-Bonsai-27B (Qwen3.6 based, 80.98 average) at 9.9% higher intelligence density. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Ternary-Bonsai-2-27B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "ternary-bonsai-2-27b",
+      "aliases": [
+        "prism-ml/Ternary-Bonsai-2-27B-gguf",
+        "prism-ml/Ternary-Bonsai-2-27B-mlx-2bit",
+        "prism-ml/Ternary-Bonsai-2-27B-gguf-dev",
+        "Ternary-Bonsai-2-27B"
+      ],
+      "max_tokens": 262144,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-09",
+      "reasoning_levels": [
+        "medium",
+        "xhigh"
+      ],
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.05
+      }
+    },
+    "ternary-bonsai-2-9b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "8.95B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Ternary-Bonsai-2-9B: Qwen3.5-9B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 8.95B language model (32 blocks, hidden 4096) plus 0.46B 27-block vision tower. Ternary (-1, 0, +1) weights with FP16 group scales packed as PTQ1_0, PQ2_0 or Q2_0 (normalization weights and the linear-attention state path stay F32); 262,144-token context inherited from the base; vision through a separate mmproj pack (Q8_0 recommended) loaded only when an image arrives. Thinking on by default, disabled per request with chat_template_kwargs enable_thinking=false; the card recommends at least 8,192 output tokens with thinking on and no greedy decoding. Card sampling: thinking temperature 1.0, top_p 0.95, top_k 20, presence_penalty 1.0; non-thinking 0.7/0.80/20 with presence_penalty 1.5. Published October 2026 (Bonsai 2 Small collection); MLX companion Ternary-Bonsai-2-9B-mlx-2bit (needs mlx-vlm 0.7.8 or newer). Packings: PTQ1_0 2.00 GB, PQ2_0 2.42 GB, Q2_0 2.56 GB. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Ternary-Bonsai-2-9B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "ternary-bonsai-2-9b",
+      "aliases": [
+        "prism-ml/Ternary-Bonsai-2-9B-gguf",
+        "prism-ml/Ternary-Bonsai-2-9B-mlx-2bit",
+        "Ternary-Bonsai-2-9B"
+      ],
+      "max_tokens": 262144,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-10",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      }
+    },
+    "ternary-bonsai-2-4b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "4.21B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Ternary-Bonsai-2-4B: Qwen3.5-4B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 4.21B language model (32 blocks, hidden 2560, tied embeddings) plus 0.33B 24-block vision tower. Ternary (-1, 0, +1) weights with FP16 group scales packed as PTQ1_0, PQ2_0 or Q2_0 (normalization weights and the linear-attention state path stay F32); 262,144-token context inherited from the base; vision through a separate mmproj pack (Q8_0 recommended) loaded only when an image arrives. Thinking on by default, disabled per request with chat_template_kwargs enable_thinking=false; the card recommends at least 8,192 output tokens with thinking on and no greedy decoding. Card sampling: thinking temperature 1.0, top_p 0.95, top_k 20, presence_penalty 1.0; non-thinking 0.7/0.80/20 with presence_penalty 1.5. Published October 2026 (Bonsai 2 Small collection); MLX companion Ternary-Bonsai-2-4B-mlx-2bit (needs mlx-vlm 0.7.8 or newer). Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Ternary-Bonsai-2-4B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "ternary-bonsai-2-4b",
+      "aliases": [
+        "prism-ml/Ternary-Bonsai-2-4B-gguf",
+        "prism-ml/Ternary-Bonsai-2-4B-mlx-2bit",
+        "Ternary-Bonsai-2-4B"
+      ],
+      "max_tokens": 262144,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-10",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      }
+    },
+    "ternary-bonsai-2-2b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "1.88B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Ternary-Bonsai-2-2B: Qwen3.5-2B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 1.88B language model plus 0.33B vision tower. Ternary (-1, 0, +1) weights with FP16 group scales packed as PTQ1_0, PQ2_0 or Q2_0 (normalization weights and the linear-attention state path stay F32); 262,144-token context inherited from the base; vision through a separate mmproj pack (Q8_0 recommended) loaded only when an image arrives. Thinking on by default, disabled per request with chat_template_kwargs enable_thinking=false; the card recommends at least 8,192 output tokens with thinking on and no greedy decoding. Card sampling: thinking temperature 1.0, top_p 0.95, top_k 20, presence_penalty 1.0; non-thinking 0.7/0.80/20 with presence_penalty 1.5. Published October 2026 (Bonsai 2 Small collection); MLX companion Ternary-Bonsai-2-2B-mlx-2bit (needs mlx-vlm 0.7.8 or newer). Packings: PTQ1_0 0.43 GB, PQ2_0 0.52 GB, Q2_0 0.55 GB; mmproj Q8_0 0.36 GB. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Ternary-Bonsai-2-2B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "ternary-bonsai-2-2b",
+      "aliases": [
+        "prism-ml/Ternary-Bonsai-2-2B-gguf",
+        "prism-ml/Ternary-Bonsai-2-2B-mlx-2bit",
+        "Ternary-Bonsai-2-2B"
+      ],
+      "max_tokens": 262144,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-10",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      }
+    },
+    "bonsai-8b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "8.19B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Bonsai-8B: Qwen3-8B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 8.19B (6.95B non-embedding), dense GQA 32/8. GGUF Q1_0 1-bit weights (one sign bit per weight plus a shared FP16 scale per 128-weight group, 1.125 bits per weight end to end across embeddings, attention, MLP and LM head); text only; 65,536-token context per the card's model overview. Thinking and tool calling are not documented on the card beyond the parent Qwen3 template (enable_thinking). Published March 2026 (tech report); MLX companion Bonsai-8B-mlx-1bit; unpacked base Bonsai-8B-unpacked. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Bonsai-8B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "bonsai-8b",
+      "aliases": [
+        "prism-ml/Bonsai-8B-gguf",
+        "prism-ml/Bonsai-8B-mlx-1bit",
+        "prism-ml/Bonsai-8B-unpacked",
+        "prism-ml/Bonsai-8B-AWQ-4-bit",
+        "Bonsai-8B"
+      ],
+      "max_tokens": 65536,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-03"
+    },
+    "bonsai-4b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "4.0B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Bonsai-4B: Qwen3-4B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 4.0B (3.6B non-embedding), dense GQA 32/8. GGUF Q1_0 1-bit weights (one sign bit per weight plus a shared FP16 scale per 128-weight group, 1.125 bits per weight end to end across embeddings, attention, MLP and LM head); text only; 32,768-token context per the card's model overview. Thinking and tool calling are not documented on the card beyond the parent Qwen3 template (enable_thinking). Published March 2026 (tech report); MLX companion Bonsai-4B-mlx-1bit; unpacked base Bonsai-4B-unpacked. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Bonsai-4B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "bonsai-4b",
+      "aliases": [
+        "prism-ml/Bonsai-4B-gguf",
+        "prism-ml/Bonsai-4B-mlx-1bit",
+        "prism-ml/Bonsai-4B-unpacked",
+        "Bonsai-4B"
+      ],
+      "max_tokens": 32768,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-03"
+    },
+    "bonsai-1.7b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "1.7B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Bonsai-1.7B: Qwen3-1.7B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 1.7B (1.4B non-embedding), dense GQA 16/8. GGUF Q1_0 1-bit weights (one sign bit per weight plus a shared FP16 scale per 128-weight group, 1.125 bits per weight end to end across embeddings, attention, MLP and LM head); text only; 32,768-token context per the card's model overview. Thinking and tool calling are not documented on the card beyond the parent Qwen3 template (enable_thinking). Published March 2026 (tech report); MLX companion Bonsai-1.7B-mlx-1bit; unpacked base Bonsai-1.7B-unpacked. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Bonsai-1.7B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "bonsai-1.7b",
+      "aliases": [
+        "prism-ml/Bonsai-1.7B-gguf",
+        "prism-ml/Bonsai-1.7B-mlx-1bit",
+        "prism-ml/Bonsai-1.7B-unpacked",
+        "Bonsai-1.7B"
+      ],
+      "max_tokens": 32768,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-03"
+    },
+    "ternary-bonsai-8b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "8.19B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Ternary-Bonsai-8B: Qwen3-8B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 8.19B (6.95B non-embedding), dense. GGUF Q2_0 g128 ternary weights (-1, 0, +1 with one FP16 scale per 128-weight group, 2.125 bits per weight; 2.03 GiB packed); text only; 65,536-token context per the card. Thinking and tool calling are not documented on the card beyond the parent Qwen3 template (enable_thinking); BFCL v3 73.9. Published April 2026 (tech report); runs in the PrismML llama.cpp fork (Q2_0 not in mainline); unpacked base Ternary-Bonsai-8B-unpacked. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Ternary-Bonsai-8B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "ternary-bonsai-8b",
+      "aliases": [
+        "prism-ml/Ternary-Bonsai-8B-gguf",
+        "prism-ml/Ternary-Bonsai-8B-mlx-2bit",
+        "prism-ml/Ternary-Bonsai-8B-unpacked",
+        "Ternary-Bonsai-8B"
+      ],
+      "max_tokens": 65536,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-04"
+    },
+    "ternary-bonsai-4b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "4.0B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Ternary-Bonsai-4B: Qwen3-4B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 4.0B (3.6B non-embedding), dense. GGUF Q2_0 g128 ternary weights (-1, 0, +1 with one FP16 scale per 128-weight group, 2.125 bits per weight; 1,020 MiB packed); text only; 32,768-token context per the card. Thinking and tool calling are not documented on the card beyond the parent Qwen3 template (enable_thinking); BFCL v3 reported. Published April 2026 (tech report); runs in the PrismML llama.cpp fork (Q2_0 not in mainline); unpacked base Ternary-Bonsai-4B-unpacked. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Ternary-Bonsai-4B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "ternary-bonsai-4b",
+      "aliases": [
+        "prism-ml/Ternary-Bonsai-4B-gguf",
+        "prism-ml/Ternary-Bonsai-4B-mlx-2bit",
+        "prism-ml/Ternary-Bonsai-4B-unpacked",
+        "Ternary-Bonsai-4B"
+      ],
+      "max_tokens": 32768,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-04"
+    },
+    "ternary-bonsai-1.7b": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "bonsai",
+      "total_parameters": "1.72B",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "license": "Apache-2.0",
+      "notes": "Prism ML Ternary-Bonsai-1.7B: Qwen3-1.7B-derived low-bit checkpoint (architecture unchanged, parent chat template and tool format), 1.72B, dense. GGUF Q2_0 g128 ternary weights (-1, 0, +1 with one FP16 scale per 128-weight group, 2.125 bits per weight; 436 MiB packed, PQ2_0 recommended); text only; 32,768-token context per the card. Thinking and tool calling are not documented on the card beyond the parent Qwen3 template (enable_thinking); BFCL v3 51.0. Published April 2026 (tech report); the Q2_0 group-64 file loads in upstream llama.cpp while the recommended PQ2_0 pack needs the PrismML fork; unpacked base Ternary-Bonsai-1.7B-unpacked. Apache-2.0. Ternary Bonsai, Bonsai 2 and 1-bit Bonsai are distinct checkpoints with separate registry identities; config-only MTP fields are not evidence of an embedded head, so no speculation support is asserted.",
+      "source": "Hugging Face model card (prism-ml/Ternary-Bonsai-1.7B-gguf, accessed 2026-11-07); prism-ml repo listing on the Hugging Face API",
+      "canonical_name": "ternary-bonsai-1.7b",
+      "aliases": [
+        "prism-ml/Ternary-Bonsai-1.7B-gguf",
+        "prism-ml/Ternary-Bonsai-1.7B-mlx-2bit",
+        "prism-ml/Ternary-Bonsai-1.7B-unpacked",
+        "Ternary-Bonsai-1.7B"
+      ],
+      "max_tokens": 32768,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "release_date": "2026-04"
     },
     "qwen3.6-35b-a3b-hauhaucs-aggressive": {
       "canonical_name": "qwen3.6-35b-a3b-hauhaucs-aggressive",
