@@ -168,3 +168,19 @@ def test_failure_line_measures_from_the_first_attempt(caplog):
     assert ms >= 40
     assert "EndpointUnreachableError" in line
     assert provider.calls == 1  # connect timed out: no second 75 s wait
+
+
+def test_endpoint_unreachable_error_pickles_with_every_field():
+    """The gateway's model-host child pickles exceptions across the process boundary."""
+    import pickle
+
+    exc = EndpointUnreachableError(provider="openai-compatible", base_url="http://192.168.1.7:1234/v1",
+                                   cause="httpx.ConnectError", detail="[Errno 60] Operation timed out",
+                                   errno=errno.ETIMEDOUT, elapsed_s=75.2, retryable=False)
+    back = pickle.loads(pickle.dumps(exc))
+    assert type(back) is EndpointUnreachableError
+    assert (back.provider, back.base_url, back.cause, back.detail, back.errno, back.elapsed_s, back.retryable) == (
+        "openai-compatible", "http://192.168.1.7:1234/v1", "httpx.ConnectError", "[Errno 60] Operation timed out",
+        errno.ETIMEDOUT, 75.2, False)
+    assert back.counts_toward_breaker is False
+    assert str(back) == str(exc)

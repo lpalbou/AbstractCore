@@ -74,6 +74,25 @@ class EndpointUnreachableError(ProviderError):
         self.retryable = bool(retryable)
         super().__init__(self._compose())
 
+    # Keyword-only construction does not survive BaseException's default pickling
+    # (it rebuilds from positional `args`); the gateway's model-host child carries
+    # exceptions across a process boundary pickled, so rebuild from the fields.
+    def __reduce__(self):
+        return (
+            _rebuild_endpoint_unreachable,
+            (
+                {
+                    "provider": self.provider,
+                    "base_url": self.base_url,
+                    "cause": self.cause,
+                    "detail": self.detail,
+                    "errno": self.errno,
+                    "elapsed_s": self.elapsed_s,
+                    "retryable": self.retryable,
+                },
+            ),
+        )
+
     def _compose(self) -> str:
         where = f" to {self.base_url}" if self.base_url else ""
         cause = self.cause + (f": {self.detail}" if self.detail else "")
@@ -82,6 +101,10 @@ class EndpointUnreachableError(ProviderError):
 
     def __str__(self) -> str:
         return self._compose()
+
+
+def _rebuild_endpoint_unreachable(fields: dict) -> "EndpointUnreachableError":
+    return EndpointUnreachableError(**fields)
 
 
 class EmptyCompletionError(ProviderAPIError):
