@@ -27,7 +27,14 @@ class McpError(RuntimeError):
 
 
 class McpHttpError(McpError):
-    """Raised when an MCP HTTP request fails (non-2xx, invalid JSON)."""
+    """Raised when an MCP HTTP request fails (non-2xx, invalid JSON).
+
+    `status_code` is the HTTP status when the failure was a response, else None.
+    """
+
+    def __init__(self, message: str, *, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = int(status_code) if isinstance(status_code, int) else None
 
 
 class McpRpcError(McpError):
@@ -56,18 +63,19 @@ def default_client_version() -> str:
 
 
 def initialize_params(*, protocol_version: str, client_name: str, client_version: str) -> Dict[str, Any]:
-    """The `initialize` request params both transports send."""
+    """The `initialize` request params both transports send.
+
+    `capabilities` declares what this client supports, and only that: the specification
+    defines each client capability (`roots`, `sampling`, `elicitation`, `experimental`) as an
+    object that is PRESENT when supported and ABSENT otherwise. This client supports none of
+    them, so it sends `{}`, exactly as the reference client does. A key set to `null` is not
+    "unsupported" to a schema-validated server; it is an invalid record, and the handshake is
+    refused (Context7: "Invalid input: expected record, received null"). No value in these
+    params may be None.
+    """
     return {
         "protocolVersion": protocol_version,
-        # Match the MCP reference client's envelope shape (server-side validators often
-        # expect these keys to exist even when the values are null).
-        "capabilities": {
-            "experimental": None,
-            "sampling": None,
-            "elicitation": None,
-            "roots": None,
-            "tasks": None,
-        },
+        "capabilities": {},
         "clientInfo": {"name": client_name, "version": client_version or "0.0.0"},
     }
 
@@ -243,7 +251,10 @@ class McpClient:
     def _raise_for_status(resp: httpx.Response) -> None:
         if resp.status_code < 200 or resp.status_code >= 300:
             body = (resp.text or "").strip()
-            raise McpHttpError(f"MCP HTTP {resp.status_code}: {preview_text(body, max_chars=500)}")
+            raise McpHttpError(
+                f"MCP HTTP {resp.status_code}: {preview_text(body, max_chars=500)}",
+                status_code=int(resp.status_code),
+            )
 
     def _post(self, payload: Dict[str, Any]) -> httpx.Response:
         try:
@@ -343,9 +354,29 @@ class McpClient:
         self._post(payload)
 
     def request(self, *, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        if str(method or "").strip() != "initialize":
-            self._ensure_initialized()
-        return self._request_no_init(method=method, params=params)
+        if str(method or "").strip() == "initialize":
+            return self._request_no_init(method=method, params=params)
+        self._ensure_initialized()
+        try:
+            return self._request_no_init(method=method, params=params)
+        except McpHttpError as e:
+            # Streamable HTTP: a 404 to a request carrying MCP-Session-Id means the server
+            # dropped that session (restart, expiry). The specification requires the client
+            # to start a new session with a fresh `initialize` without a session id, so the
+            # caller's request is replayed once on the new session instead of failing a
+            # long-lived host after every server restart.
+            if e.status_code != 404 or not self._session_id:
+                raise
+            self._reset_session()
+            self.initialize()
+            return self._request_no_init(method=method, params=params)
+
+    def _reset_session(self) -> None:
+        self._session_id = None
+        self._client.headers.pop("MCP-Session-Id", None)
+        self._initialized = False
+        self._init_attempted = False
+        self._init_result = None
 
     def _request_no_init(self, *, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         mid = str(method or "").strip()

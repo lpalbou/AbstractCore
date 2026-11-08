@@ -6,6 +6,7 @@ import time
 import copy
 import uuid
 import asyncio
+import errno as errno_module
 import warnings
 import base64
 import contextlib
@@ -73,6 +74,8 @@ from ..exceptions import (
     InvalidRequestError,
     UnsupportedFeatureError,
     ModelNotFoundError,
+    EndpointUnreachableError,
+    ProviderError,
 )
 from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
 from ..architectures.response_postprocessing import (
@@ -1021,7 +1024,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 self.logger.info(f"Generation cancelled by the host for {self.model}: {error} (latency: {latency_ms:.2f}ms)")
             else:
                 self.logger.error(
-                    f"Generation failed for {self.model}: {error} (latency: {latency_ms:.2f}ms)"
+                    f"Generation failed for {self.model}: {error} "
+                    f"[{type(error).__module__}.{type(error).__name__}] "
+                    f"(elapsed: {latency_ms:.0f}ms including retries)"
                 )
         else:
             tokens_info = ""
@@ -1271,19 +1276,67 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 )
             return f"{_provider_label()} API error: timed out"
 
-        def _looks_like_timeout(exc: Exception) -> bool:
-            # Type-based (preferred)
-            if isinstance(exc, (TimeoutError, asyncio.TimeoutError, socket.timeout)):
-                return True
+        def _class_path(exc: BaseException) -> str:
             cls = exc.__class__
-            name = (getattr(cls, "__name__", "") or "").lower()
-            mod = (getattr(cls, "__module__", "") or "").lower()
-            if "timeout" in name:
-                return True
-            if mod.startswith(("httpx", "requests", "aiohttp")) and ("timeout" in name):
-                return True
+            return f"{getattr(cls, '__module__', '') or ''}.{getattr(cls, '__name__', '') or ''}".strip(".")
 
-            # String-based fallback (covers wrapped SDK exceptions)
+        def _cause_chain(exc: BaseException) -> List[BaseException]:
+            out: List[BaseException] = []
+            cur: Optional[BaseException] = exc
+            while cur is not None and len(out) < 6 and cur not in out:
+                out.append(cur)
+                cur = cur.__cause__ or cur.__context__
+            return out
+
+        _CONNECT_ERRNOS = {
+            getattr(errno_module, n, None)
+            for n in ("ECONNREFUSED", "ETIMEDOUT", "EHOSTUNREACH", "EHOSTDOWN", "ENETUNREACH", "ENETDOWN")
+        } - {None}
+
+        def _connect_failure(exc: Exception) -> Optional[Tuple[BaseException, bool]]:
+            """(transport exception, retryable) when no TCP connection could be made, else None.
+
+            Type-first over the cause chain (SDKs wrap httpx errors): httpx/httpcore
+            ConnectError/ConnectTimeout, requests ConnectionError, ConnectionRefusedError,
+            socket.gaierror (DNS), or an OSError whose errno is a connect-class errno. A
+            connect that TIMED OUT (ConnectTimeout, ETIMEDOUT) is not retryable here: a
+            second attempt blocks for the same budget; refusals and DNS failures are.
+            """
+            for item in _cause_chain(exc):
+                cls = item.__class__
+                name = getattr(cls, "__name__", "") or ""
+                mod = (getattr(cls, "__module__", "") or "").lower()
+                if name == "ConnectTimeout" and mod.startswith(("httpx", "httpcore")):
+                    return item, False
+                if name == "ConnectError" and mod.startswith(("httpx", "httpcore")):
+                    inner = getattr(item, "__cause__", None) or getattr(item, "__context__", None)
+                    code = getattr(inner, "errno", None)
+                    return item, code != getattr(errno_module, "ETIMEDOUT", -1)
+                if name == "ConnectionError" and mod.startswith("requests"):
+                    return item, True
+                if isinstance(item, ConnectionRefusedError) or isinstance(item, socket.gaierror):
+                    return item, True
+                if isinstance(item, OSError) and getattr(item, "errno", None) in _CONNECT_ERRNOS:
+                    return item, item.errno != getattr(errno_module, "ETIMEDOUT", -1)
+            return None
+
+        def _looks_like_timeout(exc: Exception) -> bool:
+            # Type-first: the exception class (or a wrapped cause) names a timeout.
+            for item in _cause_chain(exc):
+                if isinstance(item, (TimeoutError, asyncio.TimeoutError, socket.timeout)):
+                    return True
+                if "timeout" in (getattr(item.__class__, "__name__", "") or "").lower():
+                    return True
+
+            # The message is consulted ONLY when the type carries no information at all
+            # (a bare Exception/RuntimeError or our own generic ProviderAPIError wrapper).
+            # A typed exception whose text merely contains "timed out" (an OSError errno 60
+            # from a refused TCP connect, a server's JSON body) is NOT a timeout of ours,
+            # and reporting the configured budget as spent for it is the ADR-0027 §1
+            # failure this guard exists to prevent (2026-11-08: "timed out after 7200.0s"
+            # for a machine that was switched off).
+            if exc.__class__ not in (Exception, RuntimeError, ProviderAPIError, ProviderError):
+                return False
             msg = str(exc or "").lower()
             return ("timed out" in msg) or ("timeout" in msg) or ("time out" in msg)
 
@@ -1332,9 +1385,39 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if isinstance(error, GenerationCancelledError):
             return error
 
+        # The endpoint never accepted a connection: typed, with the endpoint and the
+        # transport class, so a host can park the step and probe instead of failing
+        # the run (and the breaker never counts it: an absent machine is not a sick
+        # model). Checked BEFORE the timeout classes: an OS connect timeout is an
+        # unreachable endpoint, not a generation that exceeded its budget.
+        connect = _connect_failure(error)
+        if connect is not None:
+            transport, retryable = connect
+            inner = getattr(transport, "__cause__", None) or getattr(transport, "__context__", None)
+            code = getattr(transport, "errno", None)
+            if code is None:
+                code = getattr(inner, "errno", None)
+            detail = str(transport).strip() or (str(inner).strip() if inner is not None else "")
+            self.logger.warning(
+                f"{_provider_label()} endpoint unreachable at {getattr(self, 'base_url', None)}: "
+                f"{_class_path(error)}: {preview_text(str(error), max_chars=200)}"
+            )
+            return EndpointUnreachableError(
+                provider=_provider_label(),
+                base_url=getattr(self, "base_url", None),
+                cause=_class_path(transport),
+                detail=preview_text(detail, max_chars=200),
+                errno=code if isinstance(code, int) else None,
+                retryable=retryable,
+            )
+
         # Central timeout normalization for all providers (httpx/requests/SDKs).
         # #[WARNING:TIMEOUT] — ADR-0027 §1: duration + responsible knob, accurately.
         if _looks_like_timeout(error):
+            self.logger.warning(
+                f"{_provider_label()} timeout normalised from {_class_path(error)}: "
+                f"{preview_text(str(error), max_chars=200)}"
+            )
             return ProviderAPIError(_timeout_message())
 
         error_str = str(error).lower()
@@ -5303,6 +5386,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     ) from e
                 # Convert to custom exception and re-raise for retry handling
                 custom_error = self._handle_api_error(e)
+                if getattr(custom_error, "elapsed_s", "absent") is None:
+                    # EndpointUnreachableError: the normaliser cannot measure; this frame can.
+                    try:
+                        custom_error.elapsed_s = time.perf_counter() - start_perf
+                    except Exception:  # noqa: BLE001 - a read-only error object loses nothing
+                        pass
                 raise custom_error
 
             # operator 2026-08-01: the entity relay answered 200 with an
@@ -5382,6 +5471,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # nothing an unload could break).
         inflight_registry = self._inflight_generations()
         inflight_call = None if stream else inflight_registry.begin(cancel_event)
+        sequence_started = time.time()
         try:
             response, start_time, start_perf = self.retry_manager.execute_with_retry(
                 _execute_generation,
@@ -5763,11 +5853,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
             # eventually discards the exception (measured: 1.1 GB of MPS pool
             # retained across an in-flight eject before this).
             _release_cancelled_frames(e)
-            # This exception comes from the retry manager after all attempts failed
-            # Track final error (start_time may not be available, use current time)
-            current_time = time.time()
+            # This exception comes from the retry manager after all attempts failed.
+            # Measure from the first attempt: the failure line reports what the caller
+            # actually waited (every attempt plus backoff), never ~0 ms.
             self._track_generation(
-                prompt, None, current_time, success=False, error=e, stream=stream
+                prompt, None, sequence_started, success=False, error=e, stream=stream
             )
 
             # Emit error event

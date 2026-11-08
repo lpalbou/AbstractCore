@@ -33,6 +33,9 @@ TOOLS = [
 
 class _FakeHttpMcp:
     def __init__(self, *, refuse_initialize: bool = False, loop_cursor: bool = False) -> None:
+        # Session ids the server has forgotten (restart, expiry): a request carrying one
+        # answers 404, as the Streamable HTTP transport specifies.
+        self.expired_sessions: set = set()
         self.log: List[Dict[str, Any]] = []
         self.sessions: Dict[str, bool] = {}
         self.refuse_initialize = refuse_initialize
@@ -78,6 +81,25 @@ class _FakeHttpMcp:
                     if fake.refuse_initialize:
                         self._send(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "Unsupported protocol version"}})
                         return
+                    # Schema-validated the way zod-based servers (Context7) are: every client
+                    # capability is an object when present; `null` is an invalid record.
+                    params = req.get("params") or {}
+                    problems = [
+                        f"capabilities.{key}: Invalid input: expected record, received "
+                        f"{'null' if value is None else type(value).__name__}"
+                        for key, value in (params.get("capabilities") or {}).items()
+                        if not isinstance(value, dict)
+                    ]
+                    if not isinstance(params.get("capabilities"), dict):
+                        problems.append("capabilities: Invalid input: expected record")
+                    if not isinstance(params.get("protocolVersion"), str):
+                        problems.append("protocolVersion: Invalid input: expected string")
+                    info = params.get("clientInfo") or {}
+                    if not isinstance(info.get("name"), str) or not isinstance(info.get("version"), str):
+                        problems.append("clientInfo: Invalid input: expected {name, version}")
+                    if problems:
+                        self._send(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "; ".join(problems)}})
+                        return
                     new_sid = f"sess-{len(fake.sessions) + 1}"
                     fake.sessions[new_sid] = False
                     self._send(
@@ -88,6 +110,10 @@ class _FakeHttpMcp:
                             "serverInfo": {"name": "fake-http", "version": "1.2.3"}}},
                         headers={"MCP-Session-Id": new_sid},
                     )
+                    return
+                if sid in fake.expired_sessions:
+                    # The session is gone (server restart): 404, and the client must re-initialize.
+                    self._send(404, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32001, "message": "Session not found"}})
                     return
                 if sid not in fake.sessions:
                     self._send(400, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "Bad Request: missing or unknown MCP-Session-Id"}})
@@ -215,6 +241,69 @@ def test_http_factory_client_handshakes() -> None:
             assert len(client.list_tools()) == 3
         finally:
             client.close()
+
+
+def _assert_no_none(value: Any, path: str = "params") -> None:
+    assert value is not None, f"{path} is None"
+    if isinstance(value, dict):
+        for k, v in value.items():
+            _assert_no_none(v, f"{path}.{k}")
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            _assert_no_none(v, f"{path}[{i}]")
+
+
+def test_initialize_params_declare_only_supported_capabilities() -> None:
+    """The handshake must be valid for ANY schema-validated server, not only lenient ones.
+
+    The MCP specification defines each client capability as an object present when
+    supported and absent otherwise; a `null` value is an invalid record to zod-validated
+    servers (Context7 refused: "Invalid input: expected record, received null" x5). This
+    client supports no client capability, so it sends `{}`, like the reference client,
+    and no value anywhere in the params is None.
+    """
+    from abstractcore.mcp.client import DEFAULT_PROTOCOL_VERSION, initialize_params
+
+    params = initialize_params(protocol_version=DEFAULT_PROTOCOL_VERSION, client_name="abstractcore.mcp", client_version="1.0.0")
+    _assert_no_none(params)
+    assert params["capabilities"] == {}
+    assert params["protocolVersion"] == DEFAULT_PROTOCOL_VERSION
+    assert params["clientInfo"] == {"name": "abstractcore.mcp", "version": "1.0.0"}
+    # An unknown client version is still a string, never None.
+    assert initialize_params(protocol_version="2025-06-18", client_name="x", client_version="")["clientInfo"]["version"] == "0.0.0"
+
+
+def test_http_strict_server_accepts_the_handshake_and_refuses_null_capabilities() -> None:
+    """The strict fake accepts our params; the pre-fix envelope (null records) is refused by it."""
+    with _FakeHttpMcp() as fake, McpClient(url=fake.url, timeout_s=5) as client:
+        assert client.initialize()["serverInfo"]["name"] == "fake-http"
+        # Prove the fake really validates: the old envelope must be refused with the Context7 wording.
+        with pytest.raises(McpRpcError, match="expected record, received null"):
+            client.request(
+                method="initialize",
+                params={"protocolVersion": "2025-11-25", "capabilities": {"roots": None, "sampling": None},
+                        "clientInfo": {"name": "old", "version": "0"}},
+            )
+
+
+def test_http_expired_session_reinitializes_and_replays_once() -> None:
+    """A 404 to a request carrying MCP-Session-Id means the server dropped the session (restart):
+    the client starts a new session with a fresh initialize (no session id) and replays the request."""
+    with _FakeHttpMcp() as fake, McpClient(url=fake.url, timeout_s=5) as client:
+        assert [t["name"] for t in client.list_tools()] == ["add", "echo", "clock"]
+        assert client.session_id == "sess-1"
+        fake.expired_sessions.add("sess-1")
+
+        assert [t["name"] for t in client.list_tools()] == ["add", "echo", "clock"]
+        assert client.session_id == "sess-2"
+
+    methods = [e["method"] for e in fake.log]
+    # first session (4 calls), the stale call, then the new handshake and the replayed pages
+    assert methods == ["initialize", "notifications/initialized", "tools/list", "tools/list",
+                       "tools/list", "initialize", "notifications/initialized", "tools/list", "tools/list"]
+    assert fake.log[4]["session"] == "sess-1"  # the call the server answered 404
+    assert fake.log[5]["session"] is None  # the new initialize carries no session id
+    assert all(e["session"] == "sess-2" for e in fake.log[6:])
 
 
 def test_http_refused_initialize_raises() -> None:

@@ -46,7 +46,15 @@ def _backend_loaded(backend: str) -> bool:
     if backend == "huggingface":
         return "abstractcore.providers.huggingface_provider" in sys.modules
     if backend == "embeddings":
-        return _EMBEDDINGS_MODULE in sys.modules
+        # Presence in sys.modules is true from the first line of the module's import,
+        # on whichever thread imports it; a snapshot taken meanwhile saw a partially
+        # initialised module ("has no attribute 'registered_embedding_managers'",
+        # 2026-11-08). Loaded means the functions the snapshot calls exist.
+        module = sys.modules.get(_EMBEDDINGS_MODULE)
+        return module is not None and all(
+            callable(getattr(module, name, None))
+            for name in ("registered_embedding_managers", "resident_embedding_models")
+        )
     raise ValueError(f"unknown in-process residency backend {backend!r}; expected one of {BACKENDS}")
 
 

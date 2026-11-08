@@ -34,6 +34,56 @@ class ProviderAPIError(ProviderError):
     pass
 
 
+class EndpointUnreachableError(ProviderError):
+    """No TCP connection to the provider's endpoint could be made.
+
+    Typed so hosts can tell "the inference machine is off, asleep or unreachable" from a
+    generation that ran and failed: a host may park the step and probe the endpoint instead
+    of failing the run. Fields:
+
+    - `base_url`: the endpoint that did not answer (None when the provider has none).
+    - `cause`: the transport exception's class path (e.g. `httpx.ConnectError`).
+    - `errno`: the OS error number when the transport exposed one (ECONNREFUSED 61,
+      ETIMEDOUT 60, EHOSTUNREACH 65 ...), else None.
+    - `elapsed_s`: seconds the attempt took before failing, measured by the caller.
+    - `retryable`: False when the connect attempt itself timed out (a second attempt would
+      block for the same OS/connect budget); True for an immediate refusal or DNS failure.
+    - `counts_toward_breaker`: always False — an unreachable endpoint is not an unhealthy
+      model, so it never opens the circuit breaker.
+    """
+
+    counts_toward_breaker = False
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        base_url=None,
+        cause: str = "",
+        detail: str = "",
+        errno=None,
+        elapsed_s=None,
+        retryable: bool = True,
+    ):
+        self.provider = str(provider or "provider")
+        self.base_url = str(base_url) if base_url else None
+        self.cause = str(cause or "")
+        self.detail = str(detail or "")
+        self.errno = int(errno) if isinstance(errno, int) else None
+        self.elapsed_s = float(elapsed_s) if isinstance(elapsed_s, (int, float)) else None
+        self.retryable = bool(retryable)
+        super().__init__(self._compose())
+
+    def _compose(self) -> str:
+        where = f" to {self.base_url}" if self.base_url else ""
+        cause = self.cause + (f": {self.detail}" if self.detail else "")
+        took = f" after {self.elapsed_s:.1f}s" if self.elapsed_s is not None else ""
+        return f"{self.provider} API error: could not connect{where} ({cause}){took}"
+
+    def __str__(self) -> str:
+        return self._compose()
+
+
 class EmptyCompletionError(ProviderAPIError):
     """Provider answered 200 with a completion carrying nothing usable.
 

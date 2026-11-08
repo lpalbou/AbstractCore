@@ -284,6 +284,19 @@ class RetryManager:
         if error_type_name == "EmptyCompletionError":
             return RetryableErrorType.EMPTY_COMPLETION
 
+        # Type-first (2026-11-08): the class decides before any prose does. An
+        # unreachable endpoint (typed by the provider base) is NETWORK whatever its
+        # text says, and a class whose NAME says timeout is a timeout. The message
+        # keywords below are the last resort for exceptions that carry no type
+        # information, never a verdict over a typed one — "[Errno 60] Operation
+        # timed out" from a switched-off machine was retried as a TIMEOUT for
+        # 3 min 46 s because the text was read first.
+        if error_type_name in ("EndpointUnreachableError", "ConnectError", "ConnectTimeout",
+                               "ConnectionRefusedError", "gaierror"):
+            return RetryableErrorType.NETWORK
+        if "timeout" in error_type_name.lower():
+            return RetryableErrorType.TIMEOUT
+
         if "rate limit" in error_str or "429" in error_str or error_type_name == "RateLimitError":
             return RetryableErrorType.RATE_LIMIT
         elif "timeout" in error_str or "timed out" in error_str:
@@ -313,6 +326,12 @@ class RetryManager:
         error_type = self.classify_error(error)
 
         if attempt >= self.config.max_attempts:
+            return False
+
+        # The raise site may know a retry is pointless (an EndpointUnreachableError
+        # whose connect attempt timed out: the next attempt blocks for the same
+        # OS/connect budget). Honour that over the class-level policy.
+        if getattr(error, "retryable", True) is False:
             return False
 
         if error_type in [RetryableErrorType.RATE_LIMIT, RetryableErrorType.TIMEOUT,
@@ -438,7 +457,12 @@ class RetryManager:
                 # misconfigured caller open a SHARED breaker under endpoint
                 # damping and block every healthy instance on that endpoint
                 # (adversarial find, 2026-07-13).
-                if error_type is not RetryableErrorType.UNKNOWN:
+                # An unreachable endpoint (EndpointUnreachableError, counts_toward_breaker
+                # False) says nothing about the model either: the machine is off or asleep,
+                # and the host parks the step until it answers; an open breaker would refuse
+                # the resumed runs for recovery_timeout after it came back.
+                if (error_type is not RetryableErrorType.UNKNOWN
+                        and getattr(e, "counts_toward_breaker", True) is not False):
                     circuit_breaker.record_failure()
 
                 # Check if we should retry

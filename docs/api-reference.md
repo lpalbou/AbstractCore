@@ -849,6 +849,22 @@ class ProviderAPIError(AbstractCoreError):
     """Provider API error."""
 ```
 
+#### EndpointUnreachableError
+```python
+class EndpointUnreachableError(ProviderError):
+    """No TCP connection to the provider's endpoint could be made (machine off or asleep,
+    connection refused, DNS failure)."""
+    base_url: str | None       # the endpoint that did not answer
+    cause: str                 # transport exception class, e.g. "httpx.ConnectError"
+    errno: int | None          # OS error number when known (61 refused, 60 connect timed out)
+    elapsed_s: float | None    # seconds the attempt took before failing
+    retryable: bool            # False when the connect attempt itself timed out
+    counts_toward_breaker = False
+```
+Raised instead of a timeout message when the endpoint never accepted a connection. A host can
+catch it by type to park the step and probe the endpoint rather than fail the run; it never
+opens the circuit breaker.
+
 #### ModelNotFoundError
 ```python
 class ModelNotFoundError(AbstractCoreError):

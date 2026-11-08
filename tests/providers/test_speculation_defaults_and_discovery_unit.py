@@ -166,6 +166,32 @@ def test_default_missing_head_never_enters_upstream_downloader(monkeypatch):
     assert provider._mtp_outcome_at_load.reason == "mtp_head_not_cached"
 
 
+@pytest.mark.parametrize("provider", ["huggingface", "ollama", "openai-compatible"])
+def test_default_require_acceleration_degrades_instead_of_failing(provider):
+    """Operator ruling 2026-11-08: a stored native_mtp default (require_acceleration=True)
+    applied to a provider family without an adapter must fall back to MTP off, never fail
+    the run. Only an explicit per-call require_acceleration is a hard failure."""
+    instance = SimpleNamespace(
+        provider=provider, logger=Mock(),
+        _speculation_constructor_default={"mode": "native_mtp", "num_draft_tokens": 2, "require_acceleration": True},
+    )
+    kwargs = {"max_tokens": 5}
+    outcome = spec.prepare_provider_speculation(instance, kwargs)
+    assert outcome.used is False
+    assert outcome.requested is True
+    assert outcome.reason == "native_mtp_backend_unavailable"
+    meta = outcome.to_metadata()
+    assert meta["applied"] is False
+    assert meta["degraded_from_default"] is True
+    assert meta["used"] is False
+    assert "speculation" not in kwargs
+    instance.logger.warning.assert_called_once()
+    assert "speculation default ignored" in instance.logger.warning.call_args.args[0]
+    # The same flag given by THIS call is still the caller's explicit "fail rather than run slow".
+    with pytest.raises(spec.SpeculationUnavailableError, match="no native MTP adapter"):
+        spec.prepare_provider_speculation(instance, {"speculation": {"mode": "native_mtp", "require_acceleration": True}})
+
+
 @pytest.mark.parametrize("provider", ["huggingface", "ollama", "openai"])
 def test_explicit_unsupported_provider_controls_are_never_silent(provider):
     instance = SimpleNamespace(provider=provider, logger=Mock())

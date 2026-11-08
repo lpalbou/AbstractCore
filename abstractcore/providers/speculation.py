@@ -459,9 +459,18 @@ def prepare_provider_speculation(instance: Any, kwargs: Dict[str, Any]) -> Optio
     MLX negotiates its head and per-call restrictions in its adapter. Other
     providers currently have no native-MTP execution adapter; off is always
     safe, while a best-effort refusal is attached to the individual response.
+
+    `require_acceleration=True` is honoured as a hard failure only when THIS
+    call asked for it. When it arrived through the provider-lifetime default
+    (constructor `speculation=`, a stored profile or host setting applied to a
+    provider family without an adapter), the call runs without speculation and
+    says so: one WARNING, and `metadata["speculation"]` carries
+    `applied: False` with `degraded_from_default: True`. A stored preference
+    must never fail a run the caller did not configure.
     """
     value = kwargs.get("speculation")
-    if value is None:
+    from_default = value is None
+    if from_default:
         value = getattr(instance, "_speculation_constructor_default", None)
     request = normalize_speculation_request(value)
     if request is None:
@@ -471,9 +480,26 @@ def prepare_provider_speculation(instance: Any, kwargs: Dict[str, Any]) -> Optio
     kwargs.pop("speculation", None)
     if not request.enabled:
         return SpeculationOutcome(reason="disabled_for_this_call")
+    label = getattr(instance, "provider", None) or type(instance).__name__
+    message = f"The {label} provider has no native MTP adapter"
+    if from_default and request.require_acceleration:
+        logger = getattr(instance, "logger", None)
+        if logger is not None:
+            logger.warning(
+                f"speculation default ignored: {message}; running without speculation "
+                "(require_acceleration came from the provider default, not from this call)"
+            )
+        return SpeculationOutcome(
+            requested=True,
+            mode=request.mode,
+            used=False,
+            reason="native_mtp_backend_unavailable",
+            drafter=request.drafter,
+            num_draft_tokens=request.num_draft_tokens,
+            details={"message": message, "applied": False, "degraded_from_default": True},
+        )
     return unavailable(
-        request, "native_mtp_backend_unavailable",
-        f"The {getattr(instance, 'provider', None) or type(instance).__name__} provider has no native MTP adapter",
+        request, "native_mtp_backend_unavailable", message,
         logger=getattr(instance, "logger", None),
     )
 

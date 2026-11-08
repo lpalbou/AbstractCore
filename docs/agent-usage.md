@@ -79,7 +79,8 @@ Stop at the first authentication failure and fix configuration before another re
   A cache hit is not a guarantee of byte-identical output. Blocs store text and native cache
   artifacts, with live-binding checks on deletion.
 - **Errors:** handle `AbstractCoreError` subclasses, especially `AuthenticationError`,
-  `ModelNotFoundError`, `ModelArtifactMismatchError`, `ProviderAPIError`, `RateLimitError`,
+  `ModelNotFoundError`, `ModelArtifactMismatchError`, `ProviderAPIError`, `EndpointUnreachableError`
+  (the endpoint never accepted a connection; park and probe rather than fail), `RateLimitError`,
   `UnsupportedFeatureError`, and `GenerationCancelledError`. Cancellation is not retried.
   Invalid options can raise `ValueError`, missing engines `ImportError`, exhausted structured
   validation `pydantic.ValidationError`; backend/transport failures can also surface as
