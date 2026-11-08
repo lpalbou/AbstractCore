@@ -19,6 +19,7 @@ def test_payload_carries_every_field_and_a_503():
     assert body["provider"] == "openai-compatible"
     assert body["base_url"] == "http://192.168.1.7:1234/v1"
     assert body["cause"] == "httpx.ConnectError"
+    assert body["detail"] == "[Errno 60] Operation timed out"
     assert body["errno"] == errno.ETIMEDOUT
     assert body["elapsed_s"] == 75.2
     assert body["retryable"] is False

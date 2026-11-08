@@ -9128,7 +9128,8 @@ def _endpoint_unreachable_payload(exc: "EndpointUnreachableError") -> Dict[str, 
 
     Every field of `EndpointUnreachableError` travels, so a host behind this server can
     reconstruct the condition by `code` and park the step instead of failing the run:
-    `provider`, `base_url`, `cause` (transport class path), `errno`, `elapsed_s`, `retryable`.
+    `provider`, `base_url`, `cause` (transport class path), `detail` (transport message), `errno`,
+    `elapsed_s`, `retryable`.
     """
     return {
         "error": {
@@ -9138,6 +9139,7 @@ def _endpoint_unreachable_payload(exc: "EndpointUnreachableError") -> Dict[str, 
             "provider": getattr(exc, "provider", None),
             "base_url": getattr(exc, "base_url", None),
             "cause": getattr(exc, "cause", None),
+            "detail": getattr(exc, "detail", None),
             "errno": getattr(exc, "errno", None),
             "elapsed_s": getattr(exc, "elapsed_s", None),
             "retryable": bool(getattr(exc, "retryable", True)),
