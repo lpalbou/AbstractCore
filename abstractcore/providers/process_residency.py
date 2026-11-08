@@ -51,10 +51,7 @@ def _backend_loaded(backend: str) -> bool:
         # initialised module ("has no attribute 'registered_embedding_managers'",
         # 2026-11-08). Loaded means the functions the snapshot calls exist.
         module = sys.modules.get(_EMBEDDINGS_MODULE)
-        return module is not None and all(
-            callable(getattr(module, name, None))
-            for name in ("registered_embedding_managers", "resident_embedding_models")
-        )
+        return module is not None and callable(getattr(module, "resident_embedding_models", None))
     raise ValueError(f"unknown in-process residency backend {backend!r}; expected one of {BACKENDS}")
 
 
@@ -429,7 +426,10 @@ def _embedding_model_states() -> List[Dict[str, Any]]:
     if not _backend_loaded("embeddings"):
         return []
     module = sys.modules[_EMBEDDINGS_MODULE]
-    managers = list(module.registered_embedding_managers())
+    registered = getattr(module, "registered_embedding_managers", None)
+    if not callable(registered):
+        return []  # the module is still importing (defined after resident_embedding_models)
+    managers = list(registered())
     out = []
     for row in module.resident_embedding_models():
         name = str((row.get("models") or [""])[0] or "")
