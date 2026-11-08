@@ -1477,9 +1477,16 @@ def _parameter_gist(description: Any) -> str:
     text = " ".join(str(description or "").split())
     if not text:
         return ""
-    # Cut at the first sentence end that is followed by a space (not inside "e.g." or a version).
+    # Cut at the first sentence end that is followed by a space, unless the "sentence" ends in
+    # an abbreviation ("e.g.", "i.e.", "etc.", "vs.", "cf.", "approx.", "No.") or a single
+    # letter ("v1.2 a. b."), which is not a sentence end.
+    _abbrev = ("e.g", "i.e", "etc", "vs", "cf", "approx", "no", "max", "min", "incl", "resp")
     for idx, ch in enumerate(text):
         if ch in ".!?" and idx + 1 < len(text) and text[idx + 1] == " " and idx >= 12:
+            head = text[:idx]
+            last = head.rsplit(" ", 1)[-1].lower().lstrip("(")
+            if ch == "." and (last in _abbrev or len(last) <= 1 or last.replace(".", "").isdigit()):
+                continue
             text = text[: idx + 1]
             break
     if len(text) > _PARAMETER_GIST_MAX_CHARS:

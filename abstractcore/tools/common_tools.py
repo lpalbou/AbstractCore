@@ -7162,8 +7162,8 @@ def fetch_url(
         data: Optional data to send with POST/PUT requests (dict or string)
         timeout: Request timeout in seconds (default: 45)
         include_binary_preview: Whether to include base64 preview for binary content (default: False)
-        render_js: What to do when a page's content is client-rendered and the
-            static fetch extracts nothing usable (default: "auto"):
+        render_js: Headless-browser rendering for client-rendered pages: "auto" (default), "never" or "always".
+            Applies when the static fetch extracts nothing usable:
             - "auto":   re-fetch through the headless browser when it is
                         available, then extract from the rendered DOM. If the
                         browser is not installed, return the ordinary

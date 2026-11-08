@@ -99,6 +99,18 @@ def test_every_builtin_tool_parameter_is_described():
     assert missing == [], f"built-in tool parameters without a description: {missing}"
 
 
+def test_parameter_gist_keeps_abbreviations_and_caps_length():
+    from abstractcore.tools.parser import _parameter_gist
+
+    assert _parameter_gist('Regional preference, e.g. "us-en" or "fr-fr". Second sentence.') == 'Regional preference, e.g. "us-en" or "fr-fr".'
+    assert _parameter_gist("Seconds (max 600; values above are clamped). Time limit before the kill.") == "Seconds (max 600; values above are clamped)."
+    assert _parameter_gist("Max. three items etc. are fine. Next.") == "Max. three items etc. are fine."
+    long = "word " * 60
+    gist = _parameter_gist(long)
+    assert len(gist) <= 164 and gist.endswith("...")
+    assert _parameter_gist(None) == "" and _parameter_gist("   ") == ""
+
+
 def test_native_payload_and_prompt_carry_the_meaning():
     from abstractcore.tools.common_tools import search_files
 

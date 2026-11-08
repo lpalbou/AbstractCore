@@ -77,7 +77,7 @@ from ..embeddings.models import (
     list_available_providers as _list_embedding_providers,
     list_direct_embedding_providers as _list_direct_embedding_providers,
 )
-from ..exceptions import AuthenticationError, DecisionModelError, GenerationCancelledError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
+from ..exceptions import AuthenticationError, DecisionModelError, EndpointUnreachableError, GenerationCancelledError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 from ..providers.base import PromptCacheError
 from ..providers.model_capabilities import modalities_for_model
 from ..utils.structured_logging import get_logger, configure_logging
@@ -9123,7 +9123,31 @@ def _create_direct_embedding_provider(provider: str, model: str, provider_kwargs
     raise ValueError(f"Unsupported direct embedding provider: {provider}")
 
 
+def _endpoint_unreachable_payload(exc: "EndpointUnreachableError") -> Dict[str, Any]:
+    """The OpenAI-envelope body for an unreachable inference endpoint (HTTP 503).
+
+    Every field of `EndpointUnreachableError` travels, so a host behind this server can
+    reconstruct the condition by `code` and park the step instead of failing the run:
+    `provider`, `base_url`, `cause` (transport class path), `errno`, `elapsed_s`, `retryable`.
+    """
+    return {
+        "error": {
+            "message": str(exc),
+            "type": "endpoint_unreachable",
+            "code": "endpoint_unreachable",
+            "provider": getattr(exc, "provider", None),
+            "base_url": getattr(exc, "base_url", None),
+            "cause": getattr(exc, "cause", None),
+            "errno": getattr(exc, "errno", None),
+            "elapsed_s": getattr(exc, "elapsed_s", None),
+            "retryable": bool(getattr(exc, "retryable", True)),
+        }
+    }
+
+
 def _provider_exception_status(exc: Exception) -> int:
+    if isinstance(exc, EndpointUnreachableError):
+        return 503
     if isinstance(exc, AuthenticationError):
         return 401
     if isinstance(exc, RateLimitError):
@@ -10532,6 +10556,10 @@ async def process_chat_completion(
             # OpenAI layout: an unknown provider or model is the caller's 404.
             return JSONResponse(status_code=404, content={"error": {
                 "message": str(e), "type": "invalid_request_error", "param": "model", "code": "model_not_found"}})
+        if isinstance(e, EndpointUnreachableError):
+            # The inference machine is off, asleep or unreachable: 503 with every field, so
+            # a host can park and probe rather than treat this as a generation failure.
+            return JSONResponse(status_code=503, content=_endpoint_unreachable_payload(e))
         if isinstance(e, DecisionModelError):
             # A decision model has no text lane: the caller's 400, pointing at the System One endpoint.
             return JSONResponse(status_code=400, content={"error": {
