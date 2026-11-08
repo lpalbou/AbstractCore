@@ -111,6 +111,12 @@ def shell_exec(
     `working_directory` sets the INITIAL cwd when the session is first created (ignored on an
     existing session — use `cd` there). `timeout` bounds this call in seconds; on timeout the
     session survives and resyncs on the next call.
+
+    Args:
+        command: Shell command line to run in the session (bash syntax; a trailing `&` starts a background process that outlives the call).
+        session_id: Name of the persistent session to run in (default: "main"); a new name starts a separate shell with its own cwd and environment.
+        working_directory: Initial directory of the session when this call creates it (default: the current directory); ignored on an existing session, use `cd` there.
+        timeout: Seconds this call waits for the command (default: 120); on timeout the output so far is returned, the session survives and resyncs on the next call.
     """
     cmd = str(command or "").strip()
     if not cmd:
@@ -164,7 +170,13 @@ def shell_write_stdin(
     read_timeout: float = 5,
     _registry_namespace: str = "",
 ) -> str:
-    """Write `input` (newline-terminated) to the session's foreground process and read output."""
+    """Write `input` (newline-terminated) to the session's foreground process and read output.
+
+    Args:
+        input: Text written to the session's foreground process, newline-terminated (one line per call).
+        session_id: Session whose foreground process receives the input (default: "main").
+        read_timeout: Seconds to collect output after writing the input (default: 5).
+    """
     sid = str(session_id or "").strip() or _DEFAULT_SESSION_ID
     key = namespaced_session_id(_registry_namespace, sid)
     session = get_shell_session_registry().get(key)
@@ -198,7 +210,11 @@ def shell_close(
     session_id: str = _DEFAULT_SESSION_ID,
     _registry_namespace: str = "",
 ) -> str:
-    """Close session `session_id` and reap its process group."""
+    """Close session `session_id` and reap its process group.
+
+    Args:
+        session_id: Session to close (default: "main").
+    """
     sid = str(session_id or "").strip() or _DEFAULT_SESSION_ID
     key = namespaced_session_id(_registry_namespace, sid)
     closed = get_shell_session_registry().close(key)

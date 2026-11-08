@@ -2782,6 +2782,8 @@ def search_files(
         path: File or directory path to search in (default: current directory).
         file_pattern: Glob pattern(s) for files to search. Use "|" to separate multiple patterns (default: "*" for all files).
         head_limit: Max matching lines returned per file (default: 10). Use None for no per-file limit.
+        offset: Matching lines to skip per file before returning (default: 0). Pair with head_limit to
+            continue a file whose matches were truncated; the truncation note gives the next offset.
         max_hits: Max number of matching files to return (default: 8). Use None for no file limit.
         multiline: Enable multiline matching where pattern can span lines (default: False). Trade-off: reads whole files (bounded); slower on large trees.
         include_hidden: Include hidden files/directories (default: False).
@@ -5318,6 +5320,14 @@ def skim_url(
 
     This is intentionally faster and smaller than `fetch_url`. If you need full HTML→Markdown conversion,
     link extraction, or binary previews, use `fetch_url(...)`.
+
+    Args:
+        url: The http(s) URL to skim.
+        timeout: Seconds to wait for the server (default: 15).
+        max_bytes: Maximum bytes read from the start of the response (default: 10 MB); the rest of the page is never downloaded.
+        max_preview_chars: Length of the text preview returned, in characters (default: 2400).
+        max_headings: Number of page headings listed (default: 8).
+        user_agent: User-Agent header sent with the request (default: AbstractCore-SkimTool/1.0).
     """
     u = str(url or "").strip()
     if not u:
@@ -13417,19 +13427,18 @@ try:  # pragma: no cover
         meta = _def.parameters.get("pattern")
         if isinstance(meta, dict):
             meta.pop("default", None)
-        # Teach line-number semantics AT CALL TIME. The docstring never reaches the
-        # model: the schema builder emits {type, default} only, so a native-tool
-        # caller had no channel saying "1-based" — the live failure this guards
-        # against was a model sending start_line=0/end_line=0 (0-based habit) and
-        # burning a turn on the refusal. `description` inside a property is
-        # standard JSON Schema and rides native payloads as-is.
+        # Teach line-number semantics AT CALL TIME with an explicit line that wins
+        # over the docstring's Args text: the live failure this guards against was
+        # a model sending start_line=0/end_line=0 (0-based habit) and burning a
+        # turn on the refusal. `description` inside a property is standard JSON
+        # Schema and rides native payloads as-is.
         for _param, _desc in (
             ("start_line", "First line of the search scope (1-based, inclusive). Omit to search the whole file."),
             ("end_line", "Last line of the search scope (1-based, inclusive). Omit or pass -1 to search through end of file."),
         ):
             _meta = _def.parameters.get(_param)
-            if isinstance(_meta, dict) and "description" not in _meta:
-                _meta["description"] = _desc
+            if isinstance(_meta, dict):
+                _meta["description"] = _desc  # explicit text wins over the docstring's
 except Exception:
     pass
 
@@ -13938,17 +13947,16 @@ def execute_command(
 
 
 # Teach the timeout contract AT CALL TIME (same post-definition schema channel
-# as edit_file's block above — the docstring never reaches the model; the
-# schema builder emits {type, default} only, so nothing ever told a caller the
-# unit). The live failure this guards (2026-07-27): a model sent timeout=30000
+# as edit_file's block above; the docstring's Args text now fills parameter
+# descriptions, and this explicit line replaces it with the exact contract). The live failure this guards (2026-07-27): a model sent timeout=30000
 # meaning MILLISECONDS and the tool waited 8h20m. `description` inside a
 # property is standard JSON Schema and rides native payloads as-is.
 try:  # pragma: no cover
     _def = getattr(execute_command, "_tool_definition", None)
     if _def and isinstance(getattr(_def, "parameters", None), dict):
         _meta = _def.parameters.get("timeout")
-        if isinstance(_meta, dict) and "description" not in _meta:
-            _meta["description"] = (
+        if isinstance(_meta, dict):
+            _meta["description"] = (  # explicit text wins over the docstring's
                 f"Seconds (max {EXECUTE_COMMAND_MAX_TIMEOUT_S:g}; values above are clamped). "
                 "Time limit before the command tree is killed."
             )
@@ -14237,6 +14245,10 @@ def analyze_media(
     bounded text output; every nested LLM call runs ONE attempt with a
     bounded timeout (no retry stacking — the 2026-07-21 wedge lesson applies
     doubly one level down).
+
+    Args:
+        file_path: Path to the local image, video, audio or document file to analyse.
+        question: What to find out about the file (default: a general description); a specific question gets a specific answer.
     """
     from pathlib import Path as _Path
 

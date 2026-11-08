@@ -257,6 +257,88 @@ def adapt_external_description(
     return kept
 
 
+_DOCSTRING_ARGS_HEADERS = ("args", "arguments", "parameters", "params", "keyword args", "keyword arguments")
+_DOCSTRING_SECTION_HEADERS = _DOCSTRING_ARGS_HEADERS + (
+    "returns", "return", "yields", "yield", "raises", "raise", "examples", "example",
+    "note", "notes", "warning", "warnings", "see also", "references", "attributes", "todo",
+)
+
+
+def docstring_parameter_descriptions(doc: Optional[str]) -> Dict[str, str]:
+    """The per-parameter text of a docstring's `Args:` section (Google style), or `:param x:` lines.
+
+    An entry is `name: text` or `name (type): text` indented under the header; continuation
+    lines are indented deeper than the entry and are joined into one line. The section ends
+    at the next header (`Returns:`, `Raises:`, ...) or at a dedent back to the header level.
+    Whitespace is collapsed; nothing else is rewritten. Unknown shapes yield nothing rather
+    than a wrong description.
+    """
+    if not doc or not isinstance(doc, str):
+        return {}
+    import re as _re
+    import textwrap as _textwrap
+
+    lines = _textwrap.dedent("\n" + doc).splitlines()
+    out: Dict[str, str] = {}
+
+    def _indent(text: str) -> int:
+        return len(text) - len(text.lstrip(" \t"))
+
+    # Sphinx / reST: ":param name: text" (continuations indented under it).
+    current: Optional[str] = None
+    for raw in lines:
+        m = _re.match(r"^\s*:param\s+(?:[\w\[\], .|]+\s+)?(\*{0,2}\w+)\s*:\s*(.*)$", raw)
+        if m:
+            current = m.group(1).lstrip("*")
+            out[current] = m.group(2).strip()
+            continue
+        if current is not None:
+            if raw.strip() and _indent(raw) > 0 and not raw.strip().startswith(":"):
+                out[current] = (out[current] + " " + raw.strip()).strip()
+                continue
+            current = None
+
+    # Google style "Args:" block.
+    i = 0
+    while i < len(lines):
+        header = lines[i].strip().rstrip(":").strip().lower()
+        if lines[i].strip().endswith(":") and header in _DOCSTRING_ARGS_HEADERS:
+            header_indent = _indent(lines[i])
+            i += 1
+            entry_indent: Optional[int] = None
+            name: Optional[str] = None
+            while i < len(lines):
+                raw = lines[i]
+                stripped = raw.strip()
+                if not stripped:
+                    # A blank line ends the entry only if what follows is a new section/dedent;
+                    # inside a block it is just a separator between entries.
+                    i += 1
+                    if name is not None:
+                        name = None
+                    continue
+                ind = _indent(raw)
+                lowered = stripped.rstrip(":").strip().lower()
+                if ind <= header_indent or (stripped.endswith(":") and lowered in _DOCSTRING_SECTION_HEADERS):
+                    break
+                if entry_indent is None:
+                    entry_indent = ind
+                m = _re.match(r"^(\*{0,2}\w+)\s*(?:\([^)]*\))?\s*:\s*(.*)$", stripped)
+                if ind <= entry_indent and m:
+                    name = m.group(1).lstrip("*")
+                    out[name] = m.group(2).strip()
+                elif name is not None and ind > entry_indent:
+                    out[name] = (out[name] + " " + stripped).strip()
+                else:
+                    name = None
+                i += 1
+            continue
+        i += 1
+
+    return {k: " ".join(v.split()) for k, v in out.items() if v and v.strip()}
+
+
+
 @dataclass
 class ToolDefinition:
     """Definition of a tool that can be called by LLM"""
@@ -454,6 +536,13 @@ class ToolDefinition:
             # Fall back to string for unknown / complex annotations.
             return {"type": "string"}
 
+        # The docstring's `Args:` text is the only place a tool explains what a
+        # parameter MEANS (its unit, its modes, when to use it); the schema used to
+        # carry {type, default} only, so native tool payloads and prompted tool lists
+        # showed the model twelve bare names and it reached for the shell instead
+        # (2026-11-08). An explicit `description` set later on the schema still wins.
+        arg_docs = docstring_parameter_descriptions(func.__doc__)
+
         for param_name, param in sig.parameters.items():
             param_info = {"type": "string"}  # Default type
 
@@ -465,6 +554,10 @@ class ToolDefinition:
 
             if param.default != param.empty:
                 param_info["default"] = param.default
+
+            doc_text = arg_docs.get(param_name)
+            if doc_text:
+                param_info["description"] = doc_text
 
             parameters[param_name] = param_info
 

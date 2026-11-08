@@ -974,7 +974,10 @@ on_global(EventType.TOOL_STARTED, audit_tool_usage)
 
 ### 1. Clear Documentation
 
-Always provide clear docstrings for your tools:
+Always provide clear docstrings for your tools. The first line becomes the tool's description, and
+each entry of the `Args:` section becomes that parameter's `description` in the tool schema, so
+the model learns a parameter's meaning, unit and modes from the docstring alone. An explicit
+`description` set on the schema afterwards replaces the docstring text.
 
 ```python
 @tool

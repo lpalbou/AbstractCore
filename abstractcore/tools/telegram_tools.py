@@ -157,6 +157,16 @@ def send_telegram_message(
     timeout_s: float = 20.0,
     bot_token_env_var: str = "ABSTRACT_TELEGRAM_BOT_TOKEN",
 ) -> Dict[str, Any]:
+    """Send a text message to a Telegram chat through the bot.
+
+    Args:
+        chat_id: Numeric Telegram chat id of the destination chat (an integer, as reported by the bot's updates).
+        text: Message text; longer than 4096 characters is sent as several messages.
+        parse_mode: Formatting: "" for plain text (default), "MarkdownV2" or "HTML"; falls back to plain text when the formatting cannot be parsed.
+        disable_web_page_preview: Do not show a link preview under the message (default: False).
+        timeout_s: Seconds to wait for the Telegram API (default: 20).
+        bot_token_env_var: Name of the environment variable holding the Telegram bot token (default: ABSTRACT_TELEGRAM_BOT_TOKEN).
+    """
     transport = _telegram_transport()
 
     was_empty = False
@@ -345,6 +355,18 @@ def send_telegram_artifact(
     timeout_s: float = 60.0,
     bot_token_env_var: str = "ABSTRACT_TELEGRAM_BOT_TOKEN",
 ) -> Dict[str, Any]:
+    """Send a stored artifact to a Telegram chat as a document or photo.
+
+    Args:
+        chat_id: Numeric Telegram chat id of the destination chat (an integer, as reported by the bot's updates).
+        artifact_id: Id of the stored artifact (letters, digits, _ and -), stored as <artifact_store>/artifacts/<artifact_id>.bin.
+        caption: Text shown with the file (default: none).
+        filename: File name shown to the recipient (default: the stored file's name).
+        as_photo: Send as an inline photo instead of a document (default: False).
+        artifact_base_dir_env_var: Name of the environment variable holding the artifact store directory (default: ABSTRACTGATEWAY_DATA_DIR).
+        timeout_s: Seconds to wait for the Telegram API (default: 60).
+        bot_token_env_var: Name of the environment variable holding the Telegram bot token (default: ABSTRACT_TELEGRAM_BOT_TOKEN).
+    """
     transport = _telegram_transport()
 
     path, err = _artifact_path(artifact_id, base_dir_env_var=artifact_base_dir_env_var)

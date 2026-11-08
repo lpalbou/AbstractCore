@@ -1453,13 +1453,39 @@ def _format_parameters_compact(parameters: Dict[str, Any]) -> str:
             required = True
 
         if required:
-            parts.append(f"{name}: {ptype} (required)")
+            part = f"{name}: {ptype} (required)"
         elif default_repr is not None:
-            parts.append(f"{name}: {ptype} (default {default_repr})")
+            part = f"{name}: {ptype} (default {default_repr})"
         else:
-            parts.append(f"{name}: {ptype} (optional)")
+            part = f"{name}: {ptype} (optional)"
 
-    return ", ".join(parts) if parts else "(none)"
+        # The parameter's meaning, first sentence only: the full text rides native JSON
+        # Schema payloads; the prompted list stays compact but is no longer a bare name.
+        gist = _parameter_gist(meta.get("description") if isinstance(meta, dict) else None)
+        if gist:
+            part = f"{part} - {gist}"
+        parts.append(part)
+
+    return "; ".join(parts) if parts else "(none)"
+
+
+_PARAMETER_GIST_MAX_CHARS = 160
+
+
+def _parameter_gist(description: Any) -> str:
+    """The first sentence of a parameter description, one line, at most 160 characters."""
+    text = " ".join(str(description or "").split())
+    if not text:
+        return ""
+    # Cut at the first sentence end that is followed by a space (not inside "e.g." or a version).
+    for idx, ch in enumerate(text):
+        if ch in ".!?" and idx + 1 < len(text) and text[idx + 1] == " " and idx >= 12:
+            text = text[: idx + 1]
+            break
+    if len(text) > _PARAMETER_GIST_MAX_CHARS:
+        cut = text[:_PARAMETER_GIST_MAX_CHARS].rsplit(" ", 1)[0]
+        text = cut.rstrip(",;:") + "..."
+    return text
 
 
 # Prompt footprint control: include `when_to_use` only when it will meaningfully

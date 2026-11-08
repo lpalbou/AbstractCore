@@ -379,7 +379,12 @@ def list_email_accounts() -> Dict[str, Any]:
     examples=[{"description": "List the folders", "arguments": {}}],
 )
 def list_email_folders(*, account: Optional[str] = None, timeout_s: float = 30.0) -> Dict[str, Any]:
-    """List the mailbox folders (read-only: LIST only, nothing is opened or changed)."""
+    """List the mailbox folders (read-only: LIST only, nothing is opened or changed).
+
+    Args:
+        account: Email account to use when several are connected (default: the connected account).
+        timeout_s: Seconds to wait for the mail server (default: 30).
+    """
 
     def run() -> Dict[str, Any]:
         ctx, notices = _resolve_email_context(timeout_s)
@@ -423,7 +428,17 @@ def list_emails(
     cursor: Optional[str] = None,
     timeout_s: float = 30.0,
 ) -> Dict[str, Any]:
-    """List email headers from the connected mailbox (never marks anything as read)."""
+    """List email headers from the connected mailbox (never marks anything as read).
+
+    Args:
+        account: Email account to use when several are connected (default: the connected account).
+        mailbox: IMAP folder name (default: INBOX); list_email_folders gives the names.
+        since: Only messages newer than this: a number of days ("7" or "7d") or an ISO 8601 date-time (a time without zone is UTC).
+        status: "all" (default), "unread" or "read".
+        limit: Maximum messages per page (default: 20). When the result says has_more is true, call again with cursor=next_cursor.
+        cursor: The next_cursor value of the previous page, passed unchanged; omit to start from the newest message.
+        timeout_s: Seconds to wait for the mail server (default: 30).
+    """
     from abstractcore.comms.email import SearchCriteria
 
     def run() -> Dict[str, Any]:
@@ -467,7 +482,23 @@ def search_emails(
     account: Optional[str] = None,
     timeout_s: float = 30.0,
 ) -> Dict[str, Any]:
-    """Search email headers with exact typed filters (no patterns)."""
+    """Search email headers with exact typed filters (no patterns).
+
+    Args:
+        from_address: Only emails from this exact address.
+        from_domain: Only emails whose sender address is in this domain (example.com).
+        to_address: Only emails addressed to this address.
+        subject_contains: Only emails whose subject contains this text.
+        since: Only messages newer than this: a number of days ("7" or "7d") or an ISO 8601 date-time (a time without zone is UTC).
+        before: Only messages older than this (same format as since: "7d" or an ISO 8601 date-time).
+        status: "all" (default), "unread" or "read".
+        has_attachment: True = only emails with attachments, False = only emails without; omit for both.
+        mailbox: IMAP folder name (default: INBOX); list_email_folders gives the names.
+        limit: Maximum messages per page (default: 20). When the result says has_more is true, call again with cursor=next_cursor.
+        cursor: The next_cursor value of the previous page, passed unchanged; omit to start from the newest message.
+        account: Email account to use when several are connected (default: the connected account).
+        timeout_s: Seconds to wait for the mail server (default: 30).
+    """
     from abstractcore.comms.email import SearchCriteria
 
     def run() -> Dict[str, Any]:
@@ -506,7 +537,15 @@ def read_email(
     timeout_s: float = 30.0,
     max_body_chars: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Read a single email by UID (never marks it as read; bodies are returned whole)."""
+    """Read a single email by UID (never marks it as read; bodies are returned whole).
+
+    Args:
+        uid: The message uid exactly as returned by list_emails or search_emails.
+        account: Email account to use when several are connected (default: the connected account).
+        mailbox: IMAP folder name (default: INBOX); list_email_folders gives the names.
+        timeout_s: Seconds to wait for the mail server (default: 30).
+        max_body_chars: Accepted for older callers and ignored: bodies are returned whole.
+    """
     # `max_body_chars` is accepted for older callers and ignored: bodies are never truncated.
 
     def run() -> Dict[str, Any]:
@@ -549,7 +588,16 @@ def get_email_attachment(
     account: Optional[str] = None,
     timeout_s: float = 30.0,
 ) -> Dict[str, Any]:
-    """Download an attachment to `output_dir` (an existing folder; an existing file is never overwritten)."""
+    """Download an attachment to `output_dir` (an existing folder; an existing file is never overwritten).
+
+    Args:
+        uid: The message uid exactly as returned by list_emails or search_emails.
+        index: Position of the attachment in the email's attachment list as shown by read_email (0 = first).
+        output_dir: Existing local folder to save the file into; an existing file is never overwritten.
+        mailbox: IMAP folder name (default: INBOX); list_email_folders gives the names.
+        account: Email account to use when several are connected (default: the connected account).
+        timeout_s: Seconds to wait for the mail server (default: 30).
+    """
 
     def run() -> Dict[str, Any]:
         ctx, notices = _resolve_email_context(timeout_s)
@@ -637,7 +685,20 @@ def send_email(
     timeout_s: float = 30.0,
     headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """Send an email via the connected account (policy and limits enforced)."""
+    """Send an email via the connected account (policy and limits enforced).
+
+    Args:
+        to: Recipient address, or a list of addresses.
+        subject: Subject line (required).
+        account: Email account to use when several are connected (default: the connected account).
+        body_text: Plain-text body; give body_text and/or body_html.
+        body_html: HTML body; give body_text and/or body_html.
+        cc: Carbon-copy address or list of addresses.
+        bcc: Blind-carbon-copy address or list of addresses.
+        attachments: Local file path, or list of paths, to attach.
+        timeout_s: Seconds to wait for the mail server (default: 30).
+        headers: Not accepted; use reply_email to answer an email so threading headers are set correctly.
+    """
     from abstractcore.comms.email import EmailInvalidMessage, OutgoingMessage
 
     def run() -> Dict[str, Any]:
@@ -687,7 +748,18 @@ def reply_email(
     account: Optional[str] = None,
     timeout_s: float = 30.0,
 ) -> Dict[str, Any]:
-    """Reply to an email (policy and limits enforced on the computed recipients)."""
+    """Reply to an email (policy and limits enforced on the computed recipients).
+
+    Args:
+        uid: The uid of the email to answer, as returned by list_emails or search_emails.
+        body_text: Plain-text reply body; give body_text and/or body_html.
+        body_html: HTML reply body; give body_text and/or body_html.
+        reply_all: Answer every original recipient, not only the sender (default: False).
+        attachments: Local file path, or list of paths, to attach.
+        mailbox: IMAP folder name (default: INBOX); list_email_folders gives the names.
+        account: Email account to use when several are connected (default: the connected account).
+        timeout_s: Seconds to wait for the mail server (default: 30).
+    """
     from abstractcore.comms.email import EmailInvalidMessage
 
     def run() -> Dict[str, Any]:
@@ -771,7 +843,18 @@ def send_whatsapp_message(
     timeout_s: float = 30.0,
     media_urls: Any = None,
 ) -> Dict[str, Any]:
-    """Send a WhatsApp message (Twilio-backed v1)."""
+    """Send a WhatsApp message (Twilio-backed v1).
+
+    Args:
+        to: Recipient phone number in international form (+15551234567); the "whatsapp:" prefix is added when missing.
+        from_number: Your sending WhatsApp number (the Twilio number), international form.
+        body: Message text.
+        provider: Messaging provider; "twilio" (default) is the only supported value.
+        account_sid_env_var: Name of the environment variable holding the Twilio Account SID (default: TWILIO_ACCOUNT_SID).
+        auth_token_env_var: Name of the environment variable holding the Twilio Auth Token (default: TWILIO_AUTH_TOKEN).
+        timeout_s: Seconds to wait for the provider API (default: 30).
+        media_urls: Public URL, or list of URLs, of media to attach.
+    """
     provider_norm = str(provider or "").strip().lower() or "twilio"
     if provider_norm != "twilio":
         return {"success": False, "error": f"Unsupported WhatsApp provider: {provider_norm} (v1 supports: twilio)"}
@@ -863,7 +946,19 @@ def list_whatsapp_messages(
     direction: str = "all",
     timeout_s: float = 30.0,
 ) -> Dict[str, Any]:
-    """List recent WhatsApp messages (Twilio-backed v1)."""
+    """List recent WhatsApp messages (Twilio-backed v1).
+
+    Args:
+        provider: Messaging provider; "twilio" (default) is the only supported value.
+        account_sid_env_var: Name of the environment variable holding the Twilio Account SID (default: TWILIO_ACCOUNT_SID).
+        auth_token_env_var: Name of the environment variable holding the Twilio Auth Token (default: TWILIO_AUTH_TOKEN).
+        timeout_s: Seconds to wait for the provider API (default: 30).
+        to: Only messages sent to this number (international form).
+        from_number: Only messages sent from this number (international form).
+        since: Only messages newer than this: a number of days ("7" or "7d") or an ISO 8601 date-time (a time without zone is UTC).
+        limit: Maximum messages returned (default: 20).
+        direction: "all" (default), "inbound" (received) or "outbound" (sent).
+    """
     provider_norm = str(provider or "").strip().lower() or "twilio"
     if provider_norm != "twilio":
         return {"success": False, "error": f"Unsupported WhatsApp provider: {provider_norm} (v1 supports: twilio)"}
@@ -989,7 +1084,16 @@ def read_whatsapp_message(
     timeout_s: float = 30.0,
     max_body_chars: int = 2000,
 ) -> Dict[str, Any]:
-    """Read a WhatsApp message by id (Twilio-backed v1)."""
+    """Read a WhatsApp message by id (Twilio-backed v1).
+
+    Args:
+        message_id: The provider's message id (Twilio Message SID) as returned by list_whatsapp_messages.
+        provider: Messaging provider; "twilio" (default) is the only supported value.
+        account_sid_env_var: Name of the environment variable holding the Twilio Account SID (default: TWILIO_ACCOUNT_SID).
+        auth_token_env_var: Name of the environment variable holding the Twilio Auth Token (default: TWILIO_AUTH_TOKEN).
+        timeout_s: Seconds to wait for the provider API (default: 30).
+        max_body_chars: Maximum characters of the message body returned (default: 2000).
+    """
     provider_norm = str(provider or "").strip().lower() or "twilio"
     if provider_norm != "twilio":
         return {"success": False, "error": f"Unsupported WhatsApp provider: {provider_norm} (v1 supports: twilio)"}
