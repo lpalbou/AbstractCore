@@ -9,11 +9,17 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 31
-- Proposed: 26
+- Planned: 32
+- Proposed: 27
 - Completed: 53
 - Deprecated: 6
 - Recurrent: 0
+
+2026-11-08: added planned `0884` (release 2.35.1 carrying the unreachable-endpoint, MCP handshake, speculation-default
+and tool-description patch series that is on main unreleased; the runtime and gateway floors wait for it) and proposed
+`0885` (nine WhatsApp/Telegram tool parameters that ask the model for environment-variable names). The search-walk
+work (honour nested `.gitignore`s, wider default excludes, scan-cost footer, no deadline) stays in the root backlog as
+1160 and is discussed with the operator before any code.
 
 2026-11-07 hygiene pass (code audit by two reviewers, verified in the repository): completed `0233`, `0840`, `0842`,
 `0870`, `0816`, `0825` (all shipped earlier, never closed); deprecated and renumbered three date-named items
@@ -113,6 +119,9 @@ completed/ in a hygiene pass.)
 
 ## Next recommended work
 
+0. `planned/0884_release_2_35_1_endpoint_unreachable_mcp_handshake_tool_descriptions.md`
+   Cut 2.35.1 from main: no new code, changelog assemble, version, llms regen, tag. Unblocks the runtime's and
+   gateway's floor raise for endpoint-unreachable parking (root 1168).
 1. `proposed/0830_execute_command_program_name_denial.md`
    The command safety check blocks harmless text (`grep reboot notes.txt`) and lets `rm -fr`, `git reset
    --hard` and `git push --force` through; `require_confirmation` only logs and runs the command. Shared by the
@@ -143,6 +152,8 @@ completed/ in a hygiene pass.)
    Tenant keys, quotas and rate limits on top of the existing bearer-token auth.
 
 ## Planned ledger
+
+P1: [0884 — Release 2.35.1: unreachable endpoints typed, MCP handshake for strict servers, tool parameter descriptions](planned/0884_release_2_35_1_endpoint_unreachable_mcp_handshake_tool_descriptions.md); operator go required.
 
 P2: [0883 — A top-level `abstractcore.generate()` so image, voice and music generation need no unused text model.](planned/0883_generation_entry_point_without_a_text_model.md)
 
@@ -188,6 +199,7 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 
 | Item | Promotion criteria |
 | --- | --- |
+| `proposed/0885_tool_parameters_that_name_environment_variables.md` | Promote with the next comms-tools change or when the gateway exposes Twilio/Telegram settings. |
 | `proposed/0879_adr_0011_enforcement_tests_and_status.md` | Promote with the next residency/concurrency change or before a release wave touching `gguf_slots.py`. |
 | `proposed/0837_delegated_sight_session_route_and_first_run_seeding.md` | Core half (option B, session route) shipped with `0825`; option A (tool-result media refs) belongs to runtime and gateway. |
 | `proposed/0843_media_aware_prompt_cache_prefix_reuse.md` | Deliberately deferred media-aware cache reuse; promote when media-bearing turns need prefix reuse. |
