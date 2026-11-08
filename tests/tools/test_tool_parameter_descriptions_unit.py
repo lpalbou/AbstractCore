@@ -83,6 +83,8 @@ def test_search_files_parameters_are_all_explained():
     for name, meta in params.items():
         assert meta.get("description"), f"search_files.{name} has no description"
     assert "default ignore set" in params["ignore_dirs"]["description"]
+    # "required;" openers are dropped: the schema already says (required)
+    assert params["pattern"]["description"] == "Regular expression pattern to search for."
     assert "files_with_matches" in params["output_mode"]["description"]
 
 

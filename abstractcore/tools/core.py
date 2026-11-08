@@ -335,7 +335,15 @@ def docstring_parameter_descriptions(doc: Optional[str]) -> Dict[str, str]:
             continue
         i += 1
 
-    return {k: " ".join(v.split()) for k, v in out.items() if v and v.strip()}
+    cleaned: Dict[str, str] = {}
+    for k, v in out.items():
+        text = " ".join(v.split())
+        # Docstrings sometimes open an entry with "required;" / "optional;": the schema
+        # already states that, so the marker would read twice ("(required) - required; ...").
+        text = _re.sub(r"^(?:required|optional)\s*[;:,.-]\s*", "", text, flags=_re.I).strip()
+        if text:
+            cleaned[k] = text[0].upper() + text[1:] if text[0].islower() else text
+    return cleaned
 
 
 
