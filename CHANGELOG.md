@@ -37,57 +37,9 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
   - Gemma 4 `-it` entries alias Google's `-it-assistant` and QAT (`q4_0-gguf`, `w4a16-ct`, `unquantized`) repos, and the
     `qat`, `unquantized`, `ct`, `mobile`, `transformers` and `wNaM` packaging tokens strip like any other variant suffix.
 - Transcription language facts: `generate(..., output={"task": "transcription"})` records `language` (what the engine was told; `None` = it detected the language) and `detected_language` (what it reported) in the transcript's metadata, through the audio facade's `transcribe_detailed` (`AudioCapability` may implement it — AbstractVoice does; a backend with `transcribe` only reports neither). `POST /v1/audio/transcriptions` on a local engine answers `{text, language, detected_language}`.
-- **Context7 re-indexes the user docs after each release** (`.github/workflows/release.yml`, `context7.json`). Once the
-  release is on PyPI the workflow asks Context7 to re-index this repository, so coding agents reading AbstractCore
-  through the Context7 MCP see the published version. `context7.json` limits the index to the user docs
-  (`docs/`, the README and the llms files), keeping the backlog, ADRs, reports and sources out. The only credential
-  is `CONTEXT7_API_KEY` in the GitHub environment `context7`; without it the job reports a warning and does nothing,
-  and required reviewers on that environment turn the refresh into an approved step. The same step runs on demand
-  from the Actions tab (`context7-refresh.yml`) after a docs-only change.
 
 ### Fixed
 
-- **A settings file that cannot be parsed stops the program instead of being renamed and replaced by defaults**
-  (`abstractcore/config/manager.py`, `abstractcore/config/provider_profiles.py`). The loader raises `ConfigParseError`
-  with the file path and the parse error (`OSError` when the file cannot be read); the file is never copied to
-  `abstractcore.json.corrupt-<ts>.bak`, never shadowed by default settings, and no later save can overwrite it. A
-  provider profile's family is accepted as written while the provider registry is still importing (it is validated
-  when the profile is used), so a load that happens during `import abstractcore` no longer fails. The `abstractcore
-  config` CLI prints the error and exits with status 1 on such a file instead of showing defaults.
-- **MCP handshake accepted by every schema-validated server** (`abstractcore/mcp/client.py`). `initialize` now
-  declares `capabilities: {}` as the specification and the reference client do; the previous envelope sent five
-  capabilities set to `null`, which strict servers such as Context7 refused ("Invalid input: expected record,
-  received null"), so their tools never reached the model. A `404` to a request carrying `MCP-Session-Id` now
-  starts a new session with a fresh `initialize` and replays the request once, as the Streamable HTTP transport
-  requires after a server restart. `McpHttpError` carries `status_code`.
-- **An unreachable endpoint is reported as such, never as a spent timeout** (`abstractcore/providers/base.py`,
-  `abstractcore/core/retry.py`, `abstractcore/exceptions`). When no TCP connection to the provider's endpoint can
-  be made (machine off or asleep, connection refused, DNS failure), providers raise the new
-  `EndpointUnreachableError` with `base_url`, the transport exception class (`cause`), `errno`, the measured
-  `elapsed_s` and `retryable` (False when the connect attempt itself timed out). Hosts can import it by name to
-  park the step and probe the endpoint instead of failing the run. Such failures no longer count toward the
-  circuit breaker, and a connect that timed out is not retried (a second attempt would block for the same OS
-  budget). Timeout detection is type-first: the message is consulted only for exceptions that carry no type
-  information, so an `OSError` whose text says "Operation timed out" no longer prints
-  "timed out after 7200.0s (configured timeout)". Every normalisation logs the original exception class, and
-  the "Generation failed" line reports the elapsed time from the first attempt (it used to print ~0 ms for
-  every failure).
-- **A stored speculation default never fails a call** (`abstractcore/providers/speculation.py`). When
-  `require_acceleration=True` comes from the provider-lifetime default (constructor `speculation=`, a stored
-  profile or host setting) and the provider has no native MTP adapter, the call runs without speculation with
-  one warning, and `metadata["speculation"]` carries `applied: false` and `degraded_from_default: true`. An
-  explicit per-call `require_acceleration=True` still raises `SpeculationUnavailableError`.
-- **Residency snapshot during an embeddings import** (`abstractcore/providers/process_residency.py`). The
-  in-process residency view treated `abstractcore.embeddings.manager` as loaded as soon as it appeared in
-  `sys.modules`, which is true while another thread is still importing it, and failed with "partially
-  initialized module has no attribute". The backend counts as loaded only once its functions exist.
-- **Tool parameters carry their meaning** (`abstractcore/tools/core.py`, `abstractcore/tools/parser.py`). The tool
-  schema built from a decorated function now takes each parameter's `description` from the docstring's `Args:`
-  section (Google style, or `:param name:` lines); it used to emit the type and default only, so native tool
-  payloads and prompted tool lists showed the model bare parameter names. Native payloads carry the full text as
-  JSON Schema `description`; the prompted tool list shows each parameter's first sentence. An explicit
-  `description` set on the schema afterwards still wins. Every built-in tool parameter is now described, and a
-  test keeps it that way.
 - **GGUF and MLX re-packagings of a registered model resolve to its entry** (`architectures/detection.py`). An
   Ollama or LM Studio quant tag after the repo name (`unsloth/Qwen3.8-27B-GGUF:Q4_K_M`, `hf.co/...:UD-Q4_K_XL`,
   `...:latest`), the `OptiQ-4bit`, `oQ4e` and `i1` quantizer markers, bartowski's and mradermacher's `Org_Model-GGUF`
