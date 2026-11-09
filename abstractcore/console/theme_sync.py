@@ -30,7 +30,7 @@ GENERATED_MODULE = "themes.py"
 #: `themes.py` records the kit version it was generated from; a test compares the two
 #: without the abstractuic checkout, so a stale copy fails CI everywhere. Raise this
 #: with every re-sync.
-KIT_THEME_FLOOR = "0.9.14"
+KIT_THEME_FLOOR = "0.9.27"
 
 
 def kit_version(kit_src: Path) -> str:
