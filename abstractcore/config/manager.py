@@ -658,7 +658,11 @@ def model_supports_input(model: str, modality: str) -> bool:
 # schema layer tolerates bad rows itself and has no typed error of its own — is
 # as likely the loader's bug as the file's content; it never touches the file
 # and never silently runs the process on defaults (review 2026-11-09).
-_CONFIG_CONTENT_ERRORS = (json.JSONDecodeError, UnicodeDecodeError)
+class ConfigContentError(ValueError):
+    """The file decoded but is not a configuration document (its top level is not an object)."""
+
+
+_CONFIG_CONTENT_ERRORS = (json.JSONDecodeError, UnicodeDecodeError, ConfigContentError)
 
 
 class ConfigurationManager:
@@ -931,6 +935,12 @@ class ConfigurationManager:
             try:
                 with open(self.config_file, 'r') as f:
                     data = json.load(f)
+                if not isinstance(data, dict):
+                    # Decoded, but not a configuration document: content, not a loader bug
+                    # (review 2026-11-09: `[]`, `null` or a bare string must quarantine).
+                    raise ConfigContentError(
+                        f"top level is {type(data).__name__}, not a JSON object"
+                    )
                 # Backward compatible: accept both top-level and nested flags.
                 if isinstance(data, dict):
                     if "audio_strategy_explicit" in data:

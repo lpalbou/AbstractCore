@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import sys
 from dataclasses import dataclass, field, fields as dataclass_fields
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
@@ -38,7 +39,10 @@ def supported_provider_families() -> Optional[frozenset[str]]:
     try:
         from ..providers.registry import get_provider_registry
     except ImportError:
-        return None
+        partial = sys.modules.get("abstractcore.providers.registry")
+        if partial is not None and not hasattr(partial, "get_provider_registry"):
+            return None  # the registry module is on the stack, half-initialized
+        raise  # a registry that genuinely does not import is a real error, never silenced
 
     return frozenset(get_provider_registry().endpoint_provider_families())
 

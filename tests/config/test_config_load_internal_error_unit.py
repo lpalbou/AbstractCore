@@ -7,6 +7,8 @@ and the loader treated that ImportError as a corrupt file (quarantine + defaults
 """
 
 import json
+import os
+import subprocess
 import sys
 import threading
 import types
@@ -122,3 +124,45 @@ def test_another_thread_during_construction_gets_the_same_instance(tmp_path, mon
     release.set()
     t1.join(10); t2.join(10)
     assert results["a"] is results["b"]
+
+
+def test_decoded_non_object_top_level_is_content_and_quarantined(tmp_path):
+    """`[]`, `null` or a bare string decode fine but are not a config: the file's fault (review 2026-11-09)."""
+    for text in ("[]", "null", '"x"'):
+        d = tmp_path / f"case-{abs(hash(text))}"
+        d.mkdir()
+        path = d / "abstractcore.json"
+        path.write_text(text)
+        mgr = ConfigurationManager(config_dir=d, config_file=path, apply_env=False)
+        assert mgr.config is not None
+        assert len(list(d.glob("abstractcore.json.corrupt-*.bak"))) == 1, text
+
+
+def test_a_registry_that_truly_fails_to_import_is_not_silenced(monkeypatch):
+    from abstractcore.config import provider_profiles
+
+    monkeypatch.setitem(sys.modules, "abstractcore.providers.registry", None)  # import now raises
+    with pytest.raises(ImportError):
+        provider_profiles.supported_provider_families()
+
+
+def test_plain_import_then_config_load_in_a_fresh_process_keeps_the_file(tmp_path):
+    """The real trigger, end to end: a fresh interpreter, `import abstractcore`, then the config, with a
+    profile-bearing file under a scratch HOME. Zero quarantine copies, the profile loaded."""
+    home = tmp_path / "home"
+    (home / ".abstractcore" / "config").mkdir(parents=True)
+    _write_config(home / ".abstractcore" / "config")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ABSTRACTCORE_")}
+    env["HOME"] = str(home)
+    env["PYTHONWARNINGS"] = "ignore"
+    code = (
+        "import abstractcore\n"
+        "from abstractcore.config.manager import get_config_manager\n"
+        "m = get_config_manager()\n"
+        "print(sorted(m.config.provider_profiles.profiles))\n"
+    )
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=180)
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert "['lab']" in out.stdout, out.stdout
+    assert "could not be parsed" not in out.stderr
+    assert list((home / ".abstractcore" / "config").glob("*.corrupt-*")) == []
