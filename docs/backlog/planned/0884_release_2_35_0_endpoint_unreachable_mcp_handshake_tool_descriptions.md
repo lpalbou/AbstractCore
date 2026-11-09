@@ -34,7 +34,11 @@ exists the resilience half cannot ship.
 
 ## Also in this release (2026-11-09 audit)
 
-- The config-loader fix: a valid config quarantined as corrupt by a circular import during `import abstractcore` (187 `.corrupt-*.bak` copies; processes ran on defaults). Tests: `tests/config/test_config_load_internal_error_unit.py`.
+- The config loader no longer renames an unparseable settings file and runs on defaults (operator 2026-11-09: a JSON
+  settings file is never corrupted; the 187 `.corrupt-*.bak` copies on the operator's machine were all valid JSON,
+  166 byte-identical to the live file, written by the loader misjudging its own import-order failure). An
+  unparseable file stops the load with its path and the parse error; the import-order case is accepted at load.
+  Tests: `tests/config/test_config_load_internal_error_unit.py`, `tests/config/test_config_load_never_silently_regenerates.py`.
 - 0869: the console theme copy regenerated against the ui-kit the apps are built on.
 
 ## Non-goals

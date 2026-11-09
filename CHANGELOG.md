@@ -47,17 +47,13 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ### Fixed
 
-- **A valid config is never quarantined for the loader's own failure** (`abstractcore/config/manager.py`,
-  `abstractcore/config/provider_profiles.py`). A logger built during `import abstractcore` re-entered
-  `get_config_manager()` while the first manager was still constructing; the inner load validated `provider_profiles`
-  against the provider registry, which was itself half-imported, and the loader treated that `ImportError` as a corrupt
-  file: it wrote a byte-identical `abstractcore.json.corrupt-<ts>.bak` and ran the process on DEFAULTS (187 such copies
-  on one machine; every plain CLI or worker import ran with the wrong provider, embedding model and routes). Now the
-  file is quarantined only when it cannot be DECODED (bad JSON or encoding); any other exception during a load, our own
-  schema code's included, logs its traceback, leaves the file untouched and raises instead of running on defaults. `supported_provider_families()` returns `None` while the registry is mid-import and the family
-  is accepted as written, validated when the profile is used. `get_config_manager()` raises `RuntimeError` on a
-  re-entrant call from inside its own construction (import-time callers already fall back to their defaults) and makes
-  a second thread wait for the one instance.
+- **A settings file that cannot be parsed stops the program instead of being renamed and replaced by defaults**
+  (`abstractcore/config/manager.py`, `abstractcore/config/provider_profiles.py`). The loader raises `ConfigParseError`
+  with the file path and the parse error (`OSError` when the file cannot be read); the file is never copied to
+  `abstractcore.json.corrupt-<ts>.bak`, never shadowed by default settings, and no later save can overwrite it. A
+  provider profile's family is accepted as written while the provider registry is still importing (it is validated
+  when the profile is used), so a load that happens during `import abstractcore` no longer fails. The `abstractcore
+  config` CLI prints the error and exits with status 1 on such a file instead of showing defaults.
 - **MCP handshake accepted by every schema-validated server** (`abstractcore/mcp/client.py`). `initialize` now
   declares `capabilities: {}` as the specification and the reference client do; the previous envelope sent five
   capabilities set to `null`, which strict servers such as Context7 refused ("Invalid input: expected record,

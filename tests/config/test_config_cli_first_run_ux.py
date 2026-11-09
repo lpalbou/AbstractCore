@@ -123,27 +123,33 @@ def test_the_grid_shows_reasoning_and_base_url_wherever_they_are_set(capsys) -> 
     assert "No text-generation default" not in out
 
 
-def test_a_corrupt_store_is_reported_instead_of_looking_like_a_fresh_install(capsys) -> None:
+def test_a_corrupt_store_stops_the_cli_with_the_file_and_the_error(capsys) -> None:
     cfg = Path(tempfile.mkdtemp()) / "abstractcore.json"
-    cfg.write_text('{"capability_defaults": {"routes": {"input.text": {"provider": "lms', encoding="utf-8")
+    original = '{"capability_defaults": {"routes": {"input.text": {"provider": "lms'
+    cfg.write_text(original, encoding="utf-8")
 
-    out = _run(capsys, "--config-file", str(cfg), "defaults")
-    assert "could not be parsed" in out
-    assert "DEFAULTS, not what you configured" in out
-    assert "a save overwrites it" in out
+    rc = _handle_config_subcommand(["--config-file", str(cfg), "defaults"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert str(cfg) in out and "not valid JSON" in out
+    assert "not_configured" not in out, "a broken store must never render as a fresh install"
+    assert cfg.read_text(encoding="utf-8") == original
 
 
-def test_the_same_warning_fires_before_a_save_overwrites_a_corrupt_store(capsys) -> None:
+def test_a_save_never_overwrites_a_corrupt_store(capsys) -> None:
     cfg = Path(tempfile.mkdtemp()) / "abstractcore.json"
     cfg.write_text("{ truncated", encoding="utf-8")
 
-    out = _run(
-        capsys, "--config-file", str(cfg), "set-default", "output.text",
+    rc = _handle_config_subcommand([
+        "--config-file", str(cfg), "set-default", "output.text",
         "--provider", "lmstudio", "--model", "qwen3-0.6b",
-    )
-    assert "could not be parsed" in out, "the operator must learn BEFORE the only copy is the backup"
-    assert "✅ Set capability default for output.text" in out
-    assert list(cfg.parent.glob("abstractcore.json.corrupt-*.bak")), "the unreadable file is preserved"
+    ])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "not valid JSON" in out
+    assert "✅ Set capability default" not in out
+    assert cfg.read_text(encoding="utf-8") == "{ truncated"
+    assert sorted(p.name for p in cfg.parent.iterdir()) == ["abstractcore.json"], "no copy, no rewrite"
 
 
 def test_an_unknown_text_provider_is_saved_and_warned_never_refused(capsys) -> None:

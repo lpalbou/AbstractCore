@@ -117,10 +117,13 @@ def test_an_existing_store_is_never_seeded_even_when_empty(fresh_config: Path) -
     assert manager.config.capability_defaults.seeded is None
 
 
-def test_the_corrupt_file_fallback_is_never_seeded(fresh_config: Path) -> None:
-    # An unparseable store falls back to defaults but the operator's settings
-    # are RECOVERABLE from the backup — recommendations must not shadow them.
+def test_an_unparseable_store_is_never_seeded_or_rewritten(fresh_config: Path) -> None:
+    # An unparseable store stops the load; it is not a fresh install, so no
+    # recommendation is seeded and nothing is written next to it.
+    from abstractcore.config.manager import ConfigParseError
+
     fresh_config.write_text("{ this is not json")
-    manager = ConfigurationManager(config_file=fresh_config)
-    assert _configured_keys(manager) == set()
-    assert manager.config.capability_defaults.seeded is None
+    with pytest.raises(ConfigParseError):
+        ConfigurationManager(config_file=fresh_config)
+    assert fresh_config.read_text() == "{ this is not json"
+    assert sorted(p.name for p in fresh_config.parent.iterdir()) == [fresh_config.name]

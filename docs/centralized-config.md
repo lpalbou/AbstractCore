@@ -31,8 +31,8 @@ keys, unknown fields of any section (for example `vision.user_note`), and keys
 written by a newer AbstractCore (`capability_defaults` keys and route keys this
 version cannot parse, `provider_profiles` keys, unknown columns of a profile
 that still exists). Known keys are validated on every save, and a route or
-profile you delete stays deleted. A file that does not parse is copied aside as
-`abstractcore.json.corrupt-<time>.bak` before defaults are used.
+profile you delete stays deleted. A file that does not parse stops the load with
+its path and the parse error; it is never renamed, replaced or shadowed by defaults.
 
 When the file loads, a speech input route (`input.voice`) that names a catalog
 download instead of its engine (`huggingface` / `Systran/faster-whisper-base`)

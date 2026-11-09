@@ -7,7 +7,6 @@ Provides centralized configuration management for AbstractCore.
 import copy
 import json
 import os
-import threading
 import uuid
 import importlib.util
 from pathlib import Path
@@ -652,17 +651,8 @@ def model_supports_input(model: str, modality: str) -> bool:
         return False
 
 
-# What quarantining a config file is for: the FILE cannot be decoded (bad JSON,
-# bad encoding), so a copy is the only way to keep what it held. Any other
-# exception during a load — a ValueError or TypeError included, since the
-# schema layer tolerates bad rows itself and has no typed error of its own — is
-# as likely the loader's bug as the file's content; it never touches the file
-# and never silently runs the process on defaults (review 2026-11-09).
-class ConfigContentError(ValueError):
-    """The file decoded but is not a configuration document (its top level is not an object)."""
-
-
-_CONFIG_CONTENT_ERRORS = (json.JSONDecodeError, UnicodeDecodeError, ConfigContentError)
+class ConfigParseError(ValueError):
+    """The settings file exists but is not a JSON object. The file is left exactly as it is."""
 
 
 class ConfigurationManager:
@@ -917,120 +907,69 @@ class ConfigurationManager:
         target[path[-1]] = copy.deepcopy(node)
 
     def _load_config(self) -> AbstractCoreConfig:
-        """Load configuration from file or create default.
+        """Load the configuration file, or seed the defaults of a fresh install.
 
-        CRITICAL DATA-SAFETY INVARIANT (incident 2026-07-11): an existing config
-        file that fails to parse must NEVER be silently replaced by all-defaults.
-        The old behavior returned `AbstractCoreConfig.default()` on any read
-        error, and the next `_save_config()` then OVERWROTE the (recoverable)
-        file with defaults — silently discarding the operator's settings,
-        including capability routes like the entity embedding model. That was a
-        reassertion vector for the stale embedding default: a partial/corrupt
-        read → defaults → the framework's old `all-minilm-l6-v2` reappears with
-        no warning. We now BACK UP the unreadable file (timestamped, once) and
-        log LOUDLY before falling back, so nothing is lost and the operator sees
-        it. Happy-path behavior is unchanged.
+        An existing file is read as it is. If it cannot be read or is not a JSON
+        object, the load stops with the path and the error: the file is never
+        renamed, replaced or shadowed by defaults, because the next save would
+        publish those defaults over the operator's settings. Nothing else is
+        caught here; a failure of the loader's own code propagates with its
+        traceback.
         """
         if self.config_file.exists():
             try:
                 with open(self.config_file, 'r') as f:
                     data = json.load(f)
-                if not isinstance(data, dict):
-                    # Decoded, but not a configuration document: content, not a loader bug
-                    # (review 2026-11-09: `[]`, `null` or a bare string must quarantine).
-                    raise ConfigContentError(
-                        f"top level is {type(data).__name__}, not a JSON object"
-                    )
-                # Backward compatible: accept both top-level and nested flags.
-                if isinstance(data, dict):
-                    if "audio_strategy_explicit" in data:
-                        self._audio_strategy_explicit = bool(data.get("audio_strategy_explicit"))
-                    else:
-                        nested = data.get("audio", {})
-                        if isinstance(nested, dict) and "strategy_explicit" in nested:
-                            self._audio_strategy_explicit = bool(nested.get("strategy_explicit"))
-                config = self._dict_to_config(data)
-                # A store an earlier fresh-install seed wrote gains the rows
-                # later seeds added (2.19.2: speech input), never over a
-                # route the operator set; in memory until the next save,
-                # like the seed itself. Never allowed to fail the load: the
-                # parse succeeded, so the except branches below (quarantine,
-                # defaults) must not see an upgrade error.
-                try:
-                    from .capability_defaults import upgrade_recommended_seed
+            except OSError as e:
+                raise OSError(
+                    f"Could not read the AbstractCore config at {self.config_file}: {e}. "
+                    "Nothing was changed; the file itself may be intact (a full disk is the "
+                    "usual cause)."
+                ) from e
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                raise ConfigParseError(
+                    f"The AbstractCore config at {self.config_file} is not valid JSON ({e}). "
+                    "Fix the file; nothing was changed and no defaults are used."
+                ) from e
+            if not isinstance(data, dict):
+                raise ConfigParseError(
+                    f"The AbstractCore config at {self.config_file} must be a JSON object; its "
+                    f"top level is {type(data).__name__}. Fix the file; nothing was changed and "
+                    "no defaults are used."
+                )
+            # Backward compatible: accept both top-level and nested flags.
+            if "audio_strategy_explicit" in data:
+                self._audio_strategy_explicit = bool(data.get("audio_strategy_explicit"))
+            else:
+                nested = data.get("audio", {})
+                if isinstance(nested, dict) and "strategy_explicit" in nested:
+                    self._audio_strategy_explicit = bool(nested.get("strategy_explicit"))
+            config = self._dict_to_config(data)
+            # A store an earlier fresh-install seed wrote gains the rows later
+            # seeds added (2.19.2: speech input), never over a route the
+            # operator set; in memory until the next save, like the seed
+            # itself. Never allowed to fail the load.
+            try:
+                from .capability_defaults import upgrade_recommended_seed
 
-                    routes_before = {
+                routes_before = {
+                    key: route.to_dict()
+                    for key, route in config.capability_defaults.routes.items()
+                    if route.configured()
+                }
+                if upgrade_recommended_seed(config.capability_defaults):
+                    self._seed_upgrade_added = {
                         key: route.to_dict()
                         for key, route in config.capability_defaults.routes.items()
-                        if route.configured()
+                        if route.configured() and key not in routes_before
                     }
-                    if upgrade_recommended_seed(config.capability_defaults):
-                        self._seed_upgrade_added = {
-                            key: route.to_dict()
-                            for key, route in config.capability_defaults.routes.items()
-                            if route.configured() and key not in routes_before
-                        }
-                except Exception as upgrade_error:  # pragma: no cover - defensive
-                    import logging
-
-                    logging.getLogger(__name__).warning(
-                        "recommended-seed upgrade skipped for %s: %s", str(self.config_file), upgrade_error
-                    )
-                return config
-            except OSError as e:
-                # THE FILE IS FINE; THE READ FAILED. A full disk, an EIO, a
-                # momentarily unreadable mount — none of these are evidence that
-                # the operator's config is bad, so falling back to defaults here
-                # would be a guess, and the next _save_config() would publish
-                # that guess OVER a perfectly good store. That is the exact
-                # incident-2026-07-11 loss path, reached through a different
-                # door. Observed 2026-08-02: a full volume produced a
-                # `.corrupt-*.bak` quarantine of a file that parsed cleanly both
-                # before and after.
-                #
-                # So: refuse to proceed. A loud failure is recoverable; a silent
-                # defaults-regeneration is not. No quarantine copy either —
-                # there is nothing wrong with the file to preserve.
-                raise OSError(
-                    f"Could not READ the AbstractCore config at {self.config_file}: {e}. "
-                    "The file itself may be intact — this is an I/O failure (a full disk is "
-                    "the usual cause). Refusing to continue with default settings, which "
-                    "would overwrite your configuration on the next save."
-                ) from e
-            except _CONFIG_CONTENT_ERRORS as e:
-                # Never silently destroy a config we could not PARSE: preserve
-                # it so the operator can recover the lost settings, and make the
-                # degradation loud instead of a silent defaults regeneration.
-                # Deliberately NO recommended-defaults seed on this branch: the
-                # operator's settings are recoverable from the backup and must
-                # not be shadowed by recommendations in the meantime.
-                self._backup_unreadable_config(e)
-                return AbstractCoreConfig.default()
-            except Exception as e:
-                # THE FILE IS FINE; THE LOADER FAILED. An ImportError from a
-                # half-imported module, a RecursionError, an AttributeError in
-                # our own code — none of these say anything about the file, so
-                # quarantining it and running on defaults would be a guess, and
-                # the next _save_config() would publish that guess over a good
-                # store. Observed 2026-11-07..09: a circular import during
-                # `import abstractcore` produced 187 byte-identical
-                # `.corrupt-*.bak` copies of a valid file while every CLI ran on
-                # defaults. Refuse loudly instead; the traceback names the bug.
+            except Exception as upgrade_error:  # pragma: no cover - defensive
                 import logging
-                import traceback
 
-                logging.getLogger(__name__).error(
-                    "AbstractCore config at %s could not be LOADED because of an internal error, "
-                    "not its content (%s: %s); the file is left untouched and no defaults are "
-                    "used.\n%s",
-                    str(self.config_file), type(e).__name__, e, traceback.format_exc(),
+                logging.getLogger(__name__).warning(
+                    "recommended-seed upgrade skipped for %s: %s", str(self.config_file), upgrade_error
                 )
-                raise RuntimeError(
-                    f"AbstractCore config at {self.config_file} could not be loaded because of an "
-                    f"internal error ({type(e).__name__}: {e}); the file is intact and untouched. "
-                    "Refusing to continue with default settings, which would overwrite your "
-                    "configuration on the next save."
-                ) from e
+            return config
         else:
             # FRESH INSTALL (no config file has ever existed here): seed the
             # framework's recommended defaults so a new install works out of
@@ -1108,42 +1047,6 @@ class ConfigurationManager:
                 change["after"]["provider"], change["after"]["model"], str(backup),
             )
         return [dict(change, backup=str(backup)) for change in changes]
-
-    def _backup_unreadable_config(self, error: Exception) -> None:
-        """Copy an unparseable config aside (timestamped) and warn loudly.
-
-        Best-effort and never raises — a backup failure must not block startup,
-        but the WARNING always fires so a silent regeneration can never happen
-        unnoticed again."""
-        backup_path: Optional[Path] = None
-        try:
-            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            backup_path = self.config_file.with_suffix(
-                self.config_file.suffix + f".corrupt-{stamp}.bak"
-            )
-            # Copy raw bytes (not the parsed form) so nothing is lost/normalized.
-            backup_path.write_bytes(self.config_file.read_bytes())
-            try:
-                os.chmod(backup_path, 0o600)
-            except Exception:
-                pass
-        except Exception:
-            backup_path = None
-        try:
-            import logging
-
-            logging.getLogger(__name__).warning(
-                "#FALLBACK abstractcore config at %s could not be parsed (%s); "
-                "falling back to DEFAULTS for this session. The unreadable file "
-                "was backed up to %s — recover your settings (provider/model, "
-                "embedding model, capability routes) from it; a save will "
-                "otherwise overwrite it with defaults.",
-                str(self.config_file),
-                error,
-                str(backup_path) if backup_path else "(backup failed)",
-            )
-        except Exception:
-            pass
 
     def _dict_to_config(self, data: Dict[str, Any]) -> AbstractCoreConfig:
         """Convert dictionary to config object."""
@@ -3050,34 +2953,11 @@ class ConfigurationManager:
 
 # Global instance
 _config_manager = None
-_construct_lock = threading.Lock()
-_constructing_thread: Optional[int] = None
 
 
 def get_config_manager() -> ConfigurationManager:
-    """Get the global configuration manager instance.
-
-    Re-entrancy (2026-11-09): constructing the manager imports
-    ``abstractcore.utils``, and a module in that tree may build a logger at
-    import time that asks for the config. Before, that inner call constructed a
-    SECOND manager inside the first one's constructor, while the provider
-    registry was still half-imported, and the load failed as if the file were
-    corrupt. Now the inner call raises ``RuntimeError`` at once; import-time
-    callers already fall back to their defaults on any exception. Another
-    thread arriving during construction waits for the one instance.
-    """
-    global _config_manager, _constructing_thread
+    """Get the global configuration manager instance."""
+    global _config_manager
     if _config_manager is None:
-        if _constructing_thread == threading.get_ident():
-            raise RuntimeError(
-                "get_config_manager() re-entered while the configuration manager is being "
-                "constructed (an import-time caller asked for the config); use defaults here"
-            )
-        with _construct_lock:
-            if _config_manager is None:
-                _constructing_thread = threading.get_ident()
-                try:
-                    _config_manager = ConfigurationManager()
-                finally:
-                    _constructing_thread = None
+        _config_manager = ConfigurationManager()
     return _config_manager

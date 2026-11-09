@@ -1583,39 +1583,6 @@ def _print_capability_defaults(payload: dict) -> None:
     )
 
 
-def _unreadable_store_errors(config_file) -> List[str]:
-    """`[]`, or one loud line when the store exists and does not parse.
-
-    A CORRUPT STORE MUST NOT LOOK LIKE A FRESH INSTALL. `_load_config` already
-    refuses to destroy an unparseable file -- it backs it up and falls back to
-    defaults for the session -- but that fallback reaches this CLI as every
-    route `not_configured`, identical to a brand-new install. The operator
-    would then be told to set a default they set months ago, and the next save
-    would overwrite the recoverable file. So say it, at the surface the
-    operator is actually reading (the load-time warning goes to a logger whose
-    console level is ERROR by default).
-    """
-    try:
-        path = Path(str(config_file)).expanduser()
-        if not path.is_file():
-            return []
-        json.loads(path.read_text(encoding="utf-8"))
-        return []
-    except json.JSONDecodeError as exc:
-        try:
-            backups = sorted(p.name for p in path.parent.glob(path.name + ".corrupt-*.bak"))
-        except Exception:
-            backups = []
-        recovery = f" A copy was preserved as {backups[-1]}." if backups else ""
-        return [
-            f"The config store at {path} could not be parsed ({exc}); the values shown/written "
-            f"are DEFAULTS, not what you configured.{recovery} Fix or restore the file before "
-            "saving - a save overwrites it."
-        ]
-    except Exception:
-        return []
-
-
 def _print_store_errors(payload: dict) -> None:
     for message in payload.get("errors") or []:
         print(f"⚠️  {message}")
@@ -1630,7 +1597,7 @@ def _config_payload(manager) -> dict:
         "source": "abstractcore.local",
         "config_file": str(manager.config_file),
         "routes": manager.list_capability_defaults(),
-        "errors": _unreadable_store_errors(manager.config_file),
+        "errors": [],
     }
 
 
@@ -1755,11 +1722,6 @@ def _handle_config_defaults(args) -> int:
 
 def _handle_config_set_default(args) -> int:
     manager = _config_manager_for_cli(args)
-    # Warn BEFORE the write: this save is about to overwrite an unparseable
-    # file with defaults + this one route, and the operator deserves to know
-    # while the backup is still the only copy of their settings.
-    for message in _unreadable_store_errors(manager.config_file):
-        print(f"⚠️  {message}")
     raw_options = getattr(args, "option", []) or []
     try:
         # No `--option` at all leaves the stored options alone; `--option` given
@@ -1921,8 +1883,6 @@ def _print_apply_recommended(payload: dict) -> None:
 
 def _handle_config_apply_recommended(args) -> int:
     manager = _config_manager_for_cli(args)
-    for message in _unreadable_store_errors(manager.config_file):
-        print(f"⚠️  {message}")
     try:
         payload = manager.apply_recommended_capability_defaults(
             only=getattr(args, "only", None),

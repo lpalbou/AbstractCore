@@ -297,8 +297,7 @@ def provider_profiles_from_dict(data: Any) -> ProviderProfilesConfig:
         except (ValueError, TypeError) as exc:
             # A row this Core cannot load (a provider family it does not know, written by a
             # newer Core, 2026-11-03: `typesafe` read by 2.31) is skipped and said, never fatal:
-            # raising here made the whole config read as corrupt (a `.corrupt-*.bak` copy and
-            # DEFAULTS for the session). The save keeps the row as stored
+            # raising here would make the whole config fail to load. The save keeps the row as stored
             # (`ConfigurationManager._carry_unknown_store_keys`).
             import logging
 
