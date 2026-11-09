@@ -652,10 +652,13 @@ def model_supports_input(model: str, modality: str) -> bool:
         return False
 
 
-# What quarantining a config file is for: the FILE says something we cannot
-# read or accept (bad JSON, bad encoding, a value the schema rejects). Any other
-# exception during a load is the loader's own failure and never touches the file.
-_CONFIG_CONTENT_ERRORS = (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError, KeyError)
+# What quarantining a config file is for: the FILE cannot be decoded (bad JSON,
+# bad encoding), so a copy is the only way to keep what it held. Any other
+# exception during a load — a ValueError or TypeError included, since the
+# schema layer tolerates bad rows itself and has no typed error of its own — is
+# as likely the loader's bug as the file's content; it never touches the file
+# and never silently runs the process on defaults (review 2026-11-09).
+_CONFIG_CONTENT_ERRORS = (json.JSONDecodeError, UnicodeDecodeError)
 
 
 class ConfigurationManager:

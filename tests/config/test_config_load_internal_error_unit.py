@@ -42,6 +42,17 @@ def test_internal_error_during_load_leaves_the_file_alone_and_raises(tmp_path, m
     assert list(tmp_path.glob("*.corrupt-*")) == [], "a loader failure is not a corrupt file"
 
 
+def test_schema_error_from_our_own_code_does_not_quarantine_either(tmp_path, monkeypatch):
+    """A ValueError inside _dict_to_config is as likely our bug as the file's fault: no copy, no defaults."""
+    path = _write_config(tmp_path)
+    before = path.read_bytes()
+    monkeypatch.setattr(ConfigurationManager, "_dict_to_config", lambda self, data: (_ for _ in ()).throw(ValueError("x")))
+    with pytest.raises(RuntimeError, match="internal error"):
+        ConfigurationManager(config_dir=tmp_path, config_file=path, apply_env=False)
+    assert path.read_bytes() == before
+    assert list(tmp_path.glob("*.corrupt-*")) == []
+
+
 def test_unparseable_file_is_still_quarantined(tmp_path):
     path = tmp_path / "abstractcore.json"
     path.write_text("{ not json")

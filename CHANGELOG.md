@@ -53,9 +53,8 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
   against the provider registry, which was itself half-imported, and the loader treated that `ImportError` as a corrupt
   file: it wrote a byte-identical `abstractcore.json.corrupt-<ts>.bak` and ran the process on DEFAULTS (187 such copies
   on one machine; every plain CLI or worker import ran with the wrong provider, embedding model and routes). Now the
-  file is quarantined only when its CONTENT cannot be read or accepted (bad JSON or encoding, a value the schema
-  rejects); any other exception during a load logs its traceback, leaves the file untouched and raises instead of
-  running on defaults. `supported_provider_families()` returns `None` while the registry is mid-import and the family
+  file is quarantined only when it cannot be DECODED (bad JSON or encoding); any other exception during a load, our own
+  schema code's included, logs its traceback, leaves the file untouched and raises instead of running on defaults. `supported_provider_families()` returns `None` while the registry is mid-import and the family
   is accepted as written, validated when the profile is used. `get_config_manager()` raises `RuntimeError` on a
   re-entrant call from inside its own construction (import-time callers already fall back to their defaults) and makes
   a second thread wait for the one instance.
