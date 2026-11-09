@@ -189,10 +189,16 @@ def _apply_centralized_config_env() -> None:
     if raw_disable in {"1", "true", "yes", "on"}:
         return
 
+    from ..config.manager import ConfigParseError
+
     try:
         from ..config import get_config_manager
 
         get_config_manager()
+    except (ConfigParseError, OSError):
+        # The settings file exists and cannot be read: the server must not come
+        # up with no settings and no message. The error names the file.
+        raise
     except Exception as exc:
         logger.debug(
             "Centralized config env injection skipped",

@@ -377,6 +377,5 @@ def test_a_stored_typesafe_profile_loads_on_the_first_config_read(tmp_path) -> N
         env=env, capture_output=True, text=True, timeout=120,
     )
     assert proc.returncode == 0, proc.stderr
-    assert "could not be parsed" not in proc.stderr
     assert proc.stdout.strip().splitlines()[-1] == "['typesafe']"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["abstractcore.json"]

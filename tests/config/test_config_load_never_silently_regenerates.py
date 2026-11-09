@@ -44,8 +44,7 @@ def test_valid_config_loads_untouched_no_backup(caplog: pytest.LogCaptureFixture
 
     assert cm.config.embeddings.model == "text-embedding-qwen3-embedding-0.6b"
     assert cm.config.embeddings.provider == "lmstudio"
-    assert not list(d.glob("*.bak")), "a valid config must never spawn a backup"
-    assert not [r for r in caplog.records if "could not be parsed" in r.getMessage()]
+    assert sorted(p.name for p in d.iterdir()) == ["abstractcore.json"], "a valid config must never spawn a copy"
 
 
 def test_missing_config_is_defaults_no_backup() -> None:

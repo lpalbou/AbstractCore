@@ -87,6 +87,24 @@ def test_a_registry_that_truly_fails_to_import_is_not_silenced(monkeypatch):
         provider_profiles.supported_provider_families()
 
 
+def test_the_server_refuses_to_start_on_an_unparseable_file(tmp_path):
+    """`import abstractcore.server.app` loads the settings for its auth middleware; on a file that
+    cannot be parsed it must stop with the error, never come up with no settings and no message."""
+    home = tmp_path / "home"
+    (home / ".abstractcore" / "config").mkdir(parents=True)
+    bad = home / ".abstractcore" / "config" / "abstractcore.json"
+    bad.write_text("{ not json")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ABSTRACTCORE_")}
+    env["HOME"] = str(home)
+    env["PYTHONWARNINGS"] = "ignore"
+    out = subprocess.run([sys.executable, "-c", "import abstractcore.server.app"], env=env,
+                         capture_output=True, text=True, timeout=240)
+    assert out.returncode != 0
+    assert "ConfigParseError" in out.stderr and str(bad) in out.stderr, out.stderr[-2000:]
+    assert bad.read_text() == "{ not json"
+    assert sorted(p.name for p in bad.parent.iterdir()) == ["abstractcore.json"]
+
+
 def test_plain_import_then_config_load_in_a_fresh_process_keeps_the_file(tmp_path):
     """End to end: a fresh interpreter, `import abstractcore`, then the config, with a profile-bearing
     file under a scratch HOME. The profile loads and the config directory holds only the file."""

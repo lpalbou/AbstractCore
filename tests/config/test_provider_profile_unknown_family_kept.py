@@ -47,7 +47,6 @@ def test_a_config_with_an_unknown_family_loads_writes_nothing_and_says_so(tmp_pa
     assert config_file.read_bytes() == before
     said = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert any("'future-key' is not loaded" in m and "a-family-from-a-newer-core" in m for m in said), said
-    assert not any("could not be parsed" in m for m in said), said
 
 
 def test_a_save_keeps_the_unknown_row_exactly_as_stored(tmp_path) -> None:

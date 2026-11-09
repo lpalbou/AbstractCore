@@ -5,7 +5,7 @@ Provides configuration management and command-line interface for AbstractCore.
 """
 
 from .vision_config import handle_vision_commands, add_vision_arguments
-from .manager import get_config_manager
+from .manager import ConfigParseError, get_config_manager
 from .capability_defaults import (
     CAPABILITY_KINDS,
     capability_default_specs_dict,
@@ -41,6 +41,7 @@ __all__ = [
     'handle_vision_commands',
     'add_vision_arguments',
     'get_config_manager',
+    'ConfigParseError',
     'CAPABILITY_KINDS',
     'capability_default_specs_dict',
     'capability_defaults_from_dict',
