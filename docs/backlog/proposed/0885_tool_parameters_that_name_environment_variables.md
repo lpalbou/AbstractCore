@@ -4,7 +4,7 @@
 > Created: 2026-11-08
 > Priority: normal
 > Labels: tools, comms, settings, adr
-> Links: `abstractcore/tools/comms_tools.py`, `abstractcore/tools/telegram_tools.py`, [0884](../planned/0884_release_2_35_1_endpoint_unreachable_mcp_handshake_tool_descriptions.md)
+> Links: `abstractcore/tools/comms_tools.py`, `abstractcore/tools/telegram_tools.py`, [0884](../planned/0884_release_2_35_0_endpoint_unreachable_mcp_handshake_tool_descriptions.md)
 
 ## Summary
 

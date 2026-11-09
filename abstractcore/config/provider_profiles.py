@@ -21,14 +21,24 @@ _PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
 _ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def supported_provider_families() -> frozenset[str]:
+def supported_provider_families() -> Optional[frozenset[str]]:
     """The provider families a profile may name: the registry's HTTP-reachable providers.
 
     Read from ``ProviderRegistry.endpoint_provider_families`` (imported here,
     not at module load: the registry reads the config package), never a list
     kept in this module.
+
+    Returns ``None`` while ``abstractcore.providers.registry`` is itself still
+    importing: a config load that re-enters during ``import abstractcore``
+    (2026-11-09: a logger built at import asked for the config while the
+    registry was half-initialized) must not turn into an ImportError that the
+    loader mistakes for a corrupt file. The family is then accepted as written
+    and validated when the profile is used.
     """
-    from ..providers.registry import get_provider_registry
+    try:
+        from ..providers.registry import get_provider_registry
+    except ImportError:
+        return None
 
     return frozenset(get_provider_registry().endpoint_provider_families())
 
@@ -65,6 +75,8 @@ def profile_id_from_virtual_provider(provider: str) -> Optional[str]:
 def normalize_provider_family(value: Optional[str]) -> str:
     raw = str(value or "openai-compatible").strip().lower().replace("_", "-")
     families = supported_provider_families()
+    if families is None:
+        return raw
     if raw not in families:
         supported = ", ".join(sorted(families))
         raise ValueError(f"Unsupported provider family {raw!r}. Supported: {supported}")

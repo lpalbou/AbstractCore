@@ -7,6 +7,7 @@ Provides centralized configuration management for AbstractCore.
 import copy
 import json
 import os
+import threading
 import uuid
 import importlib.util
 from pathlib import Path
@@ -651,6 +652,12 @@ def model_supports_input(model: str, modality: str) -> bool:
         return False
 
 
+# What quarantining a config file is for: the FILE says something we cannot
+# read or accept (bad JSON, bad encoding, a value the schema rejects). Any other
+# exception during a load is the loader's own failure and never touches the file.
+_CONFIG_CONTENT_ERRORS = (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError, KeyError)
+
+
 class ConfigurationManager:
     """Manages AbstractCore configuration."""
 
@@ -977,7 +984,7 @@ class ConfigurationManager:
                     "the usual cause). Refusing to continue with default settings, which "
                     "would overwrite your configuration on the next save."
                 ) from e
-            except Exception as e:
+            except _CONFIG_CONTENT_ERRORS as e:
                 # Never silently destroy a config we could not PARSE: preserve
                 # it so the operator can recover the lost settings, and make the
                 # degradation loud instead of a silent defaults regeneration.
@@ -986,6 +993,31 @@ class ConfigurationManager:
                 # not be shadowed by recommendations in the meantime.
                 self._backup_unreadable_config(e)
                 return AbstractCoreConfig.default()
+            except Exception as e:
+                # THE FILE IS FINE; THE LOADER FAILED. An ImportError from a
+                # half-imported module, a RecursionError, an AttributeError in
+                # our own code — none of these say anything about the file, so
+                # quarantining it and running on defaults would be a guess, and
+                # the next _save_config() would publish that guess over a good
+                # store. Observed 2026-11-07..09: a circular import during
+                # `import abstractcore` produced 187 byte-identical
+                # `.corrupt-*.bak` copies of a valid file while every CLI ran on
+                # defaults. Refuse loudly instead; the traceback names the bug.
+                import logging
+                import traceback
+
+                logging.getLogger(__name__).error(
+                    "AbstractCore config at %s could not be LOADED because of an internal error, "
+                    "not its content (%s: %s); the file is left untouched and no defaults are "
+                    "used.\n%s",
+                    str(self.config_file), type(e).__name__, e, traceback.format_exc(),
+                )
+                raise RuntimeError(
+                    f"AbstractCore config at {self.config_file} could not be loaded because of an "
+                    f"internal error ({type(e).__name__}: {e}); the file is intact and untouched. "
+                    "Refusing to continue with default settings, which would overwrite your "
+                    "configuration on the next save."
+                ) from e
         else:
             # FRESH INSTALL (no config file has ever existed here): seed the
             # framework's recommended defaults so a new install works out of
@@ -3005,11 +3037,34 @@ class ConfigurationManager:
 
 # Global instance
 _config_manager = None
+_construct_lock = threading.Lock()
+_constructing_thread: Optional[int] = None
 
 
 def get_config_manager() -> ConfigurationManager:
-    """Get the global configuration manager instance."""
-    global _config_manager
+    """Get the global configuration manager instance.
+
+    Re-entrancy (2026-11-09): constructing the manager imports
+    ``abstractcore.utils``, and a module in that tree may build a logger at
+    import time that asks for the config. Before, that inner call constructed a
+    SECOND manager inside the first one's constructor, while the provider
+    registry was still half-imported, and the load failed as if the file were
+    corrupt. Now the inner call raises ``RuntimeError`` at once; import-time
+    callers already fall back to their defaults on any exception. Another
+    thread arriving during construction waits for the one instance.
+    """
+    global _config_manager, _constructing_thread
     if _config_manager is None:
-        _config_manager = ConfigurationManager()
+        if _constructing_thread == threading.get_ident():
+            raise RuntimeError(
+                "get_config_manager() re-entered while the configuration manager is being "
+                "constructed (an import-time caller asked for the config); use defaults here"
+            )
+        with _construct_lock:
+            if _config_manager is None:
+                _constructing_thread = threading.get_ident()
+                try:
+                    _config_manager = ConfigurationManager()
+                finally:
+                    _constructing_thread = None
     return _config_manager

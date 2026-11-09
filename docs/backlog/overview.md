@@ -15,7 +15,7 @@ Use this file as the entry point for planning status, recommended next work, and
 - Deprecated: 6
 - Recurrent: 0
 
-2026-11-08: added planned `0884` (release 2.35.1 carrying the unreachable-endpoint, MCP handshake, speculation-default
+2026-11-08: added planned `0884` (release 2.35.0 carrying the unreachable-endpoint, MCP handshake, speculation-default
 and tool-description patch series that is on main unreleased; the runtime and gateway floors wait for it) and proposed
 `0885` (nine WhatsApp/Telegram tool parameters that ask the model for environment-variable names). The search-walk
 work (honour nested `.gitignore`s, wider default excludes, scan-cost footer, no deadline) stays in the root backlog as
@@ -119,8 +119,8 @@ completed/ in a hygiene pass.)
 
 ## Next recommended work
 
-0. `planned/0884_release_2_35_1_endpoint_unreachable_mcp_handshake_tool_descriptions.md`
-   Cut 2.35.1 from main: no new code, changelog assemble, version, llms regen, tag. Unblocks the runtime's and
+0. `planned/0884_release_2_35_0_endpoint_unreachable_mcp_handshake_tool_descriptions.md`
+   Cut 2.35.0 from main: no new code, changelog assemble, version, llms regen, tag. Unblocks the runtime's and
    gateway's floor raise for endpoint-unreachable parking (root 1168).
 1. `proposed/0830_execute_command_program_name_denial.md`
    The command safety check blocks harmless text (`grep reboot notes.txt`) and lets `rm -fr`, `git reset
@@ -153,7 +153,7 @@ completed/ in a hygiene pass.)
 
 ## Planned ledger
 
-P1: [0884 — Release 2.35.1: unreachable endpoints typed, MCP handshake for strict servers, tool parameter descriptions](planned/0884_release_2_35_1_endpoint_unreachable_mcp_handshake_tool_descriptions.md); operator go required.
+P1: [0884 — Release 2.35.0: unreachable endpoints typed, MCP handshake for strict servers, tool parameter descriptions](planned/0884_release_2_35_0_endpoint_unreachable_mcp_handshake_tool_descriptions.md); operator go required.
 
 P2: [0883 — A top-level `abstractcore.generate()` so image, voice and music generation need no unused text model.](planned/0883_generation_entry_point_without_a_text_model.md)
 
