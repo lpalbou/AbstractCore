@@ -52,6 +52,10 @@ jobs:
                   print(f"Context7 rate limit: waiting {wait}s once as asked, then retrying")
                   time.sleep(wait)
                   status, text, headers = attempt()
+          if status == 400 and '"too-early"' in text:
+              # Context7 allows one refresh per project every 10 days; a run inside that window is a notice.
+              print(f"::notice::Context7 did not refresh {library}: {text.strip()} (run again after the window)")
+              sys.exit(0)
           if status != 200:
               sys.exit(f"Context7 refresh of {library} for {os.environ['VERSION']} failed: HTTP {status} {text.strip()}")
           print(f"Context7 refresh of {library} started for {os.environ['VERSION']}: {text.strip()}")
