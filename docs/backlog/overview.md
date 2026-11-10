@@ -10,7 +10,7 @@ Use this file as the entry point for planning status, recommended next work, and
 ## Counts
 
 - Planned: 32
-- Proposed: 27
+- Proposed: 28
 - Completed: 53
 - Deprecated: 6
 - Recurrent: 0
@@ -20,6 +20,10 @@ and tool-description patch series that is on main unreleased; the runtime and ga
 `0885` (nine WhatsApp/Telegram tool parameters that ask the model for environment-variable names). The search-walk
 work (honour nested `.gitignore`s, wider default excludes, scan-cost footer, no deadline) stays in the root backlog as
 1160 and is discussed with the operator before any code.
+
+2026-11-10: 2.35.0 released (v2.35.0 on 4cd0ee17; 0884 to close). Added proposed `0886`: `pip install abstractcore`
+fails on Python 3.14 because the light install pins `lxml<6` and lxml 5.x has no cp314 wheels (found on a Linux host;
+the installers' Python 3.12 is unaffected); lift the ceiling to `<7` and add 3.14 to CI, or state the ceiling.
 
 2026-11-07 hygiene pass (code audit by two reviewers, verified in the repository): completed `0233`, `0840`, `0842`,
 `0870`, `0816`, `0825` (all shipped earlier, never closed); deprecated and renumbered three date-named items
