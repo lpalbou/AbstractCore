@@ -12,6 +12,82 @@ AbstractCore has three install settings. Pick the one that matches where your mo
 install once, then configure providers and models (see [Getting Started](getting-started.md) and
 [Prerequisites & Setup](prerequisites.md)).
 
+## One-line install
+
+No admin rights and no Python needed: the installer gets [uv](https://docs.astral.sh/uv) when it is
+missing, Python 3.12 through uv, and installs AbstractCore alone (no gateway, no services) in its
+own environment, with its commands in `~/.local/bin`: `abstractcore` (configuration, `models`,
+`engines`, `serve`), `abstractcore-config`, `abstractcore-chat`, `abstractcore-endpoint` and the
+apps `summarizer`, `extractor`, `judge`, `intent` and `deepsearch`.
+
+```bash
+# macOS / Linux
+curl -LsSf https://abstractframework.ai/core/install.sh | sh
+```
+
+```powershell
+# Windows 10 / 11
+powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/core/install.ps1 | iex"
+```
+
+```bash
+# With pip, in your own Python environment
+pip install abstractcore              # light
+pip install "abstractcore[apple]"     # Apple Silicon Mac
+pip install "abstractcore[gpu]"       # NVIDIA or AMD GPU
+```
+
+It picks the setting from the machine (`--profile` chooses another one):
+
+| Machine | Profile | What it installs |
+|---|---|---|
+| Apple Silicon Mac, macOS 14 or later | `apple` | `abstractcore[apple]` (below), with llama.cpp's prebuilt Metal build |
+| NVIDIA card (`nvidia-smi -L` works) or, on Linux, ROCm (`rocminfo`) | `gpu` | `abstractcore[gpu]` (below); on Linux with llama.cpp's prebuilt CPU build, on Windows with PyTorch's CUDA build for the driver (`--torch-backend cu130` or `cu126`) |
+| Anything else (an Intel Mac, an older macOS, no GPU) | `light` | `abstractcore` with no extra: every remote provider, the built-in tools, media inputs and the HTTP server |
+
+`--profile gpu` on a machine without a card installs the same stack, whose engines then run on the
+processor. Every step prints its command, and so does the summary: the version, the profile, the
+llama.cpp result, where the commands are and what to try first:
+
+```bash
+abstractcore --help
+abstractcore config defaults   # the capability routes this install resolves to
+```
+
+| macOS / Linux | Windows | |
+|---|---|---|
+| `--print` | `-Print` | show the plan and every command; change nothing |
+| `--profile auto\|light\|apple\|gpu` | `-Profile auto\|light\|gpu` | the profile (default `auto`; `AC_PROFILE`) |
+| `--pin VERSION\|latest` | `-Pin` | the version: by default the release the script ships with, `latest` = the newest on PyPI (`AC_PIN`) |
+| `--from PATH` | `-From` | install from a checkout, sdist or wheel, for testing (`AC_FROM`) |
+| `--no-modify-path` | `-NoModifyPath` | do not run `uv tool update-shell` |
+
+Options go after `sh -s --` (`curl -LsSf https://abstractframework.ai/core/install.sh | sh -s -- --print`)
+or into a script block on Windows
+(`& ([scriptblock]::Create((irm https://abstractframework.ai/core/install.ps1))) -Print`).
+
+**Upgrade**: run the same line again. It finds the install, says
+`AbstractCore 2.34.0 found: upgrading to AbstractCore 2.35.0` (or `already up to date`), keeps the
+profile unless `--profile` says otherwise, ends with `abstractcore 2.34.0 -> 2.35.0`, and
+reinstalls in place when the command no longer starts. Remove it with
+`uv tool uninstall abstractcore`. AbstractFramework's installer already includes AbstractCore and
+its commands: on such a machine this script stops and says so, and nothing is changed.
+
+**Prebuilt wheels only**: the installer never starts a compiler (no Xcode tools, no build
+toolchain). Three packages of the `apple` and `gpu` trees publish no usable wheel on PyPI, so on
+macOS and Linux:
+
+- **llama.cpp** (GGUF models; `llama-cpp-python`, a source build on PyPI) comes from upstream's
+  prebuilt wheels instead: the Metal build on Apple Silicon, the CPU build on Linux (glibc, x86_64
+  or aarch64). Where no such wheel exists (musl Linux), or when it does not install, it is left
+  out and the summary says so.
+- **Echo cancellation** (`aec-audio-processing`) and **stable-diffusion.cpp**
+  (`stable-diffusion-cpp-python`), both optional, are left out; Diffusers covers image generation.
+
+On Windows x64 every package of these settings has a wheel, so nothing is left out beyond what
+[GPU on Windows](#gpu-on-windows) describes. Windows on ARM is not supported by the installer:
+tiktoken, lxml and pandas publish no Windows ARM64 wheels for the versions AbstractCore needs.
+
 ## Light: `pip install abstractcore`
 
 The light install runs everything through remote inferencers and servers you already have. It

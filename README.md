@@ -136,7 +136,27 @@ graph LR
 
 ## Install
 
-AbstractCore has three install settings:
+**Install in one line** (no admin rights, no Python needed):
+
+- **macOS / Linux:**
+
+  ```bash
+  curl -LsSf https://abstractframework.ai/core/install.sh | sh
+  ```
+
+- **Windows 10 / 11** (PowerShell):
+
+  ```powershell
+  powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/core/install.ps1 | iex"
+  ```
+
+The script detects the machine (Apple Silicon with macOS 14+: `abstractcore[apple]`; an NVIDIA or
+ROCm card: `abstractcore[gpu]`; anything else: the light install) and installs AbstractCore alone
+with uv and Python 3.12, giving you the `abstractcore`, `abstractcore-chat` and
+`abstractcore-endpoint` commands and the apps; run it again to upgrade. Options and details:
+[One-line install](docs/installation.md#one-line-install).
+
+**With pip**, in your own Python environment, AbstractCore has three install settings:
 
 ```bash
 # Light: every remote provider (OpenAI, Anthropic, OpenRouter, Portkey, any OpenAI-compatible
