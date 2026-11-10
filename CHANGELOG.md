@@ -14,6 +14,9 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ### Changed
 
+- **AbstractVision 0.3.35 is the floor** (base dependency, the `all-apple` / `all-gpu` extras and the `vision-*`
+  extras): the release proven on Linux NVIDIA and processor-only hosts and on Apple silicon (CPU float32 default,
+  8-bit GGUF first on CUDA, trimmed Diffusers downloads, `GpuOutOfMemoryError`).
 - **AbstractVoice 0.21.1 is the floor** (base dependency and the `all-apple` / `all-gpu` extras): 0.21.0's
   `gpu` extra added a second cuDNN wheel next to torch's on Linux and every CUDA convolution failed with
   `CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH` once abstractcore's `gpu` extra (vllm, torch 2.13) was in the

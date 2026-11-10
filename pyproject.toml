@@ -99,7 +99,7 @@ dependencies = [
     # sealing-key file (<config dir>/secrets/sealing.key) — no OS keychain on any OS (2.26.0).
     "cryptography>=41.0.0",
     "abstractvoice>=0.21.1",
-    "abstractvision>=0.3.34",
+    "abstractvision>=0.3.35",
     "abstractmusic>=0.1.17; python_version >= '3.10'",
     "abstract3d>=0.3.2; python_version >= '3.10'",
 ]
@@ -172,7 +172,7 @@ apple = [
     # Local voice (TTS/STT), image/video and music engines.
     "abstractvoice[all-apple]>=0.21.1",
     "omnivoice>=0.1.5",
-    "abstractvision[all-apple]>=0.3.34",
+    "abstractvision[all-apple]>=0.3.35",
     "abstractmusic[all-apple]>=0.1.17",
     # Headless-browser rendering (`browser_probe`, JS rendering in fetch_url). Kept out of light
     # (a browser is never a base-install cost); the browser binary is a one-time step:
@@ -203,7 +203,7 @@ gpu = [
     # Local voice (TTS/STT), image/video and music engines.
     "abstractvoice[all-gpu]>=0.21.1",
     "omnivoice>=0.1.5",
-    "abstractvision[all-gpu]>=0.3.34",  # 0.3.32: no MLX-Gen; stable-diffusion.cpp marked out on Windows; 0.3.33: sequential CPU offload when model offload does not fit
+    "abstractvision[all-gpu]>=0.3.35",  # 0.3.32: no MLX-Gen; stable-diffusion.cpp marked out on Windows; 0.3.33: sequential CPU offload when model offload does not fit
     "abstractmusic[all-gpu]>=0.1.17",
     # Headless-browser rendering (`browser_probe`, JS rendering in fetch_url). Kept out of light
     # (a browser is never a base-install cost); the browser binary is a one-time step:
@@ -265,9 +265,9 @@ embeddings = [
     "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
 ]
-vision-diffusers = ["abstractvision[huggingface]>=0.3.34"]
-vision-sdcpp = ["abstractvision[sdcpp]>=0.3.34"]
-vision-local = ["abstractvision[local]>=0.3.34"]
+vision-diffusers = ["abstractvision[huggingface]>=0.3.35"]
+vision-sdcpp = ["abstractvision[sdcpp]>=0.3.35"]
+vision-local = ["abstractvision[local]>=0.3.35"]
 browser = ["playwright>=1.49.0,<2.0.0"]
 # PyMuPDF-family PDF extraction is an explicit licence opt-in (AGPL / commercial).
 pdf-pymupdf-commercial = [
