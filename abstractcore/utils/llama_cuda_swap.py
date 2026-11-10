@@ -94,7 +94,8 @@ def torch_cuda_major() -> Optional[int]:
         text = (pkg / "version.py").read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    match = re.search(r"^cuda\s*=\s*['\"](\d+)\.(\d+)['\"]", text, re.MULTILINE)
+    # torch <= 2.12: `cuda = '13.0'`; torch 2.13: `cuda: Optional[str] = '13.0'` (annotated).
+    match = re.search(r"^cuda\s*(?::[^=\n]*)?=\s*['\"](\d+)\.(\d+)['\"]", text, re.MULTILINE)
     return int(match.group(1)) if match else None
 
 

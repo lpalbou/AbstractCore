@@ -188,6 +188,13 @@ def test_torch_cuda_major_reads_version_py_without_importing_torch(tmp_path, mon
     assert swap.torch_cuda_major() == 12
     (tmp_path / "site-packages" / "torch" / "version.py").write_text("cuda = None\n")
     assert swap.torch_cuda_major() is None
+    # torch 2.13 annotates the module constants (found on the GPU host: the first run skipped the swap).
+    (tmp_path / "site-packages" / "torch" / "version.py").write_text(
+        "__all__ = ['__version__', 'debug', 'cuda', 'git_version', 'hip', 'rocm', 'xpu']\n"
+        "__version__: str = '2.13.0+cu130'\ndebug: bool = False\ncuda: Optional[str] = '13.0'\n")
+    assert swap.torch_cuda_major() == 13
+    (tmp_path / "site-packages" / "torch" / "version.py").write_text("cuda: Optional[str] = None\n")
+    assert swap.torch_cuda_major() is None
 
 
 def test_prepare_llama_cpp_import_runs_the_swap_before_preloading_on_linux(tmp_path, monkeypatch):
