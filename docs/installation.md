@@ -90,6 +90,16 @@ macOS and Linux:
   build) or on aarch64, the CPU build stays and the summary says why. After
   `uv tool upgrade --reinstall` (or when the first Windows build did not install), run the
   installer again to get the CUDA build back.
+  **Plain `pip install "abstractcore[gpu]"` on Linux** gets the same result without the installer
+  (2.35.1): pip can only resolve the processor build, so the first time AbstractCore is about to load
+  a GGUF model on an x86_64 host where PyTorch is a CUDA build and `nvidia-smi` answers with a driver
+  new enough (580 for CUDA 13, 525 for CUDA 12), it runs that swap itself, once per environment
+  (`pip` or `uv pip`, same index, same pinned version), logs one line before and after, and records
+  the outcome next to the package (`llama_cpp/.abstractcore-cuda-swap.json`). A host set up by the
+  installer already has the CUDA build and nothing runs. If the swap cannot happen (offline,
+  read-only site-packages, no driver), GGUF models stay on the processor and the provider's runtime
+  info (`llama_cuda_swap`) and a warning say why; `ABSTRACTCORE_LLAMA_CUDA_SWAP=0` keeps the
+  processor build on purpose.
 - **Echo cancellation** (`aec-audio-processing`) and **stable-diffusion.cpp**
   (`stable-diffusion-cpp-python`), both optional, are left out by the overrides file and the
   summary says so (Diffusers / MLX-Gen cover image generation; with a C compiler you can add them

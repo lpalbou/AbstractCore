@@ -2,7 +2,7 @@
 
 > Canonical user documentation in one file. The linked source pages remain authoritative; source code determines behavior.
 
-Package version: 2.35.0
+Package version: 2.35.1
 
 Start with the [agent skill](skills/abstractcore/SKILL.md) for a portable operating procedure,
 or [llms.txt](llms.txt) for a short index. Register the complete skill folder with its references.
@@ -96,7 +96,7 @@ The linked source pages are canonical. Fenced examples retain their source forma
 Unified LLM Interface
 > Write once, run everywhere
 
-What's new in 2.35.0: the model capability registry covers the current vendor lineups (GPT-6 and GPT-6.1, Claude 5.5 and Fable 5.1, Grok 4.3 to 4.7, Qwen 3.8, DeepSeek V4.1 Flash, GLM 5.3, MiniMax M3.1 Flash, Kimi K3 and K3.1 Pro, LFM3, Spark X2.5/X2.6, Nemotron 3.5, Bonsai 2 and more), so an image, video or voice route can name them; and a GGUF or MLX re-packaging of a registered model (`unsloth/...-GGUF:Q4_K_M`, `mlx-community/...-4bit`, bartowski's `Org_Model-GGUF`) resolves to that model's entry instead of the text-only default. Transcriptions report `language` and `detected_language`. See the [changelog](CHANGELOG.md#2350---2026-11-10).
+What's new in 2.35.1: a plain `pip install "abstractcore[gpu]"` on a Linux NVIDIA machine now runs GGUF models on the GPU (AbstractCore installs llama.cpp's CUDA build itself, once, the first time it is needed). In 2.35.0: the model capability registry covers the current vendor lineups (GPT-6 and GPT-6.1, Claude 5.5 and Fable 5.1, Grok 4.3 to 4.7, Qwen 3.8, DeepSeek V4.1 Flash, GLM 5.3, MiniMax M3.1 Flash, Kimi K3 and K3.1 Pro, LFM3, Spark X2.5/X2.6, Nemotron 3.5, Bonsai 2 and more), so an image, video or voice route can name them; and a GGUF or MLX re-packaging of a registered model (`unsloth/...-GGUF:Q4_K_M`, `mlx-community/...-4bit`, bartowski's `Org_Model-GGUF`) resolves to that model's entry instead of the text-only default. Transcriptions report `language` and `detected_language`. See the [changelog](CHANGELOG.md#2350---2026-11-10).
 
 What's new in 2.34.0: a local model that no call has used for 60 minutes is unloaded from memory and loads
 again on its next call; a model kept loaded (Keep loaded) never is, and no running call is interrupted
@@ -1431,6 +1431,16 @@ macOS and Linux:
   build) or on aarch64, the CPU build stays and the summary says why. After
   `uv tool upgrade --reinstall` (or when the first Windows build did not install), run the
   installer again to get the CUDA build back.
+  **Plain `pip install "abstractcore[gpu]"` on Linux** gets the same result without the installer
+  (2.35.1): pip can only resolve the processor build, so the first time AbstractCore is about to load
+  a GGUF model on an x86_64 host where PyTorch is a CUDA build and `nvidia-smi` answers with a driver
+  new enough (580 for CUDA 13, 525 for CUDA 12), it runs that swap itself, once per environment
+  (`pip` or `uv pip`, same index, same pinned version), logs one line before and after, and records
+  the outcome next to the package (`llama_cpp/.abstractcore-cuda-swap.json`). A host set up by the
+  installer already has the CUDA build and nothing runs. If the swap cannot happen (offline,
+  read-only site-packages, no driver), GGUF models stay on the processor and the provider's runtime
+  info (`llama_cuda_swap`) and a warning say why; `ABSTRACTCORE_LLAMA_CUDA_SWAP=0` keeps the
+  processor build on purpose.
 - **Echo cancellation** (`aec-audio-processing`) and **stable-diffusion.cpp**
   (`stable-diffusion-cpp-python`), both optional, are left out by the overrides file and the
   summary says so (Diffusers / MLX-Gen cover image generation; with a C compiler you can add them

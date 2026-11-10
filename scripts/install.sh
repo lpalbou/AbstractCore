@@ -77,7 +77,7 @@ set -eu
 
 # The release this script ships with = abstractcore/utils/version.py (tests/test_install_scripts.py
 # fails on drift), so an install lands on the version the script was tested with.
-AC_PIN_DEFAULT="2.35.0"
+AC_PIN_DEFAULT="2.35.1"
 AC_PYTHON="3.12"
 AC_SCRIPT_URL="https://abstractframework.ai/core/install.sh"
 AC_DOCS="https://github.com/lpalbou/AbstractCore/blob/main/docs/installation.md#one-line-install"

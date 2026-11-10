@@ -1771,6 +1771,8 @@ class HuggingFaceProvider(BaseProvider):
             "context_reservation": dict(getattr(self, "_context_reservation", None) or {}),
             "requested_context": getattr(self, "_gguf_requested_context", None),
             "n_gpu_layers": self.n_gpu_layers,
+            # Why GGUF runs where it runs on Linux + NVIDIA (utils/llama_cuda_swap): outcome and reason.
+            "llama_cuda_swap": getattr(self, "gguf_cuda_swap", None),
             "max_output_tokens": self.max_output_tokens,
             "output_ceiling_source": getattr(self, "_output_ceiling_source", None),
             "prompt_cache_store": getattr(self, "_prompt_cache_store", None),
@@ -7054,6 +7056,18 @@ class HuggingFaceProvider(BaseProvider):
         # don't need to import PyTorch.
         supports_gpu_offload = False
         try:
+            # Linux + NVIDIA: a plain pip install carries the processor build of llama.cpp; the CUDA
+            # build is swapped in once per environment before the first import (llama_cuda_swap).
+            from ..utils.llama_cuda_swap import ensure_llama_cpp_cuda_build
+
+            self.gguf_cuda_swap = ensure_llama_cpp_cuda_build()
+            if self.gguf_cuda_swap.get("outcome") in {"failed", "skipped"} and self.gguf_cuda_swap.get("build"):
+                self.logger.warning(
+                    "GGUF on the processor: llama-cpp-python is the CPU build and the CUDA build was not "
+                    "installed (%s). The one-line installer does it; see docs/installation.md.",
+                    self.gguf_cuda_swap.get("reason"),
+                )
+            prepare_llama_cpp_import()
             import llama_cpp  # type: ignore
 
             if sys.platform == "win32":

@@ -146,7 +146,15 @@ def prepare_llama_cpp_import() -> List[str]:
             if folder not in entries:
                 os.environ["PATH"] = folder + (os.pathsep + os.environ["PATH"] if os.environ.get("PATH") else "")
             added.append(folder)
-    elif sys.platform.startswith("linux") and llama_cpp_is_cuda_build():
+    elif sys.platform.startswith("linux"):
+        # A plain `pip install abstractcore[gpu]` leaves the processor build of llama.cpp on an NVIDIA
+        # host (PyPI has no CUDA build); swap the CUDA build in first, once per environment.
+        from .llama_cuda_swap import ensure_llama_cpp_cuda_build
+
+        ensure_llama_cpp_cuda_build()
+        if not llama_cpp_is_cuda_build():
+            _prepared = added
+            return list(added)
         for library in linux_nvidia_cuda_libraries():
             try:
                 _handles.append(ctypes.CDLL(str(library), mode=getattr(ctypes, "RTLD_GLOBAL", 0)))
