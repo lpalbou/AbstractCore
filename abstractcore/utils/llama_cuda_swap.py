@@ -171,6 +171,18 @@ def run_swap(command: List[str]) -> subprocess.CompletedProcess:
     return subprocess.run(command, capture_output=True, text=True, timeout=SWAP_TIMEOUT_S)
 
 
+def notice(message: str) -> None:
+    """One line on stderr AND in the log: AbstractCore's console log level is ERROR by default, so a
+    `logger.warning` alone never reaches a user; a download of several hundred MB inside
+    `create_llm` must be announced where the user is looking."""
+    try:
+        sys.stderr.write(f"AbstractCore: {message}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+    logger.warning("AbstractCore: %s", message)
+
+
 def _outcome(outcome: str, reason: str = "", **extra: Any) -> Dict[str, Any]:
     data: Dict[str, Any] = {"outcome": outcome, "reason": reason}
     data.update(extra)
@@ -229,11 +241,10 @@ def _decide_and_swap() -> Dict[str, Any]:
         _write_marker(data)
         return data
     already_loaded = "llama_cpp" in sys.modules
-    logger.warning(
-        "AbstractCore: llama-cpp-python %s here is the processor build and this machine has an NVIDIA card "
-        "(CUDA %s torch, driver %s): installing its CUDA build (%s) from %s so GGUF models run on the GPU; "
-        "one-time, a few hundred MB. Set %s=0 to keep the processor build.",
-        version, major, driver, build, INDEX, ENV_OPT_OUT,
+    notice(
+        f"llama-cpp-python {version} here is the processor build and this machine has an NVIDIA card "
+        f"(CUDA {major} torch, driver {driver}): installing its CUDA build ({build}) from {INDEX} so GGUF "
+        f"models run on the GPU; one-time, a few hundred MB. Set {ENV_OPT_OUT}=0 to keep the processor build."
     )
     started = time.time()
     try:
@@ -242,7 +253,8 @@ def _decide_and_swap() -> Dict[str, Any]:
         data = _outcome("failed", f"the swap command did not run: {exc}", version=version, build=build,
                         command=" ".join(command))
         _write_marker(data)
-        logger.warning("AbstractCore: llama.cpp CUDA build not installed: %s", data["reason"])
+        notice(f"llama.cpp CUDA build not installed: {data['reason']}. GGUF models stay on the processor; the "
+               "one-line installer does this step too (docs/installation.md).")
         return data
     tail = ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()[-6:]
     if proc.returncode != 0 or not llama_cpp_is_cuda_build():
@@ -251,16 +263,15 @@ def _decide_and_swap() -> Dict[str, Any]:
         data = _outcome("failed", f"{why}: {' | '.join(tail)[:600]}", version=version, build=build,
                         command=" ".join(command), seconds=round(time.time() - started, 1))
         _write_marker(data)
-        logger.warning("AbstractCore: llama.cpp CUDA build not installed (%s); GGUF models stay on the processor. "
-                       "The one-line installer does this step too: see docs/installation.md.", data["reason"])
+        notice(f"llama.cpp CUDA build not installed ({data['reason']}); GGUF models stay on the processor. "
+               "The one-line installer does this step too: see docs/installation.md.")
         return data
     data = _outcome("swapped-restart-needed" if already_loaded else "swapped", "", version=version, build=build,
                     command=" ".join(command), seconds=round(time.time() - started, 1))
     _write_marker(data)
     if already_loaded:
-        logger.warning("AbstractCore: llama.cpp CUDA build %s installed in %.0f s; this process had already loaded "
-                       "the processor build, the next one runs GGUF models on the GPU.", build, data["seconds"])
+        notice(f"llama.cpp CUDA build {build} installed in {data['seconds']:.0f} s; this process had already loaded "
+               "the processor build, the next one runs GGUF models on the GPU.")
     else:
-        logger.warning("AbstractCore: llama.cpp CUDA build %s installed in %.0f s; GGUF models run on the GPU.",
-                       build, data["seconds"])
+        notice(f"llama.cpp CUDA build {build} installed in {data['seconds']:.0f} s; GGUF models run on the GPU.")
     return data

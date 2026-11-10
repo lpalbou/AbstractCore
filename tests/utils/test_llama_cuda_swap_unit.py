@@ -78,12 +78,18 @@ def _marker(llama: Path) -> dict:
     return json.loads((llama / swap.MARKER_NAME).read_text())
 
 
-def test_processor_build_on_a_cuda_13_host_is_swapped_once_with_the_cu130_build(tmp_path, monkeypatch):
+def test_processor_build_on_a_cuda_13_host_is_swapped_once_with_the_cu130_build(tmp_path, monkeypatch, capsys):
     llama = _fake_packages(tmp_path, monkeypatch, cuda_build=False, torch_cuda="13.0")
     runner = _Runner(llama)
     monkeypatch.setattr(swap, "run_swap", runner)
     out = swap.ensure_llama_cpp_cuda_build()
     assert out["outcome"] == "swapped" and out["build"] == "cu130" and out["version"] == "0.3.36"
+    # Loud at the default settings: AbstractCore's console log level is ERROR, so the announcement goes to
+    # stderr directly, before (what, why, size, opt-out) and after (seconds).
+    err = capsys.readouterr().err
+    assert "AbstractCore: llama-cpp-python 0.3.36 here is the processor build" in err and "cu130" in err
+    assert "a few hundred MB" in err and swap.ENV_OPT_OUT + "=0" in err
+    assert "AbstractCore: llama.cpp CUDA build cu130 installed in" in err and "run on the GPU" in err
     assert runner.calls == [["fake-pip", "cu130", "0.3.36"]]
     assert _marker(llama)["outcome"] == "swapped"
     # Second process: the CUDA build is in place, nothing runs.
@@ -140,12 +146,14 @@ def test_no_swap_when_it_does_not_apply_and_the_reason_is_recorded(tmp_path, mon
         assert "580" in out["reason"] and "550" in out["reason"]
 
 
-def test_a_failed_swap_is_recorded_once_and_not_retried(tmp_path, monkeypatch):
+def test_a_failed_swap_is_recorded_once_and_not_retried(tmp_path, monkeypatch, capsys):
     llama = _fake_packages(tmp_path, monkeypatch, cuda_build=False, torch_cuda="13.0")
     runner = _Runner(llama, succeed=False, returncode=1)
     monkeypatch.setattr(swap, "run_swap", runner)
     out = swap.ensure_llama_cpp_cuda_build()
     assert out["outcome"] == "failed" and "exit 1" in out["reason"] and "No matching distribution" in out["reason"]
+    err = capsys.readouterr().err
+    assert "AbstractCore: llama.cpp CUDA build not installed (exit 1" in err and "stay on the processor" in err
     assert _marker(llama)["outcome"] == "failed"
     monkeypatch.setattr(swap, "_result", None)
     again = swap.ensure_llama_cpp_cuda_build()

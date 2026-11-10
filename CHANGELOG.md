@@ -46,7 +46,7 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
   first `import llama_cpp` on an x86_64 Linux host where `torch/version.py` says CUDA 12 or 13 and
   `nvidia-smi` reports a driver new enough (525 / 580): the installers' command (`pip`, or `uv pip` when the
   environment has no pip, `--no-index --no-deps --find-links <index>/<cu130|cu125>/llama-cpp-python/`, the
-  installed version), one warning line before and after, the outcome written to
+  installed version), one line on the console before and one after, whatever the log level, the outcome written to
   `llama_cpp/.abstractcore-cuda-swap.json` so a failed swap is not retried at every load. A host set up by
   the installer has the CUDA build already and nothing runs. When the swap cannot happen (offline,
   read-only site-packages, no driver, `ABSTRACTCORE_LLAMA_CUDA_SWAP=0`) GGUF stays on the processor and the

@@ -7061,11 +7061,14 @@ class HuggingFaceProvider(BaseProvider):
             from ..utils.llama_cuda_swap import ensure_llama_cpp_cuda_build
 
             self.gguf_cuda_swap = ensure_llama_cpp_cuda_build()
-            if self.gguf_cuda_swap.get("outcome") in {"failed", "skipped"} and self.gguf_cuda_swap.get("build"):
-                self.logger.warning(
+            if self.gguf_cuda_swap.get("outcome") == "skipped" and self.gguf_cuda_swap.get("build"):
+                # A driver or card reason (a failed swap announces itself in llama_cuda_swap).
+                from ..utils.llama_cuda_swap import notice
+
+                notice(
                     "GGUF on the processor: llama-cpp-python is the CPU build and the CUDA build was not "
-                    "installed (%s). The one-line installer does it; see docs/installation.md.",
-                    self.gguf_cuda_swap.get("reason"),
+                    f"installed ({self.gguf_cuda_swap.get('reason')}). The one-line installer does it; see "
+                    "docs/installation.md."
                 )
             prepare_llama_cpp_import()
             import llama_cpp  # type: ignore
