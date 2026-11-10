@@ -69,16 +69,16 @@
     </div>
     <div class="qs" id="install" aria-label="Install">
       <div class="qs-tabs" role="tablist" aria-label="Install on">
-        <button type="button" class="qs-tab" role="tab" id="qs-mac" aria-controls="qs-term" aria-selected="true" data-os="mac" data-prompt="$" data-cmd="curl -LsSf https://abstractframework.ai/core/install.sh | sh" data-note="No admin rights and no Python needed: it gets uv and Python 3.12, picks &lt;code&gt;abstractcore&lt;/code&gt;, &lt;code&gt;abstractcore[apple]&lt;/code&gt; or &lt;code&gt;abstractcore[gpu]&lt;/code&gt; from the machine and installs it with its commands; running it again upgrades. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">macOS / Linux</button>
-        <button type="button" class="qs-tab" role="tab" id="qs-win" aria-controls="qs-term" aria-selected="false" tabindex="-1" data-os="win" data-prompt="PS&gt;" data-cmd="powershell -ExecutionPolicy ByPass -c &quot;irm https://abstractframework.ai/core/install.ps1 | iex&quot;" data-note="Windows 10 or 11 on x64, no administrator rights: &lt;code&gt;abstractcore[gpu]&lt;/code&gt; with an NVIDIA card, otherwise &lt;code&gt;abstractcore&lt;/code&gt;; running it again upgrades. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">Windows</button>
+        <button type="button" class="qs-tab" role="tab" id="qs-mac" aria-controls="qs-term" aria-selected="true" data-os="mac" data-prompt="$" data-cmd="curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh" data-note="No admin rights and no Python needed: it gets uv and Python 3.12, picks &lt;code&gt;abstractcore&lt;/code&gt;, &lt;code&gt;abstractcore[apple]&lt;/code&gt; or &lt;code&gt;abstractcore[gpu]&lt;/code&gt; from the machine and installs it with its commands; running it again upgrades. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">macOS / Linux</button>
+        <button type="button" class="qs-tab" role="tab" id="qs-win" aria-controls="qs-term" aria-selected="false" tabindex="-1" data-os="win" data-prompt="PS&gt;" data-cmd="powershell -ExecutionPolicy ByPass -c &quot;irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.ps1 | iex&quot;" data-note="Windows 10 or 11 on x64, no administrator rights: &lt;code&gt;abstractcore[gpu]&lt;/code&gt; with an NVIDIA card, otherwise &lt;code&gt;abstractcore&lt;/code&gt;; running it again upgrades. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">Windows</button>
         <button type="button" class="qs-tab" role="tab" id="qs-py" aria-controls="qs-term" aria-selected="false" tabindex="-1" data-os="py" data-prompt="$" data-cmd="pip install abstractcore" data-note="Python 3.9 or later: every remote provider, media inputs, the server and the plugins. Add &lt;code&gt;[apple]&lt;/code&gt; or &lt;code&gt;[gpu]&lt;/code&gt; for the local engines. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">Python</button>
       </div>
       <div class="qs-term" id="qs-term" role="tabpanel" aria-labelledby="qs-mac">
         <span class="qs-prompt" aria-hidden="true">$</span>
         <span class="qs-cmd-stack">
-          <code class="qs-cmd">curl -LsSf https://abstractframework.ai/core/install.sh | sh</code>
-          <code class="qs-cmd-sizer" aria-hidden="true">curl -LsSf https://abstractframework.ai/core/install.sh | sh</code>
-          <code class="qs-cmd-sizer" aria-hidden="true">powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/core/install.ps1 | iex"</code>
+          <code class="qs-cmd">curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh</code>
+          <code class="qs-cmd-sizer" aria-hidden="true">curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh</code>
+          <code class="qs-cmd-sizer" aria-hidden="true">powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.ps1 | iex"</code>
           <code class="qs-cmd-sizer" aria-hidden="true">pip install abstractcore</code>
         </span>
       </div>

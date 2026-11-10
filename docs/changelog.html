@@ -99,8 +99,8 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
     <code>qat</code>, <code>unquantized</code>, <code>ct</code>, <code>mobile</code>, <code>transformers</code> and <code>wNaM</code> packaging tokens strip like any other variant suffix.</li>
 <li>Transcription language facts: <code>generate(..., output={"task": "transcription"})</code> records <code>language</code> (what the engine was told; <code>None</code> = it detected the language) and <code>detected_language</code> (what it reported) in the transcript's metadata, through the audio facade's <code>transcribe_detailed</code> (<code>AudioCapability</code> may implement it — AbstractVoice does; a backend with <code>transcribe</code> only reports neither). <code>POST /v1/audio/transcriptions</code> on a local engine answers <code>{text, language, detected_language}</code>.</li>
 <li><strong>AbstractCore installs in one line, with no admin rights and no Python needed</strong> (<code>scripts/install.sh</code>,
-  <code>scripts/install.ps1</code>). <code>curl -LsSf https://abstractframework.ai/core/install.sh | sh</code> on macOS and
-  Linux, <code>powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/core/install.ps1 | iex"</code>
+  <code>scripts/install.ps1</code>). <code>curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh</code> on macOS and
+  Linux, <code>powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.ps1 | iex"</code>
   on Windows: the script gets uv when it is missing and Python 3.12 through uv, picks the install
   setting from the machine (Apple Silicon with macOS 14 or later: <code>abstractcore[apple]</code>; an NVIDIA
   card or ROCm: <code>abstractcore[gpu]</code>; anything else: the light install), and installs AbstractCore
