@@ -101,7 +101,7 @@ except BaseException as e:
 print("ACSMOKE " + json.dumps(r))
 '@
 
-$script:RanAsFile = [bool]$PSCommandPath; $script:DryRun = [bool]$Print; $script:LogFile = ''; $script:StepNo = 0
+$script:RanAsFile = [bool]$PSCommandPath; $script:DryRun = [bool]$Print; $script:LogFile = ''; $script:WorkDir = ''; $script:StepNo = 0
 $script:ShowAll = ($VerbosePreference -eq 'Continue')   # -Verbose (CmdletBinding): show every command's output
 
 function Write-Step([string]$Text) { $script:StepNo++; Write-Host ''; Write-Host "[$($script:StepNo)] $Text" -ForegroundColor White }
@@ -179,11 +179,14 @@ function Get-ToolList([string]$Uv) {  # `uv tool list` lines (none without uv)
     try { return @(& $Uv tool list 2>$null | ForEach-Object { "$_" }) } catch { return @() } finally { $ErrorActionPreference = $old }
 }
 function Get-ToolVersion([string]$Uv) { foreach ($l in (Get-ToolList $Uv)) { if ($l -match '^abstractcore v(\S+)') { return $Matches[1] } }; return '' }
-# Run one smoke script with the tool environment's Python: the parsed JSON, or $null. From a file,
-# not `-c`: Windows PowerShell 5.1 mangles double quotes inside native arguments.
+# Run one smoke script with the tool environment's Python: the parsed JSON, or $null. Always from a
+# .py file in the installer's folder, run by path, never `python -c`: Windows PowerShell 5.1 strips
+# double quotes inside native arguments (pwsh 7 does not), so inline code holding a `"` would run
+# altered and misreport there. tests/test_install_scripts.py rejects any -c argument with a `"`.
 function Invoke-Smoke([string]$Python, [string]$Code) {
     if (-not $Python -or -not (Test-Path -LiteralPath $Python)) { return $null }
-    $file = Join-Path ([System.IO.Path]::GetTempPath()) ("ac-smoke-{0}-{1}.py" -f $PID, [guid]::NewGuid().ToString('N'))
+    $dir = if ($script:WorkDir) { $script:WorkDir } else { [System.IO.Path]::GetTempPath() }
+    $file = Join-Path $dir ("smoke-{0}-{1}.py" -f $PID, [guid]::NewGuid().ToString('N'))
     [System.IO.File]::WriteAllText($file, $Code, (New-Object System.Text.UTF8Encoding($false)))
     $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     try { $out = @(& $Python $file 2>&1 | ForEach-Object { "$_" }) } catch { $out = @("$_") } finally {
@@ -328,7 +331,7 @@ function Main {
     }
     $work = [IO.Path]::Combine($(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $homeDir }), 'abstractcore', 'installer')
     if (-not $script:DryRun) { New-Item -ItemType Directory -Force -Path $work | Out-Null
-        $script:LogFile = Join-Path $work 'install.log'; Set-Content -Path $script:LogFile -Value '' -Encoding UTF8 }
+        $script:WorkDir = $work; $script:LogFile = Join-Path $work 'install.log'; Set-Content -Path $script:LogFile -Value '' -Encoding UTF8 }
 
     # --- 2. uv and Python ------------------------------------------------------------------------
     Write-Step 'uv (Python toolchain manager)'

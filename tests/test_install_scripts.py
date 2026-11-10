@@ -124,6 +124,34 @@ def test_review_fixes_carried_from_abstractvoice():
     assert "cu130 -> cu132 -> cpu" in ps1 and "no\n             Vulkan step" in ps1.replace("\r", "")
 
 
+def test_install_ps1_passes_no_inline_code_with_double_quotes():
+    """Windows PowerShell 5.1 strips double quotes inside native arguments (pwsh 7 does not), so a
+    `python -c "..."` (or `powershell -Command "..."`) whose code holds a `"` runs altered there.
+    Every -c / -Command argument install.ps1 builds is checked (a literal, or the single-quoted
+    variable it names); the Python checks run from a .py file instead (Invoke-Smoke)."""
+    ps1 = _ps1()
+    args = re.findall(r"'-(?:c|Command)',\s*(\$\w+|'[^']*'|\"[^\"]*\")", ps1)
+    assert len(args) >= 3, f"expected the -c/-Command arguments install.ps1 builds, found {args}"
+    for arg in args:
+        if arg.startswith("$"):
+            values = re.findall(rf"^\s*\{arg}\s*=\s*(.+)$", ps1, re.MULTILINE)
+            assert values, f"{arg} (a -c/-Command argument) is never assigned"
+            for value in values:
+                body = value.strip()
+                if body.startswith("'"):
+                    inner = body[1:body.rindex("'")].replace("''", "'")
+                elif body.startswith('"'):
+                    inner = body[1:body.rindex('"')].replace('`"', '"')
+                else:
+                    pytest.fail(f"{arg} = {body[:60]}: not a plain string, cannot be checked")
+                assert '"' not in inner, f"{arg} passes inline code with a double quote: {inner[:80]}"
+        else:
+            assert '"' not in arg[1:-1], f"inline -c argument with a double quote: {arg[:80]}"
+    # No Python is run inline: python.exe is only ever given a script path.
+    assert not re.search(r"&\s*\$\w*[Pp]y\w*\s+['\"]?-c", ps1)
+    assert "& $Python $file" in ps1 and "$script:WorkDir" in ps1
+
+
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="no PowerShell")
 def test_install_ps1_parses():
     cmd = (
