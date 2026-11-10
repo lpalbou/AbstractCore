@@ -9,7 +9,7 @@
 Unified LLM Interface
 > Write once, run everywhere
 
-What's new in 2.35.0: the model capability registry covers the current vendor lineups (GPT-6 and GPT-6.1, Claude 5.5 and Fable 5.1, Grok 4.3 to 4.7, Qwen 3.8, DeepSeek V4.1 Flash, GLM 5.3, MiniMax M3.1 Flash, Kimi K3 and K3.1 Pro, LFM3, Spark X2.5/X2.6, Nemotron 3.5, Bonsai 2 and more), so an image, video or voice route can name them; and a GGUF or MLX re-packaging of a registered model (`unsloth/...-GGUF:Q4_K_M`, `mlx-community/...-4bit`, bartowski's `Org_Model-GGUF`) resolves to that model's entry instead of the text-only default. Transcriptions report `language` and `detected_language`. See the [changelog](CHANGELOG.md#2350---2026-11-07).
+What's new in 2.35.0: the model capability registry covers the current vendor lineups (GPT-6 and GPT-6.1, Claude 5.5 and Fable 5.1, Grok 4.3 to 4.7, Qwen 3.8, DeepSeek V4.1 Flash, GLM 5.3, MiniMax M3.1 Flash, Kimi K3 and K3.1 Pro, LFM3, Spark X2.5/X2.6, Nemotron 3.5, Bonsai 2 and more), so an image, video or voice route can name them; and a GGUF or MLX re-packaging of a registered model (`unsloth/...-GGUF:Q4_K_M`, `mlx-community/...-4bit`, bartowski's `Org_Model-GGUF`) resolves to that model's entry instead of the text-only default. Transcriptions report `language` and `detected_language`. See the [changelog](CHANGELOG.md#2350---2026-11-10).
 
 What's new in 2.34.0: a local model that no call has used for 60 minutes is unloaded from memory and loads
 again on its next call; a model kept loaded (Keep loaded) never is, and no running call is interrupted
