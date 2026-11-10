@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AbstractCore Capabilities - AbstractCore</title>
     <meta name="description" content="This document clearly explains what AbstractCore can and cannot do, helping you understand when to use it and when to look elsewhere.">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/capabilities.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -35,7 +37,7 @@
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-abstractcore-is" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What AbstractCore IS</a>
-<a href="#optional-capability-plugins-voiceaudiovision" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Optional capability plugins (voice/audio/vision)</a>
+<a href="#capability-plugins-voiceaudiovisionmusic3d" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Capability plugins (voice/audio/vision/music/3D)</a>
 <a href="#what-abstractcore-does-well" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What AbstractCore Does Well</a>
 <a href="#what-abstractcore-does-not-do" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What AbstractCore Does NOT Do</a>
 <a href="#when-to-choose-abstractcore" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">When to Choose AbstractCore</a>
@@ -55,27 +57,335 @@
 <li><strong>Simplicity over complexity</strong></li>
 <li><strong>Provider agnostic</strong></li>
 </ul>
-<h2 id="optional-capability-plugins-voiceaudiovision">Optional capability plugins (voice/audio/vision)</h2>
-<p>AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in <strong>optional packages</strong> and are exposed through the capability plugin layer:</p>
+<h2 id="capability-plugins-voiceaudiovisionmusic3d">Capability plugins (voice/audio/vision/music/3D)</h2>
+<p>Deterministic modality APIs (STT/TTS, generative vision, music, 3D) live in separate packages and
+are exposed through the capability plugin layer. The light install (<code>pip install abstractcore</code>)
+includes these plugins with their remote backends:</p>
 <ul>
-<li>Install <code>abstractvoice</code> → <code>llm.voice</code> / <code>llm.audio</code> (TTS/STT)</li>
-<li>Install <code>abstractvision</code> → <code>llm.vision</code> (text→image, image→image, …)</li>
+<li><code>abstractvoice</code> → <code>llm.voice</code> / <code>llm.audio</code> (TTS/STT)</li>
+<li><code>abstractvision</code> → <code>llm.vision</code> (text→image, image→image, image upscaling, text→video, image→video, provider model discovery, and provider adapter discovery)</li>
+<li><code>abstractmusic</code> → <code>llm.music</code> for text→music (Python 3.10+)</li>
+<li><code>abstract3d</code> → <code>llm.scene3d</code> for text→3D and image→3D (Python 3.10+)</li>
 </ul>
-<div class="code-block"><pre><code class="language-bash">pip install abstractvoice
-pip install abstractvision
+<p>Their local engines come with <code>abstractcore[apple]</code> or <code>abstractcore[gpu]</code>. One plugin,
+<code>abstractcamera</code> (<code>llm.camera</code>: real-camera piloting of webcams and tethered bodies), is a separate
+package that is not part of the three install settings; when it is present in the environment it
+registers like the others.</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore      # voice, vision, music and 3D plugins
 </code></pre></div>
+<p><code>abstract3d</code> and <code>abstractcamera</code> register through the same
+<code>abstractcore.capabilities_plugins</code> entry point group as the voice/vision/music
+plugins, so <code>llm.capabilities.status()</code> reports their availability and selected
+backend id, and a missing plugin fails with an actionable install hint rather
+than a silent stub.</p>
+<p><code>abstractvoice</code> 0.11.0+ can install its base AbstractCore plugin path on
+Python 3.9 without OmniVoice, torch, or torchaudio. Python 3.10+ is
+recommended. Local voice engines and clone backends come with
+<code>abstractcore[apple]</code> or <code>abstractcore[gpu]</code>; AEC requires Python 3.11+.</p>
+<p>AbstractVoice provides the local Qwen3-TTS engine (included with
+<code>abstractcore[apple]</code> and <code>abstractcore[gpu]</code>, Python 3.10+): preset speakers, 70
+built-in voices in six languages, voice cloning from a few seconds of reference
+audio, and voice <em>design</em> from a natural-language description, either per call via
+the <code>instructions</code> selector or as a stored, reusable voice with
+<code>llm.voice.design_voice(...)</code>. All of it flows through <code>llm.voice.tts(...)</code> /
+<code>/v1/audio/speech</code>, since the plugin owns discovery and per-model capability
+reporting. Discovery is engine-free: listing providers, models and languages, or the
+voices of one provider, answers from static tables and the model cache without
+importing torch or loading weights.</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # example; pick a provider/model you have access to
 print(llm.capabilities.status())  # availability + selected backend ids + install hints
+print(llm.capabilities.list_backend_infos())  # registered backend metadata, no backend instantiation
 
 # Voice/audio
 wav_bytes = llm.voice.tts(&quot;Hello&quot;, format=&quot;wav&quot;)
+events = llm.voice.tts_stream(&quot;Hello&quot;, format=&quot;wav&quot;)  # optional JSON-safe stream events when the backend supports it
 text = llm.audio.transcribe(&quot;speech.wav&quot;)
+voices = llm.voice.voice_catalog()
+tts_models = llm.voice.list_tts_models()
+# Optional: llm.voice.clone(...) is available only when the selected voice
+# backend exposes cloning. The HTTP server also provides /v1/voice/clone.
 
-# Vision (requires vision_base_url / ABSTRACTVISION_BASE_URL)
+# Find voices: by engine and/or language (native speakers first). Every record
+# carries voice_id (pass it as voice=), name, kind, provider, languages, language.
+french = llm.voice.list_voices(language=&quot;fr&quot;)
+piper_voices = llm.voice.list_voices(provider=&quot;piper&quot;)
+languages = llm.voice.list_languages(kind=&quot;tts&quot;)  # {&quot;tts&quot;: {provider: {&quot;languages&quot;: [...], ...}}}
+clones = llm.voice.list_cloned_voices(provider=&quot;qwen3-tts&quot;)
+
+# Create, manage and use voices
+designed = llm.voice.design_voice(&quot;A calm, warm female voice in her thirties.&quot;, name=&quot;Mira&quot;)
+llm.voice.rename_cloned_voice(designed[&quot;voice_id&quot;], &quot;Mira (narrator)&quot;)
+wav = llm.voice.tts(&quot;Good morning.&quot;, voice=designed[&quot;voice_id&quot;], one_shot=True)
+llm.voice.delete_cloned_voice(designed[&quot;voice_id&quot;])
+
+# Vision via AbstractVision
+# Configure AbstractVision's backend/default first, or pass backend-specific kwargs.
+png_bytes = llm.vision.t2i(&quot;a red square&quot;, width=512, height=512, steps=20)
+image_models = llm.vision.list_provider_models(task=&quot;text_to_image&quot;)
+image_adapters = llm.vision.list_provider_adapters(
+    provider=&quot;mlx-gen&quot;,
+    model=&quot;AbstractFramework/qwen-image-edit-2511-8bit&quot;,
+    task=&quot;image_to_image&quot;,
+)
+mp4_bytes = llm.vision.t2v(
+    &quot;A slow camera move through a luminous data center.&quot;,
+    provider=&quot;mlx-gen&quot;,
+    model=&quot;AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit&quot;,
+    width=432,
+    height=240,
+    num_frames=41,
+    fps=24,
+    steps=20,
+    guidance_scale=4.0,
+    guidance_2=3.0,
+    extra={&quot;max_sequence_length&quot;: 256},
+)
+
+batch = llm.vision.t2i_batch(
+    &quot;An isometric research outpost on an icy exoplanet at blue hour.&quot;,
+    provider=&quot;mlx-gen&quot;,
+    model=&quot;AbstractFramework/qwen-image-2512-8bit&quot;,
+    count=2,
+    seeds=[2512, 2513],
+    lora_adapters=[
+        {
+            &quot;source&quot;: &quot;prithivMLmods/Qwen-Image-2512-Pixel-Art-LoRA:Qwen-Image-2512-Master-Pixel-Art-LoRA.safetensors&quot;,
+            &quot;scale&quot;: 1.0,
+        }
+    ],
+)
+
+# Generic discovery for plugins that expose the shared contract.
+music_providers = llm.capabilities.available_providers(&quot;music&quot;, task=&quot;text_to_music&quot;)
+music_models = llm.capabilities.list_models(&quot;music&quot;, task=&quot;text_to_music&quot;)
+
+# Why is a music provider missing from available_providers? provider_details
+# (abstractmusic &gt;= 0.1.14) reports every known provider with `usable` and the
+# reason it is not — a missing API key, an uninstalled extra, or weights that
+# have not been downloaded — so an empty provider list is never a dead end.
+music_provider_details = llm.music.provider_details(task=&quot;text_to_music&quot;)
+
+# Music via AbstractMusic when installed.
+wav_music = llm.music.generate(
+    &quot;A short calm piano loop.&quot;,
+    provider=&quot;acemusic&quot;,
+    duration_s=8,
+    format=&quot;wav&quot;,
+)
+
+# 3D via abstract3d when installed. Text-to-3D or image-to-3D; returns model
+# bytes (GLB by default). Backends: triposr (image→3D), step1x, hunyuan3d21,
+# trellis2 (license/hardware vary — see each backend's install hint).
+glb_bytes = llm.scene3d.i23d(
+    media=[{&quot;type&quot;: &quot;image&quot;, &quot;path&quot;: &quot;photo.jpg&quot;, &quot;role&quot;: &quot;source&quot;}],
+    provider=&quot;triposr&quot;,
+    format=&quot;glb&quot;,
+)
+
+# Camera piloting via abstractcamera when installed. Discovery is
+# non-invasive; capture opens the device. Bytes ride as JSON-safe base64 or
+# artifact refs, never raw frames in the JSON body.
+cameras = llm.camera.list_cameras()
+opened = llm.camera.open()                      # default device (built-in webcam)
+shot = llm.camera.capture_photo()               # writes a file; returns its path
+llm.camera.close_all()
+
+# Remote OpenAI-compatible path:
+# export ABSTRACTVISION_BACKEND=openai
+# export OPENAI_BASE_URL=http://localhost:8000/v1
+# unset ABSTRACTVISION_MODEL_ID  # omit model and use the server's configured image default
 # png_bytes = llm.vision.t2i(&quot;a red square&quot;)
 </code></pre></div>
+<h3 id="unified-generate-output-convenience">Unified <code>generate(..., output=...)</code> convenience</h3>
+<p>For common cases, the normal generation API can route to these optional
+capabilities:</p>
+<div class="code-block"><pre><code class="language-python"># Image generation.
+image = llm.generate(&quot;A red square on a white background.&quot;, output=&quot;image&quot;)
+
+# Image edit. Source plus optional reference/style media infers image-to-image.
+edited = llm.generate(
+    &quot;Make it blue using the second image as a style reference.&quot;,
+    media=[
+        {&quot;type&quot;: &quot;image&quot;, &quot;path&quot;: &quot;red-square.png&quot;, &quot;role&quot;: &quot;source&quot;},
+        {&quot;type&quot;: &quot;image&quot;, &quot;path&quot;: &quot;style.png&quot;, &quot;role&quot;: &quot;style&quot;},
+    ],
+    output=&quot;image&quot;,
+)
+
+# Text-to-video. Top-level progress callbacks are forwarded to AbstractVision.
+video = llm.generate(
+    &quot;A slow camera move through a luminous data center.&quot;,
+    on_progress=lambda event: print(event),
+    output={
+        &quot;task&quot;: &quot;text_to_video&quot;,
+        &quot;provider&quot;: &quot;mlx-gen&quot;,
+        &quot;model&quot;: &quot;AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit&quot;,
+        &quot;width&quot;: 432,
+        &quot;height&quot;: 240,
+        &quot;num_frames&quot;: 41,
+        &quot;fps&quot;: 24,
+        &quot;steps&quot;: 20,
+        &quot;guidance_scale&quot;: 4.0,
+        &quot;guidance_2&quot;: 3.0,
+        &quot;extra&quot;: {&quot;max_sequence_length&quot;: 256},
+    },
+)
+
+# Image-to-video. Mark the image as the source frame.
+i2v = llm.generate(
+    &quot;Slow camera push-in.&quot;,
+    media={&quot;type&quot;: &quot;image&quot;, &quot;path&quot;: &quot;first-frame.png&quot;, &quot;role&quot;: &quot;source&quot;},
+    output={
+        &quot;task&quot;: &quot;image_to_video&quot;,
+        &quot;provider&quot;: &quot;mlx-gen&quot;,
+        &quot;model&quot;: &quot;AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit&quot;,
+        &quot;width&quot;: 432,
+        &quot;height&quot;: 240,
+        &quot;num_frames&quot;: 41,
+        &quot;fps&quot;: 24,
+        &quot;steps&quot;: 20,
+        &quot;guidance_scale&quot;: 3.5,
+        &quot;guidance_2&quot;: 3.5,
+        &quot;extra&quot;: {&quot;max_sequence_length&quot;: 256},
+    },
+)
+
+# TTS. Text plus output=&quot;voice&quot; returns generated audio.
+speech = llm.generate(text=&quot;Hello from AbstractCore.&quot;, output=&quot;voice&quot;)
+
+# Music. Text plus output=&quot;music&quot; returns generated music/audio.
+music = llm.generate(
+    text=&quot;A short calm piano loop.&quot;,
+    output={&quot;modality&quot;: &quot;music&quot;, &quot;provider&quot;: &quot;acemusic&quot;, &quot;duration_s&quot;: 8, &quot;format&quot;: &quot;wav&quot;},
+)
+
+# Voice clone/register. Audio media plus output=&quot;voice&quot; returns a reusable voice id
+# when the selected AbstractVoice backend supports local or remote cloning.
+clone = llm.generate(text=&quot;Optional transcript.&quot;, media=&quot;reference.wav&quot;, output=&quot;voice&quot;)
+voice_id = clone.resources[&quot;voice&quot;][0].resource_id
+
+# Decision models (Kev family): text in, calibrated typed decisions out. The prompt is the
+# state; questions are choice / noul (yes-no probability) / score. See decision-models.md.
+decided = llm.generate(
+    &quot;Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.&quot;,
+    output=&quot;decision&quot;,
+    questions={
+        &quot;department&quot;: {&quot;type&quot;: &quot;choice&quot;, &quot;instructions&quot;: &quot;Which team should handle this?&quot;,
+                       &quot;criteria&quot;: {&quot;returns&quot;: None, &quot;shipping&quot;: None, &quot;billing&quot;: None}},
+        &quot;escalate&quot;: &quot;Does this need urgent human attention?&quot;,
+    },
+)
+decided.decisions[&quot;department&quot;].choice         # &quot;returns&quot;
+decided.decisions[&quot;escalate&quot;].noul             # 0.72
+</code></pre></div>
+<p>Decision output needs a decision model: a local one on the <code>mlx</code> or <code>huggingface</code> provider
+(<code>create_llm("mlx", model="jaredpalmer/kev-4b")</code>), a hosted one on <code>typesafe</code> or <code>systemone</code>, or,
+from any other provider, the <code>output.decision</code> capability default
+(<code>abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b</code>);
+see <a href="decision-models.html">Decision Models</a>.</p>
+<p>Text-only <code>generate(...)</code> is unchanged. Ambiguous media cases require explicit
+roles, for example <code>role="source"</code> and <code>role="mask"</code> for image edits with masks.
+Use <code>task="tts"</code> when audio media is a temporary voice reference rather than a
+clone/register sample.</p>
+<p>Direct <code>llm.vision</code> calls are provided by <code>abstractvision</code>. For local Diffusers,
+choose an explicit model/default in AbstractVision, pre-download model weights,
+or explicitly opt in to runtime downloads with
+<code>ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1</code>. For local MLX-Gen, select exact
+model repo ids such as <code>AbstractFramework/qwen-image-2512-4bit</code>,
+<code>briaai/FIBO</code>, <code>AbstractFramework/seedvr2-3b-8bit</code>,
+<code>AbstractFramework/seedvr2-7b-8bit</code>,
+<code>AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit</code>,
+or <code>AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit</code>; quantized image models are
+selected by repo id, while SeedVR2 upscaling accepts runtime <code>quantize</code> through
+the AbstractVision request. For
+server/OpenAI-compatible use, point <code>OPENAI_BASE_URL</code> at a media endpoint such
+as AbstractCore Server's <code>/v1</code>.</p>
+<p>The server exposes the same deep catalogs through:</p>
+<ul>
+<li><code>GET /v1/vision/providers/</code></li>
+<li><code>GET /v1/vision/models</code></li>
+<li><code>GET /v1/audio/voices</code> (optional <code>language</code>)</li>
+<li><code>GET /v1/audio/languages</code></li>
+<li><code>GET /v1/voice/clones</code>, <code>GET|PATCH|DELETE /v1/voice/clones/{voice_id}</code></li>
+<li><code>POST /v1/voice/design</code></li>
+<li><code>GET /v1/audio/speech/models</code></li>
+<li><code>GET /v1/capabilities</code></li>
+<li><code>GET /v1/capabilities/{capability}/providers</code></li>
+<li><code>GET /v1/capabilities/{capability}/models</code></li>
+<li><code>POST /v1/audio/music</code></li>
+<li><code>POST /{provider}/v1/audio/music</code></li>
+<li><code>GET /v1/audio/music/providers</code></li>
+<li><code>GET /v1/audio/music/models</code></li>
+<li><code>GET /v1/audio/music/provider-details</code></li>
+<li><code>POST /v1/videos/generations</code></li>
+<li><code>POST /v1/videos/edits</code></li>
+<li><code>POST /v1/images/upscale</code></li>
+<li><code>POST /v1/vision/jobs/images/generations</code></li>
+<li><code>POST /v1/vision/jobs/images/edits</code></li>
+<li><code>POST /v1/vision/jobs/images/upscale</code></li>
+<li><code>POST /v1/vision/jobs/videos/generations</code></li>
+<li><code>POST /v1/vision/jobs/videos/edits</code></li>
+</ul>
+<p>For <code>abstractmusic&gt;=0.1.15</code>, the default lightweight music backend is the
+remote ACE Music API path (<code>provider="acemusic"</code> or <code>/acemusic/v1/audio/music</code>).
+Set <code>ACEMUSIC_API_KEY</code> in the server or Python environment. The server music
+route accepts <code>wav</code>, <code>mp3</code>, and <code>flac</code>; individual backends may support fewer
+formats.</p>
+<p><code>/v1/audio/music/providers</code> lists only providers that are runnable right now
+(installed, weights cached, API answering). <code>/v1/audio/music/provider-details</code>
+explains the rest: every known provider with <code>usable</code> and, when it is not, the
+reason in <code>metadata.reason</code>. Local <code>acestep</code> generations also report quality
+diagnostics from abstractmusic 0.1.15 — for example
+<code>audio_stats.probably_noise_texture</code>, a warning-grade screen for the
+noise-collapse signature — in the generation metadata that flows through the
+plugin unchanged.</p>
+<p>Keep <code>/v1/models</code> for LLM/embedding provider discovery. Generated-media
+catalogs are intentionally separate so image and voice backends can expose their
+own provider-specific metadata without blurring the LLM model taxonomy.</p>
+<p><code>/v1/models</code> supports precise route filters for model metadata that belongs in
+the LLM/embedding registry:</p>
+<div class="code-block"><pre><code class="language-bash">curl 'http://localhost:8000/v1/models?capability_route=input.image,output.text'
+curl 'http://localhost:8000/v1/models?capability_route=input.sound,output.text'
+curl 'http://localhost:8000/v1/models?capability_route=input.music,output.text'
+curl 'http://localhost:8000/v1/models?capability_route=embedding.text'
+</code></pre></div>
+<p>Route filters use the same <code>&lt;kind&gt;.&lt;modality&gt;</code> vocabulary as capability
+defaults and are backed by <code>abstractcore/assets/model_capabilities.json</code>
+<code>capability_routes</code> metadata plus compatibility derivation for older entries.
+They do not report plugin readiness, download status, configured defaults, or
+generated-media backend catalogs.</p>
+<h3 id="plugin-host-text-service">Plugin host text service</h3>
+<p>Plugins that need text planning can use the host context supplied by AbstractCore instead of
+constructing their own LLM provider. The public seam is narrow:</p>
+<ul>
+<li><code>owner.capability_host_context.text.generate_text(...)</code></li>
+<li><code>owner.capability_host_context.text.generate_structured(..., response_model=...)</code></li>
+</ul>
+<p>The service forces text-only generation (<code>output=None</code>, no media, no streaming) and prevents
+capability recursion. Plugins should treat it as an optional host service and keep their base
+package usable without importing AbstractCore.</p>
+<p>Direct <code>llm.voice</code> / <code>generate(..., output="voice")</code> calls are provided by
+<code>abstractvoice</code>. For remote OpenAI TTS/STT, configure the provider before
+creating the LLM:</p>
+<div class="code-block"><pre><code class="language-python">llm = create_llm(
+    &quot;openai&quot;,
+    model=&quot;gpt-4o-mini&quot;,
+    voice_tts_engine=&quot;openai&quot;,
+    voice_stt_engine=&quot;openai&quot;,
+)
+
+speech = llm.generate(
+    text=&quot;Hello from AbstractCore.&quot;,
+    output={&quot;modality&quot;: &quot;voice&quot;, &quot;voice&quot;: &quot;coral&quot;, &quot;format&quot;: &quot;wav&quot;},
+)
+</code></pre></div>
+<p>For OpenAI-compatible audio servers, use <code>voice_tts_engine="openai-compatible"</code>
+and set <code>voice_remote_base_url</code> / <code>voice_remote_api_key</code>, or the equivalent
+<code>OPENAI_BASE_URL</code> / <code>OPENAI_API_KEY</code> environment
+variables. Voice clone/register also requires a backend that exposes a local or
+remote clone route.</p>
 <h2 id="what-abstractcore-does-well">What AbstractCore Does Well</h2>
 <h3 id="1-universal-llm-provider-interface">1. Universal LLM Provider Interface</h3>
 <p><strong>What it does</strong>: Provides identical APIs across all major LLM providers.</p>
@@ -365,7 +675,7 @@ template = PromptTemplate(&quot;Translate '{text}' to {language}&quot;)  # Not p
 └── Just API compatibility? → LiteLLM
 </code></pre></div>
 <h2 id="capabilities-summary">Capabilities Summary</h2>
-<table>
+<div class="table-scroll"><table>
 <thead>
 <tr>
 <th>Capability</th>
@@ -435,7 +745,7 @@ template = PromptTemplate(&quot;Translate '{text}' to {language}&quot;)  # Not p
 <td>Template management → Jinja2</td>
 </tr>
 </tbody>
-</table>
+</table></div>
 <h2 id="next-steps">Next Steps</h2>
 <p>Based on your needs:</p>
 <ul>
@@ -449,11 +759,18 @@ template = PromptTemplate(&quot;Translate '{text}' to {language}&quot;)  # Not p
 <p><strong>Remember</strong>: AbstractCore is infrastructure, not a full framework. It focuses on LLM provider abstraction and integrates with specialized tools for other needs.</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>

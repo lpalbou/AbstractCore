@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prompt Caching (KV / Prefix Caches) - AbstractCore</title>
-    <meta name="description" content="AbstractCore supports best-effort prompt caching via prompt_cache_key. The exact behavior depends on the provider/backend:">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <meta name="description" content="For native Qwen3.8 MLX generation, see native MLX prefix storage. Its complete-history automatic cache and optional SSD tier are separate from the durable…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/prompt-caching.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -31,24 +33,33 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Prompt Caching (KV / Prefix Caches)</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore supports best-effort prompt caching via prompt_cache_key. The exact behavior depends on the provider/backend:</p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">For native Qwen3.8 MLX generation, see native MLX prefix storage. Its complete-history automatic cache and optional SSD tier are separate from the durable append-cache APIs described below.</p>
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#unified-api-surface" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Unified API surface</a>
 <a href="#capability-modes-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Capability modes (examples)</a>
-<a href="#provider-status-mar-2026" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Provider status (Mar 2026)</a>
+<a href="#provider-status-may-2026" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Provider status (May 2026)</a>
+<a href="#measured-performance" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Measured performance</a>
+<a href="#cache-compatible-models-per-lane" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Cache-compatible models per lane</a>
+<a href="#turns-that-carry-an-image" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Turns that carry an image</a>
+<a href="#prefill-chunking-transformers-lane" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Prefill chunking (transformers lane)</a>
+<a href="#measurement-coverage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Measurement coverage</a>
+<a href="#verifying-that-a-cache-is-helping" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Verifying that a cache is helping</a>
+<a href="#watching-the-cache-split-live" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Watching the cache split live</a>
+<a href="#durable-memory-bloc-artifacts" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Durable memory bloc artifacts</a>
 <a href="#openai-notes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">OpenAI notes</a>
 <a href="#anthropic-notes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Anthropic notes</a>
 <a href="#cli-savingloading-mlx-caches" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">CLI: saving/loading MLX caches</a>
 <a href="#sessions-cachedsession" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Sessions: CachedSession</a>
-<a href="#box-caching-with-modules-systemtoolsdiscussion" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">“Box caching” with modules (system/tools/discussion)</a>
+<a href="#blocs-the-composability-contract" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Blocs: the composability contract</a>
 <a href="#file-attachments-as-cache-boxes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">File attachments as cache “boxes”</a>
 <a href="#endpoint-server-prompt-cache-control-plane" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Endpoint server: prompt cache control plane</a>
-<a href="#safety-limitations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Safety / limitations</a>
-<a href="#next-steps-unification-ideas" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Next steps (unification ideas)</a></div>
+<a href="#cache-residency-and-memory" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Cache residency and memory</a>
+<a href="#safety--limitations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Safety / limitations</a></div>
 
             <div class="doc-content">
 
+<p>AbstractCore supports <strong>best-effort prompt caching</strong> via <code>prompt_cache_key</code>. The exact behavior depends on the provider/backend:</p>
 <ul>
 <li>Some providers treat it as a <strong>hint</strong> (server-managed caching).</li>
 <li>Some local runtimes can retain an <strong>in-process KV/prefix cache</strong> keyed by <code>prompt_cache_key</code>.</li>
@@ -70,6 +81,9 @@
 <li><code>prompt_cache_fork(from_key, to_key)</code></li>
 <li><code>prompt_cache_clear(key=None)</code></li>
 <li><code>prompt_cache_prepare_modules(...)</code> (hierarchical/prefix module caches)</li>
+<li><code>prompt_cache_key_meta(key)</code> / <code>prompt_cache_update_key_meta(key, updates)</code>: read and merge
+    caller metadata (for example session/run/workflow attribution) on an in-process cache key;
+    merged fields appear in <code>get_prompt_cache_stats()["meta_by_key"]</code>.</li>
 <li>Persistence (local providers only):<ul>
 <li><code>prompt_cache_save(key, filename, ...)</code></li>
 <li><code>prompt_cache_load(filename, ...)</code></li>
@@ -77,6 +91,7 @@
 </li>
 <li>Unsupported control-plane calls raise structured prompt-cache errors (for example <code>PromptCacheUnsupportedError</code>) with <code>operation</code>, <code>code</code>, and <code>capabilities</code> so higher layers can catch and downgrade cleanly.</li>
 </ul>
+<p><code>prompt_cache_update(...)</code> accepts the same unified <code>thinking</code> control as <code>generate(...)</code>. When a backend implements reasoning control by changing prompt serialization, applying <code>thinking</code> during cache preparation keeps the cached prefix aligned with later generation calls.</p>
 <h2 id="capability-modes-examples">Capability modes (examples)</h2>
 <p>Query at runtime:</p>
 <div class="code-block"><pre><code class="language-python">caps = llm.get_prompt_cache_capabilities()
@@ -130,22 +145,36 @@ print(caps.to_dict())
   &quot;notes&quot;: [&quot;…provider-specific notes…&quot;]
 }
 </code></pre></div>
-<h2 id="provider-status-mar-2026">Provider status (Mar 2026)</h2>
+<h2 id="provider-status-may-2026">Provider status (May 2026)</h2>
 <ul>
 <li><strong>OpenAI</strong> (<code>OpenAIProvider</code>): forwards <code>prompt_cache_key</code> (server-managed) and <code>prompt_cache_retention</code> (best-effort; some models support <code>"24h"</code>).</li>
-<li><strong>Anthropic</strong> (<code>AnthropicProvider</code>): enables Claude prompt caching via <code>cache_control</code> when <code>prompt_cache_key</code> is provided (server-managed; default ~5-minute TTL).</li>
-<li><strong>OpenAI-compatible</strong> (<code>OpenAICompatibleProvider</code>, <code>LMStudioProvider</code>, <code>VLLMProvider</code>, …): forwards <code>prompt_cache_key</code> when provided (server-managed if the backend implements it).</li>
+<li><strong>Anthropic</strong> (<code>AnthropicProvider</code>): places an explicit <code>cache_control</code> breakpoint on the last system block when <code>prompt_cache_key</code> is provided (caches the tools+system head; server-managed; default ~5-minute TTL). Cache reads/writes surface as <code>usage.cached_input_tokens</code> / <code>usage.cache_write_tokens</code>.</li>
+<li><strong>OpenAI-compatible</strong> (<code>OpenAICompatibleProvider</code>, <code>LMStudioProvider</code>, <code>VLLMProvider</code>, …): forwards <code>prompt_cache_key</code> when provided (server-managed if the backend implements it). Servers that reject the field with HTTP 400 (e.g. OVH AI Endpoints) are handled automatically: the key is dropped, the request retried once, and the field suppressed for that provider instance; server-side automatic prefix caching (vLLM APC, LM Studio/llama.cpp slot reuse) still applies because it needs no request field — only a byte-stable prompt prefix.</li>
 <li><strong>MLX</strong> (<code>MLXProvider</code>): supports in-process KV caches via <code>prompt_cache_key</code> and AbstractCore’s cache control plane.</li>
 <li>CLI persistence: <code>abstractcore-chat</code> supports <code>/cache save|load</code> (writes/reads a <code>.safetensors</code> cache; model-locked).</li>
-<li><strong>HuggingFace (transformers)</strong> (<code>HuggingFaceProvider</code> with <code>model_type="transformers"</code>): supports in-process KV reuse keyed by <code>prompt_cache_key</code> via <code>past_key_values</code> (<code>DynamicCache</code>).</li>
+<li>Durable memory blocs: supports exact bloc artifacts through <code>ensure_bloc_kv_artifact(...)</code> /
+    <code>load_bloc_kv_artifact(...)</code>.</li>
+<li><strong>HuggingFace (transformers)</strong> (<code>HuggingFaceProvider</code> with <code>model_type="transformers"</code>): supports in-process KV reuse keyed by <code>prompt_cache_key</code> via provider-native <code>past_key_values</code> / <code>Cache</code> objects.</li>
+<li><strong>Requires torch &gt;= 2.11 on Apple silicon</strong> — see
+    <a href="#huggingface-transformers-huggingfaceprovider-with-model_typetransformers">Requirements</a>.</li>
 <li>Supports AbstractCore’s local prompt-cache control plane (<code>prompt_cache_update</code>, <code>prompt_cache_prepare_modules</code>, <code>prompt_cache_fork</code>, …).</li>
 <li>Supports cache persistence via <code>prompt_cache_save()</code> / <code>prompt_cache_load()</code> (writes/reads <code>.safetensors</code>; model-locked).</li>
-<li>Limitations: enabled only for standard text-generation models (decoder-only); vision/custom transformer backends do not currently expose prompt caching.</li>
+<li>Durable memory blocs: supports exact bloc artifacts through the same public bloc API as MLX.</li>
+<li>Current durable formats cover standard <code>DynamicCache</code> layer state, Qwen3.5/Qwen3Next-style
+    tensor-list hybrid state, and Mamba-style tensor state when the Transformers cache class is
+    constructible from model config. Other custom cache classes fail explicitly until an adapter is
+    added.</li>
+<li>Limitations: enabled only for standard text-generation models (decoder-only); vision/custom transformer backends do not currently expose prompt caching. There is no universal HuggingFace KV tensor format.</li>
+<li>General HuggingFace model-load compatibility, including quantized Transformers checkpoints, is
+    covered in <code>docs/huggingface-model-compatibility.md</code>.</li>
 <li><strong>HuggingFace GGUF</strong> (<code>HuggingFaceProvider</code> with llama.cpp): always supports keyed in-process RAM caches (<code>LlamaRAMCache</code>), and reports <code>mode=local_control_plane</code> when AbstractCore can render the model's llama.cpp chat format exactly for cache reuse.</li>
-<li>Current exact renderers: <code>chatml-function-calling</code>, <code>llama-3</code></li>
+<li>Current exact renderers: <code>chatml-function-calling</code>, <code>llama-3</code>, and Gemma4 <code>gemma_turn</code> through llama.cpp's model chat template.</li>
 <li>Other GGUF chat formats remain <code>mode=keyed</code> until an exact cached prompt renderer is implemented.</li>
 <li>Local control plane optimization: append-only updates tokenize/render only the delta segment; tools are kept in a stable prefix position so system/tools caches remain effective as the discussion grows.</li>
-<li>Local control plane generation: when <code>prompt_cache_key</code> is set and the chat format is supported, AbstractCore can prefill from cached state snapshots and generate via <code>llm.generate(reset=False)</code> (instead of <code>create_chat_completion()</code>), which avoids llama-cpp-python chat handlers that reset/re-evaluate long prompts.<ul>
+<li>Local control plane generation: when <code>prompt_cache_key</code> is set and the chat format is supported, AbstractCore can prefill from cached state snapshots and generate via <code>llm.generate(reset=False)</code> (instead of <code>create_chat_completion()</code>), which avoids llama-cpp-python chat handlers that reset/re-evaluate long prompts.</li>
+<li>Plain-generate reuse: a plain <code>generate(messages=…, prompt_cache_key="k")</code> growing-prefix loop — the shape a runtime agent loop produces, with no explicit <code>prompt_cache_update</code> — persists its prefill snapshot, so each warm turn loads the stored prefix and evaluates only the growing suffix. Live-measured on this lane with Metal offload active: a ~10k-token system prompt costs ~0.6 s/turn warm against ~9 s/turn for a full re-prefill, on Qwen3-4B-2507 and Gemma-4-E4B GGUFs, with fact recall correct throughout.</li>
+<li>Durable memory blocs: supports exact bloc artifacts only for exact-renderer chat formats.
+    Unsupported chat formats remain keyed-only.<ul>
 <li>Disable via <code>ABSTRACTCORE_GGUF_CONTROL_PLANE=0</code> (falls back to llama-cpp-python’s chat completion API).</li>
 </ul>
 </li>
@@ -155,6 +184,1474 @@ print(caps.to_dict())
 </li>
 <li><strong>Ollama</strong> (<code>OllamaProvider</code>): no prompt-cache integration currently (Ollama manages context internally per request).</li>
 </ul>
+<h2 id="measured-performance">Measured performance</h2>
+<p>Each subsection states its own scope. <strong>Compare within a subsection, never across them</strong>: a prefill
+probe isolates prefill cost, while an end-to-end session measures prefill <em>and</em> decode <em>and</em> client
+overhead, so the two answer different questions and produce different ratios for the same cache.</p>
+<p>Every figure in this section was taken on one machine — <strong>Apple M5 Max, 128 GB unified memory,
+macOS 26.3</strong> — with one model resident at a time and no sibling inference running.</p>
+<h3 id="how-these-numbers-are-taken">How these numbers are taken</h3>
+<p>Every figure in this section follows the same protocol. If you reproduce a cell, use it; if you
+compare against a figure taken any other way, the comparison is not valid.</p>
+<ul>
+<li><strong>Probe prefill, not end-to-end wall clock.</strong> The cache changes prompt preprocessing, not decode.
+  Pin the output length identically across arms, assert the realized length is equal, and measure a
+  decode floor per cell so it can be subtracted. Arms with different output lengths measure decode.</li>
+<li><strong>A ratio is published only when the warm median sits above the measured decode floor.</strong> Three
+  transformers cells warm faster than their own decode floor (<code>Qwen3.5-4B</code> and <code>Ornith-1.0-9B</code> at
+  10k, <code>Qwen3.6-27B</code> at 10k); for those the wall ratio is the only publishable number and no
+  floor-subtracted figure is quoted.</li>
+<li><strong>Repeat every arm and report the median with its spread.</strong> Single-sample wall clock on a shared
+  machine varies by as much as the effect being measured. Cells here run 3, 5 or 7 repetitions per
+  arm; each table states its own count, and rows measured at 3 say so. A ratio is published only when
+  every arm of the cell completed cleanly (<code>n_ok == reps</code>): a failed or empty completion returns in
+  well under a millisecond and would otherwise enter the median as a spectacular cache win.</li>
+<li><strong>A ratio is published as a point estimate only when the cold arms are tight.</strong> The bound is that
+  each cold arm spans no more than ×1.5 from its fastest to its slowest repetition, and that the
+  two cold arms agree with each other to within ×0.8–×1.25. A cell that misses it is published as a
+  <strong>range</strong> — bounded by the slowest cold repetition over the fastest warm one and the fastest cold
+  over the slowest warm — and is labelled as a range in its row. Two rows in the transformers table
+  below are ranges for this reason.</li>
+<li><strong><code>max_output_tokens</code> in the constructor is an instance ceiling</strong> that clamps every per-call
+  value. Build with a ceiling large enough for the largest arm (64 is a good default for probes),
+  pin the value per call, and check the realized budget.</li>
+<li><strong>Pin <code>thinking=False</code> identically across arms.</strong> Reasoning models return empty visible content at
+  small budgets and raise <code>EmptyCompletionError</code>.</li>
+<li><strong>Read reuse from a ground-truth token count, not from <code>usage.input_tokens</code></strong> — that field is a
+  fast heuristic estimate of prompt length, not a measurement, and it does not agree with the
+  measured length. The MLX rows and the hybrid transformers rows read
+  <code>response.metadata["prompt_cache"]</code> (<code>outcome</code>, <code>cached_tokens</code>, <code>fed_tokens</code>), which the provider
+  attests; the dense transformers rows use a forward-pre-hook count and the GGUF rows an <code>eval()</code>
+  spy, both of which count tokens actually pushed through a forward pass.</li>
+<li><strong>On untrimmable architectures, compare warm against a plan-matched cold run</strong>, not a single-call
+  cold run, or the measurement is dominated by the prefill chunk plan rather than the cache.</li>
+<li><strong>The matrix <code>warm_grow</code> arm is not an agent-loop turn 2.</strong> The matrix arm can contain an
+  identical-bytes turn in between, which changes the outcome. Use the agent-loop tables for per-lane
+  verdicts.</li>
+</ul>
+<p><strong>Ratios are the comparable quantity; absolute seconds are not.</strong> Two measurements show this from
+opposite directions. Within a single cell, the no-cache arm and the cold-with-cache arm do the same
+amount of prefill work, and their absolute seconds still differ by up to about 25% (×0.80–×1.23
+across the MLX cells). And when the dense transformers cell at 10k was measured twice with its
+absolute prefill seconds differing by a factor of six, its speedup differed by 3% — ×138.9 against
+×142.5. Quote ratios, quote the context size with them, and treat absolute seconds as descriptive of
+the run they came from rather than as a portable number.</p>
+<h3 id="the-measured-matrix">The measured matrix</h3>
+<p>Three lanes, identical columns. <strong>Cold prefill</strong> is the no-cache arm's prefill median — the same arm
+the speedup divides by. <strong>Warm prefill</strong> is the identical-full-context resend. <strong>Speedup</strong> is
+cold ÷ warm. <strong>Prompt reused</strong> is the fraction of the prompt that did not go through a forward pass.</p>
+<p>Read down a column within one table. Do <strong>not</strong> read across tables for seconds — the three lanes run
+different quantizations (see <a href="#comparing-the-three-lanes">Comparing the three lanes</a>).</p>
+<h4 id="mlx-4-bit">MLX, 4-bit</h4>
+<p><code>mlx-community</code> 4-bit conversions, MLX on Metal, output pinned to one token with the realized length
+asserted identical across arms. 7 repetitions per arm except the <code>Qwen3.5-4B</code> 30k row, which ran 3.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Context</th>
+<th>Cold prefill</th>
+<th>Warm prefill</th>
+<th>Speedup</th>
+<th>Prompt reused</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Qwen3-4B-Instruct-2507-4bit</code> (dense)</td>
+<td>10k</td>
+<td>5.390 s</td>
+<td>0.141 s</td>
+<td><strong>×38</strong></td>
+<td>99.82% (fed 18 of 10,053)</td>
+</tr>
+<tr>
+<td><code>Qwen3-4B-Instruct-2507-4bit</code> (dense)</td>
+<td>30k</td>
+<td>32.930 s</td>
+<td>0.502 s</td>
+<td><strong>×66</strong></td>
+<td>99.94% (fed 18 of 29,967)</td>
+</tr>
+<tr>
+<td><code>Qwen3-4B-Instruct-2507-4bit</code> (dense)</td>
+<td>100k</td>
+<td>263.556 s</td>
+<td>0.618 s</td>
+<td><strong>×426</strong></td>
+<td>99.96% (fed 45 of 100,090)</td>
+</tr>
+<tr>
+<td><code>Qwen3.5-4B-MLX-4bit</code> (hybrid)</td>
+<td>10k</td>
+<td>4.615 s</td>
+<td>0.092 s</td>
+<td><strong>×50</strong></td>
+<td>99.52% (fed 48 of 10,090)</td>
+</tr>
+<tr>
+<td><code>Qwen3.5-4B-MLX-4bit</code> (hybrid)</td>
+<td>30k</td>
+<td>12.486 s</td>
+<td>0.110 s</td>
+<td><strong>×113</strong></td>
+<td>99.84% (fed 48 of 30,090)</td>
+</tr>
+<tr>
+<td><code>Ornith-1.0-9B-4bit</code> (hybrid)</td>
+<td>10k</td>
+<td>13.150 s</td>
+<td>0.056 s</td>
+<td><strong>×233</strong></td>
+<td>99.52% (fed 48 of 10,090)</td>
+</tr>
+<tr>
+<td><code>Ornith-1.0-9B-4bit</code> (hybrid)</td>
+<td>30k</td>
+<td>30.188 s</td>
+<td>0.205 s</td>
+<td><strong>×147</strong></td>
+<td>99.84% (fed 48 of 30,090)</td>
+</tr>
+<tr>
+<td><code>Qwen3.6-27B-4bit</code> (hybrid)</td>
+<td>10k</td>
+<td>33.214 s</td>
+<td>0.724 s</td>
+<td><strong>×46</strong></td>
+<td>99.52% (fed 48 of 10,090)</td>
+</tr>
+<tr>
+<td><code>Qwen3.6-27B-4bit</code> (hybrid)</td>
+<td>30k</td>
+<td>87.253 s</td>
+<td>0.539 s</td>
+<td><strong>×162</strong></td>
+<td>99.84% (fed 48 of 30,090)</td>
+</tr>
+<tr>
+<td><code>Qwen3.6-35B-A3B-4bit</code> (hybrid)</td>
+<td>10k</td>
+<td>5.925 s</td>
+<td>0.351 s</td>
+<td><strong>×17</strong></td>
+<td>99.52% (fed 48 of 10,090)</td>
+</tr>
+<tr>
+<td><code>Qwen3.6-35B-A3B-4bit</code> (hybrid)</td>
+<td>30k</td>
+<td>19.018 s</td>
+<td>0.188 s</td>
+<td><strong>×101</strong></td>
+<td>99.84% (fed 48 of 30,090)</td>
+</tr>
+</tbody>
+</table></div>
+<p>The 4-bit MLX cells report prefill against prefill: both columns are wall clock minus that cell's own
+measured decode floor. Wall-against-wall on the same cells gives a different, also correct, number —
+<code>Ornith-1.0-9B</code> at 30k reads ×147 prefill-against-prefill and ×78 wall-against-wall. Keep one
+convention per comparison and say which one you used.</p>
+<p><strong>Building the cache is not a tax on this lane.</strong> The cold-with-cache arm costs ×0.80–×1.23 of the
+no-cache arm across these cells, so the first call of a session pays roughly what it would have
+paid anyway.</p>
+<h4 id="huggingface-transformers-bf16">HuggingFace transformers, bf16</h4>
+<p>torch 2.13.0, transformers 5.9.0, stock <code>sdpa</code> attention with no override, MPS device, prefill chunk
+step 2048 except where noted. bf16 rows run 7 repetitions per arm except <code>Qwen3.6-27B</code> at 30k, which
+runs 3; the NF4 rows run 4–5 cold and 7 warm. Dense models take the crop lane; hybrids take the
+snapshot lane. <strong>All eight bf16 correctness gates pass, and both NF4 gates pass</strong> — see
+<a href="#correctness-on-the-transformers-lane">Correctness on this lane</a>.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Precision</th>
+<th>Context</th>
+<th>Cold prefill</th>
+<th>Warm prefill</th>
+<th>Speedup</th>
+<th>Prompt reused</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Qwen/Qwen3-4B-Instruct-2507</code> (dense, crop)</td>
+<td>bf16</td>
+<td>10k</td>
+<td>9.023 s</td>
+<td>0.063 s</td>
+<td><strong>×143</strong></td>
+<td>99.99% (fed 1 of 10,011)</td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3-4B-Instruct-2507</code> (dense, crop)</td>
+<td>bf16</td>
+<td>30k</td>
+<td>66.927 s</td>
+<td>0.522 s</td>
+<td><strong>×107–×188</strong></td>
+<td>100.0% (fed 1 of 29,980)</td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.5-4B</code> (hybrid, snapshot)</td>
+<td>bf16</td>
+<td>10k</td>
+<td>9.790 s</td>
+<td>0.052 s</td>
+<td><strong>×188</strong></td>
+<td>99.99% (fed 1 of 10,028)</td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.5-4B</code> (hybrid, snapshot)</td>
+<td>bf16</td>
+<td>30k</td>
+<td>42.742 s</td>
+<td>0.175 s</td>
+<td><strong>×245</strong></td>
+<td>100.0% (fed 1 of 30,024)</td>
+</tr>
+<tr>
+<td><code>deepreinforce-ai/Ornith-1.0-9B</code> (hybrid, snapshot)</td>
+<td>bf16</td>
+<td>10k</td>
+<td>13.114 s</td>
+<td>0.069 s</td>
+<td><strong>×191</strong></td>
+<td>99.99% (fed 1 of 10,028)</td>
+</tr>
+<tr>
+<td><code>deepreinforce-ai/Ornith-1.0-9B</code> (hybrid, snapshot)</td>
+<td>bf16</td>
+<td>30k</td>
+<td>56.704 s</td>
+<td>0.135 s</td>
+<td><strong>×419</strong></td>
+<td>100.0% (fed 1 of 30,024)</td>
+</tr>
+<tr>
+<td><code>deepreinforce-ai/Ornith-1.0-9B</code> (hybrid, snapshot)</td>
+<td>bnb NF4</td>
+<td>10k</td>
+<td>15.527 s</td>
+<td>0.068 s</td>
+<td><strong>×228</strong></td>
+<td>99.99% (fed 1 of 10,028)</td>
+</tr>
+<tr>
+<td><code>deepreinforce-ai/Ornith-1.0-9B</code> (hybrid, snapshot)</td>
+<td>bnb NF4</td>
+<td>30k</td>
+<td>50.750 s</td>
+<td>0.156 s</td>
+<td><strong>×325</strong></td>
+<td>100.0% (fed 1 of 30,024)</td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.6-27B</code> (hybrid, snapshot)</td>
+<td>bf16</td>
+<td>10k</td>
+<td>47.370 s</td>
+<td>0.166 s</td>
+<td><strong>×285</strong></td>
+<td>99.99% (fed 1 of 10,028)</td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.6-27B</code> (hybrid, snapshot)</td>
+<td>bf16</td>
+<td>30k</td>
+<td>209.296 s</td>
+<td>0.224 s</td>
+<td><strong>×101–×1,200</strong></td>
+<td>100.0% (fed 1 of 30,024)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Two rows are ranges, not point estimates.</strong> <code>Qwen3-4B-Instruct-2507</code> at 30k has a cold arm that
+spans ×1.53 between its fastest and slowest repetition, and <code>Qwen3.6-27B</code> at 30k spans ×2.13 across
+three repetitions (116.5–248.4 s cold, 0.207–1.151 s warm). Both miss the tightness bound stated in
+<a href="#how-these-numbers-are-taken">How these numbers are taken</a>, so each is published as the interval its
+own repetitions support, with the median-over-median value being ×128 and ×933 respectively. The
+27B cell also ran with a <strong>prefill chunk step of 512</strong> rather than 2048 — see
+<a href="#prefill-chunking-transformers-lane">Prefill chunking</a> — and its correctness gate is a separate
+cell rather than an arm of the timing run.</p>
+<p><strong>The NF4 rows are measured with the bitsandbytes fused Metal kernel live.</strong> That is what you get
+today through <code>create_llm(...)</code>: warm identical resend at 10k measures <strong>0.049 s</strong> on the product
+path against <strong>0.068 s</strong> in a harness that resolved the kernel before AbstractCore loaded. Reaching
+the kernel through the product path depends on <code>offline_first</code>, which is covered in
+<a href="#4-bit-on-mps-bitsandbytes-fused-kernel">4-bit on MPS</a> below; a build without the fused kernel
+decodes about ×4 slower and warms at 0.27 s instead. Read the NF4 rows as the fused-kernel figures
+they are, and check the one-time <code>#FALLBACK</code> warning if your own numbers look like the slow set.</p>
+<h4 id="correctness-on-the-transformers-lane">Correctness on the transformers lane</h4>
+<p>Every cell in the transformers table has a matching correctness gate, and <strong>all ten pass</strong> — the
+eight bf16 cells below plus the two NF4 cells, which carry their gate inside the timing run. Each
+gate plants a distinctive fact at roughly 5%, 50% and 95% of the context depth and asks for all
+three back, cold and warm, with two controls per cell: a determinism control (the same bytes under a
+fresh key, twice, must match) and a context-dependence control (the same question with the context
+removed must fail, while a general-knowledge positive control still answers).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Context</th>
+<th>Cold recall (3 depths)</th>
+<th>Warm recall (3 depths)</th>
+<th>Distinct answers per arm</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Qwen/Qwen3-4B-Instruct-2507</code> (dense)</td>
+<td>10k</td>
+<td>24/24</td>
+<td>24/24</td>
+<td>1, 1, 1</td>
+<td><strong>PASS</strong></td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3-4B-Instruct-2507</code> (dense)</td>
+<td>30k</td>
+<td>24/24</td>
+<td>24/24</td>
+<td>1, 1, 1</td>
+<td><strong>PASS</strong></td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.5-4B</code> (hybrid)</td>
+<td>10k</td>
+<td>15/15</td>
+<td>15/15</td>
+<td>1, 1, 1</td>
+<td><strong>PASS</strong></td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.5-4B</code> (hybrid)</td>
+<td>30k</td>
+<td>15/15</td>
+<td>15/15</td>
+<td>1, 1, 1</td>
+<td><strong>PASS</strong></td>
+</tr>
+<tr>
+<td><code>deepreinforce-ai/Ornith-1.0-9B</code> (hybrid)</td>
+<td>10k</td>
+<td>15/15</td>
+<td>15/15</td>
+<td>1, 1, 1</td>
+<td><strong>PASS</strong></td>
+</tr>
+<tr>
+<td><code>deepreinforce-ai/Ornith-1.0-9B</code> (hybrid)</td>
+<td>30k</td>
+<td>15/15</td>
+<td>15/15</td>
+<td>1, 1, 1</td>
+<td><strong>PASS</strong></td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.6-27B</code> (hybrid)</td>
+<td>10k</td>
+<td>15/15</td>
+<td>15/15</td>
+<td>1, 1, 1</td>
+<td><strong>PASS</strong></td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.6-27B</code> (hybrid)</td>
+<td>30k</td>
+<td>15/15</td>
+<td>15/15</td>
+<td>1, 1, 1</td>
+<td><strong>PASS</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Sampling is 8 repetitions per depth per arm on the dense model and 5 on the hybrids. The primary
+statistic is the number of <strong>distinct</strong> answers per arm rather than the pass count: one distinct
+answer over n repetitions is stronger evidence than n independent passes, because it rules out a
+per-call intermittent fault that a single sample per depth cannot distinguish from correctness.
+Every arm at every depth returned exactly one distinct answer.</p>
+<p>The two NF4 cells (<code>Ornith-1.0-9B</code> at 10k and 30k) carry their gate inside the timing run and both
+pass. Each gate above is its own cell rather than an arm of the corresponding timing run, so a gate
+result and a timing row are separate evidence about the same model and tier.</p>
+<h4 id="gguf--llamacpp-q4_k_m">GGUF / llama.cpp, Q4_K_M</h4>
+<p>llama.cpp 0.3.23 on Metal, <code>n_gpu_layers == -1</code> asserted per cell, output pinned, 7 repetitions per
+arm except the two 30k cells marked as ranges, which ran 3. <code>n_ctx</code> is held equal across models
+within a tier. The cold arm calls <code>reset()</code> per repetition; the warm arm is an identical resend on
+one key, and it evaluates the prompt tokens the one-token guard requires rather than zero.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Context</th>
+<th>Cold prefill</th>
+<th>Warm prefill</th>
+<th>Speedup</th>
+<th>Prompt reused</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>unsloth/Qwen3-4B-Instruct-2507-GGUF</code></td>
+<td>10k</td>
+<td>9.637 s</td>
+<td>0.066 s</td>
+<td><strong>×145</strong></td>
+<td>99.98% (evaluated 2 of 10,025)</td>
+</tr>
+<tr>
+<td><code>unsloth/Qwen3-4B-Instruct-2507-GGUF</code></td>
+<td>30k</td>
+<td>76.506 s</td>
+<td>0.620 s</td>
+<td><strong>×123</strong></td>
+<td>99.99% (evaluated 2 of 29,994)</td>
+</tr>
+<tr>
+<td><code>Ornith-1.0-9B-GGUF</code></td>
+<td>10k</td>
+<td>8.937 s</td>
+<td>0.089 s</td>
+<td><strong>×101</strong></td>
+<td>99.98% (evaluated 2 of 10,035)</td>
+</tr>
+<tr>
+<td><code>Ornith-1.0-9B-GGUF</code></td>
+<td>30k</td>
+<td>38.155 s</td>
+<td>0.207 s</td>
+<td><strong>×184</strong></td>
+<td>99.99% (evaluated 2 of 30,031)</td>
+</tr>
+<tr>
+<td><code>Qwen3.6-27B-GGUF</code></td>
+<td>10k</td>
+<td>36.599 s</td>
+<td>0.296 s</td>
+<td><strong>×124</strong></td>
+<td>99.98% (evaluated 2 of 10,044)</td>
+</tr>
+<tr>
+<td><code>Qwen3.6-27B-GGUF</code></td>
+<td>30k</td>
+<td>109.079 s</td>
+<td>0.303 s</td>
+<td><strong>×82–×524</strong></td>
+<td>99.99% (evaluated 2 of 30,040)</td>
+</tr>
+<tr>
+<td><code>Qwen3.6-35B-A3B-GGUF</code></td>
+<td>30k</td>
+<td>44.301 s</td>
+<td>0.157 s</td>
+<td><strong>×81–×326</strong></td>
+<td>99.99% (evaluated 2 of 30,040)</td>
+</tr>
+<tr>
+<td><code>Ornith-1.0-35B-GGUF</code></td>
+<td>10k</td>
+<td>9.130 s</td>
+<td>0.082 s</td>
+<td><strong>×111</strong></td>
+<td>99.98% (evaluated 2 of 10,035)</td>
+</tr>
+<tr>
+<td><code>Ornith-1.0-35B-GGUF</code></td>
+<td>30k</td>
+<td>19.359 s</td>
+<td>0.169 s</td>
+<td><strong>×34–×132</strong></td>
+<td>99.99% (evaluated 2 of 30,031)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Three cells are published as ranges because three repetitions left the gain spanning more than a
+factor of two; their median-over-median values are ×360, ×283 and ×114. Extra repetitions were not
+run — a wide spread is a result about the measurement, not a reason to keep sampling until it
+narrows.</p>
+<p><strong><code>Qwen3.6-35B-A3B</code> at 10k is UNTESTED here.</strong> That cell completed but failed the pre-registered
+check on how many prompt tokens its warm arm evaluated, so its numbers are not published.</p>
+<p><strong>Warm on this lane is not context-independent.</strong> The warm call still performs one forward pass over
+the full KV, so a larger context does not have to produce a larger ratio: the 4B goes ×145 at 10k and
+×123 at 30k, and it carries the heaviest KV geometry in this set at 148 KiB per token against the
+35B-A3B's 27 KiB.</p>
+<h3 id="comparing-the-three-lanes">Comparing the three lanes</h3>
+<p><code>Ornith-1.0-9B</code> is the one model measured on all three lanes, so it is the <strong>same-model</strong> row. It is
+not a like-for-like row: each lane runs its own quantization of those weights, and that is the first
+thing to read out of the table.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Lane</th>
+<th>Quantization</th>
+<th>10k</th>
+<th>30k</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MLX</td>
+<td>4-bit</td>
+<td><strong>×233</strong> (13.150 s → 0.056 s)</td>
+<td><strong>×147</strong> (30.188 s → 0.205 s)</td>
+</tr>
+<tr>
+<td>HuggingFace transformers</td>
+<td>bf16</td>
+<td><strong>×191</strong> (13.114 s → 0.069 s)</td>
+<td><strong>×419</strong> (56.704 s → 0.135 s)</td>
+</tr>
+<tr>
+<td>HuggingFace transformers</td>
+<td>bnb NF4</td>
+<td><strong>×228</strong> (15.527 s → 0.068 s)</td>
+<td><strong>×325</strong> (50.750 s → 0.156 s)</td>
+</tr>
+<tr>
+<td>GGUF / llama.cpp</td>
+<td>Q4_K_M</td>
+<td><strong>×101</strong> (8.937 s → 0.089 s)</td>
+<td><strong>×184</strong> (38.155 s → 0.207 s)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Only the ratio is comparable across these rows.</strong> Four different quantizations of the same weights
+appear here — 4-bit for MLX, bf16 and bitsandbytes NF4 for transformers, Q4_K_M for GGUF — so the
+seconds measure the quantization at least as much as the cache. Reading a bf16 cold prefill against a
+4-bit one as an engine comparison is a quantization comparison wearing a disguise. The
+transformers rows are the closest thing to a quantization control in this set, since they differ
+only in dtype on one lane; there is no unquantized MLX or GGUF build of this model on the measurement
+host, so the other halves of that control are untested.</p>
+<p>What the ratios say:</p>
+<ul>
+<li><strong>All three lanes are in the same broad performance class</strong> once each is measured with the
+  one-token guard active: a warm full-context resend costs tens to a few hundred milliseconds
+  everywhere, and the ratio grows into the hundreds at 30k.</li>
+<li><strong>GGUF warm calls are the most sensitive to KV geometry.</strong> The warm call still runs one forward
+  pass over the full KV, so its cost tracks bytes-per-token rather than being flat; a model with
+  heavy KV geometry can show a <em>lower</em> ratio at 30k than at 10k.</li>
+<li><strong>The effect scales with context on every lane</strong>, because it is a function of how much prefill is
+  avoided. A ratio measured at one context size does not transfer to another — quote the context
+  size with the ratio.</li>
+</ul>
+<h3 id="what-the-three-lanes-share">What the three lanes share</h3>
+<p>All three lanes implement the same design, which is why their shapes agree:</p>
+<ul>
+<li><strong>A boundary snapshot for growing conversations.</strong> Each key keeps one cache boundary held back to
+  the last position two consecutive prompts agree on, so a prompt ending in per-call ephemeral bytes
+  (a generation prompt, a loop counter, a fresh-timestamp envelope) still leaves something the next
+  turn can extend. Warm turns restore that boundary and feed only the suffix.</li>
+<li><strong>A one-token guard</strong>, so a repeated prompt still runs a forward pass — see
+  <a href="#the-one-token-guard">The one-token guard</a>.</li>
+<li><strong>Telemetry</strong> on the lanes that can attest it: <code>response.metadata["prompt_cache"]</code> carries
+  <code>outcome</code>, <code>cached_tokens</code> and <code>fed_tokens</code> on MLX, on the GGUF control-plane path, and on the
+  transformers snapshot lane. The transformers crop lane (dense architectures) emits none, so read
+  its behavior from wall clock and <code>#FALLBACK</code> warnings.</li>
+</ul>
+<h3 id="the-one-token-guard">The one-token guard</h3>
+<p>A warm call must always push at least the final prompt token through a forward pass, even when the
+prompt is byte-identical to the previous one. Otherwise the sampled position would be produced from
+logits the <em>previous</em> call left behind, and the answer would be a continuation of the last turn
+rather than a response to this one.</p>
+<p>All three lanes hold that invariant: MLX and transformers keep one token back from a fully-contained
+prompt before feeding, and the GGUF lane rolls a restored full-prompt state back by one token (a
+checked rollback — architectures that refuse it get an honest full re-prefill instead). On an
+identical resend, cold and warm produce the same first token id, verified on both a dense and a
+hybrid GGUF model with a determinism control passing in each case.</p>
+<p>This is a correctness invariant rather than a policy, and it is not disabled by any environment
+switch.</p>
+<h3 id="agent-loop-cache-on-vs-off-react-task-per-cycle-view">Agent loop, cache ON vs OFF (ReAct task, per-cycle view)</h3>
+<p>A ReAct tool task where every call re-sends the growing transcript, run once with a byte-stable
+prefix (cache ON) and once with the prefix deliberately broken every cycle (cache OFF: a fresh nonce
+line prepended to the system prompt).</p>
+<p>All lanes ran the Qwen3.5-4B family except the MLX rows (see the architecture note); different
+quantizations per lane — <strong>compare within a row, never across rows.</strong> The broken-prefix arm
+receives a different prompt by construction, so trajectories can diverge; rows below state the
+comparable quantity per lane.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Lane</th>
+<th>Cache ON</th>
+<th>Cache OFF (broken prefix)</th>
+<th>The comparable quantity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LM Studio server (4-bit)</td>
+<td>~6.9 s/cycle, 3 cycles, 20.7 s total (10.9 s/cycle at ~10k-tk transcripts)</td>
+<td>~9.4 s/cycle, 3 cycles, 28.4 s total (19.0 s/cycle at ~10k tk)</td>
+<td>per-call re-prefill ≈0.7–1.3 s at 3–4k tk, ~15 s at 10k tk; savings grow with transcript size</td>
+</tr>
+<tr>
+<td>MLX in-process, pure attention (Qwen3-4B-2507 4-bit)</td>
+<td>warm generate feeds ~240 tokens instead of ~8,200</td>
+<td>full re-prefill every cycle</td>
+<td>the fed-token delta; end-to-end parity additionally requires the host to keep its per-turn cache maintenance incremental (see note ‡)</td>
+</tr>
+<tr>
+<td>MLX in-process, hybrid (Qwen3.5-4B 4-bit)</td>
+<td>snapshot/restore: warm turns feed the suffix only †</td>
+<td>full re-prefill every cycle</td>
+<td>the fed-token delta — <code>hit_restore</code> on warm turns after the cold turn 1</td>
+</tr>
+<tr>
+<td>GGUF / llama.cpp in-process (Q4_K_M)</td>
+<td>warm prefill flat as the transcript grows</td>
+<td>re-prefill grows with prompt size (~0.9→2.9 s over 2.3k→3.5k tk)</td>
+<td>the slope: flat vs growing. Per-cycle wall delta ≈+0.5–0.8 s at these sizes</td>
+</tr>
+<tr>
+<td>HuggingFace transformers in-process (bf16)</td>
+<td>warm prefill ≤~2 s</td>
+<td>re-prefill ≈7–12 s per call at 1.5–3.2k tk</td>
+<td>per-cycle prefill delta ≈6–10 s; end-to-end totals are decode-dominated at bf16 (~8 tok/s) and NOT a cache measurement</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="agent-loop-per-turn-view-at-10k-tokens">Agent loop, per-turn view at 10k tokens</h4>
+<p>One key, a monotonically growing transcript, no identical-bytes repeat — the shape a ReAct loop
+actually produces. <code>outcome</code>, <code>cached</code> and <code>fed</code> are read from <code>metadata.prompt_cache</code>.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Turn</th>
+<th>Hybrid <code>Qwen3.5-4B-MLX-4bit</code> (see the scope note below)</th>
+<th>Dense <code>Qwen3-4B-Instruct-2507-4bit</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>7.44 s — <code>rebuilt</code>, fed 10,072</td>
+<td>6.29 s — <code>cold</code>, fed 10,077</td>
+</tr>
+<tr>
+<td>2</td>
+<td>5.46 s — <code>rebuilt</code>, fed 10,118</td>
+<td>0.51 s — <code>hit_extend</code>, cached 10,077 / fed 46</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.67 s — <code>hit_restore</code>, cached 10,068 / fed 92</td>
+<td>0.41 s — <code>hit_extend</code>, cached 10,123 / fed 42</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0.76 s — <code>hit_restore</code>, cached 10,114 / fed 73</td>
+<td>0.43 s — <code>hit_extend</code>, cached 10,165 / fed 27</td>
+</tr>
+</tbody>
+</table></div>
+<p>The dense lane reuses from turn 2 onward and never rebuilds: 92% and 99% of the prompt is served
+from the cache on turns 2–4, and the turn cost collapses from 6.29 s to under half a second.</p>
+<p><strong>Scope of the hybrid column.</strong> The turn-2 <code>rebuilt</code> in this run is a consequence of where the
+snapshot boundary fell — a boundary that included the generation scaffolding the call appended, which
+the next turn replaces, so the forward-only restore had nothing to extend. The boundary selection
+described in <a href="#which-turn-reuse-starts-on">Which turn reuse starts on</a> excludes that scaffolding, and
+a CPU reproduction with the real tokenizer and renderer turns this sequence into
+<code>rebuilt, hit_restore, hit_restore, hit_restore</code>. Hardware confirmation is
+<a href="#measurement-coverage">measurement coverage</a>. Read the hybrid column as the shape of the failure
+mode to watch for in your own ledger, not as a cost to plan around.</p>
+<p>† <strong>Hybrid-architecture note (Qwen3.5-class on MLX).</strong>
+Qwen3.5 mixes attention layers (trimmable <code>KVCache</code>) with linear-attention layers whose recurrent
+state (<code>ArraysCache</code>) is not trimmable. <code>Qwen3.6</code> loads the same <code>qwen3_5</code>/<code>qwen3_5_moe</code> classes and
+Ornith 1.0 (9B/35B/397B) is a Qwen3.5 post-train, so the same lane selection applies to them by
+construction — but lane selection is not a performance result, and each model's measured status is
+listed separately in the
+<a href="#mlx-mlxprovider">MLX compatibility table</a>. A recurrent state cannot be rewound,
+so the trim-based delta path does not apply. MLX instead uses a <strong>snapshot/restore lane</strong> for these
+models: it keeps one copied cache boundary per <code>prompt_cache_key</code> and, when the next full-context
+prompt extends it, restores the copy and feeds only the new suffix (forward-only reuse; a one-time
+<code>#FALLBACK</code> line records that the snapshot lane, not the trim lane, is active). A growing-prefix
+agent loop therefore reuses its prefix on warm turns just as a pure-attention model does. Measured
+on <code>Qwen3.5-4B-MLX-4bit</code> (6.6k-token transcript, one key): turn 1 does a full prefill; turns 2–3
+report <code>outcome=hit_restore</code> and feed ~24 of 6.6k tokens, with fact recall correct throughout.
+Divergent prompts (a changed prefix) rebuild and re-snapshot.</p>
+<p>‡ <strong>Host composition note.</strong> The in-process delta engages when the host re-sends the full context
+per call (<code>messages=</code> present) over a stable key; <code>generate()</code> then does the token-level prefix
+match itself. A host that also drives the control plane should use it to build the stable
+<code>(system, tools)</code> prefix and fork the session key from it <strong>once</strong>, and leave the transcript to
+<code>generate()</code>. Pushing the transcript through <code>prompt_cache_update</code> on every turn duplicates work the
+delta feed is about to redo, and <code>prompt_cache_clear</code> is not free on this lane — it also drops the
+key's boundary snapshot, which is the state an untrimmable architecture restores from.</p>
+<h4 id="agent-loop-on-the-gguf-lane">Agent loop on the GGUF lane</h4>
+<p>The same growing-transcript shape, measured on GGUF with the boundary snapshot active. Both arms run
+in one process on one resident model with <code>n_gpu_layers == -1</code> asserted, and differ only in cache
+policy. Evaluated prompt tokens come from an <code>llm.eval</code> spy independent of the provider's own
+telemetry. Median of turns 2–5.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Context</th>
+<th>No cache</th>
+<th>With the boundary snapshot</th>
+<th>Gain</th>
+<th>Prompt tokens evaluated per warm turn</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Ornith-1.0-9B-GGUF</code></td>
+<td>10k</td>
+<td>16.33 s</td>
+<td><strong>2.25 s</strong></td>
+<td>×7.3</td>
+<td>10,032 → <strong>16</strong></td>
+</tr>
+<tr>
+<td><code>Qwen3-4B-Instruct-2507-GGUF</code> (dense)</td>
+<td>10k</td>
+<td>0.61 s</td>
+<td><strong>0.31 s</strong></td>
+<td>×2.0</td>
+<td>24 → <strong>13</strong></td>
+</tr>
+<tr>
+<td><code>Qwen3.6-27B-GGUF</code></td>
+<td>30k</td>
+<td>203.34 s</td>
+<td><strong>2.19 s</strong></td>
+<td>×93.0</td>
+<td>30,037 → <strong>16</strong></td>
+</tr>
+<tr>
+<td><code>Qwen3.6-35B-A3B-GGUF</code></td>
+<td>10k</td>
+<td>17.01 s</td>
+<td><strong>0.62 s</strong></td>
+<td>×27.2</td>
+<td>10,041 → <strong>16</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>On the hybrids the evaluated-token count collapses to a fixed 16 per turn regardless of transcript
+size, which is what a working boundary snapshot looks like from the outside. Turn 2 still does one
+rebuild — turn 1 has no previous prompt to take a longest-common-prefix against — and every turn from
+3 onward restores. The same property holds on the MLX and transformers lanes.</p>
+<p><strong>The "no cache" arm here is not "no reuse at all".</strong> llama.cpp keeps its own instance-internal
+<code>n_past</code> prefix reuse, which is why the dense model's uncached arm already drops to 24 tokens per
+turn. On that architecture there is little left for a cache to win, and the boundary policy
+correctly changes nothing.</p>
+<h4 id="which-turn-reuse-starts-on">Which turn reuse starts on</h4>
+<p>The snapshot lane is selected on the ARCHITECTURE, not on how full the cache happens to be, so an
+untrimmable model takes it from the first call — including a session
+whose key was forked from a <code>(system, tools)</code> prefix and is therefore already warm on turn 1. Where
+the lane places its boundary is what decides whether turn 2 restores:</p>
+<ul>
+<li>If the key already holds a fed-token record that is a true prefix of this prompt, that record is
+  the boundary and the turn restores from the live cache instead of prefilling cold.</li>
+<li>The boundary is held back to the last position two consecutive prompts agree on, so a prompt
+  ending in per-call ephemeral bytes still leaves something the next turn can extend.</li>
+<li>On the first turn of a fresh key there is no previous prompt to compare against, so the boundary
+  is held back by the generation scaffolding the call appended — the bytes the next turn replaces
+  with the assistant turn that actually happened.</li>
+</ul>
+<p>Read <code>outcome</code> per turn from <code>metadata.prompt_cache</code> on your own workload rather than assuming a
+turn number: <code>hit_restore</code> means the boundary was reused, <code>rebuilt</code> means it was not. Recorded
+per-turn results for specific models are in
+<a href="#mlx-mlxprovider">Which models have been measured</a>; the hybrid turn-2 outcome under the current
+boundary selection is a <a href="#measurement-coverage">measurement coverage</a>.</p>
+<h3 id="end-to-end-sessions-through-a-client">End-to-end sessions through a client</h3>
+<p>The probes above isolate prefill. A session measured end to end through a gateway client answers a
+different question — it includes decode and client overhead — and the two must not be compared.
+<strong>No end-to-end cache-on versus cache-off ratio is published here.</strong> The prefill matrix above is the
+measured result; treat any end-to-end number you take yourself as belonging to your own workload.</p>
+<p>What has been measured end to end is <strong>reuse through the product path</strong>: a four-turn <code>abstractcode-tui</code>
+session on <code>Qwen3-4B-Instruct-2507-4bit</code> at a ~13k-token working context reported <code>outcome=hit_extend</code>
+on all 96 model calls, with 86–90% of prompt tokens served from cache per turn, read from
+<code>result.metadata.prompt_cache</code> on the <code>llm_call</code> records in the run ledger. That confirms the cache
+reaches the provider through client → gateway → runtime; it is not a speed claim, because that run
+had no valid uncached control.</p>
+<p><strong>Reading reuse.</strong> Compute it as <code>Σ cached_tokens / Σ (cached_tokens + fed_tokens)</code> from
+<code>result.metadata.prompt_cache</code>, not from <code>usage.input_tokens</code> — the latter is a fast heuristic
+estimate of prompt length, not a measurement. Report turns 2 onward separately from turn 1: a lane
+that builds a <code>(system, tools)</code> prefix inside turn 1 and forks it produces turn-1 <code>cached_tokens</code>
+itself, which is not a saving.</p>
+<p><strong>Measure GGUF in its own process.</strong> GGUF Metal offload is disabled when PyTorch or transformers is
+already imported, and a gateway that serves MLX or transformers models has imported one. A GGUF
+timing taken there describes CPU inference. The Metal-offloaded figures for that lane are in
+<a href="#gguf--llamacpp-q4_k_m">the measured matrix</a>, taken with <code>n_gpu_layers == -1</code> asserted per cell —
+see <a href="#gguf--llamacpp-huggingfaceprovider">Measure this lane in its own process</a>.</p>
+<p><strong>Bound the output budget.</strong> An attempt on <code>Qwen/Qwen3.5-4B</code> (bf16) issued with
+<code>max_new_tokens = 81920</code> did not return. Pin the output length in both lanes and assert the realized
+length, or you are measuring decode.</p>
+<p><strong>Running an A/B of your own.</strong> One gateway, one resident model, the same turns per lane in a fresh
+session per lane, and both lane orders:</p>
+<div class="code-block"><pre><code class="language-bash"># uncached lane
+abstractcode-tui exec &quot;&lt;turn prompt&gt;&quot; --session pcb-off --workflow react-agent:react \
+  --provider mlx --model mlx-community/Qwen3-4B-Instruct-2507-4bit \
+  --no-project-context --no-review --permissions read --max-iterations 4 --no-prompt-cache
+
+# cached lane: identical, minus --no-prompt-cache
+</code></pre></div>
+<p>Then read <code>result.metadata.prompt_cache</code> for every <code>llm_call</code> effect in each run's ledger.
+<code>--no-prompt-cache</code> is an <code>abstractcode-tui exec</code> option; it sets <code>_runtime.prompt_cache = false</code>,
+which suppresses cache-key derivation so the provider receives no <code>prompt_cache_key</code> and emits no
+<code>prompt_cache</code> metadata at all. Absence of that metadata on every call is the proof that the
+uncached lane was genuinely uncached — check it, do not assume it.</p>
+<p><strong>The posture is inherited by child runs.</strong> <code>_runtime.prompt_cache</code> crosses the sub-run hop, so a
+workflow whose agent loop executes in a child or grandchild run carries the posture it was sent
+rather than falling back to the server default. <code>false</code> is treated as a meaningful value, not as
+absence, and an explicit posture set on the child wins. That covers both the direct workflows
+(<code>react-agent:react</code>) and the flow-graph bundles (<code>coding-agent</code>, <code>basic-agent</code>,
+<code>multiagent-coding</code>). Verify the lane from the ledger before trusting any A/B built on it.</p>
+<h3 id="what-a-cache-hit-guarantees-and-what-it-does-not">What a cache hit guarantees, and what it does not</h3>
+<p><strong>What is guaranteed, stated precisely:</strong></p>
+<ol>
+<li><strong>Identical token ids.</strong> A warm call is generated from exactly the token ids you sent. The delta
+   path trims or restores the cache back to the true shared token prefix and feeds the rest, so
+   nothing is silently dropped from the middle and the cached region holds exactly the tokens the
+   record says it holds.</li>
+<li><strong>Identical logical context.</strong> The model sees the same conversation, in the same order, at the
+   same positions, as it would on a cold call of the same prompt.</li>
+<li><strong>The same top-1 token at the first generated position.</strong> This held in every lane measured. A
+   cache split at an arbitrary boundary reproduces the warm result exactly, and a split aligned to
+   the cold run's own chunk boundaries is bit-exact with cold.</li>
+</ol>
+<p><strong>What is not guaranteed: byte-identical generated text.</strong> Warm and cold produce the same ids
+through a different sequence of matrix shapes, because prefill chunking groups the same tokens into
+different batches, and floating-point accumulates differently across different batch shapes. That is
+enough to move the sampled tokens even at <code>temperature=0</code>. The effect is not caused by the cache:
+<strong>two cold runs with identical token ids already differ in text when only their chunk plan differs.</strong></p>
+<p>Each path is individually deterministic — repeat it and you get the same bytes — but the two paths
+can be deterministic to <em>different</em> answers, and the divergence can reach content rather than only
+formatting. Treat a warm rerun as a different sample, not as a reproduction of the cold one.</p>
+<p><strong>The cause is prompt batching, not the cache.</strong> Every lane prefills in fixed chunks — <code>mlx_lm</code> at
+<code>prefill_step_size</code> 2048, the transformers lane at
+<a href="#prefill-chunking-transformers-lane"><code>ABSTRACTCORE_TRANSFORMERS_PREFILL_STEP</code></a>, default 2048. A warm
+call feeds a short suffix and a cold call feeds the whole prompt, so the same ids are grouped into
+different batches. Byte equality is therefore a diagnostic, not a correctness criterion, and it gets
+less reliable as the context grows. Gate a cache on planted-fact recall and on top-1 agreement at the
+first generated position; record byte equality as an observation.</p>
+<p>What this means in practice:</p>
+<ul>
+<li>A cached turn and an uncached turn are not interchangeable outputs. Do not mix them inside one
+  evaluation, and do not treat a cached rerun as a reproduction of an uncached result.</li>
+<li>Answers stay correct. Every correctness gate in the matrix recalls its planted facts in both arms,
+  cold and warm, with one distinct answer per arm. What moves is the free-form text around the
+  answer.</li>
+<li>The divergence can change output <em>length</em>, and a longer answer costs more decoding time than the
+  cache saves on prefill. Gate on output length as well as on content — see
+  <a href="#verifying-that-a-cache-is-helping">Verifying that a cache is helping</a>.</li>
+<li>Through a client the effect is larger, because a runtime-grounding envelope can re-render per call
+  and shift the prompt by a token or two. Pin what you can, and read <code>outcome</code> per call rather than
+  assuming byte stability.</li>
+</ul>
+<p>Guidance:</p>
+<ul>
+<li><strong>What makes caches hit</strong>: a byte-stable prefix — stable system prompt, stable tool schema
+  (tool ORDER included), append-only transcript. Any change to the first bytes (even one line)
+  forces a full re-prefill everywhere. Agent loops that only append satisfy this by construction.</li>
+<li><strong>Per-call context belongs in trailing <code>system</code> riders</strong>: a host that must re-send something on
+  every call (a session attachment index, inbox guidance) puts it at the END as <code>system</code>
+  messages. On the MLX native lane (mlx-vlm prefix cache, MTP speculation) a hybrid model restores
+  only an exact stored prefix, and the one per-call snapshot is placed before those riders, so the
+  next call restores everything but its new turns and the riders. The record says so:
+  <code>prompt_cache.snapshot_excludes_tail_tokens</code> is the rider length the snapshot left out. A rider
+  anywhere else (between turns, or as a final <code>user</code> message) is a prefix change: measured on a
+  27B MTP model, a trailing attachment index placed inside the snapshot made 10 of 10 tool-loop
+  calls cold (24,552 tokens re-prefilled at step 10); with the snapshot placed before it, steps
+  2–4 restored 8,536 / 11,424 / 14,764 tokens and fed 3,066 / 3,518 / 2,872 (49–54 s → 11–12 s
+  per step).</li>
+<li><strong>Shared server for many short-lived clients</strong>: an LM Studio-style server cache persists across
+  client restarts and needs no request field — CLI tools and restarting processes get warm
+  prefills for free. In-process caches die with the process.</li>
+<li><strong>Long-lived single process with a large context</strong>: in-process caches (MLX, GGUF, transformers)
+  give the largest <em>prefill</em> ratios because nothing leaves the process — provided the model
+  architecture supports the delta path (see the compatibility table below). Take the ratio at your
+  own context size from <a href="#the-measured-matrix">the measured matrix</a>; it ranges from ×17 to ×426 on
+  MLX, ×107 to ×1,200 on transformers, and ×34 to ×524 on GGUF, and it grows with context on every
+  lane. <strong>Those are prefill ratios, not end-to-end ones.</strong> An end-to-end session also pays decode and
+  client overhead, which the cache does not touch, so it will show a smaller ratio than any figure in
+  that matrix.</li>
+<li><strong>Choosing between the local lanes for speed</strong>: all three reduce a warm full-context resend to
+  tens or low hundreds of milliseconds at these context sizes. GGUF's warm call runs one forward pass
+  over the full KV, so its warm cost tracks the model's bytes-per-token more strongly than the other
+  two lanes do. Choose a lane for its other properties — quantization availability, model coverage,
+  memory footprint — and take the ratio at your own context size.</li>
+<li><strong>Prefill-vs-decode reality check</strong>: caching removes prefill only, so a turn can never drop below
+  <code>output_tokens × decode_time_per_token</code>. At small prompts (2–4k tokens) with slow decode,
+  end-to-end gains look modest even when the cache works perfectly; the ratio becomes dramatic at
+  long prefixes (10k+ tokens). Decode also gets slower as the KV grows, which offsets part of the
+  prefill saving on long sessions.</li>
+<li>Client-side prefix-reuse percentages (as printed by instrumented harnesses) measure whether the
+  <em>precondition</em> held, not server hits; where a backend reports no cached-token usage fields,
+  latency is the only hit evidence. Per-call "prefill estimate" columns derived from wall time
+  minus decode are lower bounds (the decode-rate calibration is itself prefill-contaminated),
+  and the rate-setting call always reads as zero — treat single-call estimates as indicative,
+  slopes and matched-position deltas as evidence.</li>
+</ul>
+<h2 id="cache-compatible-models-per-lane">Cache-compatible models per lane</h2>
+<p>Whether the full in-process cache path engages depends on the model's cache architecture.
+AbstractCore never returns wrong context: unsupported shapes degrade to a correct rebuild with
+a <code>#FALLBACK</code> warning. What degrades is the SAVINGS, not the answers.</p>
+<h3 id="mlx-mlxprovider">MLX (<code>MLXProvider</code>)</h3>
+<p>Two tables. The first says which code path a family takes — that is decided by the cache classes the
+architecture builds, so it is a statement about the code. The second says which specific models have
+a recorded measurement — that is a statement about evidence, and <strong>no model's result is inferred
+from another model, however closely related.</strong> Sharing an architecture predicts the lane; it does not
+predict reuse percentages, wall clock, or gate outcomes.</p>
+<p><strong>Which lane a family takes</strong></p>
+<p>The trim-based delta path needs a trimmable cache (<code>mlx_lm can_trim_prompt_cache</code>); untrimmable
+architectures take the snapshot/restore path instead.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model family (mlx_lm architecture)</th>
+<th>Cache</th>
+<th>Warm-call behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Llama 3.x (non-sliding), Qwen3 dense (<code>Qwen3-*-Instruct-2507</code>), Qwen3-MoE, Qwen2.x, Mistral-class — any model without a custom <code>make_cache</code></td>
+<td>pure <code>KVCache</code></td>
+<td><strong>Full delta</strong>: trim to the shared token prefix, feed only the suffix</td>
+</tr>
+<tr>
+<td>Falcon-H1, LongCat-Flash, DeepSeek-V3.2</td>
+<td><code>CacheList</code> of <code>KVCache</code></td>
+<td>Full delta (countable and trimmable)</td>
+</tr>
+<tr>
+<td>Gemma-3/3n/4, GPT-OSS, Cohere2, Ministral3, sliding-window Llama variants</td>
+<td>mix <code>KVCache</code> + <code>RotatingKVCache</code></td>
+<td>Full delta only while the transcript is under the smallest sliding window (GPT-OSS 128 tokens; Gemma 512–1024), then rebuild per call with <code>#FALLBACK</code>. <strong>Documented non-target for agent workloads</strong>: a <code>RotatingKVCache</code> physically discards positions past the window, so the rewind the delta lane needs is impossible once a real transcript exceeds it. Serve these through LM Studio or vLLM, where the engine's forward-only slot cache works regardless of the window.</td>
+</tr>
+<tr>
+<td>Llama-4 (Scout/Maverick)</td>
+<td><code>ChunkedKVCache</code> (8k chunks)</td>
+<td>Delta within the live chunk; partial trims refuse → rebuild</td>
+</tr>
+<tr>
+<td>Qwen3.5, Qwen3.6 (<code>qwen3_5</code> / <code>qwen3_5_moe</code>, 3:1 Gated DeltaNet), Ornith 1.0 (Qwen3.5 post-trains), Qwen3-Next, Nemotron-H, Jamba, LFM2/2.5, Granite-hybrid, Plamo2, Baichuan-M1</td>
+<td>hybrid with untrimmable <code>ArraysCache</code> layers</td>
+<td><strong>Snapshot/restore delta</strong> (<code>outcome=hit_restore</code>): the recurrent state cannot be trimmed but it can be copied, so a per-key boundary snapshot is restored and only the suffix is fed on warm growing-prefix turns. A divergent prefix rebuilds and re-snapshots.</td>
+</tr>
+<tr>
+<td>Mamba/Mamba2, RWKV-7 (pure SSM)</td>
+<td>all <code>ArraysCache</code></td>
+<td>Snapshot/restore delta — the same path as the hybrids</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Which models have been measured</strong></p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Architecture</th>
+<th>What was measured</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mlx-community/Qwen3-4B-Instruct-2507-4bit</code></td>
+<td>dense, full attention</td>
+<td>Prefill probe at 10k, 30k and 100k, 7 reps, pinned output length</td>
+<td>×38, ×66 and ×426 vs no cache; 99.82% / 99.94% / 99.96% of the prompt reused; gates pass</td>
+</tr>
+<tr>
+<td><code>mlx-community/Qwen3-4B-Instruct-2507-4bit</code></td>
+<td>dense, full attention</td>
+<td>Four-turn agent loop at 10k, one key</td>
+<td><code>cold</code>, then <code>hit_extend</code> on every later turn; no rebuild</td>
+</tr>
+<tr>
+<td><code>mlx-community/Qwen3-4B-Instruct-2507-4bit</code></td>
+<td>dense, full attention</td>
+<td>Four-turn client session through the gateway at ~13k tokens</td>
+<td><code>hit_extend</code> on all 96 model calls; 86–90% of prompt tokens reused per turn (reuse only — no valid uncached control in that run)</td>
+</tr>
+<tr>
+<td><code>Qwen3.5-4B-MLX-4bit</code></td>
+<td>hybrid</td>
+<td>Prefill probe at 10k and 30k, 7 and 3 reps</td>
+<td>×50 and ×113 vs no cache; 99.52% / 99.84% reused; the 10k gate passes, the 30k gate is UNTESTED</td>
+</tr>
+<tr>
+<td><code>Qwen3.5-4B-MLX-4bit</code></td>
+<td>hybrid</td>
+<td>Four-turn agent loop at 10k, one key</td>
+<td>Turn 2 <code>rebuilt</code>, turns 3–4 <code>hit_restore</code> — boundary-scoped, see <a href="#measurement-coverage">measurement coverage</a></td>
+</tr>
+<tr>
+<td><code>Ornith-1.0-9B-4bit</code></td>
+<td>hybrid</td>
+<td>Prefill probe at 10k and 30k, 7 reps</td>
+<td>×233 and ×147 vs no cache; 99.52% / 99.84% reused; the 10k gate passes, the 30k gate is UNTESTED</td>
+</tr>
+<tr>
+<td><code>Qwen3.6-27B-4bit</code></td>
+<td>hybrid</td>
+<td>Prefill probe at 10k and 30k, 7 reps</td>
+<td>×46 and ×162 vs no cache; 99.52% / 99.84% reused; <strong>both gates pass</strong></td>
+</tr>
+<tr>
+<td><code>Qwen3.6-35B-A3B-4bit</code></td>
+<td>hybrid</td>
+<td>Prefill probe at 10k and 30k, 7 reps</td>
+<td>×17 and ×101 vs no cache; 99.52% / 99.84% reused; gates pass</td>
+</tr>
+<tr>
+<td><code>mlx-community/gemma-4-31b-mxfp4</code></td>
+<td>sliding window</td>
+<td>Warm call under the window</td>
+<td><code>hit_extend</code> at a ~450-token transcript, recall correct — under-window only; documented non-target above the window</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>UNTESTED on this lane.</strong> No run has been recorded for any of the following, and none of their
+behavior should be read off the rows above:</p>
+<ul>
+<li><code>Qwen3.5-122B-A10B-4bit</code> — installed locally, no recorded run.</li>
+<li>Every hybrid family other than Qwen3.5/Qwen3.6/Ornith 1.0 — Qwen3-Next, Nemotron-H, Jamba,
+  LFM2/2.5, Granite-hybrid, Plamo2, Baichuan-M1.</li>
+<li>Pure-SSM models (Mamba/Mamba2, RWKV-7).</li>
+<li><code>CacheList</code> families (Falcon-H1, LongCat-Flash, DeepSeek-V3.2) and Llama-4 chunked caches.</li>
+<li>Llama 3.x, Qwen2.x and Mistral-class dense models.</li>
+<li>The 100k-token context tier on every model except the dense <code>Qwen3-4B-Instruct-2507-4bit</code>.</li>
+<li>The correctness gate on <code>Qwen3.6-27B-4bit</code> at 30k.</li>
+<li>Any quantization other than the one named in the measured row.</li>
+</ul>
+<p>Check your model: the first warm full-context call logs <code>#FALLBACK … not trimmable</code> /
+<code>… not countable</code> if the model cannot delta; no warning means the delta path engaged.
+<code>get_prompt_cache_stats()</code> exposes per-key <code>token_count</code> so you can watch reuse across calls, and
+<code>scripts/verify_prompt_cache_families.py</code> runs a growing-prefix session with a cache census and a
+fact-recall gate against any model you have installed.</p>
+<p><strong>Which turn reuse starts on, on an untrimmable architecture.</strong> A snapshot is written by the
+snapshot lane, and that lane is selected on the architecture. On a session whose key is forked from a
+<code>(system, tools)</code> prefix cache, turn 1 is already warm. The boundary the lane snapshots is chosen
+conservatively: it is held back to what two consecutive prompts share, so a prompt that ends in
+per-call ephemeral bytes — a loop counter, a fresh-timestamp envelope, the generation prompt — still
+leaves a boundary the next turn can restore from. Read <code>outcome</code> per turn from
+<code>metadata.prompt_cache</code> on your own workload: <code>hit_restore</code> means the boundary was reused,
+<code>rebuilt</code> means it was not.</p>
+<h3 id="gguf--llamacpp-huggingfaceprovider">GGUF / llama.cpp (<code>HuggingFaceProvider</code>)</h3>
+<p>The full control plane (<code>mode=local_control_plane</code>: delta-only updates, prefill-snapshot
+generation) requires an exact chat renderer; other formats stay <code>mode=keyed</code>, where llama.cpp's
+own in-process prefix reuse still applies (real savings, less control).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>GGUF family</th>
+<th>Renderer</th>
+<th>Mode</th>
+<th>Verified</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3 dense (<code>Qwen3-4B-Instruct-2507</code>), any "qwen"-named GGUF, ChatML-template models</td>
+<td>ChatML (<code>chatml</code> / <code>chatml-function-calling</code>)</td>
+<td><code>local_control_plane</code></td>
+<td>✅ mode and correctness. Control-plane-maintained session on Metal: warm ~0.6 s vs cold ~9 s at a 10k-token prefix, fact recall correct. A per-call session pattern also stays correct and token-for-token identical, but see the three notes below before timing this lane</td>
+</tr>
+<tr>
+<td>Qwen3.5 / Qwen3.6 hybrids (<code>Qwen3.5-*-GGUF</code>, arch <code>qwen35</code>/<code>qwen35moe</code>)</td>
+<td>ChatML</td>
+<td><code>local_control_plane</code></td>
+<td>✅ 2026-07-14: loads under llama.cpp 0.3.23, warm ~1 s, fact-recall correct (recurrent state round-trips through the snapshot; llama.cpp's in-place trim would refuse it)</td>
+</tr>
+<tr>
+<td>Gemma-4 (<code>gemma-4-*-GGUF</code>, arch <code>gemma4</code>)</td>
+<td>GGUF-embedded chat template (<code>llama-cpp-chat-template</code>)</td>
+<td><code>local_control_plane</code></td>
+<td>✅ 2026-07-14: warm ~0.5 s vs cold ~9 s, fact-recall correct</td>
+</tr>
+<tr>
+<td>Llama-3.x (when the embedded template matches llama.cpp's llama-3 template)</td>
+<td><code>llama-3</code></td>
+<td><code>local_control_plane</code></td>
+<td>prior</td>
+</tr>
+<tr>
+<td><strong>Ornith 1.0 GGUF</strong> (<code>ornith-*.gguf</code> — a Qwen3.5 post-train shipping a <code>chat_template.default</code> ChatML Jinja template) — and ANY GGUF whose embedded Jinja template is ChatML</td>
+<td>GGUF-embedded chat template (<code>llama-cpp-chat-template</code>)</td>
+<td><code>local_control_plane</code></td>
+<td>✅ 2026-07-19: detection is by template CONTENT (ChatML markers plus a probe render proving the template is ChatML-shaped), never by model name or llama.cpp's guessed format id. Live on <code>ornith-1.0-35b-Q4_K_M.gguf</code>: warm/cold 0.34–0.35, fact recall correct, no warnings. A snapshot is reused for what the state HOLDS rather than what its key claims, and a stream render failure degrades instead of raising.</td>
+</tr>
+<tr>
+<td>Mistral, Phi, DeepSeek, Granite, everything else</td>
+<td>—</td>
+<td><code>keyed</code> (llama.cpp-native prefix reuse only)</td>
+<td>prior</td>
+</tr>
+</tbody>
+</table></div>
+<p>Check your model: <code>get_prompt_cache_capabilities()</code> reports the honest per-model <code>mode</code> and the
+active renderer in <code>notes</code>. All ✅ rows were verified live with
+<code>scripts/verify_prompt_cache_families.py</code> (growing-prefix ReAct shape, one cache key, fact-recall
+correctness gate) on the quant noted in the benchmark logs. The control-plane generate path attaches
+<code>metadata.prompt_cache</code> with the same vocabulary as the MLX lane (<code>outcome</code>, <code>cached_tokens</code>,
+<code>fed_tokens</code>), so reuse can be read from a run ledger on that path; a <code>mode=keyed</code> model, which is
+served by llama.cpp's native prefix reuse rather than the control plane, emits none.</p>
+<p>Three things to know before you set <code>prompt_cache_key</code> on this lane.</p>
+<p><strong>llama.cpp keeps its own prefix cache, so there is no uncached baseline inside a live process.</strong>
+Suppressing <code>prompt_cache_key</code> removes AbstractCore's control plane; it does not stop llama.cpp
+reusing KV state from the previous call in the same process. That state also survives across sessions
+in the same process, so a second lane started afterwards inherits it. An ON/OFF comparison on this
+lane therefore measures <em>control plane on top of native reuse</em>, not <em>cache versus no cache</em>. To get a
+cold baseline, restart the process or use a fresh model instance — which is what the
+<a href="#the-measured-matrix">measured matrix</a> does, resetting per repetition and validating the result
+against a fresh-process cold prefill.</p>
+<p><strong>How much the control plane adds over native reuse depends on the architecture.</strong> On a growing
+transcript the boundary snapshot collapses warm prefill to a fixed 16 tokens per turn on hybrids
+(×7.3 to ×93.0 over the uncached arm), while on a dense model llama.cpp's own <code>n_past</code> reuse already
+gets the per-turn feed down to 24 tokens and the control plane adds ×2.0 on top. See
+<a href="#agent-loop-on-the-gguf-lane">Agent loop on the GGUF lane</a>.</p>
+<p><strong>Budget the warm call by KV size, not by a flat number.</strong> The warm path performs one forward pass
+over the full KV, so its cost scales with the model's bytes-per-token and with the context, rather
+than staying flat as the in-process copy lanes do. Measured warm medians on this lane run from
+0.066 s to 0.62 s across the matrix — see <a href="#comparing-the-three-lanes">Comparing the three lanes</a>.</p>
+<p><strong>Measure this lane in its own process, and assert the offload.</strong> GGUF Metal offload is disabled when
+PyTorch or transformers is already imported (<code>huggingface_provider.py:2991-3007</code>; see also the GGUF
+notes under <a href="#provider-status-may-2026">Provider status</a>), so a host process that also serves MLX or
+transformers models runs llama.cpp with <code>n_gpu_layers = 0</code> and every timing taken there describes CPU
+inference.</p>
+<p>The downgrade is easy to miss: importing <code>AutoTokenizer</code> at the top of a harness is enough to trigger
+it, and the only signal is a single <code>RuntimeWarning</code>. Reproduced deliberately — with <code>torch</code> imported
+first the provider comes up at <code>n_gpu_layers = 0</code> and emits nothing else; with <code>llama_cpp</code> imported
+first it comes up at <code>-1</code>. Read <code>n_gpu_layers</code> back from the provider, <strong>assert it is <code>-1</code>, and fail
+the run loudly if it is not.</strong> A GGUF timing without that assertion is not attributable to a backend.</p>
+<p><strong>Budget for the cache's own memory.</strong> The GGUF prompt cache is a <code>LlamaRAMCache</code> created with
+capacity <code>"auto"</code> — it grows without a byte cap (<code>huggingface_provider.py:1961-1975</code>) and holds
+full-<code>n_ctx</code> llama states, with <code>n_ctx</code> defaulting to 16384. A stored state is sized by <code>n_ctx</code>, not
+by the prompt that produced it, so process residency can exceed the model file by a wide margin and
+several keys multiply it. Cap <code>n_ctx</code> to the context you actually use rather than leaving the
+default, and see <a href="#cache-residency-and-memory">Cache residency and memory</a> for how to read the
+numbers you measure.</p>
+<h3 id="huggingface-transformers-huggingfaceprovider-with-model_typetransformers">HuggingFace transformers (<code>HuggingFaceProvider</code> with <code>model_type="transformers"</code>)</h3>
+<p>Two lanes. Dense, pure-attention models take the <strong>crop lane</strong>: rewind the cache to the shared token
+prefix with <code>Cache.crop</code>, then feed only the suffix. Architectures whose cache cannot be cropped take
+the <strong>snapshot lane</strong>, routed on the architecture from turn 1: keep one boundary copy per key,
+restore it on a warm turn, feed the suffix forward-only. The lane a model took is reported in its
+measured row.</p>
+<p><strong>Requirements.</strong> This lane needs <strong>torch &gt;= 2.11</strong> on Apple silicon. torch 2.10.x carries a
+known MPS <code>scaled_dot_product_attention</code> correctness defect
+(<a href="https://github.com/pytorch/pytorch/issues/163597">pytorch#163597</a>) that returns non-deterministic,
+numerically wrong results for short queries over a long KV cache in float16/bfloat16 — that is, every
+decode step past roughly 1,024 tokens of context. It is fixed upstream. AbstractCore emits a one-time
+warning when it detects torch 2.10.x on MPS with a half-precision model, and the stopgap it names
+(<code>ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager</code>) is slower but exact. On torch &gt;= 2.11 no workaround is
+applied and stock <code>sdpa</code> is the default. torch &lt;= 2.9 has not been measured on this lane.</p>
+<h4 id="4-bit-on-mps-bitsandbytes-fused-kernel">4-bit on MPS (bitsandbytes fused kernel)</h4>
+<p>Loading a bitsandbytes NF4 model on MPS needs the fused Metal 4-bit kernel
+(<code>kernels-community/bitsandbytes-mps</code>). With it, 4-bit warm calls land in the same class as bf16 —
+0.049 s for a warm identical resend on <code>Ornith-1.0-9B</code> at 10k. Without it every <code>Linear4bit</code> forward
+runs a <code>dequantize → F.linear</code> fallback that is about ×4 slower, and bitsandbytes does not report
+that: it swallows the resolution failure and latches it for the life of the process.</p>
+<p>AbstractCore resolves the kernel for you and tells you when it cannot:</p>
+<ul>
+<li><strong>Resolution runs before the weights load</strong>, because loading a bnb-quantized checkpoint quantizes
+  as it loads and would otherwise latch the failure before any later hook could help.</li>
+<li><strong><code>offline_first</code> does not block it.</strong> <code>offline_first</code> (default <code>True</code>) keeps model <em>weights</em> off
+  the network. It is applied per load call and sets no <code>HF_HUB_OFFLINE</code> in the process. The
+  kernel's publisher check has no offline path, so on a 4-bit MPS load it runs once against the Hub.</li>
+<li><strong>An offline flag you set yourself is never lifted.</strong> If <code>HF_HUB_OFFLINE</code> or
+  <code>TRANSFORMERS_OFFLINE</code> is in the process environment (set by you, or inherited from a parent
+  process), the check fails and you get the warning instead.</li>
+<li><strong>When the kernel is unavailable, a one-time <code>#FALLBACK</code> warning names it</strong>, counts the affected
+  <code>Linear4bit</code> modules, states the measured cost, and gives the remedy. It never raises.</li>
+</ul>
+<p>Cost when it does run: 1.4–1.7 s on the first 4-bit MPS load and about 2 ms afterwards, and it
+replaces the resolution bitsandbytes would otherwise attempt on the first forward. On a genuinely
+disconnected host the attempt is bounded by <code>huggingface_hub</code>'s own connect timeout (about 7 s),
+happens at most once per process, and ends in the warning. Non-4-bit and non-MPS loads are untouched.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Architecture</th>
+<th>Warm-call behavior</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pure-attention decoders (Llama-class, Qwen3 dense)</td>
+<td><strong>Crop lane</strong>: crop applies to every layer, so the rewind is exact</td>
+<td>Measured on <code>Qwen/Qwen3-4B-Instruct-2507</code> at 10k and 30k; gates pass</td>
+</tr>
+<tr>
+<td>Hybrids with linear-attention layers (Qwen3.5, Qwen3.6, Ornith 1.0, Qwen3-Next, Jamba, LFM2)</td>
+<td><strong>Snapshot lane</strong>: forward-only restore of a boundary copy, feed the suffix. No rollback is attempted, so the crop limitation below does not apply</td>
+<td>Measured on <code>Qwen/Qwen3.5-4B</code>, <code>deepreinforce-ai/Ornith-1.0-9B</code> and <code>Qwen/Qwen3.6-27B</code> at 10k and 30k; gates pass. Qwen3-Next, Jamba and LFM2 are UNTESTED</td>
+</tr>
+<tr>
+<td>Sliding-window models past their window (Gemma-4 class, window 512)</td>
+<td>Crop refuses → rebuild per warm call with <code>#FALLBACK</code></td>
+<td>Documented non-target</td>
+</tr>
+<tr>
+<td>Hybrids whose crop is a no-op on the attention half too (Zamba class)</td>
+<td>Caught by the post-crop length verify → rebuild, never wrong context</td>
+<td>UNTESTED</td>
+</tr>
+</tbody>
+</table></div>
+<p>Check your model with <code>model.config.layer_types</code>: all <code>full_attention</code> means the crop path applies
+exactly; any <code>linear_attention</code> or <code>mamba</code> entry routes the model to the snapshot lane;
+<code>sliding_attention</code> means window-bounded.</p>
+<h4 id="why-hybrid-models-take-the-snapshot-lane-instead-of-a-rollback">Why hybrid models take the snapshot lane instead of a rollback</h4>
+<p><code>Cache.crop</code> iterates every layer and calls that layer's own <code>crop</code>. On linear-attention and mamba
+layers that method is an explicit no-op — transformers states so in the implementation itself
+("We don't crop the linear attention cache, so simply do nothing here", <code>transformers.cache_utils</code>,
+5.8.0). A rollback on such a model would rewind only the attention layers and leave the recurrent
+state of the linear layers carrying the previous turn's content, and a length check afterwards cannot
+detect it: <code>Cache.get_seq_length()</code> reads a single layer and skips forward to the first <em>attention</em>
+layer, that is, to one of the layers that did crop.</p>
+<p><code>Qwen/Qwen3.5-4B</code> makes the scale of that concrete — its census is 24 <code>linear_attention</code> and 8
+<code>full_attention</code> layers of 32, so three quarters of the stack cannot be rolled back at all.</p>
+<p>AbstractCore therefore does not attempt a rollback on these architectures:</p>
+<ul>
+<li><strong>Routing is by architecture, from turn 1.</strong> A model with any uncroppable layer takes the snapshot
+  lane, which is forward-only — it restores a boundary copy and feeds the suffix. Nothing needs to be
+  rewound, so nothing can silently fail to rewind. This is a direct port of the MLX lane's design.</li>
+<li><strong>The crop path refuses before mutating.</strong> If a crop is reached on a cache with uncroppable layers,
+  it is declined up front rather than half-applied, with a one-time <code>#FALLBACK</code> warning naming the
+  affected layers, and the warm call rebuilds fresh: one cold prefill, correct output, no prefill
+  savings. The refusal happens before the mutation precisely because a post-hoc refusal would hand
+  back the inconsistent cache it exists to prevent.</li>
+<li><strong>The post-crop verify is per layer.</strong> Every layer's sequence length is checked, not just the one
+  <code>get_seq_length()</code> happens to resolve to.</li>
+</ul>
+<p>The measured hybrid rows in <a href="#the-measured-matrix">the matrix</a> are all snapshot-lane rows, and all of
+their correctness gates pass.</p>
+<h2 id="turns-that-carry-an-image">Turns that carry an image</h2>
+<p>On the MLX provider, a turn that attaches an image does not reuse a keyed prompt cache, and does
+not extend one. Image placeholders expand to a fixed number of tokens per image geometry, so two
+different images of the same size produce identical token sequences — a cache keyed on tokens
+alone cannot tell them apart.</p>
+<p>Text-only turns in the same session are unaffected: they take the normal delta-feed path with the
+full cache, including the turns that follow an image in the same conversation. See
+<a href="vision-capabilities.html#1b-native-image-input-on-the-mlx-provider-apple-silicon">Vision Capabilities</a>.</p>
+<h2 id="prefill-chunking-transformers-lane">Prefill chunking (transformers lane)</h2>
+<p>The transformers lane splits a long prefill into slices of query positions instead of running it in
+one forward pass. <strong>Nothing is truncated and no context is dropped</strong>: the model still receives the
+entire prompt, every token still attends to every earlier token, and each chunk's queries attend to
+the whole accumulated prefix rather than only their own slice. What changes is the peak memory of one
+intermediate tensor.</p>
+<p><strong>Why it exists.</strong> When torch's <code>scaled_dot_product_attention</code> falls back to its unfused math path —
+which it does on MPS at long sequence lengths — it materialises the full <code>[heads, L, L]</code> attention
+score matrix. That tensor is quadratic in context length while everything else in attention is
+linear. At 30k tokens on a 32-head model in fp32 it is a single <strong>107 GiB</strong> allocation, which Metal
+refuses outright, aborting the process. Chunked at 2048 the largest transient is about 7.9 GiB. Other
+local lanes are unaffected: MLX and llama.cpp ship their own fused Metal kernels and never build the
+matrix, as does CUDA with FlashAttention.</p>
+<p><strong>The knob.</strong></p>
+<div class="code-block"><pre><code class="language-bash"># default: 2048 query positions per forward
+export ABSTRACTCORE_TRANSFORMERS_PREFILL_STEP=512   # lower peak memory, small throughput cost
+export ABSTRACTCORE_TRANSFORMERS_PREFILL_STEP=0     # disable chunking entirely
+</code></pre></div>
+<p>Peak score memory is <code>heads × step × L × 4</code> bytes with chunking against <code>heads × L × L × 4</code> without
+it, so halving the step halves the transient. The cost is more kernel launches — at 30k with step
+2048 that is 15 forward passes instead of 1. A step of 512 is what made a 27B bf16 model at 30k fit
+alongside its 52 GB of weights on a 128 GB machine.</p>
+<p><strong>What it does not change, and what it does.</strong> Semantics are unchanged: the same tokens attend to the
+same tokens with the same weights. Exact output <em>bytes</em> are not guaranteed across different step
+values, because changing the chunk plan changes the floating-point reduction order — the same
+mechanism described in
+<a href="#what-a-cache-hit-guarantees-and-what-it-does-not">What a cache hit guarantees</a>. Pin the step if you
+need reproducible bytes.</p>
+<p><strong>Checking what you are on.</strong> <code>model.config._attn_implementation</code> reports <code>sdpa</code>, <code>eager</code> or
+<code>flash_attention_2</code>. <code>sdpa</code> on MPS is the combination that may or may not fuse depending on shape,
+and it does not report which. Note that <code>torch.nn.attention.sdpa_kernel(...)</code> cannot be used to force
+a backend on MPS — the selection op is not implemented there, so all backends produce identical
+results.</p>
+<h2 id="measurement-coverage">Measurement coverage</h2>
+<p>Treat an absent measurement as <strong>untested</strong>; do not infer it from a related model or a
+successful cache restore. The published matrix does not establish:</p>
+<ul>
+<li>turn-2 <code>hit_restore</code> for the four-turn, 10k-token <code>Qwen3.5-4B-MLX-4bit</code> hybrid loop;</li>
+<li>three-depth planted-fact correctness for the hybrid MLX 30k timing rows, or 100k hybrid prefill;</li>
+<li>snapshot-lane cold/warm behavior for Transformers Qwen3-Next, Jamba and LFM2;</li>
+<li>matched unquantized MLX/GGUF <code>Ornith-1.0-9B</code> controls at 10k and 30k;</li>
+<li>an end-to-end 10k+ bloc-reuse result for an MLX hybrid larger than 4B.</li>
+</ul>
+<p>The <code>Qwen/Qwen3.6-27B</code> Transformers 30k cold result and three GGUF 30k cold results are
+ranges, not point estimates. The <code>Qwen3.6-35B-A3B-GGUF</code> 10k row has no accepted warm result.
+Keep those qualifications when comparing ratios in <a href="#the-measured-matrix">the matrix</a>.</p>
+<h2 id="verifying-that-a-cache-is-helping">Verifying that a cache is helping</h2>
+<p>Five checks, in order. Each one rules out a different way a cache can look healthy and not be.</p>
+<ol>
+<li><strong>Did the cache engage at all?</strong> A <code>generate</code> call that received a <code>prompt_cache_key</code> attaches
+   <code>metadata.prompt_cache</code> to the response (<code>{mode, key, outcome, cached_tokens, fed_tokens}</code>, plus
+   <code>degraded_reason</code> when degraded) on <strong>MLX</strong>, on the <strong>GGUF control-plane path</strong>, and on the
+   <strong>transformers snapshot lane</strong> (hybrid architectures). On MLX it is also on the last chunk of a
+   streamed call, identical to the non-streamed record for the same prompt and key. On the GGUF
+   and transformers lanes, read it from a non-streamed call.
+   <strong>Two paths emit nothing and must be read another way</strong>: the transformers crop lane (dense
+   architectures) and GGUF models that resolve to <code>mode=keyed</code>. There the available evidence is wall
+   clock and the <code>#FALLBACK</code> warnings, so design the comparison accordingly. On the paths that do
+   emit it, absence of <code>prompt_cache</code> metadata means no key reached the provider.</li>
+<li><strong>How much was actually reused?</strong> <code>Σ cached_tokens / Σ (cached_tokens + fed_tokens)</code>. Use these
+   fields, not <code>usage.input_tokens</code>: the latter is a fast heuristic estimate that runs about a third
+   high on chat-template prompts. <code>cached_tokens + fed_tokens</code> is the measured prompt length.
+   Exclude the first call of a process from the ratio if the host prepares a <code>(system, tools)</code>
+   prefix in that same call — the tokens it reports as cached were prefilled moments earlier.</li>
+<li><strong>Did the wall clock move?</strong> Caching removes prefill only, so the floor of any turn is
+   <code>output_tokens × decode_time_per_token</code>. Measure your decode rate and compute that floor before
+   believing a speedup. At a few thousand prompt tokens on a small local model the prefill being
+   removed is a few hundred milliseconds; the ratios get large at 10k+ token prefixes.</li>
+<li>
+<p><strong>Did the answer change?</strong> It will. Generation over reused KV is not the same computation as a
+   fresh prefill, and the difference reaches the sampled tokens even at temperature 0 — see
+   <a href="#what-a-cache-hit-guarantees-and-what-it-does-not">What a cache hit guarantees, and what it does not</a>.
+   Run these gates in order; each one is meaningless if the one before it fails.</p>
+</li>
+<li>
+<p><strong>Determinism control</strong> — the same bytes under a fresh key, twice, must produce the same
+      output. If they do not, nothing below is interpretable.</p>
+</li>
+<li><strong>Context-dependence control</strong> — ask the question with the context <em>removed</em> and require it to
+      FAIL, while a general-knowledge control question still answers. This proves the question
+      actually reads the context and that removing it did not simply break generation. A question
+      answerable without the context measures nothing.</li>
+<li><strong>Semantic gate</strong> — plant distinctive facts at roughly 5%, 50% and 95% of the context depth
+      and require all three back, warm and cold. Three depths, because a cache that loses the middle
+      still answers the early and late ones. Use text generation whose answer depends on the
+      context, with exactly one correct answer — no arithmetic, and nothing with many valid
+      answers, which measures a tie-break rather than correctness. Size the context at 1,000 tokens
+      minimum; 10k / 30k / 100k are useful tiers.</li>
+<li><strong>Numeric gate</strong> — top-1 agreement at the first generated position, and <code>max |Δ log p|</code> under
+      a threshold you measured for your model and context size rather than one you assumed.</li>
+<li><strong>Output length</strong> — compare <code>output_tokens</code> per turn against the uncached lane. A cached lane
+      that answers a bounded question with an order of magnitude more tokens has changed behavior
+      even when the content gate passes, and the extra decoding can cost more than the prefill saved.</li>
+<li><strong>Byte equality is diagnostic only.</strong> Record it, do not gate on it: two <em>cold</em> runs with
+      identical ids diverge in text when only the prefill chunk plan differs. Do not build a gate as
+      a disjunction (<code>answer looks right</code> OR <code>bytes match</code>) — the first branch short-circuits the
+      second and the gate never runs.</li>
+</ol>
+<p>Once the two lanes' answers differ, their later turns run over different transcripts and are no
+   longer the same measurement. Compare only turns whose prompts are identical in both lanes.
+5. <strong>How noisy is your wall clock?</strong> Measure that before quoting any ratio. Run each arm more than
+   once and look at the spread, not only the median. On a shared box a single arm can span a factor
+   of two between its own repetitions while every start-and-end quiet check passes, because a
+   background job can occupy the middle of the arm. Publish a ratio as a point estimate only when
+   the cold arms are tight (see <a href="#how-these-numbers-are-taken">How these numbers are taken</a>), and as
+   a range otherwise. Token accounting has no such problem — quote reuse as a measurement and wall
+   clock with its spread.</p>
+<h2 id="watching-the-cache-split-live">Watching the cache split live</h2>
+<p><code>metadata.prompt_cache</code> is a completion summary: it arrives with the answer. A caller
+that needs to SHOW what the cache did while the call is running subscribes to
+phase events instead (MLX lanes only today — see
+<a href="native-mlx-runtime.html#live-phase-feedback-prefill-vs-generation">native MLX runtime</a>):</p>
+<div class="code-block"><pre><code class="language-python">events = []
+llm.generate(&quot;&quot;, messages=messages, system_prompt=system, tools=tools,
+             prompt_cache_key=&quot;session:chat&quot;, on_progress=events.append)
+</code></pre></div>
+<p>Two turns on one key, measured on <code>mlx-community/Qwen3.5-4B-4bit</code>:</p>
+<div class="code-block"><pre><code>turn 1  outcome=cold        prefill  prompt_tokens=6886                            ttft 1.613s
+        (first token)       generate cached_tokens=0     fed_tokens=6886
+turn 2  outcome=hit_restore prefill  prompt_tokens=6908                            ttft 0.068s
+        (first token)       generate cached_tokens=6885  fed_tokens=23
+</code></pre></div>
+<p>The same <code>cached_tokens</code> / <code>fed_tokens</code> fields as <code>metadata.prompt_cache</code>, and
+the same caveat: use them, not <code>usage.input_tokens</code>. Note where they appear.
+The mlx-lm key-mode lane has measured the split before it feeds anything, so it
+rides on the <code>prefill</code> event; the native APC lane only learns it once prefill
+has run, so there the <code>prefill</code> event carries <code>prompt_tokens</code> alone and the
+split lands on the first-token event. Neither lane reports a zero it has not
+measured — an absent key means "not known yet", never "nothing was cached".</p>
+<p>Phase events are also a cheap way to answer check 3 above (<em>did the wall clock
+move?</em>) without a stopwatch: <code>ttft_s</code> on the first-token event IS the prefill
+cost, separated from decode, per call.</p>
+<h2 id="durable-memory-bloc-artifacts">Durable memory bloc artifacts</h2>
+<p>For local providers with a full control plane, AbstractCore can derive one durable prompt-cache
+artifact from one bloc:</p>
+<div class="code-block"><pre><code class="language-text">1 text/file -&gt; 1 bloc -&gt; 1 provider/model cache artifact
+</code></pre></div>
+<p>Use the public helpers from either <code>abstractcore</code> or <code>abstractcore.core</code>:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import ensure_bloc_kv_artifact, load_bloc_kv_artifact
+
+ensure = ensure_bloc_kv_artifact(provider=llm, store=store, record=record, debug=True)
+loaded = load_bloc_kv_artifact(provider=llm, store=store, record=record, key=&quot;work:doc&quot;)
+
+response = llm.generate(
+    &quot;Use the loaded bloc.&quot;,
+    prompt_cache_binding=loaded.prompt_cache_binding,
+)
+</code></pre></div>
+<p>The shared shape works for:</p>
+<ul>
+<li>MLX (<code>.safetensors</code>)</li>
+<li>HuggingFace transformers (<code>.safetensors</code>)</li>
+<li>HuggingFace GGUF exact-renderer paths (<code>.npz</code>)</li>
+</ul>
+<p>The artifact payload is provider-native. The shared abstraction is the manifest, binding, Python
+helper, and server route shape; saved tensors/state are not portable between provider/model pairs.
+The manifest records provider, model, rendered recipe hash, cache backend, artifact format, and
+binding metadata so incompatible artifacts are rejected instead of guessed.</p>
+<p><code>prompt_cache_key</code> remains a volatile runtime handle. <code>prompt_cache_binding</code> is optional; when
+supplied, generation verifies that the key is still loaded with the exact artifact returned by
+<code>load_bloc_kv_artifact(...)</code>. Missing or stale bindings fail with structured prompt-cache errors
+before generation or streaming starts. Without a binding, existing best-effort key behavior is
+unchanged.</p>
+<h3 id="current-limit-an-artifact-backed-session-reuses-on-turn-1-only">Current limit: an artifact-backed session reuses on turn 1 only</h3>
+<p><strong>Know this before you build a multi-turn session on top of a durable bloc artifact.</strong> Forking a
+session key from a loaded artifact carries the artifact's identity onto the session key:
+<code>prompt_cache_fork</code> copies the source key's metadata, which includes the artifact provenance fields,
+so the provider treats the session key as artifact-backed too.</p>
+<p>Artifact-backed caches are deliberately protected — the delta path will not trim or rebuild one,
+because degrading a verified durable artifact to save a prefill would defeat the artifact's purpose.
+So the moment a turn's prompt diverges from the recorded prefix, the provider <strong>bypasses the cache
+for that call</strong> instead of trimming it. In an agent loop every turn after the first diverges, so
+every turn after the first is a bypass. Measured on one key, four turns:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Session shape</th>
+<th>Turn 1</th>
+<th>Turn 2</th>
+<th>Turn 3</th>
+<th>Turn 4</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Forked from a durable bloc artifact</td>
+<td><code>hit_extend</code></td>
+<td><code>bypassed</code></td>
+<td><code>bypassed</code></td>
+<td><code>bypassed</code></td>
+</tr>
+<tr>
+<td>Forked from an ordinary prefix cache</td>
+<td><code>hit_restore</code></td>
+<td><code>hit_restore</code></td>
+<td><code>hit_restore</code></td>
+<td><code>hit_restore</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>This applies on <strong>every architecture</strong>, trimmable or not. Until it is resolved, plan for
+artifact-backed bloc reuse to deliver the first turn only:</p>
+<ul>
+<li>For <strong>single-shot use over a large fixed document</strong> — load the artifact, ask one question — the
+  artifact does exactly what it is for.</li>
+<li>For a <strong>multi-turn session</strong>, fork the session key from an ordinary <code>(system, tools)</code> prefix cache
+  instead, and keep the artifact for prompt-only / KV-source-of-truth flows where the transcript
+  lives in the cache rather than being re-sent.</li>
+<li>A one-time <code>#FALLBACK</code> warning naming the key is logged on the first bypass, so you can confirm
+  which shape you are in from the logs.</li>
+</ul>
+<p>For server and endpoint use, <code>/acore/blocs/kv/load</code> returns
+<code>artifact.prompt_cache_binding</code>; pass that object to <code>/v1/chat/completions</code> as
+<code>prompt_cache_binding</code>.</p>
+<p>Deletion and pruning are also part of the public contract. Use
+<code>list_bloc_kv_artifacts(...)</code>, <code>find_bloc_kv_live_bindings(...)</code>,
+<code>delete_bloc_kv_artifact(...)</code>, <code>prune_bloc_kv_artifacts(...)</code>, and <code>delete_bloc(...)</code> in Python, or
+the matching <code>/acore/blocs</code> and <code>/acore/blocs/kv/*</code> delete/list/prune routes. Deleting a loaded KV
+artifact is blocked by default; pass <code>clear_loaded=true</code> to the route, or <code>clear_loaded=True</code> to
+the helper, when you want Core to clear matching runtime keys before removing artifact files.</p>
+<p>Set <code>debug=true</code> on the bloc ensure/load routes, pass <code>debug=True</code> to the Python helpers, or set
+<code>ABSTRACTCORE_BLOC_KV_DEBUG=1</code> to return verbose proof fields such as provider backend, artifact
+format, manifest path, artifact hash, binding id, rendered recipe hash, and token count when
+available.</p>
 <h2 id="openai-notes">OpenAI notes</h2>
 <p>OpenAI prompt caching is automatic for prompts with <strong>1024+ tokens</strong>. Use <code>prompt_cache_key</code> (an official OpenAI parameter) as a stable identifier to improve cache hit rates across similar requests (it replaces the legacy <code>user</code> field for caching/bucketing). Use <code>prompt_cache_retention</code> to request longer retention when supported:</p>
 <ul>
@@ -163,8 +1660,9 @@ print(caps.to_dict())
 </ul>
 <p>You can observe cache hits via <code>usage.prompt_tokens_details.cached_tokens</code> in OpenAI responses.</p>
 <h2 id="anthropic-notes">Anthropic notes</h2>
-<p>Anthropic prompt caching is enabled by sending <code>cache_control: {"type":"ephemeral"}</code> in the Messages API request body. Caching applies to the full prompt prefix (<code>tools</code>, <code>system</code>, then <code>messages</code>) up to the last cacheable block, and Anthropic also supports up to 4 explicit cache breakpoints for finer-grained invalidation. Default TTL is ~5 minutes, with an optional 1-hour TTL (<code>{"ttl":"1h"}</code>) at higher input-token cost.</p>
-<p>In AbstractCore, <code>AnthropicProvider</code> enables automatic caching when <code>prompt_cache_key</code> is provided (the key itself is not sent to Anthropic; it’s treated as a unified toggle). Optionally set <code>prompt_cache_ttl="1h"</code> to request Anthropic’s 1-hour TTL.</p>
+<p>Anthropic prompt caching uses explicit <code>cache_control: {"type":"ephemeral"}</code> breakpoints on content blocks. Caching applies to the prompt prefix (<code>tools</code>, <code>system</code>, then <code>messages</code>) up to each marked block; up to 4 breakpoints are supported. Default TTL is ~5 minutes, refreshed on hit, with an optional 1-hour TTL (<code>{"ttl":"1h"}</code>) at higher cache-write cost. Cache writes bill at 1.25x input (2x for 1h) and cache reads at 0.1x.</p>
+<p>In AbstractCore, <code>AnthropicProvider</code> places a breakpoint on the last <code>system</code> text block when <code>prompt_cache_key</code> is provided (the key itself is not sent to Anthropic; it signals caching intent). This caches the tools + system static head — the byte-stable part of agent-loop requests — while the growing message transcript stays unmarked, so the write premium is only ever paid on content later calls can actually re-read. Optionally set <code>prompt_cache_ttl="1h"</code> for the 1-hour tier.</p>
+<p>Cache traffic is reported in normalized usage keys: <code>usage.cached_input_tokens</code> (read) and <code>usage.cache_write_tokens</code> (creation). Anthropic's raw <code>input_tokens</code> excludes cache traffic; AbstractCore reports the inclusive prompt size in <code>input_tokens</code> so totals stay comparable across providers. When these keys are absent the provider did not report cache fields (absent is distinct from a measured zero).</p>
 <h2 id="cli-savingloading-mlx-caches">CLI: saving/loading MLX caches</h2>
 <p>In <code>abstractcore-chat</code> (MLX only):</p>
 <div class="code-block"><pre><code class="language-bash">/cache save chat_cache
@@ -174,7 +1672,7 @@ print(caps.to_dict())
 <p>Notes:
 - Caches are <strong>model-locked</strong>; loading a cache resets the transcript and uses the KV cache as the context source of truth.
 - <code>--q8</code> quantizes the cache before saving (smaller, lossy).</p>
-<p>Implementation note: the CLI now calls <code>provider.prompt_cache_save()</code> / <code>provider.prompt_cache_load()</code> instead of reaching into provider internals (<code>_prompt_cache_store</code>).</p>
+<p>The CLI uses the public <code>provider.prompt_cache_save()</code> / <code>provider.prompt_cache_load()</code> methods, which you can call from your own code as well.</p>
 <h2 id="sessions-cachedsession">Sessions: <code>CachedSession</code></h2>
 <p>For long chats, <code>CachedSession</code> promotes the CLI’s “prefill stable prefix once, then reuse” pattern into the library:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, CachedSession
@@ -207,17 +1705,262 @@ session.generate(&quot;Continue.&quot;, max_output_tokens=32)
 - <code>auto_compact=True</code> is disabled in KV mode because compaction mutates the transcript but cannot mutate the in-process KV cache without an explicit rebuild. Use <code>session.rebuild_prompt_cache()</code> after changing transcript state, or use <code>prompt_cache_strategy="key"</code> / <code>off</code> when you need compaction semantics.
   - Rationale: KV mode treats the in-process cache as the <strong>context source-of-truth</strong>. Allowing per-call overrides for <code>messages=</code>, <code>system_prompt=</code>, or <code>tools=</code> would create a divergence between (a) the transcript you think you sent and (b) the KV cache the model is actually continuing from. That divergence is subtle and can produce hard-to-debug failures (e.g., tool-call parsing mismatches, “memory” that won’t go away, or incorrect citations).
   - Changing <code>session.system_prompt</code> or <code>session.tools</code> triggers an automatic cache rebuild on the next <code>generate()</code> / <code>attach_files()</code> call so the prefix modules realign. For other transcript mutations (editing prior messages, clearing files, compaction), call <code>CachedSession.rebuild_prompt_cache()</code> so the KV cache and transcript realign.</p>
-<h2 id="box-caching-with-modules-systemtoolsdiscussion">“Box caching” with modules (system/tools/discussion)</h2>
-<p>When a provider supports <code>prompt_cache_prepare_modules</code>, you can build stable prefix “boxes” and only invalidate what changed:</p>
+<h2 id="blocs-the-composability-contract">Blocs: the composability contract</h2>
+<p><em>(Last revised 2026-08-03. Read this before changing anything in
+<code>prompt_cache_prepare_modules</code>, <code>prompt_cache_plan_bloc_chain</code>, or any
+provider's prompt renderer.)</em></p>
+<h3 id="what-a-bloc-is">What a bloc is</h3>
+<p>A <strong>bloc</strong> is an independently-keyed slice of <strong>one rendered conversation</strong>. It
+is <em>not</em> a conversation of its own. That distinction is the whole design.</p>
+<p>When a provider supports <code>prompt_cache_prepare_modules</code>, you pass an ordered
+module list and get one derived cache key per module:</p>
 <ul>
 <li>module <code>system</code> → stable persona</li>
 <li>module <code>tools</code> → stable tool schema</li>
 <li>(optional) module <code>discussion_prefix</code> → immutable summary/memory</li>
-<li>session cache key → append-only growth per turn</li>
+<li>session cache key → forked from the chain's final key, grows per turn</li>
 </ul>
-<p>The module fingerprints are canonicalized to reduce accidental cache invalidation:
-- tools are sorted by name for stable ordering
-- message dicts are normalized to a stable subset (<code>role</code>, <code>content</code>, and tool-call fields)</p>
+<p>Each key names the cumulative prefix through that module (the key is a chained
+hash of all module fingerprints up to and including it), and its cache holds
+exactly the tokens of that prefix.</p>
+<h3 id="why-blocs-cannot-simply-be-rendered-one-at-a-time">Why blocs cannot simply be rendered one at a time</h3>
+<p>Chat templates <strong>fold</strong> content together. ChatML, gemma-turn and every other
+format in <code>mlx_provider._build_prompt_fragment</code> render the tool instructions
+<em>inside the single system turn</em> — one <code>&lt;|im_start|&gt;system</code> block, never two.
+So rendering a <code>system</code> module and a <code>tools</code> module as two standalone
+conversations produces two consecutive system blocks: bytes <code>generate()</code> never
+emits. The cache then diverges from the real prompt at the end of the system
+text and everything after it is unreachable KV.</p>
+<p>Two consequences follow, and <code>tests/test_prompt_cache_bloc_composition.py</code>
+checks both across several real local tokenizers and deterministic toy ones:</p>
+<ul>
+<li><strong>The standalone shape is anti-composable.</strong> It is acceptable at N=1 and gets
+  <em>worse</em> with every bloc added, because each extra standalone render inserts
+  bytes <code>generate()</code> never emits and strands everything after them. The planned
+  cut stays a token-level prefix of the single-shot render at every N.</li>
+<li><strong>The planned cut gives up a small, fixed amount at N=1 and nothing after
+  that.</strong> The system turn's closing tag (about two tokens) is deliberately left
+  uncached so a later <code>tools</code> bloc can extend the same turn. At N≥2 separate
+  blocs cache exactly as many tokens as one merged module would.</li>
+</ul>
+<p>The <code>llama3_header</code> family is <strong>UNTESTED against real weights</strong>: no Llama model
+of 4B or above is installed on the measurement host and a smaller sibling is not
+an admissible stand-in, so that family is covered only by a deterministic toy
+tokenizer reproducing its hazard — a post-processor that injects a
+sequence-start token on every encode. That hazard is the reason the checks are
+token-level: a standalone render there is byte-identical <em>text</em> and still loses
+the prefix. <strong>Text-level assertions about bloc rendering prove nothing.</strong></p>
+<h3 id="the-invariant">The invariant</h3>
+<p>Blocs <code>B₁…B_N</code> with fragments <code>f₁…f_N</code>:</p>
+<ul>
+<li><strong>(C1) Slot order.</strong> Blocs are laid out in the renderer's slot order
+  (<code>system → tools → messages → prompt → generation prompt</code>). A bloc may only
+  occupy slots at or after its predecessor's highest slot. Out-of-order chains
+  are refused (they would render into an already-cached region).</li>
+<li><strong>(C2) Successor independence.</strong> <code>f_k</code> is a function of <code>B₁…B_k</code> only. It does
+  not change when <code>B_{k+1}</code> changes or disappears. This is what makes a bloc's
+  derived key an honest name for its bytes.</li>
+<li><strong>(C3) Concatenation equals the single-shot render.</strong> For every <code>k</code>,
+  <code>f₁ ++ … ++ f_k</code> is a token-for-token <strong>prefix</strong> of what the provider's own
+  <code>generate()</code> builds for the union of <code>B₁…B_k</code>. Same token ids, same positions.</li>
+</ul>
+<p><code>BaseProvider.prompt_cache_plan_bloc_chain</code> enforces all three. The cut after
+bloc <code>k</code> is the <strong>maximal successor-independent prefix</strong> of the render of
+<code>B₁…B_k</code>: the longest string that is a prefix of the render under <em>every</em>
+admissible continuation. It is derived by rendering the cumulative union against
+a fixed family of canonical probes (<code>+tools</code>, <code>+message</code>, <code>+prompt</code>,
+<code>+generation prompt</code>) and taking their common prefix, then backing off to the
+last <strong>token index</strong> all probes agree on. No template knowledge is hard-coded;
+new message formats are handled automatically.</p>
+<p>Concretely, for ChatML the <code>system</code> bloc holds <code>&lt;|im_start|&gt;system\n{sys}</code> —
+the closing tag deliberately excluded, because the closing tag is exactly the
+part a successor can still rewrite — and the <code>tools</code> bloc holds
+<code>\n\n{tools}&lt;|im_end|&gt;\n</code>.</p>
+<h3 id="seam-safety-is-checked-not-assumed">Seam safety is checked, not assumed</h3>
+<p><code>tokenize(a) + tokenize(b) == tokenize(a + b)</code> is <strong>not</strong> a property of BPE:
+merges straddle raw-text seams (Llama-3 folds <code>"."</code> + <code>"\n\n"</code> into one token).
+The planner runs an explicit plan-time check that the concatenated fragments are
+a token prefix of the full single-shot render, and that no bloc contributes zero
+tokens. On failure it logs a <code>#FALLBACK</code> and <strong>collapses the whole chain into
+one fragment</strong> stored under the chain's final key: the blocs stop being
+independently reusable, the prefill stays whole and correct. A wrong cache is
+never produced silently.</p>
+<p>Planning is render + tokenize work only — no forward pass — and it <strong>never runs
+when the chain is already warm</strong>, because <code>prepare_modules</code> returns on the final
+key first.</p>
+<h3 id="every-local-lane-feeds-the-planned-cut">Every local lane feeds the planned cut</h3>
+<p>The MLX, HuggingFace transformers and GGUF lanes all prefill the planned
+<code>bloc_token_ids</code> fragment verbatim, so a plan is honoured on every local lane.
+Measured on <code>Qwen3-4B-Instruct-2507</code> (bf16/MPS), a 702-token system
+bloc plus a 661-token tools bloc:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th></th>
+<th>cold build of <code>[system, tools]</code></th>
+<th>after editing ONE tool description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>one merged <code>system+tools</code> bloc</td>
+<td>1363 tokens prefilled</td>
+<td>1367 tokens re-prefilled</td>
+</tr>
+<tr>
+<td>separate <code>system</code> and <code>tools</code> blocs (planned cut)</td>
+<td>1363 tokens prefilled</td>
+<td><strong>665</strong> tokens re-prefilled</td>
+</tr>
+</tbody>
+</table></div>
+<p>The separate tools bloc costs nothing extra to build and saves 51 % of the
+prefill on a one-tool change; the same figure holds on the MLX lane. On the GGUF lane llama.cpp's own live-context
+prefix reuse already skips the shared prefix within a process, so the bloc cut
+matches it rather than beating it; the cut still matters there for keyed and
+durable reuse, where there is no live context to fall back on.</p>
+<p>The GGUF lane keeps a text/token pair (<code>_gguf_compose_cached_prompt_tokens</code>
+concatenates the stored text with a live suffix), so it derives the text from
+the ids it just fed via llama.cpp's detokenizer and <strong>verifies the round-trip</strong>
+before trusting it. An unverifiable pair falls back to the rebuild, loudly —
+never a stored text that disagrees with its tokens.</p>
+<h3 id="a-tools-bloc-must-actually-contain-tools">A tools bloc must actually contain tools</h3>
+<p>The seam checks are all about token boundaries. None of them can see a bloc that
+is <em>structurally</em> perfect and <em>empty of content</em>, which is the failure found on
+2026-08-07: a tool set whose descriptions exceeded <code>ToolDefinition</code>'s 200-char
+cap was converted to <strong>zero</strong> definitions, so <code>format_tools_prompt</code> returned <code>""</code>
+and every local renderer emitted a prompt with no tools in it. The planner
+reported <code>boundaries=[1408, 1411]</code>, <code>collapsed=False</code>, <code>unsound_at=None</code> — a
+"tools bloc" holding three tokens of closing scaffolding. The model saw no
+tools; nothing said so, because the only report was a <code>logger.warning</code>, which is
+dead in a default AbstractCore process.</p>
+<p>Two guards, both <code>warnings.warn</code> (the channel a caller actually receives):</p>
+<ul>
+<li><strong>Per tool, at conversion.</strong> <code>UniversalToolHandler</code> announces every tool it
+  drops, with the tool name, the model, and the reason. This covers the prompted
+  lane <em>and</em> <code>prepare_tools_for_native</code>, i.e. tools dropped on the wire too.</li>
+<li><strong>Per chain, at plan time.</strong> If a bloc carries tools whose names do not appear
+  anywhere in the prompt the chain will send, <code>prompt_cache_plan_bloc_chain</code>
+  says so. The cache is not wrong — it faithfully matches what <code>generate()</code>
+  renders — the <em>render</em> is missing the tools, which is why this warns rather
+  than collapsing the plan.</li>
+</ul>
+<p><strong>Tool descriptions are capped at 200 characters</strong> (<code>when_to_use</code> at 240, three
+examples). Over-long descriptions are rejected per tool, not truncated: put the
+detail in <code>when_to_use</code> or in your docs.</p>
+<h3 id="the-composability-contract-ordered-prefix-only">The composability contract: ordered-prefix only</h3>
+<p><strong>Bloc composition is ordered-prefix composition. It is not, and on this
+architecture cannot be, free recombination.</strong> Cached <code>K</code> tensors are
+rotary-position-encoded: the rotary embedding is applied at compile time, at the
+absolute offsets the tokens occupied then, and it is baked into the stored
+tensors. Nothing in AbstractCore re-applies or shifts it — there is no rope or
+offset rewrite in <code>core/bloc_kv.py</code> or in any provider. A <code>K</code> tensor compiled at
+offset 0 is only valid at offset 0.</p>
+<ul>
+<li><strong>Supported: ordered-prefix composition.</strong> A bloc is reusable when it is
+  replayed at the <strong>same absolute start offset</strong>, behind the <strong>same ordered
+  prefix</strong>. This is what the module chain does. In this model "composability"
+  means <em>sharing a common prefix</em> — two agents with different tool sets share the
+  <code>system</code> bloc's key and its prefill, and only the differing tail is rebuilt.</li>
+<li><strong>Not deliverable: true N-way recombination.</strong> Reordering blocs, dropping a
+  predecessor, or splicing one bloc into a different chain would require
+  re-encoding every cached <code>K</code> at its new positions. Nothing does that, and adding
+  it is a research problem rather than a metadata change. Do not design against
+  it, and do not ship an API that implies it.</li>
+</ul>
+<p><code>BlocKVArtifactManifest</code> carries <code>start_offset</code> and <code>prefix_chain</code> so the
+constraint is representable, and <code>bloc_kv_composition_verdict()</code> returns the
+usual three-way verdict (<code>match</code> / <code>mismatch</code> → refuse and recompile /
+<code>abstain</code> for pre-axis artifacts). Before those fields existed a wrong
+composition could not even be expressed as an error.</p>
+<p><strong>It is enforced, not merely decidable.</strong> <code>load_bloc_kv_artifact()</code> runs the
+verdict on the adopting path, <em>before</em> either <code>prompt_cache_load</code> call that
+would put the tensors into a live key, and <strong>raises</strong> on a mismatch. A shifted
+offset or a different or reordered <code>prefix_chain</code> refuses the load rather than
+producing a plausible wrong answer, and the refusal is total: on a mismatch the
+provider's load is never called and the target key is never created, which is
+covered by a test that asserts both. Callers adopting a bloc into a chain pass
+<code>at_offset=</code> and <code>prefix_chain=</code>; the defaults (<code>0</code>, <code>[]</code>) describe the only
+composition this package can execute.</p>
+<p>A gate that judges correctly while nothing calls it is not a gate. When you add
+a verdict to this area, add the call site and a test that the refusal actually
+stops the adoption, in the same change.</p>
+<h3 id="what-invalidates-a-bloc">What invalidates a bloc</h3>
+<p>A bloc's key is a chained SHA-256 over <code>PromptCacheModule.fingerprint()</code> of
+every module up to and including it. That fingerprint covers <code>module_id</code>,
+<code>system_prompt</code>, <code>prompt</code>, <code>messages</code>, <code>tools</code>, <code>add_generation_prompt</code> and
+<code>scope</code>. Consequences worth knowing:</p>
+<ul>
+<li>Editing the system prompt changes <strong>every</strong> downstream bloc key. Blocs are a
+  prefix chain; that is inherent, not a bug.</li>
+<li>Tool <strong>order</strong> is part of the identity. <code>normalized()</code> deliberately does <em>not</em>
+  sort tools: the same value is both the fingerprint input and the rendered
+  content, so sorting one side would make the module lane render a different
+  order than <code>generate()</code> does for the same list and break the prefix at the
+  second tool. Callers that emit an unstable order get distinct keys — which is
+  what distinct bytes deserve.</li>
+<li><code>normalized()</code> <strong>strips</strong> <code>system_prompt</code> and <code>prompt</code>, and every renderer
+  strips to match. A system prompt with surrounding whitespace would otherwise
+  render one way through the bloc chain and another through <code>generate()</code>,
+  diverging at its first token and losing the whole prefix. If you add a
+  renderer branch, strip.</li>
+<li>Message dicts are normalized to a stable subset (<code>role</code>, <code>content</code>, and
+  tool-call fields).</li>
+</ul>
+<h3 id="coupling-costs-stated-plainly">Coupling costs, stated plainly</h3>
+<ul>
+<li>Blocs are a <strong>chain</strong>, not a set. Bloc <code>k</code> is only reusable behind exactly
+  blocs <code>1…k-1</code>. There is no "system bloc + a different memory bloc" without a
+  full rebuild of everything after the divergence.</li>
+<li>An individual bloc is <strong>not</strong> an independently valid render. The <code>system</code>
+  bloc's cache ends mid-turn, with the system block unterminated. That is fine
+  for a causal prefix KV — but it means a bloc's bytes are not a usable prompt on
+  their own, and a durable artifact of one must record where it sits.</li>
+<li><strong>Cross-lane sharing is impossible today.</strong> MLX hand-rolls its renderer, GGUF
+  uses llama.cpp's embedded Jinja template, and transformers uses
+  <code>apply_chat_template</code>. Three renderers, three token streams — a bloc compiled
+  on one lane is not valid on another, which is why <code>tokenizer_fingerprint</code> and
+  <code>cache_backend</code> are reuse gates.</li>
+<li>MLX's renderer implements <strong>two</strong> of the ten registered message formats
+  (<code>im_start_end</code>, <code>gemma_turn</code>); <code>llama3_header</code>, <code>inst</code>, <code>harmony</code>,
+  <code>glm_special_tokens</code> and the rest fall through to a plain <code>role: content</code>
+  form with no special tokens. Bloc planning is still <em>correct</em> there — the
+  same renderer serves <code>generate()</code>, so both sides agree — but the prompts
+  themselves are out-of-distribution for those models. Fixing that is separate
+  work.</li>
+</ul>
+<h3 id="where-the-invariant-cannot-hold">Where the invariant cannot hold</h3>
+<p>Honest list. Each of these makes (C2) or (C3) unsatisfiable, and the planner
+degrades loudly rather than pretending:</p>
+<ol>
+<li><strong>Templates that emit a header or BOS more than once per render.</strong> If adding
+   a bloc rewrites bytes an earlier bloc already owns, the boundary cannot be
+   monotonic. Detected → <code>unsound_at</code>, chain truncated at the last sound
+   boundary.</li>
+<li><strong>Tokenizers that merge unavoidably across every candidate cut.</strong> If no token
+   boundary inside the folded turn is stable, backoff yields an empty fragment.
+   Detected → <code>#FALLBACK</code> collapse to one bloc.</li>
+<li><strong>Native tool-calling templates that pass <code>tools=</code> to
+   <code>apply_chat_template</code>.</strong> Tools may then be interleaved with, or reordered
+   against, the system content by Jinja logic the planner cannot see. MLX's
+   hand-rolled renderer is not affected; a provider that adopts
+   <code>apply_chat_template</code> must re-verify (C3) for it.</li>
+<li><strong>Sliding-window / <code>RotatingKVCache</code> models</strong> (Gemma-3/3n/4, window
+   512–1024). The KV is not a durable prefix at agent context sizes at all, so
+   bloc reuse is meaningless there regardless of rendering. Documented
+   non-target.</li>
+<li><strong>Recurrent / hybrid-linear-attention layers</strong> (<code>ArraysCache</code>, Gated-DeltaNet:
+   Qwen3.5/3.6, Ornith). Their state is not trimmable and not countable, so the
+   chain's boundaries cannot be verified against the cache after the fact; those
+   lanes use the snapshot/restore path instead.</li>
+<li><strong>Any change to the probe family.</strong> The probes define where every boundary
+   falls. Changing them changes every bloc's bytes under unchanged keys. Treat
+   them as part of the cache format: bump <code>version</code> if you must touch them.</li>
+</ol>
+<h3 id="renderer-validation-coverage">Renderer validation coverage</h3>
+<p>The composition coverage includes Qwen3-4B, Gemma-4-31B, Ornith-9B and Qwen3.5-4B tokenizer
+families. The <code>llama3_header</code> family is untested against real weights in this coverage; a
+synthetic tokenizer check is not a model-level guarantee.</p>
 <h2 id="file-attachments-as-cache-boxes">File attachments as cache “boxes”</h2>
 <p>For fast iteration on large contexts, you often want file attachments (code, docs, CSVs, PDFs) to be appended <strong>once</strong> and then reused by KV/prefix caches.</p>
 <p><code>CachedSession</code> supports this via <code>attach_files()</code>:</p>
@@ -231,7 +1974,7 @@ session.generate(&quot;Continue.&quot;, max_output_tokens=32)
 <p>Example:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import CachedSession, create_llm
 
-llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B&quot;)
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B-4bit&quot;)
 session = CachedSession(provider=llm, system_prompt=&quot;You are helpful.&quot;, prompt_cache_strategy=&quot;auto&quot;)
 
 session.attach_files([&quot;README.md&quot;, &quot;docs/prompt-caching.md&quot;])
@@ -261,28 +2004,133 @@ session.generate(&quot;Summarize the attached files.&quot;, max_output_tokens=12
 <li>other errors: <code>{"supported": false, "operation": "...", "code": "prompt_cache_error", "capabilities": {...}}</code></li>
 </ul>
 <p>This makes the same capability contract available over HTTP, not only in-process.</p>
-<p>Gateway/operator note:</p>
+<p>The HTTP control plane mirrors this: <code>/acore/prompt_cache/update</code> accepts optional <code>thinking</code> so warm cache state can be prepared with the same reasoning mode you intend to use at inference time.</p>
+<p>The gateway server (<code>abstractcore serve</code>) exposes the same control plane for its warm runtimes,
+plus a no-selector <code>GET /acore/prompt_cache/stats</code> enumeration across all loaded runtimes and
+<code>POST /acore/prompt_cache/key_meta</code> for stamping attribution metadata onto cache keys — see
+<a href="server.html#prompt-cache-control-plane">Server — Prompt Cache Control Plane</a>.</p>
+<p>Server/operator note:</p>
 <ul>
-<li><code>abstractgateway</code> can save/load MLX, HuggingFace transformers, and GGUF in-process prompt caches.</li>
-<li>For GGUF, gateway save/load persists both the raw <code>LlamaRAMCache</code> state and the provider-side module metadata needed to keep cache keys/module branches meaningful after reload.</li>
+<li>Core exposes provider-level <code>prompt_cache_save(...)</code> / <code>prompt_cache_load(...)</code> for Python and
+  CLI/operator use, but the HTTP server and endpoint do not currently expose generic
+  <code>/acore/prompt_cache/save</code> or <code>/acore/prompt_cache/load</code> routes.</li>
+<li>Public persistent HTTP cache artifacts are represented by durable memory blocs through
+  <code>/acore/blocs/kv/*</code>, which return <code>prompt_cache_binding</code> for exact request-time verification.</li>
+<li>Generic live prompt-cache snapshot save/load is intentionally not a thin-client contract. The
+  backlog tracks it separately as a possible authenticated local-admin snapshot surface or explicit
+  de-scope decision.</li>
 </ul>
-<h2 id="safety-limitations">Safety / limitations</h2>
+<h2 id="cache-residency-and-memory">Cache residency and memory</h2>
+<p>In-process caches live for the lifetime of the process. Size them before enabling long-lived keys.</p>
+<p><strong>How much a key costs.</strong> For an attention layer the KV state is
+<code>2 (K and V) × attention_layers × kv_heads × head_dim × 2 bytes</code> per token. Hybrid models carry KV
+on their full-attention layers only, plus a fixed recurrent state that does not grow with the
+transcript:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Unbounded-KV layers</th>
+<th>KV per token</th>
+<th>Fixed recurrent state</th>
+<th>One 5.6k-token key</th>
+<th>×32 keys</th>
+<th>×32 keys at 32k tokens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Qwen3-4B-Instruct-2507</code> (dense, 36 layers)</td>
+<td>all 36</td>
+<td><strong>144 KiB</strong></td>
+<td>—</td>
+<td>787 MB</td>
+<td><strong>24.6 GB</strong></td>
+<td><strong>144 GB</strong></td>
+</tr>
+<tr>
+<td><code>Qwen3.5-4B</code> (32 layers, 8 full-attention)</td>
+<td>8</td>
+<td>32 KiB</td>
+<td>~24 MiB</td>
+<td>175 MB</td>
+<td>5.5 GB</td>
+<td>32 GB</td>
+</tr>
+<tr>
+<td><code>Qwen3.6-27B</code> (64 layers, 16 full-attention)</td>
+<td>16</td>
+<td>64 KiB</td>
+<td>~72 MiB</td>
+<td>350 MB</td>
+<td>10.9 GB</td>
+<td>64 GB</td>
+</tr>
+<tr>
+<td><code>Ornith-1.0-9B</code> (32 layers, 8 full-attention)</td>
+<td>8</td>
+<td>32 KiB</td>
+<td>~24 MiB</td>
+<td>175 MB</td>
+<td>5.5 GB</td>
+<td>32 GB</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Full-attention models are the expensive case</strong> — a dense 4B costs more KV per token than a 27B
+hybrid, and hybrids are 4–8× cheaper for the same context because only their full-attention layers
+keep an unbounded KV. At 144 KiB/token a single 32k-token key costs 4.5 GB, and a full 32-entry store
+exceeds the RAM of a 128 GB machine. On architectures that use the snapshot/restore lane, budget
+roughly <strong>double</strong> — the live cache plus one boundary snapshot per key.</p>
+<p><strong>How many keys.</strong> <code>PromptCacheStore</code> keeps at most <code>max_entries</code> keys (default 32) and evicts the
+least recently used <em>within</em> the store. Keys are session-scoped and nothing removes them when a
+session ends, so entries accumulate for the life of the provider — observed growing 1 → 2 → 4 across
+consecutive benchmark sessions against a limit of 32. Set the limit to the concurrency you actually
+need, and clear keys you are finished with:</p>
+<div class="code-block"><pre><code class="language-python">llm = create_llm(&quot;mlx&quot;, model=&quot;...&quot;, prompt_cache_max_entries=4)
+llm.prompt_cache_clear(key)   # when a session ends
+</code></pre></div>
+<p><strong>Unload frees the caches too.</strong> <code>unload_model()</code> on the in-process providers (MLX, HuggingFace)
+drops the instance's prompt-cache store along with the weights — on MLX including the hybrid KV
+boundary snapshots. Session caches are only useful while the weights are resident, and they are the
+memory hogs, so unloading a model releases them in the same call. To end one session without
+unloading, use <code>prompt_cache_clear(key)</code> as above.</p>
+<p><strong>Measuring residency.</strong> <code>get_prompt_cache_stats()</code> reports each key's cost directly where the
+backend can compute it: <code>meta_by_key[key]["bytes"]</code> carries a best-effort byte size (MLX sums the
+cached KV layers' array sizes, HuggingFace transformers sums the KV tensors, GGUF mirrors its cache
+state size), alongside <code>token_count</code> for the per-token arithmetic above. MLX stats also report a
+top-level <code>snapshots: {"count": ..., "bytes": ...}</code> entry for hybrid-architecture boundary
+snapshots, which live outside the keyed store.</p>
+<p>Process RSS is not a reliable instrument for this on Apple Silicon: MLX returns freed buffers to
+its own allocator pool rather than to the OS, so RSS behaves as a high-water mark. On a measured
+run, unloading a 2.35 GB model moved gateway RSS by 37 MB. Use the stats above, or
+<code>abstractcore.utils.memory.get_memory_snapshot()["device"]["allocated_bytes"]</code> — the device
+allocation drops by the freed amount even when RSS does not move (see
+<a href="memory-management.html">Memory and Model Residency</a>).</p>
+<h2 id="safety--limitations">Safety / limitations</h2>
 <ul>
-<li>KV caches consume memory; large caches can be expensive.</li>
-<li>Reusing a cache key across unrelated prompts can contaminate context.</li>
+<li>KV caches consume memory; large caches can be expensive — see
+  <a href="#cache-residency-and-memory">Cache residency and memory</a>.</li>
+<li>Reusing a cache key across unrelated prompts is safe for correctness but not free: the delta path
+  trims the cache to the longest shared token prefix and feeds the rest, so the answer is always
+  produced from the prompt you sent, and what you lose is the saving, not the context.</li>
+<li>Durable bloc artifacts are exact-prefix artifacts, not composable KV blocks. Do not merge
+  independent cache artifacts or treat them as the durable source of truth; the bloc text remains
+  primary.</li>
 <li>Many remote OpenAI-compatible backends ignore unknown fields or differ in cache semantics; treat <code>prompt_cache_key</code> as best-effort.</li>
 <li>GGUF / llama.cpp: if you see crashes with Metal/MPS acceleration, force CPU for stability:</li>
 <li>per-call/provider init: <code>create_llm("huggingface", ..., device="cpu", n_gpu_layers=0, ...)</code></li>
 <li>env override: <code>ABSTRACTCORE_HF_DEVICE=cpu</code></li>
 </ul>
-<h2 id="next-steps-unification-ideas">Next steps (unification ideas)</h2>
-<ul>
-<li>Standardize save/load semantics beyond MLX/GGUF once more backends expose a serializable local KV state.</li>
-<li>Add retry-based fallbacks for OpenAI-compatible servers that reject cache-related fields.</li>
-<li>Extend exact cached-prompt renderers to additional GGUF chat formats without weakening the control-plane contract.</li>
-</ul>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Choosing a model for knowledge-graph extraction - AbstractCore</title>
+    <meta name="description" content="This page helps you pick a model and a prompting strategy when you extract entities and typed relationships from documents under a fixed ontology (for…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/knowledge-graph-extraction-models.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Choosing a model for knowledge-graph extraction</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This page helps you pick a model and a prompting strategy when you extract entities and typed relationships from documents under a fixed ontology (for example with BasicExtractor or your own prompt). It summarizes a measured comparison of local and hosted models run through AbstractCore, the settings that changed the results, and the limits of that measurement.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#how-the-comparison-was-run" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How the comparison was run</a>
+<a href="#results" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Results</a>
+<a href="#what-changes-the-results" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What changes the results</a>
+<a href="#recommendations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Recommendations</a>
+<a href="#limits-of-this-comparison" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Limits of this comparison</a></div>
+
+            <div class="doc-content">
+
+<p>Related pages: <a href="reasoning-control.html">Reasoning Control</a> (the <code>thinking=</code> parameter used below),
+<a href="structured-output.html">Structured Output</a>, <a href="recommended-models.html">Recommended Models</a> and
+<a href="huggingface-model-compatibility.html">Hugging Face model compatibility</a> (Hy-Memory-30B-A3B setup).</p>
+<h2 id="how-the-comparison-was-run">How the comparison was run</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Task</td>
+<td>Extract entities and relationships from one 21 KB Markdown document (a structured note about version control and digital preservation), in one call per pass</td>
+</tr>
+<tr>
+<td>Ontology</td>
+<td>15 entity types and 12 relationship types (<code>has_component</code>, <code>part_of</code>, <code>requires</code>, <code>causes</code>, <code>located_at</code>, <code>occurs_at</code>, <code>performs</code>, <code>measures</code>, <code>warns_about</code>, <code>precedes</code>, <code>produced_by</code>, <code>related_to</code>), each with a description and examples</td>
+</tr>
+<tr>
+<td>Output</td>
+<td>JSON with <code>entities</code> and <code>relationships</code> (<code>source</code>, <code>target</code>, <code>type</code>, <code>description</code>)</td>
+</tr>
+<tr>
+<td>Sampling</td>
+<td><code>temperature=0</code>, the same output budget for every model (12,000 tokens; 32,000 where noted)</td>
+</tr>
+<tr>
+<td>Local hardware</td>
+<td>Apple M5 Max, 128 GB, one model loaded at a time</td>
+</tr>
+<tr>
+<td>Local engines</td>
+<td>MLX (<code>mlx</code> provider) and LM Studio (<code>lmstudio</code> provider), 4-bit weights</td>
+</tr>
+<tr>
+<td>Hosted models</td>
+<td>Through an OpenAI-compatible relay (<code>openai-compatible</code> provider)</td>
+</tr>
+<tr>
+<td>Scoring</td>
+<td>Every distinct typed relationship (605 in total) judged once against the document by a single blind reviewer: correct, inverted (true only the other way round), contradicts the text, or unsupported</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Precision</strong> is correct typed relationships divided by all typed relationships a run produced
+(<code>related_to</code> links are counted separately). <strong>Sections covered</strong> counts how many of the
+document's 15 later subsections appear among the extracted entities. Times include every pass and
+exclude model loading.</p>
+<h2 id="results">Results</h2>
+<p>The rows below are the best-performing configurations per model and the configurations that
+illustrate each effect. Thinking "off" means <code>thinking=False</code>; "on" means the model reasoned
+(see the note on Claude below).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Where it ran</th>
+<th>Method</th>
+<th>Thinking</th>
+<th>Time</th>
+<th>Correct / typed</th>
+<th>Precision</th>
+<th>Sections covered</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Haiku 5.5</td>
+<td>hosted</td>
+<td>2 passes, add missing</td>
+<td>on</td>
+<td>134 s</td>
+<td>79 / 86</td>
+<td>92%</td>
+<td>13 / 15</td>
+</tr>
+<tr>
+<td>Claude Haiku 5.5</td>
+<td>hosted</td>
+<td>1 pass, improved prompt</td>
+<td>on</td>
+<td>36 s</td>
+<td>24 / 27</td>
+<td>89%</td>
+<td>9 / 15</td>
+</tr>
+<tr>
+<td>GPT-6 Luna</td>
+<td>hosted</td>
+<td>2 passes, review and correct</td>
+<td>off</td>
+<td>85 s</td>
+<td>27 / 30</td>
+<td>90%</td>
+<td>7 / 15</td>
+</tr>
+<tr>
+<td>GPT-6 Luna</td>
+<td>hosted</td>
+<td>1 pass, improved prompt</td>
+<td>off</td>
+<td>20 s</td>
+<td>15 / 25</td>
+<td>60%</td>
+<td>3 / 15</td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td>hosted</td>
+<td>lint + per-edge verification</td>
+<td>off</td>
+<td>160 s</td>
+<td>47 / 68</td>
+<td>69%</td>
+<td>8 / 15</td>
+</tr>
+<tr>
+<td>GPT-5.6 Luna</td>
+<td>hosted</td>
+<td>2 passes, add missing</td>
+<td>off</td>
+<td>94 s</td>
+<td>59 / 104</td>
+<td>57%</td>
+<td>12 / 15</td>
+</tr>
+<tr>
+<td>Hy-Memory 30B-A3B</td>
+<td>local (MLX, 4-bit)</td>
+<td>1 pass, original prompt</td>
+<td>high</td>
+<td>299 s</td>
+<td>20 / 24</td>
+<td>83%</td>
+<td>11 / 15</td>
+</tr>
+<tr>
+<td>Hy-Memory 30B-A3B</td>
+<td>local (MLX, 4-bit)</td>
+<td>1 pass, improved prompt</td>
+<td>off</td>
+<td>28 s</td>
+<td>9 / 11</td>
+<td>82%</td>
+<td>6 / 15</td>
+</tr>
+<tr>
+<td>Hy-Memory 30B-A3B</td>
+<td>local (MLX, 4-bit)</td>
+<td>1 pass, original prompt</td>
+<td>off</td>
+<td>25 s</td>
+<td>2 / 11</td>
+<td>18%</td>
+<td>2 / 15</td>
+</tr>
+<tr>
+<td>Qwen3.6 35B-A3B</td>
+<td>local (LM Studio, 4-bit)</td>
+<td>lint + per-edge verification</td>
+<td>off</td>
+<td>151–232 s</td>
+<td>9–14 / 9–23</td>
+<td>39–100%</td>
+<td>5–8 / 15</td>
+</tr>
+<tr>
+<td>Qwen3.6 35B-A3B</td>
+<td>local (LM Studio, 4-bit)</td>
+<td>1 pass, improved prompt</td>
+<td>on</td>
+<td>207 s</td>
+<td>12 / 19</td>
+<td>63%</td>
+<td>12 / 15</td>
+</tr>
+<tr>
+<td>Qwen3.8 27B</td>
+<td>local (LM Studio, 4-bit)</td>
+<td>1 pass, original prompt</td>
+<td>off</td>
+<td>148 s</td>
+<td>11 / 15</td>
+<td>73%</td>
+<td>6 / 15</td>
+</tr>
+<tr>
+<td>Gemma 4 12B QAT</td>
+<td>local (LM Studio, GGUF)</td>
+<td>1 pass, improved prompt</td>
+<td>off</td>
+<td>57 s</td>
+<td>7 / 10</td>
+<td>70%</td>
+<td>5 / 15</td>
+</tr>
+<tr>
+<td>Qwen3.5 9B</td>
+<td>local (LM Studio, 4-bit)</td>
+<td>1 pass, improved prompt</td>
+<td>off</td>
+<td>35 s</td>
+<td>4 / 7</td>
+<td>57%</td>
+<td>9 / 15</td>
+</tr>
+<tr>
+<td>Gemma 4 E4B</td>
+<td>local (LM Studio, 4-bit)</td>
+<td>1 pass, improved prompt</td>
+<td>off</td>
+<td>29 s</td>
+<td>2 / 12</td>
+<td>17%</td>
+<td>4 / 15</td>
+</tr>
+</tbody>
+</table></div>
+<p>The Qwen3.6 pipeline row is a range over three runs of the same configuration: its extraction
+changes from run to run even at <code>temperature=0</code>, so a single run of that model is not
+representative. Hy-Memory-30B-A3B produced byte-identical output on repeated runs.</p>
+<p>Claude Haiku 5.5 was reached through a relay that drives the Claude command-line client on a
+subscription. On that route its adaptive thinking cannot be switched off, so every Claude row
+includes reasoning; compare it with the other models' thinking-on rows. On that route a long
+extraction also needs an output budget of about 32,000 tokens.</p>
+<h2 id="what-changes-the-results">What changes the results</h2>
+<h3 id="the-prompt-rules">The prompt rules</h3>
+<p>Two generic rules, added to the ontology prompt, changed results more than any model swap
+between neighbours:</p>
+<ul>
+<li><strong>List the allowed labels as a hard constraint</strong> ("<code>type</code> MUST be exactly one of: …"). Without
+  it, Qwen3.6, Qwen3.5 and Gemma 4 invent relationship types (<code>uses</code>, <code>enables</code>, <code>informs</code>, …) that
+  a typed graph cannot load.</li>
+<li><strong>State the direction rule</strong>: every relationship must read as the true sentence
+  "<code>&lt;source&gt; &lt;type&gt; &lt;target&gt;</code>" in the same word order as the ontology's examples. This took
+  Hy-Memory-30B-A3B from 2 to 9 correct edges and from 6 inverted edges to 1.</li>
+</ul>
+<p>The same rules can hurt a model that already follows the ontology: Qwen3.8 27B produced more
+edges with them but its precision fell from 73% to 64%. Test prompt changes per model.</p>
+<h3 id="reasoning">Reasoning</h3>
+<p>Reasoning raised quality on every model that could use it within the budget:</p>
+<ul>
+<li>Hy-Memory-30B-A3B: 9 → 20 correct edges at the same precision (82% → 83%), ten times slower.</li>
+<li>Qwen3.6 35B-A3B: 50% → 63% precision with the improved prompt.</li>
+<li>GPT-6 Luna: 60% → 69% precision with the improved prompt.</li>
+</ul>
+<p>Reasoning needs output budget. GPT-5.6 Luna at <code>high</code> and Claude Haiku 5.5 at the default
+12,000-token budget ran out before finishing the JSON. Use <a href="reasoning-control.html">Reasoning Control</a>
+to set the level and size <code>max_tokens</code> for reasoning plus the answer.</p>
+<h3 id="a-second-pass">A second pass</h3>
+<p>A second call that receives the document and the first extraction helps only when it gets
+something it can act on:</p>
+<ul>
+<li><strong>"Add what is missing"</strong> grows the graph. It works best on strong models (Claude Haiku 5.5: 24 →
+  79 correct edges at 92%); on weaker models it adds a few edges at lower precision.</li>
+<li><strong>"Review and correct" without specific feedback</strong> rarely removes errors: most models return their
+  own mistakes unchanged. GPT-6 Luna is the exception (60% → 90%).</li>
+<li><strong>Machine checks plus per-edge verification</strong> (extract with an evidence quote per relationship,
+  check labels, endpoints and quotes in code, then ask for a verdict per relationship and apply the
+  verdicts in code) lifted Qwen3.6 to 93% in its best run and GPT-5.6 Luna from 58% to 69%. It did
+  not improve Hy-Memory-30B-A3B, which keeps its own edges when asked to verify them.</li>
+</ul>
+<p>Apply verdicts in code rather than asking the model to rewrite the whole graph, and treat a
+malformed verification response as "no change" rather than as a reason to drop edges.</p>
+<h2 id="recommendations">Recommendations</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Goal</th>
+<th>Model and method</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Best quality</td>
+<td>Claude Haiku 5.5, two passes ("add missing"), 32,000-token budget</td>
+</tr>
+<tr>
+<td>Fast hosted, high precision</td>
+<td>GPT-6 Luna with a "review and correct" second pass</td>
+</tr>
+<tr>
+<td>Most relationships, then review</td>
+<td>GPT-5.6 Luna with lint + per-edge verification</td>
+</tr>
+<tr>
+<td>Local, precise and reproducible</td>
+<td>Hy-Memory-30B-A3B, one pass, improved prompt, <code>thinking=False</code></td>
+</tr>
+<tr>
+<td>Local, more coverage</td>
+<td>Hy-Memory-30B-A3B with <code>thinking="high"</code>, or Qwen3.8 27B with the original prompt</td>
+</tr>
+</tbody>
+</table></div>
+<p>For any of them:</p>
+<ul>
+<li>Put the allowed labels and the direction rule in the prompt.</li>
+<li>Ask for an evidence quote per relationship and check it in code; it is the cheapest reliable
+  signal that a relationship is grounded.</li>
+<li>Validate the JSON and the labels before loading a graph; keep <code>related_to</code> as an explicit
+  "linked, untyped" fallback rather than forcing a specific label.</li>
+<li>Split long documents by section: no single-pass run covered more than 13 of the 15 later
+  subsections.</li>
+</ul>
+<h2 id="limits-of-this-comparison">Limits of this comparison</h2>
+<ul>
+<li>One document and one ontology; rankings can change with domain, language and document length.</li>
+<li>Each relationship was judged once by one reviewer; borderline verdicts are possible.</li>
+<li>Local and hosted models ran on different stacks, so times compare end-to-end latency, not raw
+  model speed. Hosted latency also depends on the relay's load.</li>
+<li>Models with run-to-run variation (Qwen3.6 in particular) need several runs per configuration
+  before you compare them.</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

@@ -5,7 +5,3186 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per pull request;
+`python scripts/changelog.py assemble X.Y.Z` writes them here at release.
+
 ## [Unreleased]
+
+## [2.35.0] - 2026-11-10
+
+### Added
+
+- **Context7 re-indexes the user docs after each release** (`.github/workflows/release.yml`, `context7.json`). Once the
+  release is on PyPI the workflow asks Context7 to re-index this repository, so coding agents reading AbstractCore
+  through the Context7 MCP see the published version. `context7.json` limits the index to the user docs
+  (`docs/`, the README and the llms files), keeping the backlog, ADRs, reports and sources out. The only credential
+  is `CONTEXT7_API_KEY` in the GitHub environment `context7`; without it the job reports a warning and does nothing,
+  and required reviewers on that environment turn the refresh into an approved step. The same step runs on demand
+  from the Actions tab (`context7-refresh.yml`) after a docs-only change.
+- **Current vendor lineups are in the capability registry** (`assets/model_capabilities.json`,
+  `assets/architecture_formats.json`), so an `input.image`, `input.video` or `input.voice` route can name them instead
+  of the text-only architecture default. New entries, each read from the vendor page or Hugging Face card on 2026-11-07:
+  - OpenAI `gpt-6-astra`, `gpt-6-sol`, `gpt-6.1-sol`, `gpt-6.1-terra`.
+  - Anthropic `claude-fable-5-1`, `claude-mythos-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`.
+  - xAI `grok-4.7`, `grok-4.6`, `grok-4.5`, `grok-4.3`, `grok-4.20-0309-reasoning`, `grok-4.20-0309-non-reasoning`,
+    `grok-4.20-multi-agent-0309`, `grok-build-0.1` (alias `grok-code-fast-1`), with the published alias lists.
+  - Qwen `qwen3.8-2.4t-a95b` (open weights), hosted `qwen3.8-max`, `qwen3.8-flash`, `qwen3.8-omni-flash`.
+  - Liquid AI `lfm3-vl-2b`, `lfm3-audio-2b`, `lfm3-omni-2b`; Spark `spark-x2.5-4b`, `spark-x2.5-1.7b`, `spark-x2.6-1.7b`,
+    and the complete official XHToken repo, Ollama tag and GGUF aliases on every Spark X2.5/X2.6 size.
+  - DeepSeek `deepseek-v4.1-flash`, `deepseek-v4.1-flash-1017` (alias `deepseek-flash`); Z.ai `glm-5.3`, `glm-5.3-flash`
+    (alias `glm-5.3-flashx`); MiniMax `minimax-m2.7`, `minimax-m3.1-flash`, with `minimax-m3` gaining video input and
+    every MiniMax M2/M2.1/M2.5/M3 entry its official, unsloth, lmstudio-community, bartowski and NVIDIA repo aliases.
+  - Moonshot `kimi-k3`, `kimi-k3.1-pro`, `kimi-k2.7-code`, `kimi-k2.5`; Baidu `ernie-5.5-flash-base`, `unlimited-ocr-2`.
+  - Prism `ternary-bonsai-27b`, the Bonsai 2 family (`ternary-bonsai-2-27b/9b/4b/2b`), the 1-bit `bonsai-8b/4b/1.7b` and
+    `ternary-bonsai-8b/4b/1.7b`, each with its gguf, mlx and unpacked repo aliases.
+  - NVIDIA `nemotron-3-ultra-550b-a55b`, `nemotron-3.5-lightning-30b-a3b`, `nemotron-3.5-bolt-74b-a9b`,
+    `nemotron-3.5-bolt-e4b`, `nemotron-3.5-super-vl-120b-a12b`, `nemotron-nano-9b-v2`, `nemotron-nano-12b-v2-vl`,
+    the `nemotron-3-embed-1b` and `nemotron-3.5-embed-1b` embedders, `nemotron-3.5-transcribe-30b-a4b` (voice in),
+    `nemotron-3.5-parse` and `nemotron-parse-2.0` (document OCR).
+  - Gemma 4 `-it` entries alias Google's `-it-assistant` and QAT (`q4_0-gguf`, `w4a16-ct`, `unquantized`) repos, and the
+    `qat`, `unquantized`, `ct`, `mobile`, `transformers` and `wNaM` packaging tokens strip like any other variant suffix.
+- Transcription language facts: `generate(..., output={"task": "transcription"})` records `language` (what the engine was told; `None` = it detected the language) and `detected_language` (what it reported) in the transcript's metadata, through the audio facade's `transcribe_detailed` (`AudioCapability` may implement it — AbstractVoice does; a backend with `transcribe` only reports neither). `POST /v1/audio/transcriptions` on a local engine answers `{text, language, detected_language}`.
+- **AbstractCore installs in one line, with no admin rights and no Python needed** (`scripts/install.sh`,
+  `scripts/install.ps1`). `curl -LsSf https://abstractframework.ai/core/install.sh | sh` on macOS and
+  Linux, `powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/core/install.ps1 | iex"`
+  on Windows: the script gets uv when it is missing and Python 3.12 through uv, picks the install
+  setting from the machine (Apple Silicon with macOS 14 or later: `abstractcore[apple]`; an NVIDIA
+  card or ROCm: `abstractcore[gpu]`; anything else: the light install), and installs AbstractCore
+  alone as a uv tool, pinned to this release, with the `abstractcore`, `abstractcore-config`,
+  `abstractcore-chat` and `abstractcore-endpoint` commands and the apps on PATH. It never starts a
+  compiler: llama.cpp comes from upstream's prebuilt Metal or CPU build, and the two optional
+  packages without wheels (echo cancellation, stable-diffusion.cpp) are left out. With an NVIDIA
+  card the `gpu` setting then gets llama.cpp's CUDA build matching PyTorch's CUDA (`cu130` or
+  `cu125`; on Windows `cu130`, `cu132` or `cu125`), kept only when it loads the way AbstractCore
+  loads it and `llama_supports_gpu_offload()` is True, else the CPU build with the reason (ROCm
+  included). On Windows the `gpu` setting also gets PyTorch's CUDA build for the driver. Every step prints its command; `--print`
+  shows the plan and changes nothing; running it again upgrades in place and keeps the setting;
+  `--profile`, `--pin VERSION|latest` and `--from PATH` choose otherwise. On a machine where
+  AbstractFramework's installer already provides the `abstractcore` command, it stops and says so
+  (a standalone AbstractCore beside the framework's gateway tool is not supported). A `curl | sh`
+  cut mid-download runs nothing (the script runs from one function called on its last line); an
+  `nvidia-smi` that does not answer is named as the reason; the summary names what the prebuilt-only
+  rule leaves out (echo cancellation, stable-diffusion.cpp); Windows takes `-DryRun` and `-Verbose`.
+  See [One-line install](docs/installation.md#one-line-install).
+
+### Changed
+
+- **Console theme copy regenerated from ui-kit 0.9.27** (`abstractcore/console/themes.py`,
+  `abstractcore/console/theme_sync.py`). The colours and fonts are unchanged; the recorded kit version and the floor
+  the theme test checks against (`KIT_THEME_FLOOR`) move to 0.9.27, the kit the apps are built on.
+
+### Fixed
+
+- **A settings file that cannot be parsed stops the program instead of being renamed and replaced by defaults**
+  (`abstractcore/config/manager.py`, `abstractcore/config/provider_profiles.py`, `abstractcore/server/app.py`). The
+  loader raises `ConfigParseError` with the file path and the parse error (`OSError` when the file cannot be read);
+  the file is never copied to `abstractcore.json.corrupt-<ts>.bak`, never shadowed by default settings, and no later
+  save can overwrite it. A provider profile's family is accepted as written while the provider registry is still
+  importing (it is validated when the profile is used), so a load that happens during `import abstractcore` no
+  longer fails. The `abstractcore config` CLI prints the error and exits with status 1, and the server refuses to
+  start on such a file instead of coming up with no settings. `ConfigParseError` is exported from
+  `abstractcore.config`.
+- **GGUF and MLX re-packagings of a registered model resolve to its entry** (`architectures/detection.py`). An
+  Ollama or LM Studio quant tag after the repo name (`unsloth/Qwen3.8-27B-GGUF:Q4_K_M`, `hf.co/...:UD-Q4_K_XL`,
+  `...:latest`), the `OptiQ-4bit`, `oQ4e` and `i1` quantizer markers, bartowski's and mradermacher's `Org_Model-GGUF`
+  repo names, and a re-packaged tail whose base alias is declared only as `org/Model` (the dated Mistral and
+  Devstral names) all resolved to nothing and fell back to the text-only architecture default. They now reach the
+  registry entry of the model they wrap; a dedicated FP8 or GGUF entry still wins over its parent, and a
+  speculative-decoding drafter still does not inherit its target.
+- **MCP handshake accepted by every schema-validated server** (`abstractcore/mcp/client.py`). `initialize` now
+  declares `capabilities: {}` as the specification and the reference client do; the previous envelope sent five
+  capabilities set to `null`, which strict servers such as Context7 refused ("Invalid input: expected record,
+  received null"), so their tools never reached the model. A `404` to a request carrying `MCP-Session-Id` now
+  starts a new session with a fresh `initialize` and replays the request once, as the Streamable HTTP transport
+  requires after a server restart. `McpHttpError` carries `status_code`.
+- **An unreachable endpoint is reported as such, never as a spent timeout** (`abstractcore/providers/base.py`,
+  `abstractcore/core/retry.py`, `abstractcore/exceptions`). When no TCP connection to the provider's endpoint can
+  be made (machine off or asleep, connection refused, DNS failure), providers raise the new
+  `EndpointUnreachableError` with `base_url`, the transport exception class (`cause`), `errno`, the measured
+  `elapsed_s` and `retryable` (False when the connect attempt itself timed out). Hosts can import it by name to
+  park the step and probe the endpoint instead of failing the run. Such failures no longer count toward the
+  circuit breaker, and a connect that timed out is not retried (a second attempt would block for the same OS
+  budget). Timeout detection is type-first: the message is consulted only for exceptions that carry no type
+  information, so an `OSError` whose text says "Operation timed out" no longer prints
+  "timed out after 7200.0s (configured timeout)". Every normalisation logs the original exception class, and
+  the "Generation failed" line reports the elapsed time from the first attempt (it used to print ~0 ms for
+  every failure).
+- **A stored speculation default never fails a call** (`abstractcore/providers/speculation.py`). When
+  `require_acceleration=True` comes from the provider-lifetime default (constructor `speculation=`, a stored
+  profile or host setting) and the provider has no native MTP adapter, the call runs without speculation with
+  one warning, and `metadata["speculation"]` carries `applied: false` and `degraded_from_default: true`. An
+  explicit per-call `require_acceleration=True` still raises `SpeculationUnavailableError`.
+- **Residency snapshot during an embeddings import** (`abstractcore/providers/process_residency.py`). The
+  in-process residency view treated `abstractcore.embeddings.manager` as loaded as soon as it appeared in
+  `sys.modules`, which is true while another thread is still importing it, and failed with "partially
+  initialized module has no attribute". The backend counts as loaded only once its functions exist.
+- **Tool parameters carry their meaning** (`abstractcore/tools/core.py`, `abstractcore/tools/parser.py`). The tool
+  schema built from a decorated function now takes each parameter's `description` from the docstring's `Args:`
+  section (Google style, or `:param name:` lines); it used to emit the type and default only, so native tool
+  payloads and prompted tool lists showed the model bare parameter names. Native payloads carry the full text as
+  JSON Schema `description`; the prompted tool list shows each parameter's first sentence. An explicit
+  `description` set on the schema afterwards still wins. Every built-in tool parameter is now described, and a
+  test keeps it that way.
+
+## [2.34.0] - 2026-11-03
+
+### Added
+
+- **A model no call has used for 60 minutes is unloaded; a kept-loaded model never is** (`providers/process_residency.py`,
+  core ADR 0012, root backlog 1115).
+  - **Scope:** HuggingFace (transformers and GGUF), MLX and in-process embedding models are unloaded by the
+    process-wide eject (every holder, `gc`, the allocator cache) after the idle-unload time. The default is 60
+    minutes (`DEFAULT_IDLE_UNLOAD_S = 3600`).
+  - **Setting:** `set_idle_unload(seconds)` sets the time for the process (`0` or `None`: off); `get_idle_unload()`
+    reads it.
+  - **What keeps a model:** never a locked model (Keep loaded), never one a call runs on, never one a claimant is
+    still building.
+  - **Never cancels:** new calls to the model wait during the unload, the model is checked again with them held, and
+    a call that started in between keeps it. A waiting call then reloads the model on demand. No check runs while
+    a model loads.
+  - **Log and timer:** each unload logs `unloaded <model> after <N> min idle; freed <X.Y GB>` (seconds under two minutes). The timer starts with
+    the first load in the process; one reaper thread runs per process.
+  - **Rows:** `resident_model_states()` covers MLX and embeddings too (also for the ADR 0010 fit failsafe), with
+    `last_used_at`, `in_use`, `locked_by` and `idle_unload_at`.
+
+### Changed
+
+- **Docs and the agent skill describe 2.34.0** (`skills/abstractcore/`, `llms.txt`, `docs/native-mlx-runtime.md`).
+  The skill (`package-version` 2.34.0) teaches the idle unload and the one-provider rule for a caller's key on the
+  discovery routes; `docs/native-mlx-runtime.md` no longer calls the shipped AbstractRuntime integration unreleased.
+
+### Fixed
+
+- **The release-PR changelog check refuses an empty release section, and sees every fragment**
+  (`scripts/changelog.py`). A release PR whose `## [X.Y.Z] - <date>` section had no entries passed when its
+  fragments were deleted without being assembled; only the tag-time validation would have caught it. It now fails,
+  naming the version. `fragment_files` reads `changelog.d/**/*.md` in any case (README excluded), so a fragment left
+  in a subfolder or named `fix.MD` is listed by `check` and written by `assemble`, no longer invisible. On an
+  ordinary PR, only such a `.md` file counts as the fragment a source change needs: a `notes.txt` under
+  `changelog.d/` used to satisfy the check, and `assemble` would never have read it. Entries are `- ` bullets.
+- **The web console's theme copy is re-synced to ui-kit 0.9.14 and a stale copy fails CI everywhere**
+  (`console/theme_sync.py`, `console/themes.py`, core backlog 0869).
+  - `themes.py` records the ui-kit version it was generated from (`KIT_SOURCE_PROVENANCE["kit_version"]`), and a test
+    compares it with `theme_sync.KIT_THEME_FLOOR` (0.9.14) without the abstractuic checkout. Before, the only check
+    was the byte-for-byte drift test, which skips when the kit source is absent (as in CI).
+  - The responsive token layer copies only bare `:root` (or `:root[attr]`) rules. A component rule written under
+    `:root` (`:root .af-session-card.af-automation-card`, new in ui-kit 0.9.14) is no longer taken for a token.
+- **Every call counts as in use and stamps the model's last use** (`providers/generation_cancel.py`).
+  - Before, a call without a cancel event was not registered and did not stamp `last_used_at`, so it could look
+    idle while it ran.
+  - MLX now gives every call a private cancel event, as HuggingFace does.
+  - Embedding managers stamp their last encode.
+  - The MLX `ttl_s` / `keep_alive` warning names the process-wide idle unload.
+
+### Security
+
+- **A caller's provider key on a discovery route reaches only the provider the request names** (`server/app.py`,
+  root backlog 0955).
+  - Before, `X-AbstractCore-Provider-API-Key` on `/v1/capabilities` and the capability and music discovery routes
+    was handed to every key slot the capability has (OpenAI and the OpenAI-compatible server for voice, AceMusic and
+    ElevenLabs for music, all of them on `/v1/capabilities`), so a key meant for one vendor could reach another.
+  - Now the key goes to one provider: the one named with `?provider=<id>` (voice: `openai` or an OpenAI-compatible
+    server; music: a backend such as `acemusic`, and the request's registry uses only that backend), else the
+    configured music backend, or the single vision endpoint.
+  - A request that sends the key without naming one provider (`GET /v1/capabilities`,
+    `GET /v1/capabilities/voice/providers`, an unknown music provider) is refused with 400 and the key reaches
+    nobody. Authenticate to the server and leave the key out to list every provider.
+  - Keys the server holds follow their own rule, unchanged: a request without its own key spends them only when it is
+    server-authenticated (otherwise 401 while the server holds a key the route could spend).
+
+## [2.33.0] - 2026-11-03
+
+GGUF prompt-cache snapshots without their unused `scores` copy and under a byte budget, a typed
+`ModelNotDownloadedError`, an OpenAI-compatible key check that refuses a wrong key where the model list is
+public, hosted decision models listed and routed as decision models (and a decision model that answers its own
+decisions), and a config that keeps a provider profile it cannot read instead of resetting itself.
+
+### Added
+
+- **A model that is not downloaded raises `ModelNotDownloadedError`, which names it** (`abstractcore.exceptions`).
+  A subclass of `ModelNotFoundError` with `model` (the id to download) and `provider` (the provider that serves
+  it) as attributes, so a host says "download X" without parsing the message (the gateway recovered the embedding
+  model's id from the message text). The messages keep their wording. Raised where a local-only load finds
+  nothing on this computer: embeddings (`EmbeddingManager`), transformers (not cached, or a download that did not
+  finish), GGUF, MLX, and an MLX drafter. Existing `except ModelNotFoundError` handlers still catch it.
+
+### Changed
+
+- **AbstractVoice floor 0.20.0** (`pyproject.toml`: the base install, `[apple]` and `[gpu]`; `ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR`).
+- **The changelog check recognises a release pull request** (`scripts/changelog.py check`). A PR that bumps
+  `abstractcore/utils/version.py` to X.Y.Z, adds `CHANGELOG.md`'s dated `## [X.Y.Z] - YYYY-MM-DD` section and leaves
+  no fragment in `changelog.d/` passes. Before, every release PR was red, because it edits `CHANGELOG.md` and source
+  without adding a fragment. A release that leaves a fragment behind fails and names it. Any other PR that touches
+  `abstractcore/` still needs a fragment.
+- **A GGUF model that is not downloaded now reaches the caller as `ModelNotDownloadedError`**, not as a
+  `RuntimeError("Failed to load GGUF model ...")` wrapping it; the message is the same "not found in local caches"
+  text without that prefix. An MLX model that is not downloaded keeps its own message (the caches searched and the
+  download tip) instead of the generic "Model not found for MLX provider" list.
+- **The test suite never fails on a slow machine** (`tests/timing.py`, `ABSTRACTCORE_TIMING_STRICT`). Every
+  elapsed-time assertion in `tests/` was audited. A "did not block" check became an event or state check:
+  - the slot pool's dropped holder: the blocked work is still running when `gc.collect()` returns;
+  - the cancelled slot request: at most one token after the cancel;
+  - `execute_command`'s drains: below the child's own `sleep 30/40`, the wait the code must not do;
+  - the retry that fails fast: below the 30 s backoff.
+
+  Latency budgets (cancel promptness, ReDoS guards, streaming overheads, live-provider response times) go through
+  `timing_budget`: one `[timing]` line on stderr by default, asserted only with `ABSTRACTCORE_TIMING_STRICT=1`,
+  mirroring the gateway's `tests/timing.py`. The session's terminal summary lists every measure ("timing budgets",
+  over-budget first), so the numbers are in every CI log. A blowup guard also passes `ceiling=`: a generous bound
+  asserted always (a ReDoS regression is never a slow green). Test-only.
+
+### Fixed
+
+- **A key check on an OpenAI-compatible endpoint with a public model list checks the KEY**
+  (`openai_compatible_provider.py`). OVH AI Endpoints answers `GET /v1/models` with 200 for no key and for a wrong
+  one (measured 2026-10-29), so the gateway's Connect said "Connected · N models" to a wrong key. With
+  `raise_on_error=True` (a key check) and a key set, when `/models` also answers WITHOUT the key, the listing now
+  asks `POST /chat/completions` for a model that does not exist (`abstractcore-key-check`, nothing is generated):
+  401/403 raises `AuthenticationError` with the service's reason (OVH: 403 "authentication failed"); any other
+  answer (404 "model not found") keeps the key. An endpoint whose `/models` needs the key (Mistral, Groq, …) is not
+  probed; plain listing is unchanged; OpenRouter keeps its `GET /key` check (`PUBLIC_MODELS_KEY_PROBE = False`).
+  Tests: `tests/providers/test_compatible_key_probe_unit.py`.
+- **Hosted decision models are listed as decision models, and only there** (`providers/typesafe_provider.py`,
+  `server/app.py`). `GET /v1/models` showed `typesafe/jev-latest` (and any `systemone` model) as a text model
+  (`capabilities.output: ["text"]`, no `decision` block), and listed it under every capability filter, so text,
+  image and embedding model pickers offered it and a chat on it then failed with `decision_model`. The `typesafe` and
+  `systemone` providers now list their models only for a filter a decision model satisfies (`input.text`,
+  `output.decision`), and `/v1/models` gives their entries `capabilities: {input: [text], output: [decision]}` and
+  `decision: {endpoint: /v1/decisions, kind: systemone, ...}`, like the local Kev, Lev and Laya models.
+- **An `output.decision` default on the hosted Jev runs the hosted Jev** (`providers/base.py`, `decision/pool.py`).
+  With the default set to provider `typesafe` and model `jev-latest`, a decision from a workflow (or any
+  `generate(..., output="decision")` on a text provider) read `jev-latest` as the alias of the most recently used
+  local decision model: it ran that local model instead, or failed with "names no resident decision model yet" when
+  none was loaded. `kev-latest` / `jev-latest` are aliases only on a local route; on `typesafe` and `systemone` they
+  are the hosted model's own name.
+- **A decision model answers its own decisions; the `output.decision` default is for models that cannot decide**
+  (`providers/base.py` `_decisions_stay_on_this_model`). Before, with a default of `typesafe` + `jev-latest`, a local
+  Kev instance (`create_llm("mlx", model="…kev…").generate(doc, output="decision", questions=…)`, no route) sent the
+  document to the hosted Jev because of a global setting. Now an instance whose own model is a decision model (a
+  local Kev / Lev / Laya checkpoint on mlx or huggingface, or a `typesafe` / `systemone` instance) answers itself when
+  the request names no decision provider or model. A route the request names still wins, and a text model still
+  uses the default. Review of #41, Q1.
+- **A GGUF prompt-cache eviction no longer clears a cache that a prefill is reading** (`huggingface_provider.py`).
+  `prompt_cache_fork` / `prompt_cache_set` store a cache from the caller's thread. The store's after-set hook enforces
+  the snapshot byte budget, and evicting a key clears that key's `cache_state`. Neither took the GGUF prompt-cache
+  lock, so a prefill holding the lock on another thread could fail with "OrderedDict mutated during iteration" or
+  miss its restore. The count-based LRU eviction had the same gap. Both store hooks now take
+  `_gguf_prompt_cache_lock`, now a reentrant lock (the save site holds it while the eviction it triggers runs the
+  hooks). Review of #37, M1.
+- **A GGUF prompt-cache snapshot no longer carries half a gigabyte it never uses, and the snapshots stay under a byte
+  budget** (8080 pass four, 2026-10-29: the model host child grew 1.65 GB per basic-agent run, 4.60 to 9.57 GB in
+  three runs). `Llama.save_state` copies a `scores` array of `n_batch x n_vocab` float32 into every snapshot, 508 MB
+  for a Qwen3.5 vocabulary. With `logits_all=False` llama.cpp never writes or reads that array, and nothing counted
+  it, so the stats showed 0.42 GB of caches per run while 1.5 GB more stayed resident. A stored snapshot now keeps
+  one zero row, which `load_state` broadcasts; with `logits_all=True` the array is kept whole. Per-key `bytes` and
+  `cache_state_total_bytes` count the arrays too. The snapshots of every key together are held to
+  `gguf_prompt_cache_max_gb` in the AbstractCore config (GiB; the environment variable
+  `ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB` overrides it; default min(8 GiB, a quarter of physical RAM), the MLX prefix
+  cache's rule; documented in `docs/centralized-config.md`, Model Memory). The least recently used keys are evicted on every insert path through a new `PromptCacheStore` `on_set`
+  hook and `evict()`, and `get_prompt_cache_stats()["gguf"]` reports `prompt_cache_budget_bytes` and
+  `prompt_cache_total_bytes`. Measured on a Mac with `unsloth/Qwen3.5-4B-GGUF` through a real gateway
+  (`--model-host process`), ten basic-agent runs:
+  - before: child RSS 14.77 to 29.95 GB, +1.69 GB a run;
+  - after: 13.28 to 15.69 GB, +0.27 GB a run while keys accumulate;
+  - with a 1.5 GiB budget: the caches hold at 1.61 GB from run 5 to run 15, and RSS stays within 11.2 to 13.5 GB.
+
+  A restore from a compacted snapshot answers token for token like a cold prefill
+  (`tests/providers/test_gguf_snapshot_restore_real.py`, opt-in `ABSTRACTCORE_RUN_GGUF_TESTS=1`): the provider never
+  samples from restored logits, because a restore covering the whole prompt is rolled back one token and that token is
+  decoded (the zero-feed guard in `_gguf_prefill_prompt_cache`, pinned by a unit test).
+- **A provider profile whose family this AbstractCore does not know no longer makes the whole config read as
+  corrupt** (`config/provider_profiles.py`, `config/manager.py`). 2026-11-03: the abstractcore 2.31 installs in the
+  gateway and assistant environments (whose family list predates `typesafe`/`systemone`, added in 2.32.0) read a
+  config holding a TypeSafe connection. The row's "Unsupported provider family 'typesafe'" error quarantined the file
+  (a `.corrupt-<stamp>.bak` copy on every import) and ran the session on DEFAULTS, without any of the other profiles
+  or settings. Such a row is now skipped with one WARNING naming it ("provider profile 'typesafe-key' is not loaded by
+  this AbstractCore (...); it stays in the config file unchanged"). The rest of the config loads, nothing is written,
+  and a later save keeps the row exactly as stored (the same carry that keeps a newer Core's route keys and columns).
+  The same applies to any profile row that does not validate. `typesafe` and `systemone` are profile families since
+  2.32.0, derived from the provider registry.
+- **The MLX owner-retirement tests prove "the GC callback did not block" with events, not a stopwatch**
+  (`tests/providers/test_mlx_native_owner_retirement_unit.py`). Three tests asserted that a whole `gc.collect()` took
+  under 0.5 s. In the Local-model CI job, a full collection alone takes about 0.55 s (torch and transformers loaded,
+  thousands of tests' objects alive), so `main` went red at 9d46642 and de1f9c85 with no MLX change. The tests now
+  check that the blocked CPU backend, or the blocked close hook, has not returned when `gc.collect()` returns: a
+  callback that waited for it could only return after it. There is no wall-clock bound, and the intent is unchanged.
+  A mutant whose GC callback joins the worker turns all three red. Test-only.
+
+## [2.32.0] - 2026-11-02
+
+Decision models (text in, calibrated typed decisions out: `output="decision"`, `POST /v1/decisions`),
+one llama.cpp weights instance per GGUF with a per-model slot pool for concurrent requests, a reserved
+context computed from free memory and settable per model, shared embedding models, and a catalogue
+that lists every installed or cached asset by its exact identity.
+
+### Added
+
+- **Every quant of a model, on demand** (backlog 0865).
+  `catalog(hub=True, extended=True)` and `?extended=true` list, per row, every quant its own GGUF repos ship (UD-IQ1_S
+  to Q8_0, BF16), each with its exact size and its fit, marked `extended: true` and never pre-selected. Labels the
+  download pattern cannot fetch exactly are left out. `gguf_quant_labels(facts)` is the enumeration.
+- **Model residency failsafe (ADR 0010): a load never fills the card.** Before llama.cpp allocates (one full-offload
+  CUDA card), the GGUF load checks weights + KV at its smallest context + the reserve against the free device
+  memory; when it does not fit, resident models that are neither locked (a "Keep loaded" pin) nor in use are
+  evicted, least recently used first, one at a time (`process_residency.make_room`); if it still does not fit, the
+  load fails before allocating with `ModelDoesNotFitError` (`needed_bytes`, `free_bytes`, `kept`, `evicted`,
+  `suggestions`: smaller artifacts of the same model from the catalog) and a sentence ("X needs 13.7 GB but only
+  9.2 GB is free on the GPU (kept: Y (locked by the runtime of account default/admin)). Choose a smaller model, for
+  example ..."). The CPU fallback is checked against available RAM the same way. `InflightGenerations.last_used_at`
+  and `_residency_registered_at` give the order.
+- **Every cached asset appears in the catalogue** (backlog 0875; `catalog()`, `/acore/models/catalog`). A local
+  repository or engine model that matches no curated row is listed as a discovered row (`source: "installed"`,
+  id `installed:<provider>:<reference>`), with its exact reference, size, kind, tasks and their source, so local
+  files stay manageable from one list. Each row carries `asset_kind` (`model`, `adapter`, `component`, `unknown`) and
+  each artifact an `inventory` object (`present`, `complete`, `kind`, `tasks`, `files`, `incomplete_files`,
+  `missing_shards`, `bytes`). Adapters, components and incomplete downloads are never offered as runnable chat
+  models: their fit is `unknown`, they are not downloadable and never recommended. The catalogue summary counts them
+  as `discovered`. No remote metadata is fetched to classify local files.
+- **Adapter metadata, separate from full models** (backlog 0876; `assets/adapter_metadata.schema.json`). A cached
+  adapter's `inventory.adapter` object reports its declared adapter type, exact base checkpoints, tasks, trigger
+  words, target modules and rank, read from `adapter_config.json` and the model card's front matter, each value with
+  its source; undeclared values stay empty. A Hugging Face search hit packaged as an adapter carries
+  `asset_kind: "adapter"`. Declared bases describe the adapter; they are not a compatibility guarantee. Full
+  fine-tuned checkpoints remain models.
+- **Installed models land on their catalogue card by exact identity** (backlog 0873; `config/model_catalog.py`,
+  `architectures.detection.resolve_registered_model_name`). An installed build (an LM Studio, Ollama, MLX or
+  Hugging Face artifact) joins the card of the registry model it is, read from explicit registry aliases and, for
+  LM Studio, from the engine's own model path, and appears as its own artifact with its exact engine identifier,
+  presence, size and quantization. Fine-tunes, QAT builds and precisions stay distinct: an unknown fine-tune is never
+  grouped under its base model by a partial name match. Quantization suffixes such as `IQ2_XXS`, `TQ1_0`, `1bit` and
+  Unsloth's `UD-` prefix are recognised as variant tags.
+- **Registry entries for more local models** (backlog 0874; `assets/model_capabilities.json`,
+  `assets/architecture_formats.json`, `assets/model_downloads_catalog.json`): Spark X2.6 4B, LFM3 1.7B, Bonsai 27B,
+  Qwen3.6-35B-A3B HauhauCS Aggressive and all-MiniLM-L6-v2, with their architecture formats, plus download rows for
+  the Gemma E2B / 12B instruction and QAT builds. Facts come from the models' own cards, configs and chat templates.
+- **Decision models: text in, calibrated typed decisions out** (`abstractcore/decision/`, `generate(..., output="decision")`,
+  `POST /v1/decisions`). One abstraction over every decision model AbstractCore can reach: hosted Jev through the new
+  `typesafe` provider and any System One-compatible host through `systemone` (HTTP only, light install), and local
+  checkpoints on `mlx` and `huggingface` (transformers or GGUF): the Kev family (pointer head on Qwen3.5), Lev (label
+  logits on Qwen3.5-4B) and Laya (ModernBERT encoder with a marker scorer), all Apache-2.0; OpenJev-style checkpoints
+  run through the same label-logit engine. Questions are `choice` (1–255 named options), `noul` (the probability a
+  statement is true) and `score` (ordered levels); answers carry calibrated probabilities and confidence in the public
+  System One request/answer shape, the format every decision-model host shares. The Kev state prefix is cached across calls.
+  `MultimodalGenerateResponse.decision` / `.decisions` carry the answers; a decision model refuses text generation with
+  a pointer to `output="decision"`. `python -m abstractcore.decision.convert` folds a Kev adapter into a merged
+  transformers or mlx-lm checkpoint (bf16, 8-bit, or the measured mixed 4-bit recipe). Registry: `kev-0.8b/4b/9b/27b`,
+  `lev`, `laya`, `openjev` in `model_capabilities.json` (`capability_routes.output: ["decision"]`, the new `decision`
+  route modality, a `decision.kind` block), the `kev` / `lev` / `laya` / `openjev` architectures, download-catalog rows.
+  A pointer-head GGUF runs on every released llama-cpp-python: when the bundled llama.cpp predates
+  ggml-org/llama.cpp#29818, AbstractCore derives a backbone copy once and applies the head itself (`gguf_compat.py`,
+  removed with abetlen/llama-cpp-python#2398). `/v1/models` entries carry additive `capabilities` (input / output
+  modalities) and, for decision models, a `decision` object naming `/v1/decisions`; a chat completion against a
+  decision model is a 400 (`code: decision_model`) with that pointer (`DecisionModelError`). The label-logit engine reuses
+  the prompt prefix every question of a request shares (the state runs once; transformers, mlx-lm, llama.cpp); Laya scans a
+  long state in overlapping windows as its runtime does. Kev-0.8B joins the registry and catalog; the AbstractFramework Hub
+  collection *Decision models* carries `kev-4b-mlx-8bit`, `kev-4b-mlx-4bit`, `kev-0.8b-mlx-8bit`, `kev-0.8b-mlx-4bit`.
+  Docs: `docs/decision-models.md`.
+- **`output.decision` capability default and a shared decision pool.** `abstractcore config set-default
+  output.decision --provider mlx --model jaredpalmer/kev-4b` names the decision model every provider
+  instance uses for `output="decision"` (the route resolver puts it on the spec; an explicit route on the
+  spec wins). `abstractcore.decision.pool` keeps at most two decision models resident per process, shared
+  by `generate(output="decision")` and `/v1/decisions`; `model: "kev-latest"` on the server falls back to
+  the configured default when nothing is loaded yet. `output_has_generated_media` is False for a decision
+  (typed answers, never bytes), so hosts need no artifact store for it.
+  Decision models also have residency: `POST /acore/models/load` / `unload` with `task: "decision"` (listed as
+  `process:decision:<provider>:<model>` rows of `/acore/models/loaded`); catalog rows carry a `decision` capability
+  flag; `/v1/decisions` accepts the question shorthand; the decision provider is recorded as
+  `metadata.decision_provider`.
+  The mlx provider lists the decision models it can run from the local caches (Kev / Lev adapters whose base
+  checkpoint is on disk, merged decision conversions), so pickers filtered on `output.decision` offer them.
+- **The reserved context is explicit and the person's** (ADR 0010 point 8). Residency claims
+  of a loaded GGUF carry `advertised_context_length` and `context_source` (`memory`: the fit rule / allocation ladder
+  chose it; `configured`: a person set it; `explicit`: the caller passed `max_tokens`) beside `context_length`, so the
+  Models page can say "Context 65,536 (model advertises 262,144; limited by memory)". A person sets a model's context
+  with `abstractcore.config.model_contexts.set_model_context(provider, model, tokens)` (config key `model_contexts`):
+  it is loaded as is and refused with the readable sentence when it does not fit, never shrunk. A request longer than
+  the loaded context still fails with `ContextWindowExceededError`; nothing is cut.
+- **Concurrent generations on one weights instance: a per-model slot pool** (`providers/gguf_slots.py`, ADR 0011).
+  - A slot is one llama.cpp context with its own KV, at the model's reserved context. Every slot of a pool has the same n_ctx.
+  - Provider instances own no context. A generation borrows a slot for its duration, and the provider's `llm` is that slot while the call runs.
+  - Bounds: 4 slots on a GPU or Metal and 1 on CPU-only by default. `model_concurrency` (`config/model_contexts.py`) sets the bound per model: the slots are built at load, or the load is refused with the numbers.
+  - Extra slots are built lazily, only when their KV fits free memory now. A slot never evicts another model and never gets a smaller context; when it does not fit, the request waits and the reason is kept.
+  - The queue is FIFO and bounded. `ModelQueueFullError` (503) and `ModelQueueTimeoutError` (504) are request-local and carry a Retry-After. A cancel while queued is a `GenerationCancelledError`.
+  - Idle extra slots are freed after 300 s.
+  - The queued state is visible in a new progress phase `queued` (with `queue_position`) and on the residency rows: `slots`, `slots_max`, `active`, `queued`, `slot_refusal_reason`, `slot_bytes`. A pool with work running or waiting counts as in use (never evicted).
+  - Measured on Metal with Qwen3.5-4B Q4_K_M: RSS was 3.14 GiB for one holder, 3.14 GiB for two and 3.86 GiB with 4 slots. A short request completed in 0.10 s during a 3.95 s decode. Four equal decodes took 0.94 x the serial wall clock (separate contexts do not batch weight reads; batched decode is backlog 0871).
+- **A GGUF the installed llama.cpp cannot load says whether updating llama.cpp fixes it.** AbstractCore ships the
+  architecture table of the newest llama-cpp-python release (`assets/llamacpp_known_architectures.json`: 0.3.36,
+  153 architectures from the vendored llama.cpp's `LLM_ARCH_NAMES`, spark2_5 included). An installed or catalog
+  GGUF whose architecture the installed llama.cpp does not know but 0.3.36 does carries `llamacpp_update`
+  (`{architecture, installed, update_to}`) and the sentence "... cannot load the spark2_5 architecture;
+  llama-cpp-python 0.3.36 can: update llama.cpp." (the console offers "Update llama.cpp"); only an architecture no
+  release knows stays greyed ("No llama.cpp release supports the X architecture yet"). Every catalog GGUF's Hub
+  architecture (86 repos, 28 architectures, checked 2026-10-29) is in the 0.3.36 table.
+- Start and stop an authenticated Core HTTP listener with `abstractcore.server.managed.start_managed_server` while retaining its host's resident model resources. The listener uses Core's server configuration and first-run token handling.
+
+### Changed
+
+- **`abstractvoice>=0.19.5`** (base install, `[apple]` and `[gpu]`; `ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR`):
+  each `tts_stream` audio event carries at most 2 s of audio, so a client on a slow link starts playing a long
+  sentence before the whole segment has downloaded, and every Qwen3-TTS generation of a cloned reply is scored
+  against the clone before its audio is delivered: a reply is spoken in one voice or fails with
+  `ClonedVoiceNotAppliedError`.
+- **The model catalog never offers MLX off Apple silicon**: the
+  mlx / mlx-gen / mlx-vlm artifacts are left out on a host whose engine registry says MLX cannot run (they were
+  listed, not downloadable), and a row with only MLX builds (the Wan video rows) is not listed there.
+- **`sse-starlette>=1.8,<4`** (was `<2.0.0`): AbstractCore never imports it (the server streams with Starlette's
+  `StreamingResponse`), and `mcp` 2.3 requires `sse-starlette>=3`, so every environment holding both ended in a pip
+  conflict. Checked with sse-starlette 3.6.0 (starlette 0.52.1, fastapi 0.136.1): the server app starts and
+  `tests/server` passes as with 1.8.2; `uv pip compile` resolves abstractcore + sse-starlette 3.6.0 + mcp 2.3.0.
+- **Faster catalogue and presence sweeps.** One catalogue build checks engine compatibility and provider support once
+  per sweep, a presence sweep resolves the Hugging Face cache roots once, and whether the installed llama.cpp knows a
+  GGUF architecture is cached per installed library.
+- **Changelog entries are fragments** (`changelog.d/`, `scripts/changelog.py`). A pull request adds
+  `changelog.d/<pr-or-slug>.md` instead of editing `CHANGELOG.md`'s `[Unreleased]` section, which conflicted on every
+  merge of main; the release assembles the fragments (`python scripts/changelog.py assemble X.Y.Z`) and CI fails a pull
+  request that changes `abstractcore/` without one. The `[Unreleased]` section as of 2026-10-29 is the first fragment.
+- **The embedding model's device is the person's choice**. `EmbeddingManager(device=...)`
+  or the embedding route's `options.device` ("gpu" / "cpu"; the route's option example is `{"device": "gpu"}`); unset
+  means the GPU when there is room. On the GGUF lane "cpu" stays all on the CPU (no KV or compute buffers on the
+  card), "gpu" that does not fit is refused with the sentence ("... could not be placed on the GPU ...; free GPU
+  memory or set its Device to CPU"), and the default falls back to the CPU and says so (`device_note`). The GGUF
+  embedder measures what it took on the GPU (`device_bytes` on its residency claim).
+- **A GGUF reserves the maximum context that fits, computed**. The smaller of the advertised
+  context and the largest whose weights + KV + compute fit the free device memory minus a 5 % safety buffer
+  (`model_memory_buffer`), by inverting the KV-size formula; an allocation that still fails halves the context. This
+  replaces the "KV at most half of the free memory" rule and the fixed 131,072 / 65,536 / ... rungs, and the
+  calibration seed no longer shrinks a load. Measured numbers for Kimi-9B on the 16 GB card: about 135k of 262,144
+  (was 65,536). Logged, and on the claim as `context_reservation`.
+
+### Fixed
+
+- **A GGUF this computer's llama.cpp cannot load says so before it is chosen** (backlog 0867).
+  XHToken/Spark-X2.6-4B (architecture `spark2_5`) downloaded fine and failed only at its first call. An installed
+  GGUF's row now carries `architecture`, and, when this install's llama-cpp-python does not name that architecture,
+  `loadable: false` with `unloadable_reason`: "This computer's llama.cpp (llama-cpp-python 0.3.x) cannot load the
+  spark2_5 architecture. Update llama-cpp-python, or choose another model." The check reads llama.cpp's own table of
+  architecture names in `libllama`, without importing it (`llamacpp_knows_architecture`).
+- **A GGUF-only model in the Hugging Face cache says what it is** (backlog 0866). The repos the
+  catalog downloads hold only the quant file, with no config or card, so `models list` reported them as an unknown
+  model with no task. The kind and tasks now come from the file's own `general.architecture`:
+  - an architecture the catalog's GGUF repos use (`qwen35`, `gemma4`, `llama`, `lfm2`, ...): text generation; any
+    other architecture stays unknown;
+  - `qwen3-tts`: text to speech;
+  - `flux`: text to image;
+  - an embedding repo (its name says so; Qwen3-Embedding reuses `qwen3`): text embedding.
+  `tasks_source: "gguf"`. A model outside the catalog can then be offered as the default text model.
+- **An embedding default that is not downloaded says so, once, and can be downloaded from the console.** The
+  availability probe resolves an embedding route's catalog alias (`huggingface/qwen3-embedding`) to the repo the
+  embedding manager loads (`Qwen/Qwen3-Embedding-0.6B`), so the route reads "not downloaded" with a
+  `download_artifact` (it read "not checked": "'qwen3-embedding' is not an <org>/<repo> Hugging Face reference").
+  A not-cached model raises its "download it first" `ModelNotFoundError` without an ERROR log line (one per
+  account on every boot on the Linux test server); the caller says it.
+- **An embedding default whose repo is not downloaded runs on the installed GGUF build of the same model.** When
+  `Qwen/Qwen3-Embedding-0.6B` is absent and `Qwen/Qwen3-Embedding-0.6B-GGUF` is installed (the Linux test server),
+  the embedding manager loads the GGUF through llama.cpp (`embedding=True`, CPU, L2-normalized, the most faithful
+  quant first: f16, bf16, Q8_0, ...) under that repo's id (another build is another embedding space), and the
+  Defaults grid reads "installed: served by the installed GGUF build ...". Measured there: 1024 dimensions,
+  similarity 0.775 for two cat sentences vs 0.262 against a revenue sentence. Only without any build the route reads
+  "not downloaded" with Download.
+
+- **A host's installed engine is offered first in the download catalog** (backlog 0863). On a Linux server with
+  llama.cpp and neither LM Studio nor Ollama, the Qwen3.5 9B row listed and pre-selected the LM Studio build.
+  39 curated chat rows had no GGUF build. Each now has one: a Q4_K_M, read from the Hugging Face API on
+  2026-10-29, with its size and revision. A curated pick for an absent engine yields to an artifact an installed
+  engine serves. Every artifact carries `engine_installed`, and a row lists the pre-selection first, then
+  installed engines' artifacts.
+
+- **Hugging Face search pages, counts, and finds an exact handle** (backlog 0864).
+  - `catalog(..., hub_page=, hub_page_size=)` and the `/acore/models/catalog` route serve one page of results at a
+    time. `hub.search` reports the page, how many rows it added, and whether another page exists.
+  - Searching `Qwen/Qwen3.5-9B` now lists that repo first, then the GGUF builds of `Qwen3.5-9B`. Before, it
+    returned neither the repo nor the curated row.
+  - A hyphenated or slashed query (`qwen3.5-9B`) now finds the curated row. Before, the query was split only on
+    spaces.
+
+- **Structured output with a host's `cancel_event`** no longer fails on the HuggingFace GGUF lane with "got multiple
+  values for keyword argument 'cancel_event'" (backlog 0861): the structured branch hands the event over once,
+  under the provider's cancel kwarg.
+- **A GGUF context that fills up mid-request** (llama.cpp "failed to find a memory slot", `llama_decode returned 1`)
+  frees the engine's context memory and fails with a clear `ContextWindowExceededError` sentence, instead of an
+  "Error: llama_decode returned 1" answer and a memory left full for the next request (backlog 0862).
+
+- **A Hugging Face GGUF this computer's llama.cpp cannot load is flagged before download** (backlog 0868, following
+  0867). With `--hub`, the catalog reads each GGUF repo's `gguf.architecture` from the Hugging Face API and checks
+  it against llama-cpp-python's `libllama`. A build it cannot load carries `loadable: false`, `unloadable_reason`
+  (the sentence) and `downloadable: false`, is never the pre-selection, and says why in its fit notes. A known
+  architecture is `loadable: true`. When it cannot be told, the value is `null` and the build stays offered.
+- **A partially downloaded Hugging Face checkpoint reads as not installed in the catalogue.** When the local inventory
+  lists a repository whose weights, shards or checkpoint index are incomplete, the checkpoint probe stays
+  authoritative and the artifact reads absent ("cache checkpoint incomplete or unverified").
+- **A first model load never waits on a provider module that is still importing** (`providers/process_residency.py`).
+  The residency admission check skips a model registry whose module has not finished initializing (it cannot hold
+  weights yet), so a load that runs while another thread imports the embeddings or MLX modules proceeds instead of
+  failing or blocking on that import.
+- **A text longer than the embedding model reads is refused, never cut** (framework ADR 0026). The GGUF embedding lane
+  had a 4,096-token context and llama-cpp-python's `embed()` truncated by default; it now loads at the model's own
+  sequence length (8,192 for Qwen3-Embedding-0.6B), embeds with `truncate=False`, and a longer text raises
+  `ContextWindowExceededError` ("This text is N tokens, but the embedding model X reads at most M; split it before
+  embedding it (nothing was cut).").
+- **The sentence-transformers embedding lane never cuts a text either.** The library truncated every text at its
+  `max_seq_length` (model-defined, often 512) silently, and a non-strict manager turned failures into zero vectors. The
+  model now reads its full length (the catalog's `max_sequence_length`, e.g. 8,192 for Qwen3-Embedding), a text one token
+  over raises `ContextWindowExceededError` with the same sentence (counted with the model's own tokenizer, specials
+  included), and that error is never replaced by a zero vector.
+- **A GGUF embedding repository id is served by llama.cpp** (`embeddings/manager.py`). `/v1/embeddings` with `huggingface/Qwen/Qwen3-Embedding-0.6B-GGUF` used to reach sentence-transformers, which cannot read a GGUF, and answered 500 "Unrecognized model". A `-GGUF` id now goes straight to the llama.cpp lane.
+- **The GGUF embedder reserves the largest input that fits, and says so.** With n_batch = n_ubatch = n_ctx, llama.cpp's compute buffers grow with the input length squared. At 8,192 tokens the 0.6B Qwen3 embedder held 6.6 GB of GPU memory on a 16 GB card, leaving no room for a second LLM slot, and its row read `device_bytes: None`.
+  - On a CUDA GPU the encoder now reserves the largest input (a multiple of 256, at most the model's maximum) whose weights, KV and compute buffers fit the free memory minus the safety buffer (`model_memory_buffer`, 5 %). It logs the choice.
+  - The row carries `context_length`, `advertised_context_length`, `context_source` (`memory` / `configured`), `memory_buffer` and `context_reservation`, the same fields as an LLM context row.
+  - A maximum input an admin set (`model_contexts`, the same per-model setting as an LLM context) is used exactly. On a GPU-only device that cannot hold it, the load is refused in words.
+  - A longer text is refused with "split it before embedding it", never cut.
+  - `device_bytes` is measured through NVML when torch has no CUDA context, as in the gateway's model host.
+- **The GGUF embedder reads long inputs in 512-token micro-batches.** With n_ubatch = 8,192, llama.cpp reserved a 5.1 GB compute buffer: the output projection for every token of the micro-batch, 8,192 × 151,669 vocabulary × 4 bytes, plus the attention scratch. A causal embedder (`<arch>.attention.causal`, or a decoder architecture: Qwen3-Embedding) now reads its full input (n_ctx = n_batch = the model's maximum, 8,192) in 512-token micro-batches with flash attention. A bidirectional encoder keeps the whole input in one micro-batch.
+  - Measured with Qwen3-Embedding-0.6B Q8_0 at 8,192 tokens, the same buffer sizes on a 16 GB CUDA card (llama-cpp-python 0.3.36) and on an Apple Silicon Mac (Metal, 0.3.35). Compute buffer 5,092 → 306 MiB; model 604 MiB and f16 KV 896 MiB unchanged. Total GPU memory on the CUDA card went from 6,710 to 1,808 MB.
+  - Vectors are equivalent: minimum cosine against the previous path over 20 texts (up to 7,581 tokens) is 0.99958 on CUDA and 0.999999 on Metal.
+  - With flash attention the default reservation is the model's full maximum. The fit, set-value and refusal logic above remains the safety net.
+  - The row now also says which build serves it (`quant`: `Q8_0`, `model_file`) and carries `flash_attn` and `micro_batch`.
+- **The residency failsafe never evicts a model it cannot replace** (ADR 0010). On a busy GPU host the unlocked
+  text model was evicted for a 14B load that was then refused anyway (the free memory after the eviction was still
+  short), leaving neither model. `make_room` now plans first: it evicts only when the free memory plus what the
+  evictable models hold covers the need; otherwise it refuses with everything kept.
+- **The GGUF embedding lane runs entirely on the CPU.** With `n_gpu_layers=0` llama.cpp's CUDA build still placed the
+  KV cache and the `n_ubatch`-sized compute buffers on the GPU (`offload_kqv` defaults on): 4.9 GiB of device memory
+  for `Qwen3-Embedding-0.6B-GGUF`, shown on no Models row (gateway backlog 0966). Now `offload_kqv=False` (and
+  `op_offload=False` where supported) and the context is bounded at 4,096 tokens; measured on the same server, the
+  embedder process holds 118 MiB of GPU (the CUDA context) instead of failing to allocate next to the text model.
+- **The GGUF architecture gate never refuses a model over a value that is not an architecture** (`utils/model_cache.py`). `llamacpp_knows_architecture` / `gguf_unloadable_reason` answer only for a GGUF `general.architecture` token, read from the INSTALLED `libllama`. Anything else (a model id such as `unsloth/Qwen3.5-4B-GGUF`, a file name) is "cannot be told" (None). Before, a model id passed in read as "No llama.cpp release supports the unsloth/Qwen3.5-4B-GGUF architecture yet", although the installed llama.cpp loads that model (qwen35, gemma4 and qwen2vl all load on this Mac's 0.3.35 Metal build). New real-file test: every GGUF in the account's hub cache that the installed llama.cpp opens (`vocab_only`) is never refused by the gate.
+- **One llama.cpp weights instance per GGUF model in a process** (`providers/gguf_shared.py`, ADR 0011). Before, every provider instance of a resident GGUF loaded the weights again: a second account's runtime pool, a gateway-side client (run summary, Ask, sandbox, entity chat) or a server request each held a full copy. The 2026-10-29 audit measured 11.8, then 23.3, then 34.9 GB RSS for three holders of one 4B model, and the residency failsafe then refused the extra copies. Now every llama.cpp context of a model borrows the one resident `LlamaModel`. The weights are freed with the last context.
+- **A key check says whether the KEY works** (`openrouter_provider.py`, `anthropic_provider.py`; the gateway's setup
+  guide checks a pasted key by listing models with `raise_on_error=True`). OpenRouter's `GET /models` is public: it
+  answered 200 with the whole catalogue for a wrong key (measured 2026-10-29), so the check said "Key works · N models"
+  to a typo. `OpenRouterProvider.list_available_models` now asks the authenticated `GET /key` first: a 401/403 lists
+  nothing, and with `raise_on_error=True` raises `AuthenticationError` with OpenRouter's reason ("User not found.").
+  Any other answer (a proxy `base_url` without `/key`) falls through to the listing as before. Anthropic's listing
+  returned `[]` with no reason for a wrong key even with `raise_on_error=True`; it now raises `AuthenticationError`
+  ("Anthropic API error (401): invalid x-api-key"), or `ProviderAPIError` for another status. Without
+  `raise_on_error` both keep their old answer (`[]`). Tests: `tests/providers/test_key_check_listing_unit.py`.
+- Managed local loaders reuse compatible resident artifacts or refuse conflicting second allocations across MLX, HuggingFace and embedding paths. Explicit incompatible placement, native target/head or Qwen4 PLE settings require unloading first; Transformers callers reuse the resident provider.
+- Pinned GGUF concurrency can construct its context slots within a model load while preserving serialization between concurrent loaders.
+- **Endpoint profiles accept every provider the registry reaches over HTTP** (`config/provider_profiles.py`,
+  `providers/registry.py`). The profile validator kept its own list of eight families, so the new decision
+  providers were refused on save ("Unsupported provider family 'typesafe'") although `create_llm("typesafe")`
+  worked. The accepted families are now `ProviderRegistry.endpoint_provider_families()`: every registered
+  provider the light install covers that is not an in-process engine (MLX, local HuggingFace stay refused). The
+  registry's logger is created on first use: the first config load runs inside `utils.structured_logging`'s
+  import, and building the registry there to validate a stored profile would otherwise be an import cycle,
+  which the loader reads as a corrupt config (defaults for the session). Tests:
+  `tests/config/test_provider_profiles_config.py`.
+- **One loaded embedding model per (model, device, backend) in a process** (`embeddings/manager.py`). Before, every `EmbeddingManager` loaded the weights again: each account's runtime service held its own full copy of the embedder. Now a manager whose model is already loaded adopts it, and stays a cheap facade (its caches, output dims and provider settings are its own). Unloading one manager detaches it. The weights go with the last manager that holds them, whether it unloads or is dropped. An eject still unloads every manager. The residency rows count the weights once (`copies` = distinct models, `holders` = managers, `shared_weights`). The GGUF encoder already serializes its own encodes, so sharing it is safe.
+- **`/v1/embeddings` reuses the loaded embedding model**. The route built a new `EmbeddingManager` for every request, and the manager loads the weights
+  in its constructor, so each request was a full load of the embedding model and another copy beside the previous
+  request's (measured on the residency probe: 4 managers alive after 2 requests). The server now keeps one manager per
+  (provider, model, dimensions, provider settings) for the life of the process; an ejected model reloads on its next
+  call as before, and the residency listing and eject see the same manager.
+
+### Migration
+
+- **Embeddings are never truncated.** A text longer than the embedding model reads raises
+  `ContextWindowExceededError` on both the GGUF and the sentence-transformers lanes, and a non-strict
+  `EmbeddingManager` no longer turns that error into a zero vector. Split long texts before embedding them.
+- **A GGUF reserves the largest context that fits** the free device memory (minus a 5 % buffer), instead of
+  the earlier half-of-free-memory rule and fixed rungs. To keep a specific context, set it per model with
+  `abstractcore.config.model_contexts.set_model_context(provider, model, tokens)`; a set value is used exactly
+  or refused, never shrunk.
+- **Conflicting local allocations are refused.** A second allocation of a resident artifact with an
+  incompatible placement (another backend, device, native target/head or Qwen4 PLE setting) raises instead of
+  loading a second copy: unload the resident model first. Compatible callers reuse the resident one.
+- **Key checks raise on a wrong key.** `OpenRouterProvider.list_available_models(raise_on_error=True)` and the
+  Anthropic listing raise `AuthenticationError` for a rejected key; without `raise_on_error` they still
+  return `[]`.
+- **Chat completions against a decision model answer 400** (`code: "decision_model"`) with a pointer to
+  `/v1/decisions`; `generate()` without `output="decision"` on a decision model raises `DecisionModelError`.
+- **`sse-starlette>=1.8,<4`**: environments that also install `mcp` 2.3 resolve without a conflict.
+- **The catalogue lists discovered assets.** Clients that render every catalogue row should filter on
+  `asset_kind` (`model` for runnable models) or `source` when they want curated or full-model rows only.
+
+## [2.31.1] - 2026-10-28
+
+### Added
+
+- **The LFM2 and LFM2.5 families in the download catalog, from 350M to 24B-A2B** (backlog 0860; LFM2.5 230M not
+  yet): 11 new rows (LFM2 350M, 700M, 1.2B, 2.6B,
+  8B-A1B, 24B-A2B; LFM2.5 350M, 1.2B Instruct, 1.2B Thinking, 8B-A1B, 24B-A2B) and GGUF on LFM2.5 2.6B, each with
+  GGUF (Liquid AI official and unsloth) and MLX (mlx-community, else Liquid AI's own) artifacts, every id and size
+  checked on Hugging Face on 2026-10-28; the capability registry gains `lfm2.5-24b-a2b` and the repo-id aliases.
+  Searching "lfm" in a Models catalog listed one row before.
+
+### Fixed
+
+- **GGUF residency rows report the KV cache llama.cpp really allocates, and the context it was built
+  with.** The estimate counted every block as an attention layer: `Qwen3.5-9B-Kimi-k3-Distilled-GGUF`
+  (qwen35, 33 blocks, a KV cache on one block in four) at 65,536 tokens read "+ 8.3 GiB cache" on a
+  16 GB card whose GPU held 9.1 GiB in total; it is 2.0 GiB. The layer walk (`utils.kv_geometry`)
+  reads the layout from the GGUF header (`full_attention_interval`, per-layer `head_count_kv`,
+  sliding-window layers and widths, shared/MTP layers) and is used by the residency rows, the
+  context-fit estimate and the load. Rows and claims carry `context_length`, `kv_cache_bytes`
+  (`kv_cache_estimated: true`).
+- **The GGUF context is sized to the card before allocating** (one CUDA/ROCm card, full offload):
+  the KV cache may take at most half of the free device memory after the weights and a reserve of
+  max(1 GiB, 10%); rungs above are skipped and the rule's pick is not stored as a calibration
+  (docs/memory-management.md). An explicit `max_tokens` is never resized.
+- **A skipped eject names its holders in words** (`owner_label` of the claim, "the runtime of account
+  default/bob"), never "runtime client 70a5b844f350" (ADR 0043).
+- **A prompt longer than the loaded GGUF context fails clearly, before any eval**
+  (`ContextWindowExceededError`, a subclass of `InvalidRequestError`): it used to fill the KV cache
+  ("decode: failed to find a memory slot for batch of size 512"), retry cold, rebuild the engine and
+  answer "Error: failed to prefill GGUF prompt cache ..." as text; llama-cpp-python's own "exceed
+  context window" refusal is raised the same way. Decoding that reaches the end of the context
+  stops with `finish_reason="length"` instead of appending "Error: llama_decode returned 1".
+
+- **`/v1/chat/completions` (and `/v1/responses`) reuse a model already resident in the process** instead of loading
+  another copy per request (backlog 0859). With no model loaded in the server's own registry, the chat route called
+  `create_llm` for every request; a host that keeps the model in another holder (AbstractGateway's runtime pool, which
+  serves `/v1` through this app) got a second full llama.cpp instance per request. Found on a fresh Linux install: a
+  2.5 GB GGUF on a 16 GB GPU answered 500 "Failed to create llama_context"; reproduced on Metal: holders 1 -> 2 -> 3
+  -> 4 and the process 11.2 -> 43.4 GB over three calls. Now the route reuses the alive `huggingface` holder of the
+  same model (new `process_residency.resident_provider(provider, model)`, matched by name or path like the eject):
+  holders stay at 1 and the process at 11.2 GB. Not with `unload_after` (it would unload the holder's model) nor with
+  request-specific provider settings (an explicit provider key, a `base_url`); an instance the server built for one
+  request is never lent; MLX instances already share weights and are not lent. A lent instance keeps its own tracing
+  (no `X-AbstractCore-Trace-Id` for that request) and ignores the request's `timeout_s`.
+- **Every operation on a HuggingFace provider instance's model runs on one worker thread of that instance, one at a
+  time** (`HuggingFaceProvider._generation_worker`): generations, the prompt-cache prefills, set/clear/save/load,
+  the bloc planner's tokenization, `load_model` and the free step of `unload_model`. Before, only the GGUF prompt-cache prefill took an instance lock, so a pool serving
+  two runs (or a run and a lent `/v1` request) could run two operations on one llama.cpp context at once. A stream is
+  produced on the worker into a queue, so it never waits for its consumer (no deadlock with a call waiting for the
+  instance, or two streams advanced by one thread); a consumer that stops early stops the producer at its next chunk;
+  a stream counts as in flight from the call (an unload cancels and waits for it); the reload of an ejected model is
+  decided on the worker; the caller's contextvars travel with the call; Ctrl-C while waiting cancels the generation.
+- A lent instance answers `/v1` off the event loop, with a client disconnect cancelling its generation (it queues
+  behind the holder's runs; the server's own in-process instances still answer on the loop as before). It keeps its
+  holder's construction defaults (seed, default max output tokens, context size) for settings the request omits,
+  shares the holder's prompt-cache store (by default 32 entries, least recently used), and, when the holder has tracing on,
+  its trace buffer.
+
+## [2.31.0] - 2026-10-27
+
+### Added
+
+- **Clone language over HTTP**: `POST /v1/voice/clone` and `POST /{provider}/v1/voice/clone` take an
+  optional `language` form field (ISO 639-1), passed to the voice plugin (recorded with
+  `abstractvoice` 0.19.0 or later) and to remote AbstractVoice-compatible servers (OpenAI custom
+  voices do not take it). Without it, the cloner identifies the language from the transcript.
+
+### Fixed
+
+- **Streamed tool calls carry the declared tool name**: a native tool whose name is not wire-safe
+  (an MCP tool such as `mcp::RAGnarok::query`, declared to strict APIs as
+  `mcp_RAGnarok_query_b6ff8949`) is returned under its declared name in streaming responses, as it
+  already was without streaming, from `generate()` and `agenerate()` (including the native async
+  paths of providers with their own async client, streaming or not).
+  Complete calls and partial deltas keep their ids, indexes and argument fragments. Only names
+  declared in the request's `tools=` are restored; any other name is returned unchanged, with a
+  warning, for the host's allowlist to refuse.
+- MLX native lane (mlx-vlm prefix cache, MTP speculation): the per-call snapshot is placed before
+  trailing `system` riders (a host's per-call attachment index), measured in tokens against the
+  same request rendered without them. A hybrid model restores only an exact stored prefix, and a
+  snapshot that contained the rider matched no later prompt: every tool-loop call of an
+  attachment-bearing session re-prefilled the whole conversation (operator run: 10 of 10 calls
+  cold, 24,552 tokens at step 10). Replayed on `Jundot/Qwen3.8-27B-oQ4e-mtp`: steps 2–4 now restore
+  8,536 / 11,424 / 14,764 tokens. New telemetry field `prompt_cache.snapshot_excludes_tail_tokens`.
+  The scheduled lane (`mlx_batching=True`) keeps the default placement (backlog 0858).
+
+## [2.30.0] - 2026-10-26
+
+First published release since 2.26.3: it also ships the changes listed under 2.26.4
+through 2.29.0 below. The AbstractVoice, AbstractVision, AbstractMusic and Abstract3D
+plugins are pinned to their latest releases.
+
+### Added
+
+- **Voice navigation by engine and language**: `llm.voice.list_voices(provider=..., model=...,
+  language=...)`, `list_cloned_voices(...)` and `voice_catalog(language=...)`; `GET /v1/audio/voices`
+  and the new `GET /v1/voice/clones` take `language`. Every voice record carries `voice_id` (the
+  value for `voice=`), `name`, `kind` (`profile` | `clone`), `provider`, `model`, `languages` and the native
+  `language` when known; native speakers of the requested language come first.
+- **Languages per engine**: `llm.voice.list_languages(kind=..., provider=...)` and
+  `GET /v1/audio/languages` list the languages of every TTS, STT and cloning engine without loading
+  a model.
+- **Cloned-voice management**: `llm.voice.get_cloned_voice`, `rename_cloned_voice`,
+  `set_cloned_voice_reference_text`, `delete_cloned_voice`, and `GET|PATCH|DELETE
+  /v1/voice/clones/{voice_id}`. Built-in voices are read-only (`422`); an unknown id is `404`.
+  `PATCH`, `DELETE` and `POST /v1/voice/design` need server authentication (or
+  `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`); a provider key does not authorize them.
+- **Voice design**: `llm.voice.design_voice(description, name=..., language=..., text=...)` and
+  `POST /v1/voice/design` create a reusable voice from a written description (Qwen3-TTS
+  VoiceDesign, then cloned; needs the `qwen3-tts` and `stt` extras of AbstractVoice, included in
+  `abstractcore[apple]` and `abstractcore[gpu]`).
+- **`one_shot` on `/v1/audio/speech`**: the whole text as one generation, so the take keeps one
+  voice (Qwen3-TTS voices, up to 1000 characters). The stream route and remote models answer `422`.
+- `llm.voice.compatibility_catalog()`: feature support per provider and model.
+
+- **Guide: [choosing a model for knowledge-graph extraction](docs/knowledge-graph-extraction-models.md)**:
+  a measured comparison of local and hosted models on ontology-constrained entity and relationship
+  extraction (precision, coverage, time), the prompt rules and second-pass strategies that change
+  results, and recommendations.
+- **Registry entries**: `claude-haiku-5-5` (1M context, 128K output, adaptive thinking, effort
+  low..xhigh plus `max`) and `gpt-6-luna` (1,050,000 context, 128,000 output,
+  `reasoning_effort` none..xhigh plus `max`), from the vendors' model pages (2026-10-25).
+- **Mailbox access is an explicit choice**: `EmailAccount.access`, `"read"` (Read only) or `"write"`
+  (Read and write), stored in `to_dict()` / `from_dict()`; `access_text` says it in words.
+  `can_write` is the choice (it was "IMAP and SMTP"); `can_send` is `can_write` and an outgoing
+  server set. An account stored without it keeps what it could do: `"write"` with an outgoing
+  server, else `"read"`. `EmailAccountStore.set_access(access, *, smtp=None, test=True)` changes it
+  without connecting again (a new outgoing server is signed in to first with the stored sign-in);
+  `public()` has `access` / `access_text`; `abstractcore email status` and the terminal console's
+  Email line say "Read only" / "Read and write".
+
+### Changed
+
+- **Plugin floors**: `abstractvoice>=0.18.2`, `abstractvision>=0.3.34`, `abstractmusic>=0.1.17`,
+  `abstract3d>=0.3.2` (base install and the `apple`, `gpu`, `all-apple`, `all-gpu` and `vision-*`
+  extras).
+- `POST /v1/voice/clone` returns the stored record of a local clone under `voice` (name, engine,
+  reference text, meta).
+- A `one_shot` TTS request the voice backend refuses (too long, unsupported engine) answers `422`
+  with the backend's reason.
+- A voice request for an engine missing from this install (AbstractVoice names the extra to
+  install) answers `501` with the install command instead of `500`.
+- A read-only mailbox refuses changes and sends in plain words: "The mailbox <address> is
+  read-only: automations only read it." / "Turn on Read and write for <address> to change it or
+  send from it." (`email_mailbox_read_only`). `guarded_send` on a read-only account with an
+  outgoing server now refuses with `EmailMailboxReadOnly` before connecting.
+
+### Fixed
+
+- The HuggingFace provider's MoE experts fallback no longer raises `ModuleNotFoundError` when
+  `transformers` is not installed; it answers "not applicable" as intended.
+- **A configured reasoning default overrode the caller's `reasoning_effort=`**: with
+  `reasoning: minimal` on the text route, `generate(..., reasoning_effort="high")` (or `"none"`)
+  ran as `thinking="minimal"`, mapped to the model's `"low"`, and sent `reasoning_effort: "low"`. Precedence is now `thinking=` >
+  a provider-native field on the call (`reasoning_effort=`, `reasoning=`, `think=`, sent as
+  given) > the configured effort > nothing. The configured effort also applies only to an
+  instance the route describes (same provider or endpoint profile, same model; a reasoning-only
+  route applies everywhere): it used to reach every model on the machine. The planner behind
+  `prompt_cache_prepare_modules(thinking=None)` follows the same rule. Metadata gains
+  `thinking_source` (`thinking` | `reasoning_effort` | `configured_default`); a raw
+  `reasoning_effort=` is reported as `thinking_requested`, and as `thinking_effective` on
+  providers that forward it verbatim; the route summary reports an unapplied default as
+  `reasoning: None`, `reasoning_source: not_applied:<reason>`.
+- **An explicit output budget was cut to a guessed ceiling on unregistered models**:
+  `max_tokens=12000` on a model missing from `model_capabilities.json` was clamped to the
+  4096 `default_capabilities` guess, truncating JSON output. For an unregistered model the per-call
+  budget is now sent as given and the server enforces its real limit; registered models and
+  constructor caps still clamp, with the warning naming the actual source. A GGUF n_ctx clamp
+  stays in force for unregistered local models.
+- **LM Studio `thinking=` reached the model only for "off"**: the control rode
+  `chat_template_kwargs`, which LM Studio's OpenAI-compatible endpoint ignores, while metadata
+  reported `thinking_effective="on"`. The unified control now travels as the top-level
+  `reasoning_effort` (`"none"` = off, the declared level, or `"medium"` for on), which LM Studio
+  maps into the chat template on plain, message-history and tool-history requests, sync and
+  async. `thinking="off"` no longer appends the assistant
+  no-think prefill on top (it rendered the empty think block twice); the prefill remains the
+  off switch only after the server rejected `reasoning_effort`. Models without a surface LM
+  Studio can drive (Kimi `thinking` param, budget-only, surface-less) are no longer claimed.
+  `thinking=` no longer routes to the native `/api/v1/chat` endpoint, which dropped the control
+  for history/tool/async requests while still claiming it; `reasoning=` keeps that lane.
+- **vLLM thinking controls never reached the server**: they were posted inside a literal
+  `extra_body` JSON field, which vLLM ignores. `chat_template_kwargs`, `reasoning_effort`,
+  `thinking_token_budget` and the other vLLM extensions are now sent at the top level, and a
+  caller's `reasoning_effort=` / `chat_template_kwargs=` are forwarded. The template switch is
+  sent under the name the model declares (no guessed `enable_thinking` claimed for models that
+  have none); models with levels and no switch (DeepSeek V4, Mistral Small 4) get
+  `reasoning_effort`; GPT-OSS gets `reasoning_effort`; Seed-OSS gets `thinking_budget`;
+  Nemotron `low_effort` is sent; a token budget alone is no longer reported as an applied level.
+- **OpenRouter ignored `thinking=`**: it is now sent as OpenRouter's `reasoning` object
+  (`effort` / `enabled`), with the lowest declared effort (warned) for models whose reasoning
+  cannot be disabled.
+- **MLX text-lane usage counted the prompt with a character estimate** although the tokenizer
+  was loaded. The prompt is now counted with
+  the loaded tokenizer exactly as mlx_lm tokenizes it; the estimate is used only when no
+  tokenizer can count.
+
+## [2.29.0] - 2026-10-25
+
+### Added
+
+- `MessageSummary.labels`: the message's Gmail labels (`X-GM-LABELS`), read with every summary and detail
+  (`get`, `get_many`, `search`, `fetch_new`, `thread`) when the server advertises `X-GM-EXT-1`, never asked of
+  another server; `()` elsewhere (IMAP keywords stay in `flags`). In `to_dict()` as `labels`.
+- The fake IMAP server's `add_message(..., labels=...)`.
+
+## [2.28.0] - 2026-10-25
+
+### Added
+
+- Mailbox verbs on `EmailClient`, each on a list of UIDs and inside `session(write=True)`:
+  `mark(uids, seen=, flagged=)` (\\Seen, \\Flagged), `label(uids, add=, remove=)` (Gmail labels through
+  `X-GM-LABELS` when the server advertises `X-GM-EXT-1`, IMAP keywords elsewhere), `move(uids, to_folder)`
+  (`UID MOVE`, else COPY + \\Deleted + `UID EXPUNGE` of exactly those messages) and `delete(uids,
+  permanent=False)` (to the special-use \\Trash folder, else a usual trash name; `permanent=True` expunges).
+  They run on a connection limited to those commands (`MailboxIMAP4`; a body FETCH stays PEEK-only).
+- `EmailAccount.can_write` (IMAP and SMTP; `can_write` in `EmailAccountStore.public()`): an account with IMAP
+  only is a read-only mailbox and every change refuses before connecting with `EmailMailboxReadOnly`
+  (`email_mailbox_read_only`).
+- `client.search(...)` takes a typed query: `from_` (address or domain), `to`, `subject`, `text`, `since`,
+  `until`, `unseen`, `flagged`, `labels`, with `folder` and `limit`; newest first. `SearchCriteria` gains
+  `text`, `flagged` and `labels`.
+- `client.thread(uid)`: the conversation of a message (References / In-Reply-To both ways), oldest first.
+- `client.build_forward(uid, to=, note=, include_attachments=)` and, through the recipient policy and send
+  limits, `EmailContext.reply(uid, text, reply_all=)` and `EmailContext.forward(uid, to, note=,
+  include_attachments=)`.
+- `session(write=True)`: one connection for reads and changes.
+- Test servers: the fake IMAP server applies STORE (flags, keywords, Gmail labels), COPY, MOVE (optional),
+  EXPUNGE / UID EXPUNGE, lists a special-use \\Trash, and searches TEXT, FLAGGED, KEYWORD, X-GM-LABELS and
+  HEADER.
+
+## [2.27.0] - 2026-10-25
+
+### Added
+
+- `EmailClient.session()`: one read-only IMAP connection (one sign-in) for every read inside it
+  (`fetch_new`, `get`, `get_many`, `search`...); nested sessions reuse the outer one.
+- `EmailClient.get_many(uids, folder=..., max_message_bytes=...)`: several messages, each exactly as
+  `get(uid)` reads it (whole text/HTML bodies up to the reading limit, `skipped` over it, attachments as
+  metadata), on one connection with one header/structure FETCH per 100 UIDs and one PEEK FETCH per
+  distinct text section; a UID the folder does not hold is a typed `EmailMessageNotFound` value, never a
+  failure of the others. A mail watcher reading 50 new messages now signs in once and sends at most four
+  FETCHes (it opened one connection per message before, about 10 s each on a remote server).
+
+### Fixed
+
+- `session()` types only its own connection and sign-in failures: an error of the caller's own raised
+  inside the block (a full disk while storing what was read) passes unchanged instead of reading as a
+  mail connection error.
+- A message a server refuses to FETCH no longer blocks a mailbox read with `get_many`: the refusal is a
+  message-level error (`email_protocol_error`, `email_server_error`, `email_message_not_found`), so a
+  caller can read the batch one by one and pass only that message (AbstractRuntime's mail watcher does,
+  from its release that requires 2.27.0).
+
+## [2.26.4] - 2026-10-21
+
+### Added
+
+- **AI agent skill** at `skills/abstractcore/SKILL.md`, with portable Python integration and
+  operating recipes for provider selection, bounded generation, sessions, streaming, typed
+  extraction, host-controlled tools, embeddings, model management and HTTP serving. See
+  [Integrating and operating AbstractCore](docs/agent-usage.md) for the canonical guide.
+- **Tencent Hy-Memory-30B-A3B** (`hy_v3`, 30B total / 3B active MoE, for long-term memory
+  extraction): registry architecture `hy_v3` and model `hy-memory-30b-a3b`, with
+  aliases for the BF16, FP8 and GGUF repositories and the three GGUF file names. Runs through
+  `huggingface` (transformers and GGUF) and `mlx`.
+- **MLX `hy_v3` model class** (`abstractcore/providers/mlx_hy_v3.py`). mlx-lm ships none; the
+  class is registered as `mlx_lm.models.hy_v3` only when mlx-lm has no module of that name. It
+  matches transformers' `HYV3ForCausalLM` (float32 router, correction bias that chooses experts
+  without weighting them, float32 shared-expert sum) and keeps the router in full precision when
+  quantizing. The same file can ship next to converted weights as `hy_v3.py`. Its weight names
+  follow the mlx-lm MoE convention (`mlp.switch_mlp.*`, `mlp.router.expert_bias`), so
+  `mlx-community/Hy3-preview-*` quants load too.
+- Published MLX quants of Hy-Memory-30B-A3B, made with that class:
+  `mlx-community/Hy-Memory-30B-A3B-4bit` (4.5 bits per weight, 16.9 GB) and
+  `mlx-community/Hy-Memory-30B-A3B-8bit` (8.5 bits per weight, 32.0 GB), affine group 64 with the
+  router and its correction bias in full precision. They bundle the class as `hy_v3.py`, so plain
+  mlx-lm loads them too. Both, with the tencent GGUF Q4_K_M, are in the model download catalog
+  (row `hy-memory-30b-a3b`).
+- `thinking_control.effort_disable_value`: for templates whose one effort variable is also the
+  on/off switch (Hy-Memory `reasoning_effort`: `high`, `low`, `no_think`). The MLX, transformers,
+  GGUF, vLLM and OpenAI-compatible providers send `no_think` for `thinking=False` and a declared
+  level for `thinking=True` (`high` for Hy-Memory), instead of an `enable_thinking` flag the
+  template ignores. OpenAI-compatible servers get `no_think` only inside `chat_template_kwargs`,
+  never as the top-level `reasoning_effort`. Metadata reports `no_think` as `off`.
+
+### Fixed
+
+- Tool calls in the `<tool_calls><tool_call>name<tool_sep><arg_key>…` form are parsed, including
+  calls without arguments, and the wrapper no longer leaks into streamed or cleaned content.
+  A call whose name would be prose (no `<tool_sep>`) is rejected instead of returned with a
+  garbled name, and a call cut inside an argument value is not executed. A generation cut right
+  after `name<tool_sep>` (for example at `max_tokens`) is not executed as an argument-less call:
+  an argument-less call counts only when its `</tool_call>` arrived.
+- Tool parsing (GLM / Laguna / HY V3 `<arg_key>` lane): a call whose argument value mentions
+  `<tool_sep>` or `<arg_key>…</arg_key>` (for example a file being written about this format) is
+  parsed; `<tool_sep>` is recognised only where it ends the tool name.
+- `clean_tool_syntax`: an unclosed trailing `<tool_call>` is removed once parsed as a call, but
+  only when its body starts like a call (JSON object, `<function=`, `name<tool_sep>` or
+  `name<arg_key>`); prose after a call that mentions `<tool_call>` is kept.
+- Streaming: a closed tool envelope whose body no parser accepts is reported in
+  `metadata["unparsed_tool_call"]` with `reason: "unparseable"` instead of disappearing (all
+  families). The HY V3 `<tool_calls>` wrapper is scanned only for the `hy_v3` architecture, so
+  Laguna, GLM and unnamed streams keep prose that mentions `<tool_calls>`.
+- Transformers: assistant `tool_calls` from the OpenAI wire (arguments as a JSON string) reach
+  the chat template as objects. Templates that iterate the arguments (Hy-Memory, GLM, Laguna)
+  used to raise, and the lane fell back to a plain prompt without the model's format or its
+  thinking control. A request with an empty prompt after a tool result no longer adds an empty
+  user turn.
+- GGUF control plane: explicit sampler zeros are values (`temperature=0.0` is greedy, `top_k=0`
+  and `min_p=0.0` disable those filters) and `top_k`, `min_p`, `typical_p` and `repeat_penalty`
+  follow the request, the provider and the registry before the lane defaults. This changes
+  `temperature=0.0` and `top_k` for every GGUF model on that lane.
+- Transformers: Hy-Memory's experts are sized from `expert_hidden_dim` (the checkpoint's
+  `moe_intermediate_size` does not match its tensors), and MoE models use Transformers' `eager`
+  experts loop when torch has no `grouped_mm` kernel on the device (torch 2.8: CPU and MPS).
+- A Hugging Face cache snapshot path (`.../models--org--name/snapshots/<revision>`) resolves to
+  the repository's registry entry; it used to fall back to architecture defaults.
+- Transformers on Apple/MPS: torch 2.8.x and 2.10.x get a load-time warning. Their causal
+  `scaled_dot_product_attention` in float16/bfloat16 is wrong past about 20 prompt tokens
+  (`ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager` avoids it).
+
+### Changed
+
+- Documentation includes agent-skill registration, explicit credential handling, retry and
+  timeout defaults, and matching AI-readable indexes for version 2.26.4.
+- GLM / Laguna `<arg_key>` tool calls cut inside an argument value (with or without a closing
+  `</tool_call>`) are no longer executed with that argument missing; they are reported as
+  unparsed. Previously they ran with that argument missing.
+
+## [2.26.3] - 2026-10-18
+
+2.26.1 and 2.26.2 were not published on PyPI; their Windows fixes ship in this release.
+
+### Fixed
+
+- **Hugging Face (transformers) prompt cache with transformers 5.20 or newer**: a warm call
+  feeds only the new part of the conversation again. transformers 5.20 removed `Cache.crop`
+  with a positive length; the cache is now cropped with the negative form (drop that many
+  tokens), which every supported transformers version accepts. With 5.20, every warm call
+  re-read the whole conversation (correct output, no prefill savings).
+
+## [2.26.1] - 2026-10-17
+
+Windows fixes.
+
+### Fixed
+
+- **Console output**: `abstractcore` (`--status`, `--config`), `abstractcore-chat`,
+  `abstractcore-endpoint` and the apps (`summarizer`, `extractor`, `judge`, `intent`,
+  `deepsearch`) no longer stop with `UnicodeEncodeError` when their output is piped or redirected
+  on Windows; a character the code page lacks is written as `?`
+  (`abstractcore.utils.stdio.safe_stdio`).
+- **Process trees on Windows**: a command or browser tool that is stopped (`hard_kill_tree`) ends
+  every process it started (`taskkill /T /F`), not only its own process.
+- **LM Studio models** in `~/.lmstudio/models` are found by the vision catalog on every OS.
+- **Model downloads into a cache without symbolic links** (Windows without Developer Mode, where
+  huggingface_hub stores each file as a copy in `snapshots/<revision>/`): `abstractcore models
+  download huggingface <repo>` reports the download as complete instead of "planned file(s) are not
+  whole", and an interrupted-download marker counts those copies as finished.
+- **Hugging Face downloads on Windows** run to the end. The download process stops when the
+  process that started it exits; on Windows it now watches that process through a process handle,
+  because a virtual environment's `python.exe` is a launcher and the parent process id is the
+  launcher's. Downloads from the gateway console (for example the default speech-to-text model,
+  faster-whisper `large-v3`) previously stopped after a second with "the Hugging Face download
+  process exited 75".
+
+## [2.26.0] - 2026-10-15
+
+### Security
+
+- **No OS keychain, on any OS** (operator ruling 2026-10-10). `abstractcore.comms.email.SecretVault` seals with AES-256-GCM under ONE key file — by default `<config dir>/secrets/sealing.key` (0600 in a 0700 folder, 32 bytes from `os.urandom`, made on first use); a host passes its own (`SecretVault(dir, key_file=...)`, `EmailAccountStore(..., key_file=..., vault=...)`; AbstractGateway uses `<data dir>/secrets/sealing.key` for every store of its data folder). Each seal binds the store's place relative to the key root, so a folder moved or restored with its `secrets/` keeps working and a sealed file copied into another store does not open. The `keyring` dependency is removed and nothing imports it (the email test suite fails any test during which `keyring` is imported). On Windows, where Python's modes only toggle the read-only flag, the key folder and file also get a best-effort owner-only ACL (`icacls /inheritance:r /grant:r <user>`). New helpers `ensure_key_file`, `read_key_file`, `key_fingerprint`.
+- Credentials sealed by an older version with the key in a keychain are **never opened** (no keychain call, no password prompt): `load()` raises `EmailSecretUnavailable` (`email_secret_sealed_with_keychain`, or the host's own sentence and code), `legacy_keychain()` / `retire_legacy_keychain()` let a host mark or move such a store, and `public()` says `secret_storage: "old-keychain"` with the sentence in `secret_warning`. Stores sealed with the older per-store key file (`secret.key`) are opened and re-sealed under the sealing key (`reseal_legacy=False` reads without writing). `secret_storage` is now `sealing-key` | `old-keychain` | `key-file` (was `os-keychain` | `key-file`); `--key-storage` accepts `auto` / `file` only (both mean the key file), `key_backend="keyring"` is refused. What the key file protects (copies without `secrets/`; not code running as the same user, as before) is in docs/email.md.
+
+### Changed
+
+- Requires AbstractVoice 0.15.0 or newer in the base install and in the `[apple]` and `[gpu]` extras (`abstractvoice[all-apple]`, `abstractvoice[all-gpu]`), the version whose engine runtime carries the mlx-whisper engine; the route engine check's floor moves with it.
+- Speech input (`input.voice`) recommends Whisper `large-v3` on every host (was `base`). On Apple silicon with the apple setting the pick is AbstractVoice's `mlx-whisper` engine, which runs it on the Apple GPU (about 1.4 s for a 17-second clip on an M5 Max, against about 20 s on the processor); the light install and every other host keep `faster-whisper` (CUDA on an NVIDIA GPU). Stored routes are never changed; fresh installs and `apply-recommended` follow the new pick. On a processor, the recommendation notes that `large-v3-turbo` is faster (about 6 s for that clip).
+
+### Added
+
+- `mlx-whisper` speech-input provider: route alias, weights probe and download (`abstractcore models download mlx-whisper large-v3`), catalog rows `whisper-large-v3` and `whisper-large-v3-turbo` (both Whisper engines).
+- `recommendations.voice_input_hint(route, host)`: the served one-line hint for a configured speech-input route (on Apple silicon, a faster-whisper route runs on the processor while mlx-whisper runs the same model on the GPU). The capability-defaults grid carries it on the `input.voice` row as `route_hint` `{code, sentence, route}`.
+
+### Fixed
+
+- The Hugging Face weights probe counts `.npz` weight files (MLX checkpoints such as `mlx-community/whisper-large-v3-mlx`), which it reported as not downloaded.
+
+## [2.25.1] - 2026-10-08
+
+### Security
+
+- **macOS command sandbox, "Deny everything, allow listed workspaces": the shared temp folders are
+  denied too.** The profile denied only user data (`/Users`, `/Volumes`, `/private/var/root`,
+  `$HOME`), so an unlisted file under `/private/tmp` or `/private/var/folders` stayed readable. Both
+  are now denied (read and write); system folders (`/usr`, `/System`, `/Library`, `/opt`,
+  `/usr/local`, `/Applications`) stay readable and unwritable; xcrun's cache files and the run's
+  private TMPDIR keep working. Test: `tests/tools/test_sandbox_macos.py`.
+- **`browser_probe` serves local pages from a scoped loopback origin, never `file://`.** A page in
+  an allowed workspace could embed `file://` subresources (img, iframe, stylesheet) from a refused
+  folder, and Chromium loaded them. Local targets are now served from a private
+  `http://<random name>.localhost:<port>` origin that answers only for files the run's `_sandbox`
+  stamp can read (new `sandbox.path_readable`, the most-specific-row rule; symlinks resolved);
+  `file://` URLs and out-of-scope files are refused and listed in the report ("Local files
+  BLOCKED"). A page outside the scope is refused before the browser starts; on a host that called
+  `configure_host` a local page without a stamp is refused; library use without a host policy serves
+  what the process can read. `browser_probe` accepts the hidden `_sandbox` argument (not in the
+  model-facing schema). Side effect: ES-module and `fetch()` pages render as they do over http (the
+  `file://` CORS blank no longer happens). Tests: `tests/tools/test_browser_probe.py`.
+
+### Fixed
+
+- **Linux command sandbox: an allowed folder inside a refused one is reachable under bubblewrap.**
+  The bwrap profile masked a refused folder with a tmpfs and remounted it read-only at once, so
+  bwrap could not create the mount point of a more specific allowed folder inside it ("bwrap: Can't
+  mkdir …/parent/child: Read-only file system") and every command failed. The masks are now made
+  read-only after every row is bound, so the most specific row wins on Linux as on macOS (a refused
+  folder inside the allowed child still refuses its subtree). Landlock already granted the child of
+  a refused parent; a test now proves it. Tests: `tests/tools/test_sandbox_spec.py`
+  (argv order) and `tests/tools/test_sandbox_linux.py` (real bwrap and Landlock runs, CI job
+  `linux-sandbox`).
+- **Every provider a capability route can name has a local-weights answer.** The gateway console's
+  Voice Input row (faster-whisper / `large-v3`) read "not checked: AbstractCore has no local-weights
+  probe for provider 'faster-whisper'" on a machine that had `Systran/faster-whisper-large-v3`
+  cached, and output sound and music (stable-audio-3) said the same. `model_materializer.probe` now
+  maps each engine's own model id to its storage with that engine's table: faster-whisper
+  (AbstractVoice's aliases, then faster-whisper's `_MODELS`, read from its source so CTranslate2
+  and torch are never imported), transformers-asr, audiodit, omnivoice, qwen3-tts, piper, f5_tts,
+  chroma, stable-audio-3, stable-audio, acestep, sdcpp and mlx-gen / mflux presets, triposr,
+  trellis2, step1x and hunyuan3d. Hugging Face storage is judged by the same reader as every other
+  HF route; `acemusic` and `elevenlabs-music` are remote. A voice route's provider is resolved the way the
+  route runs it before the probe (`local` / `hf` on input.voice, AbstractVoice's `remote` / `compatible` /
+  `proxy` aliases are remote). The engines that resolve to a Hugging Face
+  repo download it (`abstractcore models download faster-whisper large-v3`). `supported_providers()`
+  lists them. Only an id no route offers still answers `unknown` (`no materializer`), now naming
+  the provider and what to do. Tests: `tests/config/test_engine_weight_probes.py` (cache layouts
+  per provider, no network or subprocess allowed, every route provider covered).
+- **`ModelPresence.summary`**: one short sentence per answer ("In the Hugging Face cache.", "Not in
+  Piper's voice folder.") that grids print under the state; the long `detail` stays for tooltips.
+  Always present in `to_dict()`.
+- **Web console Email: no "Advanced" disclosure.** Your own sign-in client is the visible section
+  **Sign-in app** and the recipient rules, send limits and watched folder are **Recipients and
+  limits** (the operator's rule: no "Advanced" anywhere; the names the consoles share). The sign-in
+  refusal says "add your own client id under Sign-in app". Tests: `tests/test_console_email_tab.py`.
+
+## [2.25.0] - 2026-10-05
+
+### Added
+
+- **Command sandbox** (`abstractcore.tools.sandbox`): `execute_command` and the persistent
+  `shell_exec` session run inside an OS sandbox built from the run's effective workspace set, which
+  the host stamps as the hidden `_sandbox` argument (`SandboxSpec`: private workspace, posture
+  `allowed_only` | `any_except_denied`, default mode, allowed rows ro/rw, refused rows, built-in
+  refusals and the host's exceptions). macOS: `sandbox-exec` with a generated profile; Linux:
+  `bwrap`, or Landlock for the allow-list posture. The most specific row wins; built-in refusals
+  are absolute. No sandbox available: the call returns `success: false` with one sentence and runs
+  nothing, unless the host allowed unsandboxed commands. `configure_host(env=…,
+  unsandboxed_commands_allowed=…)` (set once by the host at boot) gives the scrubbed environment
+  every command starts from (plus a private `TMPDIR` in the run's workspace) and makes an unstamped
+  spawning call refuse; `host_policy()` / `host_sandbox_kind()` report it. Results carry
+  `sandbox: {kind, …}` and a `Sandbox: …` line. Library use without a host policy is unchanged.
+
+- CI: a `linux-sandbox` job installs bubblewrap on Ubuntu and runs `tests/tools/test_sandbox_linux.py`
+  (bwrap and Landlock); the job fails when any of those tests is skipped, so the Linux sandbox is verified
+  on a real Linux host on every push to main and every pull request.
+
+- `POST /v1/chat/completions` accepts OpenAI's `response_format` on every provider:
+  `{"type": "json_object"}` or `{"type": "json_schema", "json_schema": {"name", "schema", "strict"}}`.
+  Providers that constrain decoding receive the schema; every answer goes through the
+  structured-output handler and is validated against the caller's schema (feedback retries). An
+  unusable `response_format` answers `400 invalid_response_format`, `response_format` with `tools`
+  answers `400 unsupported_parameter`, and an answer that still does not match answers
+  `500 structured_output_invalid`. A streamed request receives the validated JSON as one chunk.
+  `abstractcore.structured.json_schema` (`response_model_for`, `validate_instance`) is the validator.
+
+- Console **About** (the *i* button in the top bar): the compact About card shared by every
+  AbstractFramework app (UI kit `AfAbout`) with AbstractCore's version, the AbstractFramework and
+  AbstractGateway versions installed on this host, the links and the licence line; no package list.
+  `abstractcore.utils.identity.about_card_html` (with `about_version_facts`, `about_links`) renders
+  it; the kit's `af-about` CSS is vendored by `python -m abstractcore.console.theme_sync`.
+
+- `POST /v1/audio/music` accepts `seconds` (the clip length; same value as `duration_s`, which
+  stays accepted). A non-positive length or two lengths that disagree answer `400`. The sound
+  output's `seconds`/`duration_s` and `model` reach the music plugin with the task
+  (`text_to_audio`), so a sound effect runs the route's model for the requested length.
+
+- `models delete huggingface org/repo:QUANT` (and the Gateway's Models-page Delete) removes only
+  that GGUF quant's files and keeps the repo's other quants; the whole repo goes when it was the
+  last model file set. A quant that is not in the cache answers `not_found`.
+
+### Fixed
+
+- `POST /v1/audio/music` with `task: "text_to_audio"` returns the generated sound effect; it read
+  only the `music` output and answered `500` for the `sound` output a sound effect produces.
+
+- `POST /v1/chat/completions` with an unknown provider, or a model the provider reports missing, answers `404` with `code: "model_not_found"` in the OpenAI error envelope instead of `500`. The registry raises `UnknownProviderError` (a `ModelNotFoundError` and still a `ValueError`).
+
+- A Hugging Face / MLX cache delete is planned on its own repo only. The cache API resolves a
+  commit hash to the first repo that holds it, so a mirror or duplicated repo sharing a commit
+  could be deleted in place of (or along with) the requested one.
+
+### Changed
+
+- The music plugin floor is `abstractmusic>=0.1.16` (base, `[apple]` and `[gpu]`): 0.1.16 runs the requested Stable Audio 3 checkpoint (the SFX checkpoint for sound effects) for the requested `seconds`.
+
+- Console theme CSS re-synced from UI kit 0.8.0. The terminal console crate
+  `abstractcore-console` is versioned 0.8.0 with this release.
+
+## [2.24.0] - 2026-10-03
+
+### Added
+
+- Hosting applications can compose the Core ASGI server with a request-scoped
+  `ServerAuthPolicy` and `use_server_auth_policy()` context manager. Host tokens
+  stay separate from standalone server credentials; policies remain isolated
+  across concurrent requests and restore after errors. Optional unauthenticated
+  access preserves restrictions on server-held provider credentials.
+
+### Fixed
+
+- Prompted tool-call parsing exposes structured `tool_call_error` diagnostics for
+  rejected calls; streaming malformed envelopes expose the same diagnostic so
+  agents can recover.
+
+## [2.23.1] - 2026-10-02
+
+### Fixed
+
+- MLX native lane, prefix cache on small Macs: the prompt cache now sizes itself to the machine — budget `min(8 GiB, working_set / 4)` and a 512 MiB reserve on top of the measured free memory — instead of mlx-vlm's automatic `working_set / 10` budget plus a `max(1 GiB, working_set / 10)` reserve. On a 24 GB Mac running a 27B model that reserve alone was more than the model left free, so every snapshot store was skipped (`native_apc_store_skipped`) and every turn re-prefilled the whole conversation. `mlx_cache_memory_max_gb` still sets the budget explicitly; the degraded reason now also names free memory as a cause.
+- MLX native MTP: a text route with no `speculation` key now inherits optional MTP (`native_mtp`, `require_acceleration: false`) for an artifact whose MTP support is verified, as the console's "Workflow / Gateway default" label always said. Only an explicit `false` turns it off. Before, absence meant off, so any save that dropped the key (a provider move, an MTP picker left on "default") silently disabled speculation (9 instead of 17 tok/s on Qwen3.8-27B oQ4e).
+
+## [2.23.0] - 2026-10-01
+
+
+### Added
+
+- `McpClient.initialize()` and `McpStdioClient.initialize()` run the MCP handshake explicitly and
+  return the server's `initialize` result (`serverInfo`, `protocolVersion`, `capabilities`);
+  `initialize_result` keeps it. `list_tools_page(cursor=None)` returns one `tools/list` page and
+  its `nextCursor`.
+- `McpStdioClient(..., inherit_env=False)` starts the server with exactly the given `env`
+  instead of this process's environment plus `env`.
+
+### Changed
+
+- A stored policy written before the two lists existed migrates on load: an allowlist's entries
+  become Always allowed, a denylist's entries become Always denied, the mode is kept. The stored
+  and returned policy keeps `entries` (the list the mode uses), so readers of `{mode, entries}`
+  keep their meaning; `{mode, entries}` bodies are still accepted.
+- A domain entry now also covers its subdomains (`example.com` matches `a@mail.example.com`,
+  never `a@badexample.com`); before, each subdomain needed its own entry.
+- The account's own addresses (registered address and mailbox address) are always allowed; the
+  email context, `POST /acore/email/policy/check` and `abstractcore email policy check` pass them.
+
+### Fixed
+
+- `McpClient` (Streamable HTTP) now sends `initialize` and the `notifications/initialized`
+  notification before its first request, sends the server's `MCP-Session-Id` on every later
+  request and the negotiated `MCP-Protocol-Version`, and reads responses sent as
+  `text/event-stream`. It used to post `tools/list` without a handshake, which conformant servers
+  refuse.
+- `McpStdioClient` sends `notifications/initialized` after `initialize` (it sent `initialized`,
+  which servers ignore, so strict servers refused every later request).
+- `list_tools()` on both clients follows `nextCursor` and returns every page (it returned the
+  first page only); a server that repeats a cursor or exceeds 100 pages raises `McpProtocolError`.
+- Recipient rules: the email recipient policy has two lists, `always_allow` ("Always allowed")
+  and `always_deny` ("Always denied"), each holding exact addresses (`name@example.com`) or
+  domains (`example.com`, which also covers its subdomains). The mode decides only recipients on
+  neither list: `allowlist` ("Only the Allowed list") refuses them, `denylist` ("Anyone not on
+  the Denied list") allows them. Precedence, in one function (`evaluate`): the account's own
+  address is allowed, then Always denied refuses, then Always allowed allows, then the mode.
+  To, Cc and Bcc are all checked, for agent sends and notifications alike. A refusal reads
+  "Not sent: x@denied.gov is on your Always denied list (denied.gov)."
+- `GET /acore/email` policy carries `self_addresses` (the own addresses, normalised: always
+  allowed, shown fixed by the consoles).
+- `RecipientPolicy.build(..., always_allow=, always_deny=)`, `with_changes(always_allow=,
+  always_deny=)` (a given list replaces that list), `EmailAccountStore.set_policy(always_allow=,
+  always_deny=)`, `PUT /acore/email/policy` fields `always_allow` / `always_deny`, and
+  `abstractcore email policy set --always-allow <entry> --always-deny <entry>`. `policy show`
+  prints both lists. Each verdict carries `source` (`self`, `always_deny`, `always_allow`,
+  `mode`).
+- In denylist mode the account's own address was denied when a caller passed it as "self" (it was
+  merged into the mode's matched set). Self is now its own first precedence step.
+- Changing the registered address stored the policy as an object instead of its dict form.
+- The web console's Email tab (Advanced) shows the mode ("Only the Allowed list" / "Anyone not on
+  the Denied list"), the **Always allowed** and **Always denied** lists and the sentence "Denied
+  always wins. Your own address is always allowed. A domain also covers its subdomains."; every
+  add, remove or mode change saves at once. The own address shows as a fixed chip ("(your
+  address)", not removable). The limits read "Send at most [n] per hour and [n] per day.".
+
+## [2.22.0] - 2026-10-01
+
+Mailbox servers are found from the address, the web console's Email tab connects over IMAP with
+every server field visible and pre-filled, a settings save keeps the keys this version does not
+know, and transcription routes written with a download provider are repaired. The terminal console
+`abstractcore-console` 0.6.0 ships with this release.
+
+### Added
+- `abstractcore.comms.email.discovery.discover_servers(address)` and `POST /acore/email/discover`:
+  a mailbox's IMAP and SMTP servers are found from its address (known providers, the domain's
+  autoconfig file, the Thunderbird ISPDB, DNS SRV, then MX; HTTPS only, public hosts only, safe
+  XML). `PUT /acore/email` and `abstractcore email connect` without servers discover them; nothing
+  found is a 400 `email_discovery_failed` listing the steps tried. `abstractcore email discover
+  <address>` prints the result.
+- `abstractcore.comms.email.discovery.server_defaults(address, discovered=None)`: the server
+  fields a mailbox form pre-fills (the discovered servers and login, else the standard
+  `imap.<domain>` 993 SSL and `smtp.<domain>` 465 SSL), with one sentence saying which.
+  `POST /acore/email/discover` and `abstractcore email discover --json` return it as `defaults`.
+- `PUT /acore/email/folder`, `EmailAccountStore.set_folder()` and `abstractcore email folder
+  <name>`: the folder the mailbox is read from changes without connecting again (empty = INBOX).
+- `GET /acore/email` and `abstractcore email status --json` list `oauth_providers` (whether this
+  version has a built-in sign-in client for Google and Microsoft) and `registered_address_stored`.
+- `abstractcore.console.themes.KIT_SWITCH_CSS` and `KIT_FORM_CSS`: the UI kit's switch and form,
+  card and tabs rules (ui-kit 0.3.3), copied verbatim by `abstractcore.console.theme_sync`
+  (`parse_kit_block`), which refuses a kit without them.
+- Model catalog: an artifact may carry `route: {key, provider, model}`, the capability route that
+  runs it when the engine is not the download provider (`model_catalog.route_for_download`).
+  The speech input model (Hugging Face `Systran/faster-whisper-base`) is run by faster-whisper
+  `base`.
+
+### Changed
+- Web console, Email tab: in order, **Email address** (the only field with a Save button),
+  **Mailbox**, the **Agent email tools** switch, and **Advanced**. The Mailbox tabs are **IMAP**
+  (first, the default), **Google** and **Microsoft**. The IMAP pane shows every field: Mailbox
+  address, Password, and Incoming mail (IMAP) and Outgoing mail (SMTP) as Server / Port / Security
+  rows, filled with `imap.<domain>` 993 SSL and `smtp.<domain>` 465 SSL as soon as the address has
+  a domain, then with the discovered settings, never over a field you edited; one line says where
+  they came from. There are no User name or Display name fields: a small link "My provider uses a
+  different login name" shows a Login field, and "Custom certificate" shows the CA file. One
+  **Connect** tests reading and sending, then stores; an error names the step that failed. Once
+  connected, the Mailbox card shows the status line, the **Active** switch, **Test**, and
+  **Disconnect** with an inline confirmation. Advanced is three short sentences saved as you edit:
+  who your agents may send to, "At most N per hour and N per day", and the watched folder.
+  "Save and test", "Turn on/off", "Save policy" and "Save limits" are gone; the CLI hint uses
+  `--password-stdin`. Forms are at most 720 px wide with labels above the fields.
+- Web console and terminal console, Email: the address is asked once. With no email address
+  stored and no mailbox, the mailbox form's address is the only address field (connecting sets the
+  email address from it). With an email address stored, the mailbox form shows "Mailbox account:
+  <address> — Use a different account"; the link shows the field, prefilled, and the email address
+  is read-only until you connect or go back to it. "Your mailbox is a different account" shows only
+  when the two addresses differ.
+- Email send limits default to 100 per hour and 1000 per day (were 20 and 100). Connecting a
+  mailbox does not store the defaults, so an account where nobody set limits follows the
+  defaults; limits set with `abstractcore email limits set`, `PUT /acore/email/limits` or the
+  console are stored with `set_by: "user"` (only the windows set) and kept across upgrades.
+  `abstractcore email limits reset` (`EmailAccountStore.reset_limits()`) follows the defaults
+  again. The limits document gains `source`: `default` | `user` | `legacy`.
+- Connecting a mailbox sets the email address when none is stored. A connection given no display
+  name keeps the stored one, else uses the address's local part (`abstractcore email connect
+  --display-name` still sets it); a connection given no user name signs in with the discovered
+  form, else the address.
+- Web console on phones: the content uses the full width (flat sections, one page scroll); the
+  list panels fold from their heading and the browser remembers it. The dark/light control is a
+  "Dark theme" switch.
+- `abstractcore email` texts say "Email address" and "Use this mailbox".
+- Terminal console `abstractcore-console` 0.6.0: the **Email** screen follows the web console card
+  by card: Email address with its own Save; the Mailbox card with the tabs **IMAP** (first, the
+  default), Google and Microsoft, the IMAP tab showing every server field pre-filled from the
+  address (standard values at once, then `abstractcore email discover --json` `defaults`, never
+  over an edit), Login and CA file behind small links, the address asked once, and one Connect;
+  connected: status line, the **Active** switch, Test and Disconnect with an inline confirmation;
+  the **Agent email tools** switch; Advanced as three sentences (recipients, limits, watched
+  folder) saved as you edit, every failure with its cause inline. On/off settings on every screen
+  are switches (`[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space` or `Enter`) that
+  apply at once; switching on a flag marked UNSAFE still asks first. The Routes screen reads a
+  route whose provider is no engine (for example `input.voice` = `huggingface`) as "unknown
+  engine" with AbstractCore's reason. It needs this release's `abstractcore email discover` and
+  `abstractcore email folder`. See [Terminal console](docs/console-tui.md#email-keys).
+
+### Fixed
+- A Hugging Face model on a computer with no Hugging Face cache yet reads as not downloaded
+  (`absent`, downloadable), not `unknown`: a fresh install's Transcription card said "Unknown" and
+  "Download all" skipped the model.
+- Transcription showed "Engine missing: unknown AbstractVoice engine 'huggingface'": the
+  recommended download plan asked AbstractVoice for the engine of the download provider
+  (`huggingface`) instead of the route's engine (`faster-whisper`). Plan rows carry
+  `route_provider` / `route_model` and judge that engine; the grid probes the transcription
+  model's weights in the Hugging Face cache. Any other unknown voice provider says to pick a
+  transcription engine (Multimodal page in the gateway console, Routes in the core console).
+  Speech input accepts AbstractVoice's aliases (`whisper`, `local`, `hf`, `transformers`).
+- The default allowlist entry follows the registered address when it changes
+  (`EmailAccountStore.set_registered_address` swaps the old address for the new one), so a sign-in
+  code or a notification to a changed address is no longer refused as "not in the allowlist".
+  `evaluate(..., self_addresses=)` lets a caller treat given addresses as allowlist entries.
+- Web console: Copy buttons work when the console is opened over plain http from another machine
+  (textarea fallback when the Clipboard API is unavailable) and say "Copy failed — select and
+  copy" when nothing was copied.
+- A settings save keeps the keys this version does not know in `abstractcore.json`: top-level
+  keys, unknown fields of every section, unknown `capability_defaults` keys and route keys this
+  version cannot parse, unknown `provider_profiles` keys and unknown columns of a profile that
+  still exists are written back unchanged. Before, the first save after a restart (any setter: a
+  route, a default, a timeout) removed a key you added yourself (a top-level key,
+  `vision.user_note`) and every key a newer AbstractCore had written. Known keys are validated as
+  before, and a route or profile you delete stays deleted.
+
+### Migration
+- Config repair on load: a stored `input.voice` route that holds a catalog download pair
+  (`huggingface` / `Systran/faster-whisper-base`) is rewritten to the catalog's route
+  (`faster-whisper` / `base`) the first time this version loads the config, after writing a copy
+  of the file to `abstractcore.json.route-repair-<time>.bak` (mode 0600). The repair runs once and
+  changes nothing else; any other route is left as it is.
+- Send limits: an unmarked 20 / 100 stored by 2.21 or earlier (the old defaults, written at
+  connect) follows the new defaults 100 / 1000; any other unmarked value is kept as a `legacy`
+  limit. Run `abstractcore email limits set` to keep 20 / 100, or `abstractcore email limits
+  reset` to follow the defaults.
+- Keys written by a newer AbstractCore, or added by hand, survive saves from this version: a
+  downgrade followed by an upgrade keeps them.
+- `abstractcore-console` 0.6.0 calls `abstractcore email discover` and `abstractcore email
+  folder`: upgrade AbstractCore to 2.22.0 together with the terminal console.
+
+### Documentation
+- Docker: the server examples name the current image, `ghcr.io/lpalbou/abstractcore-server:2.22.0`.
+- [Email](docs/email.md) describes server discovery, the folder verb, the Email tab's cards and
+  the terminal Email screen; [Centralized Config](docs/centralized-config.md) describes how a save
+  keeps unknown keys and the voice-route repair.
+
+## [2.21.0] - 2026-09-30
+
+The web console works on phones, tablets and any window size, following the AbstractFramework
+responsive system of `@abstractframework/ui-kit` 0.3.2.
+
+### Added
+- `abstractcore.console.themes.KIT_RESPONSIVE_CSS`: the UI kit's responsive token layer
+  (`--tap-min`, `--vh-full`, `--safe-*`, `--gutter`, the coarse-pointer floors,
+  `text-size-adjust`). `abstractcore.console.theme_sync` generates it with the themes and refuses
+  a kit without that layer. `themes.py` is regenerated from ui-kit 0.3.2.
+
+### Changed
+- Web console (`/console`): it uses the framework breakpoints (480, 768, 1024 and 1440 px wide,
+  500 px tall), `viewport-fit=cover`, and safe-area padding on the top bar, tabs and page.
+  Dialogs open as bottom sheets below 768 px wide or 500 px tall. On touch screens, targets are
+  44 px, fields use 16 px text, native selects show a drawn chevron at 44 px, and table text is
+  14 px. Card and form grids stay within their pane.
+- On phones, the console's tables scroll sideways inside their frame, and long artifact ids stay
+  on one line with an ellipsis (the full id is the tooltip).
+
+### Fixed
+- Long configuration paths in the Providers and Email tabs wrap inside their pane.
+- The Overview key/value cards (Engines) stay within the page at 320 px and with the largest font
+  size.
+
+## [2.20.2] - 2026-09-30
+
+Automatic mail is marked so automations never answer themselves, recommendations only name
+engines your install has, and media requests can run without a text model.
+
+### Added
+- Automatic mail (RFC 3834): `OutgoingMessage(auto_submitted=..., automation_marker=...)` sends
+  `Auto-Submitted` (`auto-generated` or `auto-replied`) and `X-AbstractFramework-Automation:
+  <marker>`; `EmailContext.automation_marker` stamps both on every `guarded_send` through that
+  context (`auto-replied` when `in_reply_to` is set), and `on_sent` reports them with the
+  Message-ID. `mark_automatic`, `auto_submitted_value` and the header constants are exported from
+  `abstractcore.comms.email`. See [Email](docs/email.md#automatic-mail).
+- Message summaries and details carry `auto_submitted` (the `Auto-Submitted` keyword, `None` when
+  absent) and `framework_marker` (the `X-AbstractFramework-Automation` value, `""` when absent),
+  also in the email tools' results.
+- `abstractcore.providers.capability_host.CapabilityHostProvider`: a provider with no text model
+  that runs media-only outputs (image, video, voice, music, transcription) through the capability
+  plugins. Asking it for text raises `TextGenerationUnavailable` (an `InvalidRequestError`).
+- Every host profile carries `engines_installed` (`{mlx, mlx-gen, diffusers, acestep}` ->
+  installed in this Python environment; module lookups only).
+
+### Changed
+- Recommendations and the fresh-install seed never name an in-process engine your install does
+  not have. On Apple silicon without MLX (the light install profile) the text recommendation is
+  the tier's model on LM Studio (`qwen/qwen3.5-9b` below 24 GiB, `qwen/qwen3.8-27b` from 24 GiB;
+  Qwen3.8 Flash-Next has no LM Studio build, so 128 GiB Macs get the 27B), with
+  `basis: apple_silicon_engine_fallback` and the reason in `tier`. MLX-Gen image and video rows
+  stay unset with the reason and the install command. With MLX installed the unified-memory tiers
+  are unchanged.
+- A capability-route write that moves a route to another provider and names no options drops the
+  stored speculation request (for example an MLX route's `speculation: native_mtp`);
+  `speculation: false` and every other option are kept.
+
+## [2.20.1] - 2026-09-30
+
+Email secrets never on a command line, and the terminal console `abstractcore-console` 0.5.0 (its
+2.20.0 publish stopped on a Linux test failure; 0.5.0 never reached crates.io and ships with this
+release, with the fixes below).
+
+### Added
+- `abstractcore email connect --password-stdin` and `--client-secret-stdin`: read the password or
+  the OAuth client secret from stdin (exactly one line; only the trailing newline is removed) so a
+  script or program never puts it on a command line, where every local user can read it (`ps`)
+  while the command runs. Each refuses to combine with its argv form (`--password <value>`,
+  `--client-secret <value>`), with the other stdin flag, or with the wrong sign-in
+  (`--password-stdin` with `--oauth`, `--client-secret-stdin` without it), with a typed
+  `email_invalid_settings` error naming the fix. `--password <value>` stays for people typing
+  commands.
+
+### Security
+- The terminal console's Email screen passed the password (`--password=<value>`) and the OAuth
+  client secret (`--client-secret=<value>`) in the argv of `abstractcore email connect`, visible
+  to other local users while the command ran. It now runs the command with
+  `--password-stdin` / `--client-secret-stdin`, writes the secret to its stdin and closes it.
+- A request validation error (422) on a secret field of the wrong type (`"password": 123`,
+  `"client_secret": [...]`) no longer logs or returns the value: the server redacts the input of
+  any error whose field path names a secret, on every route.
+
+### Fixed
+- Terminal console: cancelling or timing out a command kills its whole process group, so a
+  child it started cannot keep the output pipes open (on Linux the OAuth2 **Cancel sign-in**
+  waited 30 s; this failed the crate's release test).
+
+## [2.20.0] - 2026-09-30
+
+Email becomes a configured, encrypted, policy-bound account. The terminal console ships as
+`abstractcore-console` 0.5.0 with a new Email screen.
+
+### Added
+- `abstractcore.comms.email`: one typed mail library used by the CLI, the consoles, the tools and
+  hosts. IMAP is read-only (EXAMINE, BODY.PEEK, and a connection that refuses any mutating
+  command); SMTP sends with attachments and reply threading; TLS is always verified (SSL or
+  STARTTLS, optional private CA); search takes typed fields (sender address or domain, recipient,
+  subject text, dates, read state); `fetch_new` reads incrementally with UIDVALIDITY cursors;
+  bodies are returned whole. Errors are typed from protocol codes with a cause and a fix
+  (`email_auth_failed`, `email_tls_failed`, `email_unreachable`, `email_mailbox_missing`,
+  `email_quota_exceeded`, `email_recipient_refused`, ...).
+- Credentials encrypted at rest (AES-256-GCM, key in the OS keychain; a 0600 key file on hosts
+  without one, reported by `status`).
+- OAuth2 sign-in for Google and Microsoft (XOAUTH2 on IMAP and SMTP, token refresh and rotation,
+  device-code and browser flows, custom providers) with your own OAuth client or the built-in
+  AbstractFramework client when one is registered for the provider (`BUILTIN_CLIENTS`,
+  `resolve_oauth_client`; settings record `client_source`). Available from the CLI (`--oauth
+  google|microsoft --client-id <value> --client-secret <value>`; with `--json` the sign-in prompt
+  is one stderr line `{"oauth_prompt": ...}`), `/acore/email/oauth/start|finish|cancel`, the web
+  console (**Sign in with OAuth2**) and the terminal console (`g`).
+- Recipient policy (`allowlist` / `denylist` of exact addresses and domains over To, Cc and Bcc;
+  any refused recipient refuses the whole message with the addresses and rule named). A new account
+  starts with an allowlist holding the registered address.
+- Send limits per rolling hour and day (default 20 / 100), durable across processes.
+- `abstractcore email connect|test|status|folders|disconnect|enable|disable|registered-address`,
+  `abstractcore email policy show|set|check`, `abstractcore email limits show|set` (all with
+  `--json`); credentials as direct parameters.
+- `/acore/email` server routes and an **Email** tab in the web console; an **Email** screen (`@`)
+  in the terminal console.
+- Tools `search_emails`, `get_email_attachment` and `reply_email`; email tool results carry
+  `content_trust: "untrusted"` and a fixed notice. Hosts inject a per-user account with
+  `set_email_account_resolver` / `use_email_context`.
+- Refiner id `send_email_recipient@v2` (self set plus pre-authorised recipients), declared on
+  `send_email` and `reply_email`.
+- `abstractcore.testing.mailserver`: hermetic IMAP, SMTP (aiosmtpd) and OAuth2 servers with a
+  throwaway CA for tests. `aiosmtpd` joins the `test` extra.
+- Base dependencies `cryptography` and `keyring`.
+- **Agent email tools** (off by default): the email tools use the local account only when it is
+  turned on (`abstractcore email agent-tools on|off`, `PUT /acore/email/agent-tools`, the web
+  console's Email tab, `a` on the terminal console's Email screen); otherwise they answer
+  `email_agent_tools_off`. The settings document carries `agent_tools: {enabled, active, reason}`
+  (config field `email.agent_tools`). Hosts with their own resolver keep their own switch.
+- Reading by MIME structure: `read_email` / `EmailClient.get` fetch BODYSTRUCTURE and then only
+  the text and HTML parts; `get_email_attachment` / `download_attachment` fetch only that part.
+  A reading limit (`max_message_bytes`, default 25 MiB) returns a typed skip record
+  (`email_message_too_large`, `body_skipped`, bodies `null`) instead of the bodies.
+- Message summaries add `has_attachments`, `reply_to`, `in_reply_to`, `list_unsubscribe` and the
+  typed priority headers `importance`, `x_priority`, `priority`; `search_emails(has_attachment=)`
+  and `SearchCriteria(has_attachment=)`; a `list_email_folders` tool.
+- `list_emails` / `search_emails` return `has_more` and `next_cursor` (pass `cursor=` for the next
+  page); `limit` is 1 to 100 (`MAX_LIST_LIMIT`).
+- Both consoles name the account they configure (the AbstractCore install's, with its settings
+  file); [Email](docs/email.md) explains how it differs from a gateway user's account.
+
+### Changed
+- `send_email` no longer accepts a `headers` argument (From and Reply-To are always the account's;
+  threading headers come from `reply_email`). `read_email`'s `max_body_chars` is accepted and
+  ignored: bodies are never truncated.
+- `send_email` results no longer include the SMTP host and user name.
+- Attachment `size` in `read_email` / `MessageDetail` is the part's size on the wire (encoded) as
+  the server reports it; the saved file's size is in the download result.
+- `fetch_new` after a UIDVALIDITY rebuild with nothing to resynchronise returns a new baseline
+  (`reset=True, baseline=True`, cursor at the newest message) instead of a cursor at UID 0.
+- A `limit` above 100 in `list_emails` / `search_emails` is refused with `email_invalid_settings`.
+
+### Removed
+- `abstractcore.tools.email_digests.send_email_digest` (sending outside the tools and the host's
+  approval gate). Render with `render_email_digest_text` and send with `send_email` or
+  `EmailContext.send`.
+- The terminal console's Server screen no longer lists the legacy flat email fields.
+
+### Migration
+- The `ABSTRACT_EMAIL_*` environment variables, the `ABSTRACT_EMAIL_ACCOUNTS_CONFIG` accounts file
+  and the flat `email.smtp_*` / `email.imap_*` config fields are no longer read at use time. The
+  first time email is used without a configured account, that configuration is imported once
+  (password included, then sealed); afterwards the variables are ignored and `abstractcore email
+  status` names each one still set and its replacement. Only the default account of a
+  multi-account file is imported. `configs/emails.yaml` is removed.
+- Hosts that grant tools by risk refiner: `send_email` now declares `send_email_recipient@v2`; an
+  enforcement lane that only knows `@v1` holds the approval ceiling (asks) until it implements v2.
+
+## [2.19.2] - 2026-09-29
+
+A fresh install now transcribes speech locally, and "Use recommended defaults" writes what it
+reports.
+
+### Changed
+- Speech input joins the recommended starter set: `input.voice` is `faster-whisper/base`
+  (AbstractVoice's faster-whisper engine: CUDA on an NVIDIA GPU, the processor elsewhere, Apple
+  silicon included) on every host whose platform CTranslate2 supports. The fresh-install defaults,
+  `abstractcore config apply-recommended` (the consoles' "Use recommended defaults") and
+  `abstractcore models download --recommended` include it, so speech-to-text works without an
+  OpenAI key. A route you set yourself is kept. Select it alone with
+  `apply-recommended --only stt`.
+- The fresh-install marker is `seeded: recommended-v2`. A store an earlier fresh install wrote
+  (`recommended-v1`) gains `input.voice` the next time it loads when that route is empty, and is
+  stamped `recommended-v2` on its next save; a speech-input route another process saved in the
+  meantime is kept. Stores that were never seeded are unchanged.
+
+### Fixed
+- `apply-recommended` compares against the store file and always saves. Right after a grid read on
+  an NVIDIA host, a fresh store (no file yet) could report the image route "already set", save
+  nothing, and show it missing on the next read: the unsaved fresh-install defaults in memory
+  followed a cached full host probe. The report's `before` is now what is on disk, and the result
+  is written even when every route already matched.
+
+### Security
+- Email connections verify TLS (framework backlog 0992 WP0). `list_emails`, `read_email` and
+  `send_email` passed no SSL context to `imaplib.IMAP4_SSL`, `smtplib.SMTP_SSL` and
+  `SMTP.starttls()`, and on CPython 3.12 that default checks neither the certificate nor the host
+  name: anyone on the network path could read the password. Every connection now uses
+  `ssl.create_default_context()`; a failed check is refused before login, with the host, the reason
+  and the fix. There is no switch that turns verification off. A server signed by a private CA is
+  trusted with the new optional `ca_file` field of an account's `imap`/`smtp` block in the accounts
+  file (it adds that CA; the host name is still checked).
+- `password_env_var` is always the name of an environment variable. A value that did not look like
+  a variable name used to be read as the password itself; it is now refused (in the accounts file
+  when it loads, and at connection time for the environment/config account) with an error naming the
+  fix that never echoes the value. `list_email_accounts` no longer reports such a value as a set
+  password.
+
+### Dependencies
+- Floors: `abstractvoice>=0.13.2` (PyAV held below 19, which faster-whisper 1.2.1 needs to decode
+  audio files) and `abstractvision>=0.3.33` (Diffusers on CUDA falls back to sequential CPU offload
+  when model CPU offload does not fit the free GPU memory), in the light install and in the
+  `apple` and `gpu` settings.
+
+## [2.19.1] - 2026-09-29
+
+This release makes the `gpu` setting work on Linux + NVIDIA and lets `abstractcore[gpu]` install on
+Windows x86_64 with wheels only. Run on a Quadro RTX 5000 (driver 595, CUDA 13): LM Studio text,
+llama.cpp GGUF on CUDA, faster-whisper on CUDA, Supertonic speech and Diffusers FLUX.2 klein
+images. vLLM installs (0.22, PyTorch 2.11) but was not validated: its first start needs a C
+compiler (`build-essential`). The Windows changes are not yet validated on Windows hardware.
+
+### Dependencies
+- `openai>=1.0.0,<3.0.0` (was `<2.0.0`). The old cap held vLLM at 0.11.0 in `abstractcore[gpu]`,
+  which does not start with Transformers 5; on Linux the gpu setting now resolves a current vLLM
+  (0.22 with torch 2.11 on CUDA 13 at release time). The OpenAI API calls AbstractCore makes are unchanged in openai 2.x.
+- Floors: `abstractvision>=0.3.32` (its `gpu` settings no longer install MLX-Gen, about 2.1 GB less
+  on Linux, and leave stable-diffusion.cpp out on Windows) and `abstractvoice>=0.13.1`
+  (faster-whisper on CUDA with CUDA 12 cuBLAS; speech-to-text without TTS credentials), in the
+  light install and in the `apple` and `gpu` settings.
+- `abstractcore[gpu]` installs on Windows x86_64 with wheels only:
+  `vllm; sys_platform == 'linux'` (vLLM is Linux only upstream) and
+  `llama-cpp-python; sys_platform != 'win32'` (a source build on PyPI; the AbstractFramework
+  installer adds llama.cpp's prebuilt CUDA / Vulkan / CPU build on Windows). The deprecated
+  `all-gpu` and `vllm` aliases still map to `gpu`.
+
+### Changed
+- Install hints name only the three settings. Every error, CLI message, engine install plan and
+  doc says `pip install -U abstractcore` for a light dependency, `abstractcore[apple]` or
+  `abstractcore[gpu]` for a local engine, and, on a host with no local-engine setting (Intel Mac,
+  Windows on ARM), that the capability is not available there. No message advises a bare package
+  or a plugin's own extra.
+- The Engines screen installs `abstractcore[apple]` / `abstractcore[gpu]` for MLX, llama.cpp, vLLM
+  and Hugging Face. `abstractcore --download-vision-model` no longer pip-installs
+  transformers/torch on its own.
+- Windows x86_64 has the `gpu` setting in install hints and the Engines screen. The llama.cpp hint
+  and engine row there say that the AbstractFramework installer adds llama.cpp's prebuilt GPU
+  build and that, with plain pip, llama.cpp is not part of `abstractcore[gpu]` on Windows.
+- The camera endpoints and capability hint say the camera plugin (`abstractcamera`) is outside the
+  install settings instead of printing a pip command.
+- Recommendations on NVIDIA GPUs: `output.image` is `diffusers` /
+  `black-forest-labs/FLUX.2-klein-4B` (AbstractVision's Diffusers backend on CUDA, float16).
+  With AbstractVision 0.3.32's automatic model CPU offload it generates 768x768 in about 17 s with
+  an 8.3 GiB GPU peak on a 16 GB card (about 15 GiB of system RAM holds the idle weights). It is
+  fit-gated with that measured peak: an 8 GB card is reported unavailable with a GPU-memory next
+  step. Apple silicon keeps MLX-Gen; hosts without a GPU stay "not available". The catalog row is
+  now named "FLUX.2 [klein] 4B".
+- The recommended LM Studio text download is `qwen/qwen3.5-9b@q4_k_m` (was `@4bit`, an MLX variant
+  that LM Studio does not offer off Apple silicon, where LM Studio is the recommendation).
+- `apply-recommended`, the defaults grid and `models download --recommended` read the full host
+  probe off Apple silicon, so an NVIDIA host gets its image route from `apply-recommended`.
+
+### Fixed
+- Speech-to-text runs on the configured `input.voice` route. A transcription
+  (`output={"modality": "text", "task": "transcription"}`) with no provider used AbstractVoice's
+  default OpenAI engine instead of the configured one (for example local faster-whisper). The
+  route now fills a missing provider/model/base_url under the same rules as every other route (a
+  provider named on the request, or a call-level `stt_provider`/`stt_model`, still wins), also for
+  audio given as an artifact reference without a content type.
+- Linux + NVIDIA: llama.cpp's CUDA wheels load without importing torch first.
+  `prepare_llama_cpp_import()` also runs on Linux and, for a CUDA build of llama-cpp-python,
+  preloads the NVIDIA wheels' `libcudart` / `libcublasLt` / `libcublas` (CUDA 12 and CUDA 13
+  layouts), so GGUF models run on the GPU instead of the CPU.
+- GGUF on CUDA: when llama.cpp cannot allocate a large context on the GPU, the load takes the next
+  smaller context on the GPU and falls back to the CPU only after the smallest one fails there too
+  (a CPU retry at a 262144-token context could exhaust system memory). Apple silicon keeps its
+  immediate CPU retry.
+- Windows: before AbstractCore first imports `llama_cpp`, it adds PyTorch's `torch\lib` folder
+  (cuBLAS, cudart) to the DLL search (`os.add_dll_directory` and `PATH`), so llama.cpp's prebuilt
+  CUDA wheel can find those libraries without the CUDA toolkit (not yet validated on Windows
+  hardware)
+  (`abstractcore.utils.windows_dll.prepare_llama_cpp_import`; torch is not imported).
+- Windows: the GGUF lane runs `llama_backend_init()` before asking llama.cpp whether it can offload
+  to the GPU (the Windows CUDA / Vulkan wheels ship the GPU backend as a separate library loaded at init; not
+  yet validated on Windows hardware).
+- The server's `/v1/responses` usage reports `input_tokens_details.cache_write_tokens` (0 when the
+  provider reports none), which the Responses usage schema of openai 2.x requires.
+
+## [2.19.0] - 2026-09-29
+
+AbstractCore has three install settings: `pip install abstractcore` (light) runs every remote
+provider out of the box, `pip install "abstractcore[apple]"` adds every local engine an Apple
+silicon Mac can run, and `pip install "abstractcore[gpu]"` adds every local engine an NVIDIA or
+AMD machine can run. `abstractcore models recommendations` shows the recommended model for every
+capability on every kind of machine. On Apple silicon the fit estimate matches the measured GPU
+memory limit, a text model that runs only with a small context says so with the `sysctl` command
+for more, the image route is memory-gated, and the Wan2.2 video figures are
+AbstractVision/mlx-gen's measurements at AbstractVision 0.3.31's default 832x480 canvas. The
+terminal console `abstractcore-console` 0.4.1 switches screens with the Left/Right arrows.
+
+### Install settings
+
+- `pip install abstractcore` now installs everything a remote-inference application needs: the
+  OpenAI and Anthropic SDKs (OpenRouter, Portkey, Ollama, LM Studio, vLLM servers and any
+  OpenAI-compatible endpoint already used the built-in HTTP client), the built-in tools, media
+  inputs (images, PDFs, Office documents), token counting, Glyph compression, the HTTP server and
+  console, and the AbstractVoice, AbstractVision, AbstractMusic and Abstract3D capability plugins
+  with their remote backends (music and 3D on Python 3.10+). It includes no local engine. The
+  install is larger than before (about 600 MB in a fresh Python 3.12 environment, mostly the
+  Office-document parsers).
+- `abstractcore[apple]` is light plus MLX (text and image input), HuggingFace/GGUF, local
+  embeddings, local voice, image, video and music engines, and Playwright for `browser_probe`.
+  It installs everything the previous Apple aggregate installed, plus Playwright and Abstract3D.
+- `abstractcore[gpu]` is light plus vLLM, HuggingFace/GGUF, local embeddings, local voice, image,
+  video and music engines, and Playwright. It installs everything the previous GPU aggregate
+  installed, plus Playwright and Abstract3D.
+- Install hints in errors, the console and the CLI name only these three settings; the provider
+  registry's `installation_extras` is `None` for every provider that talks to a server (vLLM
+  included), `apple` for MLX, and the host's setting for HuggingFace. The Engines screen installs the HuggingFace
+  engine through the host's setting (Apple silicon: `apple`; Linux: `gpu`; Intel Macs and
+  Windows: the transformers stack directly).
+- The server image (`ghcr.io/lpalbou/abstractcore-server`) installs the light setting.
+- Migration: every previous extra name still installs, with at least the packages it installed
+  before, as a deprecated alias kept for compatibility. Replace it with light (no extra), `apple`
+  or `gpu`; the mapping is in [Installation](docs/installation.md#deprecated-aliases).
+
+### Added
+
+- `abstractcore models recommendations [--host] [--json | --markdown] [--output PATH]`: the
+  recommended model for every capability (text, image input, speech output, speech input, image,
+  video, music) on every machine class (Apple silicon by unified memory, Linux or Windows with an
+  NVIDIA GPU, processor-only Linux or Windows, Intel Macs), or for this machine with `--host`.
+  Each cell is `recommended`, `covered` (image input is read by the text model) or `unavailable`
+  with the reason and what to use instead, and carries the engine, device, download size, memory
+  need, fit verdict and, where needed, the GPU memory `sysctl`. The JSON is
+  `model_recommendations_v1`; Python: `abstractcore.config.recommendations.recommended_models()`
+  and `recommendation_matrix()`. See [Recommended Models](docs/recommended-models.md), whose
+  tables are generated from the same data (`scripts/update_recommended_models_doc.py --check`).
+- Recommendations for speech input (Whisper base on AbstractVoice's faster-whisper engine) and
+  music (ACE-Step 1.5 XL turbo on AbstractMusic's `acestep` backend, memory-gated like video).
+  They are listed everywhere recommendations are shown and are not written by the fresh-install
+  defaults, `apply-recommended` or `models download --recommended`: set them with
+  `abstractcore config set-default`. Both models are in the download catalog with their verified
+  sizes.
+
+### Changed
+
+- Apple silicon fit estimates follow the operator's measurement on a 24 GB Mac mini (GPU memory
+  limit 17.8 GB = 16.6 GiB; Qwen3.8 27B 4-bit, 16.2 GB of weights, runs out of the box with a small
+  context, and with about 30k tokens at `iogpu.wired_limit_mb=20480`). A text model whose weights
+  fit under the GPU memory limit itself but not 8k tokens of context is `tight` with
+  `small_context: true` ("Tight: it runs with a small context by default; close other apps
+  first"), with no estimated token count; the 8 GB Mac's Qwen3.5 9B and the 24 GB Mac's Qwen3.8 27B
+  read so. The only GPU memory limit ever suggested is the highest safe one, RAM minus
+  max(4 GiB, 12.5% of RAM) (was the smallest whole GiB that fits, under RAM minus 8 GiB): 20480 MB
+  on 24 GB, 114688 MB on 128 GB (the Flash-Next command was 117760); a `tight` Apple silicon fit
+  carries it as `raised_limit`, and the one measured context is stated with it. MLX's reserve
+  beside the weights and cache is a flat 2 GiB (was max(2 GiB, 5%)). The sentences name the GPU
+  memory limit itself, never only the remainder as "what this computer can give a model", and no
+  longer say "a smaller model from the catalog is the safe choice". `models recommendations`
+  entries gain `context: {small, measured}`, and their `gpu_limit_command` also carries the
+  command for a tight text fit.
+- The Apple silicon text tiers are unchanged from 2.18.0 (operator ruling): below 24 GiB Qwen3.5
+  9B (an 8 GB Mac keeps it, read as tight with a small context), 24 to below 128 GiB Qwen3.8 27B,
+  128 GiB and above Qwen3.8 Flash-Next. A text tier whose model has no MTP build would carry no
+  MTP `speculation` policy.
+- The recommended image route (FLUX.2 klein 4B, about 8.5 GiB) is memory-gated like video and
+  music: an 8 GB Mac gets no image route, with the reason.
+- Wan2.2 video memory needs are AbstractVision/mlx-gen's peaks measured at each model's default
+  canvas in AbstractVision 0.3.31 (832x480; tiled VAE decode): TI2V-5B about 16.6 GiB (832x480,
+  121 frames; image-to-video, the larger of its two tasks -- text-to-video peaks at 16.3 GiB, same
+  MLX allocator measurement; the one checkpoint serves both, so the route uses 16.6), so the recommended video route is written on Macs with 32 GiB of unified memory or
+  more, and a 24 GiB Mac is told the GPU memory limit that makes it fit; T2V-A14B and I2V-A14B
+  about 38.3 and 38.4 GiB (832x480, 81 frames). Every sentence labels the figure as that engine's
+  (it keeps the text encoder and VAE in memory), not the model's own requirement: catalog
+  `resident.measured_with`. Other measured sizes stay in the catalog: `resident.larger_canvases`
+  (new; TI2V-5B at 1280x704: 25.4 GiB; T2V-A14B at 1280x720: 53.5 GiB; I2V-A14B at 1280x720: 71.7 GiB, measured with AbstractVision 0.3.30's untiled decode) and `resident.smaller_canvases`
+  (T2V-A14B at 640x352: 35.1 GiB). Catalog artifacts carry `larger_canvas: {canvas, need_bytes, verdict}` (with
+  a fit note) when a measured larger size also fits the machine, and `smaller_canvas` when only a
+  measured smaller size does.
+- The AbstractVision floor is `abstractvision>=0.3.31` (light, `apple`, `gpu`):
+  the memory figures above hold for its 832x480 defaults and tiled decode, and an older
+  AbstractVision would generate TI2V-5B at 1280x704 by default (about 60 GiB).
+- `capability_defaults.RECOMMENDED_MODELS` is the one table of recommended models;
+  `RECOMMENDED_CAPABILITY_DEFAULT_ROUTES` and `RECOMMENDED_MODEL_DOWNLOADS` are its starter-set
+  views and keep their values.
+- The reason a memory-gated recommendation is unavailable says whether the memory need is
+  measured or estimated.
+
+- Terminal console (`abstractcore-console` 0.4.1): Left/Right switch to the previous and next
+  screen in browse mode, wrapping at both ends, like `Ctrl+P` / `Ctrl+N`; a focused text field,
+  screen bar or dialog keeps the arrows. See `console-tui/CHANGELOG.md`.
+
+### Fixed
+
+- A saved image or video route whose catalog model does not fit this computer's memory is flagged
+  `route_unavailable` (grid, `abstractcore config defaults`, `apply-recommended`) with the reason
+  the recommendation gives, from the same fit verdict: an 8 GB Mac's saved FLUX.2 klein 4B route
+  no longer reads as fine and runs out of memory at first use. A `tight` fit, or one that needs
+  the GPU memory `sysctl`, is not flagged, nor is a video route that runs at a measured smaller
+  canvas (the route the reason tells a 64 GB Mac to set); the check never changes the saved routes.
+- `abstractcore config apply-recommended --force` can now clear a saved image or video route whose
+  model does not fit this Mac, where nothing recommended runs either.
+- `input.image` says why it has no recommendation where the recommended text model does not read
+  images or no text engine runs (`recommended_unavailable_routes`, the grid's
+  `recommendation_unavailable`), instead of a bare "not configured".
+- A measured memory need (the Wan2.2 video `resident` peaks) is the need itself: the fit no longer
+  adds the estimate's overhead (max(0.5 GiB, 5%)) on top, which made TI2V-5B read "needs about
+  17.4 GiB ... (measured ...)" for its measured 16.6 GiB (`estimate_fit(need_measured=True)`).
+  T2V-A14B and I2V-A14B (about 38.3 and 38.4 GiB) now fit a 48 GiB Mac once its GPU memory limit
+  is raised (`needs_gpu_limit`, with the command) instead of reading `too_large`.
+- The light install no longer imports `unstructured` to learn whether Office documents are
+  supported (`importlib.util.find_spec`): building a media handler, for a text file say, sent
+  unstructured's telemetry request to packages.unstructured.io and ran `nvidia-smi`. Processing an
+  Office document imports it with its telemetry opted out (`SCARF_NO_ANALYTICS` and
+  `DO_NOT_TRACK` default to `true`; an explicit value is kept).
+- Install hints name the three settings: the HuggingFace provider on an Intel Mac or Windows
+  installs the transformers stack directly (as the Engines screen does), never `abstractcore[gpu]`
+  (vLLM); missing MLX points to `abstractcore[apple]`; missing llama.cpp / Transformers to this
+  machine's setting; a missing OpenAI or Anthropic SDK (shipped with every install) to
+  `pip install -U abstractcore`.
+
+## [2.18.0] - 2026-09-28
+
+Capability routes say when their engine is not installed, Apple silicon fits account for the GPU
+memory limit macOS can raise, the saved OpenAI key reaches AbstractVoice (never for a request the
+server has not authenticated), and neither `abstractcore engines open` nor the terminal console
+(`abstractcore-console` 0.4.0) tries to open a browser on a machine without a display.
+
+### Added
+
+- `engine_missing: {engine, name, reason, install[, engine_row]}` on capability routes whose
+  in-process engine is not installed in this Python environment: MLX (mlx-lm), MLX-Gen
+  (abstractvision + mlx-gen), llama.cpp (GGUF models on the `huggingface` provider), Transformers
+  (other `huggingface` models) and every local voice engine (Supertonic, faster-whisper, ...), whose
+  answer is AbstractVoice's own `abstractvoice.engine_runtime` probe (an AbstractVoice older than
+  0.13.0 is itself the missing engine of those routes, with its upgrade command, and the rest of
+  the grid is unaffected). `install` targets this Python interpreter, like the Engines screen's
+  rows (`uv pip install --python <interpreter> ...` in a pip-less uv environment, else
+  `<interpreter> -m pip install ...`). It appears on
+  `config defaults` rows, `apply-recommended` entries and the recommended download plan, and the
+  CLI prints it. It is distinct from `route_unavailable` (this host cannot run the engine at all)
+  and from weights that are not downloaded. See [Centralized config](docs/centralized-config.md).
+- Fit verdict `needs_gpu_limit` (Apple silicon): the model does not fit the current GPU memory
+  limit but fits under one macOS can grant; `fit.gpu_limit` carries the exact
+  `sudo sysctl iogpu.wired_limit_mb=<MB>` command, the value and the verdict after it. A raised
+  `iogpu.wired_limit_mb` is the ceiling in the light host reading too. The 128 GiB tier's
+  recommended text model reports this verdict with its command instead of `too_large`, and the
+  `--fits` filter keeps such models. See [Local models](docs/models.md).
+- The OpenAI API key saved in AbstractCore's config reaches the voice plugin as AbstractVoice's host
+  setting `voice_openai_api_key`: from the config file an instance was created for (the gateway's
+  core config), else the global config. An explicit `create_llm(..., voice_openai_api_key=...)`
+  wins; with no key saved nothing is set. In the server's audio routes the key is read on every
+  request and handed over only to server-authenticated requests whose voice engine is `openai` or
+  `openai-compatible`, on a capability host built for that request (never cached): a rotated key
+  is used on the next call, a removed one is no longer sent. See [Server](docs/server.md).
+- Wan2.2 T2V-A14B and I2V-A14B 8-bit carry their measured run-time memory (`resident`): about
+  72 GiB each at AbstractVision's default canvas (1280x720, 81 frames), so their fit reads
+  `too_large` on 64 GiB Macs, `needs_gpu_limit` on 96 GiB Macs and `fits` from 128 GiB. The
+  recommended video route is unchanged (Wan2.2 TI2V-5B from about 96 GiB).
+- The Supertonic voice artifact (`supertonic-3`) carries its download size (401,276,744 bytes).
+- CI job `local-models`: the whole suite with CPU torch, Transformers and llama.cpp installed; the
+  release workflow requires it.
+
+### Changed
+
+- Server audio routes without a `provider/model` (the AbstractVoice path: speech, speech stream,
+  transcriptions, voice clone, and their `/{provider}/v1/...` forms) apply the same rule as
+  `model=openai/...`: when the engine that would run is remote in AbstractVoice's own words
+  (`abstractvoice.engine_runtime`: OpenAI or an OpenAI-compatible server, under every spelling it
+  accepts, such as `remote`, `compatible` or `proxy`), or is an engine AbstractVoice does not know,
+  and the server holds an OpenAI key (saved, or `OPENAI_API_KEY`, which AbstractVoice would fall
+  back to), a request that is not server-authenticated gets `401` (also with
+  `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`); an explicit `X-AbstractCore-Provider-API-Key`
+  is then the only key used. Local engines are unaffected. The audio discovery routes
+  (`/v1/audio/voices`, `.../providers`, `.../models`) follow the same rule: the saved key counts as
+  server-held, `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` no longer exempts them, and they pass
+  the saved key to AbstractVoice only for authenticated requests.
+- The vision routes guarded by server-held OpenAI credentials (`/v1/vision/providers/`,
+  `/v1/vision/models` and the other vision discovery routes, and image/video generation, edits and
+  upscale through OpenAI or an OpenAI-compatible upstream) apply the same rule, through the one
+  guard the audio discovery routes use (`abstractcore.server.credentials`): an unauthenticated
+  request gets `401` when the server holds an OpenAI key (saved or `OPENAI_API_KEY`), also with
+  `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`; an explicit `X-AbstractCore-Provider-API-Key` is
+  spent instead.
+- `/v1/audio/music` and `/{provider}/v1/audio/music`: while the server holds a key AbstractMusic
+  reads (`ACEMUSIC_API_KEY`, `ELEVENLABS_API_KEY`, in the environment or as the matching
+  `music_*_api_key` route option), a request that is not server-authenticated gets `401` whatever
+  backend it names, also with `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1`; an explicit
+  `X-AbstractCore-Provider-API-Key` is handed to the remote music backends in place of the
+  server's keys. Local music on a server holding none of these keys works unauthenticated. This is
+  an interim rule until AbstractMusic can say which of its backends are remote.
+- The capability discovery routes (`/v1/capabilities`, `/v1/capabilities/{capability}/providers`,
+  `/v1/capabilities/{capability}/models`, `/v1/audio/music/providers`, `/v1/audio/music/models`,
+  `/v1/audio/music/provider-details`) follow the same rules: they call into the plugins, which
+  probe their remote providers with the keys they read, so a request that is not
+  server-authenticated gets `401` while the server holds a key the capability could spend (OpenAI
+  for voice, audio and vision; the music keys for music; both for `/v1/capabilities` and for any
+  other capability). A caller's own key is handed to the plugins in place of the server's.
+- Music requests: an unknown backend selector (body `provider` or route prefix, e.g.
+  `/elevenlabs/v1/audio/music`; AbstractMusic's ElevenLabs selector is `elevenlabs-music`) is
+  refused with `400` instead of running another backend; a selected backend that is not installed
+  is refused (`501`) instead of falling back to another one; a caller's own key reaches only the
+  backend the request selected.
+- `abstractcore engines open` prints the link and launches nothing without a display (SSH session;
+  Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY`), with the reason (`not_opened` in `--json`):
+  the console crate's rule, now also `abstractcore.utils.display` in Python.
+- The voice extras (`voice`, `audio`, `all`, `all-apple`, `all-gpu`, `all-non-mlx`, `full-dev`)
+  require `abstractvoice>=0.13.0`, the first release with the public engine runtime probe.
+- vLLM's engine row on a host without an NVIDIA GPU reads "vLLM needs Linux with an NVIDIA GPU
+  (CUDA); use a remote vLLM server instead".
+- `abstractcore-console` 0.4.0: `o` never launches a browser without a display (SSH
+  sessions; Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY`) and prints the link instead; routes
+  whose engine is not installed read `engine not installed` with the install command; models that
+  need a raised GPU limit show the command; remote-only engines read `remote only`.
+
+### Fixed
+
+- Five local-model tests (Transformers cached lane, GGUF control plane) match the provider's
+  current signatures and cache contracts.
+- The Transformers snapshot-lane tests load their tokenizer at test time from the cached snapshot
+  directory, and skip without network when it is not cached: loading it by repo id at collection
+  made huggingface_hub 1.33 contact huggingface.co, and the test network guard failed the
+  `local-models` job.
+- Clearing a configured API key (`set_api_key(provider, "")`) restores the environment variable
+  value it had shadowed (or unsets it), so the removed key stops being used in this process.
+
+## [2.17.0] - 2026-09-27
+
+Recommended defaults now fit the machine they are written on, video joins the model catalog and the
+recommendations, and the terminal console reaches parity with the web console's Models and Engines
+screens (`abstractcore-console` 0.3.0).
+
+### Added
+
+- Video in the model catalog: Wan2.2 TI2V-5B, T2V-A14B and I2V-A14B (MLX-Gen, Apple silicon), with a
+  `video` tag. Where the run-time memory was measured at the default canvas (`resident_bytes`), the fit
+  verdict uses it instead of the file size (TI2V-5B is a 16.9 GiB download that needs about 58 GiB while
+  it generates); the A14B models have no such measurement yet, so their fit uses the file size.
+  See [Local models](docs/models.md).
+- A recommended `output.video` route: MLX-Gen Wan2.2 TI2V-5B (one model for text-to-video and
+  image-to-video), written by the first-run seed, `abstractcore config apply-recommended` (also
+  `--only video`), "download all" and the catalog starter only on Apple silicon where the catalog's
+  fit says it fits (about 96 GiB of unified memory or more).
+- `route_unavailable: {provider, model, reason}` on configured capability routes this host cannot run
+  (an `mlx`, `mlx-gen` or `supertonic` route on a machine without that engine). `abstractcore config
+  defaults` prints it on the row. `apply-recommended` keeps and flags such a route; `apply-recommended
+  --force` replaces it with this host's recommendation, or removes it (new action `cleared`, counted in
+  the report) where nothing recommended runs. Server and cloud routes are never flagged.
+- `abstractcore-console` 0.3.0 (Rust crate): Hugging Face search (`h`), set the default text model
+  (`u`), a live downloads view, parallel downloads, a model-type filter (`t`, video included), engine
+  server start/stop (`s`), continuing a paused install (`a`, `y` copies its command), admin-gated
+  host-changing verbs for embedding consoles, and route/apply screens that show `route_unavailable`,
+  `recommendation_unavailable` and the `cleared` action. See [Terminal console](docs/console-tui.md).
+
+### Changed
+
+- Recommended capability defaults are host-aware for every route, not only text. A route is written
+  only where its engine runs: off Apple silicon `output.image` (MLX-Gen) and `output.video` stay unset;
+  Intel Macs get the Ollama build of the portable text model (LM Studio has no Intel build); hosts
+  with neither LM Studio nor Ollama (FreeBSD, 32-bit ARM, RISC-V) get no local text route. Each unset
+  route says why (`recommendation_unavailable` in the grid, action `unavailable` in the apply plan) and
+  names the next step. Apple silicon defaults are unchanged. The per-host table is in
+  [Centralized config](docs/centralized-config.md).
+- `abstractcore engines status` checks the CPU architecture: the Ollama and LM Studio install plans
+  report `available: false` with the reason on architectures and operating systems their vendors do
+  not build for (see [Local engines](docs/engines.md)).
+
+### Fixed
+
+- Cloning a voice with a local engine (`POST /{omnivoice|qwen3-tts}/v1/voice/clone`) returned HTTP 500
+  when the voice plugin answered with a plain voice id; it now returns the new voice.
+
+### Migrating `abstractcore-console` from 0.2
+
+0.3.0 is a breaking release for library hosts that embed the console screens (for example the
+gateway console): `ScreensCtx::new` takes a `Signal<Access>`, `ConsoleTransport::start_download`
+takes `expected_bytes`, a backend whose job route does not know download groups implements
+`download_job`, and the growing public types are `#[non_exhaustive]`. The full list is under
+"Migrating from 0.2" in `console-tui/CHANGELOG.md`. The `abstractcore-console` binary itself needs no
+migration.
+
+## [2.16.1] - 2026-09-26
+
+Local MLX models now see the conversation exactly as their own chat template renders it, so agent
+loops with tool calls keep working on Qwen3.x MLX builds with thinking on, and every MLX response says
+which prompt renderer it used.
+
+### Fixed
+
+- MLX prompts are rendered by the model's own chat template (`tokenizer.apply_chat_template`) on every
+  MLX lane (mlx-lm, native MTP/APC, vision add-on). Earlier assistant turns keep their tool calls, tool
+  results are rendered as the template renders them (Qwen3.x: `<tool_response>` inside a user turn),
+  `tools=` reaches the template's own tool block, and the generation prompt opens `<think>` when the
+  template does. Agent loops on Qwen3.x MLX builds with thinking on used to stop at the third
+  iteration with a one-sentence announcement ("Let me verify … before writing the digest.") and no
+  tool call; they now keep calling tools and finish with an answer. A system message in the middle of
+  a conversation is sent as a `<system_instruction>` user turn, as on strict OpenAI-compatible servers.
+  Models whose tokenizer has no chat template keep the built-in renderer; the log names the renderer
+  once per model. Prompt-cache fragments rendered by a chat template carry a new serializer version
+  (`mlx-prompt-fragment/v2:chat-template:<sha>`), so KV artifacts compiled with the previous renderer
+  are rebuilt rather than reused.
+- An MLX conversation whose history holds a tool call with non-JSON-object `arguments` stays on the
+  chat-template renderer: the arguments reach the template as `{"raw_arguments": "<text>"}` instead of
+  making every later call of the run fall back to the built-in renderer. Every MLX response names its
+  renderer in `metadata["prompt_renderer"]` (`chat_template`, `builtin` or `builtin_fallback`, with
+  `metadata["prompt_renderer_reason"]` for a fallback). A streamed call carries both keys on its last
+  chunk, including when the stream carries reasoning.
+
+## [2.16.0] - 2026-09-26
+
+Ejecting a model now frees it from the whole process for every in-process backend (MLX,
+HuggingFace transformers and GGUF, embedding models), and the memory report gives one figure for
+what the process holds on the accelerator.
+
+### Fixed
+
+- Tool calls a local model writes inside its thinking block (for example Qwen3-Coder style `<tool_call><function=…>` blocks before `</think>`) are recovered and executed when the reply has no visible answer; a call naming a tool that was not offered, or one cut off mid-parameter, is reported instead of silently dropped or run with missing arguments.
+- A thinking model now streams its reasoning while it thinks. When the chat template opens the
+  thinking block itself (Qwen3.x with thinking on), a stream used to show nothing until the model
+  closed it: minutes for a long reasoning, with the first text arriving only with the answer. The
+  reasoning now arrives as `metadata["reasoning_delta"]` from the first token (inline `<think>`
+  blocks stream the same way), the answer follows as text, and the final record, including
+  `metadata["reasoning"]`, equals the non-streamed one. This covers every lane that renders the chat
+  template in-process: MLX, HuggingFace transformers and GGUF (llama.cpp). OpenAI-compatible
+  servers render it themselves; there the reasoning streams only when the server sends it
+  separately. A streamed answer no longer starts with the
+  blank lines the model writes after `</think>`; whitespace inside the answer is kept.
+- Non-streamed calls on MLX, HuggingFace transformers and GGUF now also know when the chat template
+  opened the thinking block: a reply cut off while thinking is returned as reasoning marked
+  truncated (` (...)`) with an empty answer, instead of the thinking as the answer, and a reply with
+  a later thinking block no longer leaves `</think>` in the text.
+- `POST /acore/models/unload` and `unload_after` now free the model from every holder in the server
+  process, not only from the server's own runtime, once no other managed runtime serves it. The
+  response includes a `process_eject` report and is `ok: false` when weights remain in memory.
+  Before, a model shared with another instance, or a HuggingFace copy held elsewhere, stayed in
+  memory while the unload reported success.
+- An embedding model could never leave memory: every `EmbeddingManager` stayed referenced for the
+  life of the process. It is now freed when dropped, `EmbeddingManager.unload()` frees it on
+  request, and the next embedding after an unload loads the model again. `unload()` leaves embedders
+  served by Ollama, LM Studio or another server untouched (`in_process: false`).
+- An unload never ejects a model that something else in the process still uses. Before, an
+  unload for another spelling of a model name (for example `MLX-Community/qwen3-4b-4bit`) or for
+  its hub-cache path ejected a managed runtime's model, even a locked one. Such an unload is now
+  refused with `409` (`model_locked` or `model_in_use`). Every owner of models in the process (the
+  server's managed runtimes, runtime clients) registers what it uses, and an eject checks all of
+  them with the same name matching the eject itself uses.
+- Unloading an embedding model while an embedding is running no longer breaks that call. The
+  unload waits for it to finish; if it is still running after `drain_timeout_s`, nothing is freed
+  and the report says the call is in flight.
+- `device.process_held_bytes` on NVIDIA GPUs now counts what torch has reserved on the GPU
+  (`device.torch_cuda_reserved_bytes`, basis `cuda_device_counter`), plus the llama.cpp figure when
+  a GGUF model is loaded. Before, it read 0 while torch held the model.
+- `MLXProvider.load_model()` accepted `ttl_s` and `keep_alive` and ignored them without saying so.
+  MLX has no idle or time-based unload; the response now lists them under `unsupported_options`
+  with a warning.
+- A streamed MLX call now reports what a non-streamed one does. The stream ends with one chunk
+  carrying `finish_reason`, `usage` and, when the call has a `prompt_cache_key`,
+  `metadata["prompt_cache"]`, identical to the non-streamed response for the same prompt and key.
+  Before, MLX streams carried no usage or finish reason at all (except on the native runtime), and
+  the prompt-cache record was only attached to non-streamed calls, so hosts that need it, such as
+  AbstractRuntime, did not stream on MLX.
+- When a streamed model opens a tool call and never closes it, or writes one no parser accepts,
+  the text is no longer printed as the answer (it was, together with a second copy of the text
+  before it). It is reported on the final chunk as `metadata["unparsed_tool_call"]`
+  (`format`, `text`, `reason`) with a warning.
+- A tool call written as a ```` ```json ```` block (`{"name": ..., "arguments": ...}`,
+  `{"tool_calls": [...]}`, a list of calls, or the OpenAI `function` shape) is now recognised while
+  streaming when it names a tool the request offered: it is kept out of the text and returned in
+  `tool_calls`. Any other ```` ```json ```` block stays text, including one that names a tool the
+  request did not offer, and every one when the request has no tools.
+- Streaming a GPT-OSS model whose backend returns the raw Harmony transcript no longer holds the
+  whole answer back until the end. The `final` channel streams as text, `analysis` as reasoning
+  (`metadata["reasoning_delta"]`, joined into `metadata["reasoning"]` at the end), `commentary`
+  without a recipient as text, and a `to=` message as a tool call. The `<|channel|>` and other
+  framing tokens never appear in the text.
+- A GPT-OSS reply cut off before its `final` message (typically by `max_output_tokens`) no longer
+  returns the model's unfinished thinking as the answer. The reply is empty, the thinking is in
+  `metadata["reasoning"]` marked truncated (` (...)`), and `finish_reason` is `"length"` when the
+  output limit was the cause; streamed and non-streamed calls now agree. On MLX, a Harmony tool
+  call in a non-streamed reply is no longer lost when the reply starts with `analysis`.
+- `<|return|>` and `<|call|>` never appear in a GPT-OSS answer, streamed or not; a non-streamed
+  answer used to end with them when a backend emitted those tokens.
+- Two scheduled requests running at the same time on one MLX native-runtime provider can no longer
+  report each other's cached and fed token counts.
+- The last chunk of a stream is the one carrying the provider's `finish_reason` and `usage`. Text
+  held back because it might have started a tool call is now sent before it; before, it came after
+  with `finish_reason: "stop"`, which hid a `"length"` stop.
+
+### Added
+
+- `GET /acore/models/loaded` lists models the server process holds outside its managed runtimes,
+  including embedding models (`runtime_id` `process:<task>:<provider>:<model>`), and such rows can
+  be unloaded. `task: "embedding"` is accepted by the listing and the unload.
+- `abstractcore.providers.process_residency`: `resident_rows()` and `eject()` for the MLX,
+  HuggingFace and embeddings backends in one place; `abstractcore.providers.hf_residency` and
+  `abstractcore.embeddings.manager.eject_embedding_models()` for each backend.
+- The memory snapshot reports `device.process_held_bytes`, the accelerator memory this process
+  holds across MLX, torch and llama.cpp, with `device.process_held_basis` saying how it was obtained
+  (the Metal device counter when torch is loaded, else a sum), plus
+  `torch_mps_allocated_bytes`, `torch_mps_driver_bytes`, `llama_cpp_bytes`,
+  `metal_process_allocated_bytes`, and a `resident` block listing every in-process model across
+  backends. GGUF rows whose cache figure includes the f16 KV-cache estimate carry
+  `kv_bytes_estimated: true`.
+- `abstractcore.utils.identity`: `app_identity()`, `about_fields()`, `about_lines()`,
+  `about_html()` and `gateway_version_rows()` give every AbstractFramework application the same
+  About facts (version, framework, author, licence, source, documentation, issues, feedback) from a
+  descriptor shipped with the package.
+
+## [2.15.3] - 2026-09-25
+
+Ejecting an MLX model now frees all the memory it held, and the memory snapshot shows what MLX
+still keeps.
+
+### Fixed
+
+- Ejecting an MLX model now frees everything it held: the weights, its prompt and KV caches and the
+  drafter, from every holder in the process, and MLX's allocator cache is cleared. The eject
+  (`abstractcore.providers.mlx_residency.eject_model`) reports what it freed and any residual
+  instead of claiming success. Who is affected: anyone who ejects models to reclaim memory —
+  previously a gateway could hold tens of GB of Metal buffers with no model listed. On a 27B model
+  the process footprint now drops from 22 GB to 0.65 GB after the eject; before, it stayed at 22 GB.
+- A residency record for an MLX instance that released its hold while another instance in the
+  process still keeps the weights now reads loaded, with `provider_state:
+  "resident_via_other_holders"` and the `held_bytes` still in memory, instead of "not loaded".
+
+### Added
+
+- The memory snapshot (`get_memory_snapshot()`, `GET /acore/memory`) reports MLX active, cache,
+  peak and held bytes (`device.mlx_*_bytes`), the MLX models alive in the process and their holders
+  (`held`), and, on macOS, the process's physical footprint (`process.footprint_bytes`), which
+  includes Metal memory that RSS leaves out.
+
+## [2.15.2] - 2026-09-25
+
+The default MLX model now names a repo that exists, so a first MLX download works, and
+`llms-full.txt` covers every page the docs index links.
+
+### Fixed
+
+- The default MLX model is now `mlx-community/Qwen3-4B-4bit`, a repo that exists on Hugging Face.
+  `create_llm("mlx")` without a model and `abstractcore-endpoint` without `--model` asked for
+  `mlx-community/Qwen3-4B`, which does not exist, so the first download failed. Examples in the
+  package READMEs use the same id.
+
+### Documentation
+
+- `llms-full.txt` now includes every page the docs index links, including Web and Document Tools,
+  Prompt Caching, Hugging Face Model Compatibility, Fallbacks, Memory and Model Residency, Reasoning
+  Control and the CLI app guides, which it left out before. The page list comes from `docs/README.md`,
+  and a docs page the index does not link fails the check.
+
+## [2.15.1] - 2026-09-24
+
+A download that stops on its own now ends `failed` with a plain reason, and `cancelled` only after
+a real cancel request, which records who made it. The fit warning states the two numbers its
+verdict compared, and a copied Hugging Face cache with missing links reads absent.
+
+### Fixed
+
+- A model's "may not fit" warning now states the two numbers its verdict compared: the total need
+  (weights plus working memory and cache) against the memory a model can use (the ceiling minus the
+  part kept free for the system). A 24 GiB Mac read "needs about 16 GiB; can give about 18 GiB: may
+  not fit"; it now reads "needs about 16.4 GiB in total (15.2 GiB of weights plus 1.2 GiB ...); this
+  computer can give a model about 16.0 GiB (... 18.0 GiB, and 2.0 GiB of that is kept free ...)".
+  The fit block adds `usable_bytes`, `reserve_bytes` and `overhead_bytes`.
+- A download that stops on its own is never reported "cancelled". Host jobs record who asked for a
+  cancel (`cancelled_by`: `console`, `api`, `cli`, `other_process`; `cancelled_by_user`) and say
+  why a job ended in one plain sentence (`ended_reason`): a dropped connection, a Hub error, a full
+  disk, the owning process restarting, a failed MTP companion. A job whose owner exited reads
+  `failed` in every field (its `state` said `downloading`).
+- The Hugging Face download child stops when the process that started it exits (it kept
+  downloading after a gateway restart and held the file lock a retry then waited on).
+- Download messages no longer promise a resume huggingface_hub does not do: files that finished are
+  kept; the file that was in progress starts over. A failed download's instruction follows from what
+  failed (it always talked about gated models and an environment variable).
+- A Hugging Face cache copied without its symbolic links (rsync without `-a`) or without its blobs is
+  no longer reported installed; the model reads "absent" with a plain reason, and a download repairs
+  the missing links without fetching the data again.
+
+## [2.15.0] - 2026-09-24
+
+On a Mac the recommended local model now follows the computer's memory, downloads report real
+progress and bring a model's MTP companion along, and loading a model stays offline without
+switching the whole process offline. Fetched PDFs no longer leave the machine by default.
+
+### Added
+
+- **On a Mac the recommended text model follows the computer's memory.** One function,
+  `model_catalog.recommended_text_model()`, decides it for every surface: the
+  catalog's `recommended`/`starter` flags, the fresh-install defaults,
+  `config apply-recommended`, `models download --recommended` and, through the
+  runtime facade, the Gateway's guide. On Apple silicon it is an MLX build by
+  unified memory: below 24 GiB `mlx-community/Qwen3.5-9B-MLX-4bit`, 24 GiB to
+  below 128 GiB `mlx-community/Qwen3.8-27B-4bit`, 128 GiB and above
+  `mlx-community/Qwen3.8-Flash-Next-4bit` (new catalog row
+  `qwen3.8-flash-next`). MLX now leads the Apple-silicon provider order; LM
+  Studio and Ollama builds stay listed and downloadable. Other hosts keep LM
+  Studio `qwen/qwen3.5-9b@4bit`. Each tier also lists its MTP build
+  (`mlx-works/Qwen3.5-9B-oQ4e-mtp`, `Jundot/Qwen3.8-27B-oQ4e-mtp`,
+  `Jundot/Qwen3.8-Flash-Next-oQ4e-mtp`, with the `speculation` options);
+  `MTP_RECOMMENDED` (off) switches the recommendation to them. A tier the fit
+  estimate says will not fit is still the tier, with `fits: false` and a
+  one-sentence `warning`; `recommended_plan()` carries both on the text row.
+  New `capability_defaults.recommended_capability_default_routes()` /
+  `recommended_model_downloads()` are the host-aware views of the portable
+  tables. See [docs/models.md](docs/models.md#the-recommended-text-model).
+- **8-bit builds in the catalog, every id verified upstream.** 95 artifacts
+  added: 39 MLX `-8bit` repos (plus the 5 tier builds), 24 GGUF `Q8_0` files
+  in the repos the catalog already used for `Q4_K_M`, and 27 Ollama `-q8_0`
+  tags whose registry config matches the tag the catalog already lists. Each
+  carries `upstream: {method, checked, revision?}` and the size read upstream;
+  the seed validator (and schema) reject an `upstream` artifact without that
+  size. LM Studio `@8bit` ids are not added: they cannot be verified upstream
+  without running `lms`.
+- **`quant_class` and `quant_class_source` on every catalog artifact**:
+  `2bit`, `3bit`, `4bit`, `5bit`, `6bit`, `8bit`, `16bit`, `full` or
+  `unknown`, `stated` when the reference names its quant, `assumed` for a bare
+  Ollama tag or LM Studio id (the engine's default build, as the fit estimate
+  assumes), `null` with `unknown`. Artifacts also carry `options`, `note`,
+  `companions` (an MLX build's MTP drafter, read from the MLX drafter
+  registry, `speculation.mlx_companion_repos`, never hand-typed) and
+  `companion_bytes` (the drafter's verified size, recorded in the seed's new
+  `companion_sizes`); a catalog-sized `download_bytes` includes the
+  companion, and so does the fit estimate. `quant` and `bits` are unchanged. See
+  [docs/models.md](docs/models.md#quant_class).
+- **Fit estimates for the hybrid Qwen3.5/3.8 tier rows use their real KV
+  geometry.** The rows carry `kv_geometry` read from the upstream
+  `config.json` (full-attention layers only: 8 of 32, 16 of 64, 12 of 48),
+  used before and after install. Qwen3.8 Flash-Next 4-bit went from an
+  estimated ~199 GiB (a KV cache guessed from 180B parameters) to ~109 GiB
+  (103.9 GiB of upstream weights + 0.2 GiB KV + 5.2 GiB overhead). A `tight`
+  pick now says it fits tightly.
+- **Download jobs report real progress from the first second, for every
+  source.** A `host_job_v1` download now carries `state` (queued, resolving,
+  downloading, verifying, installing, done, failed, cancelled, stalled),
+  `bytes_done`/`bytes_total`, `size_unknown` + `size_note`, `percent`,
+  `bytes_per_second` (last 5 s; falls to 0 when bytes stop), `eta_s`,
+  `updated_at` (at least every 0.5 s), `files` and `current_file`, a
+  one-sentence `message` ("Downloading model.safetensors (2 of 5) · 1.2 GB of
+  4.8 GB · 38 MB/s · 1 min left"), the tool's own line in `detail`, and
+  `transitions`. A download with no bytes for 15 s turns `stalled`, says so,
+  is logged, and recovers by itself (`ABSTRACTCORE_DOWNLOAD_STALL_S`). Every
+  update is appended to `<jobs dir>/<job_id>.events.jsonl`, never capped.
+  Hugging Face / MLX / mlx-gen: file list and sizes before the first byte,
+  per-file bytes from the cache. Ollama: layers added up into one total (the
+  bar used to restart at 0 % for each layer). LM Studio: the bytes, total and
+  speed `lms get` prints (its bar reached the job only as raw text, so no
+  bytes or percent were ever set), or the bytes landing in the models folder
+  when it prints none. Supertonic:
+  per-file bytes, sizes read first. See [docs/models.md](docs/models.md#download-progress).
+- **Installed-model rows say what each artifact is and can do.**
+  `models_installed_v1` rows gain `kind` (`model` | `adapter` | `encoder` |
+  `embedding`, or `null`), `tasks` (for example `text_generation`,
+  `image_to_text`, `text_embedding`, `speech_to_text`, `text_to_image`) and
+  `tasks_source`. The values come from local evidence only: the cached model
+  card's `pipeline_tag`, `config.json` architectures, `adapter_config.json`,
+  sentence-transformers files, and `lms ls --json` `type`/`vision`. No card
+  is fetched. A LoRA is now visibly an adapter, not a model to load. Ollama
+  rows stay unknown (`null`/`[]`). See
+  [docs/models.md](docs/models.md#installed-models).
+- **`abstractcore models repair-refs [--dry-run] [--cache-dir DIR] [--json]`.**
+  Writes the missing `refs/main` of cached Hugging Face repos left by earlier
+  pinned downloads, so they load by repo id offline again. A repo is repaired
+  only when it has no `refs/main` and exactly one complete snapshot (no
+  `.incomplete` blob or unfinished download marker, no dangling file, every
+  shard of a `*.index.json` present, a config or weight file). Repos with
+  several complete snapshots are reported as `ambiguous` and left alone; an
+  existing `refs/main` is never changed (one naming a missing snapshot is
+  reported as `dangling_ref`); quarantined caches are not scanned. See
+  [docs/models.md](docs/models.md#repairing-refsmain).
+
+### Fixed
+
+- **`fetch_url` no longer sends fetched PDFs to OpenAI because an API key is set.** On the default `auto` route the PDF router uploaded every
+  small fetched PDF to the OpenAI-compatible endpoint whenever `OPENAI_API_KEY` was
+  present, with no enable flag. Local extraction (`pypdf`, then `pymupdf` when
+  installed) is now the only default; remote extraction is an explicit operator
+  opt-in, the new config key `offline.allow_remote_pdf_extraction` (default `false`;
+  `abstractcore --allow-remote-pdf-extraction` / `--disallow-remote-pdf-extraction`).
+  It gates `preferred_backend="native_llm"` too. Results say which extractor ran:
+  `pdf_text_backend`, `pdf_summary_backend`, `pdf_backend_attempts` (the remote route
+  is listed as skipped with `remote_extraction_disabled`) and the new
+  `pdf_remote_extraction_enabled`. See [docs/web-tools.md](docs/web-tools.md#documents).
+- **Embedding caches are no longer emptied at interpreter exit.** Every
+  `EmbeddingManager` pickled its whole in-memory cache over the on-disk file at exit,
+  last writer wins: a process that loaded the cache while it was empty (a test run, a
+  second app on the same model) and exited later replaced a populated cache with an
+  empty one. Saves now
+  merge with the file as it is on disk (under a lock where the OS has one), are
+  written to a temp file and renamed into place, never write an empty cache, and are
+  skipped when the process added nothing.
+- **`EmbeddingManager` no longer writes `HF_HOME`, `TRANSFORMERS_CACHE` and
+  `HF_DATASETS_CACHE` into the process environment.** Those writes leaked
+  into every later import and child process (`HF_DATASETS_CACHE` with the wrong
+  layout). The load location is now per call: the resolved snapshot directory, or
+  `cache_folder=` when a download is allowed.
+- **Model lookups read every Hugging Face cache, not only `~/.cache/huggingface/hub`.** The GGUF search, the similar-GGUF suggestions and
+  `list_available_models` of the HuggingFace provider, the MLX provider's
+  `list_available_models`, the embeddings ONNX probe and the model materializer's
+  fallback now share `utils.model_cache.hf_hub_cache_dirs()` (the cache
+  `huggingface_hub` uses, then `cache.huggingface_cache_dir`), so a relocated cache is
+  no longer reported as missing.
+- **`abstractcore --download-vision-model` honours `cache.local_models_cache_dir`.** It always wrote to `~/.abstractcore/models`. See [docs/models.md](docs/models.md#installed-models).
+- **An MTP-preserving MLX checkpoint never loads through mlx-lm.** mlx-lm ≤ 0.31.3 `qwen3_5.Model.sanitize` treats any `mtp.` tensor as a raw Hugging
+  Face checkpoint and adds +1.0 to every RMSNorm weight. So `mlx-works/Qwen3.5-9B-oQ4e-mtp`
+  and `Jundot/Qwen3.8-27B-oQ4e-mtp` were shifted twice and generated garbage whenever the MTP
+  lane was not entered: companion missing (always the case on a fresh install),
+  `speculation=False`, or no drafter. The provider now reads the local index `weight_map`
+  (`mlx_native_session.mtp_weight_keys`) and loads such checkpoints through mlx-vlm in every
+  lane. A failed mlx-vlm load raises `ProviderAPIError` naming the model and the reason,
+  never an mlx-lm fallback. Fixed upstream on mlx-lm `main` (ml-explore/mlx-lm#1623), not
+  released. See [docs/speculative-decoding.md](docs/speculative-decoding.md#mtp-preserving-checkpoints-never-load-through-mlx-lm).
+- **A model's MTP companion is downloaded, listed and deleted with it.**
+  `abstractcore models download mlx <model>`, the Gateway's download jobs and `--recommended`
+  fetch the registry's MLX drafter (`speculation.runtimes.mlx.drafter`) in the same job. It
+  appears as child file rows (`role: "mtp_companion"`), its size is in `bytes_total` from the
+  start, cancel covers it, and the job is `done` (and the model `installed`) only when both
+  are whole. `models list` shows the companion under its model (`companions`). `models
+  delete` offers to remove it (`--with-companion` / `--keep-companion`, `companion_offer`
+  in JSON) and keeps it while another installed model uses it. Flash-Next (built-in head)
+  has no companion. New `providers.speculation.mlx_companion_repos()` and
+  `model_materializer.companion_artifacts()`.
+- **A missing companion is said in words.** The response's `speculation.message` and the
+  discovery capabilities' `message` read: "MTP acceleration off: companion … is not
+  downloaded; download it with `abstractcore models download mlx …`". The Gateway's web
+  and terminal consoles show that text instead of the bare `mtp_head_not_cached` slug.
+- **`abstractcore models verify <repo>`**: a fresh-install inference check. It loads an
+  installed model with the default configuration (never downloads), checks the answer to
+  a fixed question and, for a model with a companion, checks `speculation.used`. The same
+  check runs as the opt-in slow test `tests/providers/test_mlx_fresh_install_inference_slow.py`.
+- Native MLX error texts name the checkpoint (`<model> (model_type qwen3_5)`) instead of
+  "Native Qwen4" for every model.
+- `abstractcore models download --help` lists every provider with a download verb, `mlx`
+  included. The refusal text already told users to run `models download mlx …`.
+- The re-read upstream size of `mlx-community/Qwen3.8-27B-4bit` is
+  16,054,541,349 bytes (the seed had 16,081,490,933 from an older revision).
+- **A pinned Hugging Face download now leaves `refs/main`.** The downloader
+  pins the commit it listed (`snapshot_download(revision=<sha>)`), and
+  huggingface_hub writes no `refs/main` for a commit-hash revision, so every
+  loader that resolves a repo by id offline (transformers with
+  `local_files_only`, `mlx_lm.load("<id>")`, vLLM, your own scripts) failed
+  with "couldn't find them in the cached files". After every planned file is
+  verified whole, the download writes `<repo>/refs/main` = that sha when the
+  repo has no `refs/main` yet. An existing `refs/main` naming another commit
+  is never overwritten; the completion message then says which commit loading
+  by name resolves. Existing caches: run `abstractcore models repair-refs`.
+- **Embedding models apply offline-first on each load.** `EmbeddingManager`
+  called `SentenceTransformer(model_id)` with no `local_files_only`; it stayed
+  offline only when the Hugging Face provider had already written
+  `HF_HUB_OFFLINE=1` into the process, a write that is now gone. With
+  offline-first on (or `force_local_files_only`), the model id resolves to its
+  cached snapshot directory (`resolve_hf_load_snapshot`; a bare legacy name is
+  also looked up as `sentence-transformers/<name>`) and loads with
+  `local_files_only=True`, making no network call. An uncached model raises
+  `ModelNotFoundError` with the same "download it first" message as the
+  Hugging Face provider.
+- **`--download-vision-model` and the config wizard's "download embeddings
+  now" say why they cannot download.** These are explicit downloads, so
+  `offline_first` does not apply and they carry no `local_files_only`. When
+  the operator set `HF_HUB_OFFLINE` or `TRANSFORMERS_OFFLINE` before start,
+  they now stop with a message naming the variable instead of a bare
+  `OfflineModeIsEnabled`. The wizard no longer says an uncached embedding
+  model "will download on first use", which is false under offline-first.
+- **Importing the Hugging Face provider no longer switches the whole process to
+  Hugging Face offline mode.** With `offline_first` on (the default), importing
+  `abstractcore.providers.huggingface_provider` wrote `TRANSFORMERS_OFFLINE`,
+  `HF_DATASETS_OFFLINE` and `HF_HUB_OFFLINE` = 1 into `os.environ`. Every child
+  process inherited them: engine installs, app launches, the tray and tools ran
+  offline. The write is removed. Offline-first is now applied on each load
+  call: every transformers call (`AutoConfig`, `AutoTokenizer`,
+  `AutoModelForCausalLM` / `AutoModel`, `AutoProcessor`,
+  `AutoModelForImageTextToText`) gets the cached snapshot directory plus
+  `local_files_only=True`. The vision loader also no longer writes
+  `TRANSFORMERS_VERBOSITY` / `DISABLE_TQDM` into the environment.
+- **A fully cached Hugging Face model loads offline.** Loads could fail with "We
+  couldn't connect to 'https://huggingface.co' ... couldn't find them in the
+  cached files" even though every file was on disk, when the repo had no
+  `refs/main`. The provider now finds the snapshot itself
+  (`utils.model_cache.resolve_hf_load_snapshot`: `refs/main`, else the newest
+  snapshot that has a config) and passes transformers the directory, so no
+  load makes a network call. A PEFT adapter (LoRA) whose base model is cached
+  loads the same way: the base comes from its snapshot and the adapter is
+  attached from its own directory. Before the base loads, the provider checks
+  that the installed `peft` meets transformers' own `MIN_PEFT_VERSION` (0.19.1
+  for transformers 5.17). If `peft` is missing, too old or cannot be imported,
+  the load raises a plain `ProviderError` naming both installed versions and the
+  `pip install -U "peft>=…"` fix. It no longer surfaces as an `ImportError`
+  wrapped in `RuntimeError`.
+- **An uncached or incomplete Hugging Face model fails at once with a plain
+  message.** With offline-first on, the load raises `ModelNotFoundError`
+  instead of a network timeout. The message names the model and the fix
+  (`abstractcore models download huggingface <repo>`). It also covers a
+  snapshot with a config but no weights, a snapshot with only a README (for
+  example a diffusion LoRA loaded as text), and an adapter whose base model is
+  not cached.
+- **An explicitly named MLX drafter that is not cached is no longer downloaded
+  silently.** With offline-first on, `resolve_native_drafter_path` refuses it
+  with the same plain message (`abstractcore models download mlx <repo>`).
+  With offline-first off, it downloads the drafter and logs a warning.
+- **The bitsandbytes fused-kernel check no longer lifts an offline flag.**
+  AbstractCore no longer sets that flag. The check runs once per process, and
+  any failure is reported without a second network attempt.
+- **Loading an MLX model no longer switches the whole process to Hugging Face
+  offline mode.** With `offline_first` on (the default), each MLX load used to
+  write `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` and `HF_DATASETS_OFFLINE` = 1
+  into `os.environ` for the rest of the process, and every child process
+  inherited it (in the gateway, download jobs started after the first MLX load
+  failed with `OfflineModeIsEnabled`). The write is removed. "No on-demand
+  download while loading" still holds: the load resolves to a local cache
+  directory and raises `ModelNotFoundError` on a miss.
+- **An explicit Hugging Face download always reaches the Hub.** Download jobs
+  build the child's `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` and
+  `HF_DATASETS_OFFLINE` from the values the operator set before the process
+  started (new `config.manager.explicit_download_hf_env()`). Values written
+  later in-process are not passed on, for example by the Hugging Face
+  provider's import. Detached job processes are started with the same values.
+  The job log says which ones were withheld. An offline
+  flag the operator set before start makes the download fail at once, with a
+  message naming the variable. See
+  [docs/models.md](docs/models.md#downloading).
+- **Cancelling a download stops it within a second and leaves nothing that
+  reads as installed.** A Hugging Face download from a job runs in a child
+  process that is stopped at once (it used to run on in a thread until the
+  hub library's next progress callback); its temporary files
+  are removed, and a marker keeps a download cancelled between two files from
+  reading as installed. A quiet Ollama pull is stopped by closing the
+  connection instead of waiting for the next line. `lms get` is stopped the way
+  its own Ctrl-C does, answering No to "continue in the background?", so LM
+  Studio stops downloading too. Supertonic removes the partial file.
+- **Engine detection finds Ollama and LM Studio installed for one user.** A
+  Mac app placed in `~/Applications` (a user-level install, no administrator
+  rights; what AbstractGateway's Install does on a standard account) is now
+  reported as installed, like one in `/Applications`. Ollama's CLI is found
+  inside the app bundle when `/usr/local/bin/ollama` was never linked.
+
+### Tests
+
+- **Tests never touch your home or the network.**
+  `tests/conftest.py` moves `HOME`, `HF_HOME`
+  and `HF_HUB_CACHE` to tmp at import and per test, clears the exported
+  `ABSTRACT*`/`HF_*` path settings and `XDG_*`, and fails loudly if
+  `huggingface_hub` froze its cache path on the real home. A socket guard
+  refuses non-loopback destinations and the live local services on loopback
+  (8080, 1234, 11434, 18850); every refused attempt fails its test and is listed
+  with its host and port. `@pytest.mark.network("reason")` (skipped unless
+  `pytest --allow-network`) and `@pytest.mark.real_home("reason")` are the
+  opt-outs; a bare marker is a collection error. Tests that need a public host
+  name use the new `fake_public_dns` fixture, and live-provider tests carry
+  `network` markers. See
+  [CONTRIBUTING.md](CONTRIBUTING.md#tests-never-touch-your-home-or-the-network).
+
+## [2.14.0] - 2026-09-23
+
+Browse, download and delete local models and install local engines from one place: the
+command line, a browser console served by `abstractcore serve`, or the terminal console.
+
+### Added
+
+- **Ready on first run.** A bare `abstractcore serve` now starts on `127.0.0.1:8000` and prints
+  a one-time console link, `http://127.0.0.1:8000/console#claim=<code>` (valid 10 minutes).
+  On a loopback address with no `ABSTRACTCORE_AUTH_TOKEN`, the server creates its bearer token
+  once and keeps it in `<config dir>/server-token` (readable by you only); opening the link
+  signs the browser tab in. `abstractcore serve --print-token` prints the token for API
+  clients and `abstractcore serve --claim-url` prints a fresh link. The link is redeemed
+  through `POST /acore/session/claim`, which answers only direct connections from the same
+  machine. See [First run](docs/server.md#first-run-on-your-machine).
+- **Web console at `/console`.** `abstractcore serve` now serves a browser console with four
+  tabs: Overview (host profile, engines summary, server health), Models (catalog search and
+  filters including "Fits this machine", weights status, fit badges with evidence, Download,
+  Delete with confirmation, job progress and Cancel), Engines (status, Install with a
+  confirmation that shows the exact command and the host it runs on, Open download page) and
+  Providers (read-only). Every action shows its CLI equivalent. The console keeps the
+  server token in the tab's session storage only, and asks for it when it has none. Themes
+  come from the AbstractFramework UI kit and follow the system light/dark preference. See
+  [Web Console](docs/console.md).
+- **Embeddable Models and Engines screens.** `abstractcore.console.web.fragment("models" |
+  "engines")` and `GET /console/fragment/{kind}` return `{html, js, css}` that a host console
+  mounts with `window.AbstractCoreConsole.mount(kind, rootEl, {apiBase, request, isAdmin,
+  onJob, hostName, cliPrefix})`, injecting its own request function for auth and CSRF.
+- **Terminal console Models and Engines screens.** The `abstractcore-console` terminal app
+  (0.2.0) gains screen 9 "Models" and screen 0 "Engines" with the same labels and keys as the
+  web console (`w` download, `d` delete, `i` install, `o` open download page, `/` filter,
+  `f` fits only, `c` cancel), and ships as a library so other consoles can mount the same
+  screens. See [Terminal console](docs/console-tui.md).
+- **Local model browser.** `abstractcore models catalog` and `models search` list downloadable
+  models (a curated catalog of 76 models across 46 families: chat, coding, vision, embedding)
+  with, for each engine artifact, whether it is installed, its download size, and a fit verdict
+  for this machine (`fits`, `tight`, `too_large`, `partial_offload`, `unknown`) with the
+  memory it needs, the largest context it allows, and a disk check. One artifact per model is
+  pre-selected for your hardware. `--hub` adds exact sizes and search results from Hugging Face
+  (cached 24 hours). See [Local Models](docs/models.md).
+- **Installed models with sizes, and delete.** `abstractcore models list` shows every model
+  installed in Ollama, LM Studio and the Hugging Face cache (split into MLX and transformers /
+  GGUF) with sizes, quantization and whether it is loaded. `abstractcore models delete` removes
+  one with the engine's own mechanism, refusing loaded, remote or shared-cache models unless
+  `--force`.
+- **Engine detection and installs.** `abstractcore engines status|install|open` detects Ollama,
+  LM Studio, MLX, llama.cpp, vLLM and transformers, shows the exact vendor install command for
+  your OS, and runs it after confirmation. See [Local Engines](docs/engines.md).
+- **`abstractcore host profile`**: accelerator, memory ceiling, free memory and free disk per
+  model store.
+- **Background jobs.** Downloads, deletes and engine installs run as jobs with progress and
+  cancel: `abstractcore models jobs`, `abstractcore models cancel`, and
+  `models download --detach`. With `--json`, `models download <provider> <artifact>` and
+  `engines install` stream one job object per line.
+- **Server routes**: `GET /acore/host/profile`, `GET /acore/models/catalog`,
+  `GET /acore/models/installed`, `POST /acore/models/download`, `POST /acore/models/delete`,
+  `GET /acore/engines`, `POST /acore/engines/{id}/install`, `GET /acore/jobs`,
+  `GET /acore/jobs/{id}`, `POST /acore/jobs/{id}/cancel`. Host-changing routes need a server
+  principal; engine installs are enabled by default only on a loopback-bound server
+  (`ABSTRACTCORE_ALLOW_ENGINE_INSTALL` overrides).
+- **GGUF quant selection**: a Hugging Face artifact `org/Repo-GGUF:Q4_K_M` downloads only that
+  quant's files, and a download that cannot fit on disk is refused before it starts.
+
+### Changed
+
+- **`abstractcore serve` binds `127.0.0.1` by default** (it was `0.0.0.0`). Pass
+  `--host 0.0.0.0` (or set `HOST`) to listen on every interface; a non-loopback server still
+  requires `ABSTRACTCORE_AUTH_TOKEN`, and its start banner now says so. The Docker image sets
+  `HOST=0.0.0.0` and is unaffected.
+- `abstractcore models download <provider> <artifact> --json` prints one `host_job_v1` object
+  per line while the download runs; the last line keeps the previous `ok` and `results` keys.
+- `psutil` may now be 6.x or 7.x (`psutil>=5.9,<8`), so the extras that use it install from
+  wheels on Linux ARM64 (Graviton, Raspberry Pi, Docker on Apple Silicon) without a compiler.
+
+## [2.13.42] - 2026-09-23
+
+### Fixed
+
+- **GPU and non-MLX install profiles resolve again on Python 3.11 and 3.12.** `all-gpu` and
+  `all-non-mlx` still capped NumPy below 2 on Python < 3.13, while `abstractvision[all-gpu]`
+  requires NumPy 2. So `abstractcore[all-gpu]`, and every GPU profile built on it
+  (`abstractruntime[gpu]`, `abstractagent[gpu]`, `abstractgateway[gpu]`,
+  `abstractframework[gpu]`), could only be installed on Python 3.13. Both extras now allow
+  `numpy>=1.20.0,<3.0.0`, as `all`, `embeddings`, `full-dev` and `test` already did.
+- Known limit: on Python 3.10, `all-gpu` and `all-apple` are still not installable. The TTS
+  engine that `abstractvoice[all-gpu]` / `abstractvoice[all-apple]` bring in (f5-tts) needs
+  NumPy 1.x on Python 3.10, and the vision and MLX stacks need NumPy 2. Use Python 3.11 or
+  newer for these profiles.
+
+## [2.13.41] - 2026-09-23
+
+2.13.39 and 2.13.40 were not published to PyPI separately; their changes (listed below) ship
+with 2.13.41.
+
+### Added
+
+- **Native MLX runtime.** In-process Qwen3.8-27B and Qwen3.8-Flash-Next support on the `mlx`
+  provider with embedded multi-token prediction (MTP), per-request draft depth, bounded native
+  prefix caching (RAM and optional SSD), image input with MTP on or off, and speculation
+  telemetry. Opt-in request scheduling (`mlx_batching=True`) adds continuous batching, bounded
+  admission and shared model ownership; the AbstractCore server and single-model endpoints admit
+  scheduled requests concurrently. See [native MLX runtime](docs/native-mlx-runtime.md),
+  [speculative decoding](docs/speculative-decoding.md) and
+  [M5 Max benchmarks](docs/native-mlx-benchmarks.md).
+- **Core-owned MTP defaults and execution-capability discovery.** Fresh configurations use draft
+  depth 2 on compatible native-MLX models with cached heads; existing settings are preserved.
+  Applications keep per-request Off/depth overrides, and unsupported strict requests fail
+  explicitly. Defaults never download weights.
+- **Generation cancel.** Pass a `threading.Event` as `cancel_event=` to `generate()`: providers
+  that declare `supports_generation_cancel()` stop the running decode (MLX per sampled token and
+  during mlx-lm prefill; HuggingFace transformers and llama.cpp per step or prefill slice;
+  OpenAI-compatible, LM Studio, vLLM, OpenRouter, Portkey and Ollama by severing the in-flight
+  HTTP request). A stopped call raises the new typed `GenerationCancelledError`, which is never
+  retried. See [generation cancel](docs/generation-cancel.md).
+- **Safe eject and reload.** `unload_model()` cancels and drains the instance's in-flight calls
+  first (bounded, 30 s by default); MLX and HuggingFace refuse to free memory under a running
+  decode. MLX and HuggingFace gain `load_model()` and reload on demand after an eject. HTTP
+  providers stay usable after `unload_model()`.
+- **Live generation phase and prefill progress.** `generate(progress_callback=...)` (alias
+  `on_progress=`) receives JSON-safe `{"kind": "llm", "phase": "prefill" | "generate" |
+  "complete", ...}` events with prompt, cached and generated token counts, prefill position and
+  throughput, TTFT and tokens per second, at most one event per 0.5 s
+  (`ABSTRACTCORE_PROGRESS_MIN_INTERVAL_S`). Implemented on MLX and HuggingFace; providers report
+  support through `supports_text_progress_events()` and HTTP providers emit nothing.
+- **AbstractCore server:** a client disconnect cancels HTTP-backed providers as well as the MLX
+  scheduler, and a cancelled request answers 499.
+- **Host memory and residency visibility (2.13.40).** `get_memory_snapshot()`, host-wide
+  `sweep_loaded_models()`, `list_loaded_models()` on every provider, per-model memory on
+  residency records, prompt-cache size stats, `POST /acore/prompt_cache/key_meta`, and model
+  locks (`POST /acore/models/lock` / `unlock`).
+- **Reasoning effort on local providers (2.13.39).** `thinking="low|medium|high|xhigh"` is
+  enforced where the model supports it, with a `reasoning_effort` compatibility net for
+  OpenAI-compatible servers. A reasoning effort configured on the text route applies to calls that
+  name none, and is settable through the server.
+- **Web and document tools.** `fetch_url` returns one canonical structure-preserving markdown
+  `content`, can render JavaScript pages, escalates bot-challenge 403s to a real browser, reads
+  Reddit threads through their feeds, recovers headlines from site feeds when every client is
+  refused, and reports honest terminal classes (`captcha_required`, `paywall`, `login_required`,
+  `blocked_by_site`). `browser_probe` verifies rendered pages. An SSRF guard validates every hop.
+  See [web and document tools](docs/web-tools.md).
+- **`analyze_media` tool** gives text-only agents delegated sight through a vision model.
+- **`analyze_code`** covers 34 languages, marks every place output is withheld, and ends with
+  runnable recovery steps.
+- **Persistent shell sessions** (`tools/shell_session.py`, `tools/shell_tools.py`), schema-aware
+  tool-argument coercion, tool risk tiers and side-effect tags, and an authoritative builtin-tool
+  inventory (`abstractcore.tools.inventory`).
+- **Retry wall-clock budget** (`RetryConfig.max_total_wall_clock_s`,
+  `create_llm(..., retry_wall_clock_budget_s=...)`) and an LLM read-idle timeout that aborts a
+  stalled stream.
+- **Provider endpoint profiles registered at runtime** (`register_runtime_provider_profile`) and
+  `create_llm(..., prompt_cache_key=...)`.
+- **Durable prompt-cache artifacts** are gated by engine, tokenizer, model-config and weights
+  identity, and support q8 KV storage. MLX warm-cache reuse covers Gated-DeltaNet hybrids
+  (Qwen3.5 / Qwen3.6 / Ornith 1.0).
+- **Machine-level data-home registry** (`abstractcore.utils.data_registry`).
+- **Model registry:** Anthropic generation-5 models, Poolside Laguna, Nemotron 3 Nano 4B and
+  recent Hugging Face models.
+
+### Changed
+
+- **Dependencies.** MLX and Apple installation profiles require `mlx>=0.32.2`, `mlx-lm>=0.31.3`
+  and `mlx-vlm>=0.7.1,<0.8.0`; `mlx-vlm` is part of every MLX profile, so `mlx-vision` is a
+  compatibility alias. Media plugin floors: `abstractvoice>=0.11.2`, `abstractvision>=0.3.29`,
+  `abstractmusic>=0.1.15`. The `embeddings`, `all` and `full-dev` extras accept NumPy 2 on every
+  Python version, so they combine with the MLX profiles (`mlx-vlm` 0.7 requires NumPy 2).
+- **Configuration is config-first.** A config-set API key supersedes the environment variable;
+  vision, voice and music behavior on the standalone server is read from configuration. Writing
+  one field of a capability route keeps the rest of the route.
+- **Native MLX `num_draft_tokens`** counts proposals excluding the target seed, including
+  separate 27B MTP heads.
+- **Native MLX prefix-cache checkpoints** default to a 256-token interval with 4 resident
+  snapshots; the `APC_CHECKPOINT_*` environment variables still override them.
+- **`skim_url`** uses the same extraction and SSRF guard as `fetch_url`; `time_range` and
+  `require_in` accept plain-English values.
+- **Unload also frees session caches** on in-process providers, and `pinned` on managed
+  residency records is an alias of `locked`.
+
+### Fixed
+
+- MLX `stream=True` no longer raises `TypeError` on the mlx-lm / mlx-vlm lanes.
+- `response_model=` keeps attached media on MLX; streaming responses carry `media_delivered` and
+  `media_dropped`; images with uncommon extensions are recognized by content.
+- MLX responses report `finish_reason="length"` at the output cap; vision prompt usage includes
+  expanded image tokens.
+- Prepared prompt-cache prefixes accept `thinking=` and use the same reasoning control as
+  generation; MLX prepared-prefix forks report a visible `#FALLBACK` when the context diverges.
+- Structured output on strict-schema backends falls back to prompted generation; MLX and
+  HuggingFace Outlines output is validated.
+- Tool-call history with non-string argument values renders on LM Studio and HuggingFace GGUF.
+- Anthropic and OpenAI native providers keep `role: "system"` messages; Anthropic cache usage is
+  reported; streamed OpenAI-compatible usage is accounted.
+- MCP tool names survive strict native endpoints; Ollama `num_ctx` is forwarded.
+- `execute_command` timeouts kill the whole process tree and return captured output.
+- `edit_file` preserves CRLF line endings and can write literal escape sequences.
+- Configuration loading never silently regenerates defaults.
+- GGUF residency reports weights across split shards; `device.host_in_use_bytes` measures
+  accelerator-heap memory.
+
+## [2.13.40] - 2026-08-27
+
+### Added
+- **Host memory snapshot.** `abstractcore.utils.memory.get_memory_snapshot()` reports system RAM,
+  process RSS, and device allocation (`metal` / `cuda` / `mps`) in one best-effort call that never
+  raises; unknown values stay `None`. Served over HTTP as `GET /acore/memory`. When verifying that
+  an unload freed memory, read `device.allocated_bytes`: on Metal hosts, process RSS behaves as a
+  high-water mark (freed device buffers return to the process allocator, not to the OS) and does
+  not drop after an in-process unload. See the new
+  [Memory and Model Residency](docs/memory-management.md) guide.
+- **The device block separates process-local from host-wide accelerator memory.**
+  `device.allocated_bytes` is what *this process's* accelerator allocator holds — truthful for an
+  in-process MLX model, but blind to a model resident in another process (LM Studio, Ollama) and
+  blind to a llama.cpp/GGUF model resident in this one, whose weights are mapped outside that
+  allocator. So `allocated_bytes: 0` means "this allocator holds nothing", never "nothing is
+  loaded on this host". Two Metal-only fields now carry the rest: `device.host_in_use_bytes`, the
+  host-wide accelerator memory in use across all processes (IORegistry `"In use system memory"`),
+  and `device.wired_limit_bytes`, the enforced ceiling (`sysctl iogpu.wired_limit_mb` when set,
+  else Metal's `max_recommended_working_set_size` — the same ceiling `estimate_context_fit()`
+  budgets against, through the shared `abstractcore.utils.memory.metal_wired_limit_bytes()`).
+  Both are `None` on non-Metal backends.
+- **Host-wide resident-model sweep.** `abstractcore.utils.residency.sweep_loaded_models()`
+  enumerates the models resident on the host's local model servers (Ollama `/api/ps`, LM Studio
+  loaded instances) without constructing model-bound providers; unreachable servers are silently
+  skipped and records are tagged `source: "provider_server"`. The module also exposes the matching
+  vocabulary as public API: `SWEEP_PROVIDERS`, `normalize_sweep_model()` (case + Ollama `:latest`
+  alias), and `sweep_models_match()` (per-provider alias rules, including LM Studio's substring key
+  resolution).
+- **Provider loaded-model listings.** `list_loaded_models(filters=None)` on every provider returns
+  the models the instance can verify as loaded; Ollama and LM Studio instances enumerate their
+  whole server. New classmethods
+  `OllamaProvider.list_server_loaded_models()` and `LMStudioProvider.list_server_loaded_models()`
+  answer the same server-wide question without a provider instance. Residency records carry
+  normalized `size_bytes` / `size_vram_bytes` where the backend reports sizes.
+- **Per-model memory on residency records.** The in-process providers report a best-effort
+  `est_weights_bytes` on their residency claim — MLX sums the loaded parameter arrays, HuggingFace
+  uses the resolved `.gguf` file size for a GGUF model (a memory-mapped quant's on-disk size *is*
+  its weight footprint) or the summed parameter bytes for a transformers model. It is the only
+  size such a runtime can report: there is no model server to ask for `size_bytes`. Managed
+  residency records served by the gateway additionally carry `cache_bytes`, the total bytes that
+  runtime's prompt-cache store holds (per-key `bytes` plus MLX hybrid boundary-snapshot bytes).
+  Both are absent when unknown, never zero, and the two are separate footprints — adding
+  `cache_bytes` into a model's size double-counts. A client rendering one size per row should read
+  the first known of `size_bytes`, `size_vram_bytes`, `est_weights_bytes`.
+- **`GET /acore/models/loaded` merges the host sweep.** Models resident on local model servers but
+  not loaded through the gateway appear as `source: "provider_server"` rows in unfiltered and
+  text-generation listings, deduplicated against gateway runtimes by the provider's own alias rules
+  (so a resident `qwen3:latest` also matches `?model=qwen3`). Sweep rows carry no `task` label —
+  server enumerations cannot classify what is resident. A sweep failure never fails the endpoint.
+- **Prompt-cache size visibility.** `get_prompt_cache_stats()` reports a best-effort per-key
+  `bytes` in `meta_by_key` where the backend can compute it (MLX KV arrays, HuggingFace
+  transformers KV tensors, GGUF cache state), and MLX stats add a top-level
+  `snapshots: {count, bytes}` entry for hybrid-architecture boundary snapshots.
+- **`GET /acore/prompt_cache/stats` without a selector** enumerates cache stats across every loaded
+  gateway runtime (previously a selector was required). Per-runtime failures are reported inline;
+  a runtime busy generating reports `error: "busy"` instead of stalling the listing.
+- **`POST /acore/prompt_cache/key_meta`.** Merge caller attribution metadata (for example
+  `session_id`, `run_id`, `workflow_id`, `node_id`, `namespace`) into an existing prompt-cache
+  key, visible in later stats. Provider-internal bookkeeping keys are rejected
+  (`prompt_cache_meta_reserved_key`), and payloads above 16 KB serialized are rejected
+  (`prompt_cache_meta_too_large`). The Python counterpart is
+  `BaseProvider.prompt_cache_update_key_meta(key, updates)`.
+- **Model locks on gateway runtimes.** `POST /acore/models/lock` and `POST /acore/models/unlock`
+  set or clear a registry-level lock on a text runtime whose model is provider-verified
+  **resident**, and `POST /acore/models/load` accepts `"lock": true` to lock in the same call.
+  Lock requires residency: a warm registry runtime alone is configuration, not memory, and
+  locking a non-resident model refuses with HTTP `409` (`error: "model_not_resident"`) —
+  load with `"lock": true` instead. A locked runtime refuses
+  `POST /acore/models/unload` with HTTP `409` (`error: "model_locked"`) unless `"force": true`
+  (which unlocks and unloads; a failed provider unload leaves the runtime registered and locked),
+  and `unload_after` cleanup skips locked runtimes — including requests that reach the same
+  server-resident model outside the managed runtime. Where the provider has a residency knob, the
+  lock also applies it best-effort and reports the outcome as `provider_side` (Ollama:
+  `keep_alive: -1` on lock, restored to `"5m"` on unlock; unlock skips the restore when the
+  model was since evicted so it is never loaded back as a side effect — locks are never
+  stranded); providers without one report `provider_side.supported: false`
+  while the gateway lock still enforces. Managed residency records carry `locked`, `lockable`,
+  and `locked_at`.
+- **Locking adopts a sweep-resident model.** Models resident on the host's local model servers are
+  often not loaded through this gateway — you loaded one in the LM Studio app, or `ollama run` left
+  it warm. A `provider` + `model` selector naming no managed runtime now creates the registry entry
+  for such a model through the same ensure path a load uses — **client construction only, never a
+  provider-side model load**, so the weights are not loaded a second time — re-verifies residency
+  with the provider's own probe, and applies the lock; the response carries `"adopted": true`.
+  A pair the sweep does not verify resident refuses with the same `409`
+  (`error: "model_not_resident"`, `runtime_id: null` — nothing was adopted), and a provider probe
+  that contradicts the sweep drops the just-created entry rather than leaving a stray "configured"
+  row. Adoption covers the sweep providers (Ollama, LM Studio) only, and a `runtime_id` selector
+  never adopts. Sweep-only rows therefore now carry `lockable: true`.
+- **LM Studio locks state what they do not cover.** LM Studio exposes no residency-pin knob, so a
+  lock there answers `provider_side: {"supported": false, "applied": false, "detail": "lock guards
+  this stack's unloads; the external server may still evict on its own policy"}`. The lock is real
+  against this stack's unloads and `unload_after` cleanup, but the external server keeps its own
+  eviction policy (idle TTL, JIT model switching, a manual eject) — re-read
+  `GET /acore/models/loaded` rather than treating a lock as a residency guarantee.
+- **Context calibration and estimation.** GGUF loads that settle their context through the probe
+  ladder record the settled `n_ctx` to a per-machine calibration store
+  (`~/.abstractcore/calibration/`, directory overridable with `ABSTRACTCORE_CALIBRATION_DIR`;
+  atomic, capped) and seed later loads of the same model on the same hardware — the seeded rung is
+  still probed. Residency records carry `context_calibrated` / `calibrated_context_length` where
+  the ladder ran. New `abstractcore.utils.context_estimate.estimate_context_fit()` — served over
+  HTTP as `GET /acore/models/context_estimate` — answers how much context a provider/model can
+  sustain on this host without loading weights, labeling every answer `"calibrated"`,
+  `"estimated"`, or `"unknown"` (calibration wins; the function never raises). The memory
+  budget uses a real ceiling instead of a blanket fraction: on Metal/MPS the
+  `iogpu.wired_limit_mb` sysctl when set, else Metal's `max_recommended_working_set_size`
+  (mlx `device_info()`), else a labeled 75% fallback; on CUDA the `mem_get_info` free bytes —
+  minus a small `max(2 GiB, 5%)` reserve, with basis and reserve stated in `notes` and the
+  number in `budget_bytes`. The response splits weights-fit from context-fit with tri-state
+  `fits_weights` / `fits_requested_context`, and `predicted_max_context` is the context that
+  fits beside the weights (`(budget − est_weights_bytes) // kv_bytes_per_token`, clamped to the
+  model max; `null` when the weights alone exceed the budget). The f16-KV assumption stays
+  stated in `notes`; the estimate is advisory only — no load path gates on it. Geometry comes
+  from HF `config.json`
+  (`model_geometry_for()`), GGUF headers (`read_gguf_geometry()`), or Ollama `/api/show`;
+  LM Studio exposes no geometry source, and unknown stays unknown.
+- **Modalities and host identity on residency records.**
+  `abstractcore.providers.model_capabilities.modalities_for_model()` returns the
+  registry-declared modality routes for a model, or `None` on a registry miss — never a text-only
+  guess. Text-generation and sweep residency records carry `modalities` where declared; an MLX
+  runtime whose vision lane is unusable has `input.image` removed with
+  `modalities_note: "vision_unusable"`. New
+  `abstractcore.utils.hostinfo.get_host_identity()` names the observing machine (`host_id` is a
+  stable 12-hex hostname hash); every row served by `GET /acore/models/loaded` carries
+  `host_id` / `host_name`, and `get_memory_snapshot()` gains a top-level `host` block.
+
+### Changed
+- **Unload also frees session caches.** `unload_model()` on the in-process providers (MLX,
+  HuggingFace) now drops the instance's prompt-cache store — on MLX including hybrid KV boundary
+  snapshots — along with the weights. Session caches are only useful while the weights are
+  resident; unload means free the memory, including them.
+- **`pinned` on managed residency records is a truthful alias of `locked`.** Managed gateway
+  runtime rows previously reported `pinned: true` unconditionally; both fields now reflect the
+  gateway-managed lock state. Provider-side keep-alive residency (Ollama) shows through the
+  record's `expires_at` rather than through `locked`/`pinned`.
+
+## [2.13.39] - 2026-08-20
+
+### Added
+- **Reasoning effort levels are enforced on local providers.** `thinking="low|medium|xhigh"`
+  now reaches models that expose a reasoning-effort control, instead of being reduced to
+  "thinking enabled". Two registry surfaces drive it: `thinking_control.effort_template_kwarg`
+  names the chat-template variable for backends that render the template (LM Studio,
+  OpenAI-compatible servers, vLLM, HuggingFace transformers, GGUF builds with an embedded
+  template), and `thinking_control.effort_system_lines` carries the template's per-level
+  instruction text so providers that serialize prompts locally (MLX, and the HuggingFace
+  cached and ChatML renderers) reproduce it exactly. `Qwen3.8-27B` and `Qwen3.8-27B-FP8`
+  declare both and accept `low`, `medium`, and `xhigh`. Adding a model needs registry entries
+  only, no provider code. See the new [Reasoning Control](docs/reasoning-control.md) guide.
+- **`reasoning_effort` compatibility net for OpenAI-compatible servers.** A server that
+  rejects the field gets one automatic retry without it, and the request succeeds with a
+  `RuntimeWarning` stating that the requested level was not applied. Subsequent calls on the
+  same provider instance skip the field.
+
+### Changed
+- **LM Studio effort transport.** Levels are sent as the OpenAI-standard `reasoning_effort`
+  request field, which LM Studio maps into the model's chat template on every request shape,
+  including multi-turn conversations with tools. `chat_template_kwargs` is still sent for
+  builds that consume it, and `thinking="off"` keeps the empty-think-block hard switch.
+- **HuggingFace GGUF thinking control.** Requests that set a thinking control are served by
+  AbstractCore's local renderer whether or not a `prompt_cache_key` is supplied, so the
+  no-think marker lands at the generation boundary the model's own template uses.
+- **Reasoning metadata reports enforcement, not intent.** `thinking_effective` and
+  `thinking_handled_level` describe the control that actually reached the model. Requests
+  served by a path that carries no control artifact — structured output, media, tool-role or
+  content-part histories on GGUF, a prefilled system bloc in KV cache mode, or a stripped
+  `reasoning_effort` field — report the control as unhandled and warn. Callers reading these
+  fields will see fewer `"off"`/level claims and more explicit warnings where the underlying
+  path could not honor the request.
+
+### Fixed
+- **`thinking="off"` on HuggingFace GGUF without a `prompt_cache_key`.** The disable marker
+  was appended as a completed assistant turn, which chat templates render as history rather
+  than as a generation prefill, so models continued to emit reasoning. The local renderer now
+  serves these requests and the marker takes effect.
+- **Reasoning controls on secondary generation paths.** Structured output on MLX and
+  HuggingFace transformers, and the HuggingFace vision paths, built their prompts without the
+  requested thinking controls; they now carry them. A chat-template render that fails and
+  falls back to the plain text format now warns when thinking controls were riding on it.
+
+## [2.13.38] - 2026-06-14
+
+### Added
+- **Workspace-path utilities**: added shared `abstractcore.utils.workspace_paths`
+  helpers for canonical workspace path normalization, mount alias generation,
+  and safe root-bound path resolution.
+- **File-family utilities**: added shared `abstractcore.utils.file_filters`
+  helpers for extension normalization and media/code/document family matching.
+
+### Changed
+- **Voice plugin floor**: raised AbstractVoice integration requirements to
+  `abstractvoice>=0.10.18` so Core installs pick up the corrected local TTS
+  model discovery surface used by Gateway and AbstractFlow.
+
+## [2.13.37] - 2026-06-13
+
+### Fixed
+- **Release packaging guard**: `tests/test_packaging_extras.py` now verifies AbstractVision extra wiring by dependency prefix instead of hard-coding one historical plugin floor, so AbstractCore patch releases no longer fail CI when the released AbstractVision minimum is bumped intentionally.
+
+## [2.13.36] - 2026-06-13
+
+### Added
+- **Vision adapter discovery**: added `llm.vision.list_provider_adapters(...)` plus `GET /v1/vision/adapters` so Core can surface installed compatible LoRA adapters for a selected provider/model/task route without duplicating AbstractVision compatibility truth.
+- **Batch generated media through Core**: added first-class batch delegation for `t2i`, `i2i`, `t2v`, and `i2v` through the Python capability facade, unified `generate(..., output=...)`, sync media routes, and async vision jobs.
+
+### Changed
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.26` so Core installs pick up the released plugin exposure for adapter discovery and batch request delegation.
+- **Generated media contract**: image/video output specs now preserve `count`/`n`, explicit `seeds`, stacked `lora_adapters`, `flow_shift`, and typed `guidance_2` across the full Core facade/server boundary instead of flattening them into generic extras or repeating the same singular call.
+- **Server async vision boundary**: `/v1/vision/jobs/images/*` and `/v1/vision/jobs/videos/*` now delegate batch seed planning, backend request construction, and progress-method selection through `ServerVisionFacade`, so the server keeps HTTP/job orchestration while AbstractVision integration remains the source of request semantics.
+
+### Fixed
+- **Server batch seed planning**: `/v1/images/*`, `/v1/videos/*`, and async `/v1/vision/jobs/*` routes now return all requested outputs and honor explicit seed lists instead of reusing one singular generation path.
+- **Remote/local bridge parity**: the server-local capability bridge now preserves typed LoRA stacks and task-specific video controls for both direct local backends and OpenAI-compatible proxy paths.
+- **Async progress totals without explicit steps**: async image, image-edit, text-to-video, and image-to-video jobs now preserve backend-reported denoise totals when the caller omits `steps`, instead of pre-committing misleading totals from request defaults or frame counts.
+
+## [2.13.35] - 2026-06-07
+
+### Added
+- **Image upscaling routes**: added `/v1/images/upscale`, `/{provider}/v1/images/upscale`, and async `/v1/vision/jobs/images/upscale` with polling/progress support.
+- **Generated image upscaling**: `generate(..., output={"task": "image_upscale"})` routes source images through the AbstractVision upscaler capability.
+- **HTTP server CLI**: added `abstractcore serve` as the first-class command for starting the OpenAI-compatible AbstractCore server. Existing module and uvicorn entrypoints remain available for compatibility.
+- **MLX-Gen reference-image edits**: `/v1/images/edits` and async `/v1/vision/jobs/images/edits` now accept repeated multipart `reference_images` files and forward them to AbstractVision backends for composition/style-reference image edits.
+- **Image progress events**: async image generation/edit jobs now capture AbstractVision `on_progress(event)` payloads in `progress.last_event`, matching the existing video job surface.
+- **Wan A14B second guidance**: video generation routes, async video jobs, and generated-video output specs now accept typed `guidance_2` for dual-transformer video models.
+
+### Removed
+- **Capability default CLI compatibility flags**: removed the top-level `abstractcore --set-capability-default` / `--clear-capability-default` form. Use `abstractcore config set-default`, `abstractcore config defaults`, and `abstractcore config clear-default` instead.
+
+### Changed
+- **Permissive PDF media path**: moved the default `PDFProcessor` and `media`/aggregate install profiles from PyMuPDF-family packages to the BSD-licensed `pypdf` baseline. PyMuPDF4LLM and `pymupdf-layout` remain available only through the explicit `pdf-pymupdf-commercial` opt-in extra.
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.22` so Core installs pick up MLX-Gen `0.18.13`, SeedVR2 image upscaling, canonical q8/q4 upscaler packages, and the current upscaler progress event surface.
+- **Vision job progress semantics**: normalized server job payloads now preserve AbstractVision `step_progress` and `frame_progress`; `progress` follows the backend event's canonical progress value, which is denoise-step progress for MLX-Gen.
+- **Generated media examples**: updated Core docs and OpenAPI examples to use task-specific MLX-Gen A14B text-to-video and image-to-video model ids.
+
+### Fixed
+- **PDF capability truth**: the default `pypdf` processor no longer advertises image extraction support, and page-level text extraction errors are reported as warnings instead of aborting the whole document.
+- **Vision upscaler discovery**: local vision catalogs now surface MLX-Gen models that only support `image_upscale`, including canonical `AbstractFramework/seedvr2-{3b,7b}-{8bit,4bit}` packages.
+- **Generated image callback forwarding**: server-local generated image/edit dispatch now forwards top-level progress callbacks and backend-specific parameters through the same AbstractVision `extra` path used for video generation.
+- **Reference media routing**: unified Python image-edit generation forwards `media` items with `reference`, `style`, or `context` roles as AbstractVision `reference_images`.
+- **Upscale Swagger examples**: multipart OpenAPI examples now cover direct, provider-scoped, and async SeedVR2 image upscaling routes.
+- **Python 3.9 configuration import**: `ConfigurationManager` constructor annotations remain importable on Python 3.9.
+
+## [2.13.32] - 2026-06-03
+
+### Added
+- **Provider endpoint profiles**: added first-class Core config support for reusable OpenAI-compatible/provider endpoint profiles, including model discovery with profile-specific base URLs and API keys.
+- **Capability default CLI**: expanded `abstractcore config` so provider/model defaults can be set, listed, cleared, and discovered from the same Core config surface used by Gateway.
+- **Audio understanding registry**: added reviewed audio-understanding model metadata for Qwen Omni/Audio candidates while keeping Qwen3.6 text/vision models marked as non-audio.
+
+### Changed
+- **Capability routing metadata**: refined multimodal route metadata for text, image, video, speech, sound effects, music, and embeddings so hosts can distinguish generation routes and fallback routes.
+- **Generated media outputs**: tightened output-spec normalization and media typing so image/video/voice/music/sound artifacts are routed consistently through Core.
+- **Plugin floors**: raised AbstractMusic to `>=0.1.13` and AbstractVision to `>=0.3.19`.
+
+### Fixed
+- **Provider discovery**: model listing now honors per-provider/profile base URLs instead of falling back to the global provider endpoint.
+- **Embedding discovery**: embedding managers use provider endpoint profile configuration when resolving remote embedding models.
+- **Media content round-trips**: audio/video/media payload normalization preserves content dictionaries used by Gateway sandbox and Runtime calls.
+
+## [2.13.31] - 2026-05-31
+
+### Changed
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.18` so Core installs pick up the MLX-Gen `0.18.8` runtime floor and Wan 2.2 A14B text-to-video/image-to-video catalog support.
+
+### Fixed
+- **Embedding endpoint validation**: LM Studio, vLLM, and generic OpenAI-compatible embedding clients now skip eager chat-model catalogue validation for embedding-only setup. Embedding requests still surface provider errors at call time, but incomplete `/models` catalogues no longer disable remote embeddings before the first request.
+- **Remote-light voice/audio extras**: `abstractcore[voice]` and `abstractcore[audio]` now install the AbstractVoice capability plugin without `omnivoice`, `torch`, or `torchaudio`. Local OmniVoice engines remain in the explicit local aggregate profiles such as `abstractcore[all-apple]` and `abstractcore[all-gpu]`.
+
+## [2.13.30] - 2026-05-29
+
+### Changed
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.17` so Core installs pick up the MLX-Gen `0.18.7` runtime floor and latest Wan video/model fixes.
+- **Voice plugin floor**: raised AbstractVoice integration requirements to `abstractvoice>=0.10.17` so Core optional installs pick up the one-shot TTS CLI release and current voice package metadata.
+
+## [2.13.29] - 2026-05-26
+
+### Added
+- **Video generation through Core**: added Python `generate(..., output={"task":"text_to_video"|"image_to_video"})` callback forwarding for AbstractVision progress events, plus OpenAI-compatible `/v1/videos/generations`, `/v1/videos/edits`, and async `/v1/vision/jobs/videos/*` routes.
+- **Video job progress**: async video jobs now capture normalized backend progress events in `progress.last_event` while preserving step/frame counters for polling clients.
+
+### Changed
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.16` so Core installs pick up MLX-Gen 0.18.6, exact model id routing, and text/image-to-video support.
+
+### Fixed
+- **Generated media callback boundary**: top-level progress callbacks supplied to multimodal `generate(...)` calls are attached to generated image/video output specs instead of leaking into the text-provider kwargs path.
+
+### Verified
+- `pytest tests/test_packaging_extras.py tests/test_output_specs.py tests/test_multimodal_generate_output.py tests/server/test_server_vision_image_endpoints.py tests/capabilities/test_vision_catalog_helper.py tests/server/test_server_model_residency_control_plane.py -q`
+
+## [2.13.28] - 2026-05-26
+
+### Changed
+- **Capability plugin floors**: updated optional capability plugin install floors to `abstractvoice>=0.10.16` and `abstractvision>=0.3.14` so Core installs consume the latest OmniVoice catalog and MLX-Gen vision surfaces.
+- **Capability defaults**: added shared capability default configuration support for server and downstream hosts.
+- **Embedding configuration**: expanded remote embedding provider configuration and server routing coverage.
+
+### Fixed
+- **Vision catalog propagation**: preserved AbstractVision's canonical `mlx-gen` q4/q8 model catalog through Core discovery without hardcoded provider fallbacks.
+
+## [2.13.27] - 2026-05-23
+
+### Changed
+- **Capability plugin floors**: updated optional capability plugin install floors to `abstractvoice>=0.10.15`, `abstractvision>=0.3.13`, and `abstractmusic>=0.1.12` (plus matching turnkey profiles and docs references).
+
+### Verified
+- **Hermetic test suite**: `pytest` passes with local/provider/live tests disabled (CI-style defaults).
+
+## [2.13.26] - 2026-05-23
+
+### Changed
+- **Server music routing contract**: `/v1/audio/music` now documents `provider` as the music backend selector (aligned with the server’s 422 rejection of legacy `backend` / `music_backend` fields).
+
+### Fixed
+- **Dev server plugin resolution**: the server now prefers a sibling `../abstractmusic/src` checkout (alongside `abstractvision` and `abstractvoice`) when `ABSTRACTCORE_DEV_PREFER_SIBLINGS=1`, avoiding stale site-packages imports during local plugin development.
+- **README install matrix**: added the missing `abstractcore[music]` extra so users can install the AbstractMusic capability plugin directly from the main install section.
+
+### Verified
+- **Hermetic test suite**: `pytest` passes with local/provider/live tests disabled (CI-style defaults).
+
+## [2.13.25] - 2026-05-22
+
+### Changed
+- **Capability plugin floors**: updated optional capability plugin install floors to `abstractvoice>=0.10.14`, `abstractvision>=0.3.9`, and `abstractmusic>=0.1.8` (plus matching turnkey profiles).
+- **Docs**: refreshed plugin-floor references across README, Server, Capabilities, and `llms*.txt`.
+
+### Verified
+- **Capability residency integration**: `/acore/models/load`, `/acore/models/loaded`, and `/acore/models/unload` were validated against the released plugin builds for STT/TTS, voice-clone engine preloads, and local MFLUX image residency.
+
+## [2.13.24] - 2026-05-21
+
+### Changed
+- **Lightweight music integration**: raised the optional `abstractcore[music]` floor to `abstractmusic>=0.1.4`, which installs AbstractMusic's lightweight remote-capable base package without local model runtime extras.
+- **Remote ACE Music routing**: `music_backend` / server `backend` selectors now recognize `acemusic`, `ace-music`, `remote`, and related ACE aliases as `abstractmusic:acemusic`, while still allowing explicit plugin backend ids.
+- **Music server formats**: `/v1/audio/music` and `/{provider}/v1/audio/music` now accept and document `wav`, `mp3`, and `flac`, matching the remote ACE Music backend's advertised formats.
+
+### Fixed
+- **Music API diagnostics**: plugin-side upstream 5xx/timeouts, including ACE Music HTTP 504 responses, now preserve gateway-style HTTP statuses instead of being collapsed into generic 500 errors.
+
+## [2.13.23] - 2026-05-21
+
+### Added
+- **Generic capability plugin contract**: added the planned Core/plugin contract record for optional modality plugins, including shared provider/model discovery, typed task methods, host text-generation access, and cycle-free plugin integration expectations.
+- **Music capability integration**: added first-class music output routing through `llm.generate(..., output="music")`, the `llm.music.generate(...)` facade, and typed server routes for `POST /v1/audio/music` and `POST /{provider}/v1/audio/music` when `abstractmusic` is installed.
+- **Memory bloc maintenance control plane**: added public local helpers and matching server operations to list, delete, and prune blocs or provider/model KV artifacts while preserving live-binding safety checks for loaded cache keys.
+
+### Changed
+- **Capability registry consistency**: normalized voice, audio, vision, and music plugin discovery around a shared Core-owned registry surface so optional plugins can expose capabilities without hard dependencies or import cycles.
+- **Server media routing**: music requests now support request-level backend/model/provider routing and typed music parameters instead of relying only on environment-selected plugin defaults.
+- **Documentation set**: refreshed README, API, server, capabilities, memory-bloc, backlog, and LLM index docs for the new music and bloc-maintenance surfaces.
+
+### Verified
+- **Music smoke proofs**: generated valid 3-second WAV outputs through both Python `generate(..., output="music")` and the server music route using the local AbstractMusic ACE-Step backend.
+
+## [2.13.22] - 2026-05-20
+
+### Added
+- **Provider-wide durable memory bloc caches**: unified exact durable bloc KV artifacts across MLX, HuggingFace Transformers, and HuggingFace GGUF, including shared Python/server APIs, provider-native artifact formats, manifest validation, and request-time `prompt_cache_binding` proof.
+- **Durable cache validation tooling and reports**: added the durable bloc cache benchmark script plus real-provider validation reports covering processing-phase speedups, correct cached answers, artifact sizes, and provider compatibility limits.
+- **HuggingFace cache-state coverage**: expanded Transformers prompt-cache save/load coverage for standard dynamic caches, sliding-window caches, Qwen3.5 hybrid cache state, and Mamba-style tensor state; expanded GGUF persistence around llama.cpp RAM-cache state.
+- **Prompt-cache planning records**: completed the unified bloc-cache, HF Transformers, and HF GGUF backlog items; accepted ADR 0007 for durable memory bloc cache binding; kept speculative superbloc/exact-prefix recipe and live snapshot persistence work proposed.
+
+### Changed
+- **Generation defaults**: providers now consume `inference_parameters` from model/architecture metadata for omitted sampling knobs such as `temperature`, `top_p`, and `top_k`; Hugging Face Transformers also applies loaded `generation_config.json` defaults when present.
+- **MLX sampling controls**: MLX generation now builds an `mlx-lm` sampler from unified `temperature`, `top_p`, and `top_k` values instead of ignoring those controls at decode time.
+- **Prompt-cache compatibility metadata**: architecture and model capability assets now capture cache, reasoning/thinking, quantization, and generation-parameter defaults used by provider capability discovery.
+- **Voice/audio compatibility floors**: optional voice/audio install profiles now target `abstractvoice>=0.10.11` and `omnivoice>=0.1.5`.
+
+### Fixed
+- **HuggingFace greedy decoding**: Transformers pipeline generation now treats `temperature=0` as greedy decoding (`do_sample=false`) instead of forwarding an invalid sampling temperature.
+- **HuggingFace model compatibility failures**: unsupported FP8-on-MPS and broken quantized Transformers load paths now fail explicitly instead of being mistaken for prompt-cache failures.
+- **Prompt-cache abstraction boundaries**: live prompt-cache snapshot persistence is now documented as a proposed local-admin decision, not as a durable bloc or thin-client binding surface.
+
+## [2.13.21] - 2026-05-20
+
+### Added
+- **ADR baseline**: added an accepted ADR set covering engineering guardrails, validation/evidence, provider and capability ownership boundaries, server trust boundaries, source-first fixes, and the planned text-generation adapter lifecycle contract.
+- **Prompt-cache research backlog**: recorded narrower proposed backlog items for exact-prefix memory-cluster recipes, external cache-binding semantics, and transformers/GGUF parity boundaries so future cache work starts from current code reality instead of stale assumptions.
+
+### Changed
+- **Loaded-runtime execution model**: gateway-loaded local runtimes now route prompt-cache control-plane calls, bloc-KV ensure/load operations, and chat generation through one stable provider worker thread, while streaming responses bridge out through an unbounded queue instead of tying provider progress to client drain speed.
+- **Planning and docs ownership**: the package backlog now points to `docs/backlog/overview.md` as the canonical planning entry point, the old ad hoc `docs/KnowledgeBase.md` was retired in favor of ADR-backed durable policy, and the adapter example docs now describe the current vLLM lifecycle reality without claiming portable `model=` hot-switching.
+
+### Fixed
+- **Loaded-runtime thread affinity**: loaded local runtimes no longer risk wedging when streaming cleanup happens on a different ASGI worker thread, and thread-affine local prompt-cache/bloc reuse paths now stay on the same provider thread across save/load/update/generate operations.
+
+## [2.13.20] - 2026-05-20
+
+### Added
+- **Public local vision cache catalog helper**: added `abstractcore.capabilities.get_local_vision_cache_catalog()` and `abstractcore.capabilities.vision_catalog.get_local_vision_cache_catalog()` as dependency-light local cached-vision snapshot helpers for Runtime, Gateway, and other in-process consumers.
+
+### Changed
+- **Server local vision catalog delegation**: `/v1/vision/models` now delegates its local cache snapshot to the public helper, keeps server-only active-backend state in the route layer, and avoids duplicate local cache scans within the same request path.
+- **AbstractVision release target**: optional vision-enabled install profiles now target `abstractvision>=0.3.8`, the current validated plugin release for this Core boundary update.
+
+### Fixed
+- **Runtime/Core discovery boundary**: local cached-vision discovery no longer needs to import `abstractcore.server.vision_endpoints`, which removes accidental FastAPI/server-extra coupling from non-server consumers.
+
+## [2.13.19] - 2026-05-19
+
+### Fixed
+- **Python 3.9 server imports**: replaced Python 3.10 union annotations in the gateway and single-model endpoint request paths so the release test matrix passes on the project-supported Python 3.9 runtime.
+
+## [2.13.18] - 2026-05-19
+
+### Added
+- **Task-aware model residency**: generalized `/acore/models/load`, `/acore/models/loaded`, and `/acore/models/unload` into a single residency control plane for `text_generation`, `image_generation`, `tts`, and `stt`, while keeping omitted `task` backward-compatible with existing text-generation runtime loading.
+- **Capability residency facade methods**: exposed optional Python residency hooks on `llm.vision`, `llm.voice`, and `llm.audio`: `load_resident_model(...)`, `list_loaded_models(...)`, `list_resident_models(...)`, and `unload_resident_model(...)`.
+- **Developer message compatibility**: server chat requests now accept OpenAI-style `developer` messages, preserving them for OpenAI and normalizing them for providers that only support system/user/assistant/tool roles.
+
+### Changed
+- **Server image residency reuse**: image loading now uses the same server backend cache as `/v1/images/*`, calls backend preload/unload hooks when available, clears load records on cache eviction, and reports remote OpenAI-compatible image providers as `configured` rather than locally loaded.
+- **Voice/audio residency routing**: `task=tts` and `task=stt` now route through the shared AbstractVoice-backed capability core used by speech and transcription endpoints, so Core owns the stable control-plane contract while AbstractVoice owns model-specific warmup semantics.
+- **Model residency contract**: `loaded_new` is now treated as a load-call event signal, not a `loaded` alias. Capability-backed loads return `loaded_new=true` only when the backend explicitly reports or clearly implies that the call transitioned the model from not loaded to loaded.
+- **Runtime documentation and backlog status**: documented task-aware residency in the server docs, server module README, memory-bloc docs, and moved the residency proposal to completed with an implementation report.
+
+### Fixed
+- **MLX Qwen no-thinking control**: `thinking="off"` for Qwen-family MLX models now serializes the Qwen no-thinking assistant prefill so models such as Qwen3.6 stop emitting visible `<think>` content when reasoning is disabled.
+
+### Removed
+- **Vision-specific model control endpoints**: removed the public `/v1/vision/model/load` and `/v1/vision/model/unload` endpoints from the server surface and OpenAPI docs now that `/acore/models/*` is the stable model residency API.
+
+## [2.13.17] - 2026-05-19
+
+### Added
+- **Shared Responses/chat request surface**: `/v1/responses` now accepts the same shared text-inference controls as `/v1/chat/completions` for OpenAI-style `input` payloads, including routing (`base_url`), agent format conversion, reasoning control, prompt-cache fields, and standard generation knobs such as `stop`/`seed`/penalties.
+
+### Changed
+- **Prompt-cache control-plane consistency**: `/acore/prompt_cache/update` now accepts optional `thinking` on both the gateway and `AbstractEndpoint`, and `BaseProvider.prompt_cache_update()` applies reasoning control before appending cached prompt state so cache-prefilled requests stay aligned with later generation calls.
+## [2.13.16] - 2026-05-19
+
+### Added
+- **Gateway warm-runtime control plane**: added `/acore/models/load`, `/acore/models/loaded`, and `/acore/models/unload` so the multi-provider server can keep local runtimes warm and expose a stable runtime selector for follow-up prompt-cache and memory-bloc operations.
+- **Direct gateway bloc/prompt-cache orchestration**: the server now supports local prompt-cache and MLX bloc-KV control-plane calls against loaded gateway runtimes instead of requiring every workflow to proxy through a separate `AbstractEndpoint`.
+- **MLX bloc artifact integrity coverage**: added focused unit/integration coverage for suffix-preserving artifact writes, resolved-model-id cache loading, gateway runtime reuse, and local/proxied bloc control-plane behavior.
+
+### Changed
+- **Gateway reuse path**: `/v1/chat/completions` now reuses a matching warm runtime when one has already been loaded into the gateway, including MLX prompt-cache/bloc workflows that need model state to stay hot across requests.
+- **Control-plane contract**: prompt-cache and memory-bloc server routes now accept `runtime_id` as the cleanest selector for a loaded runtime when multiple warm runtimes share the same `provider` + `model`, with `provider`/`model` and optional `base_url` remaining as stable fallback selectors.
+- **Documentation set**: server, endpoint, memory-bloc, and server README docs now describe both direct gateway mode and upstream `AbstractEndpoint` proxy mode, and they document that `/acore/blocs/kv/load` returns `artifact.key` for reuse as `prompt_cache_key`.
+
+### Fixed
+- **Bloc control-plane HTTP semantics**: `AbstractEndpoint` memory-bloc routes now return real HTTP error statuses for missing blocs/manifests and execution failures instead of always returning `200` with `ok: false`.
+- **Real MLX artifact persistence**: bloc KV temp artifact handling now preserves the original artifact suffix, which fixes practical save/load behavior against real MLX prompt-cache files.
+- **MLX metadata generation reuse path**: bloc metadata generation now consumes the shared MLX bloc-KV loader path correctly and avoids mutating the provider default cache key as a side effect.
+
+## [2.13.15] - 2026-05-18
+
+### Added
+- **Voice and vision provider-availability catalogs**: the capability registry now exposes lightweight `available_providers()` queries for voice and vision backends so server routes can report what is configured without constructing heavy local runtimes.
+- **Qwen3.6 MTP GGUF catalog entries**: added capability metadata for `unsloth/Qwen3.6-27B-MTP-GGUF` and `unsloth/Qwen3.6-35B-A3B-MTP-GGUF`, plus explicit GGUF quant selector resolution for model ids such as `:Q4_K_M` and `:UD-Q4_K_M`.
+
+### Changed
+- **Canonical server auth naming**: the HTTP gateway now uses `ABSTRACTCORE_AUTH_TOKEN` consistently across runtime config, CLI commands, Python config helpers, docs, and Swagger guidance.
+- **Swagger auth behavior**: `/docs` keeps the native Swagger `Authorize` flow, but only advertises the AbstractCore bearer scheme when server auth is actually enabled and validates the token through `/acore/auth/validate` before storing it client-side.
+- **Media gateway consistency**: image/audio catalog and generation routes now share a cleaner provider/model/base_url override contract and use the current AbstractVoice/AbstractVision capability package floors (`abstractvoice>=0.10.3`, `abstractvision>=0.3.6`).
+- **Apple aggregate profile alignment**: `abstractcore[all-apple]` now matches the current Apple-local dependency stack required by `abstractvoice[all-apple]`, `abstractvision[all-apple]`, `mflux`, and the newer llama.cpp bindings.
+- **OpenAI-compatible env surface**: the generic OpenAI-compatible provider, registry, config manager, and related docs/tests now consistently use `OPENAI_BASE_URL` and `OPENAI_API_KEY`.
+
+### Fixed
+- **`all-apple` install resolution**: repaired the resolver conflict between `numpy`, `Pillow`, `torch`, `mflux`, and plugin extra floors so `pip install -e ".[all-apple]"` no longer backtracks across an impossible dependency graph.
+- **Swagger false authorization state**: the browser docs no longer show a misleading authorized state for arbitrary bearer values when server auth is configured.
+- **Generated media provider metadata**: multimodal output routing now preserves explicit voice/vision provider selectors in generated artifacts and resource metadata instead of collapsing them back to the active LLM provider class name.
+
+## [2.13.14] - 2026-05-13
+
+### Fixed
+- Generated image, voice, and transcription output specs now pass per-call media model selectors through capability plugins while keeping runtime LLM provider routing out of plugin kwargs.
+- Media classification now honors dict `content_type` metadata so artifact-backed, extensionless audio remains valid for transcription.
+
+### Changed
+- Raised AbstractVision and AbstractVoice capability floors to `abstractvision>=0.3.5` and `abstractvoice>=0.9.4`.
+
+
+## [2.13.13] - 2026-05-12
+
+### Added
+- Added a Voice capability `list_stt_models()` contract and `/v1/audio/transcriptions/models` server catalog route so Gateway and thin clients can discover speech-to-text models instead of hard-coding defaults.
+
+### Changed
+- Raised AbstractVoice capability floors to `abstractvoice>=0.9.3` for voice-enabled install profiles.
+
+## [2.13.12] - 2026-05-08
+
+### Changed
+- **Capability plugin floors**: optional vision/voice/music install profiles now
+  require `abstractvision>=0.3.3`, `abstractvoice>=0.9.2`, and
+  `abstractmusic>=0.1.1`.
+- **Native aggregate profiles**: `abstractcore[all-apple]` now cascades to
+  `abstractvision[all-apple]`, `abstractvoice[all-apple]`, and
+  `abstractmusic[all-apple]`; `abstractcore[all-gpu]` now cascades to the
+  matching `all-gpu` capability packages.
+- **Profile boundary**: `abstractcore[apple]` remains the MLX local LLM alias
+  and `abstractcore[gpu]` remains the vLLM local LLM alias. Full media/capability
+  installs use `all-apple` or `all-gpu`.
+
+## [2.13.11] - 2026-05-08
+
+### Added
+- **Capability catalog discovery**: added `llm.vision.list_provider_models(...)`,
+  `llm.voice.list_profiles(...)`, `llm.voice.list_tts_models()`, and
+  `llm.voice.voice_catalog()` facade methods over optional capability plugins.
+- **Server media catalog routes**: added `GET /v1/vision/provider_models`,
+  `GET /v1/audio/voices`, and `GET /v1/audio/speech/models` so thin clients can
+  discover image models, TTS models, and voice profiles without importing
+  AbstractVision or AbstractVoice directly.
+
+### Changed
+- **Plugin compatibility floors**: optional voice/audio extras now require
+  `abstractvoice>=0.9.1`; optional vision extras now require
+  `abstractvision>=0.3.2` so Core can rely on the released plugin catalog
+  boundary while keeping local engines behind explicit plugin extras.
+- **Install profile alignment**: added `abstractcore[apple]` as the hardware
+  alias for the MLX local LLM stack and `abstractcore[gpu]` as the hardware
+  alias for the vLLM local LLM stack, while keeping `all-apple` and `all-gpu`
+  as broader aggregate profiles.
+
+### Fixed
+- **Audio catalog route HTTP status preservation**: `/v1/audio/voices` and
+  `/v1/audio/speech/models` now preserve route-level `HTTPException` statuses
+  for server-held credential auth failures and invalid/disallowed `base_url`
+  overrides instead of wrapping them as `502` catalog failures.
+
+## [2.13.10] - 2026-05-07
+
+### Fixed
+- **Task-only text generation selectors**: `generate(...)` and `agenerate(...)` calls with
+  `output={"task": "text_generation"}` now normalize through the public output selector contract as
+  `modality="text"` and follow the normal chat/text generation path instead of being treated as
+  generated media or non-chat dispatch.
+
+### Changed
+- **Backlog completion**: moved the task-only text generation output-normalization proposal to
+  completed with an implementation report, acceptance-criteria results, and validation notes.
+
+## [2.13.9] - 2026-05-07
+
+### Added
+- **Public output selector contract for runtimes**: added `abstractcore.core.output_specs` so AbstractRuntime and other durable callers can identify and normalize `generate(..., output=...)` selectors without importing private provider helpers or maintaining a drift-prone mirror of AbstractCore dispatch semantics.
+- **Output routing guardrail helpers**: exposed helpers for selector detection, output-spec normalization, generated-media detection, non-chat dispatch detection, runtime metadata stripping, and backend plugin kwargs extraction.
+- **Selector contract tests**: added parity tests for string, dict, list, unsupported, alias-normalization, transcription, generated-media, non-chat-dispatch, and runtime-metadata cases.
+
+### Changed
+- **Provider selector delegation**: `BaseProvider._is_acore_output_request(...)`, `_normalize_output_spec(...)`, `_normalize_output_specs(...)`, and `_output_plugin_kwargs(...)` now delegate to the public Core helper module while preserving existing behavior and compatibility quirks, including the current string-vs-dict `"audio"` selector behavior.
+- **Backlog completion**: moved the public output selector proposal to completed with an implementation report and validation notes.
+
+## [2.13.8] - 2026-05-07
+
+### Added
+- **Unified generated media output**: `generate(..., output=...)` now supports a narrow opt-in multimodal path over optional capability plugins. `output="image"` routes to AbstractVision image generation/edit, while `output="voice"` routes to AbstractVoice TTS or voice clone/register depending on whether audio media is supplied. Text-only `generate(...)` remains unchanged.
+- **Multimodal result types**: added `MultimodalGenerateResponse`, `GeneratedItem`, and `GeneratedResource` so generated binary artifacts and reusable resources such as cloned voices have separate, inspectable result shapes.
+- **Unified output tests**: added fake-plugin coverage for image generation, image edit, TTS, voice clone/register, transcription, multi-output text chaining, streaming rejection, and provider-kwarg backward compatibility.
+
+### Changed
+- **Plugin compatibility floors**: optional voice/audio extras now require `abstractvoice>=0.9.0`; optional vision extras now require `abstractvision>=0.3.1`.
+- **Media input normalization**: media dicts now accept the public `{"type": "...", "path": "...", "role": "..."}` shape and preserve roles for output routing.
+- **Async generated media parity**: `agenerate(..., output=...)` now uses the same central multimodal dispatcher as sync generation instead of bypassing optional voice/vision plugins in native async providers.
+- **Generated media routing hardening**: task-only output specs now infer their modality, masked image edits infer image-to-image correctly, empty `output=[]` remains a provider kwarg, and ambiguous audio+voice clone requests are rejected.
+- **AbstractVoice clone compatibility**: the library clone path can reuse AbstractVoice's `VoiceManager` clone methods when the capability shim exposes TTS/STT but not a direct `clone(...)` method.
+- **Generated artifact metadata**: output items now record backend/provider identity when available, forward TTS backend kwargs, decode base64 `MediaContent` payloads for plugin calls, and store returned raw bytes through `artifact_store` when provided.
+- **Server media wiring**: synchronous image generation/edit routes and local/plugin audio speech, transcription, and voice-clone routes now reuse the same `generate(..., output=...)` dispatcher while preserving their OpenAI-compatible HTTP contracts.
+- **Server documentation**: documented tested curl examples for image generation, image edit, TTS, STT, and image analysis, and moved the unified multimodal generation backlog item to completed with a completion report.
+
+## [2.13.7] - 2026-05-07
+
+### Fixed
+- **GHCR image packaging**: corrects the 2.13.6 image release path by installing the exact PyPI release wheel by direct URL from PyPI metadata, avoiding PyPI simple-index propagation lag during release builds.
+- **Docker image scope**: the published server image remains a lightweight remote/server gateway with `abstractcore[server,remote,media,tokens,compression]`. AbstractVoice and AbstractVision local plugin runtimes remain optional custom-image installs because their current packages pull large native inference stacks; remote OpenAI-compatible audio and image routes still work in the default image.
+- **Docker configuration docs**: server-image examples now show explicit secret values in `.env` files instead of shell interpolation that `docker run --env-file` would treat literally.
+
+## [2.13.6] - 2026-05-07
+
+### Added
+- **Provider/model image routing for local and remote vision**: `/v1/images/generations` and `/v1/images/edits` use provider/model ids for explicit routing. Local models use `diffusers/default`, `diffusers/<huggingface-repo>`, or `sdcpp/default`; remote OpenAI-compatible image endpoints use `openai-compatible/<model>` with a configured base URL. AbstractCore no longer hardcodes a local image model as its default.
+- **AbstractVision environment compatibility**: server image endpoints now understand `ABSTRACTVISION_*` configuration aliases in addition to `ABSTRACTCORE_VISION_*`, making AbstractCore Server and direct AbstractVision plugin setups easier to share.
+- **Vision route regression coverage**: added tests for OpenAI-compatible image proxy success, image edit proxy success, provider/model local Diffusers routing, rejection of removed local/default aliases, and the packaging split between lightweight server installs and optional local vision runtimes.
+- **Voice/audio plugin extras**: added `abstractcore[voice]` and `abstractcore[audio]` as lightweight aliases for installing the compatible `abstractvoice` plugin path without making the default or server extras heavier.
+- **OpenAI-compatible voice cloning route**: `/v1/voice/clone` can forward to AbstractVoice-compatible/OpenAI-compatible voice-clone endpoints with provider/model routing and loopback-safe `base_url` overrides, while preserving local AbstractVoice fallback when configured.
+- **Server image plugin coverage**: the GHCR server image now installs `abstractcore[server,remote,media,tokens,compression,voice,vision]` so AbstractVoice and AbstractVision plugin entry points are available by default for remote/OpenAI-compatible voice and vision capability paths.
+
+### Changed
+- **Cleaner image generation contract**: omitted `model` now selects the configured AbstractVision/OpenAI-compatible image default only when the server environment provides one. Explicit image models must use provider/model routing such as `diffusers/default`, `sdcpp/default`, or `openai-compatible/<model>`. The JSON generation schema documents `width`/`height` instead of OpenAI's legacy `size`; legacy `size` is still accepted and translated for compatibility.
+- **Server endpoint documentation pass**: expanded the server docs with a complete endpoint map, parameter tables for image/audio/embedding/model-discovery routes, provider-specific chat guidance, local vision model/job helper docs, and prompt-cache control-plane docs; Swagger now groups core routes under explicit tags instead of the default bucket.
+- **Safer local vision downloads**: local Diffusers server generation is cache-only by default, matching AbstractVision 0.2.6. Set `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1` or `ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1` only when runtime model downloads are intentional.
+- **Plugin compatibility floors**: optional vision extras now require `abstractvision>=0.2.6`, and optional voice/audio extras require `abstractvoice>=0.8.5`. Server-local generation, direct `llm.vision` plugin calls, local/remote audio fallback, and voice-clone routing were rechecked against those latest plugin releases.
+
+### Fixed
+- **Swagger TTS preview reliability**: `/docs` now patches Swagger's audio preview for authenticated binary `POST` responses by converting generated audio to a browser `blob:` URL; `/v1/audio/speech` examples now prefer WAV and audio responses include inline filename headers, while preserving MP3 and other formats for API clients.
+- **Strict image upstream compatibility**: OpenAI-compatible image proxy requests no longer forward local-only top-level fields such as `seed`, `steps`, `guidance_scale`, or `negative_prompt` by default; custom upstreams can still receive those fields through `extra` / `extra_json`.
+- **Swagger audio response docs**: `/v1/audio/speech` now advertises binary `audio/*` responses in OpenAPI instead of documenting the successful response as JSON.
+- **Swagger media examples and error docs**: OpenAPI now provides complete executable examples for image, audio, voice-clone, vision-job, prompt-cache, and model-load request bodies, and documents standard AbstractCore error responses so Swagger no longer labels common 4xx/5xx responses as undocumented.
+
+## [2.13.5] - 2026-05-06
+
+### Added
+- **Local audio model alias**: `/v1/audio/speech` and `/v1/audio/transcriptions` now accept `model="abstractvoice/default"` for local `abstractvoice` plugin fallback, which makes OpenAI SDK-style clients usable without relying on an empty model string. The earlier `local/abstractvoice` spelling remains accepted as a backward-compatible alias.
+
+### Documentation
+- Clarified `abstractvoice` 0.8.4 compatibility: the base AbstractCore plugin path can install on Python 3.9, while Python 3.10+ remains recommended because optional/heavier engines such as OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths.
+
+## [2.13.4] - 2026-05-04
+
+### Added
+- **Remote embeddings in the OpenAI-compatible server**: `/v1/embeddings` now routes `openai/...`, `openrouter/...`, `portkey/...`, `openai-compatible/...`, and `lmstudio/...` models in addition to the existing local/native embedding providers. OpenAI-compatible fields such as `dimensions`, `encoding_format`, and `user` are forwarded where supported, and `base_url` can target loopback/local OpenAI-compatible embedding endpoints under the existing server allowlist policy.
+- **Remote STT/TTS server routing**: `/v1/audio/transcriptions` and `/v1/audio/speech` now route to remote provider endpoints when `model` is supplied (`openai/...`, `openrouter/...`, `portkey/...`, `openai-compatible/...`) while preserving the existing `abstractvoice` capability-plugin fallback when `model` is omitted.
+- **Dependency-light image proxy routes**: `/v1/images/generations` and `/v1/images/edits` can proxy to an OpenAI-compatible upstream without installing local Diffusers/stable-diffusion.cpp vision runtimes. Local image generation remains opt-in via `abstractcore[server,vision]`.
+- **Swagger UI authentication support**: `/docs` now exposes an OpenAPI Bearer auth scheme so users can click `Authorize` and run authenticated requests directly from the browser. Docs/schema stay public by default so Swagger can load before auth; `ABSTRACTCORE_SERVER_PROTECT_DOCS=1` protects them for locked-down deployments.
+- **GHCR server image release path**: the release workflow now publishes `ghcr.io/lpalbou/abstractcore-server:<version>` after PyPI publishing succeeds. The image is built from the PyPI package with `abstractcore[server,remote,media,tokens,compression]==<version>`.
+
+### Changed
+- **Server embedding errors are strict**: HTTP embedding requests now surface upstream/provider failures as errors instead of silently returning zero-vector fallbacks.
+- **Server extra remains remote-friendly**: `abstractcore[server]` now installs the FastAPI server stack without pulling local image-generation runtimes; install `abstractcore[server,vision]` for local Diffusers/sdcpp image generation.
+- **Server docs for deployment and remote modalities**: updated server documentation for remote embeddings, remote audio, provider-key handling, OpenAI-compatible local endpoints, and the PyPI-backed Docker image.
+
+### Fixed
+- **Remote embedding parameter forwarding**: server-backed embedding providers now receive requested dimensions so OpenAI-compatible providers can perform provider-native dimension reduction instead of only local truncation.
+
+## [2.13.3] - 2026-05-04
 
 ### Added
 - **Centralized server auth config**: `abstractcore --config` and direct config commands now cover the hardened HTTP server auth model. Users can persist the AbstractCore server master key, unauthenticated local/dev mode, `base_url` and URL-fetch allowlists, safe media root, local-file toggle, and default server bind host/port.
@@ -418,7 +3597,6 @@ Add workflow event types: Introduce new event types for workflow progress tracki
 
 ### Fixed
 - **OpenAI-Compatible Provider Model Listing**: Fixed `/v1/models?provider=openai-compatible` endpoint
-  - **Root Cause**: Provider validation rejected "default" placeholder model used by registry for model discovery
   - **Solution**: Skip model validation when model == "default" (registry placeholder)
   - **Impact**: `/v1/models` endpoint now correctly lists all 27 models from LMStudio/llama.cpp servers
   - **Verified**: Works with environment variable (`OPENAI_COMPATIBLE_BASE_URL`) configuration
@@ -1121,7 +4299,6 @@ python tests/manual_seed_verification.py --provider openai --prompt "Count to 5"
     - `abstractcore.media.handlers` (OpenAIMediaHandler, AnthropicMediaHandler, LocalMediaHandler)
     - `abstractcore.media.utils` (image_scaler utilities)
   - **Solution**: Explicitly added all media subpackages to packages list in `pyproject.toml`
-  - **Root Cause**: When explicitly listing packages in pyproject.toml, setuptools does NOT auto-discover subpackages
   - **Workaround for 2.4.4**: Use `from abstractcore.core.factory import create_llm` instead of `from abstractcore import create_llm`
   - **Credit**: Bug discovered and reported during production deployment testing
 
@@ -1758,7 +4935,6 @@ Console scripts remain the same (both `summarizer` and `abstractcore-summarizer`
 
 #### CRITICAL: Tools + Structured Output Compatibility
 - **Problem**: AbstractCore's `tools` and `response_model` parameters were mutually exclusive, preventing users from combining function calling with structured output validation
-- **Root Cause**: `StructuredOutputHandler` bypassed normal tool execution flow and tried to validate tool call JSON against Pydantic model
 - **Solution**: Implemented sequential execution pattern - tools execute first, then structured output uses results as context
 - **Impact**: Enables sophisticated LLM applications requiring both function calling and structured output validation
 - **Usage**: `llm.generate(tools=[func], response_model=Model, execute_tools=True)` now works seamlessly
@@ -1859,7 +5035,6 @@ Console scripts remain the same (both `summarizer` and `abstractcore-summarizer`
 
 #### ONNX Runtime Warning Suppression
 - **Problem**: ONNX Runtime displayed verbose CoreML execution provider warnings on macOS during embedding model initialization
-- **Root Cause**: ONNX Runtime logs informational messages about CoreML partitioning and node assignment directly to stderr, bypassing Python's warning system
 - **Solution**: Added ONNX Runtime log level configuration in `_suppress_onnx_warnings()` to suppress harmless informational messages
 - **Impact**: Cleaner console output during embedding operations while preserving debugging capability via `ABSTRACTLLM_ONNX_VERBOSE=1` environment variable
 - **Technical**: Set `onnxruntime.set_default_logger_severity(3)` to suppress warnings that don't affect performance or quality
@@ -1870,26 +5045,22 @@ Console scripts remain the same (both `summarizer` and `abstractcore-summarizer`
 
 #### Critical Ollama Endpoint Selection Bug
 - **Problem**: Ollama provider was generating excessively verbose responses (1000+ characters for simple questions like "What is 2+2?")
-- **Root Cause**: Provider incorrectly used `/api/generate` endpoint for all requests, including tool-enabled conversations
 - **Solution**: Updated endpoint selection logic to use `/api/chat` by default, following Ollama's API design recommendations
 - **Impact**: Reduced response length from 977+ characters to 15 characters for simple queries, eliminated "infinite text" generation issue
 - **Technical**: Modified `_generate_internal()` method to use `use_chat_format = tools is not None or messages is not None or True` for proper endpoint routing
 
 #### Session Serialization Parameter Consistency
 - **Problem**: Inconsistent parameter naming between `session.add_message()` using `name` and `session.generate()` using `username`
-- **Root Cause**: Parameter standardization was incomplete during metadata redesign
 - **Solution**: Standardized both methods to use `name` parameter, aligning with `session_schema.json` specification
 - **Impact**: Consistent API across session methods, improved developer experience
 
 #### Tool Execution Results in Live Sessions
 - **Problem**: Tool execution results were missing from chat history during live CLI sessions but appeared after session reload
-- **Root Cause**: Tool results were not being added to session message history during execution
 - **Solution**: Modified `_execute_tool_calls()` in CLI to explicitly add `role="tool"` messages with execution metadata
 - **Impact**: Tool results now immediately available to assistant during conversation, consistent behavior between live and serialized sessions
 
 #### Common Tools Defensive Programming
 - **Problem**: `list_files` and `search_files` tools failed with type errors when `head_limit` parameter was passed as string
-- **Root Cause**: LLM-generated tool calls sometimes provided numeric parameters as strings
 - **Solution**: Added defensive type conversion with fallback to default values on `ValueError`
 - **Impact**: Improved tool reliability and error handling
 

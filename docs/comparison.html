@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Framework Comparison - AbstractCore</title>
     <meta name="description" content="Snapshot: May 2026.">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/comparison.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -43,7 +45,7 @@
 <a href="#abstractcore-vs-litellm" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">AbstractCore vs LiteLLM</a>
 <a href="#abstractcore-vs-langchain" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">AbstractCore vs LangChain</a>
 <a href="#abstractframework-vs-langgraph" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">AbstractFramework vs LangGraph</a>
-<a href="#abstractcore-abstractframework-vs-llamaindex" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">AbstractCore / AbstractFramework vs LlamaIndex</a>
+<a href="#abstractcore--abstractframework-vs-llamaindex" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">AbstractCore / AbstractFramework vs LlamaIndex</a>
 <a href="#when-to-choose-what" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">When To Choose What</a>
 <a href="#maturity-notes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Maturity Notes</a>
 <a href="#summary" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Summary</a></div>
@@ -81,7 +83,7 @@ time.</p>
 <p>The trade-off is maturity. LangChain, LangGraph, LlamaIndex, LiteLLM, AutoGen, and CrewAI have much larger communities and more battle-tested ecosystems. AbstractFramework is more opinionated, more local-first, and more vertically integrated, but still pre-1.0 in several packages.</p>
 <h2 id="objective-ranking-by-use-case">Objective Ranking By Use Case</h2>
 <p>These rankings are deliberately scenario-specific. There is no single winner across all layers.</p>
-<table>
+<div class="table-scroll"><table>
 <thead>
 <tr>
 <th>Use case</th>
@@ -141,9 +143,9 @@ time.</p>
 <td>AbstractCode is early, but strategically interesting because it sits on the same durable runtime/gateway/core foundation.</td>
 </tr>
 </tbody>
-</table>
+</table></div>
 <h2 id="quick-comparison">Quick Comparison</h2>
-<table>
+<div class="table-scroll"><table>
 <thead>
 <tr>
 <th>Dimension</th>
@@ -274,7 +276,7 @@ time.</p>
 <td>Mature and widely used</td>
 </tr>
 </tbody>
-</table>
+</table></div>
 <h2 id="what-abstractcore-is">What AbstractCore Is</h2>
 <p>AbstractCore is best understood as an <strong>LLM I/O layer</strong>:</p>
 <ul>
@@ -282,7 +284,7 @@ time.</p>
 <li>10 registered provider/backend adapters: OpenAI, Anthropic, Ollama, LM Studio, MLX, HuggingFace, vLLM, OpenAI-compatible, OpenRouter, Portkey</li>
 <li>about 79k physical Python lines in the package source</li>
 <li>225 model capability entries and 51 architecture format entries</li>
-<li>a default install with only <code>pydantic</code> and <code>httpx</code>; heavy features are optional extras</li>
+<li>three install settings: a light default that runs every remote provider, and <code>apple</code> / <code>gpu</code> for local engines</li>
 <li>offline-capable local operation through explicit model setup, local server backends, and cache/local-files-only behavior for in-process local runtimes</li>
 <li>remote operation through hosted APIs, hosted gateways, and arbitrary OpenAI-compatible endpoints</li>
 <li>tool-call normalization across native and prompted formats</li>
@@ -369,7 +371,7 @@ llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 <li>AbstractGateway exposes durable run control and ledger streaming to clients.</li>
 </ul>
 <p>Choose LangGraph when explicit graph modeling and ecosystem maturity are the priority. Choose AbstractFramework when the key requirements are local-first operation, durable replayable runs, gateway-controlled clients, and a single vertically integrated stack.</p>
-<h2 id="abstractcore-abstractframework-vs-llamaindex">AbstractCore / AbstractFramework vs LlamaIndex</h2>
+<h2 id="abstractcore--abstractframework-vs-llamaindex">AbstractCore / AbstractFramework vs LlamaIndex</h2>
 <p>LlamaIndex specializes in document ingestion, indexing, retrieval, query engines, and RAG application structure.</p>
 <p>AbstractCore does not replace that. It provides embeddings, generation, media/document extraction primitives, and provider normalization. AbstractFramework adds temporal memory and semantics, but that is closer to persistent knowledge and provenance than to turnkey document RAG.</p>
 <p>Choose LlamaIndex when retrieval over documents is the center of the product. Choose AbstractCore or AbstractFramework when RAG is one component inside a broader agent/workflow system.</p>
@@ -438,6 +440,13 @@ llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 </ul>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

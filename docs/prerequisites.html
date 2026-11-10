@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prerequisites &amp; Setup Guide - AbstractCore</title>
     <meta name="description" content="This guide walks you through setting up AbstractCore with different LLM providers. Choose the provider(s) that are suitable for your needs — you can use…">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/prerequisites.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -53,41 +55,23 @@
 <p><strong>Want a gateway/proxy?</strong> → <a href="#gateway-provider-setup-openrouter-portkey">Gateway Provider Setup</a> (OpenRouter/Portkey routing + governance)</p>
 <p><strong>Using a custom OpenAI-compatible <code>/v1</code> endpoint?</strong> → <a href="#openai-compatible-setup">OpenAI-Compatible Setup</a></p>
 <h2 id="core-installation">Core Installation</h2>
-<p>Install AbstractCore, then add the extras you need. Extras compose, so a real
-application can use one command such as <code>pip install "abstractcore[remote,server,tools]"</code>.</p>
-<div class="code-block"><pre><code class="language-bash"># Core: local HTTP servers and gateways that need no SDK
-# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
-pip install abstractcore
-
-# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
-pip install &quot;abstractcore[remote]&quot;
-
-# Individual provider SDKs / local runtimes
-pip install &quot;abstractcore[openai]&quot;       # OpenAI SDK
-pip install &quot;abstractcore[anthropic]&quot;    # Anthropic SDK
-pip install &quot;abstractcore[huggingface]&quot;  # Transformers / torch (heavy)
-pip install &quot;abstractcore[mlx]&quot;          # Apple Silicon only (heavy)
-pip install &quot;abstractcore[vllm]&quot;         # NVIDIA CUDA/ROCm only (heavy)
-
-# Optional features
-pip install &quot;abstractcore[tools]&quot;       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
-pip install &quot;abstractcore[media]&quot;       # images, PDFs, Office docs
-pip install &quot;abstractcore[embeddings]&quot;  # EmbeddingManager + local embedding models
-pip install &quot;abstractcore[tokens]&quot;      # precise token counting (tiktoken)
-pip install &quot;abstractcore[server]&quot;      # OpenAI-compatible HTTP gateway
-pip install &quot;abstractcore[compression]&quot; # Glyph visual-text compression (Pillow renderer)
-
-# Turnkey local-runtime installs
-pip install &quot;abstractcore[all-apple]&quot;    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install &quot;abstractcore[all-gpu]&quot;      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
+<p>Install one of the three settings (<a href="installation.html">Installation</a> has the full contents):</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore             # light: every remote provider, tools, media, server, plugins
+pip install &quot;abstractcore[apple]&quot;    # Apple silicon: light + every local engine a Mac can run
+pip install &quot;abstractcore[gpu]&quot;      # NVIDIA / AMD: light + every local engine a GPU machine can run
 </code></pre></div>
 <p><strong>Hardware Notes:</strong>
-- <code>[mlx]</code> - Only works on Apple Silicon (M1/M2/M3/M4)
-- <code>[vllm]</code> - Only works with NVIDIA CUDA GPUs
-- <code>[remote]</code> - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic <code>/v1</code> endpoints need no extra dependency.
-- <code>[all-apple]</code> - Best for Apple Silicon local development (includes MLX, excludes vLLM)
-- <code>[all-gpu]</code> - Best for NVIDIA GPU local development (includes vLLM, excludes MLX)
-- For CPU-only or Intel machines, compose only what you need, for example <code>abstractcore[remote,huggingface,tools]</code>.</p>
+- Light works everywhere (macOS, Linux, Windows; Python 3.9+). OpenAI, Anthropic, OpenRouter,
+  Portkey, Ollama, LM Studio, a vLLM server and any OpenAI-compatible <code>/v1</code> endpoint need nothing
+  else.
+- <code>apple</code> needs an Apple silicon Mac (M1 or newer), macOS 14+, Python 3.10+. It adds MLX,
+  HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
+- <code>gpu</code> needs a Linux machine with an NVIDIA (CUDA) or AMD (ROCm) GPU, Python 3.10+. It adds
+  vLLM, HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
+  On Windows x86_64 with an NVIDIA GPU, <code>gpu</code> installs without vLLM and stable-diffusion.cpp
+  (Linux-only or source-only there); the AbstractFramework installer adds llama.cpp's prebuilt GPU
+  build. The Windows path is not yet validated on Windows hardware.
+- On Intel Macs, run local models in Ollama or LM Studio and use the light install.</p>
 <h2 id="cloud-provider-setup">Cloud Provider Setup</h2>
 <h3 id="openai-setup">OpenAI Setup</h3>
 <p><strong>Best for</strong>: Production applications and OpenAI’s hosted models</p>
@@ -120,7 +104,7 @@ print(response.content)  # Should output: &quot;Bonjour!&quot;
 <p><strong>Model names</strong>: Use any model supported by your account (examples: <code>gpt-4o-mini</code>, <code>gpt-4o</code>).</p>
 <h3 id="anthropic-setup">Anthropic Setup</h3>
 <p><strong>Best for</strong>: Claude models via Anthropic’s API</p>
-<h4 id="1-get-api-key_1">1. Get API Key</h4>
+<h4 id="1-get-api-key-1">1. Get API Key</h4>
 <ol>
 <li>Go to <a href="https://console.anthropic.com/">Anthropic Console</a></li>
 <li>Create account or sign in</li>
@@ -128,7 +112,7 @@ print(response.content)  # Should output: &quot;Bonjour!&quot;
 <li>Click "Create Key"</li>
 <li>Copy the key (starts with <code>sk-ant-</code>)</li>
 </ol>
-<h4 id="2-set-environment-variable_1">2. Set Environment Variable</h4>
+<h4 id="2-set-environment-variable-1">2. Set Environment Variable</h4>
 <div class="code-block"><pre><code class="language-bash"># Option 1: Export in terminal (temporary)
 export ANTHROPIC_API_KEY=&quot;sk-ant-your-actual-api-key-here&quot;
 
@@ -139,7 +123,7 @@ source ~/.bashrc
 # Option 3: Create .env file
 echo 'ANTHROPIC_API_KEY=sk-ant-your-actual-api-key-here' &gt; .env
 </code></pre></div>
-<h4 id="3-test-setup_1">3. Test Setup</h4>
+<h4 id="3-test-setup-1">3. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Test with an example model (use any model available on your account)
@@ -233,29 +217,33 @@ print(response.content)
 <p><strong>Best for</strong>: M1/M2/M3/M4 Macs, optimized inference, good speed</p>
 <p><strong>Requirements</strong>: Apple Silicon Mac (M1/M2/M3/M4)</p>
 <h4 id="1-install-mlx-dependencies">1. Install MLX Dependencies</h4>
-<div class="code-block"><pre><code class="language-bash"># MLX is automatically installed with AbstractCore
-pip install &quot;abstractcore[mlx]&quot;
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[apple]&quot;
 </code></pre></div>
 <h4 id="2-download-models">2. Download Models</h4>
 <p>AbstractCore is offline-first for local model weights. The MLX provider loads
 models from an explicit local path, the Hugging Face cache, or the LM Studio
-cache; it does not silently download weights during <code>create_llm(...)</code>.</p>
-<p>Download or prefetch a model first, for example:</p>
-<div class="code-block"><pre><code class="language-bash">huggingface-cli download mlx-community/Qwen3-4B
+cache; it does not silently download weights during <code>create_llm(...)</code> (a cache miss raises
+<code>ModelNotFoundError</code>). See <a href="centralized-config.html#offline-section">Centralized Config</a> for the
+offline settings.</p>
+<p>Download a model first, for example:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore models download mlx mlx-community/Qwen3-4B-4bit
 </code></pre></div>
+<p><code>abstractcore models catalog --engine mlx --fits</code> lists MLX builds that fit this machine; see
+<a href="models.html">Local Models</a>. Any other download into the Hugging Face cache (for example
+<code>hf download &lt;repo&gt;</code>) works too.</p>
 <p>Then use the model ID, or pass a local model directory path:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Uses a cached Hugging Face snapshot or a local directory path.
-llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B&quot;)
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B-4bit&quot;)
 # OR
 llm = create_llm(&quot;mlx&quot;, model=&quot;/path/to/local/mlx-model&quot;)
 </code></pre></div>
-<h4 id="3-test-setup_2">3. Test Setup</h4>
+<h4 id="3-test-setup-2">3. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Test with a model you already downloaded/prefetched
-llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B&quot;)
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B-4bit&quot;)
 response = llm.generate(&quot;Explain machine learning briefly&quot;)
 print(response.content)
 </code></pre></div>
@@ -272,7 +260,7 @@ print(response.content)
 <li>Install the application</li>
 <li>Launch LMStudio</li>
 </ol>
-<h4 id="2-download-models_1">2. Download Models</h4>
+<h4 id="2-download-models-1">2. Download Models</h4>
 <ol>
 <li>Open LMStudio</li>
 <li>Go to "Discover" tab</li>
@@ -289,7 +277,7 @@ print(response.content)
 <li>Click "Start Server"</li>
 <li>Note the port (usually 1234)</li>
 </ol>
-<h4 id="4-test-setup_1">4. Test Setup</h4>
+<h4 id="4-test-setup-1">4. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # LM Studio exposes an OpenAI-compatible server (default: http://localhost:1234/v1).
@@ -302,7 +290,8 @@ print(resp.content)
 <p><strong>Best for</strong>: Latest research models, custom models, GGUF files</p>
 <p><strong>Requirements</strong>: 8GB+ RAM, Python environment</p>
 <h4 id="1-install-dependencies">1. Install Dependencies</h4>
-<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[huggingface]&quot;
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[apple]&quot;   # Apple silicon
+pip install &quot;abstractcore[gpu]&quot;     # NVIDIA / AMD
 </code></pre></div>
 <h4 id="2-optional-get-huggingface-token">2. Optional: Get HuggingFace Token</h4>
 <p>For private models or higher rate limits:</p>
@@ -313,7 +302,7 @@ print(resp.content)
 </ol>
 <div class="code-block"><pre><code class="language-bash">export HUGGINGFACE_TOKEN=&quot;hf_your-token-here&quot;
 </code></pre></div>
-<h4 id="3-test-setup_3">3. Test Setup</h4>
+<h4 id="3-test-setup-3">3. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Use a small model for testing (auto-downloads)
@@ -325,6 +314,11 @@ print(response.content)
 - <code>microsoft/DialoGPT-medium</code> - Good for conversation
 - <code>facebook/blenderbot-400M-distill</code> - Conversational AI
 - <code>microsoft/CodeBERT-base</code> - Code understanding</p>
+<h4 id="quantized-transformers-models">Quantized Transformers Models</h4>
+<p>Quantized Transformers checkpoints may need optional quantization runtimes beyond
+the <code>apple</code> and <code>gpu</code> settings. If a model reports missing weights, unexpected packed weights, or
+incorrect output for a trivial prompt, treat it as a model/runtime compatibility issue. See
+<a href="huggingface-model-compatibility.html">HuggingFace Model Compatibility</a>.</p>
 <h3 id="vllm-setup">vLLM Setup</h3>
 <p><strong>Best for</strong>: Production GPU deployments, high-throughput inference, tensor parallelism</p>
 <p><strong>Requirements</strong>:
@@ -334,7 +328,7 @@ print(response.content)
 - 16GB+ VRAM recommended
 - <strong>NOT compatible with</strong>: Apple Silicon, AMD GPUs, CPU-only systems</p>
 <p><strong>NVIDIA CUDA only.</strong> If you’re on Apple Silicon, use MLX. If you’re on CPU-only, use Ollama/HuggingFace.</p>
-<h4 id="hardware-compatibility-warning">⚠️ Hardware Compatibility Warning</h4>
+<h4 id="-hardware-compatibility-warning">⚠️ Hardware Compatibility Warning</h4>
 <p><strong>vLLM ONLY works with NVIDIA CUDA GPUs.</strong> It will NOT work on:
 - ❌ Apple Silicon (M1/M2/M3/M4) - Use MLX provider instead
 - ❌ AMD GPUs - Use HuggingFace or Ollama instead
@@ -342,7 +336,7 @@ print(response.content)
 - ❌ CPU-only systems</p>
 <h4 id="1-install-vllm">1. Install vLLM</h4>
 <div class="code-block"><pre><code class="language-bash"># Install AbstractCore with vLLM support
-pip install &quot;abstractcore[vllm]&quot;
+pip install &quot;abstractcore[gpu]&quot;
 
 # This installs vLLM which requires NVIDIA CUDA
 # If you get CUDA errors, ensure CUDA 12.1+ is installed:
@@ -416,7 +410,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
     &quot;max_tokens&quot;: 50
   }'
 </code></pre></div>
-<h4 id="3-test-setup_4">3. Test Setup</h4>
+<h4 id="3-test-setup-4">3. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Basic generation
@@ -455,9 +449,20 @@ response = llm.generate(
 llm.load_adapter(&quot;sql-expert&quot;, &quot;/models/adapters/sql-lora&quot;)
 llm.load_adapter(&quot;react-dev&quot;, &quot;/models/adapters/react-lora&quot;)
 
-# Route to specialized adapter
-response = llm.generate(&quot;Write SQL query&quot;, model=&quot;sql-expert&quot;)
+# Inspect currently loaded adapters
+loaded_adapters = llm.list_adapters()
+print(loaded_adapters)
 </code></pre></div>
+<p>Current status:</p>
+<ul>
+<li>adapter load/unload/list is available on the <code>vllm</code> provider;</li>
+<li>AbstractCore does not yet define a portable request-time <code>adapter=...</code> contract for text
+  generation;</li>
+<li>do not rely on <code>llm.generate(..., model="sql-expert")</code> as shared Core behavior until
+  <code>docs/backlog/planned/2026-05-04_unified-lora-adapter-serving.md</code> lands.</li>
+</ul>
+<p>Some vLLM deployments may surface loaded adapters as model ids on <code>/v1/models</code>, but AbstractCore
+does not currently normalize that behavior across providers or across its own loaded-runtime path.</p>
 <p><strong>Beam Search</strong> (higher accuracy for complex tasks):</p>
 <div class="code-block"><pre><code class="language-python">response = llm.generate(
     &quot;Solve this complex algorithm problem...&quot;,
@@ -486,9 +491,9 @@ export HF_HOME=&quot;~/.cache/huggingface&quot;
 <p>AbstractCore supports a generic OpenAI-compatible provider plus specific convenience providers (LM Studio, vLLM, OpenRouter, Portkey).</p>
 <h4 id="1-get-the-endpoint-base-url">1. Get the endpoint base URL</h4>
 <p>You must include <code>/v1</code> for OpenAI-compatible servers:</p>
-<div class="code-block"><pre><code class="language-bash">export OPENAI_COMPATIBLE_BASE_URL=&quot;http://localhost:1234/v1&quot;
+<div class="code-block"><pre><code class="language-bash">export OPENAI_BASE_URL=&quot;http://localhost:1234/v1&quot;
 # Optional (if your endpoint requires auth)
-export OPENAI_COMPATIBLE_API_KEY=&quot;your-api-key&quot;
+export OPENAI_API_KEY=&quot;your-api-key&quot;
 </code></pre></div>
 <h4 id="2-test-setup">2. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
@@ -635,14 +640,6 @@ if __name__ == &quot;__main__&quot;:
 <p>Run the test:</p>
 <div class="code-block"><pre><code class="language-bash">python test_setup.py
 </code></pre></div>
-<h3 id="live-api-smoke-tests-opt-in">Live API smoke tests (opt-in)</h3>
-<p>Some tests are intentionally <strong>real network calls</strong> and are disabled by default. To enable them, set:
-- <code>ABSTRACTCORE_RUN_LIVE_API_TESTS=1</code></p>
-<p>Example (OpenRouter):</p>
-<div class="code-block"><pre><code class="language-bash">ABSTRACTCORE_RUN_LIVE_API_TESTS=1 OPENROUTER_API_KEY=&quot;$OPENROUTER_API_KEY&quot; \
-  python -m pytest -q tests/test_graceful_fallback.py::test_openrouter_generation_smoke
-</code></pre></div>
-<p>Local provider smoke tests use <code>ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1</code> (and <code>ABSTRACTCORE_RUN_MLX_TESTS=1</code> for MLX).</p>
 <h2 id="security-notes">Security Notes</h2>
 <h3 id="api-keys">API Keys</h3>
 <ul>
@@ -667,6 +664,13 @@ if __name__ == &quot;__main__&quot;:
 <p>This setup guide should get you running with any AbstractCore provider. Choose what works well for your use case - you can always add more providers later!</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

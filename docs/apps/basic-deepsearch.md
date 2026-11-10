@@ -26,9 +26,7 @@ BasicDeepSearch implements a state-of-the-art four-stage research pipeline:
 BasicDeepSearch relies on the built-in web tools (`web_search`, `fetch_url`).
 
 ```bash
-pip install "abstractcore[tools]"
-# plus any provider extras you use, e.g.:
-# pip install "abstractcore[openai]"
+pip install abstractcore   # the web tools and every remote provider are part of the light install
 ```
 
 ## CLI Usage
@@ -357,7 +355,7 @@ for trend in trends:
 - Check internet connectivity
 - Try broader search terms
 - Reduce `max_sources` if hitting rate limits
-- Install `ddgs` for better web search: `pip install ddgs`
+- `ddgs` (better web search) ships with the light install; repair with `pip install -U abstractcore`
 
 **"Report generation failed"**
 - Increase `max_output_tokens`

@@ -14,25 +14,25 @@ Source: `abstractcore/endpoint/app.py` (entrypoint: `abstractcore-endpoint`).
 ## Install
 
 ```bash
-pip install "abstractcore[server]"
+pip install abstractcore            # the endpoint itself (light)
 ```
 
-Then install the provider extra you need:
+To host a local model in-process (MLX, HuggingFace/GGUF), install the local engines for your machine:
 
 ```bash
-pip install "abstractcore[mlx]"         # Apple Silicon local inference
-pip install "abstractcore[huggingface]" # Transformers / torch / llama-cpp-python (heavy)
+pip install "abstractcore[apple]"   # Apple silicon: MLX, HuggingFace/GGUF
+pip install "abstractcore[gpu]"     # NVIDIA / AMD: vLLM, HuggingFace/GGUF
 ```
 
 ## Run
 
 ```bash
 # CLI flags
-abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B --host 0.0.0.0 --port 8001
+abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B-4bit --host 0.0.0.0 --port 8001
 
 # Or via env vars
 export ABSTRACTENDPOINT_PROVIDER=mlx
-export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B
+export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B-4bit
 export ABSTRACTENDPOINT_HOST=0.0.0.0
 export ABSTRACTENDPOINT_PORT=8001
 abstractcore-endpoint
@@ -57,6 +57,10 @@ resp = client.chat.completions.create(
 print(resp.choices[0].message.content)
 ```
 
+The endpoint accepts the same unified `thinking` control as the gateway on `/v1/chat/completions`, so a dedicated local worker can expose provider-native reasoning toggles without any extra adapter layer.
+It also accepts `prompt_cache_binding`, the optional exact durable bloc binding returned by
+`/acore/blocs/kv/load`.
+
 ## Prompt cache control plane (optional)
 
 If the underlying provider exposes prompt-cache controls, the endpoint also exposes a small control plane under `/acore/prompt_cache/*` (see `abstractcore/endpoint/app.py`):
@@ -79,5 +83,38 @@ Response contract:
 
 The `capabilities` object is always included on prompt-cache control-plane responses so callers can branch on `mode` / `supports_*` flags without re-probing the provider.
 
+`POST /acore/prompt_cache/update` also accepts optional `thinking`, which is applied before the provider appends the cached fragment. This matters for local backends where reasoning control changes prompt serialization.
+
 For caching concepts, see [Session Management](session.md) and [Architecture](architecture.md).
 For a dedicated overview, see [Prompt Caching](prompt-caching.md).
+
+## Memory blocs and durable provider-backed bloc KV artifacts
+
+`AbstractEndpoint` can also expose a small memory-bloc control plane for single-model local
+providers:
+
+- `POST /acore/blocs/upsert_text`
+- `GET /acore/blocs/record`
+- `GET /acore/blocs/kv/manifest`
+- `POST /acore/blocs/kv/ensure`
+- `POST /acore/blocs/kv/load`
+
+Typical flow:
+
+1. persist extracted text into the endpoint-local bloc store with `POST /acore/blocs/upsert_text`
+2. compile or validate the durable artifact with `POST /acore/blocs/kv/ensure`
+3. load or fork it into an in-process cache key with `POST /acore/blocs/kv/load`
+4. call `/v1/chat/completions` with the returned `artifact.prompt_cache_binding` when exact
+   request-time binding is required
+
+Important boundary:
+
+- the durable artifact is **bloc-only**; it is not a full `system + tools + transcript` bootstrap
+- the loaded cache key is **worker-local** to this `AbstractEndpoint` process
+- stable reuse only works when subsequent requests hit the same long-lived endpoint worker/provider
+- the shared route shape covers MLX, HuggingFace transformers, and supported HuggingFace GGUF
+  exact-renderer paths
+- `debug=true` on ensure/load returns verbose artifact proof fields, and stale
+  `prompt_cache_binding` use fails before generation
+
+For the storage contract and Python helpers, see [Memory Blocs](memory-blocs.md).

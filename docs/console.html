@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Console - AbstractCore</title>
+    <meta name="description" content="abstractcore serve ships a browser console at http://127.0.0.1:8000/console. Use it to see what this machine can run, browse and download models, delete…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/console.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Web Console</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">abstractcore serve ships a browser console at http://127.0.0.1:8000/console. Use it to see what this machine can run, browse and download models, delete weights you no longer need, and install local inference engines such as Ollama, without writing a command. Every action the console takes shows the equivalent abstractcore CLI command, so you can repeat it in a terminal or a script.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#open-the-console" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Open the console</a>
+<a href="#tabs" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tabs</a>
+<a href="#authentication" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Authentication</a>
+<a href="#themes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Themes</a>
+<a href="#responsive-layout" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Responsive layout</a>
+<a href="#embedding-the-models-and-engines-screens" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Embedding the Models and Engines screens</a>
+<a href="#terminal-console" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Terminal console</a>
+<a href="#related" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related</a></div>
+
+            <div class="doc-content">
+
+<p>The console is a view over the HTTP API described in <a href="server.html">Server</a>. It adds no logic of its
+own: presence, fit verdicts, download progress and install plans all come from the server. The
+same Models and Engines screens are embedded in the AbstractGateway console, so both entry points
+look and behave the same.</p>
+<h2 id="open-the-console">Open the console</h2>
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore
+abstractcore serve
+# then open the printed link: http://127.0.0.1:8000/console#claim=...
+</code></pre></div>
+<p>The link signs the browser tab in once (it is valid for 10 minutes and one use). Lost it, or
+opening the console in another browser? <code>abstractcore serve --claim-url --port 8000</code> prints a
+fresh one. The server landing page (<code>/</code>) links to the console as well.</p>
+<h2 id="tabs">Tabs</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What you see</th>
+<th>What you can do</th>
+<th>CLI equivalent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Overview</strong></td>
+<td>This machine: OS, architecture, accelerator, RAM or unified memory, the usable model-memory ceiling and its source, free memory now, free disk for each model cache, Python version. An engines summary and server health (version, whether a bearer token is required).</td>
+<td>Jump to Models or Engines.</td>
+<td><code>abstractcore host profile --json</code>, <code>abstractcore engines status --probe</code></td>
+</tr>
+<tr>
+<td><strong>Models</strong></td>
+<td>The model catalog, one row per downloadable artifact (provider, artifact id, quantization, download size, weights status, fit badge), the models already installed with their sizes, and any running jobs with progress bars.</td>
+<td>Search, filter, Download, Delete, Cancel a job.</td>
+<td><code>abstractcore models search &lt;q&gt; --engine &lt;id&gt; --fits</code>, <code>abstractcore models download</code>, <code>abstractcore models delete</code>, <code>abstractcore models list</code></td>
+</tr>
+<tr>
+<td><strong>Engines</strong></td>
+<td>Each engine (Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face): supported on this host, installed and version, running and reachable, base URL, model count.</td>
+<td>Install (with confirmation), Open download page, Refresh (live probe).</td>
+<td><code>abstractcore engines status --probe</code>, <code>abstractcore engines install &lt;id&gt;</code>, <code>abstractcore engines open &lt;id&gt;</code></td>
+</tr>
+<tr>
+<td><strong>Email</strong></td>
+<td>Your email address, the mailbox (connected address, sign-in method, last check), the recipient rules and the send limits with their usage.</td>
+<td>Save the email address; connect a mailbox (tabs IMAP / Google / Microsoft; IMAP shows the address, password and server fields, pre-filled from the address), Test, Disconnect (inline confirmation); the mailbox's <strong>Active</strong> switch and the <strong>Agent email tools</strong> switch; recipient rules, send limits and folder under <strong>Recipients and limits</strong> (applied at once). See <a href="email.html">Email</a>.</td>
+<td><code>abstractcore email status</code>, <code>abstractcore email connect ... --password-stdin</code>, <code>abstractcore email policy set</code>, <code>abstractcore email limits set</code>, <code>abstractcore email folder</code>, <code>abstractcore email agent-tools on\|off</code></td>
+</tr>
+<tr>
+<td><strong>Providers</strong></td>
+<td>Read-only list of providers (<code>GET /providers</code>) and the configured capability defaults (<code>GET /v1/config/capability-defaults</code>).</td>
+<td>Nothing to edit here.</td>
+<td><code>abstractcore config providers --probe</code>, <code>abstractcore config defaults</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>API keys and default models are configured on the host with <code>abstractcore --config</code>; the console
+does not store or edit keys. See <a href="centralized-config.html">Centralized Config</a>.</p>
+<h3 id="models-tab">Models tab</h3>
+<ul>
+<li><strong>Search box</strong>: queries the catalog by name (<code>/</code> focuses it).</li>
+<li><strong>Engine</strong> and <strong>Modality</strong> filters: narrow to one provider or to text, vision, audio or
+  embedding models.</li>
+<li><strong>Fits this machine</strong> (on by default): hides artifacts whose fit verdict is <code>too large</code>. The
+  count line tells you how many were hidden.</li>
+<li><strong>Installed only</strong>: shows only artifacts whose weights are already on disk.</li>
+<li><strong>Search Hugging Face</strong>: adds live Hub search results to the curated catalog (slower).</li>
+</ul>
+<p>Weights status uses the same four labels everywhere in AbstractFramework:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>installed</code></td>
+<td>The weights are on this host.</td>
+</tr>
+<tr>
+<td><code>not downloaded</code></td>
+<td>The weights can be downloaded; they are not on disk.</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>The provider's tool could not be consulted (for example, the engine is not running).</td>
+</tr>
+<tr>
+<td><code>remote</code></td>
+<td>Nothing to download: the model runs on a remote API.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Fit badges: <code>fits</code>, <code>tight</code>, <code>too large</code>, <code>partial offload</code>, <code>needs GPU limit</code>, <code>unknown</code>. Hover a
+badge to see the evidence: memory needed versus the usable ceiling, free memory now, whether the
+download fits on disk, the maximum context, the confidence of the estimate and any notes.
+<code>needs GPU limit</code> (Apple silicon) means the model fits once macOS lets the GPU use more memory;
+the notes carry the exact <code>sudo sysctl iogpu.wired_limit_mb=&lt;MB&gt;</code> command (see
+<a href="models.html">Local models</a>).</p>
+<p><strong>Download</strong> starts immediately (one click). <strong>Delete</strong> asks for confirmation, shows the files'
+location and size, and warns when the model is loaded or when the files are shared with another
+provider (for example MLX and Hugging Face share the Hugging Face cache). In those cases you must
+tick <strong>Force</strong> to proceed. Both dialogs offer <strong>Preview (dry run)</strong>, which asks the server for the
+exact command without running it.</p>
+<h3 id="engines-tab">Engines tab</h3>
+<p><strong>Install</strong> opens a confirmation dialog that shows:</p>
+<ul>
+<li>the exact command as a fixed argument list (for example <code>brew install ollama</code>); the server
+  never runs a shell string built from user input;</li>
+<li>the host it runs on: the machine running the server, which may not be the computer in front of
+  you;</li>
+<li>the install method and what it changes, plus host notes (Homebrew needs no sudo, a vendor
+  script may ask for sudo, which a background job cannot answer, <code>winget</code> may raise a UAC prompt
+  on the host's desktop, <code>pip</code> installs into the server's Python environment).</li>
+</ul>
+<p>Engines that are installed by hand, such as the LM Studio desktop app, offer <strong>Open download
+page</strong> instead. The server may refuse an install (for example when another install is running, or
+when engine installs are disabled for a remote server); the console shows the server's reason.</p>
+<h3 id="jobs">Jobs</h3>
+<p>Downloads, deletes and engine installs run as server-side jobs. The console polls each job every
+1.5 seconds and shows its status (<code>queued</code>, <code>running</code>, <code>completed</code>, <code>failed</code>, <code>cancelled</code>),
+progress, bytes, the last log lines, the command it runs and its CLI equivalent. Active job ids
+are remembered for the browser tab, so a page reload re-attaches to them. Jobs live in the server
+process: after a server restart the console reports that the job is no longer known and
+re-checks what is on disk.</p>
+<h3 id="keyboard">Keyboard</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Where</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/</code></td>
+<td>Models</td>
+<td>Focus the search box</td>
+</tr>
+<tr>
+<td><code>f</code></td>
+<td>Models</td>
+<td>Toggle <strong>Fits this machine</strong></td>
+</tr>
+<tr>
+<td><code>r</code></td>
+<td>any tab</td>
+<td>Refresh</td>
+</tr>
+<tr>
+<td><code>w</code></td>
+<td>Models, focused row</td>
+<td>Download</td>
+</tr>
+<tr>
+<td><code>d</code></td>
+<td>Models, focused row</td>
+<td>Delete (confirm)</td>
+</tr>
+<tr>
+<td><code>i</code></td>
+<td>Engines, focused row</td>
+<td>Install (confirm)</td>
+</tr>
+<tr>
+<td><code>o</code></td>
+<td>Engines, focused row</td>
+<td>Open download page</td>
+</tr>
+<tr>
+<td><code>c</code></td>
+<td>focused row with a running job</td>
+<td>Cancel the job</td>
+</tr>
+<tr>
+<td><code>Esc</code></td>
+<td>dialog</td>
+<td>Close</td>
+</tr>
+</tbody>
+</table></div>
+<p>Click a row or move to it with <code>Tab</code> to focus it. These are the same verbs as the terminal
+consoles.</p>
+<h2 id="authentication">Authentication</h2>
+<p>The console page and its fragments are static code and never require a token. The data behind
+them does. There are two ways in:</p>
+<ul>
+<li><strong>The one-time link</strong> printed by <code>abstractcore serve</code> on your own machine
+  (<code>/console#claim=&lt;code&gt;</code>). The console trades the code for the server's token through
+  <code>POST /acore/session/claim</code>, then removes it from the address bar. This works only from the
+  machine running the server; see <a href="server.html#first-run-on-your-machine">First run</a>.</li>
+<li><strong>Pasting the token.</strong> When the first API call answers <code>401</code>, the console asks for the token
+  (<code>abstractcore serve --print-token</code> prints it, or it is the value of <code>ABSTRACTCORE_AUTH_TOKEN</code>).</li>
+</ul>
+<p>Either way the token is kept in the browser tab's <code>sessionStorage</code> only (cleared when the tab
+closes) and sent as <code>Authorization: Bearer &lt;token&gt;</code>. Use <strong>Forget token</strong> in the top bar to
+clear it.</p>
+<p>A server bound to a non-loopback address with no token configured and
+<code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED</code> unset answers <code>503 server_auth_not_configured</code>; the
+console shows that message. See <a href="server.html">Server</a> for the auth settings.</p>
+<h2 id="themes">Themes</h2>
+<p>The console uses the AbstractFramework UI kit themes. By default it follows your system's light
+or dark preference; the top bar has a theme picker (every kit theme) and a light/dark toggle. The
+choice is stored in <code>localStorage</code>.</p>
+<p><strong>About</strong> (the <em>i</em> button at the end of the top bar) opens the compact About card every
+AbstractFramework app shows: AbstractCore and its version, the AbstractFramework and AbstractGateway
+versions installed on this host (or "not installed on this host"), one row of links (Website,
+Source, Docs, Issues, Feedback, Contact) and the copyright and licence line. It lists no packages.
+Escape, the Close button or a click outside closes it.</p>
+<h2 id="responsive-layout">Responsive layout</h2>
+<p>The console works in any browser window and on phones and tablets. The tab strip scrolls
+sideways when the tabs do not fit, and long configuration paths wrap inside their pane. On
+phones, tables scroll sideways inside their frame, and long artifact ids stay on one line with an
+ellipsis (hover or long-press shows the full id). Below 768 px wide, or in phone landscape,
+dialogs open as bottom sheets. On touch screens, buttons, tabs and selects are at least 44 px
+tall, form fields use 16 px text (iOS does not zoom into a focused field), and table text is
+14 px. The page respects the notch and home-indicator areas of phones.</p>
+<p>On phones (below 768 px) the content uses the full width: cards become flat sections with a
+hairline divider, forms stack in one column, and the page is the only scroll area. The list
+panels (Catalog, Installed, Providers, Capability defaults) fold from their heading; they start
+open and the browser remembers what you folded. Forms are at most 720 px wide, with labels above
+the fields and short fields (port and security, per hour and per day) side by side from 768 px.
+Every on/off setting is a switch labelled by its feature, applied at once.</p>
+<p>The layout reads the UI kit's responsive tokens (<code>--tap-min</code>, <code>--vh-full</code>, <code>--safe-*</code>,
+<code>--gutter</code>) and its switch, form, card and tabs rules (<code>KIT_SWITCH_CSS</code>, <code>KIT_FORM_CSS</code>), which
+<code>abstractcore.console.theme_sync</code> copies verbatim from the kit together with the themes.</p>
+<h2 id="embedding-the-models-and-engines-screens">Embedding the Models and Engines screens</h2>
+<p>Hosts such as AbstractGateway embed the Models and Engines screens in their own console. Two ways
+to obtain them:</p>
+<ul>
+<li>In Python: <code>abstractcore.console.web.fragment(kind)</code> with <code>kind</code> <code>"models"</code> or <code>"engines"</code>
+  returns <code>{"html": str, "js": str, "css": str}</code>.</li>
+<li>Over HTTP: <code>GET /console/fragment/{kind}</code> returns the same object plus <code>"kind"</code>.</li>
+</ul>
+<p><code>render_console_html(api_base="/acore", title="AbstractCore Console")</code> returns the standalone page
+served at <code>/console</code>.</p>
+<p>Place <code>css</code> in a <code>&lt;style&gt;</code> element, <code>html</code> where the tab body goes, and <code>js</code> in a <code>&lt;script&gt;</code>
+element (the script is idempotent; both kinds return the same <code>js</code> and <code>css</code>, so include each
+once). The script defines one global, <code>window.AbstractCoreConsole</code>; then mount each screen:</p>
+<div class="code-block"><pre><code class="language-js">AbstractCoreConsole.mount(&quot;models&quot;, document.getElementById(&quot;tab-catalog&quot;), {
+  apiBase: &quot;/api/gateway&quot;,                 // default &quot;/acore&quot;
+  request: (method, path, body) =&gt;          // default: fetch + optional bearer token
+    api(path, { method, body: body == null ? undefined : JSON.stringify(body) }),
+  isAdmin: () =&gt; Boolean(currentUser.admin),  // boolean or function; default true
+  onJob: (job, kind) =&gt; {},                 // called on every job update
+  hostName: &quot;gateway-host&quot;,                 // shown in install/delete dialogs; default location.hostname
+  cliPrefix: &quot;abstractgateway&quot;,             // CLI shown for composed commands; default &quot;abstractcore&quot;
+});
+</code></pre></div>
+<ul>
+<li><code>request(method, path, body)</code> receives the full path (<code>apiBase</code> + route) and a JSON-serializable
+  body or <code>undefined</code>; it must resolve to the parsed JSON and reject with an <code>Error</code> carrying
+  <code>status</code> on HTTP errors. The host keeps full control of auth, CSRF headers and timeouts.</li>
+<li>The screens call these routes under <code>apiBase</code>: <code>GET /host/profile</code>, <code>GET /engines?probe=1</code>,
+  <code>GET /models/catalog?q=&amp;engine=&amp;fits=1&amp;hub=1</code>, <code>GET /models/installed</code>,
+  <code>POST /models/download</code>, <code>POST /models/delete</code>, <code>POST /engines/{id}/install</code>,
+  <code>GET /jobs/{id}</code>, <code>POST /jobs/{id}/cancel</code>. Verbs answer a <code>host_job_v1</code> job (a <code>{"job": ...}</code>
+  envelope is also accepted).</li>
+<li>When <code>isAdmin</code> is false, Download, Delete and Install are disabled.</li>
+<li><code>mount()</code> returns <code>{kind, refresh(), unmount()}</code>; <code>AbstractCoreConsole.unmount(rootEl)</code> does the
+  same. Mounting injects the tab body itself when the host did not place <code>html</code>.</li>
+<li>Styles are scoped under <code>.acc-root</code> and read the UI kit's CSS variables (<code>--bg-secondary</code>,
+  <code>--text-primary</code>, <code>--accent</code>, <code>--info</code>, <code>--success</code>, <code>--warning</code>, <code>--error</code>, ...), so the
+  screens follow the host's active theme.</li>
+</ul>
+<h2 id="terminal-console">Terminal console</h2>
+<p>The same Models and Engines screens exist in the terminal: <code>abstractcore-console</code> (a Rust
+terminal app, <code>cargo install abstractcore-console</code>) shows them as screen 9 "Models" and screen 0
+"Engines", with the same labels and keys (<code>w</code> download, <code>d</code> delete, <code>i</code> install, <code>o</code> open
+download page, <code>/</code> filter, <code>f</code> fits only, <code>c</code> cancel). It drives the <code>abstractcore</code> CLI on this
+machine, so it needs no server. On a machine without a display (an SSH session, or Linux without
+<code>DISPLAY</code>/<code>WAYLAND_DISPLAY</code>) <code>o</code> prints the link instead of launching a browser. See <a href="console-tui.html">Terminal console</a>.</p>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="server.html">Server</a>: endpoints, auth settings, runtime control plane.</li>
+<li><a href="centralized-config.html">Centralized Config</a>: API keys and default models (<code>abstractcore --config</code>).</li>
+<li><a href="memory-management.html">Memory and Model Residency</a>: loading, unloading and locking models.</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

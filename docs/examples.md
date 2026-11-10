@@ -84,7 +84,7 @@ print(response.content)
 
 Glyph compression renders long text into images for vision-capable models to reduce effective token usage (often 3–4x on long text; depends on content/model).
 
-Requires `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` if you want PDF/Office text extraction).
+Works with the light install (`pip install abstractcore`), including PDF/Office text extraction.
 
 ### Automatic Compression with Ollama
 

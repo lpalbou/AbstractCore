@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stopping a generation (host cancel) and ejecting a model - AbstractCore</title>
+    <meta name="description" content="A host stops an in-flight generation by passing a threading.Event as cancel_event= to generate() and setting it later. AbstractRuntime does this for every…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/generation-cancel.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Stopping a generation (host cancel) and ejecting a model</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">A host stops an in-flight generation by passing a threading.Event as cancel_event= to generate() and setting it later. AbstractRuntime does this for every LLM call (a UI Stop sets the event of the running effect); AbstractGateway adds a kill switch on top. The contract lives in abstractcore/providers/generation_cancel.py.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-every-provider-guarantees" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What every provider guarantees</a>
+<a href="#per-lane" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Per lane</a>
+<a href="#ejecting-a-model-unload_model-while-it-generates" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Ejecting a model (unload_model) while it generates</a>
+<a href="#remote-abstractcore-server" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Remote AbstractCore server</a></div>
+
+            <div class="doc-content">
+
+<div class="code-block"><pre><code class="language-python">import threading
+from abstractcore import create_llm
+from abstractcore.exceptions import GenerationCancelledError
+
+llm = create_llm(&quot;lmstudio&quot;, model=&quot;llama-3.2-1b-instruct&quot;)
+stop = threading.Event()
+threading.Timer(3.0, stop.set).start()        # e.g. the user pressed Stop
+try:
+    llm.generate(&quot;Write a very long story.&quot;, cancel_event=stop)
+except GenerationCancelledError as e:
+    print(&quot;stopped:&quot;, e)                        # never an &quot;Error: ...&quot; answer, never retried
+</code></pre></div>
+<h2 id="what-every-provider-guarantees">What every provider guarantees</h2>
+<ul>
+<li>An event that is already set raises before anything is sent to the model.</li>
+<li>A stop raises <code>GenerationCancelledError</code> (<code>request_local</code>: never retried, never
+  counted against endpoint health). A cancelled answer is never returned as a
+  complete one, and never as an <code>"Error: ..."</code> string with <code>finish_reason="error"</code>.</li>
+<li>Streams are checked between chunks for every provider, and the upstream stream
+  is closed.</li>
+<li>A call whose event is set that fails for any reason (for example a severed
+  socket) is reported as the typed stop, not as a transport error.</li>
+</ul>
+<h2 id="per-lane">Per lane</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Lane</th>
+<th>Where the stop is observed</th>
+<th>Measured (2026-09-23)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MLX (native runtime, mlx-vlm, mlx-lm)</td>
+<td>every sampled token; mlx-lm also between prefill chunks</td>
+<td>decode stopped 5 ms after the cancel reached it (4B + MTP, hermetic gateway)</td>
+</tr>
+<tr>
+<td>HuggingFace transformers</td>
+<td>a <code>StoppingCriteria</code> that raises, every decode step; chunked prefill checks between chunks</td>
+<td>2-8 ms (SmolLM2-135M, MPS)</td>
+</tr>
+<tr>
+<td>HuggingFace GGUF, control-plane lane</td>
+<td>every sampled token; prefill evaluated in <code>n_batch</code> slices with a check between slices</td>
+<td>decode 3-5 ms; prefill 34 ms (was 2.4 s before the slicing)</td>
+</tr>
+<tr>
+<td>HuggingFace GGUF, <code>create_chat_completion</code> lane</td>
+<td>a logits processor forces end-of-generation at the next token, then the provider raises</td>
+<td>1-5 ms</td>
+</tr>
+<tr>
+<td>LM Studio (OpenAI-compatible and native <code>/api/v1/chat</code>)</td>
+<td>the request is <strong>severed</strong> (see below)</td>
+<td>client returned in ~1 ms; LM Studio worker CPU 50 % → 0 %</td>
+</tr>
+<tr>
+<td>Ollama (<code>/api/chat</code>, <code>/api/generate</code>, <code>/v1</code>)</td>
+<td>the request is severed</td>
+<td>client ~1 ms; runner CPU 36-40 % → 0 %</td>
+</tr>
+<tr>
+<td>llama.cpp server, vLLM, any OpenAI-compatible server</td>
+<td>the request is severed</td>
+<td>llama-server logged <code>stop: cancel task</code> for streaming, non-streaming and mid-prefill requests</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="http-lanes-the-request-is-severed">HTTP lanes: the request is severed</h3>
+<p>Checking "between chunks" is not enough over HTTP: a non-streaming request sits
+in a blocking socket read for the whole generation, and a streaming request sits
+there for the whole prefill. Neither the per-chunk check nor an injected
+exception (the gateway kill switch) can reach a thread blocked in <code>recv</code>.</p>
+<p>So when an event is passed, the request runs on its own connection under an
+<code>HttpCancelGuard</code>: a watcher thread waits on the event and shuts the socket down
+(<code>shutdown(SHUT_RDWR)</code>), which wakes the blocked read immediately. The server sees
+the client disconnect and stops decoding. Measured: LM Studio 0.4.20 (MLX engine),
+Ollama 0.20.2 and llama.cpp's <code>llama-server</code> stop on disconnect, streaming or not.
+Ollama finishes a prompt evaluation already in progress before it notices; LM
+Studio and llama-server stop mid-prefill. Uncancellable calls keep using the
+provider's pooled client, exactly as before.</p>
+<h3 id="not-interruptible-from-python">Not interruptible from Python</h3>
+<ul>
+<li>One native call: one transformers prefill forward (chunks of
+  <code>ABSTRACTCORE_TRANSFORMERS_PREFILL_STEP</code> tokens), one llama.cpp <code>n_batch</code>
+  evaluation inside <code>create_chat_completion</code>, one mlx-vlm prefill op. The stop
+  lands when that call returns.</li>
+<li>The Outlines structured-output lane and custom <code>infer()</code> models (for example
+  DeepSeek-OCR) own their loop: they are checked before they start only.</li>
+</ul>
+<h2 id="ejecting-a-model-unload_model-while-it-generates">Ejecting a model (<code>unload_model</code>) while it generates</h2>
+<p><code>unload_model()</code> first cancels the instance's in-flight generations and waits for
+them (<code>generation_cancel.InflightGenerations</code>, bounded by
+<code>DEFAULT_EJECT_DRAIN_TIMEOUT_S</code>, 30 s, logged). In-process providers (MLX,
+HuggingFace) refuse the unload with a <code>ProviderAPIError</code> if a call is still running
+at the deadline, so memory is never freed under a running decode (<code>Llama.close()</code>
+under a running llama.cpp evaluation crashes the process). HuggingFace gives every
+call a private event when the host passed none, so any call can be stopped.</p>
+<p>HTTP providers cancel <strong>our</strong> requests before asking the server to unload. LM Studio
+answers an unload under a running request with an in-stream "Model unloaded" error,
+which the retry layer would resample, reloading the model the operator just ejected.</p>
+<p>After an eject:</p>
+<ul>
+<li><code>load_model()</code> reloads an MLX or HuggingFace instance. It was missing, so a
+  gateway <code>POST /models/load</code> after an unload of the default model could not
+  warm it again.</li>
+<li>A generation on an ejected MLX or HuggingFace instance reloads the model on
+  demand and logs a WARNING. Before, the gateway recorded a <em>completed</em> run whose
+  answer was the string <code>"Error: MLX model not loaded"</code>.</li>
+<li>The sync httpx client of LM Studio, Ollama and OpenAI-compatible providers is
+  replaced, not left closed. A closed client made every later request of a pooled
+  instance raise.</li>
+</ul>
+<p>Measured through the hermetic gateway routes (<code>POST /api/gateway/models/unload</code>),
+with the settled process phys_footprint:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Loaded</th>
+<th>After eject</th>
+<th>Eject during a running generation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MLX 4B + MTP</td>
+<td>4,110 MB</td>
+<td>769 MB (settled in 0.8 s)</td>
+<td>stopped 6-9 ms after, <code>cancelled_by: model_eject</code>; 1,039 MB</td>
+</tr>
+<tr>
+<td>HuggingFace SmolLM2-135M</td>
+<td>1,985 MB</td>
+<td>702 MB</td>
+<td>stopped 10 ms after; 893 MB</td>
+</tr>
+<tr>
+<td>GGUF Qwen3.5-2B (in-process)</td>
+<td>4,724 MB</td>
+<td>267 MB</td>
+<td>stopped 3-10 ms after</td>
+</tr>
+<tr>
+<td>LM Studio llama-3.2-1b</td>
+<td><code>loaded_instances: [id]</code></td>
+<td><code>[]</code></td>
+<td>stopped 1 ms after; not JIT-reloaded</td>
+</tr>
+<tr>
+<td>Ollama gemma3:1b</td>
+<td><code>/api/ps</code>: 1.41 GB</td>
+<td><code>[]</code></td>
+<td>stopped 0-1 ms after</td>
+</tr>
+</tbody>
+</table></div>
+<p>The operating system reclaims freed Metal buffers asynchronously, so a footprint
+read right after the unload can still show the weights for up to about a second.
+Use the MLX allocator (<code>mx.get_active_memory()</code>, which is 0 immediately) or wait
+for the reading to settle.</p>
+<h2 id="remote-abstractcore-server">Remote AbstractCore server</h2>
+<p><code>RemoteAbstractCoreLLMClient</code> (AbstractRuntime) severs its request to the
+AbstractCore server when the effect's event is set. The server treats the client
+disconnect as a cancel: HTTP-backed providers run off the event loop with a
+disconnect watcher, and their own guard severs the upstream request in turn.
+There is no abort endpoint and no request id: the wire form of a Stop is the
+closed connection. Measured chain runtime → server → LM Studio: the client
+returned in about 0 ms and the LM Studio worker went from 49.5 % CPU to 0 %.
+In-process providers on the server (transformers, llama.cpp) stay serialized on
+the event loop and are not cancelled by a disconnect.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

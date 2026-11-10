@@ -2,34 +2,28 @@
 
 ## What do I get with `pip install abstractcore`?
 
-The default install is intentionally lightweight. It includes the core API (`create_llm`, `BasicSession`, tool definitions, structured output plumbing) and uses only small dependencies (`pydantic`, `httpx`).
+The light install. It runs everything through remote inferencers and servers: OpenAI, Anthropic,
+OpenRouter, Portkey, any OpenAI-compatible `/v1` endpoint, LM Studio, Ollama and a vLLM server all
+work without another install step. It also includes the built-in tools, media inputs (images,
+PDFs, Office documents), token counting, Glyph compression, the HTTP server, and the voice,
+vision, music and 3D capability plugins with their remote backends. It includes no local engine
+(no torch, transformers, MLX or vLLM). See [Installation](installation.md).
 
-Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings models, web scraping deps, the HTTP server) is behind install extras. See [Getting Started](getting-started.md) and [Prerequisites](prerequisites.md).
+## Which install do I need for my provider?
 
-## Which extra do I need for my provider?
+- OpenAI, Anthropic, OpenRouter, Portkey, Ollama, LM Studio, a vLLM server, any OpenAI-compatible
+  `/v1` endpoint: `pip install abstractcore`.
+- MLX, or HuggingFace/GGUF models on a Mac: `pip install "abstractcore[apple]"`.
+- A vLLM engine on this machine, or HuggingFace/GGUF models on an NVIDIA / AMD machine:
+  `pip install "abstractcore[gpu]"`.
 
-- Hosted SDK bundle: `pip install "abstractcore[remote]"` installs OpenAI + Anthropic.
-- OpenAI: `pip install "abstractcore[openai]"`
-- Anthropic: `pip install "abstractcore[anthropic]"`
-- OpenRouter, Portkey, Ollama, LM Studio, and generic OpenAI-compatible `/v1` endpoints: core install is enough (`pip install abstractcore`).
-- HuggingFace (transformers/torch; heavy): `pip install "abstractcore[huggingface]"`
-- MLX (Apple Silicon; heavy): `pip install "abstractcore[mlx]"`
-- vLLM integration (GPU; heavy): `pip install "abstractcore[vllm]"`
-
-These providers work with the core install (no provider extra): `ollama`, `lmstudio`, `openrouter`, `portkey`, `openai-compatible`.
-
-## How do I combine extras?
-
-```bash
-# zsh: keep quotes
-pip install "abstractcore[remote,media,tools]"
-```
-
-For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU).
+There are only these three settings, and `apple` and `gpu` each include everything in light.
 
 ## Why did my install pull `torch` / take a long time?
 
-You probably installed a heavy extra (most commonly `abstractcore[huggingface]`, `abstractcore[mlx]`, or `abstractcore[all-*]`). The core install (`pip install abstractcore`) does not include torch/transformers.
+You installed `abstractcore[apple]` or `abstractcore[gpu]`, which carry the local engines (torch,
+transformers, MLX or vLLM, local voice/image/music engines). The light install
+(`pip install abstractcore`) does not include torch or transformers.
 
 ## What’s the difference between “provider” and “model”?
 
@@ -106,11 +100,13 @@ Config is stored in `~/.abstractcore/config/abstractcore.json`. See [Centralized
 
 ## Can I use the HTTP server with only provider API keys?
 
-Yes. You do not have to give a client the AbstractCore server master key. If `ABSTRACTCORE_SERVER_API_KEY` is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`.
+Yes. You do not have to give a client the AbstractCore server auth token. If `ABSTRACTCORE_AUTH_TOKEN` is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as `X-AbstractCore-Provider-API-Key`.
 
 That key is forwarded only to the provider requested by the model route, such as `anthropic/...`, `openrouter/...`, or `portkey/...`. It does not unlock other server-configured provider keys, and it does not grant access to providers the client did not supply credentials for.
 
-If `ABSTRACTCORE_SERVER_API_KEY` is configured, `Authorization` is reserved for the AbstractCore server key. In that mode, use `X-AbstractCore-Provider-API-Key` only when you want to override the upstream provider key for a single request. Provider keys in request bodies or query strings are disabled.
+If `ABSTRACTCORE_AUTH_TOKEN` is configured, `Authorization` is reserved for the AbstractCore server auth token. In that mode, use `X-AbstractCore-Provider-API-Key` only when you want to override the upstream provider key for a single request.
+
+Provider keys in request bodies remain disabled. Select discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI convenience, but headers remain preferred.
 
 ## Why aren’t tools executed automatically?
 
@@ -120,16 +116,12 @@ Automatic execution (`execute_tools=True`) exists but is deprecated for most use
 
 ## What’s the difference between `web_search`, `skim_websearch`, `skim_url`, and `fetch_url`?
 
-These built-in web tools live in `abstractcore.tools.common_tools` and require:
+These built-in web tools live in `abstractcore.tools.common_tools` and are part of the light install.
 
-```bash
-pip install "abstractcore[tools]"
-```
-
-- `web_search`: fuller DuckDuckGo result set (good when you want breadth or more options).
-- `skim_websearch`: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results and truncates long snippets.
-- `skim_url`: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). Defaults: `max_bytes=200_000`, `max_preview_chars=1200`, `max_headings=8`.
-- `fetch_url`: full fetch + parsing for text-first types (HTML→Markdown, JSON/XML/text). For PDFs/images/other binaries it returns metadata and optional previews; it does **not** do full PDF text extraction. It downloads up to 10MB by default; use `include_full_content=False` for smaller outputs.
+- `web_search`: fuller DuckDuckGo result set (good when you want breadth or more options). It normalizes JSON-style numeric `num_results` values such as `"5"` before calling `ddgs`, and invalid values fail explicitly instead of silently changing the request.
+- `skim_websearch`: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results, truncates long snippets, accepts string-like numeric `num_results`, and surfaces its compact cap when a caller asks for more than 15 results.
+- `skim_url`: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). It can also summarize RSS/Atom/XML feeds and PDF content when those assets are detectable from headers or content bytes. Defaults: `max_bytes=200_000`, `max_preview_chars=1200`, `max_headings=8`.
+- `fetch_url`: full fetch + parsing for HTML, JSON, XML/RSS/Atom, plain text, and PDFs. PDFs are extracted locally (`pypdf`, then `pymupdf` when installed) and never leave the machine by default, whatever API keys are configured. Sending a fetched PDF to the configured OpenAI-compatible LLM for extraction and a summary is an explicit opt-in: `abstractcore --allow-remote-pdf-extraction` (config key `offline.allow_remote_pdf_extraction`). Once enabled, native PDF calls try `file_id` first and then `data_url` when an OpenAI-compatible endpoint rejects uploaded PDF files. Results expose PDF backend provenance, including native transport. It downloads up to 10MB by default; use `include_full_content=False` for smaller outputs.
 
 Recommended workflow: `skim_websearch` → `skim_url` → `fetch_url` (use `include_full_content=False` when you want a smaller `fetch_url` output).
 
@@ -158,6 +150,10 @@ llm = create_llm("openai", model="gpt-4o-mini")
 result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
 ```
 
+Over the OpenAI-compatible server, send `response_format` (`{"type": "json_object"}` or a
+`json_schema`) to `POST /v1/chat/completions`; the answer is validated against your schema on every
+provider. See [Server: structured outputs](server.md#structured-outputs-response_format).
+
 See [Structured Output](structured-output.md).
 
 ## Why does structured output retry or fail validation?
@@ -170,15 +166,9 @@ Structured output is validated against your schema. If validation fails, Abstrac
 
 See [Structured Output](structured-output.md) and [Troubleshooting](troubleshooting.md).
 
-## Why do PDFs / Office docs / images not work?
+## How do I attach PDFs / Office docs / images?
 
-Those require the media extra:
-
-```bash
-pip install "abstractcore[media]"
-```
-
-Then pass `media=[...]` to `generate()` or use the media pipeline. See [Media Handling](media-handling-system.md).
+Media handling is part of the light install. Pass `media=[...]` to `generate()` or use the media pipeline. See [Media Handling](media-handling-system.md).
 
 ## How do I attach audio or video?
 
@@ -187,7 +177,7 @@ Audio and video attachments are supported via `media=[...]`, but they are **poli
 - **Audio** defaults to `audio_policy="native_only"` (fails loudly unless the model supports native audio input).
 - **Video** defaults to `video_policy="auto"` (native video when supported; otherwise sample frames and route through image/vision handling). Frame sampling requires `ffmpeg`/`ffprobe`.
 
-Speech-to-text fallback for audio (`audio_policy="speech_to_text"` or `"auto"`) typically requires installing `abstractvoice` (capability plugin).
+Speech-to-text fallback for audio (`audio_policy="speech_to_text"` or `"auto"`) runs through the AbstractVoice capability plugin (part of the light install).
 
 You can set defaults via the config CLI:
 
@@ -203,11 +193,8 @@ See:
 
 ## How do I do speech-to-text (STT) or text-to-speech (TTS)?
 
-Install the optional capability plugin package:
-
-```bash
-pip install abstractvoice
-```
+The light install includes the AbstractVoice capability plugin with its remote backends. Local
+voice engines come with `abstractcore[apple]` or `abstractcore[gpu]`.
 
 Then use the deterministic capability surfaces:
 
@@ -227,35 +214,69 @@ If you run the optional HTTP server, you can also use OpenAI-compatible endpoint
 
 See: [Server](server.md) and [Capabilities](capabilities.md).
 
-## How do I generate or edit images?
+## How do I find a voice, clone one, or create one from a description?
 
-Generative vision is intentionally not part of AbstractCore’s default install. Use `abstractvision`:
+Every voice record carries `voice_id` (pass it as `voice=`), `kind` (`profile` or `clone`),
+`provider`, `model`, the `languages` it can speak and its native `language` when known:
 
-```bash
-pip install abstractvision
+```python
+french = llm.voice.list_voices(language="fr")          # native French voices first
+qwen = llm.voice.list_voices(provider="qwen3-tts")     # one engine's voices
+print(llm.voice.list_languages(kind="tts"))            # languages per engine, no model loaded
+
+mine = llm.voice.clone(open("reference.wav", "rb").read(), provider="qwen3-tts",
+                       name="Mine", reference_text="What the recording says.")
+mira = llm.voice.design_voice("A calm, warm female voice in her thirties.", name="Mira")
+wav = llm.voice.tts("Good morning.", voice=mira["voice_id"], one_shot=True)
 ```
 
-You can use it through AbstractCore’s `llm.vision.*` capability plugin surface (typically configured via an OpenAI-compatible images endpoint), or through AbstractCore Server’s optional endpoints:
+Cloning and design need the engine installed (`abstractcore[apple]` or `abstractcore[gpu]`
+include Qwen3-TTS); without it the call names the install command. On the server, the same
+operations are `GET /v1/audio/voices?language=fr`, `GET /v1/audio/languages`,
+`POST /v1/voice/clone`, `POST /v1/voice/design` and `GET|PATCH|DELETE /v1/voice/clones/{voice_id}`;
+see [Server](server.md).
+
+## How do I generate or edit images?
+
+The light install includes the AbstractVision plugin, and AbstractCore Server can proxy
+OpenAI-compatible image endpoints without local vision runtimes. For local image and video
+generation (MLX-Gen, Diffusers, stable-diffusion.cpp), install the local engines:
+
+```bash
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
+```
+
+You can use generative vision through AbstractCore’s `llm.vision.*` capability plugin surface, or through AbstractCore Server’s optional endpoints:
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
+
+Omit `model` with the server endpoints only when this server has a configured
+AbstractVision/OpenAI-compatible image default. Use `model="diffusers/default"`
+or `model="diffusers/<huggingface-repo>"` for explicit Diffusers routing,
+`model="sdcpp/default"` for configured stable-diffusion.cpp, or
+`model="openai-compatible/<model>"` with a configured image base URL for remote
+OpenAI-compatible endpoints. Local Diffusers is cache-only by default, so
+pre-download the model or set `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1` /
+`ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1` when runtime downloads are intended.
 
 See: [Server](server.md), [Capabilities](capabilities.md), and `abstractvision/docs/reference/abstractcore-integration.md` (in the AbstractVision repo).
 
 ## What are “glyphs” and what do they require?
 
-Glyph visual-text compression is an optional feature for long documents. Install:
-
-- `pip install "abstractcore[compression]"` (renderer)
-- plus `pip install "abstractcore[media]"` if you want PDF extraction support
+Glyph visual-text compression is an optional feature for long documents. Its renderer and PDF
+extraction are part of the light install.
 
 See [Glyph Visual-Text Compression](glyphs.md).
 
 ## How do I use embeddings?
 
-Embeddings are opt-in:
+Remote embeddings (OpenAI, OpenRouter, Portkey, Ollama, LM Studio, OpenAI-compatible endpoints) work with the light
+install. Local embedding models (sentence-transformers) come with the local engines:
 
 ```bash
-pip install "abstractcore[embeddings]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 Then import from the embeddings module:
@@ -273,14 +294,15 @@ No. The server is optional and is mainly for:
 - exposing one OpenAI-compatible `/v1` endpoint that can route to multiple providers/models
 - integrating with OpenAI-compatible clients and agentic CLIs
 
-Install and run:
+It is part of the light install. Run:
 
 ```bash
-pip install "abstractcore[server]"
-python -m abstractcore.server.app
+pip install abstractcore
+abstractcore serve        # open the printed link for the web console
 ```
 
-See [Server](server.md).
+On your own machine the server creates its bearer token on first run
+(`abstractcore serve --print-token` prints it). See [Server](server.md#first-run-on-your-machine).
 
 ## Where are logs and traces?
 
@@ -297,12 +319,25 @@ See [Troubleshooting](troubleshooting.md) and [Centralized Config](centralized-c
 
 ## HuggingFace won’t download models — why?
 
-The HuggingFace provider respects AbstractCore’s offline-first settings. If you want HuggingFace to fetch from the Hub, update `~/.abstractcore/config/abstractcore.json`:
+The HuggingFace provider respects AbstractCore’s offline-first settings. A load reads the local cache only, and a model that is not cached fails at once with `download it first: abstractcore models download huggingface <repo>`. Downloading it that way is the recommended fix. If you want loads themselves to fetch from the Hub, update `~/.abstractcore/config/abstractcore.json`:
 
 - set `"offline_first": false`
 - set `"force_local_files_only": false`
 
-Restart your Python process after changing this (the provider reads these settings at import time).
+Restart your Python process after editing the file (the configuration is loaded once per process). Neither setting touches `HF_HUB_OFFLINE` in the process. See [Centralized Config](centralized-config.md#offline-section).
+
+## Does native MLX MTP support vision and continuous batching?
+
+Native image input works with MTP off or on for the documented Qwen3.8-27B
+and Flash-Next artifacts. MTP does not replace or bypass their vision encoder.
+The [vision comparison](native-mlx-benchmarks.md#vision-and-functional-coverage)
+uses swapped-image answers and actual draft/verify execution evidence.
+
+With `mlx_batching=True`, compatible greedy target-only requests use continuous
+admission. MTP requests form fixed same-depth cohorts; later arrivals wait.
+Sampled requests run exclusively. For concurrent or staggered clients, compare
+`speculation=False` against MTP rather than assuming speculation is faster.
+See [runtime policies](native-mlx-runtime.md#scheduling-and-request-controls).
 
 ## Is AbstractCore a full agent/RAG framework?
 

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request And Output - AbstractCore</title>
+    <meta name="description" content="AbstractCore still supports the familiar prompt-first forms:">
+    <link rel="canonical" href="https://abstractcore.ai/docs/request-output.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Request And Output</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore still supports the familiar prompt-first forms:</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#request-shape" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Request shape</a>
+<a href="#output-shape" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Output shape</a>
+<a href="#defaults-and-explicit-overrides" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Defaults and explicit overrides</a>
+<a href="#capability-default-routes-one-store-two-entry-points" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Capability default routes: one store, two entry points</a>
+<a href="#route-inspection" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Route inspection</a>
+<a href="#related" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related</a></div>
+
+            <div class="doc-content">
+
+<div class="code-block"><pre><code class="language-python">resp = llm.generate(&quot;Summarize this.&quot;)
+resp = llm.generate(&quot;Red cube&quot;, output=&quot;image&quot;)
+resp = llm.generate(media={&quot;type&quot;: &quot;audio&quot;, &quot;path&quot;: &quot;meeting.wav&quot;}, output=&quot;text&quot;)
+</code></pre></div>
+<p>The lower-level canonical shape is now the keyword form:</p>
+<div class="code-block"><pre><code class="language-python">resp = llm.generate(
+    request={
+        &quot;text&quot;: &quot;Turn this into a calm synth loop.&quot;,
+        &quot;media&quot;: [],
+    },
+    output={&quot;modality&quot;: &quot;music&quot;, &quot;format&quot;: &quot;wav&quot;},
+)
+</code></pre></div>
+<p>A sound effect uses the <code>sound</code> output and takes its length in <code>seconds</code> (or <code>duration_s</code>); the
+route's <code>model</code> and the task reach the music plugin, and a sound effect without a length is 5
+seconds:</p>
+<div class="code-block"><pre><code class="language-python">resp = llm.generate(
+    text=&quot;laser gunshot&quot;,
+    output={&quot;modality&quot;: &quot;sound&quot;, &quot;task&quot;: &quot;text_to_audio&quot;, &quot;seconds&quot;: 3, &quot;format&quot;: &quot;wav&quot;},
+)
+clip = resp.outputs[&quot;sound&quot;][0]
+</code></pre></div>
+<p><code>request=</code> and the legacy <code>prompt</code> / <code>text</code> / <code>messages</code> / <code>media</code> kwargs normalize to the same
+internal contract. This keeps the public API compatible while giving Core one stable semantic
+request shape under the hood.</p>
+<h2 id="request-shape">Request shape</h2>
+<p>The stable request payload is intentionally small:</p>
+<ul>
+<li><code>text</code>: plain request text</li>
+<li><code>messages</code>: optional chat history</li>
+<li><code>media</code>: optional image/audio/video/document inputs</li>
+</ul>
+<p>Routing fields do not live inside <code>request</code>. Provider/model/base URL selection still comes from:</p>
+<ul>
+<li>explicit call arguments and output-spec fields when you intentionally pin a route;</li>
+<li>capability defaults (<code>input.*</code>, <code>output.*</code>) when you do not; or</li>
+<li>the provider instance you created with <code>create_llm(...)</code>.</li>
+</ul>
+<h2 id="output-shape">Output shape</h2>
+<p><code>output=</code> stays separate from <code>request</code> and remains the public generated-output selector:</p>
+<div class="code-block"><pre><code class="language-python">output=&quot;text&quot;
+output={&quot;modality&quot;: &quot;image&quot;}
+output={&quot;modality&quot;: &quot;video&quot;, &quot;task&quot;: &quot;image_to_video&quot;}
+output={&quot;task&quot;: &quot;tts&quot;}
+</code></pre></div>
+<p>Core infers the concrete task structurally when it can:</p>
+<ul>
+<li>text request + <code>output=image</code> -&gt; text-to-image</li>
+<li>one source image + <code>output=image</code> -&gt; image edit</li>
+<li>one source image + <code>output=video</code> -&gt; image-to-video</li>
+<li>audio media + <code>output=text</code> with no text prompt -&gt; transcription</li>
+<li>audio media + <code>output=voice</code> with no explicit voice id -&gt; voice clone</li>
+</ul>
+<h2 id="defaults-and-explicit-overrides">Defaults and explicit overrides</h2>
+<p>The request/output contract does not remove explicit control. Manual routing still works when you
+need it:</p>
+<div class="code-block"><pre><code class="language-python">resp = llm.generate(
+    request={&quot;text&quot;: &quot;Slow dolly shot over a misty valley.&quot;},
+    output={
+        &quot;modality&quot;: &quot;video&quot;,
+        &quot;provider&quot;: &quot;mlx-gen&quot;,
+        &quot;model&quot;: &quot;Wan-AI/Wan2.2-TI2V-5B-Diffusers&quot;,
+        &quot;num_frames&quot;: 41,
+    },
+)
+</code></pre></div>
+<p>When you do not pin a route, capability defaults fill in provider/model/base URL and, for the
+text-generation route, a default reasoning effort.</p>
+<h3 id="the-reasoning-effort">The reasoning effort</h3>
+<p>The text-generation route carries an optional <code>reasoning</code> field alongside its provider and model.
+It is the execution host's default reasoning effort, and it follows the same precedence as the
+provider and the model:</p>
+<ol>
+<li><strong>an explicit <code>thinking=</code> on the call</strong>, including <code>thinking=False</code>, which turns reasoning off
+   for that call, and <code>thinking="auto"</code>, which asks for no control at all;</li>
+<li><strong>a provider-native reasoning field on the call</strong> (<code>reasoning_effort=</code>, <code>reasoning=</code>, <code>think=</code>),
+   sent as given;</li>
+<li><strong>the effort configured on the text route</strong>, applied when the call names none of the above and
+   the route describes the instance serving the call: same provider (or endpoint profile) and same
+   model. A route that names only a reasoning effort applies to every instance. A route configured
+   for another provider or model does not set this instance's reasoning;</li>
+<li><strong>nothing</strong> — no reasoning parameter is sent and the model behaves as it does without one.</li>
+</ol>
+<p>The full rule, with the metadata that reports which one applied, is in
+<a href="reasoning-control.html#precedence">Reasoning Control</a>.</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore config set-default output.text --provider lmstudio --model qwen3-30b --reasoning high
+</code></pre></div>
+<p>The same field is editable from the AbstractGateway console, and both entry points write the same
+row. See <a href="centralized-config.html">Centralized Config</a> for the full route grid.</p>
+<h2 id="capability-default-routes-one-store-two-entry-points">Capability default routes: one store, two entry points</h2>
+<p>There are two entry points to the framework — AbstractCore (low level) and AbstractGateway (high
+level) — and <strong>one</strong> store of per-modality defaults. AbstractCore owns it
+(<code>~/.abstractcore/config/abstractcore.json</code>, key <code>capability_defaults.routes</code>). AbstractGateway is a
+full CRUD surface over that store, not a second copy: every gateway read hits Core's manager and
+every gateway write goes through Core's setter. Setting a default in the Gateway console configures
+Core's default, and both entry points then read the same value.</p>
+<p>Route keys are a <code>kind.modality[.task]</code> grid. <code>kind</code> is the direction of the <strong>media</strong> the route
+handles, not the direction of your intent — that is the only reading under which every modality
+lands in exactly one cell (speech-to-text provisions the <em>audio</em> side, so it is an <code>input</code> route).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Generation task</th>
+<th>Route key</th>
+<th>Broad fallback</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text_generation</code></td>
+<td><code>output.text</code> (derived, read-only — canonical storage is <code>input.text</code>)</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>image_generation</code> / <code>text_to_image</code></td>
+<td><code>output.image.text_to_image</code></td>
+<td><code>output.image</code></td>
+</tr>
+<tr>
+<td><code>image_to_image</code> / <code>image_edit</code></td>
+<td><code>output.image.image_to_image</code></td>
+<td><code>output.image</code></td>
+</tr>
+<tr>
+<td><code>image_upscale</code></td>
+<td><code>output.image.image_upscale</code></td>
+<td><code>output.image</code></td>
+</tr>
+<tr>
+<td><code>text_to_video</code></td>
+<td><code>output.video.text_to_video</code></td>
+<td><code>output.video</code></td>
+</tr>
+<tr>
+<td><code>image_to_video</code></td>
+<td><code>output.video.image_to_video</code></td>
+<td><code>output.video</code></td>
+</tr>
+<tr>
+<td><code>tts</code></td>
+<td><code>output.voice</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>voice_clone</code> (voice output + reference audio)</td>
+<td><code>output.voice</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>stt</code> / <code>transcription</code></td>
+<td><code>input.voice</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>music_generation</code></td>
+<td><code>output.music</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>sound_generation</code></td>
+<td><code>output.sound</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>text_to_scene3d</code></td>
+<td><code>output.scene3d.text_to_scene3d</code></td>
+<td><code>output.scene3d</code></td>
+</tr>
+<tr>
+<td><code>image_to_scene3d</code></td>
+<td><code>output.scene3d.image_to_scene3d</code></td>
+<td><code>output.scene3d</code></td>
+</tr>
+<tr>
+<td>image / video / sound / music <strong>understanding</strong></td>
+<td><code>input.image</code> / <code>input.video</code> / <code>input.sound</code> / <code>input.music</code></td>
+<td>covered by <code>input.text</code> when that model is multimodal</td>
+</tr>
+</tbody>
+</table></div>
+<p>This mapping is stated once in code, in
+<code>abstractcore/config/capability_defaults.py::_OUTPUT_ROUTE_TABLE</code>
+(<code>capability_route_key_for_output</code>). Core's execution path and AbstractRuntime's media path both
+delegate to it.</p>
+<p>Two rules follow from the table:</p>
+<ul>
+<li><strong>A <code>.task</code> suffix is only legal for the tasks the store persists</strong> — the seven in
+  <code>CAPABILITY_ROUTE_TASKS</code>. <code>tts</code>, <code>stt</code>, <code>music_generation</code> and <code>sound_generation</code> have no
+  sub-route; they resolve at the modality cell. Writing <code>output.voice.tts</code> is rejected by
+  <code>set_capability_default</code> and dropped on load.</li>
+<li><strong>A bare request with a source image attached</strong> resolves to the edit variant
+  (<code>image_to_image</code> / <code>image_to_video</code> / <code>image_to_scene3d</code>) rather than the text-to-X one.</li>
+</ul>
+<p><strong>A pin always wins.</strong> A default only ever fills a field the request left absent. Naming
+<code>provider</code>, <code>model</code> <em>or</em> <code>base_url</code> on an output spec makes that spec the author's: the route
+contributes nothing further to it (an explicit provider that contradicts the configured row also
+drops the row's options — see <code>_route_row_contribution</code>). So a default is safe to set: it changes
+what unpinned calls do, never what pinned ones do.</p>
+<h3 id="setting-one-from-the-core-entry-point">Setting one from the Core entry point</h3>
+<div class="code-block"><pre><code class="language-bash">abstractcore config set-default output.voice --provider supertonic --model supertonic-3
+abstractcore config set-default output.image.text_to_image --provider mlx-gen --model &lt;model-id&gt;
+abstractcore config set-default output.text            # shows the row
+abstractcore config clear-default output.music
+</code></pre></div>
+<p>AbstractCore's console-TUI (<code>abstractcore --config</code>) drives the same command. In Python:
+<code>get_capability_default</code> / <code>set_capability_default</code> / <code>clear_capability_default</code> on the
+configuration manager; <code>list_capability_defaults()</code> returns the whole grid, each row naming its
+source (<code>abstractcore.capability_defaults</code>, <code>not_configured</code>, or a derived/covered marker).</p>
+<p>Either spelling writes the one store, so a running AbstractGateway picks it up too: the Gateway host
+fingerprints the config file and re-publishes the defaults to its live runtime on the next run (see
+<code>abstractgateway/docs/configuration.md</code>).</p>
+<h2 id="route-inspection">Route inspection</h2>
+<p>For debugging and replay-oriented integrations, responses carry a bounded normalized route
+summary in metadata:</p>
+<div class="code-block"><pre><code class="language-python">resp = llm.generate(request={&quot;text&quot;: &quot;hello&quot;}, output=&quot;text&quot;)
+route = resp.metadata.get(&quot;_resolved_generate_route&quot;)
+</code></pre></div>
+<p>That summary is meant for inspection and integration, not for ordinary application logic. It
+records the normalized request, normalized outputs, resolved text/input/output routes, and the
+effective reasoning default when one applied. When a configured effort was not applied,
+<code>reasoning</code> is <code>None</code> and <code>reasoning_source</code> says why (<code>not_applied:explicit_reasoning_effort</code>,
+<code>not_applied:route_provider_differs</code>, <code>not_applied:route_model_differs</code>).</p>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="centralized-config.html">Centralized Config</a></li>
+<li><a href="capabilities.html">Capabilities</a></li>
+<li><a href="server.html">Server</a></li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

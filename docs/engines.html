@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local engines: detect, install, open - AbstractCore</title>
+    <meta name="description" content="An engine is the software that runs local model weights: Ollama, LM Studio, MLX (mlx-lm), llama.cpp, vLLM, and the Hugging Face transformers stack.…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/engines.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Local engines: detect, install, open</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">An engine is the software that runs local model weights: Ollama, LM Studio, MLX (mlx-lm), llama.cpp, vLLM, and the Hugging Face transformers stack. AbstractCore detects which engines are on this machine, whether their servers answer, and can install a missing engine with the vendor&#x27;s documented command after showing you that command.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#status" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Status</a>
+<a href="#install-plans" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Install plans</a>
+<a href="#installing" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Installing</a>
+<a href="#safety-and-policy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Safety and policy</a></div>
+
+            <div class="doc-content">
+
+<p>Related pages: <a href="models.html">Local models</a> (browse, download, delete weights),
+<a href="prerequisites.html">Prerequisites</a> (provider setup and base URLs), <a href="server.html">Server</a>.</p>
+<h2 id="status">Status</h2>
+<div class="code-block"><pre><code class="language-bash">abstractcore engines status            # installed / version / supported on this host
+abstractcore engines status --probe    # also GET each local server once (running, models_count)
+abstractcore engines status --json     # engines_status_v1
+</code></pre></div>
+<p>HTTP: <code>GET /acore/engines?probe=true</code>, <code>GET /acore/engines/{id}</code>. Python:
+<code>abstractcore.config.engines.engine_inventory(probe=True)</code>.</p>
+<p>Each row carries <code>id</code>, <code>name</code>, <code>kind</code> (<code>local_server</code>, <code>local_engine</code>, <code>remote_only</code>),
+<code>supported_on_host</code> and <code>unsupported_reason</code>, <code>installed</code>, <code>version</code>, <code>install_location</code>,
+<code>running</code>, <code>base_url</code>, <code>reachable</code>, <code>models_count</code>, <code>install</code> (the plan below) and <code>docs_url</code>.
+<code>running</code>/<code>reachable</code> are <code>null</code> unless you probe.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Engine</th>
+<th>Detected by</th>
+<th>Version from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ollama</code></td>
+<td><code>ollama</code> on PATH, <code>/Applications/Ollama.app</code>, <code>%LOCALAPPDATA%\Programs\Ollama</code></td>
+<td><code>ollama --version</code> (app bundle version as fallback)</td>
+</tr>
+<tr>
+<td><code>lmstudio</code></td>
+<td>the <code>lms</code> CLI (PATH or <code>~/.lmstudio/bin/lms</code>), <code>/Applications/LM Studio.app</code>, <code>%LOCALAPPDATA%\Programs\LM Studio</code></td>
+<td>app bundle version, else <code>lms version</code> (<code>cli-&lt;commit&gt;</code>)</td>
+</tr>
+<tr>
+<td><code>mlx</code></td>
+<td><code>import mlx</code></td>
+<td>package metadata (<code>mlx</code>, <code>mlx-lm</code>)</td>
+</tr>
+<tr>
+<td><code>llamacpp</code></td>
+<td><code>import llama_cpp</code>, or <code>llama-server</code> on PATH</td>
+<td><code>llama-cpp-python</code> metadata</td>
+</tr>
+<tr>
+<td><code>vllm</code></td>
+<td><code>import vllm</code> or <code>vllm</code> on PATH</td>
+<td>package metadata</td>
+</tr>
+<tr>
+<td><code>huggingface</code></td>
+<td><code>import transformers</code></td>
+<td>package metadata</td>
+</tr>
+</tbody>
+</table></div>
+<p>Servers are read at <code>OLLAMA_BASE_URL</code> (default <code>http://localhost:11434</code>),
+<code>LMSTUDIO_BASE_URL</code> (default <code>http://localhost:1234/v1</code>) and <code>VLLM_BASE_URL</code>.</p>
+<h2 id="install-plans">Install plans</h2>
+<p><code>abstractcore engines install &lt;id&gt; --dry-run</code> shows the exact command for this host without
+running anything. Commands come from a fixed table; nothing in them comes from a request.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Engine</th>
+<th>macOS</th>
+<th>Linux</th>
+<th>Windows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ollama</td>
+<td><code>brew install ollama</code> when Homebrew is present, else the official script <code>curl -fsSL https://ollama.com/install.sh \| sh</code> (may ask for your password to link <code>/usr/local/bin/ollama</code>)</td>
+<td>official script; <strong>needs sudo</strong> (installs to <code>/usr/local</code>, creates a systemd <code>ollama.service</code>)</td>
+<td><code>winget install --id Ollama.Ollama</code> (per-user), else <code>irm https://ollama.com/install.ps1 \| iex</code></td>
+</tr>
+<tr>
+<td>LM Studio</td>
+<td>desktop app from https://lmstudio.ai/download (or <code>brew install --cask lm-studio</code>); the command installs the headless daemon and <code>lms</code> CLI: <code>curl -fsSL https://lmstudio.ai/install.sh \| bash</code>. Apple silicon only</td>
+<td>same headless install (may need <code>libatomic1</code>)</td>
+<td>desktop app (or <code>winget install --id ElementLabs.LMStudio</code>); headless: <code>irm https://lmstudio.ai/install.ps1 \| iex</code></td>
+</tr>
+<tr>
+<td>MLX</td>
+<td>Apple silicon: <code>python -m pip install "abstractcore[apple]"</code> into this Python environment</td>
+<td>not supported</td>
+<td>not supported</td>
+</tr>
+<tr>
+<td>llama.cpp</td>
+<td>Apple silicon: <code>python -m pip install "abstractcore[apple]"</code> (Metal build); Intel Macs: not available with the install settings. Alternative everywhere: <code>brew install llama.cpp</code> (the llama.cpp server binaries)</td>
+<td><code>python -m pip install "abstractcore[gpu]"</code></td>
+<td>x86_64: the AbstractFramework installer adds llama.cpp's prebuilt GPU build; with plain pip, llama.cpp is not part of abstractcore[gpu] on Windows (the row is <code>available: false</code>); alternative <code>winget install --id ggml.llamacpp</code> (the llama.cpp server binaries)</td>
+</tr>
+<tr>
+<td>vLLM</td>
+<td>not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind <code>remote_only</code>)</td>
+<td>NVIDIA GPU only: <code>python -m pip install "abstractcore[gpu]"</code></td>
+<td>not supported (same reason)</td>
+</tr>
+<tr>
+<td>Hugging Face</td>
+<td>Apple silicon: <code>python -m pip install "abstractcore[apple]"</code>; Intel Macs: not available with the install settings</td>
+<td><code>python -m pip install "abstractcore[gpu]"</code></td>
+<td>x86_64: <code>python -m pip install "abstractcore[gpu]"</code>; ARM: not available with the install settings</td>
+</tr>
+</tbody>
+</table></div>
+<p>Every Python engine arrives with one of AbstractCore's install settings, never as a bare package.
+An Intel Mac or Windows on ARM has no local-engine setting (<code>abstractcore[apple]</code> does not resolve
+on Intel macOS, and <code>abstractcore[gpu]</code> has no wheels for its engines on Windows ARM), so those rows
+are <code>available: false</code> and their <code>notes</code> say the engine is not available on this machine with the
+install settings; use Ollama, LM Studio or a remote provider there. Windows x86_64 has the <code>gpu</code>
+setting (vLLM and llama.cpp are marked out of it there; see
+<a href="installation.html#gpu-on-windows">Installation</a>).</p>
+<p>Python-package installs target the interpreter running AbstractCore. When that environment has
+no <code>pip</code> (a <code>uv</code> virtual environment), the plan uses
+<code>uv pip install --python &lt;this interpreter&gt; ...</code> instead. The plan block also lists
+<code>alternatives</code>, <code>requires_admin</code>, <code>url</code> and human <code>notes</code>.</p>
+<p>Ollama and LM Studio publish builds for x86_64 and arm64 only (LM Studio on macOS: Apple silicon
+only). On any other architecture (a 32-bit ARM board, RISC-V) or operating system (FreeBSD) the
+plan is <code>available: false</code> and its <code>notes</code> give the reason.</p>
+<h2 id="installing">Installing</h2>
+<div class="code-block"><pre><code class="language-bash">abstractcore engines install ollama --dry-run     # show the command
+abstractcore engines install ollama               # asks for confirmation, then streams the output
+abstractcore engines install ollama --yes --json  # NDJSON host_job_v1 lines, final job last
+abstractcore engines open lmstudio                # print and open the download page
+</code></pre></div>
+<p><code>engines open</code> prints the link and launches nothing when there is no display: in an SSH
+session, or on Linux/BSD without <code>DISPLAY</code> or <code>WAYLAND_DISPLAY</code> (<code>--json</code> then carries
+<code>"opened": false</code> and the reason in <code>not_opened</code>).</p>
+<p>HTTP: <code>POST /acore/engines/{id}/install</code> with <code>{"dry_run": false, "force": false}</code> returns a
+job; follow it with <code>GET /acore/jobs/{id}</code>.</p>
+<ul>
+<li>An engine that is already installed finishes immediately as <code>already_installed</code>; pass
+  <code>--force</code> to run the installer anyway.</li>
+<li>Only one engine install runs at a time; a second request is refused (exit <code>2</code>, HTTP <code>409</code>).</li>
+<li>The installer runs with no terminal input: a step that needs a password (for example <code>sudo</code>
+  in the Linux Ollama script) fails with the tool's own message. Run the shown command in a
+  terminal in that case.</li>
+<li>Cancel (<code>abstractcore models cancel &lt;job_id&gt;</code>, <code>POST /acore/jobs/{id}/cancel</code>, or SIGTERM /
+  Ctrl-C on the CLI) stops the installer and every process it started.</li>
+<li>After a successful install the result reports <code>installed_after</code> and <code>version_after</code>. A new
+  shell may be needed before a freshly installed command is on your PATH.</li>
+</ul>
+<h2 id="safety-and-policy">Safety and policy</h2>
+<ul>
+<li>Installs run on the machine that runs AbstractCore. For <code>abstractcore serve</code>, that is the
+  server host, not the browser's machine.</li>
+<li>The CLI allows installs by default. The server allows them by default only when bound to a
+  loopback address (<code>abstractcore serve</code> binds <code>127.0.0.1</code> by default); set
+  <code>ABSTRACTCORE_ALLOW_ENGINE_INSTALL=1</code> or <code>=0</code> to override either default. <code>GET /acore/engines</code>
+  reports the effective <code>install_allowed</code>. A dry run is always allowed.</li>
+<li>Every <code>POST</code> under <code>/acore/models</code>, <code>/acore/engines</code> and <code>/acore/jobs</code> needs a server
+  principal: the server's bearer token (on a loopback <code>abstractcore serve</code>, the one it
+  generated; <code>abstractcore serve --print-token</code> prints it), or
+  <code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1</code> for local development. An upstream provider key
+  alone does not authorize host actions.</li>
+<li>Refusals are structured: <code>{"ok": false, "status": "refused", "reason": ..., "message": ...}</code>
+  with HTTP <code>403</code> (not allowed), <code>404</code> (unknown engine) or <code>409</code> (unsupported, busy).</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

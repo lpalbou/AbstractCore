@@ -66,18 +66,18 @@ llm.generate("Analyze these files", media=["report.pdf", "chart.png"])
 ```python
 # 1. Detect file types automatically
 MediaType.IMAGE     -> ImageProcessor (PIL-based)
-MediaType.DOCUMENT  -> PDFProcessor (PyMuPDF4LLM) or OfficeProcessor (Unstructured)
+MediaType.DOCUMENT  -> PDFProcessor (pypdf) or OfficeProcessor (Unstructured)
 MediaType.TEXT      -> TextProcessor (pandas for CSV/TSV)
 
 # 2. Process each file with specialized processor
-pdf_content = PDFProcessor.process("report.pdf")      # → Markdown text
+pdf_content = PDFProcessor.process("report.pdf")      # → text/Markdown from permissive PDF extraction
 image_content = ImageProcessor.process("chart.png")   # → Base64 + metadata
 ```
 
 **Graceful Fallback System:**
 ```python
 try:
-    # Advanced processing (PyMuPDF4LLM, Unstructured)
+    # Specialized processing (pypdf, Unstructured)
     content = advanced_processor.process(file)
 except Exception:
     # Always falls back to basic processing
@@ -154,8 +154,8 @@ graph TD
 
 ### 5. Error Handling & Resilience
 
-**Multi-Level Fallback Strategy:**
-1. **Advanced Processing**: Try specialized libraries (PyMuPDF4LLM, Unstructured)
+**Multi-Level Processing Strategy:**
+1. **Specialized Processing**: Use configured specialized libraries (pypdf, Unstructured)
 2. **Basic Processing**: Fall back to simple text extraction
 3. **Metadata Only**: If all else fails, provide file metadata
 4. **Graceful Degradation**: Best-effort results with clear errors (no silent semantic changes)
@@ -163,7 +163,7 @@ graph TD
 **Example of Robust Error Handling:**
 ```python
 try:
-    # Try advanced PDF processing with PyMuPDF4LLM
+    # Try default PDF processing with pypdf
     content = pdf_processor.extract_with_formatting(file)
 except PDFProcessingError:
     try:
@@ -185,7 +185,7 @@ except PDFProcessingError:
 
 ### Documents
 - **Text Files**: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis
-- **PDF**: Text extraction with PyMuPDF4LLM (when installed), with best-effort structure preservation
+- **PDF**: Text and metadata extraction with pypdf by default. Optional PyMuPDF4LLM layout extraction is an explicit opt-in after license review: `pip install pymupdf4llm pymupdf-layout` (see [Installation](installation.md#optional-pdf-extraction-with-pymupdf)).
 - **Office**: DOCX, XLSX, PPTX via Unstructured (when installed), with best-effort extraction
   - **Word**: section/paragraph extraction
   - **Excel**: sheet-by-sheet extraction
@@ -203,7 +203,7 @@ Transparency:
 
 Requirements:
 - **Native audio** requires an audio-capable model.
-- **STT fallback** requires installing an STT capability plugin (typically `pip install abstractvoice`) and using `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
+- **STT fallback** uses the AbstractVoice capability plugin (part of the light install) and `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
 
 ### Video (policy-driven; native or frames fallback)
 - **Formats**: common `video/*` types as attachments via `media=[...]`
@@ -212,7 +212,7 @@ Requirements:
 
 Requirements:
 - Frame sampling fallback requires **`ffmpeg`/`ffprobe`** available on `PATH`.
-- For the sampled-frame path, you also need **image/vision handling**: either a vision-capable main model or configured vision fallback, and (for local frame attachments) `pip install "abstractcore[media]"` so Pillow-based image processing is available.
+- For the sampled-frame path, you also need **image/vision handling**: either a vision-capable main model or configured vision fallback, and Pillow-based image processing (part of the light install) for local frame attachments.
 
 ### Processing Features
 - **Intelligent Detection**: Automatic file type recognition and processor selection
@@ -255,6 +255,7 @@ For large files that exceed model context limits, use `BasicSummarizer` or imple
 | **Anthropic** | Claude 3.5 Sonnet, Claude 4 series | Supported: Up to 20 images | Supported: All formats |
 | **Ollama** | qwen2.5vl:7b, gemma3:4b, llama3.2-vision:11b | Supported: Single image | Supported: All formats |
 | **LMStudio** | qwen2.5-vl-7b, gemma-3n-e4b, magistral-small-2509 | Supported: Multiple images | Supported: All formats |
+| **MLX** | Vision-capable MLX checkpoints (`qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4`) | Supported: Single image (mlx-vlm ships with the MLX provider) | Supported: All formats |
 
 ### Text-Only Providers
 
@@ -266,6 +267,42 @@ All providers support document processing even without vision capabilities:
 | **MLX** | Supported: All formats | Supported: Embedded in prompt |
 | **Any Provider** | Supported: Automatic fallback | Supported: Text extraction |
 
+MLX appears in both tables: it reads images natively for vision-capable checkpoints, and embeds
+documents as text on every checkpoint. Image input needs no separate extra — `mlx-vlm` ships with
+`mlx-lm` in every profile that installs the MLX provider. See
+[Vision Capabilities](vision-capabilities.md#1b-native-image-input-on-the-mlx-provider-apple-silicon).
+
+### Knowing whether media reached the model
+
+Providers that participate in the delivery contract report what actually reached the model:
+
+```python
+resp = llm.generate("What is in this image?", media=["photo.png"])
+resp.metadata["media_delivered"]
+# [{"index": 0, "kind": "image", "sha256": "3da0b68c…",
+#   "tokens": 1024, "transport": "mlx_vision_addon"}]
+```
+
+- `media_delivered` is written only after the media entered the model's forward pass, and
+  `tokens` is measured rather than intended.
+- `media_dropped` names why a part was not carried, using stable reason literals such as
+  `vision_family_unsupported`, `vision_multi_image_unsupported` or `media_processing_unavailable`.
+- Streamed responses carry the same record; read it from the final chunk as you would usage.
+
+For a single answer, use the shared helper:
+
+```python
+from abstractcore.media.delivery import media_delivery_verdict
+
+verdict = media_delivery_verdict(resp, provider="mlx")
+verdict.state    # "delivered" | "not_delivered" | "unverified"
+verdict.reasons  # reason literals when not delivered
+```
+
+`unverified` means that provider does not report delivery yet, so treat it as "no evidence either
+way" rather than a failure. This is what the vision fallback uses to decide whether a caption can
+be attributed to an actual observation.
+
 ### ⚠️ Model Compatibility Notes (Updated: 2025-10-17)
 
 Some newer vision models may not be immediately available due to rapid development:
@@ -276,8 +313,8 @@ Some newer vision models may not be immediately available due to rapid developme
 
 **HuggingFace Limitations:**
 - `Qwen3-VL` models - Require newer transformers architecture
-- Install latest transformers: `pip install --upgrade transformers`
-- Or use bleeding edge: `pip install git+https://github.com/huggingface/transformers.git`
+- Upgrade the local-engine setting: `pip install -U "abstractcore[apple]"` (Apple silicon) or
+  `pip install -U "abstractcore[gpu]"` (Linux GPU machines)
 
 **Recommended Stable Models (2025-10-17):**
 - **LMStudio**: `qwen/qwen2.5-vl-7b`, `google/gemma-3n-e4b`, `mistralai/magistral-small-2509`
@@ -338,7 +375,7 @@ response = llm.generate(
 
 ### CLI Usage
 
-These examples work in AbstractCore CLI when `abstractcore[media]` is installed and your selected provider/model supports the requested media (or you configured fallbacks):
+These examples work in AbstractCore CLI with any install setting when your selected provider/model supports the requested media (or you configured fallbacks):
 
 ```bash
 # PDF Analysis - Working
@@ -387,7 +424,7 @@ anthropic_response = anthropic_llm.generate(prompt, media=media_files)
 
 ```python
 # Real-time streaming responses with media
-llm = create_llm("openai", model="gpt-4o")  # requires: pip install "abstractcore[openai]"
+llm = create_llm("openai", model="gpt-4o")  # light install
 
 for chunk in llm.generate(
     "Describe this image in detail",
@@ -399,7 +436,7 @@ for chunk in llm.generate(
 
 ## Advanced Features
 
-### Maximum Resolution Optimization (NEW)
+### Maximum Resolution Optimization
 
 AbstractCore automatically optimizes image resolution for each model's maximum capability, ensuring optimal vision results:
 
@@ -668,32 +705,22 @@ response = llama_llm.generate(
 
 ## Installation
 
-### Basic Installation
+Media handling (images, text, PDF, Office documents) is part of the light install:
 
 ```bash
-# Core media handling (images, text, basic documents)
-pip install "abstractcore[media]"
+pip install abstractcore
 ```
 
-### Full Installation
-
-```bash
-# Media features (PDF + Office docs) are covered by `abstractcore[media]`.
-# Compose only what your app needs:
-pip install "abstractcore[remote,media,tools]"
-
-# Or choose a turnkey local-runtime install:
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
-```
-
-Advanced: If you prefer to install only the pieces you need (instead of `abstractcore[media]`),
-these are the main libraries AbstractCore uses:
+`abstractcore[apple]` and `abstractcore[gpu]` include it too. The main libraries AbstractCore uses:
 
 - `Pillow` (images)
-- `pymupdf4llm` + `pymupdf-layout` (PDF extraction)
+- `pypdf` (permissive PDF text/metadata extraction)
 - `unstructured[docx,pptx,xlsx,odt,rtf]` (Office docs)
 - `pandas` (tabular helpers)
+
+Optional commercial-license PDF backend:
+
+- `pymupdf4llm` + `pymupdf-layout`, installed directly: `pip install pymupdf4llm pymupdf-layout`
 
 ## Troubleshooting
 
@@ -706,7 +733,7 @@ try:
     response = llm.generate("Test", media=["test.jpg"])
 except ImportError as e:
     print(f"Missing dependency: {e}")
-    print('Install with: pip install "abstractcore[media]"')
+    print('Repair the light install with: pip install -U abstractcore')
 ```
 
 **Vision model not detecting images:**
@@ -773,7 +800,7 @@ from abstractcore.media.types import MediaType, ContentFormat
 from abstractcore.media.processors import (
     ImageProcessor,    # Images with PIL
     TextProcessor,     # Text, CSV, JSON with pandas
-    PDFProcessor,      # PDFs with PyMuPDF4LLM
+    PDFProcessor,      # PDFs with pypdf by default
     OfficeProcessor    # DOCX, XLSX, PPT with unstructured
 )
 ```

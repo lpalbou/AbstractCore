@@ -1,18 +1,54 @@
 #!/usr/bin/env python3
+"""Sync AbstractCore's user documentation into the abstractcore.ai (gh-pages) site.
+
+The site mirrors the user documentation only: docs/*.md, docs/apps/*.md and docs/assets/,
+the root project files, llms.txt / llms-full.txt and the agent skill. Internal folders
+(docs/backlog, docs/adr, docs/reports, docs/research, docs/archive, docs/known_bugs) are not
+mirrored, matching the repository's context7.json. A rendered page that links to any file the
+site does not mirror points at that file on GitHub at the released tag; a link whose target does
+not exist at that tag stops the sync.
+
+    python3 scripts/sync_docs.py --source <export of the tag> --repo <abstractcore checkout> --ref v2.35.0 --copy-md
+"""
 from __future__ import annotations
 
 import argparse
 import html
+import posixpath
 import re
 import shutil
+import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import markdown
+import markdown.extensions.toc as md_toc
 from markdown.extensions.toc import TocExtension
 
+
+def github_slugify(value: str, separator: str = "-") -> str:
+    # Heading ids as GitHub makes them, so anchors written for GitHub (`page.md#some--heading`) resolve here too.
+    value = re.sub(r"[^\w\- ]", "", value.strip().lower())
+    return value.replace(" ", separator)
+
+
+def github_unique(id: str, ids: "set[str]") -> str:
+    # GitHub numbers repeated headings `name-1`, `name-2` (Python-Markdown would use `name_1`).
+    base, n = id, 0
+    while id in ids or not id:
+        n += 1
+        id = f"{base}-{n}"
+    ids.add(id)
+    return id
+
+
+md_toc.unique = github_unique
+
+
+GITHUB = "https://github.com/lpalbou/AbstractCore"
 
 MENU_ITEMS_JS = (
     "[{'text': 'Features', 'href': '/docs/capabilities.html'}, "
@@ -23,6 +59,29 @@ MENU_ITEMS_JS = (
     "{'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]"
 )
 
+ROOT_FILES = [
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "ACKNOWLEDGEMENTS.md",
+    "LICENSE",
+    "pyproject.toml",
+    "llms.txt",
+    "llms-full.txt",
+]
+# Root files that get a rendered page of their own.
+ROOT_HTML = {
+    "CHANGELOG.md": "docs/changelog.html",
+    "SECURITY.md": "docs/security.html",
+}
+# Files the site serves as they are (linked from llms.txt).
+EXTRA_COPIES = [
+    "skills/abstractcore/SKILL.md",
+    "skills/abstractcore/references/integrations.md",
+    "skills/abstractcore/references/operations.md",
+    "examples/README.md",
+]
 
 DOC_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -31,14 +90,15 @@ DOC_TEMPLATE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{page_title} - AbstractCore</title>
     <meta name="description" content="{meta_description}">
-    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
-    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link rel="canonical" href="https://abstractcore.ai/{page_path}">
+    <link rel="icon" type="image/x-icon" href="{root}favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="{root}apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="../assets/css/main.css">
+    <link rel="stylesheet" href="{root}assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
 
     <!-- Navbar Component -->
-    <script src="../assets/js/navbar-component.js"></script>
+    <script src="{root}assets/js/navbar-component.js"></script>
 </head>
 <body>
     <!-- Navigation -->
@@ -67,6 +127,13 @@ DOC_TEMPLATE = """<!DOCTYPE html>
 
 {doc_body}
             </div>
+
+            <footer class="doc-footer">
+                <a href="{root}index.html">AbstractCore</a> {version} &middot;
+                <a href="{root}docs/README.html">Documentation index</a> &middot;
+                <a href="{root}llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 
@@ -74,7 +141,7 @@ DOC_TEMPLATE = """<!DOCTYPE html>
     {mermaid_scripts}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
-    <script src="../assets/js/main.js"></script>
+    <script src="{root}assets/js/main.js"></script>
 </body>
 </html>
 """
@@ -84,7 +151,7 @@ TOC_BLOCK_TEMPLATE = """<div style="background: var(--background-secondary); pad
 TOC_LINK_TEMPLATE = """<a href="#{hid}" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">{label}</a>"""
 
 
-HREF_RE = re.compile(r'href="([^"]+)"')
+HREF_RE = re.compile(r'(href|src)="([^"]+)"')
 MERMAID_FENCE_RE = re.compile(r"```mermaid\s*\r?\n(.*?)\r?\n```", re.DOTALL)
 
 
@@ -95,6 +162,56 @@ class RenderedDoc:
     body_html: str
     toc_links_html: str
     has_mermaid: bool
+
+
+class LinkResolver:
+    """Maps a link found in a source page to its address on the site."""
+
+    def __init__(self, rendered: set[str], repo: Path | None, ref: str) -> None:
+        self.rendered = rendered  # repo-relative .md paths that get an .html page
+        self.repo = repo
+        self.ref = ref
+        self.missing: list[str] = []
+        self._kinds: dict[str, str | None] = {}
+
+    def _kind_at_ref(self, path: str) -> str | None:
+        if path not in self._kinds:
+            kind = None
+            if self.repo is not None:
+                proc = subprocess.run(
+                    ["git", "-C", str(self.repo), "cat-file", "-t", f"{self.ref}:{path}"],
+                    capture_output=True,
+                    text=True,
+                )
+                if proc.returncode == 0:
+                    kind = proc.stdout.strip()
+            self._kinds[path] = kind
+        return self._kinds[path]
+
+    def resolve(self, href: str, src_path: str, out_dir: str) -> str:
+        if href.startswith(("#", "mailto:", "tel:", "data:")):
+            return href
+        parts = urlsplit(href)
+        if parts.scheme or parts.netloc or not parts.path:
+            return href
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(src_path), parts.path))
+        if target.startswith("../"):
+            return href
+        if target in self.rendered:
+            new = target[: -len(".md")] + ".html"
+        elif target in ROOT_HTML:
+            new = ROOT_HTML[target]
+        elif target.startswith("docs/assets/"):
+            new = target
+        else:
+            kind = self._kind_at_ref(target)
+            if kind is None:
+                self.missing.append(f"{src_path}: {href} -> {target} (not at {self.ref})")
+                return href
+            word = "tree" if kind == "tree" else "blob"
+            return urlunsplit(("https", "github.com", f"/lpalbou/AbstractCore/{word}/{self.ref}/{target}", "", parts.fragment))
+        rel = posixpath.relpath(new, out_dir)
+        return urlunsplit(("", "", rel, parts.query, parts.fragment))
 
 
 def strip_tags(value: str) -> str:
@@ -123,16 +240,16 @@ def extract_title_and_split(markdown_text: str, fallback_title: str) -> tuple[st
     if not title:
         title = fallback_title
 
-    # Remove leading blank lines after title.
     while lines and not lines[0].strip():
         lines.pop(0)
 
-    # First paragraph becomes the doc header description; it is removed from body.
+    # First paragraph becomes the doc header description; it is removed from body,
+    # unless it is a block (fence, table, list, heading) rather than prose.
     description_lines: list[str] = []
-    while lines and lines[0].strip():
-        description_lines.append(lines.pop(0))
+    if lines and not lines[0].lstrip().startswith(("```", "|", "#", "- ", "* ", ">", "<")):
+        while lines and lines[0].strip():
+            description_lines.append(lines.pop(0))
 
-    # Remove blank lines after description.
     while lines and not lines[0].strip():
         lines.pop(0)
 
@@ -141,28 +258,11 @@ def extract_title_and_split(markdown_text: str, fallback_title: str) -> tuple[st
     return title, description_md, body_md
 
 
-def rewrite_href(href: str) -> str:
-    if href.startswith(("#", "mailto:", "tel:")):
-        return href
-    if href.startswith(("http://", "https://")):
-        return href
-
-    parts = urlsplit(href)
-    path = parts.path
-    if path.startswith("../"):
-        return href
-
-    # Only rewrite same-folder markdown links (docs/*.md -> docs/*.html).
-    if path.endswith(".md") and ("/" not in path or path.startswith("./")):
-        path = path[: -len(".md")] + ".html"
-        return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
-    return href
-
-
-def rewrite_links(html_text: str) -> str:
+def rewrite_links(html_text: str, resolver: LinkResolver, src_path: str, out_dir: str) -> str:
     def _repl(match: re.Match[str]) -> str:
-        href = match.group(1)
-        return f'href="{html.escape(rewrite_href(html.unescape(href)))}"'
+        attr, href = match.group(1), match.group(2)
+        new = resolver.resolve(html.unescape(href), src_path, out_dir)
+        return f'{attr}="{html.escape(new)}"'
 
     return HREF_RE.sub(_repl, html_text)
 
@@ -180,10 +280,15 @@ def replace_mermaid_fences(markdown_text: str) -> tuple[str, bool]:
 
 
 def wrap_code_blocks(html_text: str) -> str:
-    # Prism expects language-* on <code>; add the wrapper used by the site for copy button styling.
     html_text = html_text.replace("<pre><code", '<div class="code-block"><pre><code')
     html_text = html_text.replace("</code></pre>", "</code></pre></div>")
     return html_text
+
+
+def wrap_tables(html_text: str) -> str:
+    # Wide tables scroll inside their own box instead of widening the page on a phone.
+    html_text = html_text.replace("<table>", '<div class="table-scroll"><table>')
+    return html_text.replace("</table>", "</table></div>")
 
 
 def toc_links_from_tokens(toc_tokens: list[dict]) -> str:
@@ -204,7 +309,7 @@ def toc_links_from_tokens(toc_tokens: list[dict]) -> str:
     return "\n".join(links)
 
 
-def render_markdown_doc(markdown_text: str, fallback_title: str) -> RenderedDoc:
+def render_markdown_doc(markdown_text: str, fallback_title: str, resolver: LinkResolver, src_path: str, out_dir: str) -> RenderedDoc:
     title, description_md, body_md = extract_title_and_split(markdown_text, fallback_title=fallback_title)
 
     description_text = ""
@@ -214,10 +319,11 @@ def render_markdown_doc(markdown_text: str, fallback_title: str) -> RenderedDoc:
 
     body_md, has_mermaid = replace_mermaid_fences(body_md)
 
-    md = markdown.Markdown(extensions=["fenced_code", "tables", TocExtension(permalink=False)])
+    md = markdown.Markdown(extensions=["fenced_code", "tables", TocExtension(permalink=False, slugify=github_slugify)])
     body_html = md.convert(body_md)
-    body_html = rewrite_links(body_html)
+    body_html = rewrite_links(body_html, resolver, src_path, out_dir)
     body_html = wrap_code_blocks(body_html)
+    body_html = wrap_tables(body_html)
 
     toc_links_html = toc_links_from_tokens(getattr(md, "toc_tokens", []))
     return RenderedDoc(
@@ -229,7 +335,9 @@ def render_markdown_doc(markdown_text: str, fallback_title: str) -> RenderedDoc:
     )
 
 
-def render_html_page(doc: RenderedDoc) -> str:
+def render_html_page(doc: RenderedDoc, out_path: str, version: str) -> str:
+    out_dir = posixpath.dirname(out_path)
+    root = posixpath.relpath(".", out_dir) + "/"
     toc_block = ""
     if doc.toc_links_html:
         toc_block = TOC_BLOCK_TEMPLATE.format(links=doc.toc_links_html)
@@ -237,111 +345,105 @@ def render_html_page(doc: RenderedDoc) -> str:
     mermaid_scripts = ""
     if doc.has_mermaid:
         mermaid_scripts = (
-            '<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>\n'
+            '<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>\n'
             '<script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>'
         )
 
-    doc_description = html.escape(doc.description_text)
-    meta_description = html.escape(truncate_meta(doc.description_text))
-
     html_text = DOC_TEMPLATE.format(
         page_title=html.escape(doc.title),
-        meta_description=meta_description,
+        meta_description=html.escape(truncate_meta(doc.description_text)),
+        page_path=out_path,
+        root=root,
         menu_items=MENU_ITEMS_JS,
         doc_title=html.escape(doc.title),
-        doc_description=doc_description,
+        doc_description=html.escape(doc.description_text),
         toc_block=toc_block,
         doc_body=doc.body_html.strip() + "\n",
         mermaid_scripts=mermaid_scripts,
+        version=html.escape(version),
     )
     return "\n".join(line.rstrip() for line in html_text.splitlines()) + "\n"
 
 
 def copy_markdown_assets(source_repo: Path, site_root: Path) -> None:
-    # Copy a small set of repo-root files referenced by llms.txt.
-    root_files = [
-        "README.md",
-        "CHANGELOG.md",
-        "CONTRIBUTING.md",
-        "SECURITY.md",
-        "ACKNOWLEDGEMENTS.md",
-        "LICENSE",
-        "pyproject.toml",
-    ]
-    for rel in root_files:
+    for rel in ROOT_FILES + EXTRA_COPIES:
         src = source_repo / rel
+        if not src.exists():
+            raise SystemExit(f"Missing in source: {rel}")
         dst = site_root / rel
-        if src.exists():
-            shutil.copy2(src, dst)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
 
-    # Copy docs markdown (agents prefer markdown; llms.txt references these paths).
     src_docs = source_repo / "docs"
     dst_docs = site_root / "docs"
-    dst_docs.mkdir(parents=True, exist_ok=True)
-
-    # 1) Markdown files (including nested docs/apps, docs/reports, docs/archive, …).
-    for md_file in sorted(src_docs.rglob("*.md")):
-        rel = md_file.relative_to(src_docs)
-        out = dst_docs / rel
+    for md_file in sorted(list(src_docs.glob("*.md")) + list(src_docs.glob("apps/*.md"))):
+        out = dst_docs / md_file.relative_to(src_docs)
         out.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(md_file, out)
 
-    # 2) Doc assets referenced by markdown (images/plots/CSVs under docs/assets).
     assets_dir = src_docs / "assets"
     if assets_dir.exists():
         for asset in sorted(assets_dir.rglob("*")):
             if asset.is_dir():
                 continue
-            rel = asset.relative_to(src_docs)
-            out = dst_docs / rel
+            out = dst_docs / asset.relative_to(src_docs)
             out.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(asset, out)
 
 
+def read_version(source_repo: Path) -> str:
+    text = (source_repo / "llms.txt").read_text(encoding="utf-8")
+    match = re.search(r"^Package version: (\S+)", text, re.M)
+    return match.group(1) if match else ""
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Sync AbstractCore markdown docs into AbstractCore gh-pages HTML.")
-    parser.add_argument("--source", type=Path, default=Path("../abstractcore"), help="Path to the abstractcore repo")
-    parser.add_argument("--site", type=Path, default=Path("."), help="Path to the gh-pages repo root")
-    parser.add_argument("--copy-md", action="store_true", help="Copy markdown docs and key root files into the site")
+    parser = argparse.ArgumentParser(description="Sync AbstractCore user docs into the abstractcore.ai gh-pages site.")
+    parser.add_argument("--source", type=Path, default=Path("../abstractcore"), help="Path to the abstractcore sources (a checkout or an export of the release tag)")
+    parser.add_argument("--site", type=Path, default=Path("."), help="Path to the gh-pages checkout")
+    parser.add_argument("--repo", type=Path, default=None, help="An abstractcore git checkout holding --ref, used to check links to files the site does not mirror")
+    parser.add_argument("--ref", default="main", help="Git ref those links point at on GitHub (the release tag)")
+    parser.add_argument("--copy-md", action="store_true", help="Copy the markdown docs and root files into the site")
     args = parser.parse_args()
 
     source_repo = args.source.resolve()
     site_root = args.site.resolve()
-
     src_docs = source_repo / "docs"
-    out_docs = site_root / "docs"
     if not src_docs.exists():
         raise SystemExit(f"Source docs folder not found: {src_docs}")
-    out_docs.mkdir(parents=True, exist_ok=True)
 
     if args.copy_md:
         copy_markdown_assets(source_repo=source_repo, site_root=site_root)
 
-    generated = 0
-    for md_path in sorted(src_docs.glob("*.md")):
-        fallback_title = md_path.stem.replace("-", " ").replace("_", " ").title()
-        rendered = render_markdown_doc(md_path.read_text(encoding="utf-8"), fallback_title=fallback_title)
-        html_out = render_html_page(rendered)
-        out_path = out_docs / f"{md_path.stem}.html"
-        out_path.write_text(html_out, encoding="utf-8")
-        generated += 1
+    version = read_version(source_repo)
+    pages = sorted(list(src_docs.glob("*.md")) + list(src_docs.glob("apps/*.md")))
+    rendered = {p.relative_to(source_repo).as_posix() for p in pages}
+    resolver = LinkResolver(rendered=rendered, repo=args.repo.resolve() if args.repo else None, ref=args.ref)
 
-    root_docs = {
-        "CHANGELOG.md": "changelog.html",
-        "SECURITY.md": "security.html",
-    }
-    for source_name, output_name in root_docs.items():
-        md_path = source_repo / source_name
-        if not md_path.exists():
-            continue
-        fallback_title = md_path.stem.replace("-", " ").replace("_", " ").title()
-        rendered = render_markdown_doc(md_path.read_text(encoding="utf-8"), fallback_title=fallback_title)
-        html_out = render_html_page(rendered)
-        (out_docs / output_name).write_text(html_out, encoding="utf-8")
-        generated += 1
+    jobs = [(p.relative_to(source_repo).as_posix(), p.relative_to(source_repo).with_suffix(".html").as_posix()) for p in pages]
+    jobs += [(src, out) for src, out in ROOT_HTML.items() if (source_repo / src).exists()]
 
-    print(f"Generated {generated} docs pages into {out_docs}")
+    for src_rel, out_rel in jobs:
+        md_path = source_repo / src_rel
+        fallback_title = md_path.stem.replace("-", " ").replace("_", " ").title()
+        rendered_doc = render_markdown_doc(
+            md_path.read_text(encoding="utf-8"),
+            fallback_title=fallback_title,
+            resolver=resolver,
+            src_path=src_rel,
+            out_dir=posixpath.dirname(out_rel),
+        )
+        out_path = site_root / out_rel
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(render_html_page(rendered_doc, out_rel, version), encoding="utf-8")
+
+    print(f"Generated {len(jobs)} pages into {site_root / 'docs'} (AbstractCore {version}, links at {args.ref})")
     print(f"Date: {date.today().isoformat()}")
+    if resolver.missing:
+        print("Links whose target does not exist:", file=sys.stderr)
+        for line in resolver.missing:
+            print(f"  {line}", file=sys.stderr)
+        return 1
     return 0
 
 

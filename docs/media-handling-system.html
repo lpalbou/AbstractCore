@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Media Handling System - AbstractCore</title>
     <meta name="description" content="AbstractCore provides a production-ready unified media handling system that enables seamless file attachment and processing across all LLM providers and…">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/media-handling-system.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -102,16 +104,16 @@ llm.generate(&quot;Analyze these files&quot;, media=[&quot;report.pdf&quot;, &qu
 <p><strong>AutoMediaHandler Coordination:</strong></p>
 <div class="code-block"><pre><code class="language-python"># 1. Detect file types automatically
 MediaType.IMAGE     -&gt; ImageProcessor (PIL-based)
-MediaType.DOCUMENT  -&gt; PDFProcessor (PyMuPDF4LLM) or OfficeProcessor (Unstructured)
+MediaType.DOCUMENT  -&gt; PDFProcessor (pypdf) or OfficeProcessor (Unstructured)
 MediaType.TEXT      -&gt; TextProcessor (pandas for CSV/TSV)
 
 # 2. Process each file with specialized processor
-pdf_content = PDFProcessor.process(&quot;report.pdf&quot;)      # → Markdown text
+pdf_content = PDFProcessor.process(&quot;report.pdf&quot;)      # → text/Markdown from permissive PDF extraction
 image_content = ImageProcessor.process(&quot;chart.png&quot;)   # → Base64 + metadata
 </code></pre></div>
 <p><strong>Graceful Fallback System:</strong></p>
 <div class="code-block"><pre><code class="language-python">try:
-    # Advanced processing (PyMuPDF4LLM, Unstructured)
+    # Specialized processing (pypdf, Unstructured)
     content = advanced_processor.process(file)
 except Exception:
     # Always falls back to basic processing
@@ -174,15 +176,15 @@ Executive Summary...
     O --&gt; P[LLM API Call]
     P --&gt; Q[Response to User]</div>
 
-<h3 id="5-error-handling-resilience">5. Error Handling &amp; Resilience</h3>
-<p><strong>Multi-Level Fallback Strategy:</strong>
-1. <strong>Advanced Processing</strong>: Try specialized libraries (PyMuPDF4LLM, Unstructured)
+<h3 id="5-error-handling--resilience">5. Error Handling &amp; Resilience</h3>
+<p><strong>Multi-Level Processing Strategy:</strong>
+1. <strong>Specialized Processing</strong>: Use configured specialized libraries (pypdf, Unstructured)
 2. <strong>Basic Processing</strong>: Fall back to simple text extraction
 3. <strong>Metadata Only</strong>: If all else fails, provide file metadata
 4. <strong>Graceful Degradation</strong>: Best-effort results with clear errors (no silent semantic changes)</p>
 <p><strong>Example of Robust Error Handling:</strong></p>
 <div class="code-block"><pre><code class="language-python">try:
-    # Try advanced PDF processing with PyMuPDF4LLM
+    # Try default PDF processing with pypdf
     content = pdf_processor.extract_with_formatting(file)
 except PDFProcessingError:
     try:
@@ -204,7 +206,7 @@ except PDFProcessingError:
 <h3 id="documents">Documents</h3>
 <ul>
 <li><strong>Text Files</strong>: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis</li>
-<li><strong>PDF</strong>: Text extraction with PyMuPDF4LLM (when installed), with best-effort structure preservation</li>
+<li><strong>PDF</strong>: Text and metadata extraction with pypdf by default. Optional PyMuPDF4LLM layout extraction is an explicit opt-in after license review: <code>pip install pymupdf4llm pymupdf-layout</code> (see <a href="installation.html#optional-pdf-extraction-with-pymupdf">Installation</a>).</li>
 <li><strong>Office</strong>: DOCX, XLSX, PPTX via Unstructured (when installed), with best-effort extraction</li>
 <li><strong>Word</strong>: section/paragraph extraction</li>
 <li><strong>Excel</strong>: sheet-by-sheet extraction</li>
@@ -222,7 +224,7 @@ except PDFProcessingError:
 - When STT fallback is used, <code>GenerateResponse.metadata.media_enrichment[]</code> records what was injected and which backend was used.</p>
 <p>Requirements:
 - <strong>Native audio</strong> requires an audio-capable model.
-- <strong>STT fallback</strong> requires installing an STT capability plugin (typically <code>pip install abstractvoice</code>) and using <code>audio_policy="auto"</code>/<code>"speech_to_text"</code> (or setting a default via <code>abstractcore --set-audio-strategy ...</code>).</p>
+- <strong>STT fallback</strong> uses the AbstractVoice capability plugin (part of the light install) and <code>audio_policy="auto"</code>/<code>"speech_to_text"</code> (or setting a default via <code>abstractcore --set-audio-strategy ...</code>).</p>
 <h3 id="video-policy-driven-native-or-frames-fallback">Video (policy-driven; native or frames fallback)</h3>
 <ul>
 <li><strong>Formats</strong>: common <code>video/*</code> types as attachments via <code>media=[...]</code></li>
@@ -231,7 +233,7 @@ except PDFProcessingError:
 </ul>
 <p>Requirements:
 - Frame sampling fallback requires <strong><code>ffmpeg</code>/<code>ffprobe</code></strong> available on <code>PATH</code>.
-- For the sampled-frame path, you also need <strong>image/vision handling</strong>: either a vision-capable main model or configured vision fallback, and (for local frame attachments) <code>pip install "abstractcore[media]"</code> so Pillow-based image processing is available.</p>
+- For the sampled-frame path, you also need <strong>image/vision handling</strong>: either a vision-capable main model or configured vision fallback, and Pillow-based image processing (part of the light install) for local frame attachments.</p>
 <h3 id="processing-features">Processing Features</h3>
 <ul>
 <li><strong>Intelligent Detection</strong>: Automatic file type recognition and processor selection</li>
@@ -240,7 +242,7 @@ except PDFProcessingError:
 <li><strong>Performance Optimized</strong>: Lazy loading and efficient memory usage</li>
 <li><strong>Testing status</strong>: Coverage varies by provider and modality; see the test suite under <code>tests/media_handling/</code></li>
 </ul>
-<h3 id="token-estimation-no-truncation-policy">Token Estimation &amp; No Truncation Policy</h3>
+<h3 id="token-estimation--no-truncation-policy">Token Estimation &amp; No Truncation Policy</h3>
 <p>AbstractCore processors <strong>do not silently truncate content</strong>. This design decision ensures:</p>
 <ol>
 <li><strong>No data loss</strong>: Full file content is always preserved</li>
@@ -260,7 +262,7 @@ tokens = handler.estimate_tokens_for_media(media_content)
 <p>For large files that exceed model context limits, use <code>BasicSummarizer</code> or implement custom chunking at the application layer.</p>
 <h2 id="provider-compatibility">Provider Compatibility</h2>
 <h3 id="vision-enabled-providers">Vision-Enabled Providers</h3>
-<table>
+<div class="table-scroll"><table>
 <thead>
 <tr>
 <th>Provider</th>
@@ -294,11 +296,17 @@ tokens = handler.estimate_tokens_for_media(media_content)
 <td>Supported: Multiple images</td>
 <td>Supported: All formats</td>
 </tr>
+<tr>
+<td><strong>MLX</strong></td>
+<td>Vision-capable MLX checkpoints (<code>qwen3_5</code>, <code>qwen3_5_moe</code>, <code>qwen3_vl</code>, <code>gemma4</code>)</td>
+<td>Supported: Single image (mlx-vlm ships with the MLX provider)</td>
+<td>Supported: All formats</td>
+</tr>
 </tbody>
-</table>
+</table></div>
 <h3 id="text-only-providers">Text-Only Providers</h3>
 <p>All providers support document processing even without vision capabilities:</p>
-<table>
+<div class="table-scroll"><table>
 <thead>
 <tr>
 <th>Provider</th>
@@ -323,16 +331,44 @@ tokens = handler.estimate_tokens_for_media(media_content)
 <td>Supported: Text extraction</td>
 </tr>
 </tbody>
-</table>
-<h3 id="model-compatibility-notes-updated-2025-10-17">⚠️ Model Compatibility Notes (Updated: 2025-10-17)</h3>
+</table></div>
+<p>MLX appears in both tables: it reads images natively for vision-capable checkpoints, and embeds
+documents as text on every checkpoint. Image input needs no separate extra — <code>mlx-vlm</code> ships with
+<code>mlx-lm</code> in every profile that installs the MLX provider. See
+<a href="vision-capabilities.html#1b-native-image-input-on-the-mlx-provider-apple-silicon">Vision Capabilities</a>.</p>
+<h3 id="knowing-whether-media-reached-the-model">Knowing whether media reached the model</h3>
+<p>Providers that participate in the delivery contract report what actually reached the model:</p>
+<div class="code-block"><pre><code class="language-python">resp = llm.generate(&quot;What is in this image?&quot;, media=[&quot;photo.png&quot;])
+resp.metadata[&quot;media_delivered&quot;]
+# [{&quot;index&quot;: 0, &quot;kind&quot;: &quot;image&quot;, &quot;sha256&quot;: &quot;3da0b68c…&quot;,
+#   &quot;tokens&quot;: 1024, &quot;transport&quot;: &quot;mlx_vision_addon&quot;}]
+</code></pre></div>
+<ul>
+<li><code>media_delivered</code> is written only after the media entered the model's forward pass, and
+  <code>tokens</code> is measured rather than intended.</li>
+<li><code>media_dropped</code> names why a part was not carried, using stable reason literals such as
+  <code>vision_family_unsupported</code>, <code>vision_multi_image_unsupported</code> or <code>media_processing_unavailable</code>.</li>
+<li>Streamed responses carry the same record; read it from the final chunk as you would usage.</li>
+</ul>
+<p>For a single answer, use the shared helper:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.media.delivery import media_delivery_verdict
+
+verdict = media_delivery_verdict(resp, provider=&quot;mlx&quot;)
+verdict.state    # &quot;delivered&quot; | &quot;not_delivered&quot; | &quot;unverified&quot;
+verdict.reasons  # reason literals when not delivered
+</code></pre></div>
+<p><code>unverified</code> means that provider does not report delivery yet, so treat it as "no evidence either
+way" rather than a failure. This is what the vision fallback uses to decide whether a caption can
+be attributed to an actual observation.</p>
+<h3 id="-model-compatibility-notes-updated-2025-10-17">⚠️ Model Compatibility Notes (Updated: 2025-10-17)</h3>
 <p>Some newer vision models may not be immediately available due to rapid development:</p>
 <p><strong>LMStudio Limitations:</strong>
 - <code>qwen3-vl</code> models (8B, 30B) - Not yet supported in LMStudio
 - Use <code>qwen2.5-vl-7b</code> as a proven alternative</p>
 <p><strong>HuggingFace Limitations:</strong>
 - <code>Qwen3-VL</code> models - Require newer transformers architecture
-- Install latest transformers: <code>pip install --upgrade transformers</code>
-- Or use bleeding edge: <code>pip install git+https://github.com/huggingface/transformers.git</code></p>
+- Upgrade the local-engine setting: <code>pip install -U "abstractcore[apple]"</code> (Apple silicon) or
+  <code>pip install -U "abstractcore[gpu]"</code> (Linux GPU machines)</p>
 <p><strong>Recommended Stable Models (2025-10-17):</strong>
 - <strong>LMStudio</strong>: <code>qwen/qwen2.5-vl-7b</code>, <code>google/gemma-3n-e4b</code>, <code>mistralai/magistral-small-2509</code>
 - <strong>Ollama</strong>: <code>qwen2.5vl:7b</code>, <code>gemma3:4b</code>, <code>llama3.2-vision:11b</code>
@@ -383,7 +419,7 @@ response = llm.generate(
 )
 </code></pre></div>
 <h3 id="cli-usage">CLI Usage</h3>
-<p>These examples work in AbstractCore CLI when <code>abstractcore[media]</code> is installed and your selected provider/model supports the requested media (or you configured fallbacks):</p>
+<p>These examples work in AbstractCore CLI with any install setting when your selected provider/model supports the requested media (or you configured fallbacks):</p>
 <div class="code-block"><pre><code class="language-bash"># PDF Analysis - Working
 python -m abstractcore.utils.cli --prompt &quot;What is this document about? @report.pdf&quot;
 
@@ -424,7 +460,7 @@ anthropic_response = anthropic_llm.generate(prompt, media=media_files)
 </code></pre></div>
 <h3 id="streaming-with-media">Streaming with Media</h3>
 <div class="code-block"><pre><code class="language-python"># Real-time streaming responses with media
-llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o&quot;)  # requires: pip install &quot;abstractcore[openai]&quot;
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o&quot;)  # light install
 
 for chunk in llm.generate(
     &quot;Describe this image in detail&quot;,
@@ -434,7 +470,7 @@ for chunk in llm.generate(
     print(chunk.content or &quot;&quot;, end=&quot;&quot;, flush=True)
 </code></pre></div>
 <h2 id="advanced-features">Advanced Features</h2>
-<h3 id="maximum-resolution-optimization-new">Maximum Resolution Optimization (NEW)</h3>
+<h3 id="maximum-resolution-optimization">Maximum Resolution Optimization</h3>
 <p>AbstractCore automatically optimizes image resolution for each model's maximum capability, ensuring optimal vision results:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
@@ -648,26 +684,19 @@ response = llama_llm.generate(
 )
 </code></pre></div>
 <h2 id="installation">Installation</h2>
-<h3 id="basic-installation">Basic Installation</h3>
-<div class="code-block"><pre><code class="language-bash"># Core media handling (images, text, basic documents)
-pip install &quot;abstractcore[media]&quot;
+<p>Media handling (images, text, PDF, Office documents) is part of the light install:</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore
 </code></pre></div>
-<h3 id="full-installation">Full Installation</h3>
-<div class="code-block"><pre><code class="language-bash"># Media features (PDF + Office docs) are covered by `abstractcore[media]`.
-# Compose only what your app needs:
-pip install &quot;abstractcore[remote,media,tools]&quot;
-
-# Or choose a turnkey local-runtime install:
-pip install &quot;abstractcore[all-apple]&quot;    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install &quot;abstractcore[all-gpu]&quot;      # NVIDIA GPU: HF/GGUF + vLLM + features + server
-</code></pre></div>
-<p>Advanced: If you prefer to install only the pieces you need (instead of <code>abstractcore[media]</code>),
-these are the main libraries AbstractCore uses:</p>
+<p><code>abstractcore[apple]</code> and <code>abstractcore[gpu]</code> include it too. The main libraries AbstractCore uses:</p>
 <ul>
 <li><code>Pillow</code> (images)</li>
-<li><code>pymupdf4llm</code> + <code>pymupdf-layout</code> (PDF extraction)</li>
+<li><code>pypdf</code> (permissive PDF text/metadata extraction)</li>
 <li><code>unstructured[docx,pptx,xlsx,odt,rtf]</code> (Office docs)</li>
 <li><code>pandas</code> (tabular helpers)</li>
+</ul>
+<p>Optional commercial-license PDF backend:</p>
+<ul>
+<li><code>pymupdf4llm</code> + <code>pymupdf-layout</code>, installed directly: <code>pip install pymupdf4llm pymupdf-layout</code></li>
 </ul>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <h3 id="common-issues">Common Issues</h3>
@@ -677,7 +706,7 @@ try:
     response = llm.generate(&quot;Test&quot;, media=[&quot;test.jpg&quot;])
 except ImportError as e:
     print(f&quot;Missing dependency: {e}&quot;)
-    print('Install with: pip install &quot;abstractcore[media]&quot;')
+    print('Repair the light install with: pip install -U abstractcore')
 </code></pre></div>
 <p><strong>Vision model not detecting images:</strong></p>
 <div class="code-block"><pre><code class="language-python"># Verify model capabilities
@@ -727,7 +756,7 @@ from abstractcore.media.capabilities import (
 <div class="code-block"><pre><code class="language-python">from abstractcore.media.processors import (
     ImageProcessor,    # Images with PIL
     TextProcessor,     # Text, CSV, JSON with pandas
-    PDFProcessor,      # PDFs with PyMuPDF4LLM
+    PDFProcessor,      # PDFs with pypdf by default
     OfficeProcessor    # DOCX, XLSX, PPT with unstructured
 )
 </code></pre></div>
@@ -735,18 +764,25 @@ from abstractcore.media.capabilities import (
 <ul>
 <li><strong><a href="getting-started.html">Getting Started Guide</a></strong> - Complete AbstractCore tutorial</li>
 <li><strong><a href="api-reference.html">API Reference</a></strong> - Full Python API documentation</li>
-<li><strong><a href="../examples/media/glyph_complete_example.py">Glyph + Vision Example</a></strong> - End-to-end document analysis with a vision model</li>
-<li><strong><a href="../examples/media/list_supported_formats.py">Supported Formats Utility</a></strong> - Inspect available processors and supported formats</li>
+<li><strong><a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/examples/media/glyph_complete_example.py">Glyph + Vision Example</a></strong> - End-to-end document analysis with a vision model</li>
+<li><strong><a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/examples/media/list_supported_formats.py">Supported Formats Utility</a></strong> - Inspect available processors and supported formats</li>
 </ul>
 <hr />
 <p>The media handling system makes AbstractCore multimodal while maintaining the same "write once, run everywhere" philosophy. Focus on your application logic while AbstractCore handles the complexity of different provider APIs and media formats.</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>

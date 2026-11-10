@@ -80,7 +80,7 @@ AbstractCore is best understood as an **LLM I/O layer**:
 - 10 registered provider/backend adapters: OpenAI, Anthropic, Ollama, LM Studio, MLX, HuggingFace, vLLM, OpenAI-compatible, OpenRouter, Portkey
 - about 79k physical Python lines in the package source
 - 225 model capability entries and 51 architecture format entries
-- a default install with only `pydantic` and `httpx`; heavy features are optional extras
+- three install settings: a light default that runs every remote provider, and `apple` / `gpu` for local engines
 - offline-capable local operation through explicit model setup, local server backends, and cache/local-files-only behavior for in-process local runtimes
 - remote operation through hosted APIs, hosted gateways, and arbitrary OpenAI-compatible endpoints
 - tool-call normalization across native and prompted formats

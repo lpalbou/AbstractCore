@@ -9,6 +9,33 @@ The goal of a fallback is:
 - Avoid “system prompt injection” where possible
 - Be explicit about trade-offs and when behavior is only best-effort
 
+## Not a fallback: which model gets loaded
+
+There is **no fallback between model artifacts**. A model handle names an artifact, and
+AbstractCore either loads that artifact or fails ([ADR 0009](adr/0009-model-handle-fidelity.md)).
+Every fallback on this page changes *how* a request is served; none of them changes *what model
+serves it*.
+
+For example, `create_llm("huggingface", model="Qwen/Qwen3.6-27B")` loads the transformers
+weights of that repo. When those weights are not cached but a local LM Studio Hub manifest maps
+the name to a GGUF conversion, the provider raises `ModelArtifactMismatchError` instead of
+loading that GGUF. To load a GGUF build, say which artifact you want:
+
+```python
+# The GGUF that the LM Studio Hub alias points at:
+create_llm("huggingface", model="Qwen/Qwen3.6-27B", model_type="gguf")
+create_llm("huggingface", model="lmstudio-community/Qwen3.6-27B-GGUF")   # or name it directly
+create_llm("huggingface", model="/path/to/Qwen3.6-27B-Q4_K_M.gguf")      # or the file itself
+
+# The transformers weights the handle actually names:
+create_llm("huggingface", model="Qwen/Qwen3.6-27B", model_type="transformers")
+```
+
+An explicit `:quant` selector is likewise honoured exactly or refused — `repo-GGUF:Q8_0` will
+never quietly hand back `Q4_K_M`. Where a handle genuinely underdetermines the artifact (a GGUF
+repository holding several quantizations and no selector), the default pick is logged at WARNING
+on the `abstractcore.providers.huggingface` logger.
+
 ## Qwen3 / Qwen3.5: thinking (“reasoning”) toggle
 
 ### What upstream Qwen recommends
@@ -37,6 +64,20 @@ Reference: Qwen docs “Thinking & Non-Thinking Mode”.
 
 AbstractCore implements a layered approach for `thinking=...` on Qwen3/Qwen3.5:
 
+0) **Unified request abstraction**
+
+   Callers use the same public parameter everywhere:
+
+   ```python
+   llm.generate("...", thinking="off")
+   ```
+
+   `BaseProvider` normalizes `thinking=True|False|"auto"|"on"|"off"|"none"|level` and calls a
+   provider hook, `_apply_provider_thinking_kwargs(...)`. Providers return both rewritten kwargs
+   and a `ThinkingControlHandling` record so the base layer knows whether enable/disable and effort
+   level were actually handled. This prevents a provider-native control from being followed by a
+   second generic fallback marker.
+
 1) **Backend-native knob (preferred)**  
    When the serving stack supports template kwargs, we send:
 
@@ -45,21 +86,38 @@ AbstractCore implements a layered approach for `thinking=...` on Qwen3/Qwen3.5:
 
    This is the “clean” approach because it aligns with Qwen’s chat templates and avoids injecting control tokens into the conversation.
 
-2) **Robust fallback for `thinking="off"/"none"` (LM Studio + llama.cpp/GGUF)**  
-   Some local runtimes either:
-   - do not expose template kwargs via API (e.g. `llama-cpp-python` today), or
-   - may ignore `chat_template_kwargs` for some model formats (observed in some LM Studio builds)
+2) **Provider-rendered hard switch for local Qwen runtimes**
 
-   In those cases, AbstractCore uses Qwen’s **stateless hard switch** by appending a final assistant “prefill” message containing the empty think block:
+   - MLX and HuggingFace transformers place the empty think block through their provider prompt
+     renderers when `thinking="off"` and a native `enable_thinking` template kwarg is not available.
+   - HuggingFace transformers passes `enable_thinking` into `tokenizer.apply_chat_template(...)`
+     when the tokenizer supports it, and uses the same empty-think marker in its cache-delta
+     renderer for Qwen-family cached generation.
+   - HuggingFace GGUF exact-renderer paths do not mutate canonical history. The control-plane
+     renderer inserts the empty think block at the final assistant generation prompt, so durable
+     prompt-cache prefixes and live suffixes serialize consistently. Because that renderer owns
+     the control, thinking-controlled GGUF requests are routed through it whether or not a
+     `prompt_cache_key` is in play.
 
-   - Implemented in `abstractcore/providers/base.py` (Qwen hard-switch marker injection).
-   - Used for Qwen3/Qwen3.5 on:
-     - `LMStudioProvider`
-     - `HuggingFaceProvider` when `model_type=="gguf"` (llama-cpp-python)
+3) **LM Studio: `reasoning_effort`, with the prefill as the last resort**
+   LM Studio's OpenAI-compatible endpoint ignores `chat_template_kwargs`. The top-level
+   `reasoning_effort` field reaches the chat template on every request shape, so the LM Studio
+   provider sends `reasoning_effort: "none"` for `thinking="off"` (the template then renders its
+   own empty think block). The Qwen **stateless hard switch** — a final assistant "prefill"
+   message containing the empty think block — is used only when the server has rejected
+   `reasoning_effort` earlier in the session. Sending both rendered the empty block twice. See
+   [Reasoning Control](reasoning-control.md#lm-studio-facts) for the live evidence.
 
-   Note: this fallback adds an extra assistant turn **in the outbound request only**. Callers should not persist that marker message as part of the canonical chat history.
+   - The marker injection lives in `abstractcore/providers/base.py`; a provider opts in through
+     `_wants_assistant_prefill_disable(...)` (LM Studio: only when its hook did not handle the
+     disable).
+   - Providers that render prompts locally (MLX, HuggingFace transformers and GGUF) place the
+     marker themselves at the generation boundary, which is where the model's own chat template
+     puts it; they do not use this message-level fallback.
 
-3) **Why we do not rely on `/no_think` as the primary switch**
+   Note: the fallback adds an extra assistant turn **in the outbound request only**. Callers should not persist that marker message as part of the canonical chat history.
+
+4) **Why we do not rely on `/no_think` as the primary switch**
 
 `/no_think` is a “soft” instruction and can be unreliable when:
 
@@ -68,4 +126,3 @@ AbstractCore implements a layered approach for `thinking=...` on Qwen3/Qwen3.5:
 - The runtime ignores or alters the chat template behavior
 
 The assistant-prefill hard switch is stateless and robust, and matches Qwen’s own documented method.
-

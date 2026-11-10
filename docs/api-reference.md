@@ -294,11 +294,26 @@ def unload_model(self, model_name: str) -> None
 For local providers (Ollama, MLX, HuggingFace, LMStudio), this explicitly frees model memory or releases client resources. For API providers (OpenAI, Anthropic), this is typically a no-op but safe to call.
 
 **Provider-specific behavior:**
-- **Ollama**: Sends `keep_alive=0` to immediately unload from server
+- **Ollama**: Uses native `keep_alive` load/unload semantics and `/api/ps` for residency truth
 - **MLX**: Clears model/tokenizer references and forces garbage collection
 - **HuggingFace**: Closes llama.cpp resources (GGUF) or clears model references
-- **LMStudio**: Closes HTTP connection (server auto-manages via TTL)
+- **LMStudio**: Uses native loaded-instance REST load/unload when available
 - **OpenAI/Anthropic**: No-op (safe to call)
+
+On in-process providers (MLX, HuggingFace), unloading also drops the instance's session
+prompt caches — the prompt-cache store and, on MLX, the hybrid KV boundary snapshots.
+Session caches are only useful while the weights are resident, so unload frees them in
+the same call.
+
+To verify that memory was actually freed, read `device.allocated_bytes` from
+`abstractcore.utils.memory.get_memory_snapshot()`. Process RSS is not a reliable unload
+signal on Metal hosts: freed device buffers return to the process allocator, so RSS
+behaves as a high-water mark. See
+[Memory and Model Residency](memory-management.md).
+
+`get_model_residency(...)` reports verified loaded state only when the provider can
+check the backing runtime. Client construction, configured defaults, and model catalogs
+are not treated as loaded-model proof.
 
 **Example:**
 ```python
@@ -318,6 +333,37 @@ llm2 = create_llm("mlx", model="mlx-community/Qwen3-30B-4bit")
 - Test suites testing multiple models sequentially
 - Memory-constrained environments (<32GB RAM)
 - Sequential model loading in production systems
+
+#### list_loaded_models(filters=None)
+
+List the models this provider instance can verify as loaded.
+
+```python
+def list_loaded_models(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]
+```
+
+**Returns:** residency records (provider, model, `loaded`, `resident`, plus normalized
+`size_bytes` / `size_vram_bytes` when the backend reports sizes). Unknown residency yields
+an empty list, never a guess.
+
+**Provider-specific behavior:**
+- **Default**: derived from `get_model_residency()` — the instance's own model when verified loaded
+- **Ollama / LMStudio**: all models resident on the instance's server (transport errors raise)
+- **MLX**: the in-process record plus a best-effort `est_weights_bytes` estimate
+
+`OllamaProvider.list_server_loaded_models()` and `LMStudioProvider.list_server_loaded_models()`
+are classmethods for the same server-wide question without constructing a provider instance,
+and `abstractcore.utils.residency.sweep_loaded_models()` sweeps both servers best-effort
+(unreachable servers are skipped silently). `abstractcore.utils.memory.get_memory_snapshot()`
+reports host RAM, process RSS, device allocation, and the host identity in one call.
+`abstractcore.utils.context_estimate.estimate_context_fit(provider, model, context_length=None)`
+estimates how much context a model can sustain on this host without loading weights — every
+answer labeled `"calibrated"`, `"estimated"`, or `"unknown"`, and the function never raises.
+`abstractcore.utils.hostinfo.get_host_identity()` names the machine residency and memory records
+were observed on (`host_id`, `host_name`, `kind`), and
+`abstractcore.providers.model_capabilities.modalities_for_model()` returns the registry-declared
+modality routes for a model, or `None` on a registry miss (never a text-only guess). See
+[Memory and Model Residency](memory-management.md) for the full surface.
 
 ### GenerateResponse
 
@@ -662,11 +708,12 @@ class RetryConfig:
     use_jitter: bool = True
     failure_threshold: int = 5
     recovery_timeout: float = 60.0
-    half_open_max_calls: int = 2
+    half_open_max_calls: int = 3
+    max_total_wall_clock_s: Optional[float] = None
 ```
 
 **Parameters:**
-- `max_attempts` (int): Maximum retry attempts
+- `max_attempts` (int): Maximum attempts including the initial call
 - `initial_delay` (float): Initial delay in seconds
 - `max_delay` (float): Maximum delay in seconds
 - `exponential_base` (float): Base for exponential backoff
@@ -674,6 +721,11 @@ class RetryConfig:
 - `failure_threshold` (int): Circuit breaker failure threshold
 - `recovery_timeout` (float): Circuit breaker recovery timeout
 - `half_open_max_calls` (int): Max calls in half-open state
+- `max_total_wall_clock_s` (float or None): Budget for starting further retries; does not interrupt an in-flight attempt. Constructor shorthand: `retry_wall_clock_budget_s`.
+
+`RetryConfig.single_attempt()` sets `max_attempts=1` for hosts that already own retries.
+Structured-output `FeedbackRetry` is a separate validation budget; see the
+[bounded integration recipes](agent-usage.md).
 
 **Example:**
 ```python
@@ -797,10 +849,34 @@ class ProviderAPIError(AbstractCoreError):
     """Provider API error."""
 ```
 
+#### EndpointUnreachableError
+```python
+class EndpointUnreachableError(ProviderError):
+    """No TCP connection to the provider's endpoint could be made (machine off or asleep,
+    connection refused, DNS failure)."""
+    base_url: str | None       # the endpoint that did not answer
+    cause: str                 # transport exception class, e.g. "httpx.ConnectError"
+    errno: int | None          # OS error number when known (61 refused, 60 connect timed out)
+    elapsed_s: float | None    # seconds the attempt took before failing
+    retryable: bool            # False when the connect attempt itself timed out
+    counts_toward_breaker = False
+```
+Raised instead of a timeout message when the endpoint never accepted a connection. A host can
+catch it by type to park the step and probe the endpoint rather than fail the run; it never
+opens the circuit breaker.
+
 #### ModelNotFoundError
 ```python
 class ModelNotFoundError(AbstractCoreError):
     """Model not found error."""
+```
+
+#### ModelNotDownloadedError
+```python
+class ModelNotDownloadedError(ModelNotFoundError):
+    """The model is not on this computer, and loading never downloads (offline_first)."""
+    model: str | None     # the id to download
+    provider: str | None  # the provider that serves it
 ```
 
 #### AuthenticationError

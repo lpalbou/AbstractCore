@@ -26,6 +26,13 @@ Each returned tool spec is an AbstractCore-compatible dict you can pass to `tool
 
 See `abstractcore/abstractcore/mcp/naming.py`.
 
+Strict native tool APIs (OpenAI, Anthropic) accept only `^[a-zA-Z0-9_-]{1,64}$` names, so native
+declarations carry a deterministic wire alias (`mcp::RAGnarok::query` is declared as
+`mcp_RAGnarok_query_b6ff8949`). AbstractCore maps the alias back before the response reaches you:
+`tool_calls` carry the declared `mcp::...` name in streaming and non-streaming responses, from
+`generate()` and `agenerate()` alike. Only names declared in the request's `tools=` are restored; any
+other name is returned as the model sent it, so your host's allowlist still refuses it.
+
 ### 2) Execute MCP tools in your host/runtime
 
 AbstractCore’s default execution path is **passthrough** (`execute_tools=False`): the model can
@@ -52,16 +59,26 @@ def execute_mcp_tool_call(call: dict) -> dict:
 
 ### Streamable HTTP
 
-`McpClient` posts JSON-RPC to the server URL. It automatically sets an `Accept` header compatible
-with streamable HTTP (`application/json, text/event-stream`) and will capture `MCP-Session-Id`
-responses when provided.
+`McpClient` posts JSON-RPC to the server URL. It sets an `Accept` header compatible with
+streamable HTTP (`application/json, text/event-stream`), runs the handshake (`initialize`, then the
+`notifications/initialized` notification) before its first request, sends the server's
+`MCP-Session-Id` and the negotiated `MCP-Protocol-Version` on every later request, and reads
+responses sent as JSON or as an event stream. Call `client.initialize()` to run the handshake
+explicitly and get the server's `serverInfo`, `protocolVersion` and `capabilities`.
 
 See `abstractcore/abstractcore/mcp/client.py`.
 
 ### stdio
 
-`McpStdioClient` spawns an MCP server subprocess and communicates over stdin/stdout with JSON-RPC,
-including a best-effort initialization handshake.
+`McpStdioClient` spawns an MCP server subprocess and communicates over stdin/stdout with JSON-RPC.
+It runs the same handshake (`initialize`, then `notifications/initialized`) before its first
+request; `client.initialize()` runs it explicitly. `close()` terminates the subprocess (and kills
+it if it does not exit within 2 seconds).
+
+### Tool pagination
+
+`list_tools()` follows `nextCursor` and returns every tool the server lists;
+`list_tools_page(cursor=None)` returns one page and the next cursor.
 
 See `abstractcore/abstractcore/mcp/stdio_client.py`.
 

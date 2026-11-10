@@ -16,7 +16,7 @@ function initNavigation() {
     const navToggle = document.getElementById('nav-toggle');
     const navMenu = document.getElementById('nav-menu');
     
-    if (navToggle && navMenu) {
+    if (navToggle && navMenu && !navToggle.dataset.bound) {
         navToggle.addEventListener('click', function() {
             navToggle.classList.toggle('active');
             navMenu.classList.toggle('active');
@@ -313,22 +313,11 @@ window.addEventListener('error', function(e) {
     console.error('JavaScript error:', e.error);
 });
 
-// Service worker registration (if available)
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/sw.js')
-            .then(function(registration) {
-                console.log('ServiceWorker registration successful');
-            })
-            .catch(function(err) {
-                console.log('ServiceWorker registration failed');
-            });
-    });
-}
-
 // Copy code functionality for demo tabs
 function copyCode(button) {
-    const code = button.getAttribute('data-code');
+    // The button's data-code, or else the code shown in its own code window
+    const shown = button.closest('.code-window') && button.closest('.code-window').querySelector('pre code');
+    const code = button.getAttribute('data-code') || (shown ? shown.textContent : '');
     
     if (!code) return;
     

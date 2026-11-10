@@ -6,4 +6,4 @@ Allow: /llms.txt
 Allow: /llms-full.txt
 
 # Sitemap
-Sitemap: https://www.abstractcore.ai/sitemap.xml
+Sitemap: https://abstractcore.ai/sitemap.xml

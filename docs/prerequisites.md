@@ -20,44 +20,26 @@ This guide walks you through setting up AbstractCore with different LLM provider
 
 ## Core Installation
 
-Install AbstractCore, then add the extras you need. Extras compose, so a real
-application can use one command such as `pip install "abstractcore[remote,server,tools]"`.
+Install one of the three settings ([Installation](installation.md) has the full contents):
 
 ```bash
-# Core: local HTTP servers and gateways that need no SDK
-# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
-pip install abstractcore
-
-# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
-pip install "abstractcore[remote]"
-
-# Individual provider SDKs / local runtimes
-pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[mlx]"          # Apple Silicon only (heavy)
-pip install "abstractcore[vllm]"         # NVIDIA CUDA/ROCm only (heavy)
-
-# Optional features
-pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
-pip install "abstractcore[media]"       # images, PDFs, Office docs
-pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
-pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
-pip install "abstractcore[compression]" # Glyph visual-text compression (Pillow renderer)
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
+pip install abstractcore             # light: every remote provider, tools, media, server, plugins
+pip install "abstractcore[apple]"    # Apple silicon: light + every local engine a Mac can run
+pip install "abstractcore[gpu]"      # NVIDIA / AMD: light + every local engine a GPU machine can run
 ```
 
 **Hardware Notes:**
-- `[mlx]` - Only works on Apple Silicon (M1/M2/M3/M4)
-- `[vllm]` - Only works with NVIDIA CUDA GPUs
-- `[remote]` - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic `/v1` endpoints need no extra dependency.
-- `[all-apple]` - Best for Apple Silicon local development (includes MLX, excludes vLLM)
-- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM, excludes MLX)
-- For CPU-only or Intel machines, compose only what you need, for example `abstractcore[remote,huggingface,tools]`.
+- Light works everywhere (macOS, Linux, Windows; Python 3.9+). OpenAI, Anthropic, OpenRouter,
+  Portkey, Ollama, LM Studio, a vLLM server and any OpenAI-compatible `/v1` endpoint need nothing
+  else.
+- `apple` needs an Apple silicon Mac (M1 or newer), macOS 14+, Python 3.10+. It adds MLX,
+  HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
+- `gpu` needs a Linux machine with an NVIDIA (CUDA) or AMD (ROCm) GPU, Python 3.10+. It adds
+  vLLM, HuggingFace/GGUF, local embeddings and the local voice, image, video and music engines.
+  On Windows x86_64 with an NVIDIA GPU, `gpu` installs without vLLM and stable-diffusion.cpp
+  (Linux-only or source-only there); the AbstractFramework installer adds llama.cpp's prebuilt GPU
+  build. The Windows path is not yet validated on Windows hardware.
+- On Intel Macs, run local models in Ollama or LM Studio and use the light install.
 
 ## Cloud Provider Setup
 
@@ -255,21 +237,26 @@ print(response.content)
 #### 1. Install MLX Dependencies
 
 ```bash
-# MLX is automatically installed with AbstractCore
-pip install "abstractcore[mlx]"
+pip install "abstractcore[apple]"
 ```
 
 #### 2. Download Models
 
 AbstractCore is offline-first for local model weights. The MLX provider loads
 models from an explicit local path, the Hugging Face cache, or the LM Studio
-cache; it does not silently download weights during `create_llm(...)`.
+cache; it does not silently download weights during `create_llm(...)` (a cache miss raises
+`ModelNotFoundError`). See [Centralized Config](centralized-config.md#offline-section) for the
+offline settings.
 
-Download or prefetch a model first, for example:
+Download a model first, for example:
 
 ```bash
-huggingface-cli download mlx-community/Qwen3-4B
+abstractcore models download mlx mlx-community/Qwen3-4B-4bit
 ```
+
+`abstractcore models catalog --engine mlx --fits` lists MLX builds that fit this machine; see
+[Local Models](models.md). Any other download into the Hugging Face cache (for example
+`hf download <repo>`) works too.
 
 Then use the model ID, or pass a local model directory path:
 
@@ -277,7 +264,7 @@ Then use the model ID, or pass a local model directory path:
 from abstractcore import create_llm
 
 # Uses a cached Hugging Face snapshot or a local directory path.
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 # OR
 llm = create_llm("mlx", model="/path/to/local/mlx-model")
 ```
@@ -288,7 +275,7 @@ llm = create_llm("mlx", model="/path/to/local/mlx-model")
 from abstractcore import create_llm
 
 # Test with a model you already downloaded/prefetched
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 response = llm.generate("Explain machine learning briefly")
 print(response.content)
 ```
@@ -348,7 +335,8 @@ print(resp.content)
 #### 1. Install Dependencies
 
 ```bash
-pip install "abstractcore[huggingface]"
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 #### 2. Optional: Get HuggingFace Token
@@ -379,6 +367,13 @@ print(response.content)
 - `facebook/blenderbot-400M-distill` - Conversational AI
 - `microsoft/CodeBERT-base` - Code understanding
 
+#### Quantized Transformers Models
+
+Quantized Transformers checkpoints may need optional quantization runtimes beyond
+the `apple` and `gpu` settings. If a model reports missing weights, unexpected packed weights, or
+incorrect output for a trivial prompt, treat it as a model/runtime compatibility issue. See
+[HuggingFace Model Compatibility](huggingface-model-compatibility.md).
+
 ### vLLM Setup
 
 **Best for**: Production GPU deployments, high-throughput inference, tensor parallelism
@@ -404,7 +399,7 @@ print(response.content)
 
 ```bash
 # Install AbstractCore with vLLM support
-pip install "abstractcore[vllm]"
+pip install "abstractcore[gpu]"
 
 # This installs vLLM which requires NVIDIA CUDA
 # If you get CUDA errors, ensure CUDA 12.1+ is installed:
@@ -537,9 +532,21 @@ response = llm.generate(
 llm.load_adapter("sql-expert", "/models/adapters/sql-lora")
 llm.load_adapter("react-dev", "/models/adapters/react-lora")
 
-# Route to specialized adapter
-response = llm.generate("Write SQL query", model="sql-expert")
+# Inspect currently loaded adapters
+loaded_adapters = llm.list_adapters()
+print(loaded_adapters)
 ```
+
+Current status:
+
+- adapter load/unload/list is available on the `vllm` provider;
+- AbstractCore does not yet define a portable request-time `adapter=...` contract for text
+  generation;
+- do not rely on `llm.generate(..., model="sql-expert")` as shared Core behavior until
+  `docs/backlog/planned/2026-05-04_unified-lora-adapter-serving.md` lands.
+
+Some vLLM deployments may surface loaded adapters as model ids on `/v1/models`, but AbstractCore
+does not currently normalize that behavior across providers or across its own loaded-runtime path.
 
 **Beam Search** (higher accuracy for complex tasks):
 ```python
@@ -582,9 +589,9 @@ AbstractCore supports a generic OpenAI-compatible provider plus specific conveni
 You must include `/v1` for OpenAI-compatible servers:
 
 ```bash
-export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+export OPENAI_BASE_URL="http://localhost:1234/v1"
 # Optional (if your endpoint requires auth)
-export OPENAI_COMPATIBLE_API_KEY="your-api-key"
+export OPENAI_API_KEY="your-api-key"
 ```
 
 #### 2. Test Setup
@@ -757,19 +764,6 @@ Run the test:
 ```bash
 python test_setup.py
 ```
-
-### Live API smoke tests (opt-in)
-
-Some tests are intentionally **real network calls** and are disabled by default. To enable them, set:
-- `ABSTRACTCORE_RUN_LIVE_API_TESTS=1`
-
-Example (OpenRouter):
-```bash
-ABSTRACTCORE_RUN_LIVE_API_TESTS=1 OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
-  python -m pytest -q tests/test_graceful_fallback.py::test_openrouter_generation_smoke
-```
-
-Local provider smoke tests use `ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1` (and `ABSTRACTCORE_RUN_MLX_TESTS=1` for MLX).
 
 ## Security Notes
 

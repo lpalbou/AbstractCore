@@ -62,6 +62,10 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 ```
 
+Since the 2.35.0 refresh, a page that calls `createNavbar({...})` replaces the auto-initialized
+navbar instead of adding a second one, and the component owns the mobile menu (toggle, close on a
+link, close on an outside click); `main.js` leaves a toggle the component has bound alone.
+
 ## Configuration Options
 
 ### `basePath` (string)

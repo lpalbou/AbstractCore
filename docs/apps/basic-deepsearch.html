@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BasicDeepSearch - Autonomous Research Agent - AbstractCore</title>
+    <meta name="description" content="The BasicDeepSearch application provides autonomous, multi-stage research capabilities that go beyond simple search to deliver comprehensive, synthesized…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/apps/basic-deepsearch.html">
+    <link rel="icon" type="image/x-icon" href="../../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">BasicDeepSearch - Autonomous Research Agent</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">The BasicDeepSearch application provides autonomous, multi-stage research capabilities that go beyond simple search to deliver comprehensive, synthesized research reports with citations.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Overview</a>
+<a href="#key-features" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Key Features</a>
+<a href="#installation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Installation</a>
+<a href="#cli-usage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">CLI Usage</a>
+<a href="#reflexive-research-mode" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Reflexive Research Mode</a>
+<a href="#python-api-usage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Python API Usage</a>
+<a href="#research-depths" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Research Depths</a>
+<a href="#output-formats" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Output Formats</a>
+<a href="#report-structure" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Report Structure</a>
+<a href="#configuration-options" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration Options</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#error-handling" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Error Handling</a>
+<a href="#limitations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Limitations</a>
+<a href="#integration-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration Examples</a>
+<a href="#troubleshooting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting</a>
+<a href="#see-also" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">See Also</a></div>
+
+            <div class="doc-content">
+
+<h2 id="overview">Overview</h2>
+<p>BasicDeepSearch implements a state-of-the-art four-stage research pipeline:</p>
+<ol>
+<li><strong>Planning</strong>: Decomposes complex research queries into structured sub-tasks</li>
+<li><strong>Question Development</strong>: Generates specific, diverse search queries for each sub-task  </li>
+<li><strong>Web Exploration</strong>: Executes parallel web searches and gathers evidence</li>
+<li><strong>Report Generation</strong>: Synthesizes findings into structured reports with citations</li>
+</ol>
+<h2 id="key-features">Key Features</h2>
+<ul>
+<li><strong>Autonomous Research</strong>: Minimal human intervention required</li>
+<li><strong>Reflexive Research</strong>: Analyzes limitations and performs targeted refinement searches</li>
+<li><strong>Parallel Execution</strong>: Multiple web searches run simultaneously for speed</li>
+<li><strong>Structured Output</strong>: Professional reports with citations and analysis</li>
+<li><strong>Verification Layer</strong>: Optional fact-checking and validation</li>
+<li><strong>Multiple Formats</strong>: Structured, narrative, or executive report styles</li>
+<li><strong>Configurable Depth</strong>: Brief, standard, or comprehensive research modes</li>
+</ul>
+<h2 id="installation">Installation</h2>
+<p>BasicDeepSearch relies on the built-in web tools (<code>web_search</code>, <code>fetch_url</code>).</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore   # the web tools and every remote provider are part of the light install
+</code></pre></div>
+<h2 id="cli-usage">CLI Usage</h2>
+<h3 id="basic-usage">Basic Usage</h3>
+<div class="code-block"><pre><code class="language-bash"># Simple research query
+deepsearch &quot;What are the latest developments in quantum computing?&quot;
+
+# Research with specific focus areas
+deepsearch &quot;AI impact on healthcare&quot; --focus &quot;diagnosis,treatment,ethics&quot;
+
+# Comprehensive research with custom output
+deepsearch &quot;sustainable energy 2025&quot; --depth comprehensive --format executive --output report.json
+</code></pre></div>
+<h3 id="advanced-options">Advanced Options</h3>
+<div class="code-block"><pre><code class="language-bash"># High-volume research with custom LLM
+deepsearch &quot;blockchain technology trends&quot; \
+  --max-sources 25 \
+  --provider openai \
+  --model gpt-4o-mini \
+  --verbose
+
+# Fast research without verification
+deepsearch &quot;current market trends&quot; \
+  --depth brief \
+  --no-verification \
+  --parallel-searches 10
+
+# Reflexive mode - analyzes gaps and refines research automatically
+deepsearch &quot;quantum computing breakthroughs&quot; --reflexive
+deepsearch &quot;AI safety research&quot; --reflexive --max-reflexive-iterations 3
+
+# Full-text extraction with reflexive improvement
+deepsearch &quot;climate change solutions&quot; --full-text --reflexive
+</code></pre></div>
+<h2 id="reflexive-research-mode">Reflexive Research Mode</h2>
+<p><strong>Reflexive mode</strong> (<code>--reflexive</code>) enables <strong>adaptive, self-improving research</strong> that learns from its own limitations and iteratively refines the results.</p>
+<h3 id="how-it-works">How It Works</h3>
+<ol>
+<li><strong>Standard Research</strong>: Executes the normal 4-stage pipeline</li>
+<li><strong>Gap Analysis</strong>: LLM analyzes the "Methodology &amp; Limitations" section to identify specific information gaps</li>
+<li><strong>Targeted Refinement</strong>: Generates focused search queries to address identified gaps</li>
+<li><strong>Iterative Improvement</strong>: Repeats until no significant gaps remain or max iterations reached</li>
+</ol>
+<h3 id="gap-types-identified">Gap Types Identified</h3>
+<ul>
+<li><strong>Missing Perspectives</strong>: Lack of expert opinions or alternative viewpoints</li>
+<li><strong>Insufficient Data</strong>: Areas where more quantitative information is needed</li>
+<li><strong>Outdated Information</strong>: When current findings may be superseded by recent developments</li>
+<li><strong>Technical Details</strong>: Missing technical specifications or implementation details</li>
+<li><strong>Recent Developments</strong>: Gaps in coverage of latest news or research</li>
+</ul>
+<h3 id="example-reflexive-analysis">Example Reflexive Analysis</h3>
+<div class="code-block"><pre><code>Initial Research: &quot;quantum computing timeline&quot;
+├── Finds general information about quantum computing progress
+├── Limitations: &quot;Limited coverage of recent commercial developments&quot;
+└── Reflexive Gap Analysis:
+    ├── Gap: &quot;Missing industry expert predictions for 2025-2030&quot;
+    ├── Searches: [&quot;quantum computing expert predictions 2025&quot;, &quot;industry roadmap quantum timeline&quot;]
+    └── Result: Enhanced report with expert opinions and commercial timelines
+</code></pre></div>
+<h3 id="configuration">Configuration</h3>
+<div class="code-block"><pre><code class="language-bash"># Enable reflexive mode with default 2 iterations
+deepsearch &quot;AI safety research&quot; --reflexive
+
+# Custom iteration limit
+deepsearch &quot;climate solutions&quot; --reflexive --max-reflexive-iterations 3
+
+# Combine with other advanced features
+deepsearch &quot;quantum breakthroughs&quot; --reflexive --full-text --max-sources 20
+</code></pre></div>
+<h2 id="python-api-usage">Python API Usage</h2>
+<h3 id="basic-research">Basic Research</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicDeepSearch
+
+# Initialize with default settings
+searcher = BasicDeepSearch()
+
+# Conduct research
+report = searcher.research(&quot;What are the latest developments in quantum computing?&quot;)
+
+# Access results
+print(f&quot;Title: {report.title}&quot;)
+print(f&quot;Summary: {report.executive_summary}&quot;)
+print(f&quot;Sources: {len(report.sources)}&quot;)
+</code></pre></div>
+<h3 id="advanced-configuration">Advanced Configuration</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.processing import BasicDeepSearch
+
+# Custom LLM configuration
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;, max_tokens=32000)
+
+# Reflexive research configuration
+searcher = BasicDeepSearch(
+    llm=llm,
+    reflexive_mode=True,
+    max_reflexive_iterations=3,
+    full_text_extraction=True
+)
+
+# Conduct reflexive research
+report = searcher.research(
+    &quot;What are the current challenges in AI safety research?&quot;,
+    focus_areas=[&quot;alignment&quot;, &quot;robustness&quot;, &quot;interpretability&quot;],
+    output_format=&quot;structured&quot;
+)
+
+print(f&quot;Methodology: {report.methodology}&quot;)
+print(f&quot;Limitations: {report.limitations}&quot;)
+print(f&quot;Sources analyzed: {len(report.sources)}&quot;)
+
+# Initialize with custom settings
+searcher = BasicDeepSearch(
+    llm=llm,
+    max_parallel_searches=8,
+    timeout=600
+)
+
+# Comprehensive research
+report = searcher.research(
+    query=&quot;Impact of AI on healthcare&quot;,
+    focus_areas=[&quot;medical diagnosis&quot;, &quot;drug discovery&quot;, &quot;patient care&quot;],
+    max_sources=20,
+    search_depth=&quot;comprehensive&quot;,
+    include_verification=True,
+    output_format=&quot;executive&quot;
+)
+</code></pre></div>
+<h2 id="research-depths">Research Depths</h2>
+<h3 id="brief-3-sub-tasks-5-minutes">Brief (3 sub-tasks, ~5 minutes)</h3>
+<ul>
+<li>Quick overview and current state</li>
+<li>Suitable for initial exploration</li>
+<li>10-15 sources typically</li>
+</ul>
+<h3 id="standard-5-sub-tasks-10-minutes">Standard (5 sub-tasks, ~10 minutes)</h3>
+<ul>
+<li>Balanced depth and breadth</li>
+<li>Good for most research needs</li>
+<li>15-20 sources typically</li>
+</ul>
+<h3 id="comprehensive-8-sub-tasks-20-minutes">Comprehensive (8 sub-tasks, ~20 minutes)</h3>
+<ul>
+<li>Deep analysis with multiple perspectives</li>
+<li>Includes stakeholders, economics, technical aspects</li>
+<li>20-30 sources typically</li>
+</ul>
+<h2 id="output-formats">Output Formats</h2>
+<h3 id="structured-default">Structured (Default)</h3>
+<ul>
+<li>Professional research report format</li>
+<li>Clear sections: Executive Summary, Key Findings, Analysis, Conclusions</li>
+<li>Ideal for academic or business use</li>
+</ul>
+<h3 id="executive">Executive</h3>
+<ul>
+<li>Concise, business-focused format</li>
+<li>Emphasizes strategic insights and implications</li>
+<li>Suitable for decision-makers</li>
+</ul>
+<h3 id="narrative">Narrative</h3>
+<ul>
+<li>Engaging, story-driven format</li>
+<li>Shows connections between findings</li>
+<li>Great for presentations and communication</li>
+</ul>
+<h2 id="report-structure">Report Structure</h2>
+<p>All reports include:</p>
+<ul>
+<li><strong>Title</strong>: Descriptive report title</li>
+<li><strong>Executive Summary</strong>: 2-3 sentence overview</li>
+<li><strong>Key Findings</strong>: Bullet points of main discoveries</li>
+<li><strong>Detailed Analysis</strong>: Comprehensive synthesis (3-4 paragraphs)</li>
+<li><strong>Conclusions</strong>: Implications and recommendations</li>
+<li><strong>Sources</strong>: Complete list with URLs and relevance scores</li>
+<li><strong>Methodology</strong>: Research approach description</li>
+<li><strong>Limitations</strong>: Caveats and constraints</li>
+</ul>
+<h2 id="configuration-options">Configuration Options</h2>
+<h3 id="research-parameters">Research Parameters</h3>
+<ul>
+<li><code>focus_areas</code>: Specific areas to emphasize</li>
+<li><code>max_sources</code>: Number of sources to gather (1-100)</li>
+<li><code>search_depth</code>: Research thoroughness level</li>
+<li><code>include_verification</code>: Enable fact-checking</li>
+<li><code>output_format</code>: Report style</li>
+</ul>
+<h3 id="performance-settings">Performance Settings</h3>
+<ul>
+<li><code>max_parallel_searches</code>: Concurrent web searches (1-20)</li>
+<li><code>timeout</code>: HTTP request timeout</li>
+<li><code>max_tokens</code>: LLM context window</li>
+<li><code>max_output_tokens</code>: LLM output limit</li>
+</ul>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="query-formulation">Query Formulation</h3>
+<ul>
+<li>Use specific, focused questions</li>
+<li>Avoid overly broad topics</li>
+<li>Include time constraints when relevant</li>
+<li>Specify domain or context</li>
+</ul>
+<p><strong>Good Examples:</strong>
+- "What are the latest developments in quantum computing for drug discovery?"
+- "How is AI transforming medical diagnosis in 2024-2025?"
+- "What are the main challenges facing renewable energy adoption?"</p>
+<p><strong>Avoid:</strong>
+- "Tell me about AI" (too broad)
+- "What is quantum computing?" (basic definition)
+- "Everything about healthcare" (unfocused)</p>
+<h3 id="focus-areas">Focus Areas</h3>
+<ul>
+<li>Provide 3-5 specific focus areas for complex topics</li>
+<li>Use domain-specific terminology</li>
+<li>Balance breadth and depth</li>
+</ul>
+<p><strong>Example:</strong></p>
+<div class="code-block"><pre><code class="language-bash">deepsearch &quot;AI in education&quot; --focus &quot;personalized learning,assessment automation,teacher tools,student outcomes,ethical concerns&quot;
+</code></pre></div>
+<h3 id="performance-optimization">Performance Optimization</h3>
+<ul>
+<li>Use <code>brief</code> depth for quick overviews</li>
+<li>Increase <code>parallel_searches</code> for faster execution</li>
+<li>Use cloud providers (OpenAI, Anthropic) for reliability</li>
+<li>Enable <code>verbose</code> mode for progress tracking</li>
+</ul>
+<h3 id="output-management">Output Management</h3>
+<ul>
+<li>Save comprehensive reports to files (<code>--output report.json</code>)</li>
+<li>Use markdown format for sharing (<code>--output report.md</code>)</li>
+<li>Choose appropriate format for audience</li>
+</ul>
+<h2 id="error-handling">Error Handling</h2>
+<p>The system includes robust error handling:</p>
+<ul>
+<li><strong>Network Issues</strong>: Automatic retries with exponential backoff</li>
+<li><strong>LLM Failures</strong>: Graceful degradation with fallback responses</li>
+<li><strong>Parsing Errors</strong>: Fallback to simplified report generation</li>
+<li><strong>Source Failures</strong>: Continues with available sources</li>
+</ul>
+<h2 id="limitations">Limitations</h2>
+<ul>
+<li><strong>Source Quality</strong>: Limited to publicly available web content</li>
+<li><strong>Real-time Data</strong>: May not capture very recent developments</li>
+<li><strong>Language</strong>: Primarily English-language sources</li>
+<li><strong>Verification</strong>: Automated fact-checking has limitations</li>
+<li><strong>Bias</strong>: Inherits biases from web sources and LLM training</li>
+</ul>
+<h2 id="integration-examples">Integration Examples</h2>
+<h3 id="research-pipeline">Research Pipeline</h3>
+<div class="code-block"><pre><code class="language-python"># Multi-stage research workflow
+topics = [
+    &quot;quantum computing applications&quot;,
+    &quot;AI safety developments&quot;,
+    &quot;renewable energy innovations&quot;
+]
+
+searcher = BasicDeepSearch()
+reports = []
+
+for topic in topics:
+    report = searcher.research(
+        topic,
+        search_depth=&quot;standard&quot;,
+        max_sources=15
+    )
+    reports.append(report)
+
+# Analyze across reports
+all_sources = []
+for report in reports:
+    all_sources.extend(report.sources)
+
+print(f&quot;Total unique sources: {len(set(s['url'] for s in all_sources))}&quot;)
+</code></pre></div>
+<h3 id="custom-analysis">Custom Analysis</h3>
+<div class="code-block"><pre><code class="language-python"># Extract specific insights
+def extract_trends(report):
+    trends = []
+    for finding in report.key_findings:
+        if any(word in finding.lower() for word in ['trend', 'growing', 'increasing', 'emerging']):
+            trends.append(finding)
+    return trends
+
+report = searcher.research(&quot;AI market trends 2025&quot;)
+trends = extract_trends(report)
+print(&quot;Key trends identified:&quot;)
+for trend in trends:
+    print(f&quot;- {trend}&quot;)
+</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<p><strong>"Failed to initialize default Ollama model"</strong>
+- Install Ollama: https://ollama.com/
+- Pull model: <code>ollama pull qwen3:4b-instruct-2507-q4_K_M</code>
+- Or specify custom provider: <code>--provider openai --model gpt-4o-mini</code></p>
+<p><strong>"No search results found"</strong>
+- Check internet connectivity
+- Try broader search terms
+- Reduce <code>max_sources</code> if hitting rate limits
+- <code>ddgs</code> (better web search) ships with the light install; repair with <code>pip install -U abstractcore</code></p>
+<p><strong>"Report generation failed"</strong>
+- Increase <code>max_output_tokens</code>
+- Use more capable model (e.g., gpt-4o-mini)
+- Reduce <code>max_sources</code> to avoid context overflow</p>
+<p><strong>"Timeout errors"</strong>
+- Increase <code>--timeout</code> value
+- Reduce <code>parallel_searches</code>
+- Use faster LLM provider</p>
+<h3 id="performance-tips">Performance Tips</h3>
+<ul>
+<li>Use local models (Ollama) for cost-effective research</li>
+<li>Use cloud models (OpenAI, Anthropic) for reliability</li>
+<li>Enable <code>verbose</code> mode to monitor progress</li>
+<li>Save reports to files for large research projects</li>
+<li>Use <code>brief</code> depth for quick iterations</li>
+</ul>
+<h2 id="see-also">See Also</h2>
+<ul>
+<li><a href="basic-summarizer.html">BasicSummarizer</a> - Document summarization</li>
+<li><a href="basic-extractor.html">BasicExtractor</a> - Knowledge extraction  </li>
+<li><a href="basic-judge.html">BasicJudge</a> - Content evaluation</li>
+<li><a href="../tool-calling.html">Tool Calling Guide</a> - Custom tool integration</li>
+<li><a href="../centralized-config.html">Configuration Guide</a> - LLM setup</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../../docs/README.html">Documentation index</a> &middot;
+                <a href="../../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../../assets/js/main.js"></script>
+</body>
+</html>

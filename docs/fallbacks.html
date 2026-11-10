@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fallbacks - AbstractCore</title>
     <meta name="description" content="This document describes best-effort fallbacks AbstractCore uses when a provider/runtime does not expose (or does not reliably honor) a model’s native control…">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/fallbacks.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -34,7 +36,8 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">This document describes best-effort fallbacks AbstractCore uses when a provider/runtime does not expose (or does not reliably honor) a model’s native control surface.</p>
             </div>
 
-            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#qwen3-qwen35-thinking-reasoning-toggle" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Qwen3 / Qwen3.5: thinking (“reasoning”) toggle</a></div>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#not-a-fallback-which-model-gets-loaded" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Not a fallback: which model gets loaded</a>
+<a href="#qwen3--qwen35-thinking-reasoning-toggle" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Qwen3 / Qwen3.5: thinking (“reasoning”) toggle</a></div>
 
             <div class="doc-content">
 
@@ -45,7 +48,28 @@
 <li>Avoid “system prompt injection” where possible</li>
 <li>Be explicit about trade-offs and when behavior is only best-effort</li>
 </ul>
-<h2 id="qwen3-qwen35-thinking-reasoning-toggle">Qwen3 / Qwen3.5: thinking (“reasoning”) toggle</h2>
+<h2 id="not-a-fallback-which-model-gets-loaded">Not a fallback: which model gets loaded</h2>
+<p>There is <strong>no fallback between model artifacts</strong>. A model handle names an artifact, and
+AbstractCore either loads that artifact or fails (<a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/docs/adr/0009-model-handle-fidelity.md">ADR 0009</a>).
+Every fallback on this page changes <em>how</em> a request is served; none of them changes <em>what model
+serves it</em>.</p>
+<p>For example, <code>create_llm("huggingface", model="Qwen/Qwen3.6-27B")</code> loads the transformers
+weights of that repo. When those weights are not cached but a local LM Studio Hub manifest maps
+the name to a GGUF conversion, the provider raises <code>ModelArtifactMismatchError</code> instead of
+loading that GGUF. To load a GGUF build, say which artifact you want:</p>
+<div class="code-block"><pre><code class="language-python"># The GGUF that the LM Studio Hub alias points at:
+create_llm(&quot;huggingface&quot;, model=&quot;Qwen/Qwen3.6-27B&quot;, model_type=&quot;gguf&quot;)
+create_llm(&quot;huggingface&quot;, model=&quot;lmstudio-community/Qwen3.6-27B-GGUF&quot;)   # or name it directly
+create_llm(&quot;huggingface&quot;, model=&quot;/path/to/Qwen3.6-27B-Q4_K_M.gguf&quot;)      # or the file itself
+
+# The transformers weights the handle actually names:
+create_llm(&quot;huggingface&quot;, model=&quot;Qwen/Qwen3.6-27B&quot;, model_type=&quot;transformers&quot;)
+</code></pre></div>
+<p>An explicit <code>:quant</code> selector is likewise honoured exactly or refused — <code>repo-GGUF:Q8_0</code> will
+never quietly hand back <code>Q4_K_M</code>. Where a handle genuinely underdetermines the artifact (a GGUF
+repository holding several quantizations and no selector), the default pick is logged at WARNING
+on the <code>abstractcore.providers.huggingface</code> logger.</p>
+<h2 id="qwen3--qwen35-thinking-reasoning-toggle">Qwen3 / Qwen3.5: thinking (“reasoning”) toggle</h2>
 <h3 id="what-upstream-qwen-recommends">What upstream Qwen recommends</h3>
 <p>Qwen3’s official docs describe <strong>two</strong> ways to switch between thinking and non-thinking modes:</p>
 <p>1) <strong>Stateless hard switch (recommended for reliability)</strong><br />
@@ -61,6 +85,15 @@
 <code>https://qwen.readthedocs.io/en/stable/inference/transformers.html#thinking-non-thinking-mode</code></p>
 <h3 id="abstractcore-strategy">AbstractCore strategy</h3>
 <p>AbstractCore implements a layered approach for <code>thinking=...</code> on Qwen3/Qwen3.5:</p>
+<p>0) <strong>Unified request abstraction</strong></p>
+<p>Callers use the same public parameter everywhere:</p>
+<p><code>python
+   llm.generate("...", thinking="off")</code></p>
+<p><code>BaseProvider</code> normalizes <code>thinking=True|False|"auto"|"on"|"off"|"none"|level</code> and calls a
+   provider hook, <code>_apply_provider_thinking_kwargs(...)</code>. Providers return both rewritten kwargs
+   and a <code>ThinkingControlHandling</code> record so the base layer knows whether enable/disable and effort
+   level were actually handled. This prevents a provider-native control from being followed by a
+   second generic fallback marker.</p>
 <p>1) <strong>Backend-native knob (preferred)</strong><br />
    When the serving stack supports template kwargs, we send:</p>
 <ul>
@@ -68,21 +101,37 @@
 <li>and a compatibility alias <code>enableThinking = true|false</code></li>
 </ul>
 <p>This is the “clean” approach because it aligns with Qwen’s chat templates and avoids injecting control tokens into the conversation.</p>
-<p>2) <strong>Robust fallback for <code>thinking="off"/"none"</code> (LM Studio + llama.cpp/GGUF)</strong><br />
-   Some local runtimes either:
-   - do not expose template kwargs via API (e.g. <code>llama-cpp-python</code> today), or
-   - may ignore <code>chat_template_kwargs</code> for some model formats (observed in some LM Studio builds)</p>
-<p>In those cases, AbstractCore uses Qwen’s <strong>stateless hard switch</strong> by appending a final assistant “prefill” message containing the empty think block:</p>
+<p>2) <strong>Provider-rendered hard switch for local Qwen runtimes</strong></p>
 <ul>
-<li>Implemented in <code>abstractcore/providers/base.py</code> (Qwen hard-switch marker injection).</li>
-<li>Used for Qwen3/Qwen3.5 on:<ul>
-<li><code>LMStudioProvider</code></li>
-<li><code>HuggingFaceProvider</code> when <code>model_type=="gguf"</code> (llama-cpp-python)</li>
+<li>MLX and HuggingFace transformers place the empty think block through their provider prompt
+     renderers when <code>thinking="off"</code> and a native <code>enable_thinking</code> template kwarg is not available.</li>
+<li>HuggingFace transformers passes <code>enable_thinking</code> into <code>tokenizer.apply_chat_template(...)</code>
+     when the tokenizer supports it, and uses the same empty-think marker in its cache-delta
+     renderer for Qwen-family cached generation.</li>
+<li>HuggingFace GGUF exact-renderer paths do not mutate canonical history. The control-plane
+     renderer inserts the empty think block at the final assistant generation prompt, so durable
+     prompt-cache prefixes and live suffixes serialize consistently. Because that renderer owns
+     the control, thinking-controlled GGUF requests are routed through it whether or not a
+     <code>prompt_cache_key</code> is in play.</li>
 </ul>
-</li>
+<p>3) <strong>LM Studio: <code>reasoning_effort</code>, with the prefill as the last resort</strong>
+   LM Studio's OpenAI-compatible endpoint ignores <code>chat_template_kwargs</code>. The top-level
+   <code>reasoning_effort</code> field reaches the chat template on every request shape, so the LM Studio
+   provider sends <code>reasoning_effort: "none"</code> for <code>thinking="off"</code> (the template then renders its
+   own empty think block). The Qwen <strong>stateless hard switch</strong> — a final assistant "prefill"
+   message containing the empty think block — is used only when the server has rejected
+   <code>reasoning_effort</code> earlier in the session. Sending both rendered the empty block twice. See
+   <a href="reasoning-control.html#lm-studio-facts">Reasoning Control</a> for the live evidence.</p>
+<ul>
+<li>The marker injection lives in <code>abstractcore/providers/base.py</code>; a provider opts in through
+     <code>_wants_assistant_prefill_disable(...)</code> (LM Studio: only when its hook did not handle the
+     disable).</li>
+<li>Providers that render prompts locally (MLX, HuggingFace transformers and GGUF) place the
+     marker themselves at the generation boundary, which is where the model's own chat template
+     puts it; they do not use this message-level fallback.</li>
 </ul>
-<p>Note: this fallback adds an extra assistant turn <strong>in the outbound request only</strong>. Callers should not persist that marker message as part of the canonical chat history.</p>
-<p>3) <strong>Why we do not rely on <code>/no_think</code> as the primary switch</strong></p>
+<p>Note: the fallback adds an extra assistant turn <strong>in the outbound request only</strong>. Callers should not persist that marker message as part of the canonical chat history.</p>
+<p>4) <strong>Why we do not rely on <code>/no_think</code> as the primary switch</strong></p>
 <p><code>/no_think</code> is a “soft” instruction and can be unreliable when:</p>
 <ul>
 <li>The instruction is not placed in a position the model “sees” as authoritative</li>
@@ -92,6 +141,13 @@
 <p>The assistant-prefill hard switch is stateless and robust, and matches Qwen’s own documented method.</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

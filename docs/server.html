@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AbstractCore Server - AbstractCore</title>
     <meta name="description" content="Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/server.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -34,7 +36,9 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.</p>
             </div>
 
-            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#interactive-api-docs-start-here" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Interactive API docs (start here)</a>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#serving-through-abstractgateway" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Serving through AbstractGateway</a>
+<a href="#web-console" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Web console</a>
+<a href="#interactive-api-docs-start-here" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Interactive API docs (start here)</a>
 <a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
 <a href="#configuration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration</a>
 <a href="#api-endpoints" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">API Endpoints</a>
@@ -49,33 +53,178 @@
             <div class="doc-content">
 
 <p>If you want a dedicated <strong>single-model</strong> <code>/v1</code> server (one provider/model per worker), see <a href="endpoint.html">Endpoint</a>.</p>
+<h2 id="serving-through-abstractgateway">Serving through AbstractGateway</h2>
+<p>Native framework clients use Gateway run APIs and replay Runtime's ledger. They do not need an
+OpenAI-compatible endpoint. Gateway can optionally start Core's direct listener in the existing
+execution owner: its address and authentication come from Core's server configuration, and
+requests are handled by Core without Gateway/Runtime run orchestration. The direct listener is
+disabled by default and has a separate lifecycle from native execution.</p>
+<p>Gateway also offers a separate compatibility API at <code>&lt;gateway-url&gt;/v1</code> (the deprecated
+<code>/core/v1</code> prefix redirects there). That API uses Gateway account admission, named OpenAI API
+keys and its network policy. Its credentials are distinct from a direct Core listener's token.
+See <a href="https://github.com/lpalbou/abstractgateway/blob/main/docs/openai-api.md">Gateway's OpenAI API guide</a>
+for its configuration and key rules. Core continues to own inference and upstream credential
+policy. See <a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/docs/adr/0004-operator-control-and-server-trust-boundary.md">Operator control and server trust boundary</a>.</p>
+<h3 id="managed-listener-in-an-execution-owner">Managed listener in an execution owner</h3>
+<p>Hosts that already own Core inference can explicitly start its authenticated HTTP app without
+launching another model-owning process:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.server.managed import start_managed_server
+
+listener = start_managed_server()  # Core's configured server host/port
+try:
+    print(listener.url)
+    print(listener.status())
+    # Keep the host's normal service loop running here.
+finally:
+    listener.stop()
+</code></pre></div>
+<p>The default address is <code>127.0.0.1:8000</code>; explicit <code>host=</code> and <code>port=</code> override the persisted
+server configuration, and <code>port=0</code> selects an available port. Importing the helper does not
+import the HTTP application or bind a socket. Starting it uses Core's existing first-run token
+handling and authentication; it does not accept Gateway credentials as Core credentials.
+The actual listener bind controls the default engine-install policy, independently for each
+concurrent listener. An explicit <code>ABSTRACTCORE_ALLOW_ENGINE_INSTALL</code> setting still wins.</p>
+<p><code>status()</code> returns <code>running</code>, <code>url</code> and <code>error</code>; <code>is_running</code> and <code>last_error</code> are also available.
+Startup is bounded by <code>timeout_s</code> (15 seconds by default); invalid timeouts and failed binds
+raise before serving. <code>stop(timeout_s=6.0)</code> is repeatable and stops HTTP serving without
+unloading resident weights or restarting the execution owner. It raises if the listener cannot
+stop, so hosts can report and retry cleanup. Hosts own supervision and service recovery.</p>
+<p>The listener shares process resources with Python callers under the
+<a href="memory-management.html#one-resident-artifact-per-process">managed-loader sharing rules</a>.
+Launching <code>abstractcore serve</code> separately creates an independent process and pool.</p>
+<h3 id="embedding-core-in-an-asgi-host">Embedding Core in an ASGI host</h3>
+<p>A hosting application can supply a request-scoped authentication policy without
+changing process environment variables:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.server.app import app as core_app
+from abstractcore.server.auth_policy import ServerAuthPolicy, use_server_auth_policy
+
+policy = ServerAuthPolicy(token=&quot;host-managed-core-token&quot;, allow_unauthenticated=False)
+
+async def serve_core(scope, receive, send):
+    with use_server_auth_policy(policy):
+        await core_app(scope, receive, send)
+</code></pre></div>
+<p>Keep the context active for the complete ASGI call, including streamed response
+bodies. Policies are isolated between concurrent requests, propagate to
+context-aware worker threads, and restore the previous policy when the context
+exits. The host owns endpoint enablement, route exposure, network restrictions,
+and token persistence and rotation.</p>
+<p><code>ServerAuthPolicy</code> requires a non-empty token and a boolean open-access flag.
+When <code>allow_unauthenticated=True</code>, requests without <code>Authorization</code> may proceed,
+but they receive no server-authenticated provider credential privileges. Any
+supplied <code>Authorization</code> must still be the valid Core bearer token; explicit
+provider credentials use <code>X-AbstractCore-Provider-API-Key</code>.</p>
+<p>Outside a host policy, standalone server authentication continues to use its
+existing environment/configuration settings. See <a href="api.html#request-scoped-server-authentication">API reference</a>.</p>
+<h2 id="web-console">Web console</h2>
+<p><code>abstractcore serve</code> prints a one-time link, <code>http://127.0.0.1:8000/console#claim=&lt;code&gt;</code>,
+that opens the browser console already signed in: host profile, model catalog with fit badges,
+download and delete, engine status and install, providers. Each action shows its CLI
+equivalent. See <a href="#first-run-on-your-machine">First run</a> and <a href="console.html">Web Console</a>.</p>
 <h2 id="interactive-api-docs-start-here">Interactive API docs (start here)</h2>
 <p>Visit while the server is running:
 - <strong>Swagger UI</strong>: <code>http://localhost:8000/docs</code>
-- <strong>ReDoc</strong>: <code>http://localhost:8000/redoc</code></p>
+- <strong>ReDoc</strong>: <code>http://localhost:8000/redoc</code>
+- <strong>Lightweight endpoint index</strong>: <code>http://localhost:8000/docs-lite</code></p>
+<p>Swagger UI keeps its standard <code>Authorize</code> button when server auth is enabled.
+When <code>ABSTRACTCORE_AUTH_TOKEN</code> is set,
+AbstractCore wraps that authorize
+flow and validates the entered bearer token through <code>/acore/auth/validate</code>
+before Swagger stores it for <code>Try it out</code> requests. Invalid tokens stay
+unauthorized and render an auth error inside the modal. The docs and OpenAPI
+schema are public by default so the UI can load before authentication, but API
+operations remain protected. Set <code>ABSTRACTCORE_SERVER_PROTECT_DOCS=1</code> if you
+also want <code>/docs</code>, <code>/docs-lite</code>, <code>/redoc</code>, and <code>/openapi.json</code> behind server auth.
+When server auth is disabled, the server bearer scheme is omitted from the docs,
+so Swagger does not render a misleading server-token authorize flow.</p>
+<p>The OpenAPI schema includes executable examples for every request body. JSON
+examples intentionally show optional aliases as <code>null</code> when sending both fields
+would be ambiguous; the server drops nulls before routing. For local/custom
+OpenAI-compatible endpoints, set <code>base_url</code> only when you intentionally want to
+route away from the provider's default API host.</p>
 <h2 id="quick-start">Quick Start</h2>
 <h3 id="install-and-run-2-minutes">Install and Run (2 minutes)</h3>
-<div class="code-block"><pre><code class="language-bash"># Install
-pip install &quot;abstractcore[server]&quot;
+<p>On your own machine:</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore
+abstractcore serve
+# AbstractCore server
+#   Config dir: ~/.abstractcore/config
+#   URL:        http://127.0.0.1:8000
+#   ...
+#   Open the console (one-time link, valid 10 minutes):
+#     http://127.0.0.1:8000/console#claim=...
 
-# Configure server auth and provider keys
-export ABSTRACTCORE_SERVER_API_KEY=&quot;acore-server-secret&quot;
-export OPENAI_API_KEY=&quot;sk-...&quot;
-
-# Start server
-python -m abstractcore.server.app
-
-# Or with uvicorn directly
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Test
+export ABSTRACTCORE_AUTH_TOKEN=&quot;$(abstractcore serve --print-token)&quot;   # for API clients
 curl http://localhost:8000/health
 # Response: {&quot;status&quot;:&quot;healthy&quot;}
 </code></pre></div>
+<p>Open the printed link, then use the <strong>Models</strong> and <strong>Engines</strong> tabs. The server listens on
+<code>127.0.0.1</code> only and created its bearer token for you (see
+<a href="#first-run-on-your-machine">First run</a>).</p>
+<p>On a network or in production, choose the token yourself and bind every interface:</p>
+<div class="code-block"><pre><code class="language-bash">export ABSTRACTCORE_AUTH_TOKEN=&quot;acore-server-secret&quot;
+export OPENAI_API_KEY=&quot;sk-...&quot;
+abstractcore serve --host 0.0.0.0 --port 8000
+
+# Or with uvicorn directly (no generated token: set ABSTRACTCORE_AUTH_TOKEN)
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
+</code></pre></div>
+<h3 id="first-run-on-your-machine">First run on your machine</h3>
+<p><code>abstractcore serve</code> on a loopback address (<code>127.0.0.1</code>, the default, <code>localhost</code> or <code>::1</code>)
+with neither <code>ABSTRACTCORE_AUTH_TOKEN</code> nor <code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED</code> set
+(nor their persisted forms, <code>abstractcore --set-server-auth-token</code> and
+<code>abstractcore --allow-unauthenticated-server</code>):</p>
+<ul>
+<li>creates a bearer token once and keeps it in <code>&lt;config dir&gt;/server-token</code>, readable by you
+  only (<code>~/.abstractcore/config/server-token</code> by default; <code>ABSTRACTCORE_CONFIG_DIR</code> moves it),
+  and uses it as the server token on every start;</li>
+<li>prints a one-time console link, <code>http://127.0.0.1:&lt;port&gt;/console#claim=&lt;code&gt;</code>, valid for
+  10 minutes and for one use. Opening it signs that browser tab in: the console exchanges the
+  code for the token, keeps the token in the tab's session storage and removes the code from
+  the address bar;</li>
+<li>prints the command-line equivalents.</li>
+</ul>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>You want</th>
+<th>Run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The token for an API client or the terminal</td>
+<td><code>abstractcore serve --print-token</code></td>
+</tr>
+<tr>
+<td>A fresh console link for a running server</td>
+<td><code>abstractcore serve --claim-url --port &lt;port&gt;</code></td>
+</tr>
+<tr>
+<td>Your own fixed token</td>
+<td><code>ABSTRACTCORE_AUTH_TOKEN=&lt;token&gt; abstractcore serve</code>, or write it into <code>&lt;config dir&gt;/server-token</code></td>
+</tr>
+<tr>
+<td>No auth at all (local development only)</td>
+<td><code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1 abstractcore serve</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>The link is redeemed with <code>POST /acore/session/claim</code> <code>{"code": "&lt;code&gt;"}</code>, which returns
+<code>{"ok": true, "token_type": "bearer", "token": "..."}</code>. It answers only a direct connection
+from the same machine: a request from another address, one carrying a forwarding header
+(<code>X-Forwarded-For</code>, <code>Forwarded</code>, <code>X-Real-IP</code>, ...) or one whose <code>Host</code> is not a loopback name
+is refused with 403, and a used, expired or unknown code is refused with 403 too. When the
+token comes from <code>ABSTRACTCORE_AUTH_TOKEN</code> (or <code>--set-server-auth-token</code>), no links are issued
+and the route answers 404.</p>
+<p>A server bound to any other address (<code>--host 0.0.0.0</code>, a LAN address) never generates a token:
+set <code>ABSTRACTCORE_AUTH_TOKEN</code>, or every API call answers <code>server_auth_not_configured</code>. The
+start banner says which case applies. Starting the app with <code>uvicorn</code> directly skips the first
+run too.</p>
 <h3 id="first-request">First Request</h3>
 <div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
   -H &quot;Content-Type: application/json&quot; \
-  -H &quot;Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY&quot; \
+  -H &quot;Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN&quot; \
   -d '{
     &quot;model&quot;: &quot;openai/gpt-4o-mini&quot;,
     &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}]
@@ -85,7 +234,7 @@ curl http://localhost:8000/health
 <div class="code-block"><pre><code class="language-python">import os
 from openai import OpenAI
 
-client = OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=os.environ[&quot;ABSTRACTCORE_SERVER_API_KEY&quot;])
+client = OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=os.environ[&quot;ABSTRACTCORE_AUTH_TOKEN&quot;])
 
 response = client.chat.completions.create(
     model=&quot;anthropic/claude-haiku-4-5&quot;,
@@ -97,7 +246,7 @@ print(response.choices[0].message.content)
 <h2 id="configuration">Configuration</h2>
 <p>You can configure the server through environment variables or through AbstractCore's centralized config. Environment variables always take precedence over config-persisted values.</p>
 <div class="code-block"><pre><code class="language-bash"># Persisted local/server config
-abstractcore --set-server-api-key acore-server-secret
+abstractcore --set-server-auth-token acore-server-secret
 abstractcore --set-api-key openai sk-...
 abstractcore --set-api-key anthropic sk-ant-...
 abstractcore --set-api-key openrouter sk-or-...
@@ -118,16 +267,22 @@ export OPENROUTER_API_KEY=&quot;sk-or-...&quot;
 export PORTKEY_API_KEY=&quot;pk_...&quot;         # optional (Portkey)
 export PORTKEY_CONFIG=&quot;pcfg_...&quot;        # required for Portkey routing
 
-# Server master key. Authenticated clients can use all server-configured providers.
-export ABSTRACTCORE_SERVER_API_KEY=&quot;acore-server-secret&quot;
+# Server auth token. Authenticated clients can use all server-configured providers.
+export ABSTRACTCORE_AUTH_TOKEN=&quot;acore-server-secret&quot;
+
+# Optional: also protect /docs, /docs-lite, /redoc, and /openapi.json.
+export ABSTRACTCORE_SERVER_PROTECT_DOCS=1
 
 # Local providers
 export OLLAMA_BASE_URL=&quot;http://localhost:11434&quot;          # (or legacy: OLLAMA_HOST)
 export LMSTUDIO_BASE_URL=&quot;http://localhost:1234/v1&quot;
 export VLLM_BASE_URL=&quot;http://localhost:8000/v1&quot;
+export OPENAI_BASE_URL=&quot;http://localhost:1234/v1&quot;
+export OPENAI_API_KEY=&quot;your-endpoint-key&quot;                # optional, if the endpoint requires auth
 
-# Server bind (only used by `python -m abstractcore.server.app`)
-export HOST=&quot;0.0.0.0&quot;
+# Server bind (used by `abstractcore serve` and compatibility module entrypoints).
+# The default is 127.0.0.1; 0.0.0.0 listens on every interface and needs ABSTRACTCORE_AUTH_TOKEN.
+export HOST=&quot;127.0.0.1&quot;
 export PORT=&quot;8000&quot;
 
 # Debug mode
@@ -156,10 +311,18 @@ export ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1
 </code></pre></div>
 <h3 id="startup-options">Startup Options</h3>
 <div class="code-block"><pre><code class="language-bash"># Using AbstractCore's built-in CLI
-python -m abstractcore.server.app --help                    # View all options
-python -m abstractcore.server.app --debug                   # Debug mode
-python -m abstractcore.server.app --host 127.0.0.1 --port 8080  # Custom host/port
-python -m abstractcore.server.app --debug --port 8001       # Debug on custom port
+abstractcore serve --help                              # View all options
+abstractcore serve --debug                             # Debug mode
+abstractcore serve --port 8080                         # Custom port (binds 127.0.0.1)
+abstractcore serve --host 0.0.0.0 --port 8080          # Every interface (set ABSTRACTCORE_AUTH_TOKEN)
+abstractcore serve --print-token                       # Print the local server's token, then exit
+abstractcore serve --claim-url --port 8080             # Print a fresh one-time console link, then exit
+abstractcore serve --debug --port 8001                 # Debug on custom port
+abstractcore serve --reload                            # Development auto-reload
+
+# Compatibility module entrypoints
+python -m abstractcore.server
+python -m abstractcore.server.app
 
 # Using uvicorn directly
 uvicorn abstractcore.server.app:app --reload                # Development with auto-reload
@@ -168,16 +331,949 @@ uvicorn abstractcore.server.app:app --port 3000             # Custom port
 </code></pre></div>
 <hr />
 <h2 id="api-endpoints">API Endpoints</h2>
+<h3 id="endpoint-map">Endpoint Map</h3>
+<p>All API operations except <code>GET /health</code> use the same server auth policy:
+send <code>Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN</code> when <code>ABSTRACTCORE_AUTH_TOKEN</code> is configured. Provider-key overrides use
+<code>X-AbstractCore-Provider-API-Key</code>. Provider keys in request bodies remain disabled; select
+discovery endpoints accept an <code>api_key</code> query parameter for tooling/Swagger UI convenience.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Group</th>
+<th style="text-align: right;">Method</th>
+<th>Endpoint</th>
+<th>Purpose</th>
+<th>Main parameters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Health</td>
+<td style="text-align: right;">GET</td>
+<td><code>/health</code></td>
+<td>Liveness/version probe; never requires auth</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Console</td>
+<td style="text-align: right;">GET</td>
+<td><code>/console</code></td>
+<td>Web console page; never requires auth (its API calls do)</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Console</td>
+<td style="text-align: right;">GET</td>
+<td><code>/console/fragment/{kind}</code></td>
+<td>Embeddable Models/Engines screen as <code>{kind, html, js, css}</code>; never requires auth</td>
+<td>path <code>kind</code>: <code>models</code> or <code>engines</code></td>
+</tr>
+<tr>
+<td>Console</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/session/claim</code></td>
+<td>Trade a one-time console link code for the bearer token (<a href="#first-run-on-your-machine">first run</a>); loopback peers only, no auth</td>
+<td>JSON <code>code</code></td>
+</tr>
+<tr>
+<td>Configuration</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/config/capability-defaults</code></td>
+<td>List explicit input/output/embedding/rerank route defaults</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Configuration</td>
+<td style="text-align: right;">PUT</td>
+<td><code>/v1/config/capability-defaults/{kind}/{modality}</code></td>
+<td>Set one capability route default</td>
+<td>path <code>kind</code>, <code>modality</code>; body <code>provider</code>, <code>model</code>, <code>base_url</code>, <code>options</code></td>
+</tr>
+<tr>
+<td>Configuration</td>
+<td style="text-align: right;">PUT</td>
+<td><code>/v1/config/capability-defaults/{kind}/{modality}/{task}</code></td>
+<td>Set one task-specific generated-media route default</td>
+<td>path <code>kind</code>, <code>modality</code>, <code>task</code>; body <code>provider</code>, <code>model</code>, <code>base_url</code>, <code>options</code></td>
+</tr>
+<tr>
+<td>Configuration</td>
+<td style="text-align: right;">DELETE</td>
+<td><code>/v1/config/capability-defaults/{kind}/{modality}</code></td>
+<td>Clear one capability route default</td>
+<td>path <code>kind</code>, <code>modality</code></td>
+</tr>
+<tr>
+<td>Configuration</td>
+<td style="text-align: right;">DELETE</td>
+<td><code>/v1/config/capability-defaults/{kind}/{modality}/{task}</code></td>
+<td>Clear one task-specific generated-media route default</td>
+<td>path <code>kind</code>, <code>modality</code>, <code>task</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/models</code></td>
+<td>List models and filter by provider/capabilities</td>
+<td><code>provider</code>, <code>input_type</code>, <code>output_type</code>, <code>capability_route</code>, <code>base_url</code>, <code>api_key</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/providers</code></td>
+<td>Provider status/capabilities</td>
+<td><code>include_models</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/vision/providers/</code></td>
+<td>AbstractVision provider catalog for image/video generation models</td>
+<td>optional <code>task</code>, <code>provider</code>, <code>include_models</code>, <code>base_url</code>, <code>api_key</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/vision/adapters</code></td>
+<td>Installed compatible AbstractVision adapter catalog for one provider/model/task route</td>
+<td>optional <code>provider</code>, <code>model</code>, <code>task</code>, <code>base_url</code>, <code>api_key</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/audio/voices</code></td>
+<td>AbstractVoice voice/profile catalog for TTS</td>
+<td>optional <code>provider</code>, <code>model</code>, <code>language</code>, <code>providers_only</code>, <code>base_url</code>, <code>api_key</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/audio/languages</code></td>
+<td>Languages each TTS, STT and cloning engine accepts (no model loaded)</td>
+<td>optional <code>kind</code> (<code>tts</code>/<code>stt</code>/<code>cloning</code>), <code>provider</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/audio/speech/models</code></td>
+<td>AbstractVoice TTS model/provider catalog</td>
+<td>optional <code>provider</code>, <code>base_url</code>, <code>api_key</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/audio/speech/providers</code></td>
+<td>AbstractVoice TTS provider catalog</td>
+<td>optional <code>base_url</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/audio/transcriptions/models</code></td>
+<td>AbstractVoice STT model/provider catalog</td>
+<td>optional <code>provider</code>, <code>base_url</code>, <code>api_key</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/audio/transcriptions/providers</code></td>
+<td>AbstractVoice STT provider catalog</td>
+<td>optional <code>base_url</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/voice/clone/providers</code></td>
+<td>AbstractVoice voice clone provider catalog</td>
+<td>optional <code>base_url</code></td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/voice/clones</code></td>
+<td>Cloned voices: your own, designed and built-in</td>
+<td>optional <code>provider</code>, <code>model</code>, <code>language</code></td>
+</tr>
+<tr>
+<td>Chat</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/chat/completions</code></td>
+<td>OpenAI-compatible chat, streaming, tools, media</td>
+<td><code>model</code>, <code>messages</code>, <code>stream</code>, <code>tools</code>, <code>tool_choice</code>, <code>temperature</code>, <code>max_tokens</code>, <code>base_url</code>, <code>agent_format</code>, <code>thinking</code></td>
+</tr>
+<tr>
+<td>Chat</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/chat/completions</code></td>
+<td>Provider-scoped chat route where body model is unprefixed</td>
+<td>path <code>provider</code>, body <code>model</code>, <code>messages</code>, chat parameters</td>
+</tr>
+<tr>
+<td>Responses</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/responses</code></td>
+<td>OpenAI Responses API (<code>object:"response"</code>) + legacy chat fallback</td>
+<td><code>model</code>, <code>input</code> or <code>messages</code>, <code>stream</code>, generation parameters, <code>base_url</code>, <code>agent_format</code>, <code>thinking</code>, <code>prompt_cache_key</code>, <code>prompt_cache_binding</code></td>
+</tr>
+<tr>
+<td>Embeddings</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/embeddings</code></td>
+<td>OpenAI-compatible embedding vectors</td>
+<td><code>model</code>, <code>input</code>, <code>dimensions</code>, <code>encoding_format</code>, <code>user</code>, <code>base_url</code></td>
+</tr>
+<tr>
+<td>Decisions</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/decisions</code></td>
+<td>Typed questions (choice / noul / score) about a state, answered by a local or hosted decision model with calibrated probabilities (System One request/answer shape)</td>
+<td><code>model</code>, <code>state</code>, <code>questions</code>, <code>truncate</code></td>
+</tr>
+<tr>
+<td>Decisions</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/decisions</code></td>
+<td>Provider-scoped decisions route where the body model is unprefixed</td>
+<td>path <code>provider</code>, body <code>model</code>, <code>state</code>, <code>questions</code>, <code>truncate</code></td>
+</tr>
+<tr>
+<td>Images</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/images/generations</code></td>
+<td>Text-to-image generation</td>
+<td><code>prompt</code>, optional <code>model</code>, <code>provider</code>, <code>base_url</code>, <code>width</code>, <code>height</code>, <code>size</code>, <code>n</code>, <code>seeds</code>, <code>steps</code>, <code>guidance_scale</code>, <code>seed</code>, <code>lora_adapters</code>, <code>quality</code>, <code>extra</code></td>
+</tr>
+<tr>
+<td>Images</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/images/generations</code></td>
+<td>Provider-scoped text-to-image route where body model is unprefixed</td>
+<td>path <code>provider</code>, body <code>model</code>, optional <code>base_url</code>, image generation parameters</td>
+</tr>
+<tr>
+<td>Images</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/images/edits</code></td>
+<td>Image edit/inpaint via multipart form</td>
+<td><code>prompt</code>, <code>image</code>, optional <code>mask</code>, repeatable <code>reference_images</code>, <code>model</code>, <code>provider</code>, <code>base_url</code>, <code>n</code>, <code>seeds</code>, <code>size</code>, <code>steps</code>, <code>guidance_scale</code>, <code>seed</code>, <code>lora_adapters_json</code>, <code>extra_json</code></td>
+</tr>
+<tr>
+<td>Images</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/images/edits</code></td>
+<td>Provider-scoped image edit route where body model is unprefixed</td>
+<td>path <code>provider</code>, optional <code>base_url</code>, image edit form fields</td>
+</tr>
+<tr>
+<td>Images</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/images/upscale</code></td>
+<td>Image upscaling via multipart form</td>
+<td><code>image</code>, optional <code>model</code>, <code>provider</code>, <code>base_url</code>, <code>scale</code>, <code>resolution</code>, <code>softness</code>, <code>seed</code>, <code>quantize</code>, <code>vae_tiling</code>, <code>extra_json</code></td>
+</tr>
+<tr>
+<td>Images</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/images/upscale</code></td>
+<td>Provider-scoped image upscale route where body model is unprefixed</td>
+<td>path <code>provider</code>, optional <code>base_url</code>, image upscale form fields</td>
+</tr>
+<tr>
+<td>Videos</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/videos/generations</code></td>
+<td>Text-to-video generation</td>
+<td><code>prompt</code>, optional <code>model</code>, <code>provider</code>, <code>base_url</code>, <code>width</code>, <code>height</code>, <code>fps</code>, <code>num_frames</code>, <code>n</code>, <code>seeds</code>, <code>steps</code>, <code>guidance_scale</code>, <code>guidance_2</code>, <code>flow_shift</code>, <code>lora_adapters</code>, <code>extra</code></td>
+</tr>
+<tr>
+<td>Videos</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/videos/generations</code></td>
+<td>Provider-scoped text-to-video route where body model is unprefixed</td>
+<td>path <code>provider</code>, body <code>model</code>, optional <code>base_url</code>, video generation parameters</td>
+</tr>
+<tr>
+<td>Videos</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/videos/edits</code></td>
+<td>Image-to-video via multipart form</td>
+<td><code>prompt</code>, <code>image</code>, optional <code>model</code>, <code>provider</code>, <code>base_url</code>, <code>width</code>, <code>height</code>, <code>fps</code>, <code>num_frames</code>, <code>n</code>, <code>seeds</code>, <code>steps</code>, <code>guidance_scale</code>, <code>guidance_2</code>, <code>flow_shift</code>, <code>lora_adapters_json</code>, <code>extra_json</code></td>
+</tr>
+<tr>
+<td>Videos</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/videos/edits</code></td>
+<td>Provider-scoped image-to-video route where body model is unprefixed</td>
+<td>path <code>provider</code>, optional <code>base_url</code>, image-to-video form fields</td>
+</tr>
+<tr>
+<td>Vision Jobs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/vision/jobs/images/generations</code></td>
+<td>Async image generation with polling and progress events</td>
+<td>same body as <code>/v1/images/generations</code></td>
+</tr>
+<tr>
+<td>Vision Jobs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/vision/jobs/images/edits</code></td>
+<td>Async image edit with polling and progress events</td>
+<td>same form fields as <code>/v1/images/edits</code></td>
+</tr>
+<tr>
+<td>Vision Jobs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/vision/jobs/images/upscale</code></td>
+<td>Async image upscale with polling and progress events</td>
+<td>same form fields as <code>/v1/images/upscale</code></td>
+</tr>
+<tr>
+<td>Vision Jobs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/vision/jobs/videos/generations</code></td>
+<td>Async text-to-video with polling and progress events</td>
+<td>same body as <code>/v1/videos/generations</code></td>
+</tr>
+<tr>
+<td>Vision Jobs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/vision/jobs/videos/edits</code></td>
+<td>Async image-to-video with polling and progress events</td>
+<td>same form fields as <code>/v1/videos/edits</code></td>
+</tr>
+<tr>
+<td>Vision Jobs</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/vision/jobs/{job_id}</code></td>
+<td>Poll/consume async job state</td>
+<td>path <code>job_id</code>, query <code>consume</code></td>
+</tr>
+<tr>
+<td>Vision Models</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/vision/models</code></td>
+<td>Available AbstractVision model catalog</td>
+<td>optional <code>task</code>, <code>provider</code>, <code>base_url</code>, <code>api_key</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/audio/transcriptions</code></td>
+<td>Speech-to-text multipart endpoint. Local engines answer <code>{text, language, detected_language}</code>: <code>language</code> is what the engine was told (<code>null</code> = it detected the language), <code>detected_language</code> the ISO 639-1 code it reported (<code>null</code> when it reports none).</td>
+<td><code>file</code>, optional <code>provider</code>, <code>model</code>, <code>language</code> (ISO 639-1; absent = detected), <code>prompt</code>, <code>response_format</code>, <code>temperature</code>, <code>format</code>, <code>base_url</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/audio/transcriptions</code></td>
+<td>Provider-scoped speech-to-text route where body model is unprefixed</td>
+<td>path <code>provider</code>, optional <code>base_url</code>, STT form fields</td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/audio/speech</code></td>
+<td>Text-to-speech endpoint</td>
+<td><code>input</code>/<code>text</code>, optional <code>provider</code>, <code>model</code>, <code>voice</code>, <code>response_format</code>/<code>format</code>, <code>speed</code>, <code>instructions</code>, <code>profile</code>, <code>quality_preset</code>, <code>quality</code>, <code>one_shot</code>, <code>base_url</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/audio/speech</code></td>
+<td>Provider-scoped text-to-speech route where body model is unprefixed</td>
+<td>path <code>provider</code>, optional <code>base_url</code>, TTS body fields</td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/audio/speech/stream</code></td>
+<td>Text-to-speech JSON Lines stream endpoint</td>
+<td>Local/plugin TTS stream events; currently <code>wav</code> segment chunks only</td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/audio/speech/stream</code></td>
+<td>Provider-scoped text-to-speech stream route</td>
+<td>path <code>provider</code>; currently local/plugin <code>wav</code> segment chunks only</td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/voice/clone</code></td>
+<td>AbstractVoice-compatible voice-clone/custom-voice extension</td>
+<td><code>file</code>, optional <code>provider</code>, <code>model</code>, <code>tts_model</code>, <code>cloning_engine</code>, <code>base_url</code>, <code>name</code>, <code>reference_text</code>, <code>language</code>, <code>validate</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/voice/clone</code></td>
+<td>Provider-scoped voice-clone route where body model is unprefixed</td>
+<td>path <code>provider</code>, optional <code>base_url</code>, voice-clone form fields</td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/voice/clones/{voice_id}</code></td>
+<td>One cloned voice's stored record</td>
+<td>path <code>voice_id</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">PATCH</td>
+<td><code>/v1/voice/clones/{voice_id}</code></td>
+<td>Rename a cloned voice and/or replace its reference transcript</td>
+<td>path <code>voice_id</code>; body <code>name</code> and/or <code>reference_text</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">DELETE</td>
+<td><code>/v1/voice/clones/{voice_id}</code></td>
+<td>Delete a cloned voice (built-in voices are read-only)</td>
+<td>path <code>voice_id</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/voice/design</code></td>
+<td>Create a reusable voice from a written description</td>
+<td>body <code>description</code>, optional <code>name</code>, <code>language</code>, <code>text</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/audio/translations</code></td>
+<td>Reserved OpenAI-compatible translation route</td>
+<td><code>file</code>, <code>model</code>; returns <code>501</code> in this version</td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/audio/music</code></td>
+<td>Extension endpoint for text-to-music and sound-effect plugins</td>
+<td><code>prompt</code>/<code>input</code>/<code>text</code>, optional <code>task</code>, <code>provider</code>, <code>model</code>, <code>lyrics</code>, <code>seconds</code>/<code>duration_s</code>, <code>seed</code>, <code>num_inference_steps</code>, <code>guidance_scale</code>, <code>format</code>; requires a music capability plugin</td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/audio/music</code></td>
+<td>Backend-scoped text-to-music route</td>
+<td>path <code>provider</code>, music body fields</td>
+</tr>
+<tr>
+<td>Scene3D</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/scene3d/generations</code></td>
+<td>Extension endpoint for 3D generation plugins</td>
+<td><code>prompt</code> (text→3D) or <code>image_b64</code> (image→3D), optional <code>provider</code>, <code>model</code>, <code>task</code> (<code>t23d</code>/<code>i23d</code>), <code>format</code> (<code>glb</code> default), backend options (<code>seed</code>, <code>mc_resolution</code>, …); returns raw model bytes; requires a scene3d capability plugin</td>
+</tr>
+<tr>
+<td>Scene3D</td>
+<td style="text-align: right;">POST</td>
+<td><code>/{provider}/v1/scene3d/generations</code></td>
+<td>Backend-scoped 3D generation route</td>
+<td>path <code>provider</code> (e.g. <code>triposr</code>, <code>step1x</code>, <code>hunyuan3d21</code>, <code>trellis2</code>), scene3d body fields</td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/camera/devices</code></td>
+<td>List cameras (non-invasive discovery)</td>
+<td>none; requires a camera capability plugin</td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/camera/open</code></td>
+<td>Claim a camera and start its session</td>
+<td>optional <code>camera</code></td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/camera/close</code></td>
+<td>Release a camera</td>
+<td>optional <code>camera</code></td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/camera/status</code></td>
+<td>Camera status (one or all)</td>
+<td>optional <code>camera</code></td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/camera/preview</code></td>
+<td>Latest live-view frame (JPEG)</td>
+<td>optional <code>camera</code></td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/camera/photo</code></td>
+<td>Capture a photo</td>
+<td>optional <code>camera</code>, <code>timeout_s</code></td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/camera/video</code></td>
+<td>Record a bounded video clip</td>
+<td><code>duration_s</code>, optional <code>camera</code>, <code>timeout_s</code></td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/camera/recording/stop</code></td>
+<td>Stop a running recording</td>
+<td>optional <code>camera</code></td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/camera/detection</code></td>
+<td>Arm detection (motion/lightning/meteor)</td>
+<td>detection fields; optional <code>camera</code></td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">POST</td>
+<td><code>/v1/camera/detection/stop</code></td>
+<td>Disarm detection</td>
+<td>optional <code>camera</code></td>
+</tr>
+<tr>
+<td>Camera</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/camera/events</code></td>
+<td>Camera event log (cursor-paginated)</td>
+<td>optional <code>camera</code>, cursor params</td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/models/load</code></td>
+<td>Load and keep warm a task-specific model runtime</td>
+<td>optional <code>task</code> (<code>text_generation</code> default, <code>image_generation</code>, <code>video_generation</code>, <code>text_to_video</code>, <code>image_to_video</code>, <code>tts</code>, <code>stt</code>), <code>provider</code>, <code>model</code>, <code>options</code>, <code>pin</code>, <code>lock</code>, <code>base_url</code>, <code>timeout_s</code></td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/models/loaded</code></td>
+<td>List task-aware loaded runtimes, merged with a host sweep of local model servers (Ollama/LM Studio) and with every model held in the server process (MLX, HuggingFace, embeddings)</td>
+<td>optional <code>task</code> (including <code>embedding</code>), <code>provider</code>, <code>model</code></td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/models/unload</code></td>
+<td>Unload a task-specific runtime and eject the model from every holder in the server process; a locked runtime returns <code>409</code> unless <code>force</code></td>
+<td><code>runtime_id</code> or <code>provider</code> + <code>model</code>, optional <code>task</code>, <code>base_url</code>, <code>force</code>, <code>options</code></td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/models/lock</code></td>
+<td>Lock a resident text runtime against unloading, adopting a sweep-resident model when no runtime is managed for it (<code>409 model_not_resident</code> otherwise)</td>
+<td><code>runtime_id</code> or <code>provider</code> + <code>model</code>, optional <code>base_url</code></td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/models/unlock</code></td>
+<td>Clear a text runtime's lock (works even after eviction)</td>
+<td><code>runtime_id</code> or <code>provider</code> + <code>model</code>, optional <code>base_url</code></td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/models/context_estimate</code></td>
+<td>Analytical context-fit estimate for a provider/model on this host</td>
+<td><code>provider</code>, <code>model</code>, optional <code>context_length</code></td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/email</code></td>
+<td>The email account, policy, limits and last test (<code>email_settings_v1</code>; never a secret) — see <a href="email.html">Email</a></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/email/discover</code></td>
+<td>Find the mailbox's IMAP and SMTP servers from its address; <code>defaults</code> holds the values a form pre-fills (discovered, else the standard <code>imap.&lt;domain&gt;</code> 993 / <code>smtp.&lt;domain&gt;</code> 465 SSL) — see <a href="email.html#server-discovery">Email</a></td>
+<td>JSON <code>address</code></td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">PUT</td>
+<td><code>/acore/email</code></td>
+<td>Connect: test IMAP/SMTP, then store (the password is sealed, never returned). Without <code>imap</code> and <code>smtp</code> the servers are discovered from the address (400 <code>email_discovery_failed</code> with <code>tried</code> when none are found); sets the email address when none is stored</td>
+<td>JSON <code>address</code>, <code>password</code>, optional <code>imap{host,port,security,folder,ca_file}</code>, <code>smtp{...}</code>, <code>display_name</code> (default: the stored one, else the local part), <code>username</code> (default: the discovered form, else the address), <code>registered_address</code>, <code>test</code></td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/email/test</code></td>
+<td>Sign in to IMAP and SMTP with the stored account</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">DELETE</td>
+<td><code>/acore/email</code></td>
+<td>Disconnect: delete the credentials and account (policy and limits kept)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">PUT</td>
+<td><code>/acore/email/policy</code></td>
+<td>Replace the recipient policy</td>
+<td>JSON <code>mode</code> (<code>allowlist</code>/<code>denylist</code>), <code>entries</code></td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/email/policy/check</code></td>
+<td>Evaluate recipients against the policy</td>
+<td>JSON <code>addresses</code></td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">PUT</td>
+<td><code>/acore/email/limits</code></td>
+<td>Set the send limits</td>
+<td>JSON <code>per_hour</code>, <code>per_day</code></td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">PUT</td>
+<td><code>/acore/email/enabled</code></td>
+<td>Turn email on or off</td>
+<td>JSON <code>enabled</code></td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">PUT</td>
+<td><code>/acore/email/agent-tools</code></td>
+<td>Turn <strong>Agent email tools</strong> on or off (default off); the response's <code>agent_tools</code> is <code>{enabled, active, reason}</code></td>
+<td>JSON <code>enabled</code></td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">PUT</td>
+<td><code>/acore/email/folder</code></td>
+<td>Set the folder the mailbox is read from, without connecting again</td>
+<td>JSON <code>folder</code> (empty = <code>INBOX</code>)</td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">PUT</td>
+<td><code>/acore/email/registered-address</code></td>
+<td>Set your own address (the default allowlist entry)</td>
+<td>JSON <code>address</code></td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/email/oauth/start</code>, <code>/acore/email/oauth/finish</code></td>
+<td>OAuth2 sign-in (device code or browser on the server's machine), then connect; <code>finish</code> answers <code>{pending: true}</code> until the sign-in is approved and a flow is used once</td>
+<td>JSON <code>address</code>, <code>provider</code>, optional <code>client_id</code> (empty = the built-in client when registered), <code>client_secret</code>, <code>flow</code>, <code>tenant</code>, <code>ca_file</code>; then <code>flow_id</code>, <code>wait_s</code> (at most 60)</td>
+</tr>
+<tr>
+<td>Email</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/email/oauth/cancel</code></td>
+<td>Drop a pending OAuth2 sign-in (closes its loopback listener)</td>
+<td>JSON <code>flow_id</code></td>
+</tr>
+<tr>
+<td>Models &amp; engines</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/host/profile</code></td>
+<td>Host profile: accelerator, memory ceiling, free memory, disk per model store (see <a href="models.html">Local Models</a>)</td>
+<td>optional <code>refresh</code></td>
+</tr>
+<tr>
+<td>Models &amp; engines</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/models/catalog</code></td>
+<td>Downloadable model catalog with presence and fit verdicts</td>
+<td><code>q</code>, <code>engine</code>, <code>fits</code>, <code>hub</code>, <code>tag</code>, <code>hub_page</code>, <code>hub_page_size</code></td>
+</tr>
+<tr>
+<td>Models &amp; engines</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/models/installed</code></td>
+<td>Installed models per engine, with sizes and delete blockers</td>
+<td>optional <code>provider</code></td>
+</tr>
+<tr>
+<td>Models &amp; engines</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/models/download</code></td>
+<td>Start (or join) a download job</td>
+<td><code>provider</code>, <code>artifact</code>, <code>dry_run</code>, optional <code>expected_bytes</code></td>
+</tr>
+<tr>
+<td>Models &amp; engines</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/models/delete</code></td>
+<td>Start a delete job; <code>409</code> with <code>delete_blockers</code> when refused</td>
+<td><code>provider</code>, <code>artifact</code>, <code>dry_run</code>, <code>force</code></td>
+</tr>
+<tr>
+<td>Models &amp; engines</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/engines</code></td>
+<td>Engine status (see <a href="engines.html">Local Engines</a>)</td>
+<td>optional <code>probe</code></td>
+</tr>
+<tr>
+<td>Models &amp; engines</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/engines/{id}/install</code></td>
+<td>Install an engine as a job (<code>403</code> unless allowed, <code>409</code> when busy)</td>
+<td><code>dry_run</code>, <code>force</code></td>
+</tr>
+<tr>
+<td>Models &amp; engines</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/jobs</code>, <code>/acore/jobs/{id}</code></td>
+<td>Download/delete/install jobs, newest first</td>
+<td><code>kind</code>, <code>status</code></td>
+</tr>
+<tr>
+<td>Models &amp; engines</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/jobs/{id}/cancel</code></td>
+<td>Cancel a job</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/memory</code></td>
+<td>Best-effort host memory snapshot (RAM, process, device backend incl. process-local and cross-process accelerator-heap bytes, host identity)</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Prompt Cache</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/prompt_cache/stats</code></td>
+<td>Cache stats on a loaded gateway runtime or upstream AbstractEndpoint; with no selector, enumerate stats across all loaded runtimes</td>
+<td>optional <code>provider</code> + <code>model</code> or <code>base_url</code>; provider key header if required</td>
+</tr>
+<tr>
+<td>Prompt Cache</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/prompt_cache/capabilities</code></td>
+<td>Cache capability discovery on a loaded gateway runtime or upstream AbstractEndpoint</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>; provider key header if required</td>
+</tr>
+<tr>
+<td>Prompt Cache</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/prompt_cache/set</code></td>
+<td>Select/create a cache key locally or upstream</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>key</code>, <code>make_default</code>, <code>ttl_s</code></td>
+</tr>
+<tr>
+<td>Prompt Cache</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/prompt_cache/update</code></td>
+<td>Prepare prompt/messages/tools locally or upstream</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>key</code>, <code>prompt</code> or <code>messages</code>, <code>system_prompt</code>, <code>tools</code>, optional <code>thinking</code>, <code>ttl_s</code></td>
+</tr>
+<tr>
+<td>Prompt Cache</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/prompt_cache/fork</code></td>
+<td>Fork one cache key to another locally or upstream</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>from_key</code>, <code>to_key</code>, <code>make_default</code>, <code>ttl_s</code></td>
+</tr>
+<tr>
+<td>Prompt Cache</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/prompt_cache/clear</code></td>
+<td>Clear local or upstream cache state</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, optional <code>key</code></td>
+</tr>
+<tr>
+<td>Prompt Cache</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/prompt_cache/prepare_modules</code></td>
+<td>Prepare reusable module/tool context locally or upstream</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>namespace</code>, <code>modules</code>, <code>make_default</code>, <code>ttl_s</code>, <code>version</code></td>
+</tr>
+<tr>
+<td>Prompt Cache</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/prompt_cache/key_meta</code></td>
+<td>Merge caller attribution metadata into an existing cache key</td>
+<td><code>runtime_id</code> or <code>provider</code> + <code>model</code> or <code>base_url</code>, <code>key</code>, <code>meta</code></td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/blocs/upsert_text</code></td>
+<td>Persist extracted text into the gateway-local bloc store or an upstream AbstractEndpoint bloc store</td>
+<td>optional <code>base_url</code>, <code>path</code>, <code>content</code>, optional bloc metadata</td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/blocs</code></td>
+<td>List gateway-local or upstream bloc records</td>
+<td>optional <code>base_url</code>, <code>sha256</code>, <code>bloc_id</code></td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/blocs/record</code></td>
+<td>Inspect a gateway-local or upstream bloc record</td>
+<td>optional <code>base_url</code>, <code>sha256</code> or <code>bloc_id</code></td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/blocs/delete</code></td>
+<td>Delete one bloc with optional live KV safety checks</td>
+<td>optional <code>base_url</code>, <code>sha256</code> or <code>bloc_id</code>, <code>delete_kv</code>, <code>clear_loaded</code>, <code>force</code>, <code>dry_run</code></td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/blocs/kv/manifest</code></td>
+<td>Inspect a gateway-local or upstream bloc KV manifest</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>sha256</code> or <code>bloc_id</code>, optional <code>artifact_path</code></td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">GET</td>
+<td><code>/acore/blocs/kv/list</code></td>
+<td>List manifest-backed bloc KV artifacts</td>
+<td>optional <code>base_url</code>, <code>provider</code>, <code>model</code>, <code>sha256</code>, <code>bloc_id</code></td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/blocs/kv/ensure</code></td>
+<td>Compile or validate a local or upstream provider-backed bloc KV artifact</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>sha256</code> or <code>bloc_id</code>, optional <code>artifact_path</code>, <code>force_rebuild</code>, <code>debug</code></td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/blocs/kv/load</code></td>
+<td>Load or fork a local or upstream provider-backed bloc KV artifact into a cache key</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>sha256</code> or <code>bloc_id</code>, optional <code>artifact_path</code>, <code>stable_cache_key</code>, <code>key</code>, <code>make_default</code>, <code>force_rebuild</code>, <code>debug</code></td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/blocs/kv/delete</code></td>
+<td>Delete one bloc KV artifact with live-binding safety</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code> when checking live state, <code>sha256</code> or <code>bloc_id</code>, optional <code>artifact_path</code>, <code>clear_loaded</code>, <code>force</code>, <code>dry_run</code>, <code>debug</code></td>
+</tr>
+<tr>
+<td>Memory Blocs</td>
+<td style="text-align: right;">POST</td>
+<td><code>/acore/blocs/kv/prune</code></td>
+<td>Delete matching bloc KV artifacts by filter</td>
+<td>optional <code>provider</code>, <code>model</code>, <code>base_url</code>, <code>sha256</code>, <code>bloc_id</code>, <code>clear_loaded</code>, <code>force</code>, <code>dry_run</code>, <code>debug</code></td>
+</tr>
+<tr>
+<td>Capabilities</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/capabilities</code></td>
+<td>Inspect optional capability plugin availability and backend metadata</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Capabilities</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/capabilities/{capability}/providers</code></td>
+<td>List normalized providers for one capability plugin</td>
+<td>path <code>capability</code>, optional <code>task</code></td>
+</tr>
+<tr>
+<td>Capabilities</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/capabilities/{capability}/models</code></td>
+<td>List normalized models for one capability plugin</td>
+<td>path <code>capability</code>, optional <code>task</code>, <code>provider</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/audio/music/providers</code></td>
+<td>List music capability providers</td>
+<td>optional <code>task</code></td>
+</tr>
+<tr>
+<td>Audio</td>
+<td style="text-align: right;">GET</td>
+<td><code>/v1/audio/music/models</code></td>
+<td>List music capability models</td>
+<td>optional <code>task</code>, <code>provider</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="capability-routing-defaults">Capability Routing Defaults</h3>
+<p><code>/v1/config/capability-defaults</code> exposes the execution host's explicit route
+defaults for <code>input</code>, <code>output</code>, <code>embedding</code>, and <code>rerank</code> capabilities. Gateway
+uses this route as its control-plane source when <code>ABSTRACTCORE_SERVER_BASE_URL</code>
+points at a remote Core server.</p>
+<p>Generated-media defaults may use task-specific routes such as
+<code>output.image.text_to_image</code>, <code>output.image.image_to_image</code>,
+<code>output.image.image_upscale</code>, <code>output.video.text_to_video</code>, and
+<code>output.video.image_to_video</code>. The broad <code>output.image</code> and <code>output.video</code>
+routes remain compatibility fallbacks; Gateway Console presents the
+task-specific routes as the normal generated-media configuration surface.</p>
+<p>These defaults are configuration only; they do not load a model. Use the
+runtime residency routes under <code>/acore/models/*</code> to inspect or change
+provider-loaded state.</p>
+<h3 id="shared-request-conventions">Shared Request Conventions</h3>
+<ul>
+<li><code>model</code> usually uses <code>provider/model</code> format, for example
+  <code>openai/gpt-4o-mini</code>, <code>anthropic/claude-haiku-4-5</code>,
+  <code>ollama/qwen3:4b</code>, <code>lmstudio/qwen/qwen3-vl-4b</code>, or
+  <code>openai-compatible/my-model</code>.</li>
+<li><code>base_url</code> is an AbstractCore extension for routing a provider to a specific
+  OpenAI-compatible endpoint. Loopback URLs are allowed by default; non-loopback
+  URLs require <code>ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST</code>.</li>
+<li>Media routes also accept an optional <code>provider</code> routing hint. This is mainly
+  useful when you omit <code>model</code>, use a provider-scoped route, or pair a custom
+  <code>base_url</code> with the default local/plugin path.</li>
+<li><code>X-AbstractCore-Provider-API-Key</code> overrides only the requested upstream
+  provider for that request. It does not replace the AbstractCore server token.</li>
+<li>On the capability discovery routes (<code>/v1/capabilities...</code>, <code>/v1/audio/music/providers|models|provider-details</code>)
+  the key reaches one provider only: the one named with <code>?provider=&lt;id&gt;</code> (voice: <code>openai</code> or an OpenAI-compatible
+  server; music: a backend such as <code>acemusic</code>), the configured music backend, or the single vision endpoint. A
+  request that sends the key without naming one provider (for example <code>GET /v1/capabilities</code>) is refused with
+  400 instead of handing the key to every provider it checks.</li>
+<li>Provider keys in request bodies remain disabled; use <code>X-AbstractCore-Provider-API-Key</code>
+  for per-request upstream overrides. Select discovery endpoints accept an <code>api_key</code>
+  query parameter for tooling/Swagger UI convenience.</li>
+<li>Remote URL media fetches are SSRF-protected by default. Local file paths are
+  disabled unless <code>ABSTRACTCORE_SERVER_MEDIA_ROOT</code> or
+  <code>ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1</code> is configured.</li>
+</ul>
 <h3 id="chat-completions">Chat Completions</h3>
 <p><strong>Endpoint:</strong> <code>POST /v1/chat/completions</code></p>
 <p>Standard OpenAI-compatible endpoint. Works with all providers.</p>
 <p>Server auth:
-- If <code>ABSTRACTCORE_SERVER_API_KEY</code> is configured, every non-health endpoint requires
-  <code>Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY</code>. Authenticated clients can use all
+- If <code>ABSTRACTCORE_AUTH_TOKEN</code> is configured, every non-health endpoint requires
+  <code>Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN</code>. Authenticated clients can use all
   provider keys/endpoints configured on the server.
-- If <code>ABSTRACTCORE_SERVER_API_KEY</code> is not configured, <code>Authorization: Bearer &lt;provider-key&gt;</code>
-  may be used as a bring-your-own upstream provider key. That key is forwarded only to the
-  requested provider and never unlocks server-configured provider keys.
+- If <code>ABSTRACTCORE_AUTH_TOKEN</code> is not configured, either set
+  <code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1</code> for intentional local/dev use, or provide an
+  upstream provider key explicitly via <code>X-AbstractCore-Provider-API-Key</code>.
 - Health checks (<code>GET /health</code>) are always unauthenticated.</p>
 <p><strong>Request:</strong></p>
 <div class="code-block"><pre><code class="language-json">{
@@ -196,11 +1292,15 @@ uvicorn abstractcore.server.app:app --port 3000             # Custom port
 - <code>messages</code> (required): Array of message objects
 - <code>stream</code> (optional): Enable streaming responses
 - <code>tools</code> (optional): Tools for function calling
+- <code>response_format</code> (optional): OpenAI structured outputs — <code>{"type": "text"}</code> (default), <code>{"type": "json_object"}</code> or <code>{"type": "json_schema", "json_schema": {...}}</code>. See <a href="#structured-outputs-response_format">Structured outputs</a> below.
 - <code>agent_format</code> (optional, AbstractCore extension): Tool-call syntax output format for agentic clients (<code>"auto"|"openai"|"codex"|"qwen3"|"llama3"|"gemma"|"xml"|"passthrough"</code>). When omitted, the server auto-detects from user-agent + model heuristics.
-- <code>api_key</code> (deprecated/disabled, AbstractCore extension): Provider API keys are no longer accepted in request bodies or query strings. Configure provider keys on the server, use <code>X-AbstractCore-Provider-API-Key</code> for a per-request provider override, or use <code>Authorization</code> as a provider key only when <code>ABSTRACTCORE_SERVER_API_KEY</code> is not configured.
+- <code>api_key</code> (deprecated/disabled, AbstractCore extension): Provider API keys are not accepted in request bodies. Configure provider keys on the server or use <code>X-AbstractCore-Provider-API-Key</code> for a per-request provider override. Select discovery endpoints accept an <code>api_key</code> query parameter for tooling/Swagger UI convenience.
 - <code>base_url</code> (optional, AbstractCore extension): Override the provider endpoint (include <code>/v1</code> for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - <code>unload_after</code> (optional, AbstractCore extension): If <code>true</code>, calls <code>llm.unload_model(model)</code> after the request completes. Disabled for <code>ollama/*</code> unless <code>ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1</code>.
 - <code>prompt_cache_key</code> (optional, AbstractCore extension): Best-effort prompt caching key (semantics depend on provider/backend). See <code>docs/prompt-caching.md</code>.
+- <code>prompt_cache_binding</code> (optional, AbstractCore extension): Exact durable bloc binding returned
+  by <code>/acore/blocs/kv/load</code>. When supplied, the server verifies the cache key before generation or
+  streaming; stale/missing bindings return <code>409</code>.
 - <code>prompt_cache_retention</code> (optional, AbstractCore extension): Prompt cache retention policy (OpenAI: <code>"in_memory"</code> or <code>"24h"</code>; ignored by other providers). See <code>docs/prompt-caching.md</code>.
 - <code>thinking</code> (optional, AbstractCore extension): Unified thinking/reasoning control (<code>null|"auto"|"on"|"off"|"none"</code> or <code>"low"|"medium"|"high"|"xhigh"</code> when supported). Note: <code>"none"</code> is treated as an alias for <code>"off"</code>.
 - <code>temperature</code>, <code>max_tokens</code>, <code>top_p</code>: Standard LLM parameters</p>
@@ -218,13 +1318,13 @@ uvicorn abstractcore.server.app:app --port 3000             # Custom port
   }'
 </code></pre></div>
 <p>Notes:
-- For <strong>Qwen3 / Qwen3.5 on LM Studio</strong>, <code>thinking="none"</code> maps to LM Studio’s template variables (<code>enable_thinking</code> / <code>enableThinking</code>) plus a Qwen template “hard switch” fallback (empty <code>&lt;think&gt;&lt;/think&gt;</code>) when needed. This avoids injecting “reasoning effort” instructions into the system prompt.
+- On <strong>LM Studio</strong>, <code>thinking="none"</code> maps to the top-level <code>reasoning_effort: "none"</code>, which LM Studio maps into the model's chat template; the Qwen empty-think-block prefill is used only if the server rejects that field. This avoids injecting “reasoning effort” instructions into the system prompt.
 - Not every backend supports per-effort budgets for <code>low|medium|high</code>; when unavailable, levels degrade to “thinking enabled”.</p>
 <p><strong>Example with streaming:</strong></p>
 <div class="code-block"><pre><code class="language-python">import os
 from openai import OpenAI
 
-client = OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=os.environ[&quot;ABSTRACTCORE_SERVER_API_KEY&quot;])
+client = OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=os.environ[&quot;ABSTRACTCORE_AUTH_TOKEN&quot;])
 
 stream = client.chat.completions.create(
     model=&quot;ollama/qwen3-coder:30b&quot;,
@@ -236,6 +1336,64 @@ for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end=&quot;&quot;, flush=True)
 </code></pre></div>
+<h4 id="structured-outputs-response_format">Structured outputs (<code>response_format</code>)</h4>
+<p><code>POST /v1/chat/completions</code> (and the provider-specific route) accepts OpenAI's <code>response_format</code>
+on every provider:</p>
+<ul>
+<li><code>{"type": "json_object"}</code> — the answer is a JSON object.</li>
+<li><code>{"type": "json_schema", "json_schema": {"name": "invoice", "schema": {...}, "strict": true}}</code> —
+  the answer matches your JSON Schema. <code>name</code> uses letters, digits, <code>_</code> and <code>-</code> (up to 64), and the
+  root schema describes an object.</li>
+</ul>
+<p>Providers that can constrain decoding (Ollama, LM Studio, llama.cpp and OpenAI-compatible servers,
+MLX or Transformers with Outlines, Anthropic) receive your schema as is; other providers get it in
+the prompt. Every answer is validated against your schema through AbstractCore's
+<a href="structured-output.html">structured-output handler</a>, with feedback retries when it does not match.
+The validator covers the schema subset OpenAI structured outputs accept (types, <code>properties</code>,
+<code>required</code>, <code>additionalProperties</code>, <code>items</code>/<code>prefixItems</code>, <code>enum</code>/<code>const</code>, <code>anyOf</code>/<code>oneOf</code>/<code>allOf</code>,
+local <code>$ref</code> into <code>$defs</code>, length, size, <code>pattern</code> and numeric bounds); <code>format</code> and annotation
+keywords are accepted and not enforced.</p>
+<div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN&quot; \
+  -d '{
+    &quot;model&quot;: &quot;ollama/qwen3:4b&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Extract: Ada Lovelace, born 1815.&quot;}],
+    &quot;response_format&quot;: {&quot;type&quot;: &quot;json_schema&quot;, &quot;json_schema&quot;: {&quot;name&quot;: &quot;person&quot;, &quot;strict&quot;: true,
+      &quot;schema&quot;: {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {&quot;name&quot;: {&quot;type&quot;: &quot;string&quot;}, &quot;born&quot;: {&quot;type&quot;: &quot;integer&quot;}},
+                 &quot;required&quot;: [&quot;name&quot;, &quot;born&quot;], &quot;additionalProperties&quot;: false}}}
+  }'
+</code></pre></div>
+<p>The validated JSON is the message <code>content</code>. With <code>"stream": true</code> it arrives as one content chunk
+followed by the stop chunk and <code>[DONE]</code>, because the answer is validated before it is sent.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Status</th>
+<th><code>error.code</code></th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>400</code></td>
+<td><code>invalid_response_format</code></td>
+<td>The <code>response_format</code> is not usable (unknown <code>type</code>, missing <code>name</code> or <code>schema</code>, a schema that does not describe an object or is not valid); <code>error.param</code> names the field. Checked before any model loads.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td><code>unsupported_parameter</code></td>
+<td><code>response_format</code> sent together with <code>tools</code>; send one or the other.</td>
+</tr>
+<tr>
+<td><code>500</code></td>
+<td><code>structured_output_invalid</code></td>
+<td>The model's answer still did not match the schema after the retries; the message names the first violation.</td>
+</tr>
+</tbody>
+</table></div>
+<p>An unknown provider, or a model the provider reports missing, answers <code>404</code> with
+<code>code: "model_not_found"</code> in the same OpenAI error envelope.</p>
 <h4 id="provider-base_url-override-abstractcore-extension">Provider <code>base_url</code> override (AbstractCore extension)</h4>
 <p>Route a provider to a specific endpoint (useful for remote OpenAI-compatible servers):</p>
 <p>Security notes:
@@ -252,65 +1410,1086 @@ for chunk in stream:
   }'
 </code></pre></div>
 <h4 id="provider-authentication">Provider Authentication</h4>
-<p>Do not put provider keys in request bodies or query strings. Those fields are disabled because
-they leak through logs, shell history, browser history, and reverse proxies.</p>
+<p>Do not put provider keys in request bodies. Those fields are disabled because they leak through
+logs, shell history, browser history, and reverse proxies. For discovery/model catalog endpoints,
+an <code>api_key</code> query parameter exists for tooling/Swagger UI convenience, but headers remain preferred.</p>
 <div class="code-block"><pre><code class="language-bash"># Preferred: configure provider keys on the server and authenticate to AbstractCore.
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H &quot;Content-Type: application/json&quot; \
-  -H &quot;Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY&quot; \
+  -H &quot;Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN&quot; \
   -d '{
     &quot;model&quot;: &quot;openai/gpt-4o-mini&quot;,
     &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}]
   }'
 </code></pre></div>
-<p>When <code>ABSTRACTCORE_SERVER_API_KEY</code> is not configured, <code>Authorization: Bearer &lt;provider-key&gt;</code> may
-be used as an upstream provider key. Once server auth is enabled, <code>Authorization</code> is reserved for
-the AbstractCore server key and is never forwarded upstream.</p>
-<p>To override a single upstream provider while still using the server master key, send the provider
+<p>When <code>ABSTRACTCORE_AUTH_TOKEN</code> is not configured, either set
+<code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1</code> for intentional local/dev use, or provide an
+upstream provider key explicitly via <code>X-AbstractCore-Provider-API-Key</code>. Once server auth is
+enabled, <code>Authorization</code> is reserved for the AbstractCore server auth token and is never forwarded
+upstream.</p>
+<p>To override a single upstream provider while still using the server auth token, send the provider
 key in <code>X-AbstractCore-Provider-API-Key</code>. The override applies only to the requested provider:</p>
 <div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
   -H &quot;Content-Type: application/json&quot; \
-  -H &quot;Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY&quot; \
+  -H &quot;Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN&quot; \
   -H &quot;X-AbstractCore-Provider-API-Key: $ANTHROPIC_API_KEY&quot; \
   -d '{
     &quot;model&quot;: &quot;anthropic/claude-haiku-4-5&quot;,
     &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}]
   }'
 </code></pre></div>
+<h3 id="provider-specific-chat-route">Provider-Specific Chat Route</h3>
+<p><strong>Endpoint:</strong> <code>POST /{provider}/v1/chat/completions</code></p>
+<p>This route is useful for clients that already route by base URL path and expect
+the body <code>model</code> to be provider-local. It is equivalent to using
+<code>POST /v1/chat/completions</code> with <code>model="{provider}/{model}"</code>.</p>
+<p>Parameters:
+- Path <code>provider</code> (required): provider route prefix such as <code>openai</code>,
+  <code>anthropic</code>, <code>ollama</code>, <code>openrouter</code>, <code>portkey</code>, <code>lmstudio</code>, <code>vllm</code>, or
+  <code>openai-compatible</code>.
+- Body <code>model</code> (required): provider-local model id, without the provider prefix.
+- Body <code>messages</code>, <code>stream</code>, <code>tools</code>, <code>tool_choice</code>, <code>agent_format</code>,
+  <code>thinking</code>, <code>base_url</code>, and other chat parameters behave like
+  <code>/v1/chat/completions</code>.</p>
+<p>Example:</p>
+<div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/openai/v1/chat/completions \
+  -H &quot;Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;model&quot;: &quot;gpt-4o-mini&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}]
+  }'
+</code></pre></div>
 <h3 id="media-generation-endpoints-optional">Media generation endpoints (optional)</h3>
-<p>AbstractCore Server can optionally expose OpenAI-compatible <strong>image generation</strong> and <strong>audio</strong> endpoints.</p>
+<p>AbstractCore Server can optionally expose OpenAI-compatible <strong>image/video generation</strong> and <strong>audio</strong> endpoints, plus <strong>extension</strong> endpoints for <strong>3D generation</strong> (<code>/v1/scene3d/generations</code>) and <strong>camera piloting</strong> (<code>/v1/camera/*</code>). OpenAI has no 3D or camera API, so these follow the same shape as <code>/v1/audio/music</code>: raw bytes back, <code>501</code> with an install hint when the plugin is absent.</p>
 <p>Important notes:
 - These are <strong>interoperability-first</strong> endpoints (return <code>b64_json</code> or raw bytes), not an artifact-first durability contract.
-- If the required plugin/backend is not available, the server returns <code>501</code> with actionable messaging.</p>
-<h4 id="images-generateedit-requires-abstractvision">Images (generate/edit) — requires <code>abstractvision</code></h4>
+- If the required plugin/backend is not available, the server returns <code>501</code> with actionable messaging.
+- Long-running generation handlers (music, speech, 3D) run in the server threadpool, so one synchronous generation does not stall other requests.</p>
+<p>3D example (image→3D through the <code>abstract3d</code> plugin):</p>
+<div class="code-block"><pre><code class="language-bash"># image_b64 is the base64 of a source image; returns raw GLB bytes.
+curl -sS -X POST &quot;$BASE/v1/scene3d/generations&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &quot;{\&quot;image_b64\&quot;:\&quot;$(base64 -i photo.jpg)\&quot;,\&quot;task\&quot;:\&quot;i23d\&quot;,\&quot;provider\&quot;:\&quot;triposr\&quot;,\&quot;format\&quot;:\&quot;glb\&quot;}&quot; \
+  -o reconstruction.glb
+</code></pre></div>
+<p>Camera example (capture one photo through the <code>abstractcamera</code> plugin):</p>
+<div class="code-block"><pre><code class="language-bash">curl -sS &quot;$BASE/v1/camera/devices&quot;                 # non-invasive discovery
+curl -sS -X POST &quot;$BASE/v1/camera/open&quot;            # claim the default device
+curl -sS -X POST &quot;$BASE/v1/camera/photo&quot; -o shot.jpg
+curl -sS -X POST &quot;$BASE/v1/camera/close&quot;
+</code></pre></div>
+<h4 id="capability-catalogs">Capability catalogs</h4>
+<p>Thin clients can preflight the configured media surface without importing
+<code>abstractvision</code> or <code>abstractvoice</code> directly:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Purpose</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /v1/vision/providers/</code></td>
+<td>Lists provider image/video catalog entries through the selected AbstractVision backend.</td>
+<td>Optional <code>task</code>, <code>provider</code>, <code>include_models</code>, <code>base_url</code>, <code>api_key</code>. Set <code>include_models=true</code> to include full provider model catalogs (slower).</td>
+</tr>
+<tr>
+<td><code>GET /v1/audio/voices</code></td>
+<td>Lists TTS profiles/voices, active profile, active model, and bounded catalog data through AbstractVoice.</td>
+<td>Optional <code>provider</code>, <code>model</code>, <code>language</code>, <code>providers_only</code>, <code>base_url</code>, <code>api_key</code>. Every voice record carries <code>voice_id</code>, <code>name</code>, <code>kind</code>, <code>provider</code>, <code>model</code>, <code>languages</code> and <code>language</code>.</td>
+</tr>
+<tr>
+<td><code>GET /v1/audio/languages</code></td>
+<td>Languages per engine for <code>tts</code>, <code>stt</code> and <code>cloning</code>.</td>
+<td>Optional <code>kind</code>, <code>provider</code>. Answered from static tables; no engine is built.</td>
+</tr>
+<tr>
+<td><code>GET /v1/audio/speech/models</code></td>
+<td>TTS model id projection with provider/model route strings.</td>
+<td>Includes <code>models_by_provider</code> and <code>provider_models</code> for clients that route via <code>provider/model</code>.</td>
+</tr>
+<tr>
+<td><code>GET /v1/audio/speech/providers</code></td>
+<td>TTS provider projection.</td>
+<td>Useful for clients that pick <code>/{provider}/v1/audio/speech</code> first and then choose a model.</td>
+</tr>
+<tr>
+<td><code>GET /v1/audio/transcriptions/models</code></td>
+<td>STT model id projection with provider/model route strings.</td>
+<td>Includes <code>models_by_provider</code> and <code>provider_models</code>.</td>
+</tr>
+<tr>
+<td><code>GET /v1/audio/transcriptions/providers</code></td>
+<td>STT provider projection.</td>
+<td>Mirrors speech provider discovery for <code>/v1/audio/transcriptions</code>.</td>
+</tr>
+<tr>
+<td><code>GET /v1/voice/clone/providers</code></td>
+<td>Voice cloning provider projection.</td>
+<td>Uses AbstractVoice clone provider availability.</td>
+</tr>
+</tbody>
+</table></div>
+<p>These routes instantiate only the selected capability backend needed for deep
+catalog discovery. Shallow plugin availability remains available through the
+library <code>llm.capabilities.status()</code> call. Server-held provider keys (the OpenAI key saved in the
+config, or <code>OPENAI_API_KEY</code>) remain behind server auth, also with
+<code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1</code>, on these routes and on image/video generation
+through OpenAI or an OpenAI-compatible upstream; per-request upstream key overrides must use
+<code>X-AbstractCore-Provider-API-Key</code>. For tooling/Swagger UI convenience, these catalog routes also accept an <code>api_key</code> query parameter (redacted from server logs).</p>
+<h4 id="images-generateedit">Images (generate/edit)</h4>
 <p>Endpoints:
 - <code>POST /v1/images/generations</code>
-- <code>POST /v1/images/edits</code></p>
-<p>Install:</p>
-<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[server]&quot;
-pip install abstractvision
+- <code>POST /{provider}/v1/images/generations</code>
+- <code>POST /v1/images/edits</code>
+- <code>POST /{provider}/v1/images/edits</code></p>
+<p>Remote OpenAI-compatible image proxying is part of the light install
+and is enabled by setting <code>OPENAI_BASE_URL</code>.
+The synchronous image routes use the same internal <code>generate(..., output="image")</code>
+dispatcher as the Python API, then serialize the result back to the
+OpenAI-compatible <code>b64_json</code> response shape.</p>
+<p>Install for remote image proxying:</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore
 </code></pre></div>
-<h4 id="audio-stttts-requires-an-audiovoice-capability-plugin-typically-abstractvoice">Audio (STT/TTS) — requires an audio/voice capability plugin (typically <code>abstractvoice</code>)</h4>
+<p>Install the local engines only when you want the server to load Diffusers,
+MLX-Gen, or stable-diffusion.cpp models itself:</p>
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[apple]&quot;   # Apple silicon
+pip install &quot;abstractcore[gpu]&quot;     # NVIDIA / AMD
+</code></pre></div>
+<p>Use provider/model-style image ids:
+- Omit <code>model</code> only when this server has a configured AbstractVision/OpenAI-compatible
+  image default, for example via <code>OPENAI_BASE_URL</code> plus an optional default model id.
+- Provider-scoped routes such as <code>/openai-compatible/v1/images/generations</code>
+  and <code>/diffusers/v1/images/generations</code> accept an unprefixed body <code>model</code>
+  and internally route it as <code>provider/model</code>, matching
+  <code>/{provider}/v1/chat/completions</code>.
+- <code>diffusers/default</code> selects the configured local Diffusers default:
+  <code>ABSTRACTCORE_VISION_MODEL_ID</code> / <code>ABSTRACTVISION_DIFFUSERS_MODEL_ID</code> /
+  <code>ABSTRACTVISION_MODEL_ID</code>.
+- <code>diffusers/&lt;huggingface-repo&gt;</code> selects an explicit local Diffusers model.
+- <code>mlx-gen/default</code> selects the configured local MLX-Gen model; use
+  AbstractVision's q4 AbstractFramework presets by default and q8 variants when
+  quality is paramount.
+- <code>mlx-gen/&lt;exact-huggingface-repo&gt;</code> selects an explicit cached MLX-Gen model
+  such as <code>mlx-gen/AbstractFramework/flux.2-klein-4b-4bit</code> or
+  <code>mlx-gen/AbstractFramework/qwen-image-edit-2511-4bit</code>. Official MLX-Gen
+  runtime snapshots such as <code>mlx-gen/briaai/FIBO</code>,
+  <code>mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit</code>, and
+  <code>mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit</code> are selected the same way. Legacy
+  <code>mflux</code> prefixes remain accepted as compatibility aliases, but the model id
+  itself must be the exact published repo id.
+- <code>sdcpp/default</code> selects the configured stable-diffusion.cpp model.
+- <code>openai-compatible/&lt;model&gt;</code> routes to the configured OpenAI-compatible image
+  endpoint.
+- <code>openai/gpt-image-1</code> or provider-scoped <code>/openai/v1/images/generations</code>
+  routes to OpenAI's Images API and uses <code>OPENAI_API_KEY</code> when an explicit
+  AbstractVision upstream base URL is not configured.</p>
+<p>Local Diffusers generation is cache-only by default; set
+<code>ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1</code> or
+<code>ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1</code> only when runtime downloads are
+intentional.</p>
+<p><code>POST /v1/images/generations</code> JSON parameters:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prompt</code></td>
+<td style="text-align: right;">yes</td>
+<td>Text prompt to render.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: right;">no</td>
+<td>Omit for the server's configured AbstractVision default. If present, use provider/model routing: <code>diffusers/default</code>, <code>diffusers/&lt;huggingface-repo&gt;</code>, <code>mlx-gen/default</code>, <code>mlx-gen/&lt;exact-huggingface-repo&gt;</code>, <code>sdcpp/default</code>, <code>openai-compatible/&lt;model&gt;</code>, or <code>openai/gpt-image-1</code>. Provider-scoped routes accept the same model without the prefix.</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional routing hint when you want the configured default model/backend for a specific provider, or when pairing a request with <code>base_url</code>.</td>
+</tr>
+<tr>
+<td><code>width</code>, <code>height</code></td>
+<td style="text-align: right;">no</td>
+<td>Requested output dimensions in pixels. These are the natural fields for local engines and remain accepted for remote routes.</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td style="text-align: right;">no</td>
+<td>OpenAI-style size such as <code>1024x1024</code>. The server normalizes <code>size</code> with <code>width</code>/<code>height</code> so OpenAI-style and local-engine clients can use the same route.</td>
+</tr>
+<tr>
+<td><code>n</code></td>
+<td style="text-align: right;">no</td>
+<td>Number of images; clamped to <code>1..10</code>.</td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td style="text-align: right;">no</td>
+<td>Server response format. <code>b64_json</code> is the supported response shape.</td>
+</tr>
+<tr>
+<td><code>negative_prompt</code></td>
+<td style="text-align: right;">no</td>
+<td>Local/backend-specific negative prompt. Strict OpenAI-compatible upstreams do not receive this top-level field; use <code>extra</code> only when your custom upstream supports it.</td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td style="text-align: right;">no</td>
+<td>Local deterministic seed. Strict OpenAI-compatible upstreams do not receive this top-level field; use <code>extra.seed</code> only when your custom upstream supports it.</td>
+</tr>
+<tr>
+<td><code>seeds</code></td>
+<td style="text-align: right;">no</td>
+<td>Explicit seed list for batch generation. When supplied, <code>n</code> must match the number of seeds.</td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td style="text-align: right;">no</td>
+<td>Local denoising/inference step count. Strict OpenAI-compatible upstreams do not receive this top-level field; use <code>extra.steps</code> only when your custom upstream supports it.</td>
+</tr>
+<tr>
+<td><code>guidance_scale</code></td>
+<td style="text-align: right;">no</td>
+<td>Local classifier-free guidance scale. Strict OpenAI-compatible upstreams do not receive this top-level field; use <code>extra.guidance_scale</code> only when your custom upstream supports it.</td>
+</tr>
+<tr>
+<td><code>lora_adapters</code></td>
+<td style="text-align: right;">no</td>
+<td>Ordered LoRA adapter stack for local backends that support adapters. Each item can include <code>source</code>, <code>scale</code>, <code>weight_name</code>, <code>subfolder</code>, <code>adapter_name</code>, and <code>target_role</code>.</td>
+</tr>
+<tr>
+<td><code>quality</code>, <code>style</code>, <code>user</code>, <code>background</code>, <code>output_format</code>, <code>output_compression</code>, <code>moderation</code></td>
+<td style="text-align: right;">no</td>
+<td>Named OpenAI-compatible passthrough fields for upstream image endpoints.</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td style="text-align: right;">no</td>
+<td>OpenAI-compatible endpoint override. Prefer this with <code>openai-compatible/...</code>; if set with <code>openai/...</code>, the request is sent to that URL instead of api.openai.com. Loopback is allowed by default; non-loopback requires allowlist.</td>
+</tr>
+<tr>
+<td><code>extra</code></td>
+<td style="text-align: right;">no</td>
+<td>JSON object for backend-specific passthrough fields. Prefer this over arbitrary top-level keys so the schema stays explicit.</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>POST /v1/images/edits</code> multipart parameters:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prompt</code></td>
+<td style="text-align: right;">yes</td>
+<td>Edit/inpaint instruction.</td>
+</tr>
+<tr>
+<td><code>image</code></td>
+<td style="text-align: right;">yes</td>
+<td>Source image file.</td>
+</tr>
+<tr>
+<td><code>mask</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional mask image for inpainting/edit-capable backends.</td>
+</tr>
+<tr>
+<td><code>reference_images</code></td>
+<td style="text-align: right;">no</td>
+<td>Repeatable file field for optional style/layout/composition reference images. Forwarded to AbstractVision backends that support multi-image edits.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: right;">no</td>
+<td>Same provider/model routing as generation; omit for the server default. Provider-scoped routes accept the same model without the prefix.</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional routing hint when you want the configured default backend for a specific provider, or when pairing a request with <code>base_url</code>.</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td style="text-align: right;">no</td>
+<td>OpenAI-style edit output size such as <code>1024x1024</code>; multipart edit compatibility keeps this field.</td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td style="text-align: right;">no</td>
+<td>Server response shape; <code>b64_json</code> is supported.</td>
+</tr>
+<tr>
+<td><code>n</code>, <code>seeds</code></td>
+<td style="text-align: right;">no</td>
+<td>Batch edit controls. <code>seeds</code> is a comma-separated list for multipart forms, and its length must match <code>n</code>.</td>
+</tr>
+<tr>
+<td><code>negative_prompt</code>, <code>seed</code>, <code>steps</code>, <code>guidance_scale</code></td>
+<td style="text-align: right;">no</td>
+<td>Local/backend-specific fields. Strict OpenAI-compatible upstreams do not receive them as top-level fields; use <code>extra_json</code> only when your custom upstream supports them.</td>
+</tr>
+<tr>
+<td><code>lora_adapters_json</code></td>
+<td style="text-align: right;">no</td>
+<td>JSON array describing an ordered LoRA adapter stack for local backends that support adapters.</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td style="text-align: right;">no</td>
+<td>OpenAI-compatible endpoint override. Loopback is allowed by default; non-loopback requires allowlist.</td>
+</tr>
+<tr>
+<td><code>extra_json</code></td>
+<td style="text-align: right;">no</td>
+<td>JSON object string with backend/upstream-specific parameters.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Async image jobs are available when a request can take long enough that polling
+is preferable:
+- <code>POST /v1/vision/jobs/images/generations</code> uses the same JSON body as
+  <code>/v1/images/generations</code> and returns <code>{"job_id": "..."}</code>.
+- <code>POST /v1/vision/jobs/images/edits</code> uses the same multipart fields as
+  <code>/v1/images/edits</code> and returns <code>{"job_id": "..."}</code>.
+- <code>POST /v1/vision/jobs/images/upscale</code> uses the same multipart fields as
+  <code>/v1/images/upscale</code> and returns <code>{"job_id": "..."}</code>.
+- <code>GET /v1/vision/jobs/{job_id}</code> returns <code>queued</code>, <code>running</code>, <code>succeeded</code>, or
+  <code>failed</code>. Add <code>?consume=true</code> to remove a completed job from the in-memory job
+  store after reading it.
+When the backend reports rich progress events, image jobs include the latest
+event in <code>progress.last_event</code>.</p>
+<p>Use <code>GET /v1/vision/adapters</code> to inspect installed compatible adapters before a
+local run:</p>
+<div class="code-block"><pre><code class="language-bash">curl -sS &quot;$BASE/v1/vision/adapters?provider=mlx-gen&amp;task=text_to_video&amp;model=AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot;
+</code></pre></div>
+<h4 id="videos-text-to-videoimage-to-video">Videos (text-to-video/image-to-video)</h4>
+<p>Endpoints:
+- <code>POST /v1/videos/generations</code>
+- <code>POST /{provider}/v1/videos/generations</code>
+- <code>POST /v1/videos/edits</code>
+- <code>POST /{provider}/v1/videos/edits</code>
+- <code>POST /v1/vision/jobs/videos/generations</code>
+- <code>POST /v1/vision/jobs/videos/edits</code></p>
+<p>The synchronous video routes use the same internal
+<code>generate(..., output={"modality": "video"})</code> dispatcher as the Python API and
+return <code>{"data":[{"b64_json":"..."}]}</code> with MP4 bytes encoded in base64.
+Async video jobs are the preferred path for longer local runs; polling
+<code>GET /v1/vision/jobs/{job_id}</code> includes <code>progress.last_event</code> when the selected
+backend reports richer progress events. For MLX-Gen, <code>progress</code> is denoise-step
+progress; video frame context is exposed separately as <code>frame</code>, <code>total_frames</code>,
+and <code>frame_progress</code>.</p>
+<p>Use exact provider/model ids. For MLX-Gen, select the published model repo id,
+for example:</p>
+<ul>
+<li><code>mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit</code> for text-to-video.</li>
+<li><code>mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit</code> for image-to-video.</li>
+<li><code>mlx-gen/AbstractFramework/qwen-image-2512-4bit</code> for text-to-image.</li>
+</ul>
+<p>Core does not expose a quantization override. Q4/Q8 choices are part of the
+model id that AbstractVision/MLX-Gen loads.</p>
+<p><code>POST /v1/videos/generations</code> JSON parameters:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prompt</code></td>
+<td style="text-align: right;">yes</td>
+<td>Text prompt to render as video.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider/model id such as <code>mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit</code> or <code>openai-compatible/&lt;model&gt;</code>. Provider-scoped routes accept the same model without the prefix.</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional routing hint, e.g. <code>mlx-gen</code> or <code>openai-compatible</code>.</td>
+</tr>
+<tr>
+<td><code>width</code>, <code>height</code>, <code>size</code></td>
+<td style="text-align: right;">no</td>
+<td>Requested output dimensions. <code>size</code> accepts <code>WIDTHxHEIGHT</code>.</td>
+</tr>
+<tr>
+<td><code>fps</code>, <code>num_frames</code> / <code>frames</code></td>
+<td style="text-align: right;">no</td>
+<td>Video frame rate and frame count.</td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td style="text-align: right;">no</td>
+<td><code>b64_json</code> is the supported response shape.</td>
+</tr>
+<tr>
+<td><code>negative_prompt</code>, <code>seed</code>, <code>steps</code>, <code>guidance_scale</code>, <code>guidance_2</code>, <code>flow_shift</code></td>
+<td style="text-align: right;">no</td>
+<td>Backend-specific generation controls. <code>guidance_2</code> is the typed second-stage/low-noise guidance control for dual-transformer video models such as Wan A14B. <code>flow_shift</code> is a typed video control used by models such as Wan TI2V 5B.</td>
+</tr>
+<tr>
+<td><code>n</code>, <code>seeds</code></td>
+<td style="text-align: right;">no</td>
+<td>Batch generation controls. When <code>seeds</code> is provided, its length must match <code>n</code>.</td>
+</tr>
+<tr>
+<td><code>lora_adapters</code></td>
+<td style="text-align: right;">no</td>
+<td>Ordered LoRA adapter stack for local video backends that support adapters.</td>
+</tr>
+<tr>
+<td><code>extra.max_sequence_length</code></td>
+<td style="text-align: right;">no</td>
+<td>Useful for MLX-Gen Wan-style video runs.</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>POST /v1/videos/edits</code> multipart parameters mirror generation and add
+required <code>image=@first-frame.png</code>. Send <code>guidance_2</code> as a normal form field
+when the selected image-to-video model declares that parameter, and <code>flow_shift</code>
+when the selected route supports it. This route is
+the image-to-video path; the
+alias <code>/v1/videos/from-image</code> is accepted for clients that prefer a literal
+name.</p>
+<p>Examples:</p>
+<div class="code-block"><pre><code class="language-bash"># Remote OpenAI-compatible image endpoint.
+BASE=http://127.0.0.1:8000
+TOKEN=replace-with-server-token
+
+curl -sS -X POST &quot;$BASE/v1/images/generations&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;model&quot;:&quot;openai-compatible/gpt-image-1&quot;,&quot;prompt&quot;:&quot;A clean product photo of a red ceramic mug on a white table.&quot;,&quot;n&quot;:1,&quot;width&quot;:1024,&quot;height&quot;:1024,&quot;response_format&quot;:&quot;b64_json&quot;,&quot;quality&quot;:&quot;low&quot;}' \
+  &gt; /tmp/acore-image.json
+
+python - &lt;&lt;'PY'
+import base64
+import json
+from pathlib import Path
+
+data = json.loads(Path(&quot;/tmp/acore-image.json&quot;).read_text())
+Path(&quot;/tmp/acore-image.png&quot;).write_bytes(base64.b64decode(data[&quot;data&quot;][0][&quot;b64_json&quot;]))
+PY
+
+# Image edit using the generated image.
+curl -sS -X POST &quot;$BASE/v1/images/edits&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -F &quot;model=openai-compatible/gpt-image-1&quot; \
+  -F &quot;prompt=Make the mug blue while keeping the white table.&quot; \
+  -F &quot;image=@/tmp/acore-image.png;type=image/png&quot; \
+  -F &quot;reference_images=@./style-reference.png;type=image/png&quot; \
+  -F &quot;size=1024x1024&quot; \
+  -F &quot;response_format=b64_json&quot; \
+  -F 'extra_json={&quot;quality&quot;:&quot;low&quot;}' \
+  &gt; /tmp/acore-edit.json
+
+python - &lt;&lt;'PY'
+import base64
+import json
+from pathlib import Path
+
+data = json.loads(Path(&quot;/tmp/acore-edit.json&quot;).read_text())
+Path(&quot;/tmp/acore-edit.png&quot;).write_bytes(base64.b64decode(data[&quot;data&quot;][0][&quot;b64_json&quot;]))
+PY
+
+# Configured server image default
+curl -sS -X POST &quot;$BASE/v1/images/generations&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;prompt&quot;:&quot;a red fox in snow&quot;,&quot;width&quot;:512,&quot;height&quot;:512,&quot;response_format&quot;:&quot;b64_json&quot;}'
+
+# Text-to-video, asynchronous job with progress polling.
+curl -sS -X POST &quot;$BASE/v1/vision/jobs/videos/generations&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;provider&quot;:&quot;mlx-gen&quot;,&quot;model&quot;:&quot;AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit&quot;,&quot;prompt&quot;:&quot;A slow camera move through a luminous data center.&quot;,&quot;width&quot;:432,&quot;height&quot;:240,&quot;fps&quot;:24,&quot;num_frames&quot;:41,&quot;steps&quot;:20,&quot;guidance_scale&quot;:4.0,&quot;guidance_2&quot;:3.0,&quot;extra&quot;:{&quot;max_sequence_length&quot;:256}}'
+
+# Image upscale, asynchronous job with progress polling. Use the canonical
+# SeedVR2 q8 package by default, or the 7B/q4 variants explicitly.
+JOB_ID=$(curl -sS -X POST &quot;$BASE/v1/vision/jobs/images/upscale&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -F &quot;provider=mlx-gen&quot; \
+  -F &quot;model=AbstractFramework/seedvr2-3b-8bit&quot; \
+  -F &quot;image=@./input.png;type=image/png&quot; \
+  -F &quot;resolution=2x&quot; \
+  -F &quot;softness=0.25&quot; \
+  -F &quot;seed=2405&quot; \
+  | python -c 'import json,sys; print(json.load(sys.stdin)[&quot;job_id&quot;])')
+
+# Poll until `status` is terminal. MLX-Gen progress is denoise-step progress;
+# the latest callback is available at `progress.last_event`.
+curl -sS &quot;$BASE/v1/vision/jobs/$JOB_ID&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot;
+
+# Image-to-video, synchronous multipart route.
+curl -sS -X POST &quot;$BASE/v1/videos/edits&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -F &quot;provider=mlx-gen&quot; \
+  -F &quot;model=AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit&quot; \
+  -F &quot;prompt=Slow camera push-in.&quot; \
+  -F &quot;image=@./first-frame.png;type=image/png&quot; \
+  -F &quot;width=432&quot; \
+  -F &quot;height=240&quot; \
+  -F &quot;fps=24&quot; \
+  -F &quot;num_frames=41&quot; \
+  -F &quot;steps=20&quot; \
+  -F &quot;guidance_scale=3.5&quot; \
+  -F &quot;guidance_2=3.5&quot; \
+  -F 'extra_json={&quot;max_sequence_length&quot;:256}'
+</code></pre></div>
+<p>Local vision model helper endpoint:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Purpose</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /v1/vision/models</code></td>
+<td>List available AbstractVision provider models.</td>
+<td>Includes remote providers when their API key/base URL is configured and local models when they are present in known caches.</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="audio-stttts">Audio (STT/TTS)</h4>
 <p>Endpoints:
 - <code>POST /v1/audio/transcriptions</code> (multipart; <code>file=...</code>)
-- <code>POST /v1/audio/speech</code> (json; <code>input=...</code>, optional <code>voice</code>, optional <code>format</code>)</p>
-<p>Install:</p>
-<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[server]&quot;
-pip install abstractvoice
+- <code>POST /{provider}/v1/audio/transcriptions</code> (multipart; provider-scoped STT)
+- <code>POST /v1/audio/speech</code> (json; <code>input=...</code>, optional <code>voice</code>, optional <code>format</code>)
+- <code>POST /{provider}/v1/audio/speech</code> (json; provider-scoped TTS)
+- <code>POST /v1/voice/clone</code> (multipart; extension route for AbstractVoice-compatible voice cloning)
+- <code>POST /{provider}/v1/voice/clone</code> (multipart; provider-scoped voice cloning)
+- <code>GET /v1/voice/clones</code>, <code>GET|PATCH|DELETE /v1/voice/clones/{voice_id}</code> (cloned-voice listing and management)
+- <code>POST /v1/voice/design</code> (json; a reusable voice from a written description)
+- <code>GET /v1/audio/languages</code> (languages per TTS, STT and cloning engine)
+- <code>POST /v1/audio/translations</code> (multipart; reserved for compatibility, returns <code>501</code>)
+- <code>POST /v1/audio/music</code> (json; extension endpoint, requires a music capability plugin)
+- <code>POST /{provider}/v1/audio/music</code> (json; provider/backend-scoped music route)</p>
+<p>Local plugin fallback is enabled when <code>model</code> is omitted. OpenAI SDK-style
+clients that require a non-empty model string can use <code>abstractvoice/default</code>.</p>
+<p>Remote provider routing is enabled when <code>model</code> is supplied in <code>provider/model</code> format:
+- <code>openai/gpt-4o-mini-transcribe</code>, <code>openai/whisper-1</code>
+- <code>openai/gpt-4o-mini-tts</code>, <code>openai/tts-1</code>
+- <code>openrouter/...</code> for OpenRouter STT/TTS models
+- <code>portkey/...</code> for Portkey-routed OpenAI-compatible audio models
+- <code>openai-compatible/...</code> for endpoints that implement OpenAI-compatible audio routes</p>
+<p>Provider-scoped audio routes mirror chat routing. For example,
+<code>POST /openai/v1/audio/transcriptions</code> with <code>model=gpt-4o-mini-transcribe</code>
+is equivalent to <code>POST /v1/audio/transcriptions</code> with
+<code>model=openai/gpt-4o-mini-transcribe</code>; the same applies to
+<code>/openai-compatible/v1/audio/speech</code> and other supported provider prefixes.</p>
+<p>For <code>openai-compatible/...</code>, request-level <code>base_url</code> can point to a local
+AbstractVoice/OpenAI-compatible audio server. Loopback URLs are allowed by
+default; non-loopback URLs require <code>ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST</code>.</p>
+<p>If <code>model</code> is omitted, the endpoint delegates to local capability plugins
+(typically <code>abstractvoice</code>) and returns <code>501</code> when no suitable plugin is installed.
+Those local/plugin paths use the same internal <code>generate(..., output=...)</code>
+dispatcher as the Python API; provider/model remote routes keep their
+OpenAI-compatible HTTP wire behavior.</p>
+<p>Server-held OpenAI credentials follow one rule on both paths. When the engine
+that would run (the request's <code>provider</code> or route prefix, else the configured
+voice route, else AbstractVoice's default, <code>openai</code>) is remote in
+AbstractVoice's own words (OpenAI or an OpenAI-compatible server, under any
+spelling it accepts: <code>remote</code>, <code>compatible</code>, <code>proxy</code>, ...), or is an engine
+AbstractVoice does not know, a request that is not server-authenticated gets
+<code>401</code> whenever the server holds an OpenAI key (saved with
+<code>abstractcore --set-api-key openai</code>, or <code>OPENAI_API_KEY</code>), exactly like
+<code>model=openai/...</code>, also with <code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1</code>;
+an explicit <code>X-AbstractCore-Provider-API-Key</code> is then the only key used. The
+discovery routes (<code>/v1/audio/voices</code>, <code>.../providers</code>, <code>.../models</code>) apply the
+same rule. An authenticated
+request gets the saved key, read on every request: a rotated key is used on
+the next call and a removed one is no longer sent. Local engines (Supertonic,
+Piper, faster-whisper, ...) never receive a key.</p>
+<p>Remote audio and plugin-backed routing both work with the light install, which
+includes the AbstractVoice plugin:</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore
 </code></pre></div>
 <p>Notes:
-- <code>/v1/audio/transcriptions</code> requires <code>python-multipart</code> for form parsing (included in the server extra).</p>
+- The light install carries AbstractVoice without OmniVoice, torch, or
+  torchaudio (Python 3.9+; 3.10+ recommended). Local voice engines come with
+  <code>abstractcore[apple]</code> or <code>abstractcore[gpu]</code>; AEC requires Python 3.11+.
+- <code>/v1/audio/transcriptions</code> parses forms with <code>python-multipart</code> (part of the light install).
+- Uploaded audio is limited by <code>ABSTRACTCORE_SERVER_AUDIO_MAX_BYTES</code> (default: 25 MB).</p>
+<p><code>POST /v1/audio/transcriptions</code> multipart parameters:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>file</code></td>
+<td style="text-align: right;">yes</td>
+<td>Audio file to transcribe, commonly <code>mp3</code>, <code>mp4</code>, <code>mpeg</code>, <code>mpga</code>, <code>m4a</code>, <code>wav</code>, or <code>webm</code>.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider/model id for remote STT (<code>openai/gpt-4o-mini-transcribe</code>, <code>openai/whisper-1</code>, <code>openrouter/...</code>, <code>portkey/...</code>, <code>openai-compatible/...</code>). Omit for local <code>abstractvoice</code> plugin fallback; <code>abstractvoice/default</code> is accepted for clients that require a model string.</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional routing hint when omitting <code>model</code>, using a provider-scoped route, or pairing the request with <code>base_url</code>.</td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td style="text-align: right;">no</td>
+<td>Input language code such as <code>en</code> or <code>fr</code>.</td>
+</tr>
+<tr>
+<td><code>prompt</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider transcription prompt/context.</td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider response format such as <code>json</code>, <code>text</code>, <code>srt</code>, or <code>vtt</code>.</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider sampling temperature where supported.</td>
+</tr>
+<tr>
+<td><code>format</code></td>
+<td style="text-align: right;">no</td>
+<td>Audio format override for providers that need it, notably OpenRouter base64 audio input.</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td style="text-align: right;">no</td>
+<td>Endpoint override for local/gateway routing. Prefer this with <code>openai-compatible/...</code>; if set with <code>openai/...</code>, the request is sent to that URL instead of api.openai.com. Loopback is allowed by default; non-loopback requires allowlist.</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>POST /v1/audio/speech</code> JSON parameters:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>input</code> or <code>text</code></td>
+<td style="text-align: right;">yes</td>
+<td>Text to synthesize. <code>text</code> is the AbstractCore-compatible alias.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider/model id for remote TTS (<code>openai/gpt-4o-mini-tts</code>, <code>openai/tts-1</code>, <code>openrouter/...</code>, <code>portkey/...</code>, <code>openai-compatible/...</code>). Omit for local plugin fallback; <code>abstractvoice/default</code> is accepted.</td>
+</tr>
+<tr>
+<td><code>voice</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider/backend voice name; remote OpenAI-compatible routing defaults to <code>alloy</code>. OpenAI TTS voices include <code>alloy</code>, <code>ash</code>, <code>ballad</code>, <code>coral</code>, <code>echo</code>, <code>fable</code>, <code>nova</code>, <code>onyx</code>, <code>sage</code>, <code>shimmer</code>, <code>verse</code>, <code>marin</code>, and <code>cedar</code>; the Swagger example uses <code>coral</code>.</td>
+</tr>
+<tr>
+<td><code>response_format</code> or <code>format</code></td>
+<td style="text-align: right;">no</td>
+<td>Audio output format. Remote providers commonly support <code>mp3</code>, <code>wav</code>, <code>opus</code>, <code>aac</code>, <code>flac</code>, or <code>pcm</code>; local plugin fallback defaults to <code>wav</code>.</td>
+</tr>
+<tr>
+<td><code>speed</code></td>
+<td style="text-align: right;">no</td>
+<td>Speech speed multiplier when supported.</td>
+</tr>
+<tr>
+<td><code>instructions</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider-specific style/instruction text for expressive TTS.</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional routing hint when omitting <code>model</code>, using a provider-scoped route, or pairing the request with <code>base_url</code>.</td>
+</tr>
+<tr>
+<td><code>profile</code></td>
+<td style="text-align: right;">no</td>
+<td>AbstractVoice profile hint for compatible local/plugin backends.</td>
+</tr>
+<tr>
+<td><code>quality_preset</code></td>
+<td style="text-align: right;">no</td>
+<td>AbstractVoice/local-backend quality preset when supported.</td>
+</tr>
+<tr>
+<td><code>quality</code></td>
+<td style="text-align: right;">no</td>
+<td>OpenAI-compatible quality selector or backend-specific quality hint.</td>
+</tr>
+<tr>
+<td><code>one_shot</code></td>
+<td style="text-align: right;">no</td>
+<td>AbstractVoice extension: synthesize the whole text as one generation, so the take keeps one voice from start to end. Qwen3-TTS voices (presets, designed, cloned and built-in) up to 1000 characters; a longer text, another engine, a remote <code>model</code> or the stream route answers <code>422</code>.</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td style="text-align: right;">no</td>
+<td>Endpoint override for local/gateway routing. Prefer this with <code>openai-compatible/...</code>; if set with <code>openai/...</code>, the request is sent to that URL instead of api.openai.com. Loopback is allowed by default, non-loopback requires allowlist.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A <code>one_shot</code> request the backend refuses (over its limit, or an engine without one-shot
+synthesis) answers <code>422</code> with the backend's reason.</p>
+<p><code>POST /v1/audio/speech/stream</code> accepts the same local/plugin routing fields but
+returns <code>application/x-ndjson</code> stream events. Audio events carry base64 WAV
+segment chunks (<code>audio_b64</code>, <code>content_type=audio/wav</code>), followed by a terminal
+<code>done</code>, <code>cancelled</code>, or <code>error</code> event. The stream route currently supports
+<code>response_format</code>/<code>format="wav"</code> only and returns <code>501</code> for remote provider
+models that do not expose a native streaming TTS method.</p>
+<p>Swagger UI can execute <code>/v1/audio/speech</code>. AbstractCore serves a small custom
+Swagger wrapper that converts authenticated binary audio <code>POST</code> responses into
+browser <code>blob:</code> URLs before Swagger renders the player. The example uses
+<code>response_format="wav"</code> because WAV has explicit duration metadata and is the
+most reliable inline preview format. If a browser still cannot play the inline
+preview, use the response download or a curl <code>--output</code> command; the endpoint
+returns normal <code>audio/*</code> bytes and includes a filename in <code>Content-Disposition</code>.</p>
+<p><code>POST /v1/voice/clone</code> and <code>POST /{provider}/v1/voice/clone</code> multipart parameters:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>file</code></td>
+<td style="text-align: right;">yes</td>
+<td>Reference voice audio file.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider/model id for remote clone routing. Use <code>openai-compatible/default</code> for an AbstractVoice-compatible server, or <code>openai/default</code> where OpenAI custom voice creation is available. Omit for local AbstractVoice clone fallback.</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional routing hint when omitting <code>model</code>, using a provider-scoped route, or pairing the request with <code>base_url</code>.</td>
+</tr>
+<tr>
+<td><code>tts_model</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional TTS model to associate with the clone for compatible local/plugin backends.</td>
+</tr>
+<tr>
+<td><code>cloning_engine</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional clone backend/engine selector for compatible local/plugin backends.</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td style="text-align: right;">no</td>
+<td>Friendly cloned voice name.</td>
+</tr>
+<tr>
+<td><code>reference_text</code></td>
+<td style="text-align: right;">no</td>
+<td>Transcript of the reference audio when available.</td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td style="text-align: right;">no</td>
+<td>Language of the recording (ISO 639-1, for example <code>fr</code>). When omitted, the cloner identifies it from the transcript. Local cloning records it with <code>abstractvoice</code> 0.19.0 or later; remote AbstractVoice-compatible servers receive it as a form field; OpenAI custom voices do not take it.</td>
+</tr>
+<tr>
+<td><code>validate</code></td>
+<td style="text-align: right;">no</td>
+<td>Ask compatible clone servers to validate/smoke-test the clone before returning.</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td style="text-align: right;">no</td>
+<td>OpenAI-compatible endpoint override for <code>openai-compatible/...</code>; loopback is allowed by default, non-loopback requires allowlist.</td>
+</tr>
+<tr>
+<td><code>clone_path</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider-specific clone path. Defaults to <code>/voice/clone</code> for OpenAI-compatible servers and <code>/audio/voices</code> for OpenAI.</td>
+</tr>
+<tr>
+<td><code>file_field</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider-specific multipart file field. Defaults to <code>file</code>; OpenAI uses <code>audio_sample</code>.</td>
+</tr>
+<tr>
+<td><code>consent</code></td>
+<td style="text-align: right;">no</td>
+<td>Provider-specific consent id when custom voice creation requires it.</td>
+</tr>
+</tbody>
+</table></div>
+<p>The returned <code>voice_id</code> / <code>id</code> can be used as the <code>voice</code> value in
+<code>/v1/audio/speech</code> when the selected backend supports custom voices. For a local
+clone, <code>voice</code> carries the stored record (<code>name</code>, <code>engine</code>, <code>reference_text</code>, <code>meta</code>).</p>
+<h4 id="voices-finding-managing-and-designing-them">Voices: finding, managing and designing them</h4>
+<p>Every voice record returned by <code>GET /v1/audio/voices</code> and <code>GET /v1/voice/clones</code>
+has the same navigation fields:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>voice_id</code></td>
+<td>The value to send as <code>voice</code> to <code>/v1/audio/speech</code>.</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>Display name.</td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td><code>profile</code> (an engine voice) or <code>clone</code> (a stored voice: your own, designed or built-in).</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td>The engine that speaks it.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>The checkpoint it belongs to; a Qwen3-TTS preset speaker is listed once per installed checkpoint (filter with <code>model</code>).</td>
+</tr>
+<tr>
+<td><code>languages</code></td>
+<td>Languages the voice can speak; empty when the provider does not restrict them (remote providers).</td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td>The voice's native language when known (Piper voices, Qwen3-TTS presets, built-in and designed voices), else <code>null</code>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Use <code>language=fr</code> on either listing to keep the voices that can speak French, native
+French voices first. <code>GET /v1/audio/languages?kind=tts</code> lists the languages of each
+engine. Cloned voices are managed under <code>/v1/voice/clones/{voice_id}</code>: <code>GET</code> reads the
+stored record, <code>PATCH</code> renames it (<code>name</code>) or replaces its transcript
+(<code>reference_text</code>; both fields are checked before either is applied), <code>DELETE</code> removes
+it. Built-in voices are read-only (<code>422</code>); an unknown id answers <code>404</code>. <code>PATCH</code>,
+<code>DELETE</code> and <code>POST /v1/voice/design</code> change this server's voices, so they need server
+authentication (<code>Authorization: Bearer &lt;ABSTRACTCORE_AUTH_TOKEN&gt;</code>) or
+<code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1</code>; a provider key does not authorize them
+(<code>401</code>). The listings follow the discovery rule of the other audio catalogs.</p>
+<p><code>POST /v1/voice/design</code> creates a reusable voice from a written description, with no
+recording: AbstractVoice renders a reference with Qwen3-TTS 1.7B VoiceDesign, keeps the
+part after the warm-up the model needs to settle, and clones it with Qwen3-TTS 1.7B
+Base. The response is the stored record; its <code>voice_id</code> works like any cloned voice.
+Body fields: <code>description</code> (required; state the voice's sex explicitly, in the
+reference language when it is not English), <code>name</code>, <code>language</code> (<code>en</code>, <code>fr</code>, <code>es</code>,
+<code>de</code>, <code>it</code>, <code>pt</code>, <code>ru</code>, <code>zh</code>, <code>ja</code> or <code>ko</code>), <code>text</code> (replaces the built-in reference
+text). It needs <code>abstractvoice[qwen3-tts]</code> and <code>abstractvoice[stt]</code>, both included in
+<code>abstractcore[apple]</code> and <code>abstractcore[gpu]</code>.</p>
+<p>Design runs one at a time per server process and takes tens of seconds. A voice
+backend without these methods answers <code>501</code> naming the missing method, including a
+<code>language</code> filter the backend cannot apply.</p>
+<p><code>POST /v1/audio/music</code> and <code>POST /{provider}/v1/audio/music</code> JSON parameters:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prompt</code> or <code>input</code> or <code>text</code></td>
+<td style="text-align: right;">yes</td>
+<td>Music generation prompt.</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td style="text-align: right;">no</td>
+<td>Music backend selector, for example <code>acemusic</code>, <code>acestep</code>, <code>stable-audio</code>, <code>stable-audio-3</code>, or <code>diffusers</code>. The provider-scoped path can also select a backend, e.g. <code>/acemusic/v1/audio/music</code> or <code>/diffusers/v1/audio/music</code>.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: right;">no</td>
+<td>Music model id for the selected backend, for example <code>acemusic/ace-step-api</code> for remote ACE Music or a Hugging Face repo id for local AbstractMusic backends.</td>
+</tr>
+<tr>
+<td><code>lyrics</code></td>
+<td style="text-align: right;">no</td>
+<td>Optional lyrics for vocal music backends.</td>
+</tr>
+<tr>
+<td><code>task</code></td>
+<td style="text-align: right;">no</td>
+<td><code>text_to_music</code> (default) or <code>text_to_audio</code> for a sound effect. A sound effect is answered from the <code>sound</code> output.</td>
+</tr>
+<tr>
+<td><code>seconds</code> / <code>duration_s</code></td>
+<td style="text-align: right;">no</td>
+<td>Clip length in seconds (one value; both must agree, and it must be positive, else <code>400</code>). Without it a sound effect is 5 seconds and music keeps the backend default (30 seconds for Stable Audio 3); the model's maximum still applies.</td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td style="text-align: right;">no</td>
+<td>Deterministic seed when supported.</td>
+</tr>
+<tr>
+<td><code>num_inference_steps</code></td>
+<td style="text-align: right;">no</td>
+<td>Diffusion/sampling step count when supported.</td>
+</tr>
+<tr>
+<td><code>guidance_scale</code></td>
+<td style="text-align: right;">no</td>
+<td>Guidance scale when supported.</td>
+</tr>
+<tr>
+<td><code>instrumental</code></td>
+<td style="text-align: right;">no</td>
+<td>Request instrumental output when supported.</td>
+</tr>
+<tr>
+<td><code>enhance_prompt</code> / <code>structure_prompt</code> / <code>auto_lyrics</code></td>
+<td style="text-align: right;">no</td>
+<td>Prompt/lyrics planning controls for compatible music backends.</td>
+</tr>
+<tr>
+<td><code>text_planner_mode</code></td>
+<td style="text-align: right;">no</td>
+<td>Host/plugin text-planning mode such as <code>auto</code>, <code>on</code>, or <code>off</code>.</td>
+</tr>
+<tr>
+<td><code>response_format</code> or <code>format</code></td>
+<td style="text-align: right;">no</td>
+<td>Server contract supports <code>wav</code>, <code>mp3</code>, and <code>flac</code>; backend support can be narrower.</td>
+</tr>
+<tr>
+<td>extra top-level fields</td>
+<td style="text-align: right;">no</td>
+<td>Best-effort passthrough to the installed music capability plugin.</td>
+</tr>
+</tbody>
+</table></div>
+<p>With <code>abstractmusic&gt;=0.1.15</code>, the base install includes the remote ACE Music
+backend. Configure <code>ACEMUSIC_API_KEY</code> in the server environment, optionally set
+<code>ACEMUSIC_BASE_URL</code>, and use <code>provider="acemusic"</code> or the <code>/acemusic/v1/audio/music</code>
+path. Local ACE-Step/Diffusers routes come with <code>abstractcore[apple]</code> or <code>abstractcore[gpu]</code>.</p>
+<p>While the server holds a music provider key (<code>ACEMUSIC_API_KEY</code> or <code>ELEVENLABS_API_KEY</code>, in its
+environment or as the <code>music_acemusic_api_key</code> / <code>music_elevenlabs_api_key</code> route option), a
+music request that is not server-authenticated gets <code>401</code>, whatever backend it names and also
+with <code>ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1</code>; an explicit
+<code>X-AbstractCore-Provider-API-Key</code> is then used in place of the server's keys, and only by the
+backend the request selected. Local music on a server that holds none of these keys works
+unauthenticated. An unknown backend selector is refused with <code>400</code> (the ElevenLabs selector is
+<code>elevenlabs-music</code>), and a selected backend that is not installed is refused with <code>501</code>; neither
+ever runs another backend. The music and capability discovery routes (<code>/v1/audio/music/providers</code>,
+<code>/v1/audio/music/models</code>, <code>/v1/audio/music/provider-details</code>, <code>/v1/capabilities...</code>) follow the
+same key rule.</p>
 <p>Examples:</p>
-<div class="code-block"><pre><code class="language-bash"># Speech-to-text (STT)
-curl -X POST http://localhost:8000/v1/audio/transcriptions \
-  -F &quot;file=@speech.wav&quot; \
+<div class="code-block"><pre><code class="language-bash">BASE=http://127.0.0.1:8000
+TOKEN=replace-with-server-token
+
+# Local/plugin TTS through AbstractCore's unified output dispatcher.
+curl -sS -X POST &quot;$BASE/v1/audio/speech&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -H &quot;Accept: audio/wav&quot; \
+  -d '{&quot;input&quot;:&quot;Hello from the updated AbstractCore server.&quot;,&quot;voice&quot;:&quot;coral&quot;,&quot;response_format&quot;:&quot;wav&quot;}' \
+  --output /tmp/acore-speech.wav
+
+# Local/plugin STT through AbstractCore's unified output dispatcher.
+curl -sS -X POST &quot;$BASE/v1/audio/transcriptions&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -F &quot;file=@/tmp/acore-speech.wav;type=audio/wav&quot; \
   -F &quot;language=en&quot;
 
-# Text-to-speech (TTS)
-curl -X POST http://localhost:8000/v1/audio/speech \
+# Remote speech-to-text (STT)
+curl -sS -X POST &quot;$BASE/v1/audio/transcriptions&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -F &quot;file=@speech.wav&quot; \
+  -F &quot;model=openai/gpt-4o-mini-transcribe&quot; \
+  -F &quot;language=en&quot;
+
+# Remote text-to-speech (TTS)
+curl -sS -X POST &quot;$BASE/v1/audio/speech&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
   -H &quot;Content-Type: application/json&quot; \
-  -d '{&quot;input&quot;:&quot;Hello!&quot;,&quot;format&quot;:&quot;wav&quot;}' \
+  -d '{&quot;model&quot;:&quot;openai/gpt-4o-mini-tts&quot;,&quot;input&quot;:&quot;Hello!&quot;,&quot;voice&quot;:&quot;coral&quot;,&quot;response_format&quot;:&quot;wav&quot;}' \
   --output hello.wav
+
+# Local abstractvoice TTS through the OpenAI-compatible endpoint
+curl -sS -X POST &quot;$BASE/v1/audio/speech&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;model&quot;:&quot;abstractvoice/default&quot;,&quot;input&quot;:&quot;Hello!&quot;,&quot;voice&quot;:&quot;alloy&quot;,&quot;format&quot;:&quot;wav&quot;}' \
+  --output hello.wav
+
+# Remote ACE Music through AbstractMusic.
+# Start the server with ACEMUSIC_API_KEY set in its environment.
+curl -sS -X POST &quot;$BASE/v1/audio/music&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;prompt&quot;:&quot;A short calm piano loop.&quot;,&quot;provider&quot;:&quot;acemusic&quot;,&quot;duration_s&quot;:8,&quot;format&quot;:&quot;mp3&quot;}' \
+  --output music.mp3
+
+# French voices, native speakers first; then speak with one of them
+curl -sS &quot;$BASE/v1/audio/voices?language=fr&quot; -H &quot;Authorization: Bearer $TOKEN&quot;
+curl -sS -X POST &quot;$BASE/v1/audio/speech&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;input&quot;:&quot;Bonjour et bienvenue.&quot;,&quot;voice&quot;:&quot;fr-female-camille&quot;,&quot;one_shot&quot;:true}' \
+  --output bonjour.wav
+
+# Design a voice from a description, rename it, delete it
+curl -sS -X POST &quot;$BASE/v1/voice/design&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;description&quot;:&quot;A calm, warm female voice in her thirties.&quot;,&quot;name&quot;:&quot;Mira&quot;,&quot;language&quot;:&quot;en&quot;}'
+curl -sS -X PATCH &quot;$BASE/v1/voice/clones/$VOICE_ID&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; -H &quot;Content-Type: application/json&quot; -d '{&quot;name&quot;:&quot;Mira (narrator)&quot;}'
+curl -sS -X DELETE &quot;$BASE/v1/voice/clones/$VOICE_ID&quot; -H &quot;Authorization: Bearer $TOKEN&quot;
+
+# Remote/local OpenAI-compatible voice clone endpoint
+curl -sS -X POST &quot;$BASE/v1/voice/clone&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -F &quot;file=@reference.wav&quot; \
+  -F &quot;model=openai-compatible/default&quot; \
+  -F &quot;base_url=http://127.0.0.1:5000/v1&quot; \
+  -F &quot;name=my_voice&quot; \
+  -F &quot;reference_text=Hello from my reference recording.&quot; \
+  -F &quot;validate=true&quot;
 </code></pre></div>
 <p>If you want to “ask a model about an audio file”, prefer one of:
 - Run STT first (<code>/v1/audio/transcriptions</code>) then send the transcript to <code>POST /v1/chat/completions</code>, or
@@ -319,6 +2498,36 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 <p>AbstractCore server supports comprehensive file attachments using OpenAI-compatible multimodal message format, plus AbstractCore's convenient <code>@filename</code> syntax.</p>
 <p>Security note (HTTP server): local file paths are disabled by default (including <code>@/path/to/file</code> and <code>{"url": "/path/to/file"}</code>).
 Use <code>http(s)</code> URLs or <code>data:</code> base64, or enable local paths via <code>ABSTRACTCORE_SERVER_MEDIA_ROOT</code> (safe) / <code>ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1</code> (unsafe).</p>
+<p>Image analysis example using a local generated image:</p>
+<div class="code-block"><pre><code class="language-bash">BASE=http://127.0.0.1:8000
+TOKEN=replace-with-server-token
+
+python - &lt;&lt;'PY'
+import base64
+from pathlib import Path
+
+Path(&quot;/tmp/acore-image.b64&quot;).write_text(base64.b64encode(Path(&quot;/tmp/acore-image.png&quot;).read_bytes()).decode(&quot;ascii&quot;))
+PY
+
+jq -n --rawfile img /tmp/acore-image.b64 '{
+  model: &quot;openai/gpt-4o-mini&quot;,
+  messages: [{
+    role: &quot;user&quot;,
+    content: [
+      {type: &quot;text&quot;, text: &quot;Describe this image in one concise sentence.&quot;},
+      {type: &quot;image_url&quot;, image_url: {url: (&quot;data:image/png;base64,&quot; + $img)}}
+    ]
+  }],
+  max_tokens: 80,
+  temperature: 0
+}' &gt; /tmp/acore-vision-chat.json
+
+curl -sS -X POST &quot;$BASE/v1/chat/completions&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  --data-binary @/tmp/acore-vision-chat.json \
+  | jq -r '.choices[0].message.content'
+</code></pre></div>
 <h4 id="supported-file-types">Supported File Types</h4>
 <ul>
 <li><strong>Images</strong>: PNG, JPEG, GIF, WEBP, BMP, TIFF</li>
@@ -436,7 +2645,7 @@ Use <code>http(s)</code> URLs or <code>data:</code> base64, or enable local path
 from openai import OpenAI
 import base64
 
-client = OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=os.environ[&quot;ABSTRACTCORE_SERVER_API_KEY&quot;])
+client = OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=os.environ[&quot;ABSTRACTCORE_AUTH_TOKEN&quot;])
 
 # Method 1: @filename syntax
 response = client.chat.completions.create(
@@ -520,11 +2729,11 @@ for model in providers_models:
 <p>AbstractCore implements an OpenAI-compatible Responses-style API, including <code>input_file</code> support.</p>
 <h4 id="why-use-v1responses">Why Use /v1/responses?</h4>
 <ul>
-<li><strong>OpenAI Compatible</strong>: Drop-in replacement for OpenAI's Responses API</li>
+<li><strong>OpenAI Compatible</strong>: Accepts OpenAI Responses API requests and returns an OpenAI Responses <code>object: "response"</code> payload</li>
 <li><strong>Native File Support</strong>: <code>input_file</code> type designed specifically for document attachments</li>
 <li><strong>Cleaner API</strong>: Explicit separation between text (<code>input_text</code>) and files (<code>input_file</code>)</li>
 <li><strong>Backward Compatible</strong>: Existing <code>messages</code> format still works alongside new <code>input</code> format</li>
-<li><strong>Optional Streaming</strong>: Streaming opt-in with <code>"stream": true</code> (defaults to <code>false</code>)</li>
+<li><strong>Optional Streaming</strong>: <code>"stream": true</code> streams OpenAI Responses events (OpenAI format) or chat-completions chunks (legacy format)</li>
 </ul>
 <h4 id="request-format">Request Format</h4>
 <p><strong>OpenAI Responses API Format (Recommended):</strong></p>
@@ -539,11 +2748,72 @@ for model in providers_models:
       ]
     }
   ],
+  &quot;tools&quot;: [
+    {&quot;type&quot;: &quot;web_search&quot;, &quot;external_web_access&quot;: true}
+  ],
+  &quot;tool_choice&quot;: &quot;auto&quot;,
   &quot;stream&quot;: false,
-  &quot;max_tokens&quot;: 2000,
+  &quot;max_output_tokens&quot;: 2000,
   &quot;temperature&quot;: 0.7
 }
 </code></pre></div>
+<p>Key parameters:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: right;">yes</td>
+<td>Provider/model id. Bare model ids may be auto-detected, but provider/model is preferred.</td>
+</tr>
+<tr>
+<td><code>input</code></td>
+<td style="text-align: right;">yes, unless <code>messages</code> is used</td>
+<td>OpenAI Responses input. Supports a string, or an array of input items such as <code>{"type":"message","role":"user","content":"..."}</code> and <code>{"type":"function_call_output","call_id":"...","output":"..."}</code>. Message content can be a string or an array of <code>input_text</code> / <code>input_file</code> / <code>input_image</code> items.</td>
+</tr>
+<tr>
+<td><code>messages</code></td>
+<td style="text-align: right;">yes, unless <code>input</code> is used</td>
+<td>Backward-compatible chat-completions request shape.</td>
+</tr>
+<tr>
+<td><code>instructions</code></td>
+<td style="text-align: right;">no</td>
+<td>System-level instructions prepended ahead of <code>input</code> (best-effort).</td>
+</tr>
+<tr>
+<td><code>stream</code></td>
+<td style="text-align: right;">no</td>
+<td>When <code>true</code>, returns server-sent events.</td>
+</tr>
+<tr>
+<td><code>tools</code></td>
+<td style="text-align: right;">no</td>
+<td>Responses-style tools. AbstractCore does not execute tools server-side; tools are only transported to the model prompt. <code>web_search*</code> tools are normalized into function tools for local-model prompting and host-side execution. Unsupported built-in tool types return a 400 error.</td>
+</tr>
+<tr>
+<td><code>tool_choice</code></td>
+<td style="text-align: right;">no</td>
+<td>Tool selection control; normalized where needed (best-effort).</td>
+</tr>
+<tr>
+<td><code>max_output_tokens</code> / <code>max_tokens</code>, <code>temperature</code>, <code>top_p</code>, <code>stop</code>, <code>seed</code>, <code>frequency_penalty</code>, <code>presence_penalty</code></td>
+<td style="text-align: right;">no</td>
+<td>Standard generation controls, forwarded where supported.</td>
+</tr>
+<tr>
+<td><code>base_url</code>, <code>agent_format</code>, <code>thinking</code>, <code>prompt_cache_key</code>, <code>prompt_cache_retention</code>, <code>timeout_s</code>, <code>unload_after</code></td>
+<td style="text-align: right;">no</td>
+<td>AbstractCore text-inference extensions with the same behavior as <code>/v1/chat/completions</code> for shared fields.</td>
+</tr>
+</tbody>
+</table></div>
 <p><strong>Legacy Format (Still Supported):</strong></p>
 <div class="code-block"><pre><code class="language-json">{
   &quot;model&quot;: &quot;openai/gpt-4&quot;,
@@ -587,7 +2857,9 @@ for model in providers_models:
           {&quot;type&quot;: &quot;input_file&quot;, &quot;file_url&quot;: &quot;https://www.berkshirehathaway.com/letters/2024ltr.pdf&quot;}
         ]
       }
-    ]
+    ],
+    &quot;thinking&quot;: &quot;off&quot;,
+    &quot;prompt_cache_key&quot;: &quot;tenantA:doc-review&quot;
   }'
 </code></pre></div>
 <p><strong>Multiple Files:</strong></p>
@@ -649,7 +2921,7 @@ for model in providers_models:
 <div class="code-block"><pre><code class="language-python">import os
 from openai import OpenAI
 
-client = OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=os.environ[&quot;ABSTRACTCORE_SERVER_API_KEY&quot;])
+client = OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=os.environ[&quot;ABSTRACTCORE_AUTH_TOKEN&quot;])
 
 # Direct request to /v1/responses endpoint
 import requests
@@ -674,6 +2946,44 @@ result = response.json()
 print(result[&quot;choices&quot;][0][&quot;message&quot;][&quot;content&quot;])
 </code></pre></div>
 <hr />
+<h3 id="decisions">Decisions</h3>
+<p><strong>Endpoint:</strong> <code>POST /v1/decisions</code></p>
+<p>Answer typed questions about a document with a decision model: the System One request and answer
+shape, the format every decision-model host shares. Nothing is generated;
+every answer is a calibrated probability distribution over the options you supply.</p>
+<p><strong>Request:</strong></p>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;model&quot;: &quot;mlx/jaredpalmer/kev-4b&quot;,
+  &quot;state&quot;: &quot;Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.&quot;,
+  &quot;questions&quot;: {
+    &quot;department&quot;: {&quot;type&quot;: &quot;choice&quot;, &quot;instructions&quot;: &quot;Which team should handle this?&quot;,
+                   &quot;criteria&quot;: {&quot;returns&quot;: &quot;Exchanges, refunds, wrong or damaged items&quot;,
+                                &quot;shipping&quot;: &quot;Delivery status, delays, lost packages&quot;,
+                                &quot;billing&quot;: &quot;Charges, invoices, payment problems&quot;}},
+    &quot;escalate&quot;:   {&quot;type&quot;: &quot;noul&quot;,  &quot;instructions&quot;: &quot;Does this need urgent human attention?&quot;},
+    &quot;frustration&quot;: {&quot;type&quot;: &quot;score&quot;, &quot;instructions&quot;: &quot;How frustrated is the customer?&quot;,
+                    &quot;criteria&quot;: [&quot;Calm&quot;, &quot;Frustrated&quot;, &quot;Very angry&quot;]}
+  }
+}
+</code></pre></div>
+<p><strong>Response:</strong> <code>answers</code> by question name (<code>choice</code> + <code>probabilities</code> + <code>confidence</code>; <code>noul</code>;
+<code>score</code> + <code>legend</code> + <code>probabilities</code> + <code>confidence</code>), <code>usage</code>, <code>latency_ms</code>.</p>
+<p><strong>Models:</strong> <code>typesafe/jev-latest</code> (hosted Jev, <code>TYPESAFE_API_KEY</code>), <code>mlx/jaredpalmer/kev-4b</code> (Apple silicon),
+<code>huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M</code> (llama.cpp), <code>huggingface/ggml-org/lev-GGUF:Q8_0</code>,
+<code>huggingface/convaiinnovations/laya</code>, <code>huggingface/jaredpalmer/kev-4b</code> (transformers). A bare handle picks the local engine;
+<code>kev-latest</code> / <code>jev-latest</code> reuse the decision model loaded most recently, else the configured
+<code>output.decision</code> capability default. The first request loads the model and later ones reuse it; the
+two most recently used decision models stay resident.
+Errors: 400 invalid request, 404 model not downloaded, 422 state over the context limit. See
+<a href="decision-models.html">Decision Models</a>.</p>
+<p><strong>Discovery and the OpenAI routes:</strong> <code>GET /v1/models?output_type=decision</code> lists decision models; every
+<code>/v1/models</code> entry carries an additive <code>capabilities</code> object (<code>input</code> / <code>output</code> modalities from the
+registry) and a decision model also a <code>decision</code> object (<code>endpoint: "/v1/decisions"</code>, <code>kind</code>,
+<code>question_types</code>, <code>generates_text: false</code>). OpenAI clients ignore the extra fields. A chat completion or
+<code>/v1/responses</code> call against a decision model answers 400 (<code>code: "decision_model"</code>, with the endpoint
+in the error), never a silent empty completion: there is no OpenAI-compatible shape for calibrated typed
+decisions, and the System One request/response is the format every decision-model host shares.</p>
+<hr />
 <h3 id="embeddings">Embeddings</h3>
 <p><strong>Endpoint:</strong> <code>POST /v1/embeddings</code></p>
 <p>Generate embedding vectors for semantic search, RAG, and similarity analysis.</p>
@@ -686,7 +2996,70 @@ print(result[&quot;choices&quot;][0][&quot;message&quot;][&quot;content&quot;])
 <p><strong>Supported Providers:</strong>
 - <strong>HuggingFace</strong>: Local models with ONNX acceleration
 - <strong>Ollama</strong>: <code>ollama/granite-embedding:278m</code>, etc.
-- <strong>LMStudio</strong>: Any loaded embedding model</p>
+- <strong>LMStudio</strong>: Any loaded embedding model
+- <strong>OpenAI</strong>: <code>openai/text-embedding-3-small</code>, <code>openai/text-embedding-3-large</code>
+- <strong>OpenRouter</strong>: <code>openrouter/openai/text-embedding-3-small</code>, etc.
+- <strong>Portkey</strong>: <code>portkey/...</code> with your Portkey routing configuration
+- <strong>OpenAI-compatible</strong>: <code>openai-compatible/...</code> against configured/local <code>/v1/embeddings</code> endpoints</p>
+<p>Anthropic does not expose a native embeddings API. Use OpenAI, OpenRouter,
+Portkey, an OpenAI-compatible endpoint, or a local embedding provider.</p>
+<p>For endpoint-backed providers such as LM Studio, vLLM, and generic
+OpenAI-compatible servers, the embedding route does not require the embedding
+model to appear in a chat model catalogue before the request is sent. This
+supports embedding-only endpoints whose <code>/models</code> response is incomplete or
+chat-only.</p>
+<p>OpenAI-compatible request fields are forwarded where supported:
+- <code>dimensions</code>
+- <code>encoding_format</code>
+- <code>user</code>
+- <code>base_url</code> (AbstractCore extension; loopback by default, allowlist required for non-loopback)</p>
+<p>Parameters:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>input</code></td>
+<td style="text-align: right;">yes</td>
+<td>String or array of strings. Arrays return one vector per input item.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td style="text-align: right;">yes</td>
+<td>Provider/model id such as <code>openai/text-embedding-3-small</code>, <code>openrouter/openai/text-embedding-3-small</code>, <code>portkey/...</code>, <code>openai-compatible/...</code>, <code>ollama/...</code>, <code>lmstudio/...</code>, or <code>huggingface/...</code>.</td>
+</tr>
+<tr>
+<td><code>encoding_format</code></td>
+<td style="text-align: right;">no</td>
+<td><code>float</code> by default; <code>base64</code> is accepted where supported by the provider/backend.</td>
+</tr>
+<tr>
+<td><code>dimensions</code></td>
+<td style="text-align: right;">no</td>
+<td>Requested output dimensions for providers that support native dimension reduction; local backends may truncate when appropriate.</td>
+</tr>
+<tr>
+<td><code>user</code></td>
+<td style="text-align: right;">no</td>
+<td>End-user identifier forwarded to providers that support abuse monitoring.</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td style="text-align: right;">no</td>
+<td>OpenAI-compatible endpoint override with the same allowlist policy as chat.</td>
+</tr>
+<tr>
+<td><code>api_key</code></td>
+<td style="text-align: right;">no</td>
+<td>Deprecated/disabled in the body. Use <code>X-AbstractCore-Provider-API-Key</code> for provider overrides.</td>
+</tr>
+</tbody>
+</table></div>
 <p><strong>Batch Embedding:</strong></p>
 <div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/v1/embeddings \
   -H &quot;Content-Type: application/json&quot; \
@@ -700,8 +3073,16 @@ print(result[&quot;choices&quot;][0][&quot;message&quot;][&quot;content&quot;])
 <p><strong>Endpoint:</strong> <code>GET /v1/models</code></p>
 <p>List all available models from configured providers.</p>
 <p><strong>Query Parameters:</strong>
-- <code>provider</code>: Filter by provider (e.g., <code>ollama</code>, <code>openai</code>)
-- <code>type</code>: Filter by type (<code>text-generation</code> or <code>text-embedding</code>)</p>
+- <code>provider</code>: Filter by provider (e.g., <code>ollama</code>, <code>openai</code>, <code>anthropic</code>, <code>lmstudio</code>, <code>openai-compatible</code>).
+- <code>input_type</code>: Legacy broad input filter such as <code>text</code>, <code>image</code>, <code>audio</code>, or <code>video</code>.
+- <code>output_type</code>: Legacy broad output filter such as <code>text</code> or <code>embeddings</code>.
+- <code>capability_route</code>: Precise route-key filter. Repeat the query parameter or
+  comma-separate values, for example <code>capability_route=input.image,output.text</code>
+  or <code>capability_route=embedding.text</code>. Model-discovery route keys use broad
+  <code>&lt;kind&gt;.&lt;modality&gt;</code> values and
+  are normalized through the same vocabulary as capability defaults.
+- <code>base_url</code>: Optional upstream base URL override for providers that support OpenAI-compatible discovery. Loopback is allowed by default; non-loopback requires <code>ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST</code>.
+- <code>api_key</code>: Optional upstream provider API key override for discovery. Requires <code>provider=...</code> so the override target is unambiguous. Prefer <code>X-AbstractCore-Provider-API-Key</code>.</p>
 <p><strong>Examples:</strong></p>
 <div class="code-block"><pre><code class="language-bash"># All models
 curl http://localhost:8000/v1/models
@@ -710,15 +3091,27 @@ curl http://localhost:8000/v1/models
 curl http://localhost:8000/v1/models?provider=ollama
 
 # Embedding models only
-curl http://localhost:8000/v1/models?type=text-embedding
+curl http://localhost:8000/v1/models?output_type=embeddings
+
+# Text embedding models only, using the route filter
+curl http://localhost:8000/v1/models?capability_route=embedding.text
+
+# Vision-capable input models
+curl http://localhost:8000/v1/models?input_type=image
+
+# Vision models that return text, using precise route keys
+curl 'http://localhost:8000/v1/models?capability_route=input.image,output.text'
 
 # Ollama embeddings
-curl http://localhost:8000/v1/models?provider=ollama&amp;type=text-embedding
+curl http://localhost:8000/v1/models?provider=ollama&amp;output_type=embeddings
 </code></pre></div>
 <hr />
 <h3 id="provider-status">Provider Status</h3>
 <p><strong>Endpoint:</strong> <code>GET /providers</code></p>
 <p>List all available providers and their status.</p>
+<p><strong>Query Parameters:</strong>
+- <code>include_models</code> (optional, default <code>false</code>): Include model lists for each
+  provider. This is slower because it may query provider registries/endpoints.</p>
 <p><strong>Response:</strong></p>
 <div class="code-block"><pre><code class="language-json">{
   &quot;providers&quot;: [
@@ -735,7 +3128,532 @@ curl http://localhost:8000/v1/models?provider=ollama&amp;type=text-embedding
 <h3 id="health-check">Health Check</h3>
 <p><strong>Endpoint:</strong> <code>GET /health</code></p>
 <p>Server health check for monitoring.</p>
-<p><strong>Response:</strong> <code>{"status": "healthy"}</code></p>
+<p><strong>Response:</strong> includes <code>status</code>, server <code>version</code>, and enabled feature flags.</p>
+<hr />
+<h3 id="runtime-control-plane">Runtime Control Plane</h3>
+<p>If you want the gateway itself to keep a local model warm, use:</p>
+<ul>
+<li><code>POST /acore/models/load</code></li>
+<li><code>GET /acore/models/loaded</code></li>
+<li><code>POST /acore/models/unload</code></li>
+<li><code>POST /acore/models/lock</code> / <code>POST /acore/models/unlock</code></li>
+<li><code>GET /acore/models/context_estimate</code></li>
+<li><code>GET /acore/memory</code></li>
+</ul>
+<p><code>/acore/models/load</code> creates or reuses a task-specific runtime. Omitted <code>task</code>
+keeps the existing text behavior, keyed by <code>provider</code>, <code>model</code>, optional
+<code>base_url</code>, and the explicit provider-key override when one is supplied. Later
+<code>/v1/chat/completions</code> calls that target the same provider/model automatically
+reuse that warm runtime instead of creating a fresh provider instance per
+request. Pass <code>"lock": true</code> to lock the runtime against unloading in the same
+call (see <a href="#model-locks">Model locks</a>); the response then carries
+<code>lock: {"locked": true, "provider_side": {...}}</code>. The separate <code>pin</code> field
+(default <code>true</code>) is a best-effort provider-side residency hint applied at load
+where supported (Ollama <code>keep_alive: -1</code>); unlike <code>lock</code>, it is not enforced by
+the gateway, and the server-side state it produces shows through the record's
+<code>expires_at</code> rather than through <code>locked</code>/<code>pinned</code>.</p>
+<p>For text-generation runtimes, Core reports provider-owned loaded-model truth
+separately from gateway client cache state. A configured default model, model
+catalog row, reachable server, or cached Core client is not proof that the
+provider has a model loaded. Providers that can verify residency expose it
+through <code>get_model_residency(...)</code>; providers that cannot verify it report
+<code>provider_residency_verified=false</code>, <code>provider_resident=null</code>, and <code>loaded=false</code>.
+When a provider exposes a native load/warm hook, <code>/acore/models/load</code> calls it
+and then verifies the result through the same residency contract.</p>
+<p>For non-text tasks, the same route delegates to capability-owned load/list/unload:
+<code>image_generation</code>, <code>video_generation</code>, <code>text_to_video</code>, and <code>image_to_video</code>
+reuse the server's AbstractVision backend cache, while <code>tts</code> and <code>stt</code> delegate
+through the shared AbstractVoice capability core when the selected plugin
+exposes residency hooks. Remote OpenAI-compatible image/video/audio providers
+are reported as configured rather than locally loaded unless the upstream
+exposes a real loaded-state signal.</p>
+<p><code>loaded_new</code> is an event signal for the load call, not a synonym for <code>loaded</code>.
+For capability-backed tasks it is true only when the backend reports or clearly
+implies that this request transitioned the model from not loaded to loaded.
+Already-loaded models should return <code>loaded_new=false</code>.</p>
+<h4 id="models-held-in-the-server-process">Models held in the server process</h4>
+<p>A model can be held in the server process by something other than a managed runtime: a
+per-request provider, an instance that shares MLX weights with it, or an embedding model loaded
+by <code>/v1/embeddings</code>. <code>GET /acore/models/loaded</code> lists these too, with <code>runtime_id</code>
+<code>process:&lt;task&gt;:&lt;provider&gt;:&lt;model&gt;</code> (<code>task</code> is <code>text_generation</code> or <code>embedding</code>),
+<code>provider_state: "resident_via_other_holders"</code>, <code>process_holders</code>, <code>held_bytes</code> and
+<code>lockable: false</code>. Managed rows get <code>process_holders</code> when other instances hold the same model.</p>
+<p><code>POST /acore/models/unload</code> frees a model from every holder in the process, not just the managed
+runtime's instance, once no other managed runtime serves that provider and model. The response
+includes a <code>process_eject</code> report. When weights remain in memory, <code>ok</code> is <code>false</code> and <code>error</code>
+names what is still held. A <code>process:</code> row can be unloaded by its <code>runtime_id</code>, or by <code>provider</code>
+plus <code>model</code>. An embedding model can be unloaded with <code>task: "embedding"</code> and its <code>model</code>.
+Requests with <code>unload_after</code> use the same process-wide eject.</p>
+<p>The eject never takes a model that another owner in the process still uses. The server's managed
+runtimes and AbstractRuntime clients register the models they pool, lock or are loading, and names
+are matched case-insensitively and by local or hub-cache path. When you unload a managed runtime
+whose model another owner still claims, the runtime is unloaded, the weights stay, and
+<code>process_eject</code> reports <code>skipped: true</code> with the <code>claims</code>. An unload that targets such a model
+without a managed runtime of its own (a <code>process:</code> row, or <code>provider</code> plus <code>model</code> in another
+spelling) is refused with HTTP <code>409</code>:</p>
+<div class="code-block"><pre><code class="language-json">{&quot;ok&quot;: false, &quot;error&quot;: &quot;model_in_use&quot;,
+ &quot;detail&quot;: &quot;... is still in use by ...; not ejected; unload it by its runtime_id&quot;,
+ &quot;claims&quot;: [{&quot;kind&quot;: &quot;managed_runtime&quot;, &quot;owner&quot;: &quot;...&quot;, &quot;runtime_id&quot;: &quot;...&quot;, &quot;model&quot;: &quot;...&quot;, &quot;locked&quot;: false}]}
+</code></pre></div>
+<p><code>error</code> is <code>model_locked</code> when a claiming owner holds the model locked. Unload that owner's runtime
+by its <code>runtime_id</code> (with <code>force: true</code> when it is locked). For embedding models, an unload waits
+for embeddings that are running; if one is still running after the drain timeout (30 seconds),
+nothing is freed and the report carries <code>in_flight</code>.</p>
+<h4 id="host-model-server-sweep-in-acoremodelsloaded">Host model-server sweep in <code>/acore/models/loaded</code></h4>
+<p>For unfiltered and text-generation listings, <code>GET /acore/models/loaded</code> merges a
+best-effort sweep of the host's local model servers (Ollama <code>/api/ps</code>, LM Studio
+loaded instances — see
+<a href="memory-management.html#host-wide-residency-which-models-are-loaded-on-this-machine">Memory and Model Residency</a>).
+Models resident on those servers but not loaded through the gateway appear as
+additional rows with <code>source: "provider_server"</code>, <code>loaded: true</code>,
+<code>resident: true</code>, and no <code>task</code> label (the server enumerations cannot classify
+what is resident — Ollama's running-model list includes embedding models too).
+Rows the gateway already tracks are not duplicated: sweep records matching a
+gateway runtime by the provider's own alias rules (case and Ollama's <code>:latest</code>
+alias; LM Studio's substring key resolution) only contribute missing
+<code>size_bytes</code> / <code>size_vram_bytes</code> fields. The <code>model</code> query filter applies the
+same alias normalization, so <code>?model=qwen3</code> matches a resident <code>qwen3:latest</code>.
+A sweep failure never fails the endpoint, and the sweep is skipped entirely
+when a <code>provider</code> filter excludes both <code>ollama</code> and <code>lmstudio</code>. Residency
+records also carry normalized <code>size_bytes</code> / <code>size_vram_bytes</code> where the
+backend reports sizes.</p>
+<p>Managed rows carry two more per-model memory figures where they are knowable,
+both best-effort (absent means unknown, never zero):</p>
+<ul>
+<li><code>est_weights_bytes</code> — the in-memory weight footprint from the provider's own
+  residency claim, for providers that serve the model in this process: MLX sums
+  the loaded parameter arrays, and HuggingFace uses the total on-disk size of
+  the resolved <code>.gguf</code> for a GGUF model (<strong>every shard</strong> of a split set, not
+  just the first shard llama-cpp was handed) or the summed parameter bytes for
+  a transformers model. It is the only size an in-process runtime can report —
+  there is no server to ask for <code>size_bytes</code>. A memory-mapped GGUF's weights
+  are resident as process RSS and are absent from
+  <code>memory.device.host_in_use_bytes</code>.</li>
+<li><code>cache_bytes</code> — the total bytes that runtime's prompt-cache store holds
+  (per-key <code>bytes</code> plus MLX hybrid boundary-snapshot bytes). It is a <strong>separate</strong>
+  footprint from the weights; adding the two into one "size" double-counts.</li>
+</ul>
+<p>A client that renders one size per row should read the first known of
+<code>size_bytes</code>, <code>size_vram_bytes</code>, <code>est_weights_bytes</code>.</p>
+<p>Every record the listing serves carries the observing machine's <code>host_id</code> /
+<code>host_name</code>, and text-generation and sweep records whose model the capability
+registry knows carry <code>modalities</code> (registry route keys; a registry miss omits
+the field rather than guessing text-only, and an MLX runtime whose vision lane
+is unusable has <code>input.image</code> removed with <code>modalities_note:
+"vision_unusable"</code>; capability-task rows such as image or TTS runtimes do not
+carry the field). Managed rows
+report lock state (<code>locked</code>, <code>lockable: true</code>, <code>locked_at</code> while locked, with
+<code>pinned</code> as a compatibility alias of <code>locked</code>); sweep-only rows carry
+<code>lockable: true</code> as well — locking one adopts it into the registry (see
+<a href="#model-locks">Model locks</a>). See
+<a href="memory-management.html#modalities-and-host-identity-on-residency-records">Memory and Model Residency</a>.</p>
+<h4 id="model-locks">Model locks</h4>
+<p><code>POST /acore/models/lock</code> and <code>POST /acore/models/unlock</code> set or clear a
+registry-level lock on a text runtime whose model is verified <strong>resident</strong> in
+provider memory. Select the runtime with <code>runtime_id</code> or <code>provider</code> + <code>model</code>
+(optional <code>base_url</code>); a missing selector returns <code>400</code> and an unknown runtime
+<code>404</code>. Lock requires provider-verified residency (<code>provider_resident: true</code>):
+a warm registry runtime alone is configuration, not memory, and locking a
+non-resident model returns HTTP <code>409</code> with body
+<code>{"ok": false, "error": "model_not_resident", "detail": "...", "runtime_id": "..."}</code> —
+load the model first (<code>POST /acore/models/load</code> with <code>"lock": true</code>). Unlock
+never requires residency, so a locked-but-since-evicted runtime is always
+unlockable.</p>
+<div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/acore/models/lock \
+  -H &quot;Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;provider&quot;: &quot;ollama&quot;, &quot;model&quot;: &quot;qwen3-coder:30b&quot;}'
+</code></pre></div>
+<p>Response (both routes):</p>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;ok&quot;: true,
+  &quot;locked&quot;: true,
+  &quot;runtime_id&quot;: &quot;1234567890abcdef&quot;,
+  &quot;provider&quot;: &quot;ollama&quot;,
+  &quot;model&quot;: &quot;qwen3-coder:30b&quot;,
+  &quot;provider_side&quot;: {&quot;supported&quot;: true, &quot;applied&quot;: true}
+}
+</code></pre></div>
+<h5 id="adopting-a-sweep-resident-model">Adopting a sweep-resident model</h5>
+<p>A <code>provider</code> + <code>model</code> selector that names <strong>no</strong> managed runtime does not
+return <code>404</code> when the host sweep verifies that model resident on its server
+(Ollama or LM Studio — for example a model you loaded in the LM Studio app, or
+one <code>ollama run</code> left resident). The lock <strong>adopts</strong> it: the managed runtime
+entry is created through the same ensure path the load route uses — <strong>client
+construction only, never a provider-side model load</strong>, so the weights are not
+loaded a second time — residency is re-verified with the provider's own probe,
+and the lock is applied. The response then carries <code>"adopted": true</code>:</p>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;ok&quot;: true,
+  &quot;locked&quot;: true,
+  &quot;adopted&quot;: true,
+  &quot;runtime_id&quot;: &quot;1234567890abcdef&quot;,
+  &quot;provider&quot;: &quot;lmstudio&quot;,
+  &quot;model&quot;: &quot;qwen/qwen3-vl-4b&quot;,
+  &quot;provider_side&quot;: {&quot;supported&quot;: false, &quot;applied&quot;: false,
+                    &quot;detail&quot;: &quot;lock guards this stack's unloads; the external server may still evict on its own policy&quot;}
+}
+</code></pre></div>
+<p>A pair the sweep does <strong>not</strong> verify resident refuses with the usual
+<code>409 model_not_resident</code> body and <code>"runtime_id": null</code> — nothing was adopted.
+When the provider's own probe contradicts the sweep, the just-created entry is
+dropped and the same <code>409</code> is returned, so no stray "configured" row is left
+behind. Adoption covers the sweep providers only (Ollama, LM Studio): MLX and
+HuggingFace residency lives on an owning provider instance rather than on a
+server the sweep can ask, so a cold pair there still returns <code>404</code>. A
+<code>runtime_id</code> selector never adopts — it addresses an existing runtime or
+nothing.</p>
+<p>The registry lock is the enforcement truth:</p>
+<ul>
+<li><code>POST /acore/models/unload</code> on a locked runtime returns HTTP <code>409</code> with body
+  <code>{"ok": false, "error": "model_locked", "detail": "...", "runtime_id": "..."}</code>.
+  Pass <code>"force": true</code> to unlock and unload in one call; when the provider
+  unload fails, the runtime stays registered and locked.</li>
+<li><code>unload_after</code> cleanup on chat requests skips locked runtimes — including
+  requests that reach the same server-resident model outside the managed
+  runtime (matched with the same alias rules as the sweep).</li>
+</ul>
+<p><code>provider_side</code> reports the best-effort provider-side reinforcement: on Ollama,
+lock applies <code>keep_alive: -1</code> and unlock restores the server default (<code>"5m"</code>);
+a failure is reported as <code>applied: false</code> with a <code>detail</code> and never fails the
+lock. Providers without a residency knob report <code>supported: false</code> while the
+gateway lock still enforces. LM Studio is the case that needs stating plainly:
+a lock there answers <code>{"supported": false, "applied": false, "detail": "lock
+guards this stack's unloads; the external server may still evict on its own
+policy"}</code>. The lock is real against this stack's unloads and <code>unload_after</code>
+cleanup, but LM Studio runs its own eviction policy (idle TTL, JIT model
+switching, a manual eject), so a locked model can still disappear — re-read
+<code>GET /acore/models/loaded</code> rather than treating a lock as a residency
+guarantee. Two Ollama notes: the record's <code>locked</code>/<code>pinned</code>
+fields reflect the gateway-managed lock only (Ollama's own server-side
+keep-alive shows through <code>expires_at</code>), and because the keep-alive setting
+rides Ollama's native load request, unlocking a runtime whose model was since
+evicted skips the keep-alive restore (<code>applied: false</code> with a detail) so the
+unlock never loads the model back as a side effect — the residency-required
+lock rule already prevents the lock-side equivalent.</p>
+<h4 id="context-fit-estimates">Context-fit estimates</h4>
+<p><code>GET /acore/models/context_estimate?provider=&amp;model=&amp;context_length=</code> answers
+how large a context the model could sustain on this host, and what a requested
+context would cost in KV memory, without loading any weights. Geometry comes
+from local configs, GGUF headers, or Ollama <code>/api/show</code> metadata; a measured
+calibration entry (recorded when a GGUF load settles its context ladder on
+this machine) wins over any estimate. <code>confidence</code> is <code>"calibrated"</code>,
+<code>"estimated"</code>, or <code>"unknown"</code>. The memory budget uses a real ceiling: on
+Metal/MPS the <code>iogpu.wired_limit_mb</code> sysctl when set, else Metal's
+<code>max_recommended_working_set_size</code>, else a labeled 75% fallback; on CUDA the
+<code>mem_get_info</code> free bytes — minus a small <code>max(2 GiB, 5%)</code> reserve, with basis
+and reserve stated in <code>notes</code> (<code>budget_bytes</code> carries the number). The response
+splits weights-fit from context-fit: <code>fits_weights</code> and
+<code>fits_requested_context</code> are tri-state (<code>true</code>/<code>false</code>/<code>null</code> when unknown),
+and <code>predicted_max_context</code> is the context that fits beside the weights
+(<code>null</code> when the weights alone exceed the budget). Estimates state their
+remaining assumptions (f16 KV cache) in <code>notes</code>, unknown members are omitted,
+the route never fails, and the estimate is advisory only — no load path gates
+on it.
+See <a href="memory-management.html#context-calibration-and-estimation">Memory and Model Residency</a>
+for the full contract and the Python equivalent
+(<code>abstractcore.utils.context_estimate.estimate_context_fit()</code>).</p>
+<h4 id="host-memory-snapshot">Host memory snapshot</h4>
+<p><code>GET /acore/memory</code> returns a best-effort host memory snapshot for capacity
+decisions (for example, whether another local model fits):</p>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;ok&quot;: true,
+  &quot;ts&quot;: 1700000000.0,
+  &quot;ram&quot;: {&quot;total_bytes&quot;: 137438953472, &quot;available_bytes&quot;: 33013366784, &quot;used_bytes&quot;: 95548260352, &quot;percent&quot;: 76.0},
+  &quot;process&quot;: {&quot;rss_bytes&quot;: 175357952},
+  &quot;device&quot;: {&quot;backend&quot;: &quot;metal&quot;, &quot;allocated_bytes&quot;: 0, &quot;total_bytes&quot;: 137438953472, &quot;free_bytes&quot;: null,
+             &quot;host_in_use_bytes&quot;: 105743990784, &quot;wired_limit_bytes&quot;: 115343360000},
+  &quot;host&quot;: {&quot;host_id&quot;: &quot;a1b2c3d4e5f6&quot;, &quot;host_name&quot;: &quot;studio.local&quot;, &quot;kind&quot;: &quot;local&quot;}
+}
+</code></pre></div>
+<p>Unknown values are <code>null</code>; the route never fails. <code>device.backend</code> is
+<code>"metal"</code>, <code>"cuda"</code>, <code>"mps"</code>, or <code>null</code>.</p>
+<p>The device block carries three figures that answer three different questions:</p>
+<ul>
+<li><code>allocated_bytes</code> is <strong>process-local</strong> — what this server process's own
+  accelerator allocator holds. It is the signal to read when verifying that an
+  in-process unload freed memory. It does not see a model resident in another
+  process (LM Studio, Ollama), and it does not see a llama.cpp/GGUF model
+  resident in <em>this</em> process either, because those weights are mapped outside
+  that allocator. <code>allocated_bytes: 0</code> means "this allocator holds nothing",
+  never "nothing is loaded on this host".</li>
+<li><code>host_in_use_bytes</code> (Metal only, else <code>null</code>) is the <strong>accelerator heap
+  across processes</strong>: driver-allocated Metal buffers, read from IORegistry. It
+  is NOT the host's total memory use. Memory-mapped GGUF/llama.cpp weights are
+  absent from it — they are file-backed no-copy buffers, visible instead as
+  <code>process.rss_bytes</code> and the model's own <code>est_weights_bytes</code> — so a resident-
+  model total routinely exceeds it. Render it labelled as the accelerator heap,
+  never as the machine's memory use; use <code>ram</code> for the system picture.</li>
+<li><code>wired_limit_bytes</code> (Metal only, else <code>null</code>) is the enforced accelerator
+  ceiling — <code>sysctl iogpu.wired_limit_mb</code> when set, else Metal's
+  <code>max_recommended_working_set_size</code> — the same ceiling
+  <code>/acore/models/context_estimate</code> budgets against. Compare <code>host_in_use_bytes</code>
+  against it for headroom.</li>
+</ul>
+<p>On Metal hosts <code>process.rss_bytes</code> behaves as a high-water mark (freed device
+buffers return to the process allocator, not to the OS) and does not drop after
+an in-process unload, so it is not an unload signal. Neither device total is a
+per-model number; for that, read the residency records' <code>size_bytes</code> /
+<code>size_vram_bytes</code> / <code>est_weights_bytes</code>. See
+<a href="memory-management.html#reading-the-snapshot-process-local-accelerator-heap-and-process-rss">Memory and Model Residency</a>.</p>
+<h3 id="prompt-cache-control-plane">Prompt Cache Control Plane</h3>
+<p>Prompt-cache routes support two modes:</p>
+<ul>
+<li>direct gateway mode:</li>
+<li>target a previously loaded runtime with <code>provider</code> + <code>model</code></li>
+<li>proxy mode:</li>
+<li>target an upstream <a href="endpoint.html">AbstractEndpoint</a> with <code>base_url</code></li>
+</ul>
+<p>In proxy mode, the gateway normalizes <code>base_url</code>, enforces the same base URL
+allowlist rules as other request-level routing, and forwards provider auth only
+from <code>X-AbstractCore-Provider-API-Key</code> or from <code>Authorization</code> when server auth
+is disabled.</p>
+<p>Common fields:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Location</th>
+<th style="text-align: right;">Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>runtime_id</code></td>
+<td>query or JSON body</td>
+<td style="text-align: right;">no</td>
+<td>Stable selector returned by <code>/acore/models/load</code>. Use this when multiple warm runtimes share the same <code>provider</code> + <code>model</code>.</td>
+</tr>
+<tr>
+<td><code>provider</code> + <code>model</code></td>
+<td>query or JSON body</td>
+<td style="text-align: right;">yes, unless <code>base_url</code> is provided</td>
+<td>Select a loaded gateway-local runtime.</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td>query or JSON body</td>
+<td style="text-align: right;">yes, unless <code>runtime_id</code> or <code>provider</code> + <code>model</code> is provided</td>
+<td>Upstream AbstractEndpoint URL. It may include <code>/v1</code>; the proxy strips that suffix for control-plane calls. In local mode it can also disambiguate a warm runtime that was loaded with a base URL.</td>
+</tr>
+<tr>
+<td><code>X-AbstractCore-Provider-API-Key</code></td>
+<td>header</td>
+<td style="text-align: right;">no</td>
+<td>Upstream endpoint token when required.</td>
+</tr>
+<tr>
+<td><code>api_key</code></td>
+<td>query/body</td>
+<td style="text-align: right;">no</td>
+<td>Deprecated/disabled; do not use.</td>
+</tr>
+<tr>
+<td><code>ttl_s</code></td>
+<td>JSON body</td>
+<td style="text-align: right;">no</td>
+<td>Optional upstream cache TTL in seconds, where supported.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Operations:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th style="text-align: right;">Method</th>
+<th>Parameters</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/acore/prompt_cache/capabilities</code></td>
+<td style="text-align: right;">GET</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code></td>
+<td>Cache features on the selected local or upstream runtime.</td>
+</tr>
+<tr>
+<td><code>/acore/prompt_cache/stats</code></td>
+<td style="text-align: right;">GET</td>
+<td>optional <code>provider</code> + <code>model</code> or <code>base_url</code></td>
+<td>Cache stats on the selected local or upstream runtime. With no selector: stats across every loaded gateway runtime.</td>
+</tr>
+<tr>
+<td><code>/acore/prompt_cache/set</code></td>
+<td style="text-align: right;">POST</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>key</code>, <code>make_default</code>, <code>ttl_s</code></td>
+<td>Select/create a cache key locally or upstream.</td>
+</tr>
+<tr>
+<td><code>/acore/prompt_cache/update</code></td>
+<td style="text-align: right;">POST</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>key</code>, <code>prompt</code> or <code>messages</code>, <code>system_prompt</code>, <code>tools</code>, optional <code>thinking</code>, <code>add_generation_prompt</code>, <code>ttl_s</code></td>
+<td>Prepare prompt/messages/tools into a local or upstream cache key.</td>
+</tr>
+<tr>
+<td><code>/acore/prompt_cache/fork</code></td>
+<td style="text-align: right;">POST</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>from_key</code>, <code>to_key</code>, <code>make_default</code>, <code>ttl_s</code></td>
+<td>Fork an existing local or upstream key.</td>
+</tr>
+<tr>
+<td><code>/acore/prompt_cache/clear</code></td>
+<td style="text-align: right;">POST</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, optional <code>key</code></td>
+<td>Clear a local or upstream key, or default/all cache state depending on backend support.</td>
+</tr>
+<tr>
+<td><code>/acore/prompt_cache/prepare_modules</code></td>
+<td style="text-align: right;">POST</td>
+<td><code>provider</code> + <code>model</code> or <code>base_url</code>, <code>namespace</code>, <code>modules</code>, <code>make_default</code>, <code>ttl_s</code>, <code>version</code></td>
+<td>Prepare reusable module/tool context locally or upstream.</td>
+</tr>
+<tr>
+<td><code>/acore/prompt_cache/key_meta</code></td>
+<td style="text-align: right;">POST</td>
+<td><code>runtime_id</code> or <code>provider</code> + <code>model</code> or <code>base_url</code>, <code>key</code>, <code>meta</code></td>
+<td>Merge caller metadata into an existing cache key.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Stats enumeration: <code>GET /acore/prompt_cache/stats</code> with no selector returns
+<code>{"ok": true, "operation": "stats", "runtimes": [...]}</code> with one row per loaded
+gateway runtime (<code>runtime_id</code>, <code>provider</code>, <code>model</code>, <code>stats</code>). Per-runtime
+failures are reported inline in an <code>error</code> field instead of failing the
+enumeration; a runtime busy generating reports <code>"stats": null, "error": "busy"</code>
+rather than stalling the listing. Per-key stats include a best-effort <code>bytes</code>
+size where the backend can compute it — see
+<a href="prompt-caching.html#cache-residency-and-memory">Prompt Caching</a>.</p>
+<p>Key metadata: <code>POST /acore/prompt_cache/key_meta</code> merges attribution metadata —
+for example <code>session_id</code>, <code>run_id</code>, <code>workflow_id</code>, <code>node_id</code>, <code>namespace</code> —
+into an existing cache key's metadata, where it appears in later stats
+(<code>meta_by_key</code>). <code>null</code> values are skipped. Two validation rules apply before
+any merge:</p>
+<ul>
+<li>provider-internal bookkeeping keys (cache-composition and binding-verification
+  fields such as <code>fed_token_ids</code>, <code>token_count</code>, <code>backend</code>, <code>binding_id</code>,
+  <code>artifact_sha256</code>, <code>provider</code>, <code>model</code>) are rejected with
+  <code>code: "prompt_cache_meta_reserved_key"</code>;</li>
+<li><code>meta</code> serialized above 16 KB is rejected with
+  <code>code: "prompt_cache_meta_too_large"</code>.</li>
+</ul>
+<p>A key that does not exist returns <code>code: "prompt_cache_missing_key"</code>. The same
+operation is available in Python as
+<code>BaseProvider.prompt_cache_update_key_meta(key, updates)</code>.</p>
+<p>Example:</p>
+<div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/acore/prompt_cache/update \
+  -H &quot;Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;base_url&quot;: &quot;http://127.0.0.1:8001/v1&quot;,
+    &quot;key&quot;: &quot;project-default&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are concise.&quot;}],
+    &quot;thinking&quot;: &quot;off&quot;,
+    &quot;ttl_s&quot;: 3600
+  }'
+</code></pre></div>
+<p><code>thinking</code> on <code>/acore/prompt_cache/update</code> is applied before the provider appends the cached fragment. This keeps cache-prefilled prompt state aligned with later <code>/v1/chat/completions</code> or <code>/v1/responses</code> calls when reasoning control changes prompt serialization.</p>
+<h3 id="memory-blocs-control-plane">Memory Blocs Control Plane</h3>
+<p>Memory-bloc routes also support two modes:</p>
+<ul>
+<li>direct gateway mode:</li>
+<li><code>POST /acore/models/load</code></li>
+<li>local <code>POST /acore/blocs/upsert_text</code></li>
+<li>local <code>POST /acore/blocs/kv/ensure</code></li>
+<li>local <code>POST /acore/blocs/kv/load</code></li>
+<li>then normal <code>/v1/chat/completions</code></li>
+<li>proxy mode:</li>
+<li>the same <code>/acore/blocs/*</code> routes with <code>base_url</code> targeting an upstream <code>AbstractEndpoint</code></li>
+</ul>
+<p>That distinction matters:</p>
+<ul>
+<li>gateway-local bloc records live in the gateway bloc store</li>
+<li>gateway-local loaded cache keys live on the selected loaded runtime</li>
+<li>proxy-mode loaded cache keys live on the upstream <code>AbstractEndpoint</code></li>
+</ul>
+<p>Operations:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th style="text-align: right;">Method</th>
+<th>Parameters</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/acore/blocs/upsert_text</code></td>
+<td style="text-align: right;">POST</td>
+<td>optional <code>base_url</code>, <code>path</code>, <code>content</code>, optional bloc metadata</td>
+<td>Persist extracted text into the local bloc store or upstream bloc store.</td>
+</tr>
+<tr>
+<td><code>/acore/blocs/record</code></td>
+<td style="text-align: right;">GET</td>
+<td>optional <code>base_url</code>, <code>sha256</code> or <code>bloc_id</code></td>
+<td>Inspect a local or upstream bloc record.</td>
+</tr>
+<tr>
+<td><code>/acore/blocs/kv/manifest</code></td>
+<td style="text-align: right;">GET</td>
+<td><code>runtime_id</code> or <code>provider</code> + <code>model</code> or <code>base_url</code>, <code>sha256</code> or <code>bloc_id</code>, optional <code>artifact_path</code></td>
+<td>Inspect the local or upstream KV manifest for the selected model.</td>
+</tr>
+<tr>
+<td><code>/acore/blocs/kv/ensure</code></td>
+<td style="text-align: right;">POST</td>
+<td><code>runtime_id</code> or <code>provider</code> + <code>model</code> or <code>base_url</code>, <code>sha256</code> or <code>bloc_id</code>, optional <code>artifact_path</code>, <code>force_rebuild</code>, <code>debug</code></td>
+<td>Compile or validate the durable provider/model bloc KV artifact locally or upstream.</td>
+</tr>
+<tr>
+<td><code>/acore/blocs/kv/load</code></td>
+<td style="text-align: right;">POST</td>
+<td><code>runtime_id</code> or <code>provider</code> + <code>model</code> or <code>base_url</code>, <code>sha256</code> or <code>bloc_id</code>, optional <code>artifact_path</code>, <code>stable_cache_key</code>, <code>key</code>, <code>make_default</code>, <code>force_rebuild</code>, <code>debug</code></td>
+<td>Load or fork the local or upstream artifact into a prompt-cache key and return <code>prompt_cache_binding</code>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Typical direct gateway flow:</p>
+<ol>
+<li><code>POST /acore/models/load</code></li>
+<li><code>POST /acore/blocs/upsert_text</code></li>
+<li><code>POST /acore/blocs/kv/ensure</code></li>
+<li><code>POST /acore/blocs/kv/load</code></li>
+<li>call <code>/v1/chat/completions</code> with returned <code>artifact.prompt_cache_binding</code> when exact binding is required</li>
+</ol>
+<p>Typical remote flow:</p>
+<ol>
+<li><code>POST /acore/blocs/upsert_text</code></li>
+<li><code>POST /acore/blocs/kv/ensure</code></li>
+<li><code>POST /acore/blocs/kv/load</code></li>
+<li>call <code>/v1/chat/completions</code> with returned <code>artifact.prompt_cache_binding</code> when exact binding is required</li>
+</ol>
+<p>Example:</p>
+<div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/acore/blocs/kv/load \
+  -H &quot;Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;base_url&quot;: &quot;http://127.0.0.1:8001/v1&quot;,
+    &quot;sha256&quot;: &quot;abababababababababababababababababababababababababababababababab&quot;,
+    &quot;stable_cache_key&quot;: &quot;stable:orbit&quot;,
+    &quot;key&quot;: &quot;work:orbit&quot;,
+    &quot;make_default&quot;: false,
+    &quot;debug&quot;: true
+  }'
+</code></pre></div>
+<p>The load response includes:</p>
+<ul>
+<li><code>artifact.key</code>: the worker-local runtime cache key</li>
+<li><code>artifact.binding_id</code>: the opaque exact-artifact identity</li>
+<li><code>artifact.prompt_cache_binding</code>: object to pass to chat as <code>prompt_cache_binding</code></li>
+<li><code>artifact.debug</code>: verbose proof fields when <code>debug=true</code></li>
+</ul>
+<p>Supported local artifact backends share this route shape: MLX, HuggingFace transformers, and
+HuggingFace GGUF exact-renderer paths. Remote providers and unsupported GGUF chat formats remain
+best-effort <code>prompt_cache_key</code> paths.</p>
 <hr />
 <h2 id="agentic-cli-integration">Agentic CLI integration</h2>
 <p>AbstractCore Server is <strong>OpenAI-compatible</strong>. Most OpenAI-compatible CLIs/SDKs can be pointed at it by setting:</p>
@@ -782,33 +3700,71 @@ codex --model &quot;ollama/qwen3-coder:30b&quot; &quot;Write a factorial functio
 <hr />
 <h2 id="deployment">Deployment</h2>
 <h3 id="docker">Docker</h3>
-<div class="code-block"><pre><code class="language-dockerfile">FROM python:3.9-slim
-
-RUN pip install &quot;abstractcore[server]&quot;
-
-EXPOSE 8000
-
-CMD [&quot;uvicorn&quot;, &quot;abstractcore.server.app:app&quot;, &quot;--host&quot;, &quot;0.0.0.0&quot;, &quot;--port&quot;, &quot;8000&quot;, &quot;--workers&quot;, &quot;4&quot;]
+<p>Release images are published to GitHub Container Registry after the matching
+PyPI release succeeds:</p>
+<div class="code-block"><pre><code class="language-bash">ghcr.io/lpalbou/abstractcore-server:&lt;version&gt;
 </code></pre></div>
+<p>The image is built from PyPI, not from the repository checkout, and installs the
+light setting:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore==&lt;version&gt;
+</code></pre></div>
+<p>It includes remote chat/responses, remote embeddings, remote STT/TTS routing,
+remote OpenAI-compatible image proxying, the server, media parsing, token
+counting, compression helpers, and the voice/vision/music plugins with their
+remote backends. It does not include local engines (vLLM, MLX, transformers,
+<code>sentence-transformers</code>, local voice/image/music engines). Build a custom image
+on <code>abstractcore[gpu]</code> when you want local native inference engines.</p>
 <p><strong>Run:</strong></p>
-<div class="code-block"><pre><code class="language-bash">docker build -t abstractcore-server .
-docker run -p 8000:8000 \
-  -e ABSTRACTCORE_SERVER_API_KEY=$ABSTRACTCORE_SERVER_API_KEY \
-  -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  abstractcore-server
+<div class="code-block"><pre><code class="language-bash">docker pull ghcr.io/lpalbou/abstractcore-server:2.22.0
+</code></pre></div>
+<p>For local development, keep secrets in an uncommitted <code>.env</code> file:</p>
+<div class="code-block"><pre><code class="language-bash">ABSTRACTCORE_AUTH_TOKEN=replace-with-a-server-token
+OPENAI_API_KEY=sk-...
+OPENROUTER_API_KEY=sk-or-...
+ANTHROPIC_API_KEY=sk-ant-...
+PORTKEY_API_KEY=pk_...
+PORTKEY_CONFIG=pcfg_...
+OPENAI_BASE_URL=http://host.docker.internal:1234/v1
+</code></pre></div>
+<p>Then run the image with that environment file:</p>
+<div class="code-block"><pre><code class="language-bash">docker run --rm --name abstractcore-server \
+  -p 127.0.0.1:8000:8000 \
+  --env-file .env \
+  ghcr.io/lpalbou/abstractcore-server:2.22.0
+</code></pre></div>
+<p><code>ABSTRACTCORE_AUTH_TOKEN</code> is the AbstractCore server auth token. Clients send it as <code>Authorization: Bearer &lt;token&gt;</code>.
+At <code>/docs</code>, use Swagger UI's normal <code>Authorize</code> button when server auth is
+enabled; AbstractCore validates that bearer token before Swagger marks it
+authorized. Provider keys such as
+<code>OPENAI_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>, and
+<code>PORTKEY_API_KEY</code> stay inside the server container.</p>
+<p>Set <code>ABSTRACTCORE_SERVER_PROTECT_DOCS=1</code> if <code>/docs</code>, <code>/redoc</code>, and
+<code>/openapi.json</code> should require the same server token.</p>
+<p>For local OpenAI-compatible endpoints such as LM Studio or Ollama's <code>/v1</code>
+server, point the container at a URL reachable from Docker:</p>
+<div class="code-block"><pre><code class="language-bash">docker run --rm --name abstractcore-server \
+  -p 127.0.0.1:8000:8000 \
+  -e ABSTRACTCORE_AUTH_TOKEN=&quot;$ABSTRACTCORE_AUTH_TOKEN&quot; \
+  -e OPENAI_BASE_URL=&quot;http://host.docker.internal:1234/v1&quot; \
+  -e OPENAI_API_KEY=&quot;$OPENAI_API_KEY&quot; \
+  ghcr.io/lpalbou/abstractcore-server:2.22.0
 </code></pre></div>
 <h3 id="docker-compose">Docker Compose</h3>
 <div class="code-block"><pre><code class="language-yaml">version: '3.8'
 
 services:
   abstractcore:
-    image: abstractcore-server:latest
+    image: ghcr.io/lpalbou/abstractcore-server:2.22.0
     ports:
       - &quot;8000:8000&quot;
     environment:
-      - ABSTRACTCORE_SERVER_API_KEY=${ABSTRACTCORE_SERVER_API_KEY}
+      - ABSTRACTCORE_AUTH_TOKEN=${ABSTRACTCORE_AUTH_TOKEN}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PORTKEY_API_KEY=${PORTKEY_API_KEY}
+      - PORTKEY_CONFIG=${PORTKEY_CONFIG}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
     restart: unless-stopped
 </code></pre></div>
 <h3 id="production-with-gunicorn">Production with Gunicorn</h3>
@@ -824,11 +3780,11 @@ gunicorn abstractcore.server.app:app \
 <h3 id="enable-debug-mode">Enable Debug Mode</h3>
 <p>Debug mode provides comprehensive logging and detailed error reporting for troubleshooting API issues.</p>
 <div class="code-block"><pre><code class="language-bash"># Method 1: Using command line flag (recommended)
-python -m abstractcore.server.app --debug
+abstractcore serve --debug
 
 # Method 2: Using environment variable
 export ABSTRACTCORE_DEBUG=true
-python -m abstractcore.server.app
+abstractcore serve
 
 # Method 3: With uvicorn directly
 export ABSTRACTCORE_DEBUG=true
@@ -924,7 +3880,7 @@ ollama list
 </code></pre></div>
 <h3 id="authentication-errors">Authentication Errors</h3>
 <div class="code-block"><pre><code class="language-bash"># Set API keys
-export ABSTRACTCORE_SERVER_API_KEY=&quot;acore-server-secret&quot;
+export ABSTRACTCORE_AUTH_TOKEN=&quot;acore-server-secret&quot;
 export OPENAI_API_KEY=&quot;sk-...&quot;
 export ANTHROPIC_API_KEY=&quot;sk-ant-...&quot;
 
@@ -954,6 +3910,13 @@ export ANTHROPIC_API_KEY=&quot;sk-ant-...&quot;
 <p><strong>AbstractCore Server</strong> - One server, all models, any client.</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

@@ -26,7 +26,66 @@ API keys saved via `--config` or `--set-api-key` are persisted here and automati
 
 HTTP server settings saved via `--config` or the `--set-server-*` commands are also injected into the corresponding `ABSTRACTCORE_SERVER_*`, `HOST`, and `PORT` environment variables when those variables are not already set.
 
+A save writes back the keys this version does not know: your own top-level
+keys, unknown fields of any section (for example `vision.user_note`), and keys
+written by a newer AbstractCore (`capability_defaults` keys and route keys this
+version cannot parse, `provider_profiles` keys, unknown columns of a profile
+that still exists). Known keys are validated on every save, and a route or
+profile you delete stays deleted. A file that does not parse stops the load with
+its path and the parse error; it is never renamed, replaced or shadowed by defaults.
+
+When the file loads, a speech input route (`input.voice`) that names a catalog
+download instead of its engine (`huggingface` / `Systran/faster-whisper-base`)
+is rewritten to the engine route the catalog gives (`faster-whisper` / `base`),
+after a copy of the file is written to
+`abstractcore.json.route-repair-<time>.bak`. Other routes are left as they are.
+
+Provider endpoint profiles are also stored in this file. They let you create a
+named reusable provider such as `endpoint:ovh-provider` without putting the
+endpoint URL or API key in workflows or route defaults.
+
 ## Configuration Sections
+
+### Provider Endpoint Profiles
+
+Use provider endpoint profiles for OpenAI-compatible or provider-compatible
+servers that you want to reuse by name. Core profiles are local and
+single-principal; Gateway adds user and runtime scoping on top for hosted
+deployments.
+
+```bash
+export OVH_AI_API_KEY="..."
+
+abstractcore config set-provider ovh-provider \
+  --family openai-compatible \
+  --base-url https://oai.endpoints.kepler.ai.cloud.ovh.net/v1 \
+  --api-key $OVH_AI_API_KEY \
+  --name "OVH Provider" \
+  --description "OVH hosted OpenAI-compatible endpoint"
+
+abstractcore config providers
+abstractcore config models ovh-provider
+
+abstractcore config set-default input.text \
+  --provider endpoint:ovh-provider \
+  --model Qwen3.5-9B
+```
+
+The config file is written with private file permissions. Listing commands never
+print raw keys:
+
+```bash
+abstractcore config providers --json
+abstractcore config provider endpoint:ovh-provider --json
+```
+
+If you want a fixed model allowlist instead of live `/v1/models` discovery, add
+one or more `--allow-model MODEL` flags when creating or updating the profile.
+Clear that allowlist with `--clear-models`.
+
+If you want the config to store an environment reference instead of the expanded
+secret value, pass the variable literally, for example `--api-key
+'$OVH_AI_API_KEY'`. To remove the stored key source, use `--clear-api-key`.
 
 ### Application Defaults
 
@@ -49,12 +108,281 @@ Set fallback defaults when app-specific configurations are not available:
 
 ```bash
 # Set global fallback model
-abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-global-default lmstudio:qwen/qwen3.6-35b-a3b
 
 # Set specialized defaults
 abstractcore --set-chat-model openai/gpt-4o-mini
 abstractcore --set-code-model anthropic/claude-haiku-4-5
 ```
+
+`--set-global-default` writes the canonical `input.text` capability route
+default. `output.text` is a read-only derived view of `input.text`, so text
+understanding and text generation stay on the same LLM route. Commands that
+target `output.text` are accepted for compatibility, but persist to
+`input.text`.
+
+### Capability Routing Defaults
+
+A fresh install starts with recommended defaults so generation works out of
+the box. They depend on the host, and a route is only written when its engine
+runs there. [Recommended Models](recommended-models.md) lists every
+recommendation per kind of machine, including music (`output.music`), which is
+not written for you:
+
+| host | `input.text` | `output.voice` | `input.voice` | `output.image` | `output.video` |
+| --- | --- | --- | --- | --- | --- |
+| Apple silicon | `mlx`, chosen by unified memory (Qwen3.5 9B below 24 GiB, Qwen3.8 27B below 128 GiB, Qwen3.8 Flash-Next above) | `supertonic/supertonic-3` | `faster-whisper/base` (processor) | `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` where it fits (16 GiB or more), else unset | `mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` where it fits (32 GiB of unified memory or more), else unset |
+| Linux, Windows with an NVIDIA GPU (CUDA) | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | `faster-whisper/base` (CUDA) | `diffusers/black-forest-labs/FLUX.2-klein-4B` where it fits (measured GPU peak about 8.3 GiB with model CPU offload); written by `apply-recommended`, not by the fresh-install seed | unset |
+| Linux, Windows (x86_64, arm64), no NVIDIA GPU | `lmstudio/qwen/qwen3.5-9b` | `supertonic/supertonic-3` | `faster-whisper/base` (processor); unset on Windows arm64 | unset | unset |
+| Intel Mac (LM Studio has no build) | `ollama/qwen3.5:9b` | `supertonic/supertonic-3` | `faster-whisper/base` (processor) | unset | unset |
+| anything else (FreeBSD, 32-bit ARM, RISC-V) | unset | unset | unset | unset | unset |
+
+Speech input (`input.voice`) runs AbstractVoice's faster-whisper engine
+(`abstractvoice[stt]`, included in `abstractcore[apple]` and `abstractcore[gpu]`),
+so transcription works without a cloud key. A store written by an earlier
+fresh install (`seeded: recommended-v1`) gains `input.voice` the next time it
+loads, unless you set that route yourself; the store is then stamped
+`recommended-v2`. `apply-recommended` always compares against the store file
+and writes its result, so what it reports is what the next reader sees.
+
+Supertonic runs on ONNX Runtime on the CPU, which has builds for x86_64 and
+arm64 on Linux and Windows, and for macOS. Where neither LM Studio nor Ollama
+has a build, the text route stays unset too, and the reason says to use a
+cloud provider or a text server on another machine.
+MLX-Gen needs Apple silicon. On an NVIDIA GPU the image recommendation is
+Diffusers instead (AbstractVision's `diffusers` backend, CUDA, float16, model CPU
+offload when the weights do not fit the GPU's free memory). The fresh-install
+seed reads only the light host profile, which does not detect CUDA, so there
+`apply-recommended` (which runs the full host probe) writes it. On other hosts
+the image route stays unset, and
+the grid (`recommendation_unavailable`) and `apply-recommended` (action
+`unavailable`) both give the reason. The unset `input.image` row gives one too
+where the recommended text model does not read images, or where no text
+engine runs. Set it to an image engine the host can
+run: `diffusers` (included with `abstractcore[gpu]`), `sdcpp` (included with `abstractcore[apple]`
+and `abstractcore[gpu]`), or a cloud image provider.
+The video route (Wan2.2 TI2V-5B, one model for text-to-video and
+image-to-video) also runs on MLX-Gen, and it is written only where the model
+catalog's fit estimate says it fits: measured with AbstractVision/mlx-gen at
+its default canvas (832x480, 121 frames), which keeps the text encoder and VAE
+in memory, it peaks at about 16.6 GiB for image-to-video (16.3 GiB for
+text-to-video; the one checkpoint serves both, so the route uses the larger), so from 32 GiB of unified memory; a
+24 GiB Mac runs it once the GPU memory limit is raised, and the reason gives
+the command. That is this engine's figure, not the model's own requirement.
+A caller can ask for a larger size: at 1280x704 (Wan's reference size) the
+same engine needs about 25.4 GiB (measured), and the catalog entry says so
+where that fits too. AbstractFramework has no local video engine off Apple
+silicon, so elsewhere the reason names the remaining option: an
+OpenAI-compatible video endpoint through AbstractVision.
+The larger Wan2.2 A14B 8-bit models (`AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`,
+`AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`) are in the catalog but not
+recommended: at AbstractVision's default A14B canvas (832x480, 81 frames) each
+needs about 38.3 GiB while it generates (measured with AbstractVision/mlx-gen), so the catalog's fit reads
+`too_large` up to 48 GiB, `tight` on 64 GiB Macs and `fits` from 96 GiB.
+Text-to-video A14B also has measured needs at other canvases (about 35.1 GiB at
+640x352 and 53.5 GiB at 1280x720, 81 frames): the catalog entry's
+`smaller_canvas` names the smaller size where only it fits, and `larger_canvas`
+the larger size where that fits too.
+A route that is already configured but cannot run on this host — an
+`mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
+example `output.image: mlx-gen/...` kept from an install made before these
+defaults were host-aware — carries `route_unavailable: {provider, model,
+reason}` in the grid, and `abstractcore config defaults` prints it on the row.
+So does an image or video route whose catalog model does not fit this
+computer's memory (for example the FLUX.2 klein 4B image route, about 8.5 GiB,
+saved on an 8 GB Mac), with the same reason the recommendation gives; a fit
+that is `tight`, or that needs the GPU memory `sysctl`, is not flagged.
+Checking never changes the saved routes.
+`apply-recommended` keeps it and flags it; `apply-recommended --force` replaces
+it with this host's recommendation, or removes it (action `cleared`) where
+nothing recommended runs here. Routes to a server (LM Studio, Ollama,
+OpenAI-compatible) and cloud routes are never flagged: the server may be on
+another machine.
+A route this host CAN run whose engine is not installed in this Python
+environment carries `engine_missing: {engine, name, reason, install}` instead
+(plus `engine_row` when the Engines screen installs it). The in-process
+engines judged are MLX (`mlx`: mlx-lm), MLX-Gen (`mlx-gen`: abstractvision and
+mlx-gen), llama.cpp (`huggingface` with a GGUF model: llama-cpp-python),
+Transformers (`huggingface` otherwise: transformers and torch) and every local
+voice engine on `input.voice` / `output.voice` (Supertonic, faster-whisper,
+...), whose answer comes from AbstractVoice's own `engine_runtime` probe
+(abstractvoice 0.13.1 or newer; an older AbstractVoice is itself the missing
+engine of those routes, with its upgrade command). `install` is the exact
+command, targeting this Python interpreter. The flag is
+never combined with `route_unavailable`, and it is separate from the weights
+status ("not downloaded"). `apply-recommended` entries and the recommended
+download plan carry it too, and `abstractcore config defaults` and
+`abstractcore models status` print it.
+The defaults are ordinary routes — change or clear them with the commands below, and any
+provider or model supplied on a request always wins. The seed is written only
+when no configuration file exists yet; clearing a route is permanent, and a
+store you already have is never modified.
+
+Capability route defaults use `kind.modality` keys, with optional
+`kind.modality.task` keys for generated-media defaults that need finer routing.
+Each route stores a small provider target: `provider`, `model`, optional
+`base_url`, optional `reasoning` for reasoning-capable text routes, and
+provider/plugin `options`.
+
+### The modality row and its task rows
+
+`output.image` is not a legacy twin of `output.image.text_to_image` — it is its
+**parent**, and the two levels answer different questions:
+
+| you want | set |
+| --- | --- |
+| one image model for everything (generate, edit, upscale) | `output.image` |
+| a different model for one of those tasks | `output.image.<task>` |
+
+Resolution is **exact task row first, modality row second**. A configured task
+row wins *wholesale* — a route row is one coherent backend identity and is never
+field-merged with its parent. Only the seven tasks in `CAPABILITY_ROUTE_TASKS`
+have task rows: `text_to_image`, `image_to_image`, `image_upscale`,
+`text_to_video`, `image_to_video`, `text_to_scene3d`, `image_to_scene3d`.
+
+Setting the modality row is the simple path, and it is what the fresh-install
+seed writes: one `output.image` value makes generate, edit and upscale all work.
+
+The other output modalities — `output.voice`, `output.sound`, `output.music`,
+`output.decision` — have **no** task rows at all, so their modality row is the primary key rather
+than a fallback. The same is true of every `input.*`, `embedding.*` and
+`rerank.*` route.
+
+A question asked at the modality level ("which image backend does this host
+use?") resolves the same way generation does — the canonical task row
+(`text_to_image`) first, then `output.image`. Advertising and execution must
+never answer it differently.
+
+Consequences you can see in `abstractcore config defaults`:
+
+- task rows are listed indented beneath their modality row;
+- a modality row that is unset **while every task row beneath it is set** is
+  reported as `not needed` rather than `not configured`: nothing can reach it,
+  because those task rows are exactly the keys generation can produce for that
+  modality. It stays settable — setting it would then be a no-op until a task
+  row is cleared.
+
+Route kinds:
+
+- `input`: understanding/enrichment of request content
+- `output`: generated content
+- `embedding`: vectors for retrieval/indexes
+- `rerank`: reserved for the future reranker manager
+
+Examples:
+
+```bash
+abstractcore config set-default input.text \
+  --provider lmstudio \
+  --model qwen/qwen3.6-35b-a3b \
+  --base-url http://127.0.0.1:1234/v1 \
+  --reasoning medium
+
+abstractcore config set-default output.voice \
+  --provider supertonic \
+  --model supertonic-3 \
+  --option voice=M1
+
+abstractcore config set-default output.image.image_to_image \
+  --provider mlx-gen \
+  --model AbstractFramework/qwen-image-edit-2511-4bit
+
+abstractcore config set-default output.image.image_upscale \
+  --provider mlx-gen \
+  --model AbstractFramework/seedvr2-3b-8bit \
+  --option resolution=2x \
+  --option softness=0.25
+
+abstractcore config set-default output.video.image_to_video \
+  --provider mlx-gen \
+  --model AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit
+
+abstractcore config defaults
+
+abstractcore config clear-default output.voice
+```
+
+`set-default` is a partial update. A flag you do not pass keeps its stored
+value, so setting a model does not discard a reasoning effort or the route
+options set earlier; pass an empty string to clear one field
+(`--reasoning ""`), or `clear-default` to drop the whole route. AbstractGateway
+writes the same rows under the same rule, so a change made from either entry
+point survives the other.
+
+`--option` is the exception, because options are a SET rather than a field:
+
+| what you type | what happens to the stored options |
+| --- | --- |
+| no `--option` at all | kept exactly as they are |
+| `--option k=v` (one or more) | the whole set is REPLACED by what you typed |
+| `--option ""` | the whole set is CLEARED |
+
+There is no per-key clear; re-send the keys you want to keep, or clear the set
+and rebuild it. Both console-TUIs use `--option ""` for "clear all options".
+
+A write that fails says why. `set-default` / `clear-default` raise
+`CapabilityDefaultWriteError` naming the route and the underlying cause, and
+every surface renders it: the CLI prints it after `❌ Error:`, and the
+AbstractCore server and AbstractGateway routes return it as the body of a 400.
+
+Route defaults are configuration only; they do not load a model into a provider.
+Provider residency is reported separately.
+
+`reasoning` is a route default, not part of the semantic request payload. It applies to the
+text-generation route (`output.text`, stored as `input.text`) and takes effect only when the caller
+set no `thinking=` of its own. An explicit `thinking=` always wins, `thinking=False` included; with
+no configured effort and no explicit value, no reasoning parameter is sent at all. The same field is
+editable from the AbstractGateway console, and both entry points write the same row.
+
+`input.image` is a fallback route for image understanding when the configured
+text route cannot natively accept images. If the `input.text` model is known in
+AbstractCore's model-capability registry as image-capable, the effective
+`input.image` route is marked as covered by `input.text` and should not be
+edited separately.
+
+`input.video` is the corresponding video-understanding route. If the
+`input.text` model can process visual frames, Core may report `input.video` as
+covered by `input.text`; unlike `input.image`, that coverage is overrideable so
+you can route video through a dedicated VLM or video-capable endpoint.
+
+`input.voice` is the speech-to-text fallback route. Core does not silently use a
+locally installed STT package just because `audio.strategy=auto`; a text-only
+model needs `input.voice` configured before audio attachments are transcribed
+automatically.
+
+`input.sound` is reserved for non-speech audio understanding: environmental
+sound, SFX, audio scenes, and later music-understanding routes. Do not configure
+STT-only models there. Source-backed open candidates in the model registry
+include `qwen3-omni-30b-a3b-instruct`,
+`qwen3-omni-30b-a3b-captioner`, `qwen2.5-omni-7b`, and
+`qwen2-audio-7b-instruct`. Qwen3.6 text/vision/video models remain
+`audio_support=false`.
+
+`input.music` is the corresponding music-audio understanding route. If the
+configured `input.text` model is known to accept native music/audio input, Core
+may report `input.sound` and `input.music` as covered by `input.text`; both rows
+remain overrideable so a dedicated audio-understanding backend can be selected.
+
+Use `abstractcore config set-default`, `abstractcore config defaults`, and
+`abstractcore config clear-default` for capability route defaults. Capability
+route defaults are intentionally managed through the `config` subcommand so
+route discovery, provider profiles, and scoped config files share one explicit
+interface.
+
+By default Core writes to `~/.abstractcore/config/abstractcore.json`. Operators
+and embedded hosts can target a specific Core config with
+`ABSTRACTCORE_CONFIG_FILE`, `ABSTRACTCORE_CONFIG_DIR`, or:
+
+```bash
+abstractcore config --config-file /srv/runtime/config/abstractcore.json defaults
+```
+
+### Email
+
+The `email` section holds the email account (address, IMAP/SMTP servers, sign-in method), the
+recipient policy, the send limits and the on/off switch. It never holds a password: credentials are
+sealed in `<config dir>/email/secret.enc`. Configure it with `abstractcore email connect ...` or the
+consoles' Email pages; see [Email](email.md).
 
 ### Cache Directories
 
@@ -71,6 +399,26 @@ abstractcore --set-local-models-cache-dir ~/.abstractcore/models
 - Default cache: `~/.cache/abstractcore`
 - HuggingFace cache: `~/.cache/huggingface`
 - Local models: `~/.abstractcore/models`
+
+### Model Memory
+
+Two top-level keys in `abstractcore.json` bound the memory a local model takes:
+
+```json
+{
+  "model_memory_buffer": 0.05,
+  "gguf_prompt_cache_max_gb": 4
+}
+```
+
+- **model_memory_buffer**: the fraction of free memory kept free when a GGUF context is sized (default `0.05`; see
+  [Memory management](memory-management.md)).
+- **gguf_prompt_cache_max_gb**: the byte budget, in GiB, for the GGUF prompt-cache snapshots of one model, all keys
+  together. When a new snapshot takes the total past it, the least recently used keys are evicted; the snapshot just
+  written is kept even when it alone is larger. Unset: min(8 GiB, a quarter of physical RAM). The environment
+  variable `ABSTRACTCORE_GGUF_PROMPT_CACHE_MAX_GB` overrides it. A value that is not a positive number is refused.
+  The budget and the bytes held are in `get_prompt_cache_stats()["gguf"]` (`prompt_cache_budget_bytes`,
+  `prompt_cache_total_bytes`).
 
 ### Logging Configuration
 
@@ -153,13 +501,22 @@ Notes:
 - `abstractcore --set-vision-caption ...` is deprecated but kept for compatibility.
 - Vision fallback is only used for **image/video inputs** when the *main* model is text-only.
 
-### Audio (default policy + optional speech-to-text fallback)
+### Audio (default policy + explicit speech-to-text fallback)
 
-Audio attachments are controlled by `audio_policy`. The default is `auto`: use native audio when supported, otherwise fall back to STT via `abstractvoice` (if installed). If `abstractvoice` is not installed, `auto` degrades gracefully to native-only behavior at runtime.
+Audio attachments are controlled by `audio_policy`. The default is `auto`: use
+native audio when the selected model supports audio, otherwise use the
+configured `input.voice` capability route as the speech-to-text fallback. If
+`input.voice` is not configured, Core reports a configuration error for
+text-only models instead of silently choosing an installed STT backend.
 
 ```bash
-# STT fallback requires abstractvoice
-pip install abstractvoice
+# A local STT engine (faster-whisper) comes with the local engines
+pip install "abstractcore[apple]"   # or "abstractcore[gpu]" on NVIDIA / AMD
+
+# Select the STT route used by audio_policy=auto
+abstractcore config set-default input.voice \
+  --provider faster-whisper \
+  --model large-v3
 
 # Override strategy explicitly (auto is the default)
 abstractcore --set-audio-strategy auto
@@ -169,24 +526,32 @@ abstractcore --set-stt-language fr
 ```
 
 Notes:
-- `audio_policy="auto"` uses native audio when supported, otherwise STT when available (default).
-- `audio_policy="speech_to_text"` forces STT and injects a transcript into the request.
+- `audio_policy="auto"` uses native audio when supported, otherwise the configured `input.voice` route.
+- `audio_policy="speech_to_text"` forces STT and injects a transcript into the request; direct per-call routing may still provide explicit STT parameters.
 - `audio_policy="native_only"` errors on text-only models (no fallback).
 
-### Video (native vs frames fallback)
+### Video (native vs configured frame/video fallback)
 
-Video attachments are controlled by `video_policy`. By default (`auto`), AbstractCore uses native video input when supported, otherwise it samples frames via `ffmpeg` and routes them through image/vision handling.
+Video attachments are controlled by `video_policy`. By default (`auto`),
+AbstractCore uses native video input when supported. Otherwise it can sample
+frames via `ffmpeg` and route those frames through the selected `input.text`
+model when that model supports visual input, or through an explicit
+`input.video` route when configured.
 
 ```bash
 abstractcore --set-video-strategy auto
 abstractcore --set-video-max-frames 6
 abstractcore --set-video-sampling-strategy keyframes
 abstractcore --set-video-max-frame-side 1024
+
+abstractcore config set-default input.video \
+  --provider endpoint:office-vlm \
+  --model qwen2.5-vl-72b
 ```
 
 Notes:
 - Frame sampling requires `ffmpeg`/`ffprobe` available on `PATH`.
-- If your main model is text-only, frame fallback still requires **vision fallback** to be configured (see above).
+- If the main model is text-only and `input.video` is not configured, Core reports a configuration error rather than silently using an unrelated vision/video backend.
 
 ### API Keys
 
@@ -209,20 +574,20 @@ Supported provider key names include `openai`, `anthropic`, `openrouter`, `portk
 
 ### HTTP Server Gateway Auth
 
-The optional OpenAI-compatible HTTP server has its own inbound server key. This is separate from upstream provider keys.
+The optional OpenAI-compatible HTTP server has its own inbound auth token. This is separate from upstream provider keys.
 
 ```bash
-# Set the AbstractCore server master key
-abstractcore --set-server-api-key acore-server-secret
+# Set the AbstractCore server auth token
+abstractcore --set-server-auth-token acore-server-secret
 
 # Start the server; clients now authenticate with:
 # Authorization: Bearer acore-server-secret
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
-When a server master key is configured, authenticated clients can use provider keys configured on the server through `abstractcore --set-api-key ...` or environment variables. To override one upstream provider for one request, clients can send `X-AbstractCore-Provider-API-Key`.
+When a server auth token is configured, authenticated clients can use provider keys configured on the server through `abstractcore --set-api-key ...` or environment variables. To override one upstream provider for one request, clients can send `X-AbstractCore-Provider-API-Key`.
 
-When no server master key is configured, clients may bring their own upstream provider key with `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`, but they cannot use server-held provider keys. Provider keys in request bodies or query strings are disabled.
+When no server auth token is configured, clients may bring their own upstream provider key with `X-AbstractCore-Provider-API-Key`, but they cannot use server-held provider keys. Provider keys in request bodies remain disabled; select discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI convenience.
 
 Server hardening commands:
 
@@ -244,12 +609,12 @@ abstractcore --set-server-media-root /srv/abstractcore-media
 abstractcore --allow-server-local-files
 abstractcore --disallow-server-local-files
 
-# Defaults for `python -m abstractcore.server.app`
+# Defaults for `abstractcore serve`
 abstractcore --set-server-host 127.0.0.1
 abstractcore --set-server-port 8000
 ```
 
-The interactive wizard (`abstractcore --config`) asks for the same persisted server security surface: server master key, unauthenticated local/dev mode, request `base_url` allowlist, URL media-fetch allowlist, safe media root, unrestricted local-file toggle, and default server host/port. It can generate a server key and accepts `clear` for the key, allowlists, and media root.
+The interactive wizard (`abstractcore --config`) asks for the same persisted server security surface: server auth token, unauthenticated local/dev mode, request `base_url` allowlist, URL media-fetch allowlist, safe media root, unrestricted local-file toggle, and default server host/port. It can generate an auth token and accepts `clear` for the key, allowlists, and media root.
 
 ### Streaming Configuration
 
@@ -327,6 +692,71 @@ This displays:
 - Logging configuration
 - Configuration file location
 
+## Model Weights
+
+Configuration decides *which* model a capability uses. `abstractcore models`
+answers whether that model is actually on this machine, and fetches it when it
+is not.
+
+```bash
+abstractcore models status                       # every configured route
+abstractcore models status output.text           # one route
+abstractcore models status ollama/gemma3:1b      # one provider/model pair
+abstractcore models status --all --json          # unconfigured routes too, machine-readable
+```
+
+Each route reports one of four states:
+
+| State | Meaning |
+|---|---|
+| `installed` | The weights are on this machine, with the path or the id they were found under. |
+| `not downloaded` | The provider's own tool says the model is absent. Downloadable. |
+| `unknown` | The provider's tool could not be consulted, so there is no answer. Never guessed. |
+| `remote` | The provider serves models it does not store locally (OpenAI, Anthropic, endpoint profiles). Nothing to download. |
+
+Probing is read-only: it never contacts a model hub, never warms a cache and
+never spends a byte. At worst it makes one localhost request or lists one
+directory.
+
+### Downloading
+
+```bash
+abstractcore models download ollama gemma3:1b
+abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m
+abstractcore models download --recommended            # every MISSING recommended default
+abstractcore models download --recommended --dry-run  # resolve the commands, fetch nothing
+```
+
+The download runs the provider's own tool and streams its output; a failure
+reports that tool's own words plus one actionable line. `--json` emits a single
+machine-readable document instead of progress.
+
+**The artifact is not the model id.** A capability route stores the id the
+provider *serves* (`qwen/qwen3.5-9b`); the thing you *fetch* names the exact
+weights, quantization included (`qwen/qwen3.5-9b@q4_k_m`). `models status` prints
+the artifact to download next to the route that needs it, so the two never have
+to be reconciled by hand.
+
+**The recommendation is advice for an empty route, not a standing debt.**
+`models status` reports a recommended model as `missing:` only when its route
+has nothing else serving it — its own provider/model, a `covered_by`
+derivation, a parent covered by its task rows, or a task row inheriting its
+parent. Route text generation at a model of your own and the starter kit's LM
+Studio build stops being listed: nothing on this machine needs it. The payload
+carries both answers — `recommended.would_download` (what `--recommended`
+*would* fetch, which is what `--dry-run` reports) and `recommended.gaps` (what
+anything is actually short of). The consoles read `gaps`.
+
+Supported providers: `lmstudio`, `ollama`, `supertonic`, and the Hugging
+Face-backed engines (`mlx-gen`, `mlx`, `mlx-vlm`, `huggingface`, `diffusers`).
+
+### Interrupted downloads
+
+A Hugging Face repo that was interrupted mid-download reports `not downloaded`,
+not `installed` — even though the files it did fetch are complete and its
+snapshot directory looks healthy. Re-running the download resumes it from where
+it stopped.
+
 ## Interactive Configuration
 
 Set up configuration interactively:
@@ -369,7 +799,7 @@ abstractcore --set-api-key openai-compatible your-endpoint-key
 abstractcore --set-api-key vllm your-vllm-key
 
 # 5. Optional: configure the OpenAI-compatible HTTP server gateway
-abstractcore --set-server-api-key acore-server-secret
+abstractcore --set-server-auth-token acore-server-secret
 abstractcore --set-server-base-url-allowlist "https://example.com/v1"
 
 # 6. Configure logging for development
@@ -508,7 +938,8 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
   "offline": {
     "offline_first": true,
     "allow_network": false,
-    "force_local_files_only": true
+    "force_local_files_only": true,
+    "allow_remote_pdf_extraction": false
   },
   "streaming": {
     "cli_stream_default": false
@@ -554,6 +985,12 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 ### Embeddings Section
 - **provider**: Embeddings provider (`"huggingface"`, `"openai"`, etc.)
 - **model**: Embeddings model name (e.g., `"all-minilm-l6-v2"`)
+- **base_url**: Optional embeddings provider base URL
+
+This section mirrors the `embedding.text` capability route in both directions, so
+`abstractcore config --set-embeddings-model` and `abstractcore config set-default embedding.text`
+always report the same answer. The capability route is what the framework routes on; this section is
+the shape the embeddings commands and `--show-config` read.
 
 ### API Keys Section
 - **openai**: OpenAI API key
@@ -565,18 +1002,20 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **google**: Google API key (reserved for future integrations; not required for current built-in providers)
 
 ### Server Section
-- **api_key**: AbstractCore server master key for inbound client authentication
+- **auth_token**: AbstractCore server auth token for inbound client authentication
+- **api_key**: Legacy status alias retained for compatibility with older callers
 - **allow_unauthenticated**: Local/dev escape hatch for unauthenticated HTTP server requests
 - **base_url_allowlist**: Additional non-loopback `base_url` override allowlist
 - **url_fetch_allowlist**: URL media fetch allowlist for otherwise blocked targets
 - **media_root**: Safe root for local media file paths accepted by the HTTP server
 - **allow_local_files**: Unsafe unrestricted local file toggle
-- **host** / **port**: Defaults for `python -m abstractcore.server.app`
+- **host** / **port**: Defaults for `abstractcore serve`
 
 ### Cache Section
 - **default_cache_dir**: General cache directory for AbstractCore (`~/.cache/abstractcore`)
 - **huggingface_cache_dir**: HuggingFace models cache (`~/.cache/huggingface`)
-- **local_models_cache_dir**: Local models storage (`~/.abstractcore/models`)
+- **local_models_cache_dir**: Local models storage (`~/.abstractcore/models`); where
+  `abstractcore --download-vision-model` writes
 - **glyph_cache_dir**: Glyph cache directory (`~/.abstractcore/glyph_cache`)
 
 ### Logging Section
@@ -596,9 +1035,49 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **tool_timeout**: Default tool execution timeout (seconds)
 
 ### Offline Section
-- **offline_first**: Default to offline-first behavior
+- **offline_first**: Loading a local model never downloads it on demand. Providers look in the
+  local caches only and fail with a "not found locally" error on a miss. The setting only covers
+  loading: it does not switch the process offline and never blocks an explicit download
+  (`abstractcore models download`, the gateway's download jobs). The MLX and Hugging Face
+  providers and the embeddings manager apply it to each load call. None of them sets
+  `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` or `HF_DATASETS_OFFLINE`, so neither the process
+  nor its child processes are switched offline. See [Downloading](models.md#downloading).
+  - *Hugging Face (transformers)*: the provider finds the model's cached snapshot directory
+    and passes that directory, with `local_files_only=True`, to every transformers call
+    (config, tokenizer or processor, model). A fully cached model therefore loads with no
+    network call, including a snapshot that has no `refs/main` (`abstractcore models
+    repair-refs` writes it for other tools that load by id; see
+    [Repairing `refs/main`](models.md#repairing-refsmain)). A PEFT adapter (LoRA) loads its base model from the base's snapshot and attaches the adapter from its
+    own directory. If the model is not cached, or the snapshot is incomplete (a config with
+    no weights, a README only, or an adapter whose base is missing), the load fails at once
+    with `ModelNotFoundError`. The message names the model and says
+    `download it first: abstractcore models download huggingface <repo>`.
+  - *MLX drafter*: a drafter named explicitly that is not cached is refused with the same
+    kind of message (`abstractcore models download mlx <repo>`). With `offline_first` off,
+    it is downloaded and a warning is logged.
+  - *Embeddings (sentence-transformers)*: `EmbeddingManager` resolves the model id to its
+    cached snapshot directory (a bare legacy name such as `all-MiniLM-L6-v2` is also looked
+    up as `sentence-transformers/<name>`) and loads it with `local_files_only=True`. An
+    uncached model fails with `ModelNotFoundError` and the same "download it first" message.
+    With both `offline_first` and `force_local_files_only` off, the id is passed through and
+    may download on first use.
+  - *Explicit downloads outside `models download`*: `abstractcore --download-vision-model`
+    and the config wizard's "download embeddings model now" are downloads, not loads, so
+    `offline_first` does not apply to them.
+  - Variables the operator set before the process started are left exactly as they were.
+    They are the only thing that stops an explicit download, which then fails with a
+    message naming the variable. A gateway restart from the tray or console passes the
+    variables' start-up values to the new process, not values written in-process during
+    the run.
 - **allow_network**: Allow network access when offline-first is enabled (for API providers)
-- **force_local_files_only**: Force HuggingFace `local_files_only` mode
+- **force_local_files_only**: Loads with transformers read the local cache only, even when
+  `offline_first` is off (default `true`). A Hugging Face load reads the cache only when
+  either key is on.
+- **allow_remote_pdf_extraction**: May `fetch_url` send a fetched PDF to the configured
+  OpenAI-compatible LLM for extraction and a summary (default `false`). Off, PDFs are
+  extracted locally (pypdf) and never leave the machine, whatever API keys are configured.
+  Turn it on with `abstractcore --allow-remote-pdf-extraction`, off with
+  `abstractcore --disallow-remote-pdf-extraction`.
 
 ## Common Configuration Tasks
 

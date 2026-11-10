@@ -25,7 +25,7 @@ Features:
 - **Tools / web**: **requests**, **beautifulsoup4**, **lxml**, **ddgs** / **duckduckgo-search**, **psutil**
 - **Embeddings**: **sentence-transformers**, **numpy**
 - **Tokens**: **tiktoken**
-- **Media / documents**: **Pillow**, **pymupdf4llm**, **pymupdf-layout**, **unstructured**, **pandas**
+- **Media / documents**: **Pillow**, **pypdf**, **unstructured**, **pandas**. PyMuPDF-family PDF tooling is available only through the explicit commercial-license opt-in extra.
 - **Compression**: **Pillow** (glyph rendering)
 - **Server**: **fastapi**, **uvicorn**, **python-multipart**, **sse-starlette**
 - **Vision plugin integration**: **abstractvision**

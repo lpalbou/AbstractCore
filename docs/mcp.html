@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MCP (Model Context Protocol) - AbstractCore</title>
     <meta name="description" content="AbstractCore treats MCP as a tool-server protocol (not an LLM provider).">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/mcp.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -57,6 +59,12 @@ tools = source.list_tool_specs()
 <code>generate()</code>/<code>agenerate()</code>. Tool names are namespaced as:</p>
 <p><code>mcp::&lt;server_id&gt;::&lt;tool_name&gt;</code></p>
 <p>See <code>abstractcore/abstractcore/mcp/naming.py</code>.</p>
+<p>Strict native tool APIs (OpenAI, Anthropic) accept only <code>^[a-zA-Z0-9_-]{1,64}$</code> names, so native
+declarations carry a deterministic wire alias (<code>mcp::RAGnarok::query</code> is declared as
+<code>mcp_RAGnarok_query_b6ff8949</code>). AbstractCore maps the alias back before the response reaches you:
+<code>tool_calls</code> carry the declared <code>mcp::...</code> name in streaming and non-streaming responses, from
+<code>generate()</code> and <code>agenerate()</code> alike. Only names declared in the request's <code>tools=</code> are restored; any
+other name is returned as the model sent it, so your host's allowlist still refuses it.</p>
 <h3 id="2-execute-mcp-tools-in-your-hostruntime">2) Execute MCP tools in your host/runtime</h3>
 <p>AbstractCore’s default execution path is <strong>passthrough</strong> (<code>execute_tools=False</code>): the model can
 request tool calls and you execute them in your host/runtime.</p>
@@ -76,13 +84,21 @@ def execute_mcp_tool_call(call: dict) -&gt; dict:
 </code></pre></div>
 <h2 id="transports-supported">Transports supported</h2>
 <h3 id="streamable-http">Streamable HTTP</h3>
-<p><code>McpClient</code> posts JSON-RPC to the server URL. It automatically sets an <code>Accept</code> header compatible
-with streamable HTTP (<code>application/json, text/event-stream</code>) and will capture <code>MCP-Session-Id</code>
-responses when provided.</p>
+<p><code>McpClient</code> posts JSON-RPC to the server URL. It sets an <code>Accept</code> header compatible with
+streamable HTTP (<code>application/json, text/event-stream</code>), runs the handshake (<code>initialize</code>, then the
+<code>notifications/initialized</code> notification) before its first request, sends the server's
+<code>MCP-Session-Id</code> and the negotiated <code>MCP-Protocol-Version</code> on every later request, and reads
+responses sent as JSON or as an event stream. Call <code>client.initialize()</code> to run the handshake
+explicitly and get the server's <code>serverInfo</code>, <code>protocolVersion</code> and <code>capabilities</code>.</p>
 <p>See <code>abstractcore/abstractcore/mcp/client.py</code>.</p>
 <h3 id="stdio">stdio</h3>
-<p><code>McpStdioClient</code> spawns an MCP server subprocess and communicates over stdin/stdout with JSON-RPC,
-including a best-effort initialization handshake.</p>
+<p><code>McpStdioClient</code> spawns an MCP server subprocess and communicates over stdin/stdout with JSON-RPC.
+It runs the same handshake (<code>initialize</code>, then <code>notifications/initialized</code>) before its first
+request; <code>client.initialize()</code> runs it explicitly. <code>close()</code> terminates the subprocess (and kills
+it if it does not exit within 2 seconds).</p>
+<h3 id="tool-pagination">Tool pagination</h3>
+<p><code>list_tools()</code> follows <code>nextCursor</code> and returns every tool the server lists;
+<code>list_tools_page(cursor=None)</code> returns one page and the next cursor.</p>
 <p>See <code>abstractcore/abstractcore/mcp/stdio_client.py</code>.</p>
 <h2 id="configuration-helpers">Configuration helpers</h2>
 <p><code>create_mcp_client(config=...)</code> supports both HTTP and stdio config shapes:</p>
@@ -100,6 +116,13 @@ client = create_mcp_client(config={&quot;transport&quot;: &quot;stdio&quot;, &qu
 </ul>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

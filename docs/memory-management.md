@@ -1,0 +1,696 @@
+# Memory and Model Residency
+
+AbstractCore gives you a small, dependable set of surfaces for one operational question: **what is
+using memory on this host right now, and how do I free it — or keep it?** This page covers the
+host memory snapshot, host-wide model residency discovery, per-provider loaded-model listings,
+what `unload_model()` actually frees, locking a model against unloading, and estimating how much
+context a model can sustain before you load it.
+
+Related pages:
+
+- [Architecture](architecture.md) — the provider lifecycle and the `unload_model()` contract
+- [API Reference](api-reference.md) — full method signatures
+- [Prompt Caching](prompt-caching.md#cache-residency-and-memory) — sizing KV caches and per-key cost
+- [Native MLX Runtime](native-mlx-runtime.md) — shared native weights, request-owner leases, bounded queues and RAM/SSD prefix storage
+- [Server](server.md) — the HTTP routes (`/acore/memory`, `/acore/models/loaded`, `/acore/models/unload`, `/acore/prompt_cache/*`)
+
+## One resident artifact per process
+
+Core's managed local loaders identify an artifact by its resolved file or cached snapshot
+directory. A symlink or repository ID that resolves to the same snapshot does not select a
+second copy. Different snapshots or quantized artifacts remain distinct models.
+
+Loading is serialized across the supported local loaders. Compatible holders reuse resident
+weights; a configuration that cannot share them raises `InvalidRequestError` before allocating
+another copy. Provider wrappers retain their own request and account state.
+
+| Loader | Sharing and conflict behavior |
+| --- | --- |
+| HuggingFace GGUF chat | Contexts can have separate KV allocations while sharing the same file's weights. An explicit GPU-layer placement that conflicts with the resident placement is refused, including when the requested context differs. |
+| MLX plain and native | Compatible holders share their existing model/session. Changing native target/head configuration or Qwen4 PLE placement requires unloading first. A target or drafter cannot also be loaded in a conflicting engine or target/head role. |
+| HuggingFace Transformers | Reuse the resident provider. Constructing a second provider for the same base artifact is refused; Core does not merge mutable provider state. |
+| Local embeddings | Compatible device/backend/trust settings share the encoder. Automatic settings can adopt a compatible resident entry; conflicting explicit settings are refused. |
+
+The same artifact cannot be loaded separately through these managed chat and embedding paths,
+or through incompatible supported engines. This is a **process-local** contract: separate Core
+processes, external servers such as Ollama or LM Studio, direct engine constructors and arbitrary
+capability-plugin loaders have their own resource ownership. Keep framework-managed inference
+in one execution owner when all clients must use one pool. Starting a separate standalone Core
+server does not join another process's pool.
+
+If a request is refused, reuse the resident configuration or finish active work and unload its
+holders before selecting a different configuration. Do not retry the same incompatible request
+or disable MLX model sharing. See [eject safety](generation-cancel.md) and the
+[Python residency API](api.md#memory-and-model-residency).
+
+## Host memory snapshot
+
+`abstractcore.utils.memory.get_memory_snapshot()` reports system RAM, this process, and the
+accelerator backend in one call. It is pure observation: every probe is individually guarded,
+unknown values stay `None`, and the function never raises.
+
+```python
+from abstractcore.utils.memory import get_memory_snapshot
+
+snap = get_memory_snapshot()
+print(snap["ram"]["available_bytes"])       # can another model fit?
+print(snap["device"]["allocated_bytes"])    # what does the accelerator hold right now?
+```
+
+Shape:
+
+```json
+{
+  "ts": 1700000000.0,
+  "ram": {"total_bytes": 137438953472, "available_bytes": 33013366784, "used_bytes": 95548260352, "percent": 76.0},
+  "process": {"rss_bytes": 53182464, "footprint_bytes": 61341696},
+  "device": {"backend": "metal", "allocated_bytes": 0, "total_bytes": 137438953472, "free_bytes": null,
+             "host_in_use_bytes": 9911418880, "wired_limit_bytes": 115343360000,
+             "mlx_active_bytes": 0, "mlx_cache_bytes": 0, "mlx_peak_bytes": 0, "mlx_held_bytes": 0,
+             "torch_mps_allocated_bytes": null, "torch_mps_driver_bytes": null, "llama_cpp_bytes": 0,
+             "metal_process_allocated_bytes": null, "process_held_bytes": 0,
+             "process_held_basis": "sum:mlx_held_bytes+llama_cpp_bytes"},
+  "held": {"backend": "mlx", "active_bytes": 0, "cache_bytes": 0, "peak_bytes": 0, "held_bytes": 0,
+           "resident_models": 0, "holders": 0, "models": []},
+  "resident": {"backends": {"mlx": {...}, "huggingface": {...}, "embeddings": null},
+               "models": [], "resident_models": 0, "holders": 0, "total_held_bytes": 0},
+  "host": {"host_id": "a1b2c3d4e5f6", "host_name": "studio.local", "kind": "local"}
+}
+```
+
+- `ram` comes from `psutil` when available.
+- `process.rss_bytes` is this process's resident set size.
+- `process.footprint_bytes` (macOS only, else `null`) is this process's physical footprint, the
+  figure Activity Monitor's "Memory" column shows. Unlike RSS it **includes Metal buffers**, so MLX
+  weights and KV caches count in it.
+- `device` probes MLX first (`backend: "metal"`), then `torch.cuda` (`"cuda"`), then `torch.mps`
+  (`"mps"`); with none available, `backend` is `null`.
+- `device.allocated_bytes` is **this process's** accelerator memory (mlx active memory on Metal).
+  It is truthful per-process but blind to other processes: a model resident inside LM Studio's or
+  Ollama's process reads `0` here.
+- `device.mlx_active_bytes`, `mlx_cache_bytes`, `mlx_peak_bytes` and `mlx_held_bytes` (Metal only,
+  else `null`) are MLX's allocator counters for this process: live buffers, freed buffers MLX keeps
+  cached for reuse, the high-water mark, and `held` = active + cache — the memory the process
+  actually keeps. A process can read `mlx_active_bytes: 0` and still hold gigabytes in the cache;
+  `mlx_held_bytes` is the figure to show.
+- `held` (MLX only, else `null`) lists every MLX model whose weights are alive in this process and
+  how many provider instances hold it, with per-model weight, cache and held bytes — including
+  holders no runtime pool reaches (a boot-time summarizer, an old client). A listing that says "no
+  models loaded" while `held.held_bytes` is large is wrong; this block is the check.
+- `device.process_held_bytes` is the **one figure to show for "what this process holds on the
+  accelerator"**, across every in-process backend. `device.process_held_basis` says how it was
+  obtained:
+  - `"metal_device_counter"` — when torch is loaded in the process, the figure is the Metal
+    device's own allocation count for this process (`device.metal_process_allocated_bytes`, read
+    through `torch.mps.driver_allocated_memory()`). It is a measurement and it covers everything:
+    MLX weights and MLX's allocator cache, torch tensors (transformers, embeddings, voice) and
+    llama.cpp (GGUF) buffers. Measured on an M5 Max: a 2 GiB MLX array moved it by exactly
+    2 GiB, and a Qwen3.5-4B Q4_K_M GGUF on Metal with an 8K context moved it by 3.59 GB, all of
+    which was returned when the model was closed.
+  - `"cuda_device_counter"` — on NVIDIA GPUs, what torch has reserved on every visible GPU
+    (`device.torch_cuda_reserved_bytes`). When a GGUF model is loaded, the llama.cpp figure is
+    added and the basis reads `cuda_device_counter+llama_cpp_bytes(estimated)`, because llama.cpp
+    allocates GPU memory outside torch.
+  - `"sum:..."` — the sum of the fields named: `mlx_held_bytes` (measured) and `llama_cpp_bytes`,
+    which is the GGUF weights plus an **estimate** of the KV cache computed from the model's
+    geometry at f16 (marked `(estimated)` when non-zero). That estimate can overstate hybrid
+    models (3.80 GB estimated versus 3.59 GB measured for the model above).
+
+  Other native libraries that allocate GPU memory by themselves (whisper.cpp, CoreML,
+  onnxruntime) appear only in the Metal device counter, not in a `cuda_device_counter` or `sum:`
+  figure.
+
+  The per-backend fields (`mlx_held_bytes`, `torch_mps_allocated_bytes`, `llama_cpp_bytes`)
+  attribute that total; do not add them on top of it. CPU-side memory (tokenizers, Python objects)
+  is never in it; `process.footprint_bytes` covers that.
+- `resident` lists every model whose weights are alive in this process across backends — MLX,
+  the HuggingFace provider (transformers and GGUF) and in-process embedding models — one row per
+  model with `backend`, `holders`, `weights_bytes`, `cache_bytes`, `held_bytes` and
+  `shared_weights`. Holder count is not a count of physical weight copies: compatible GGUF,
+  MLX and embedding holders can share weights. Read the row's sharing fields rather than
+  multiplying weights by holder count. A GGUF row whose cache figure includes the f16 KV estimate
+  carries `kv_bytes_estimated: true`. Reading the snapshot never loads a backend that the process
+  has not loaded already.
+- `device.host_in_use_bytes` (Metal only, else `null`) is the **accelerator heap across
+  processes**: driver-allocated Metal buffers, read from IORegistry
+  (`ioreg -r -c IOAccelerator -l`, the `"In use system memory"` PerformanceStatistics figure).
+  It sees MLX models whichever process allocated them, including MLX-engine servers such as
+  LM Studio. It is **not** the host's total memory use, and **memory-mapped GGUF/llama.cpp
+  weights do not appear in it at all** — see
+  [Reading the snapshot](#reading-the-snapshot-process-local-accelerator-heap-and-process-rss).
+- `device.wired_limit_bytes` (Metal only, else `null`) is the enforced accelerator ceiling:
+  `sysctl iogpu.wired_limit_mb` when set (> 0), else Metal's
+  `max_recommended_working_set_size` — the same ceiling `estimate_context_fit()` budgets against
+  (one shared helper, `abstractcore.utils.memory.metal_wired_limit_bytes`).
+- `host` names the machine the snapshot was observed on (see
+  [Modalities and host identity](#modalities-and-host-identity-on-residency-records)).
+- Metal exposes no free-bytes query, so `device.free_bytes` is `null` on Apple Silicon. On unified
+  memory machines, `ram.available_bytes` is the practical headroom figure.
+
+The same snapshot is served over HTTP as `GET /acore/memory` on the AbstractCore server.
+
+## Reading the snapshot: process-local, accelerator heap, and process RSS
+
+Three device figures answer three different questions. Picking the wrong one is the quickest way to
+conclude "nothing is loaded" while a 93 GB model is resident.
+
+**`device.allocated_bytes` answers "what does *this process's* accelerator allocator hold?"** It is
+the authoritative "memory freed" signal for models loaded in-process through MLX: after unloading
+an MLX model it drops by roughly the model-plus-KV size, back to near zero when nothing else is
+resident.
+
+It is process-local, and blind in two ordinary directions:
+
+- a model resident in **another process** — anything LM Studio or Ollama holds — is not counted;
+- a model resident in **this** process through a backend with its own allocator is not counted
+  either. A llama.cpp/GGUF model loaded through the HuggingFace provider maps its weights outside
+  mlx's allocator, so `allocated_bytes` can read `0` while that model is fully resident in this
+  very process.
+
+`allocated_bytes: 0` therefore never means "no model is loaded on this host". It means "this
+process's accelerator allocator holds nothing".
+
+**`device.host_in_use_bytes` answers "how much accelerator *heap* is allocated across processes?"**
+It is a driver-allocator figure (Metal only): it counts buffers the Metal driver allocated, in any
+process. An MLX model shows up here whether this process or an MLX-engine server such as LM Studio
+allocated it.
+
+It has one large, systematic blind spot, and the UIs must never paper over it:
+
+- **Memory-mapped GGUF/llama.cpp weights are not counted.** llama.cpp `mmap`s the `.gguf` and wraps
+  those pages with `newBufferWithBytesNoCopy`, so the weights are file-backed and never become
+  driver-allocated accelerator memory. Measured on an Apple-silicon host: a fully offloaded
+  (`n_gpu_layers=-1`) 89.99 GB three-shard GGUF left `host_in_use_bytes` at 0.79 GB. The same host
+  reported `allocated_bytes: 0` and `process.rss_bytes` of 75.81 GB.
+
+So `host_in_use_bytes` is **not** the host's total memory use, and it is not a denominator for
+"how full is this machine". A resident-model total legitimately and routinely exceeds it — that is
+the normal GGUF case, not an inconsistency. Where do mmapped weights show up instead?
+`process.rss_bytes`, `ram.used_bytes`, and the model's own `est_weights_bytes`.
+
+Compare `host_in_use_bytes` against `device.wired_limit_bytes` for accelerator-heap headroom, and
+read `ram` for the system picture. It is a total, not an attribution: it cannot tell you *which*
+model or process holds the memory. For per-model figures, read the residency records —
+`size_bytes` / `size_vram_bytes` from a model server, `est_weights_bytes` from an in-process
+provider (see
+[Per-model memory on residency records](#per-model-memory-on-residency-records)).
+
+**Presenting it.** Every AbstractFramework surface (web console, abstractflow, both TUIs,
+`monitor-memory`) renders RAM as the primary system meter and shows this figure as its own
+clearly-scoped line labelled **`Accelerator heap · <backend> (all processes)`**, with the note
+*"memory-mapped GGUF weights are not counted here"*. No surface labels it as the host's memory use,
+and none subtracts RAM-dimensioned quantities from it.
+
+**Process RSS is not a reliable unload signal on Metal hosts.** Freed Metal buffers return to the
+process allocator rather than to the operating system, so `process.rss_bytes` behaves as a
+high-water mark: it does not drop after an in-process unload and can even grow slightly. Monitoring
+or alerting that verifies unload through RSS will report false negatives; read
+`device.allocated_bytes` instead, and use `ram.available_bytes` / `ram.percent` for host-level
+capacity decisions.
+
+In short: verify an in-process unload with `device.allocated_bytes`, render accelerator-heap usage
+from `device.host_in_use_bytes` against `device.wired_limit_bytes` (labelled as the accelerator
+heap, never as total memory use), read `ram` for host capacity, and never read any of them as a
+per-model number.
+
+## Host-wide residency: which models are loaded on this machine
+
+`abstractcore.utils.residency.sweep_loaded_models()` asks the host's local model servers — Ollama
+(`GET /api/ps`) and LM Studio (loaded instances via its native REST API) — which models they
+currently hold resident, without constructing any model-bound provider:
+
+```python
+from abstractcore.utils.residency import sweep_loaded_models
+
+for record in sweep_loaded_models(timeout_s=2.0):
+    print(record["provider"], record["model"], record.get("size_bytes"))
+```
+
+Each record is the server's own enumeration, normalized and tagged `source: "provider_server"`:
+
+```json
+{
+  "provider": "ollama",
+  "model": "qwen3:latest",
+  "resident": true,
+  "loaded": true,
+  "source": "provider_server",
+  "size_bytes": 5225376768,
+  "size_vram_bytes": 5225376768,
+  "expires_at": "2026-01-01T00:05:00Z",
+  "context_length": 4096
+}
+```
+
+The sweep is best-effort and never raises: a server that is not running, unreachable, or errors
+contributes nothing (unknown stays unknown — it is never guessed). LM Studio records carry
+`provider_instance_ids` and `size_bytes` where the server reports them; the LM Studio REST payload
+has no VRAM split, so those records never carry `size_vram_bytes`.
+
+Note that residency covers whatever the servers hold — Ollama's running-model list includes
+embedding models too, so a sweep record does not imply a text-generation model.
+
+### Matching helpers
+
+The module also exposes the alias rules used to compare sweep records against registry or runtime
+records, so every consumer deduplicates the same way:
+
+```python
+from abstractcore.utils.residency import (
+    SWEEP_PROVIDERS,        # ("ollama", "lmstudio") — the providers the sweep covers
+    normalize_sweep_model,  # case-normalized name; strips Ollama's ":latest" alias
+    sweep_models_match,     # does (provider, model) name the same resident model as a sweep row?
+)
+
+normalize_sweep_model("Qwen3:latest")                    # "qwen3"
+sweep_models_match("ollama", "qwen3", {"model": "qwen3:latest"})   # True
+```
+
+`sweep_models_match` applies `normalize_sweep_model` equality for all providers, and for LM Studio
+additionally the provider's own substring resolution against the server key and loaded instance
+ids (so `qwen3-vl-4b` matches the server key `qwen/qwen3-vl-4b`). Empty inputs never match.
+
+## Provider-level listings
+
+Every provider instance offers `list_loaded_models(filters=None)`, returning the models it can
+**verify** as loaded (residency is provider-owned truth; unknown residency yields an empty list,
+never a guess):
+
+- **Default (BaseProvider)**: derived from `get_model_residency()` — one record when the instance's
+  model is verified loaded, otherwise empty.
+- **Ollama / LM Studio instances**: enumerate **all** models resident on their server, not just the
+  instance's own model. Transport errors propagate (an unreachable server raises rather than
+  returning a false "nothing loaded"); `sweep_loaded_models()` is the catching, best-effort layer.
+- **MLX / HuggingFace**: the in-process residency record plus a best-effort `est_weights_bytes`
+  estimate of the resident weight size.
+
+Records carry normalized `size_bytes` / `size_vram_bytes` when the backend reports sizes. The
+`filters` argument is accepted for capability-handler compatibility and ignored.
+
+### Per-model memory on residency records
+
+Two per-model figures ride residency records where they are knowable. Both are best-effort:
+absent means unknown, never zero.
+
+- **`est_weights_bytes`** — the in-memory weight footprint reported by the provider's own residency
+  claim (`get_model_residency()`), for providers that serve the model **in this process** and
+  therefore know it: MLX sums the loaded parameter arrays; HuggingFace uses the total on-disk size
+  of the resolved `.gguf` for a GGUF model (a memory-mapped quant's on-disk size *is* its weight
+  footprint) and the summed parameter bytes for a transformers model. Ollama and LM Studio do not
+  report it — their servers report `size_bytes` / `size_vram_bytes` instead.
+
+  For a **split GGUF** (`<stem>-00001-of-00003.gguf`) this is the sum of **every shard**, not the
+  file llama.cpp was handed. llama-cpp's `model_path` names only the first shard, and that shard
+  can be a rounding error against the set: measured live, first shard 10,946,624 B against
+  89,986,353,824 B for the three-shard quant. A partially-fetched set sums the shards actually
+  present rather than claiming completeness.
+
+  Because a GGUF's weights are memory-mapped, this footprint is resident as process RSS and is
+  **not** visible in `device.host_in_use_bytes`.
+- **`cache_bytes`** — the total bytes the runtime's prompt-cache store holds, on managed residency
+  records served by the AbstractCore server: the per-key `bytes` figures plus MLX's hybrid boundary
+  snapshot bytes, the same arithmetic `get_prompt_cache_stats()` exposes per key. An empty store is
+  a known `0`; a store whose keys carry no byte figures stays unknown.
+
+Weights and cache are **separate** footprints. Adding `cache_bytes` into a model's size
+double-counts what the device actually holds; render it as its own figure.
+
+A UI that shows one size per row should read the first field that is known, in this order:
+`size_bytes`, `size_vram_bytes`, `est_weights_bytes`. The first two come from a model server that
+holds the weights; the third is the only figure an in-process MLX or GGUF runtime can offer,
+because there is no server to ask.
+
+For server-wide queries without constructing a provider instance, use the classmethods:
+
+```python
+from abstractcore.providers.ollama_provider import OllamaProvider
+from abstractcore.providers.lmstudio_provider import LMStudioProvider
+
+OllamaProvider.list_server_loaded_models()      # base_url from OLLAMA_BASE_URL / OLLAMA_HOST, else http://localhost:11434
+LMStudioProvider.list_server_loaded_models()    # base_url from LMSTUDIO_BASE_URL, else http://localhost:1234/v1
+```
+
+Both accept `base_url=` and `timeout_s=` and raise on transport errors.
+
+## What `unload_model()` frees
+
+`unload_model()` is the single best-effort unload entrypoint across providers (see
+[Architecture](architecture.md#memory-management) for the per-provider behavior). For in-process
+providers (MLX, HuggingFace), unloading frees the model weights **and drops the instance's session
+caches** — the prompt-cache store and, on MLX, the hybrid KV boundary snapshots. Session caches are
+only useful while the weights are resident, and they are the memory hogs, so unload means "free the
+memory", including them.
+
+```python
+from abstractcore import create_llm
+from abstractcore.utils.memory import get_memory_snapshot
+
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
+llm.generate("Hello", prompt_cache_key="session-1")
+
+llm.unload_model(llm.model)
+print(get_memory_snapshot()["device"]["allocated_bytes"])  # back to near zero
+```
+
+Verify the unload through `device.allocated_bytes` on MLX, or `device.process_held_bytes` for any
+in-process backend, not process RSS (see
+[Reading the snapshot](#reading-the-snapshot-process-local-accelerator-heap-and-process-rss)).
+
+An unload first **stops the generations running on the instance** and waits for them; an
+in-process provider refuses the unload if one does not stop, rather than freeing memory under
+it. `load_model()` re-warms an ejected MLX or HuggingFace instance, and a generation on an
+ejected instance reloads it on demand (logged). See
+[Stopping a Generation and Ejecting a Model](generation-cancel.md#ejecting-a-model-unload_model-while-it-generates).
+
+### Ejecting a model from the whole process
+
+Several compatible holders can share weights in one process, and `unload_model()` releases
+only the calling holder's resources. Another instance or owner can keep the model alive after
+yours is unloaded. To free a model completely, eject its holders from the whole process. One
+call covers the managed in-process backends:
+
+```python
+from abstractcore.providers.process_residency import eject, resident_rows
+
+print(resident_rows())                         # every model alive in this process, all backends
+report = eject("mlx", "mlx-community/Qwen3-4B-4bit")
+report = eject("huggingface", "unsloth/Qwen3.5-4B-GGUF")
+report = eject("embeddings", "sentence-transformers/all-MiniLM-L6-v2")
+```
+
+`eject()` unloads every holder, whoever uses it. To eject only what nobody still needs, use
+`eject_unclaimed(provider, model)`. The AbstractCore server's managed runtimes and AbstractRuntime
+clients register the models they pool, lock or are loading (`register_claimant()`), and
+`eject_unclaimed()` skips a model any of them claims, matching names the way the eject does:
+case-insensitively, and by local or hub-cache path. The check and the eject run under one process
+lock (`residency_lock()`). A skipped eject returns `{"ok": true, "skipped": true, "claims": [...],
+"locked": ..., "reason": "..."}`, and `eject_unclaimed()` returns `None` for a provider whose
+weights live in another process (Ollama, LM Studio, remote APIs).
+
+```mermaid
+graph TD
+    REQ["eject_unclaimed(provider, model)"] --> LOCK["residency_lock()"]
+    LOCK --> CHECK{"Any registered claimant<br/>pools, locks or is loading it?"}
+    CHECK -->|yes| SKIP["skipped: true, claims, locked"]
+    CHECK -->|no| EJECT["eject(backend, model)"]
+    EJECT --> M["MLX: every holder, drafter,<br/>KV caches, allocator cache"]
+    EJECT --> H["HuggingFace: transformers and GGUF<br/>instances, torch MPS pool"]
+    EJECT --> E["Embeddings: in-process managers<br/>(reload on next embed)"]
+    M --> REP["report: ok, holders_unloaded,<br/>holders_refused, residual"]
+    H --> REP
+    E --> REP
+```
+
+The backend-specific functions are also available. For MLX, use `eject_model()`:
+
+```python
+from abstractcore.providers.mlx_residency import eject_model
+
+report = eject_model("mlx-community/Qwen3-4B-4bit")   # eject_model() with no model: every MLX model
+print(report["ok"], report["freed_bytes"], report["residual"])
+```
+
+It unloads **every** holder of the model in the process — weights, prompt and KV caches and the
+speculative drafter — then collects garbage and clears MLX's allocator cache. The report says what
+happened instead of assuming success: `holders_unloaded`, `holders_refused` (a holder that could
+not stop a generation, with its error), MLX counters `before` and `after`, `freed_bytes`, and
+`residual` — the model's row if its weights are still alive. `ok` is `true` only when nothing of the
+model remains resident. A plain `unload_model()` also clears MLX's allocator cache every time, and
+a residency record for an instance that released its hold while others still keep the weights reads
+`provider_state: "resident_via_other_holders"` with the `held_bytes` still in memory.
+
+The HuggingFace provider has the same function in `abstractcore.providers.hf_residency`
+(`eject_model()`, `resident_models()`): it unloads every transformers or GGUF instance holding the
+model, collects garbage and returns torch's MPS memory pool to the system. For embedding models,
+`abstractcore.embeddings.manager.eject_embedding_models()` does the same for every
+`EmbeddingManager` holding the model, and `EmbeddingManager.unload()` frees a single one. An
+embedder stays usable after an eject: its next embedding loads the model again. An unload waits for
+embeddings that are running on the manager; if one is still running after `drain_timeout_s`
+(default 30 seconds), nothing is freed and the report carries `in_flight`. Embedders served by
+Ollama, LM Studio or another server hold nothing in this process, so `unload()` leaves them
+untouched and says so (`in_process: false`).
+
+`load_model()` on MLX does not apply a per-load `ttl_s` or `keep_alive`; the response lists them under
+`unsupported_options` with a warning. The process-wide idle unload below applies instead.
+
+### Idle unload: 60 minutes by default
+
+A model loaded in this process that no call has used for the idle-unload time is unloaded from memory. The default
+is 60 minutes. A model kept loaded (locked, see below) is never unloaded this way. A call running on the model, or a
+model still loading, is never interrupted. The next call loads the model again. Covered: HuggingFace (transformers
+and GGUF), MLX and in-process embedding models
+([ADR 0012](adr/0012-idle-unload.md)).
+
+```python
+from abstractcore.providers import process_residency
+
+process_residency.get_idle_unload()      # 3600.0 (seconds); None when off
+process_residency.set_idle_unload(1800)  # 30 minutes for this process
+process_residency.set_idle_unload(0)     # off: models stay until they are ejected
+```
+
+- The timer starts with the first model this process loads, and checks every `min(60 s, idle / 4)`.
+- A model's idle time counts from its last call, or from when it was first seen resident if no call has used it
+  yet. Every call counts, with or without a cancel event.
+- Idle time is measured on the wall clock by design: `last_used_at` and `idle_unload_at` are epoch times a host
+  can show, and time the machine spends asleep counts as unused time.
+- What keeps a model loaded is the same rule as the residency failsafe: a lock (Keep loaded), a call running on any
+  instance of it, or a claimant still building it. A runtime pool or a configured default does not.
+- No check runs while another model loads. Before unloading, new calls to that model wait. The model is checked
+  again, and kept if a call started in between: an idle unload never cancels a call.
+- The unload is the process-wide eject (every holder, then `gc` and the allocator cache). It logs
+  `unloaded <model> after <N> min idle; freed <X.Y GB>` (seconds under two minutes) on the `abstractcore.residency` logger.
+- `process_residency.resident_model_states()` shows, per model, `last_used_at`, `in_use`, `locked_by` and
+  `idle_unload_at` (None when off, locked or in use). `reap_idle()` runs one check now.
+- After an unload, the next call pays the load and a full prefill: the in-memory prompt caches go with the weights.
+
+A gateway sets this time for its process. External servers (Ollama, LM Studio) keep their own TTLs.
+
+To size and inspect the session caches themselves — per-key `token_count` and best-effort `bytes` —
+use `get_prompt_cache_stats()`; see
+[Prompt Caching — Cache residency and memory](prompt-caching.md#cache-residency-and-memory).
+
+## Locking a model in memory
+
+When the AbstractCore server keeps a runtime warm (`POST /acore/models/load`), you can lock it
+against unloading:
+
+- `POST /acore/models/lock` sets a registry-level lock on a runtime whose model is verified
+  **resident** in provider memory, and `POST /acore/models/unlock` clears it. Both select the
+  runtime by `runtime_id` or by `provider` + `model` (optional `base_url`).
+- **Lock requires provider-verified residency** (`provider_resident: true`). A warm registry
+  runtime alone is configuration, not memory — locking it would present a configured model as
+  loaded. Locking a non-resident runtime refuses with HTTP `409` and body
+  `{"ok": false, "error": "model_not_resident", "detail": "...", "runtime_id": "..."}`; load the
+  model first (`POST /acore/models/load` with `"lock": true`) to lock it at load time.
+- **A `provider` + `model` selector naming no managed runtime adopts a sweep-resident model.**
+  Models resident on the host's local model servers are not always loaded through this gateway —
+  you loaded one in the LM Studio app, or `ollama run` did. Locking such a pair creates the managed
+  runtime entry for it through the same path a load uses, **client construction only: no cold
+  model load happens**, so nothing is loaded twice and nothing is re-downloaded.
+  Residency is then re-verified with the provider's own probe before the lock is set, and the
+  response carries `"adopted": true`.
+
+  One precise caveat, because "no provider-side call happens" would be false: on **Ollama** the
+  lock is reinforced with the server's residency-pin knob, `load_model(model, keep_alive=-1)`,
+  which POSTs `/api/generate` with `prompt: ""` — the standard preload idiom. On a model the
+  probe has just verified resident (the only kind the lock rule accepts) that request is a
+  keep-alive **refresh**: nothing is generated, no weights are re-read, only the TTL moves.
+  Unlock re-verifies residency first and skips the restore when the model is gone, so neither
+  direction can load a model back as a side effect. A pair the sweep does not verify resident refuses with the
+  same `409 model_not_resident` body (`runtime_id: null` — nothing was adopted); a pair whose
+  provider probe disagrees with the sweep refuses too, and the just-created entry is dropped.
+  Adoption applies to the sweep providers only (Ollama, LM Studio): MLX and HuggingFace residency
+  lives on an owning provider instance, not on a server that can be asked.
+- `POST /acore/models/load` with `"lock": true` locks the runtime in the same call. When the
+  provider cannot verify the loaded model resident, the load still succeeds and the response's
+  `lock` block reports `{"locked": false, "error": "model_not_resident", ...}` additively.
+- A locked runtime refuses `POST /acore/models/unload` with HTTP `409` and body
+  `{"ok": false, "error": "model_locked", "detail": "...", "runtime_id": "..."}`. Pass
+  `"force": true` to unlock and unload in one call; if the provider unload fails, the runtime
+  stays registered and locked.
+- An unload that names a claimed model without targeting its runtime (another spelling of the
+  name, its hub-cache path, or a `process:` row) is refused with HTTP `409` and
+  `error: "model_locked"` (a claiming owner holds it locked) or `"model_in_use"`, with the
+  `claims` that keep it. See [Server](server.md#models-held-in-the-server-process).
+- Automatic cleanup never evicts a locked model: `unload_after` on chat requests skips locked
+  runtimes, including requests that address the same server-resident model directly rather than
+  through the managed runtime (matched with the same alias rules as the sweep).
+
+The registry lock is the enforcement truth. Where the provider has a residency knob of its own,
+lock and unlock also apply it best-effort: on Ollama, lock maps to `keep_alive: -1` and unlock
+restores the server default (`"5m"`). The lock/unlock response reports that side channel as
+`provider_side` — `{"supported": bool, "applied": bool}` plus a `detail` when it failed — and a
+provider-side failure never fails the lock. Providers without such a knob report
+`provider_side: {"supported": false, "applied": false}` while the gateway lock still enforces.
+
+**LM Studio has no residency-pin knob, and the lock says so.** A lock on an LM Studio model
+answers:
+
+```json
+{"supported": false, "applied": false,
+ "detail": "lock guards this stack's unloads; the external server may still evict on its own policy"}
+```
+
+The lock is real — it blocks this stack's unloads and `unload_after` cleanup — but LM Studio is an
+external server running its own eviction policy (idle TTL, JIT model switching, the user clicking
+"Eject"). A model locked here can still disappear from under you, and the lock cannot prevent it.
+Re-read `GET /acore/models/loaded` rather than assuming a lock guarantees residency.
+
+The Ollama keep-alive knob rides that provider's native load request, which is why lock only
+reaches resident models (see the lock rule above) — otherwise setting the knob would itself be a
+server-side load. Unlock always works — including on a locked runtime whose
+model was since evicted, so locks are never stranded — and skips the keep-alive restore for a
+non-resident model (`provider_side.applied: false` with a detail) so unlock never loads a model
+back as a side effect either.
+
+Residency records report lock state truthfully:
+
+- managed runtime rows carry `locked`, `lockable: true`, and `locked_at` (present only while
+  locked); `pinned` is a compatibility alias carrying the same value as `locked`;
+- `locked`/`pinned` reflect the gateway-managed lock only — Ollama's own server-side keep-alive
+  shows through the record's `expires_at`;
+- sweep-only rows (`source: "provider_server"`) carry `lockable: true`: locking one adopts it into
+  the registry, so it is lockable even though no managed runtime exists for it yet.
+
+## Context calibration and estimation
+
+### GGUF context on a discrete GPU: the maximum that fits
+
+On a single CUDA / ROCm card with every layer offloaded, a GGUF loads at the smaller of its advertised context and
+the largest whose weights + KV + compute fit the free device memory minus a safety buffer (5 % by default;
+`model_memory_buffer` in the AbstractCore config, a fraction). If the allocation still fails, the context halves down
+to 4,096. The choice is logged and shown on the Models row ("131,072 of 262,144; limited by memory, 5 % buffer"); a
+context set for a model (`abstractcore.config.model_contexts`) is used exactly or refused (ADR 0010 point 8).
+
+The KV figure is computed layer by layer from the GGUF header (`abstractcore.utils.kv_geometry`):
+only the layers llama.cpp gives a cache count (one block in `full_attention_interval` on hybrid
+models such as Qwen3.5; sliding-window layers at their own width; per-layer head counts), f16 K
+and V, plus the fixed recurrent state. Residency rows report it as `kv_cache_bytes`
+(`kv_cache_estimated: true`) with the loaded `context_length`; `cache_bytes` is that KV plus the
+session prompt caches.
+
+A prompt that does not fit the loaded context fails before any evaluation with
+`ContextWindowExceededError` ("This conversation is N tokens, but MODEL is loaded with an M-token
+context on this machine ...") instead of filling the KV cache, retrying and rebuilding the engine.
+An answer that reaches the end of the context stops with `finish_reason="length"` and
+`metadata.context_exhausted`.
+
+### The calibration store
+
+When the HuggingFace provider loads a GGUF model, it settles a workable context size by walking a
+descending ladder of candidate `n_ctx` values and probe-decoding each rung. Where that ladder ran
+(that is, when you did not pin the context with an explicit `max_tokens`), the settled context is
+recorded to a per-machine calibration store —
+`~/.abstractcore/calibration/context_calibration.json`, directory overridable with
+`ABSTRACTCORE_CALIBRATION_DIR` — keyed by provider, model artifact, and the machine's device/RAM
+totals. Later loads of the same model on the same hardware seed the ladder with the recorded rung
+and skip the larger rungs that already failed; the seeded rung is still probed, because memory
+conditions change — a calibration entry is a hint, never a fact. Writes are atomic under a
+cross-process lock, the file is capped (oldest entries drop), and a corrupt file is abandoned and
+rebuilt: the store is a cache, not a source of truth.
+
+Where the ladder ran, the provider's residency claim — and the managed residency record served by
+the gateway — carries `context_calibrated: true` and `calibrated_context_length`.
+
+### Estimating context fit
+
+`abstractcore.utils.context_estimate.estimate_context_fit()` answers "how large a context could
+this model sustain on this host, and what would it cost in KV memory" without loading any weights:
+
+```python
+from abstractcore.utils.context_estimate import estimate_context_fit
+
+result = estimate_context_fit("ollama", "qwen3:4b", context_length=32768)
+print(result["confidence"], result.get("predicted_max_context"))
+```
+
+The same estimate is served over HTTP as
+`GET /acore/models/context_estimate?provider=&model=&context_length=`.
+
+Every answer is labeled with a `confidence`:
+
+- `"calibrated"` — a calibration entry for this provider/model/hardware exists;
+  `predicted_max_context` is the measured settled context, also reported as
+  `calibrated_context_length`. Calibration always wins over estimation.
+- `"estimated"` — computed from model geometry and the host's **memory budget**. The budget basis
+  is a real ceiling, not a blanket fraction: on Metal/MPS it is `sysctl iogpu.wired_limit_mb`
+  when set (> 0) — the wired-memory ceiling the OS actually enforces, which operators raise
+  precisely so larger models fit — else Metal's own `max_recommended_working_set_size` (via mlx
+  `device_info()`), else a stated fallback of 75% of the device/RAM total (labeled as fallback in
+  the notes); currently-allocated device memory is deducted. On CUDA the basis is
+  `torch.cuda.mem_get_info()` free bytes. A small reserve — `max(2 GiB, 5% of the basis)` — is
+  subtracted, and the `notes` array states basis and reserve so the budget (`budget_bytes`) is
+  auditable. `predicted_max_context` is the context that fits **beside the weights**:
+  `(budget - est_weights_bytes) // kv_bytes_per_token`, clamped to the model's maximum context
+  (`budget // kv_bytes_per_token` with a note when the weight size is unknown), and `null` when
+  the weights alone exceed the budget. The KV math assumes an f16 KV cache.
+- `"unknown"` — no geometry source and no calibration entry; `predicted_max_context` is `null`.
+
+Two additive tri-state verdicts split weights-fit from context-fit:
+
+- `fits_weights` — `true`/`false` when `est_weights_bytes` and the budget are both known
+  (`est_weights_bytes <= budget_bytes`), else `null`. A 93 GB quant on a ~110 GB wired-limit
+  ceiling reads `fits_weights: true` with a reduced `predicted_max_context` — never "doesn't fit".
+- `fits_requested_context` — whether weights **plus** the KV cost of the requested
+  `context_length` fit the budget; `null` when any component is unknown.
+
+The estimate is **advisory only**: no load path in AbstractCore (or the runtime/gateway layers
+above it) gates or blocks on it — a real load must still probe.
+
+Geometry sources by provider (unknown members are omitted, never guessed, and the function never
+raises):
+
+- `huggingface` — a local GGUF file's header (direct path or hub cache, `repo:selector`
+  references included) via `abstractcore.utils.model_cache.read_gguf_geometry()`, else the
+  snapshot's `config.json` via `model_geometry_for()`;
+- `mlx` — the snapshot or local-directory `config.json`;
+- `ollama` — the server's `/api/show` model metadata (short timeout, best-effort);
+- `lmstudio` — no geometry source; results stay `"unknown"` unless calibrated.
+
+Results also include the observed `memory` view (`ram_available_bytes`, `device_total_bytes`,
+`device_allocated_bytes`), `budget_bytes`, `geometry`, `kv_bytes_per_token`, `est_weights_bytes`
+(the GGUF file size or the snapshot's weight-file sum), and `est_kv_bytes` for a requested
+`context_length` — each present only when known.
+
+## Modalities and host identity on residency records
+
+Residency records served by the AbstractCore server carry two more pieces of truth:
+
+- **`modalities`** — the registry-declared modality routes for the model (for example
+  `["input.text", "input.image", "output.text"]`), from
+  `abstractcore.providers.model_capabilities.modalities_for_model()`, stamped on
+  text-generation and host-sweep records (capability-task rows such as image or TTS runtimes do
+  not carry the field). A model the registry does
+  not know is served **without** the field: absence means unknown, never "text-only". When a
+  provider instance knows its vision lane is unusable (an MLX runtime without the vision stack),
+  `input.image` is removed from that record and `modalities_note: "vision_unusable"` says why.
+- **`host_id` / `host_name`** — the identity of the machine the record was observed on, from
+  `abstractcore.utils.hostinfo.get_host_identity()` (`host_id` is a stable 12-hex hash of the
+  hostname; the function is cached and never raises). Every row served by
+  `GET /acore/models/loaded` carries them, and `get_memory_snapshot()` includes the same identity
+  as its top-level `host` block, so listings gathered from multiple machines can be merged without
+  ambiguity.
+
+## HTTP surface
+
+The AbstractCore server exposes the same visibility over HTTP (see [Server](server.md) for full
+route documentation):
+
+- `GET /acore/memory` — the host memory snapshot, including the `host` identity block and the
+  process-local and cross-process accelerator-heap device figures.
+- `GET /acore/models/loaded` — warm gateway runtimes merged with the host sweep; sweep-only rows
+  carry `source: "provider_server"`. Rows carry lock state, `modalities` where declared (text and
+  sweep rows), `host_id` / `host_name`, and the per-model memory figures
+  (`size_bytes` / `size_vram_bytes` / `est_weights_bytes` / `cache_bytes`) where known.
+- `GET /acore/models/loaded` also lists models the server process holds outside its managed
+  runtimes, including embedding models, with `runtime_id` `process:<task>:<provider>:<model>`.
+- `POST /acore/models/unload` (and `unload_after` on chat requests) — unload a runtime and eject the
+  model from every holder in the process unless another owner still claims it; the response
+  carries a `process_eject` report.
+- `POST /acore/models/lock` / `POST /acore/models/unlock` — lock or unlock a warm runtime, or adopt
+  and lock a sweep-resident one; see [Locking a model in memory](#locking-a-model-in-memory).
+- `GET /acore/models/context_estimate` — the context-fit estimate; see
+  [Estimating context fit](#estimating-context-fit).
+- `GET /acore/prompt_cache/stats` — per-key cache stats for one runtime, or an enumeration across
+  every loaded runtime when called with no selector.

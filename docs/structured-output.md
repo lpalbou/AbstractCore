@@ -24,6 +24,8 @@ AbstractCore implements structured output generation using Pydantic models with 
 
 Structured output constrains LLM responses to conform to predefined schemas, enabling direct deserialization into typed objects. AbstractCore uses Pydantic BaseModel classes to define schemas and validate responses.
 
+Over HTTP, the [server](server.md#structured-outputs-response_format) exposes the same handler through OpenAI's `response_format` (`json_object` or `json_schema`) on `POST /v1/chat/completions`, for every provider.
+
 ### Basic Example
 
 ```python
@@ -76,9 +78,9 @@ AbstractCore implements two distinct strategies for structured output generation
 
 **Characteristics**:
 - Server-side schema validation
-- Zero client-side validation retries required
-- Deterministic schema compliance
-- Optimal performance for production workloads
+- Backend schema constraints where supported
+- Client-side validation, with fallback/retry for invalid native results
+- Success and latency depend on backend, model and schema
 
 **Validation**:
 - Structured output behavior is covered by automated tests in this repo (see `tests/structured/`).
@@ -288,7 +290,8 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 
 **Installation**:
 ```bash
-pip install "abstractcore[huggingface]"  # Includes Outlines automatically
+pip install "abstractcore[apple]"   # Apple silicon; includes Outlines
+pip install "abstractcore[gpu]"     # NVIDIA / AMD; includes Outlines
 ```
 
 **Characteristics**:
@@ -337,7 +340,7 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 
 **Installation**:
 ```bash
-pip install "abstractcore[mlx]"  # Includes Outlines automatically
+pip install "abstractcore[apple]"  # Includes Outlines automatically
 ```
 
 **Models**:
@@ -741,38 +744,23 @@ Historical benchmark notes (non-authoritative) may exist under `docs/reports/`.
 
 ### Error Categories
 
-#### 1. Infrastructure Errors (Retriable)
+#### 1. Infrastructure errors and retry ownership
 
-Network failures, timeouts, server unavailability—retry with exponential backoff:
+Provider-level retry and structured-output validation retry are separate budgets. Handle
+`AbstractCoreError` and transport/backend errors at the application boundary as described in
+[API error handling](api.md#errors-and-retry-boundaries). Authentication errors require fixing
+configuration before another call. Do not add an unconditional outer retry around a provider
+that already retries.
 
-```python
-import time
-from requests.exceptions import ConnectionError, Timeout
+Use `RetryConfig.single_attempt()` when your host owns infrastructure retries, and
+`FeedbackRetry(max_attempts=1)` when it also needs one schema attempt. The default
+`FeedbackRetry` permits 3 attempts including the first. A length-cutoff response is rejected by
+default even if its JSON validates; the handler may retry with a larger output budget.
+See [bounded typed extraction](agent-usage.md#typed-extraction) for a complete example.
 
-def generate_with_retry(llm, prompt, response_model, max_retries=3):
-    """Retry infrastructure errors with exponential backoff"""
-    for attempt in range(max_retries):
-        try:
-            return llm.generate(
-                prompt,
-                response_model=response_model,
-                temperature=0
-            )
-        except (ConnectionError, Timeout) as e:
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
-                time.sleep(wait_time)
-                continue
-            raise
-
-result = generate_with_retry(llm, "Extract data...", DataModel)
-```
-
-**Retriable errors**:
-- `ConnectionError`: Network connectivity issues
-- `TimeoutError`: Request timeout
-- HTTP 5xx: Server errors
-- Token limit exceeded (retry with simplified schema or chunking)
+Known issue (2.26.4): a native response with `content=None` can raise `TypeError` while decoding
+JSON. Catch it at the extraction boundary and treat the extraction as failed. Do not replace
+missing model output with an empty object or invented fields.
 
 #### 2. Validation Errors (Non-Retriable)
 
@@ -1003,6 +991,7 @@ retry = FeedbackRetry(max_attempts=3)
 - [Getting Started](getting-started.md#structured-output) - Quick introduction
 - [API Reference](api-reference.md) - Complete API documentation
 - [Examples](examples.md#structured-output-examples) - Real-world usage patterns
+- [Server: structured outputs](server.md#structured-outputs-response_format) - `response_format` over the OpenAI-compatible API
 - [Response Model Parameter Analysis](archive/structured-response-keyword.md) - Why `response_model`
 - [Native Implementation Test Results](archive/improved-structured-response.md) - Detailed test data
 
@@ -1034,13 +1023,13 @@ pytest tests/structured -q
 
 Some provider-specific tests require additional extras:
 
-- HuggingFace / Outlines: `pip install -e ".[huggingface]"`
-- MLX: `pip install -e ".[mlx]"` (macOS + Apple Silicon only)
+- MLX, HuggingFace / Outlines: `pip install -e ".[apple,test]"` (Apple silicon)
+- vLLM, HuggingFace / Outlines: `pip install -e ".[gpu,test]"` (NVIDIA / AMD)
 
-If you're installing from PyPI and just want the test dependencies:
+For the light install plus the test tooling:
 
 ```bash
-pip install "abstractcore[test]"
+pip install -e ".[test]"
 pytest -q
 ```
 

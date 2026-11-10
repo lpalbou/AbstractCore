@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decision Models - AbstractCore</title>
+    <meta name="description" content="Decision models answer typed questions about a document with calibrated probabilities instead of generating text. AbstractCore surfaces them as the decision…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/decision-models.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Decision Models</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">Decision models answer typed questions about a document with calibrated probabilities instead of generating text. AbstractCore surfaces them as the decision output modality — text in, decisions out — behind one abstraction that does not depend on any single model or vendor:</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-a-decision-model-returns" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What a decision model returns</a>
+<a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick start</a>
+<a href="#over-http-post-v1decisions" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Over HTTP: POST /v1/decisions</a>
+<a href="#providers-models-and-formats" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Providers, models and formats</a>
+<a href="#measured-quality-and-speed" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Measured quality and speed</a>
+<a href="#limits" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Limits</a>
+<a href="#related" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related</a></div>
+
+            <div class="doc-content">
+
+<ul>
+<li><strong>Hosted</strong>: TypeSafe's Jev (<code>typesafe</code> provider) and any System One-compatible endpoint, that is
+  any server speaking the public System One decision API (<code>systemone</code> provider: a self-hosted Kev or
+  Lev process, another AbstractCore server, or another host). Nothing but <code>httpx</code>; the light install
+  is enough.</li>
+<li><strong>Local</strong>: the Kev family (pointer head on Qwen3.5), Lev (label logits on Qwen3.5-4B) and Laya
+  (ModernBERT encoder with a marker scorer), all Apache-2.0, on the <code>mlx</code> provider (Apple silicon)
+  and the <code>huggingface</code> provider (transformers, or a GGUF through llama.cpp). OpenJev-style
+  checkpoints run through the same label-logit engine (their weights are CC-BY-NC-4.0).</li>
+</ul>
+<p>The request, the answers and the HTTP surface (<code>POST /v1/decisions</code>) are the same for every one of
+them, so you switch models and providers without changing your code. Use a decision model when you
+classify, route, triage, score, or check documents and need probabilities you can threshold —
+send the uncertain cases to a human, automate the rest. Kev-4B answers several questions about a
+support ticket in about 100 ms on Apple silicon; Laya in about 50 ms on a laptop CPU/GPU; no prompt
+engineering and no output parsing.</p>
+<h2 id="what-a-decision-model-returns">What a decision model returns</h2>
+<p>One request carries one <strong>state</strong> (the document: a string, or a JSON object/array rendered as
+labelled text) and any number of named <strong>questions</strong>. Each question has one of three types:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Type</th>
+<th>You supply</th>
+<th>You get</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>choice</code></td>
+<td>1–255 named options, each with an optional description</td>
+<td>the most likely option (<code>choice</code>), <code>probabilities</code> per option, <code>confidence</code></td>
+</tr>
+<tr>
+<td><code>noul</code></td>
+<td>a statement in <code>instructions</code> (optional <code>criteria</code> describing <code>true</code> / <code>false</code>)</td>
+<td><code>noul</code>: the probability that the statement is true</td>
+</tr>
+<tr>
+<td><code>score</code></td>
+<td>1–255 ordered levels, lowest first</td>
+<td><code>score</code>: the expected level index, <code>probabilities</code> per level, <code>legend</code>, <code>confidence</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Questions never influence one another: every question is scored against the state alone. The model
+only ever scores the options you give it; it never writes an option of its own. Confidence is
+derived from the distribution (0 at uniform, 1 at certainty) and follows the System One reference
+conventions, so answers are comparable across hosted and local decision models.</p>
+<h2 id="quick-start">Quick start</h2>
+<p>Download the model once (no silent downloads: AbstractCore loads only what is on disk):</p>
+<div class="code-block"><pre><code class="language-bash"># Apple silicon (MLX) or transformers: the adapter + its base model
+abstractcore models download mlx jaredpalmer/kev-4b
+abstractcore models download mlx Qwen/Qwen3.5-4B-Base
+# or the self-contained GGUF (llama.cpp), 3 GB
+abstractcore models download huggingface &quot;ggml-org/Kev-4B-GGUF:Q4_K_M&quot;
+</code></pre></div>
+<p>Then ask:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(&quot;mlx&quot;, model=&quot;jaredpalmer/kev-4b&quot;)   # or (&quot;huggingface&quot;, model=&quot;ggml-org/Kev-4B-GGUF:Q4_K_M&quot;)
+
+ticket = &quot;Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.&quot;
+result = llm.generate(ticket, output=&quot;decision&quot;, questions={
+    &quot;department&quot;: {&quot;type&quot;: &quot;choice&quot;, &quot;instructions&quot;: &quot;Which team should handle this?&quot;,
+                   &quot;criteria&quot;: {&quot;returns&quot;: &quot;Exchanges, refunds, wrong or damaged items&quot;,
+                                &quot;shipping&quot;: &quot;Delivery status, delays, lost packages&quot;,
+                                &quot;billing&quot;: &quot;Charges, invoices, payment problems&quot;}},
+    &quot;escalate&quot;:   {&quot;type&quot;: &quot;noul&quot;, &quot;instructions&quot;: &quot;Does this need urgent human attention?&quot;},
+    &quot;frustration&quot;: {&quot;type&quot;: &quot;score&quot;, &quot;instructions&quot;: &quot;How frustrated is the customer?&quot;,
+                    &quot;criteria&quot;: [&quot;Calm&quot;, &quot;Frustrated&quot;, &quot;Very angry&quot;]},
+})
+
+result.decisions[&quot;department&quot;].choice          # &quot;returns&quot;
+result.decisions[&quot;department&quot;].probabilities   # {&quot;returns&quot;: 0.51, &quot;shipping&quot;: 0.36, &quot;billing&quot;: 0.13}
+result.decisions[&quot;escalate&quot;].noul              # 0.72
+result.decisions[&quot;frustration&quot;].score          # 1.30  (between &quot;Frustrated&quot; and &quot;Very angry&quot;)
+result.decision.to_systemone()                 # the System One response body
+</code></pre></div>
+<p>The document is read once per request and reused for every question in it, and the last four
+documents stay cached, so consecutive requests about the same document only pay for their questions
+(Kev-4B 8-bit on an M5 Max: a 6,300-token contract costs 1.4 s the first time and 0.1 s again; a
+100-token ticket 95 ms then 45 ms). <code>create_llm(..., decision_prefix_cache_size=0)</code> disables the cache,
+a larger value keeps more documents; every <code>decision_&lt;option&gt;=</code> kwarg reaches the decision loader.</p>
+<p><code>generate(..., output="decision")</code> returns a <code>MultimodalGenerateResponse</code> whose <code>decision</code> is a
+<code>DecisionResponse</code> (<code>answers</code>, <code>usage</code>, <code>latency_ms</code>) and whose <code>decisions</code> property is the answers
+keyed by question name. <code>result.content</code> is the answers as JSON, so sessions and logs that read
+text still see something meaningful. The state is the prompt; pass <code>state=</code> (any JSON) to render an
+object instead.</p>
+<p>Python shorthand is accepted for questions: a string is a <code>noul</code> statement, a list of names is a
+<code>choice</code> with no descriptions, <code>{"instructions": ..., "levels": [...]}</code> is a <code>score</code>:</p>
+<div class="code-block"><pre><code class="language-python">llm.generate(ticket, output=&quot;decision&quot;, questions={
+    &quot;team&quot;: [&quot;returns&quot;, &quot;shipping&quot;, &quot;billing&quot;],
+    &quot;urgent&quot;: &quot;Does this need urgent human attention?&quot;,
+    &quot;mood&quot;: {&quot;instructions&quot;: &quot;How frustrated is the customer?&quot;, &quot;levels&quot;: [&quot;Calm&quot;, &quot;Frustrated&quot;, &quot;Very angry&quot;]},
+})
+</code></pre></div>
+<p>A decision model has no text lane: <code>generate("hello")</code> on it raises with a pointer to
+<code>output="decision"</code>. Text generation on other models is unchanged.</p>
+<h3 id="from-any-provider-through-the-default-route">From any provider, through the default route</h3>
+<p>Set the <code>output.decision</code> capability default once and every provider instance that cannot decide
+itself (a text model) can answer <code>output="decision"</code>, the way <code>output="voice"</code> runs the configured
+voice engine. An instance whose own model is a decision model (a local Kev, or a <code>typesafe</code> /
+<code>systemone</code> instance) always answers itself unless the request names a route, so a hosted default
+never receives a document a local decision model was asked about:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore config set-default output.decision --provider mlx --model jaredpalmer/kev-4b
+</code></pre></div>
+<div class="code-block"><pre><code class="language-python">llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3.5:9b&quot;)           # a text model
+result = llm.generate(ticket, output=&quot;decision&quot;, questions={...})   # answered by the configured Kev
+</code></pre></div>
+<p>The route resolver puts the configured provider and model on the output spec; the decision lane
+runs them through the process-wide pool (<code>abstractcore.decision.pool</code>): at most two decision
+models stay loaded, the least recently used is unloaded, and the server's <code>/v1/decisions</code> shares
+the same pool, and a model a request is using is never unloaded under it. An explicit route on the
+spec wins over the default: <code>output={"modality": "decision", "provider": "mlx", "model":
+"jaredpalmer/kev-0.8b"}</code>, or a <code>provider/model</code> handle in <code>model</code> (<code>"huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M"</code>),
+while a bare <code>model</code> picks the local engine (a GGUF on huggingface, else mlx when mlx-lm is installed)
+and <code>kev-latest</code> reuses the most recently used resident model. <code>decision_*</code> route options
+(<code>decision_prefix_cache_size</code>, <code>decision_n_ctx</code>, ...) reach the loader. With no route and no
+default, a provider that is not itself a decision model raises an error that names the
+<code>set-default</code> command. The answers' <code>model</code> is always <code>provider/model</code>.</p>
+<h3 id="without-a-provider-object">Without a provider object</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.decision import load_decision_model
+
+model = load_decision_model(&quot;mlx&quot;, &quot;jaredpalmer/kev-4b&quot;)
+response = model.decide(ticket, {&quot;urgent&quot;: &quot;Does this need urgent human attention?&quot;})
+response[&quot;urgent&quot;].noul
+</code></pre></div>
+<p><code>load_decision_model(provider, model)</code> is cache-only; pass <code>allow_download=True</code> to fetch the
+snapshot (and the base model of an adapter) first.</p>
+<h2 id="over-http-post-v1decisions">Over HTTP: <code>POST /v1/decisions</code></h2>
+<p>The AbstractCore server answers decisions at <code>POST /v1/decisions</code> with the System One request and
+answer shape (the format every decision-model host shares; <code>/{provider}/v1/decisions</code> takes an
+unprefixed model). The Python shorthand works on this route too (a string question is a noul, a
+list of option names a choice); hosted System One servers take only the typed form:</p>
+<div class="code-block"><pre><code class="language-bash">curl -s http://localhost:8000/v1/decisions -H 'content-type: application/json' -d '{
+  &quot;model&quot;: &quot;mlx/jaredpalmer/kev-4b&quot;,
+  &quot;state&quot;: &quot;Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.&quot;,
+  &quot;questions&quot;: {
+    &quot;department&quot;: {&quot;type&quot;: &quot;choice&quot;, &quot;instructions&quot;: &quot;Which team should handle this?&quot;,
+                   &quot;criteria&quot;: {&quot;returns&quot;: &quot;Exchanges, refunds, wrong or damaged items&quot;,
+                                &quot;shipping&quot;: &quot;Delivery status, delays, lost packages&quot;,
+                                &quot;billing&quot;: &quot;Charges, invoices, payment problems&quot;}},
+    &quot;escalate&quot;:   {&quot;type&quot;: &quot;noul&quot;, &quot;instructions&quot;: &quot;Does this need urgent human attention?&quot;},
+    &quot;frustration&quot;: {&quot;type&quot;: &quot;score&quot;, &quot;instructions&quot;: &quot;How frustrated is the customer?&quot;,
+                    &quot;criteria&quot;: [&quot;Calm&quot;, &quot;Frustrated&quot;, &quot;Very angry&quot;]}
+  }}'
+</code></pre></div>
+<div class="code-block"><pre><code class="language-json">{&quot;model&quot;: &quot;mlx/jaredpalmer/kev-4b&quot;,
+ &quot;answers&quot;: {
+   &quot;department&quot;: {&quot;type&quot;: &quot;choice&quot;, &quot;choice&quot;: &quot;returns&quot;, &quot;confidence&quot;: 0.2681,
+                  &quot;probabilities&quot;: {&quot;returns&quot;: 0.5121, &quot;shipping&quot;: 0.3554, &quot;billing&quot;: 0.1326}},
+   &quot;escalate&quot;: {&quot;type&quot;: &quot;noul&quot;, &quot;noul&quot;: 0.7242},
+   &quot;frustration&quot;: {&quot;type&quot;: &quot;score&quot;, &quot;score&quot;: 1.3023, &quot;confidence&quot;: 0.422,
+                   &quot;legend&quot;: {&quot;0&quot;: &quot;Calm&quot;, &quot;1&quot;: &quot;Frustrated&quot;, &quot;2&quot;: &quot;Very angry&quot;},
+                   &quot;probabilities&quot;: {&quot;0&quot;: 0.0415, &quot;1&quot;: 0.6146, &quot;2&quot;: 0.3438}}},
+ &quot;usage&quot;: {&quot;input_tokens&quot;: 101, &quot;output_tokens&quot;: 181}, &quot;latency_ms&quot;: 43.4}
+</code></pre></div>
+<p><code>GET /v1/models?output_type=decision</code> lists the decision models the server can reach; each entry
+carries <code>capabilities</code> (<code>input</code> / <code>output</code>) and a <code>decision</code> object naming this endpoint. A chat
+completion against a decision model is refused with a 400 that points here: OpenAI has no shape for
+calibrated typed decisions, and the System One format is the one every decision-model host shares.</p>
+<p><code>model</code> takes <code>provider/model</code> (<code>mlx/jaredpalmer/kev-4b</code>, <code>huggingface/ggml-org/Kev-4B-GGUF:Q4_K_M</code>,
+<code>huggingface/jaredpalmer/kev-4b</code>). A bare handle picks the local engine (mlx on Apple silicon when
+mlx-lm is installed, otherwise huggingface); <code>kev-latest</code> and <code>jev-latest</code> reuse the decision model
+this server loaded most recently, else the configured <code>output.decision</code> default. The first request
+loads the model, later ones reuse it, and the server keeps the two most recently used decision
+models resident (the same pool <code>generate(output="decision")</code> uses in that process). The pool is part of
+the model residency API: <code>POST /acore/models/load</code> with <code>{"task": "decision", "model": "mlx/jaredpalmer/kev-4b"}</code>
+loads a decision model ahead of the first request, <code>GET /acore/models/loaded?task=decision</code> lists the
+resident ones (<code>process:decision:&lt;provider&gt;:&lt;model&gt;</code> rows), and <code>POST /acore/models/unload</code> releases one. Errors: 400 for an invalid
+request, 404 when the model is not downloaded, 422 when the state is over the context limit.</p>
+<h2 id="providers-models-and-formats">Providers, models and formats</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Model handle</th>
+<th>Kind</th>
+<th>Engine</th>
+<th>Needs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>typesafe</code></td>
+<td><code>jev-latest</code> (also <code>jev-preview</code>)</td>
+<td>hosted System One</td>
+<td>HTTP</td>
+<td><code>TYPESAFE_API_KEY</code></td>
+</tr>
+<tr>
+<td><code>systemone</code></td>
+<td>any id the host serves (<code>base_url=</code> required)</td>
+<td>hosted System One</td>
+<td>HTTP</td>
+<td>the host's key, if any</td>
+</tr>
+<tr>
+<td><code>mlx</code></td>
+<td><code>AbstractFramework/kev-4b-mlx-8bit</code>, <code>AbstractFramework/kev-4b-mlx-4bit</code> (ready-to-run conversions) or <code>jaredpalmer/kev-4b</code> (+ base <code>Qwen/Qwen3.5-4B-Base</code>)</td>
+<td>kev (pointer head)</td>
+<td>mlx-lm</td>
+<td><code>abstractcore[apple]</code></td>
+</tr>
+<tr>
+<td><code>mlx</code></td>
+<td><code>AbstractFramework/kev-0.8b-mlx-8bit</code>, <code>AbstractFramework/kev-0.8b-mlx-4bit</code> or <code>jaredpalmer/kev-0.8b</code> (+ base <code>Qwen/Qwen3.5-0.8B-Base</code>)</td>
+<td>kev</td>
+<td>mlx-lm</td>
+<td>the small, fast member of the family</td>
+</tr>
+<tr>
+<td><code>huggingface</code></td>
+<td><code>jaredpalmer/kev-4b</code> (+ base), a conversion</td>
+<td>kev</td>
+<td>transformers</td>
+<td><code>abstractcore[apple]</code> / <code>[gpu]</code></td>
+</tr>
+<tr>
+<td><code>huggingface</code></td>
+<td><code>ggml-org/Kev-4B-GGUF:Q4_K_M</code> / <code>Q8_0</code></td>
+<td>kev</td>
+<td>llama.cpp</td>
+<td>any released llama-cpp-python (see below)</td>
+</tr>
+<tr>
+<td><code>huggingface</code></td>
+<td><code>ggml-org/lev-GGUF:Q8_0</code> / <code>Q4_K_M</code></td>
+<td>lev (label logits)</td>
+<td>llama.cpp</td>
+<td>any released llama-cpp-python</td>
+</tr>
+<tr>
+<td><code>mlx</code> / <code>huggingface</code></td>
+<td><code>interfaze-ai/lev</code> (+ base <code>Qwen/Qwen3.5-4B</code>)</td>
+<td>lev</td>
+<td>mlx-lm / transformers</td>
+<td>the base model on disk</td>
+</tr>
+<tr>
+<td><code>huggingface</code></td>
+<td><code>convaiinnovations/laya</code> (also <code>.../multilingual</code>, <code>.../typed-decisions</code>)</td>
+<td>laya (marker scorer)</td>
+<td>transformers</td>
+<td><code>abstractcore[apple]</code> / <code>[gpu]</code>; long states scanned in overlapping 512-token windows</td>
+</tr>
+<tr>
+<td><code>mlx</code> / <code>huggingface</code></td>
+<td><code>openjev/openjev-MLX-4bit</code>, <code>ggml-org/OpenJev-GGUF:Q4_K_M</code>, <code>openjev/openjev</code></td>
+<td>openjev (letter logits)</td>
+<td>mlx-lm / llama.cpp / transformers</td>
+<td>weights are CC-BY-NC-4.0</td>
+</tr>
+</tbody>
+</table></div>
+<div class="code-block"><pre><code class="language-python"># Hosted Jev: the light install, nothing local.
+llm = create_llm(&quot;typesafe&quot;, model=&quot;jev-latest&quot;)           # TYPESAFE_API_KEY in the environment
+result = llm.generate(ticket, output=&quot;decision&quot;, questions=questions)
+
+# Any System One-compatible endpoint (here a self-hosted Kev server on this machine).
+llm = create_llm(&quot;systemone&quot;, model=&quot;kev-latest&quot;, base_url=&quot;http://localhost:8009&quot;)
+
+# Local models: the same call.
+llm = create_llm(&quot;huggingface&quot;, model=&quot;convaiinnovations/laya&quot;)
+llm = create_llm(&quot;huggingface&quot;, model=&quot;ggml-org/lev-GGUF:Q8_0&quot;)
+</code></pre></div>
+<p>The hosted route also serves <code>POST /v1/decisions</code> on the AbstractCore server with
+<code>"model": "typesafe/jev-latest"</code>, so one server can front local and hosted decision models.</p>
+<h3 id="decision-kinds">Decision kinds</h3>
+<p>A <em>kind</em> is a readout mechanism; every checkpoint of a kind shares its prompt layout and how the
+probabilities are read, and differs only in weights and calibration:</p>
+<ul>
+<li><strong>kev</strong> — five delimiter tokens pack the state and each question; a pointer head scores every
+  option's end token against the question's decide token. The state is computed once and cached;
+  each question only pays for its own tokens.</li>
+<li><strong>lev</strong> — a chat prompt lists the options under letters; the answer is read from the next-token
+  logits of the label tokens. A choice is read in two option orders and averaged; a yes/no is a
+  0–8 rating. The adapter runs at a quarter of its trained strength, as released. The tokens every
+  prompt of a request shares (system text and state) run once and are reused for every question
+  and option order, on transformers, mlx-lm and llama.cpp alike.</li>
+<li><strong>openjev</strong> — the same mechanism with one letter per option (up to 52 options) and fixed
+  temperatures.</li>
+<li><strong>laya</strong> — one bidirectional ModernBERT pass per question (<code>[CLS] question [SEP] [MASK] option …
+  [SEP] state [SEP]</code>, 512 tokens), a two-layer head and a scorer at each <code>[MASK]</code>. A state longer
+  than the room the questions leave is scanned in overlapping windows (half-window stride) and the
+  windows are combined as Laya's own runtime does: a yes/no is the maximum P(true) over windows, a
+  choice or score is the most confident window's distribution (<code>long_state="truncate"</code> reads the
+  start only). The number read is the deciding window's, not a calibration over the whole document.</li>
+<li><strong>systemone</strong> — a remote endpoint; the host decides.</li>
+</ul>
+<h3 id="artifact-layouts">Artifact layouts</h3>
+<ul>
+<li><strong>Adapter</strong> (<code>jaredpalmer/kev-4b</code>, <code>interfaze-ai/lev</code>): the published LoRA; needs its base model
+  on disk (download both). AbstractCore folds the adapter into the base at load (about a minute
+  for a 4B model).</li>
+<li><strong>Merged</strong> (an AbstractCore conversion, or a complete checkpoint such as <code>convaiinnovations/laya</code>):
+  loads directly, in transformers or mlx-lm layout, bf16 or quantized.</li>
+<li><strong>GGUF</strong> (<code>ggml-org/Kev-4B-GGUF</code>, <code>ggml-org/lev-GGUF</code>, <code>ggml-org/OpenJev-GGUF</code>): llama.cpp's
+  conversions. Lev and OpenJev read ordinary logits and run on every released llama-cpp-python.
+  Kev's GGUF carries its pointer head inside the file. On a llama-cpp-python that bundles
+  llama.cpp from 2026-10-02 or later (ggml-org/llama.cpp#29818) it loads as is; on every
+  current release AbstractCore derives once, next to its model cache, a backbone copy of the file
+  without the head (every other tensor copied byte for byte) and applies the head itself, with
+  the same numbers. Nothing to install beyond <code>abstractcore[apple]</code> / <code>[gpu]</code>; the first load of a
+  file takes a few seconds longer. (This bridge goes away with abetlen/llama-cpp-python#2398.)
+  Laya's GGUF needs llama.cpp's decision graph and is not run by AbstractCore yet; use the
+  transformers checkpoint.</li>
+</ul>
+<p>The AbstractFramework conversions on the Hub (collection <em>Decision models</em>) are these recipes applied
+to Kev-4B and Kev-0.8B: <code>kev-4b-mlx-8bit</code> (4.2 GB), <code>kev-4b-mlx-4bit</code> (3.0 GB), <code>kev-0.8b-mlx-8bit</code>
+(0.8 GB), <code>kev-0.8b-mlx-4bit</code>. Convert a Kev adapter yourself with:</p>
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.decision.convert jaredpalmer/kev-4b --runtime mlx --bits 8 --out ./kev-4b-mlx-8bit
+python -m abstractcore.decision.convert jaredpalmer/kev-4b --runtime mlx --bits 4 --group-size 32 \
+    --upgrade '{&quot;linear_attn.in_proj_qkv&quot;: 8, &quot;linear_attn.in_proj_z&quot;: 8, &quot;linear_attn.in_proj_a&quot;: 8, &quot;linear_attn.in_proj_b&quot;: 8, &quot;linear_attn.out_proj&quot;: 8}' \
+    --out ./kev-4b-mlx-4bit
+python -m abstractcore.decision.convert jaredpalmer/kev-4b --runtime transformers --out ./kev-4b
+# Kev-0.8B is more sensitive: keep the MLP gate/up projections at 8-bit as well
+python -m abstractcore.decision.convert jaredpalmer/kev-0.8b --runtime mlx --bits 4 --group-size 32 \
+    --upgrade '{&quot;linear_attn.in_proj_qkv&quot;: 8, &quot;linear_attn.in_proj_z&quot;: 8, &quot;linear_attn.in_proj_a&quot;: 8, &quot;linear_attn.in_proj_b&quot;: 8, &quot;linear_attn.out_proj&quot;: 8, &quot;mlp.gate_proj&quot;: 8, &quot;mlp.up_proj&quot;: 8}' \
+    --out ./kev-0.8b-mlx-4bit
+</code></pre></div>
+<p>The second command is the measured 4-bit recipe (group size 32, the Gated DeltaNet projections at
+8 bits): a plain 4-bit conversion of a decision model loses accuracy and shifts probabilities;
+this one keeps the accuracy and most of the calibration (table below). When calibration matters
+more than size, use 8-bit: it is indistinguishable from bf16. A converted folder is a plain model handle:
+<code>create_llm("mlx", model="./kev-4b-mlx-4bit")</code>.</p>
+<h2 id="measured-quality-and-speed">Measured quality and speed</h2>
+<p>Public development set of the Kev evaluation suite (<code>public-pool-v6</code>: 1,328 records, 1,592
+questions over banking77, AG News, MNLI, TREC, DBpedia, ARC, OpenBookQA, CommonsenseQA, BoolQ,
+SST-5 and Yelp), Kev-4B, Apple M5 Max. Accuracy is argmax accuracy over all questions; Brier and
+NLL are per question (lower is better); ECE uses 10 bins. "Agreement" and "max |Δp|" compare each
+run with the bf16 MLX reference on the same questions.</p>
+<p>| Runtime | Precision | Size | Accuracy | Brier | ECE | Agreement with bf16 | max / mean |Δp| | ms per record |
+|---|---|---|---|---|---|---|---|---|
+| mlx | bf16 (adapter merged at load) | 7.9 GB | 0.846 | 0.227 | 0.024 | — | — | 117 |
+| mlx | bf16 (merged checkpoint) | 7.9 GB | 0.846 | 0.227 | 0.024 | 1.000 | 0.000 / 0.000 | 169 |
+| mlx | 8-bit (group 64) | 4.2 GB | 0.846 | 0.227 | 0.025 | 0.997 | 0.07 / 0.004 | 136 |
+| mlx | 4-bit (group 64, every linear) | 2.2 GB | 0.837 | 0.232 | 0.026 | 0.954 | 0.92 / 0.038 | 117 |
+| llama.cpp | Q4_K_M | 3.0 GB | 0.845 | 0.225 | 0.025 | 0.981 | 0.30 / 0.018 | 398 |
+| mlx | 4-bit mixed (group 32, DeltaNet projections 8-bit) | 3.0 GB | 0.847 | 0.226 | 0.024 | 0.973 | 0.34 / 0.023 | 113 |
+| llama.cpp | Q8_0 | 4.5 GB | 0.844 | 0.227 | 0.022 | 0.995 | 0.07 / 0.003 | 225 |
+| transformers | bf16 (MPS, 300 records) | 7.9 GB | 0.909<em> | 0.154</em> | 0.019<em> | 1.000</em> | 0.06 / 0.002* | 755 |
+| Kev-0.8B mlx | bf16 | 1.6 GB | 0.763 | 0.321 | 0.030 | — | — | 30 |
+| Kev-0.8B mlx | 8-bit | 0.8 GB | 0.761 | 0.321 | 0.025 | 0.990 (vs its bf16) | 0.006 / — | 24 |
+| Kev-0.8B mlx | 4-bit mixed (group 32, DeltaNet and MLP gate/up at 8-bit) | 0.65 GB | 0.754 | 0.331 | 0.024 | 0.960 (vs its bf16) | 0.028 / — | 24 |</p>
+<p>Rows marked * were measured on the first 300 records (460 questions) of the same set; on that
+subset the full-set runs read: bf16 0.909 accuracy; 8-bit 0.909 / agreement 1.000; plain 4-bit
+0.902 / 0.972 / mean |Δp| 0.030; Q4_K_M 0.904 / 0.991 / 0.014.</p>
+<p>"ms per record" is the whole request for a new state (its tokens plus one to three questions);
+a repeated state only pays for its questions (Kev-4B on MLX: about 45 ms for three questions).
+Latency on transformers reflects PyTorch's reference Gated DeltaNet kernels on MPS; on CUDA with
+the fused kernels installed it is several times faster.</p>
+<h3 id="small-benchmark-kev-lev-laya-and-hosted-jev-on-the-same-questions">Small benchmark: Kev, Lev, Laya and hosted Jev on the same questions</h3>
+<p>A source-balanced slice of the same public pool: the first 10 records of each of its 13 sources
+(130 records, 160 questions: 115 choice, 30 noul, 15 score; banking77, BoolQ, AG News, MNLI, SST-5,
+Yelp, TREC, DBpedia, Amazon, IMDb, ARC, OpenBookQA, CommonsenseQA). States are short: median 30
+tokens, mean 59, maximum 313 (see the length ladder below for long documents). Every model
+answered the same requests through AbstractCore; Jev through the <code>typesafe</code> provider (model <code>jev-1.14.0</code> on
+2026-11-01). Accuracy is argmax accuracy; Brier, NLL and ECE (10 bins) are per question, lower is
+better. Keep in mind that several of these sources are in Kev's and Lev's training data and that
+130 records is a small sample (one question is 0.6 points).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Provider / precision</th>
+<th>Accuracy</th>
+<th>Brier</th>
+<th>NLL</th>
+<th>ECE</th>
+<th>choice / noul / score accuracy</th>
+<th>ms per record</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Jev (hosted)</td>
+<td>typesafe, <code>jev-1.14.0</code></td>
+<td>0.844</td>
+<td>0.267</td>
+<td>1.076</td>
+<td>0.099</td>
+<td>0.86 / 0.88 / 0.73</td>
+<td>164 (network included)</td>
+</tr>
+<tr>
+<td>Kev-4B</td>
+<td>mlx 4-bit mixed</td>
+<td>0.825</td>
+<td>0.255</td>
+<td>0.549</td>
+<td>0.066</td>
+<td>0.88 / 0.92 / 0.53</td>
+<td>113</td>
+</tr>
+<tr>
+<td>Lev</td>
+<td>llama.cpp Q4_K_M</td>
+<td>0.825</td>
+<td>0.295</td>
+<td>0.701</td>
+<td>0.098</td>
+<td>0.88 / 0.88 / 0.60</td>
+<td>180</td>
+</tr>
+<tr>
+<td>Kev-4B</td>
+<td>llama.cpp Q4_K_M</td>
+<td>0.812</td>
+<td>0.257</td>
+<td>0.554</td>
+<td>0.064</td>
+<td>0.85 / 0.92 / 0.53</td>
+<td>398</td>
+</tr>
+<tr>
+<td>Lev</td>
+<td>mlx bf16</td>
+<td>0.812</td>
+<td>0.304</td>
+<td>0.719</td>
+<td>0.104</td>
+<td>0.85 / 0.86 / 0.63</td>
+<td>711</td>
+</tr>
+<tr>
+<td>Kev-4B</td>
+<td>mlx bf16</td>
+<td>0.806</td>
+<td>0.259</td>
+<td>0.564</td>
+<td>0.070</td>
+<td>0.85 / 0.90 / 0.53</td>
+<td>117</td>
+</tr>
+<tr>
+<td>Kev-4B</td>
+<td>mlx 8-bit</td>
+<td>0.806</td>
+<td>0.260</td>
+<td>0.564</td>
+<td>0.076</td>
+<td>0.85 / 0.90 / 0.53</td>
+<td>136</td>
+</tr>
+<tr>
+<td>Kev-0.8B</td>
+<td>mlx bf16</td>
+<td>0.762</td>
+<td>0.326</td>
+<td>0.643</td>
+<td>0.053</td>
+<td>0.75 / 0.92 / 0.53</td>
+<td>30</td>
+</tr>
+<tr>
+<td>Laya</td>
+<td>transformers fp32 (start of the state only)</td>
+<td>0.656</td>
+<td>0.553</td>
+<td>1.905</td>
+<td>0.188</td>
+<td>0.55 / 0.86 / 0.60</td>
+<td>49</td>
+</tr>
+</tbody>
+</table></div>
+<p>What the numbers say: the hosted model is the most accurate and the strongest on ordinal
+(<code>score</code>) questions; the 4B local models are within two points of it on choice and yes/no questions
+and are better calibrated (lower Brier and NLL); Laya is six times faster and much smaller but
+weakens on long option lists (its 512-token sequence caps each option at a few tokens when a
+question has dozens of them). On a slice dominated by 77-way intent questions (the pool's first 100
+records) Laya drops to 0.46 while Kev and Lev score 0.89 and Jev 0.84.</p>
+<p>The same support ticket, every model:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>department (returns / shipping / billing)</th>
+<th>escalate</th>
+<th>frustration (expected level)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Jev (hosted)</td>
+<td>returns 0.66 / 0.11 / 0.23</td>
+<td>0.68</td>
+<td>1.01</td>
+</tr>
+<tr>
+<td>Kev-4B (mlx bf16)</td>
+<td>returns 0.51 / 0.36 / 0.13</td>
+<td>0.72</td>
+<td>1.30</td>
+</tr>
+<tr>
+<td>Lev (llama.cpp Q4_K_M)</td>
+<td>shipping 0.25 / 0.72 / 0.03</td>
+<td>0.99</td>
+<td>1.78</td>
+</tr>
+<tr>
+<td>Lev (mlx bf16, full strength)</td>
+<td>returns 0.51 / 0.45 / 0.04</td>
+<td>0.99</td>
+<td>1.81</td>
+</tr>
+<tr>
+<td>Laya (transformers)</td>
+<td>shipping 0.28 / 0.40 / 0.32</td>
+<td>0.12</td>
+<td>1.10</td>
+</tr>
+</tbody>
+</table></div>
+<p>Lev's release manifest applies its adapter at a quarter of its trained strength (the author's
+benchmark setting) while llama.cpp's GGUF conversion merges it at full strength; on this pool the
+full-strength weights score higher (0.89 vs 0.80 on the first 100 records), so the <code>mlx</code> /
+<code>huggingface</code> adapter path accepts <code>adapter_scale=</code> (default: the manifest's 0.25; pass 1.0 to
+match the GGUF). Parity checks against the authors' own runtimes: Kev within 0.006 on the example
+and 0.028 max over 40 questions; Laya identical on the example and 0.056 max over 30 questions.</p>
+<h3 id="length-ladder-1k-to-16k-token-documents">Length ladder: 1k to 16k-token documents</h3>
+<p>Two document types, each with its own questions, bucketed by how long the document is:</p>
+<ul>
+<li><strong>Contracts</strong> (CUAD: real commercial contracts with expert clause annotations): "does this contract
+  contain a clause of type X?" (yes/no, one present and one absent per contract) and "which of these
+  four clause types is present?" (choice). Buckets of 1k, 2k, 4k, 8k and 16k tokens.</li>
+<li><strong>Reading</strong> (QuALITY: long articles with multiple-choice comprehension questions written for them):
+  two 4-option questions per article. Buckets of 2k, 4k and 8k tokens.</li>
+</ul>
+<p>The summary first (mean accuracy over the buckets of each task; seconds per document, all its questions
+in one request; Jev over the network, local models on an M5 Max). Every local row runs with the state
+cache described above: within a request the document is read once for all its questions, on every
+engine and backend (Kev on transformers, mlx-lm and llama.cpp; Lev on the same three); the ladder
+measures first requests, so these are cold costs, and a second request about the same document costs
+only its questions. Laya is a bidirectional encoder with nothing to cache; its long-state mode is the
+windowed scan.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Contracts, accuracy</th>
+<th>Reading, accuracy</th>
+<th>Seconds per document at 2k / 8k / 16k</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Jev hosted (jev-1.14.0)</td>
+<td>0.88</td>
+<td>0.94</td>
+<td>0.2 / 0.2 / 0.3</td>
+</tr>
+<tr>
+<td>Kev-4B (mlx bf16)</td>
+<td>0.88</td>
+<td>0.78</td>
+<td>0.7 / 3.6 / 5.2</td>
+</tr>
+<tr>
+<td>Kev-4B (mlx 4-bit)</td>
+<td>0.87</td>
+<td>0.78</td>
+<td>1.1 / 3.4 / 7.6</td>
+</tr>
+<tr>
+<td>Kev-4B (llama.cpp Q4_K_M)</td>
+<td>0.87</td>
+<td>0.80</td>
+<td>1.5 / 4.9 / 11.1</td>
+</tr>
+<tr>
+<td>Lev (llama.cpp Q4_K_M)</td>
+<td>0.84</td>
+<td>0.78</td>
+<td>1.3 / 4.2 / 8.7</td>
+</tr>
+<tr>
+<td>Kev-0.8B (mlx bf16)</td>
+<td>0.77</td>
+<td>0.51</td>
+<td>0.1 / 0.6 / 1.3</td>
+</tr>
+<tr>
+<td>Kev-0.8B (mlx 4-bit)</td>
+<td>0.76</td>
+<td>0.48</td>
+<td>0.1 / 0.4 / 0.9</td>
+</tr>
+<tr>
+<td>Laya (windowed)</td>
+<td>0.48</td>
+<td>0.26</td>
+<td>3.4 / 10.0 / 26.1</td>
+</tr>
+<tr>
+<td>Laya (start of the document only)</td>
+<td>0.40</td>
+<td>0.26</td>
+<td>0.1 / 0.1 / 0.2</td>
+</tr>
+</tbody>
+</table></div>
+<p>In one sentence each: the hosted model is the only one that reads long articles well and it answers in
+a fraction of a second whatever the length; the 4B local models equal it on contract clauses up to 16k
+tokens but pay one to eleven seconds to read a long document (once per document, see the cache below);
+Kev-0.8B is the fast local option, good on contract clauses, weak on reading comprehension; Laya does not
+handle long documents. The detailed per-bucket tables follow.</p>
+<p>The small benchmark above uses short states (median 30 tokens, maximum 313). This one uses whole
+documents bucketed by their natural token length, nothing padded or truncated: CUAD contracts
+(CC-BY-4.0, expert clause annotations) at 1k, 2k, 4k, 8k and 16k tokens with, per contract, one
+present-clause and one absent-clause yes/no question and a 4-way "which clause type is present"
+question; and QuALITY articles (CC-BY-4.0, Project Gutenberg texts) at 2k, 4k and 8k tokens with
+two 4-option comprehension questions each. 87 documents, 229 questions (7 to 12 documents per
+bucket; bucket bands 500–1.3k, 1.3k–2.6k, 3k–4.3k, 6.2k–8.6k, 12.5k–17k state tokens). Accuracy /
+Brier / milliseconds per document (every question of the document in one request; Jev over the
+network). Laya is listed in both of its modes: reading the start of the document only (512 tokens), and
+scanning it in overlapping windows as its runtime does; neither reaches the decoder models on
+these tasks, and the windowed scan costs about one forward pass per 150 tokens per question.</p>
+<p>Contract clause questions (CUAD):</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>1k (21 q)</th>
+<th>2k (36 q)</th>
+<th>4k (36 q)</th>
+<th>8k (36 q)</th>
+<th>16k (36 q)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Jev hosted (jev-1.14.0)</td>
+<td>0.95 / 0.05 / 155</td>
+<td>0.89 / 0.14 / 157</td>
+<td>0.89 / 0.19 / 184</td>
+<td>0.75 / 0.33 / 223</td>
+<td>0.94 / 0.09 / 307</td>
+</tr>
+<tr>
+<td>Kev-4B (mlx bf16)</td>
+<td>0.95 / 0.14 / 301</td>
+<td>0.86 / 0.20 / 643</td>
+<td>0.83 / 0.25 / 1236</td>
+<td>0.83 / 0.27 / 2236</td>
+<td>0.94 / 0.18 / 5222</td>
+</tr>
+<tr>
+<td>Laya (transformers, start of the state only)</td>
+<td>0.48 / 0.70 / 190</td>
+<td>0.47 / 0.65 / 149</td>
+<td>0.36 / 0.72 / 151</td>
+<td>0.36 / 0.75 / 153</td>
+<td>0.31 / 0.74 / 248</td>
+</tr>
+<tr>
+<td>Lev (llama.cpp Q4_K_M)</td>
+<td>0.90 / 0.19 / 843</td>
+<td>0.92 / 0.14 / 1204</td>
+<td>0.75 / 0.41 / 1972</td>
+<td>0.78 / 0.36 / 3584</td>
+<td>0.86 / 0.16 / 8747</td>
+</tr>
+<tr>
+<td>Kev-4B (mlx 4-bit)</td>
+<td>0.95 / 0.13 / 594</td>
+<td>0.86 / 0.20 / 1039</td>
+<td>0.81 / 0.26 / 1923</td>
+<td>0.81 / 0.29 / 3446</td>
+<td>0.94 / 0.17 / 7583</td>
+</tr>
+<tr>
+<td>Kev-0.8B (mlx bf16)</td>
+<td>0.86 / 0.31 / 121</td>
+<td>0.75 / 0.33 / 119</td>
+<td>0.81 / 0.39 / 308</td>
+<td>0.64 / 0.44 / 697</td>
+<td>0.81 / 0.40 / 1342</td>
+</tr>
+<tr>
+<td>Kev-0.8B (mlx 4-bit)</td>
+<td>0.81 / 0.32 / 74</td>
+<td>0.78 / 0.32 / 112</td>
+<td>0.81 / 0.38 / 193</td>
+<td>0.61 / 0.45 / 375</td>
+<td>0.78 / 0.40 / 945</td>
+</tr>
+<tr>
+<td>Laya (transformers, windowed)</td>
+<td>0.52 / 0.52 / 1916</td>
+<td>0.50 / 0.68 / 4034</td>
+<td>0.47 / 0.71 / 7010</td>
+<td>0.50 / 0.77 / 11898</td>
+<td>0.42 / 0.88 / 26119</td>
+</tr>
+<tr>
+<td>Kev-4B (llama.cpp Q4_K_M, released binding)</td>
+<td>0.86 / 0.15 / 757</td>
+<td>0.92 / 0.19 / 1474</td>
+<td>0.83 / 0.25 / 2593</td>
+<td>0.81 / 0.29 / 4570</td>
+<td>0.92 / 0.18 / 11060</td>
+</tr>
+</tbody>
+</table></div>
+<p>Reading comprehension (QuALITY):</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>2k (16 q)</th>
+<th>4k (24 q)</th>
+<th>8k (24 q)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Jev hosted (jev-1.14.0)</td>
+<td>1.00 / 0.01 / 233</td>
+<td>0.92 / 0.13 / 218</td>
+<td>0.92 / 0.09 / 188</td>
+</tr>
+<tr>
+<td>Kev-4B (mlx bf16)</td>
+<td>0.94 / 0.18 / 787</td>
+<td>0.71 / 0.34 / 1923</td>
+<td>0.71 / 0.48 / 5540</td>
+</tr>
+<tr>
+<td>Laya (transformers, start of the state only)</td>
+<td>0.19 / 0.85 / 133</td>
+<td>0.38 / 0.76 / 105</td>
+<td>0.21 / 0.79 / 108</td>
+</tr>
+<tr>
+<td>Lev (llama.cpp Q4_K_M)</td>
+<td>0.88 / 0.17 / 1453</td>
+<td>0.75 / 0.44 / 2574</td>
+<td>0.71 / 0.49 / 5160</td>
+</tr>
+<tr>
+<td>Kev-4B (mlx 4-bit)</td>
+<td>0.94 / 0.17 / 1142</td>
+<td>0.71 / 0.36 / 1709</td>
+<td>0.71 / 0.48 / 3353</td>
+</tr>
+<tr>
+<td>Kev-0.8B (mlx bf16)</td>
+<td>0.69 / 0.48 / 203</td>
+<td>0.50 / 0.61 / 268</td>
+<td>0.33 / 0.77 / 544</td>
+</tr>
+<tr>
+<td>Kev-0.8B (mlx 4-bit)</td>
+<td>0.69 / 0.52 / 150</td>
+<td>0.42 / 0.63 / 207</td>
+<td>0.33 / 0.77 / 430</td>
+</tr>
+<tr>
+<td>Laya (transformers, windowed)</td>
+<td>0.19 / 0.90 / 2003</td>
+<td>0.29 / 0.90 / 3088</td>
+<td>0.29 / 0.93 / 7113</td>
+</tr>
+<tr>
+<td>Kev-4B (llama.cpp Q4_K_M, released binding)</td>
+<td>0.94 / 0.17 / 1639</td>
+<td>0.75 / 0.32 / 2676</td>
+<td>0.71 / 0.51 / 5286</td>
+</tr>
+</tbody>
+</table></div>
+<p>What the ladder says: the hosted model holds its accuracy across the whole range and stays flat in
+latency; the 4B local models match it on clause presence up to 16k tokens (within the noise of a
+few dozen questions) but lose reading comprehension beyond 4k, where their authors' training states
+stopped. Kev-0.8B is four times faster than Kev-4B at every length (1.3 s for a 16k-token contract)
+and keeps most of the clause-presence accuracy, but not reading comprehension past 2k. On every
+local engine the state is read once per request and reused for all its questions and option orders
+(the pointer-head cache for Kev, the shared prompt prefix for Lev), so a second request about the
+same document only pays for its questions; Kev-4B's 4-bit checkpoint keeps the bf16 accuracy at a
+somewhat higher prefill cost on MLX. Local latency grows linearly with the document: a 16k-token contract costs
+about five seconds on an M5 Max, once per document, after which more questions about it cost tens
+of milliseconds.</p>
+<h3 id="how-to-read-the-numbers">How to read the numbers</h3>
+<ul>
+<li>Argmax agreement with the bf16 run is what a classifier or router sees; |Δp| is what a
+  threshold sees. 8-bit (MLX or Q8_0) is indistinguishable from bf16. The official Q4_K_M GGUF
+  and the mixed MLX 4-bit recipe keep the accuracy; a few percent of their answers move by more
+  than 0.10 against bf16, so prefer 8-bit when you threshold probabilities. The plain 4-bit
+  recipe (every linear at 4 bits, group 64) loses a point of accuracy and moves a tenth of the
+  answers by more than 0.10; it is not offered.</li>
+<li>The Kev model card reports its own figures for Kev-4B (new-source accuracy 0.82–0.84,
+  trained-source 0.87) on the author's evaluation suites; they are not reproduced here. The tables
+  above are measured on the public pool, which mixes trained and new sources.</li>
+</ul>
+<h2 id="limits">Limits</h2>
+<ul>
+<li>Kev and Lev are English only (Laya ships a multilingual checkpoint); knowledge questions are bounded by the 4B base (the author reports MMLU-Pro 0.59
+  for Kev-9B against 0.84 for Jev).</li>
+<li>A state may hold up to 65,536 tokens and each question row 8,192 tokens more; an over-long state
+  is refused (<code>ContextOverflow</code>, HTTP 422) unless you ask to <code>truncate</code>. The author trained on
+  states up to 7,552 tokens, so accuracy on much longer documents is not characterised.</li>
+<li>Changing the order of a question's options can change its answer; keep option order stable
+  when you compare runs.</li>
+<li>Calibration is the author's: one temperature per checkpoint for Kev (2.41 for Kev-4B), per
+  question type and option count for Lev and Laya; a temperature never changes which option ranks
+  first. A hosted model's calibration is the host's.</li>
+<li>Decision models never generate text: <code>response_model=</code>, tools, streaming and media inputs do
+  not apply to <code>output="decision"</code>.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="capabilities.html">Capabilities</a> — the other <code>generate(..., output=...)</code> modalities</li>
+<li><a href="api.html">API (Python)</a> — <code>generate</code>, <code>MultimodalGenerateResponse</code></li>
+<li><a href="server.html">Server</a> — <code>POST /v1/decisions</code></li>
+<li><a href="models.html">Local Models</a> — downloading and listing weights</li>
+<li><code>abstractcore/assets/model_capabilities.json</code> — the <code>kev-*</code> entries (<code>capability_routes.output: ["decision"]</code>)</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

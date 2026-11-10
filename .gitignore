@@ -6,7 +6,7 @@ abstractcore.egg-info
 dist
 build
 tests
-abstractcore
+/abstractcore
 logs
 test_logs
 tests

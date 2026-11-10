@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reasoning Control - AbstractCore</title>
+    <meta name="description" content="AbstractCore exposes one parameter — thinking= — for every provider that can reason, and maps it to whatever control surface each backend actually honors.…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/reasoning-control.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Reasoning Control</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore exposes one parameter — thinking= — for every provider that can reason, and maps it to whatever control surface each backend actually honors. This page explains what you can request, what each provider does with the request, and how to verify from the response that your request took effect.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#request-a-reasoning-mode" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Request a reasoning mode</a>
+<a href="#precedence" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Precedence</a>
+<a href="#what-each-provider-sends" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What each provider sends</a>
+<a href="#model-requirements" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Model requirements</a>
+<a href="#verify-what-actually-happened" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Verify what actually happened</a>
+<a href="#requests-that-fall-back" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Requests that fall back</a>
+<a href="#reasoning-control-and-prompt-caching" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Reasoning control and prompt caching</a>
+<a href="#related-documentation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related documentation</a></div>
+
+            <div class="doc-content">
+
+<p>For the wider parameter vocabulary (<code>temperature</code>, <code>top_p</code>, <code>max_output_tokens</code>, …) see
+<a href="generation-parameters.html">Generation Parameters</a>. For the registry fields referenced here,
+see <code>abstractcore/assets/README.md</code>.</p>
+<h2 id="request-a-reasoning-mode">Request a reasoning mode</h2>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3.8-27B-4bit&quot;)
+
+llm.generate(&quot;Plan the migration&quot;, thinking=None)      # model/server default
+llm.generate(&quot;Plan the migration&quot;, thinking=&quot;off&quot;)     # no reasoning (&quot;none&quot; is an alias)
+llm.generate(&quot;Plan the migration&quot;, thinking=&quot;on&quot;)      # reasoning enabled, model default depth
+llm.generate(&quot;Plan the migration&quot;, thinking=&quot;low&quot;)     # brief reasoning
+llm.generate(&quot;Plan the migration&quot;, thinking=&quot;medium&quot;)  # balanced
+llm.generate(&quot;Plan the migration&quot;, thinking=&quot;xhigh&quot;)   # deepest, when the model offers it
+</code></pre></div>
+<p>Accepted values: <code>None</code> / <code>"auto"</code>, <code>True</code> / <code>"on"</code>, <code>False</code> / <code>"off"</code> / <code>"none"</code>, and the
+levels <code>"minimal"</code>, <code>"low"</code>, <code>"medium"</code>, <code>"high"</code>, <code>"xhigh"</code> (<code>"extra high"</code> is an alias for
+<code>"xhigh"</code>).</p>
+<p>When a model advertises a specific effort enum, a level outside that enum is mapped to the
+nearest supported one and the substitution is reported as a <code>RuntimeWarning</code>. Requesting
+<code>"high"</code> from a model offering <code>low | medium | xhigh</code> therefore runs at <code>medium</code>.</p>
+<p>Reasoning text, when the model emits it, is available as <code>response.reasoning</code>, and
+<code>response.content</code> stays clean.</p>
+<h2 id="precedence">Precedence</h2>
+<p>Several things can set the reasoning of one call. The first that applies wins:</p>
+<ol>
+<li><strong><code>thinking=</code> on the call.</strong> <code>thinking="auto"</code> (or <code>None</code> passed through an API that
+   distinguishes it) means "no control": nothing is sent and no configured default is added.</li>
+<li><strong>A provider-native reasoning field on the call</strong>: <code>reasoning_effort=</code>, <code>reasoning=</code>
+   (LM Studio's native endpoint, OpenRouter's object), or <code>think=</code> (Ollama). It is sent as
+   given, without level mapping.</li>
+<li><strong>The reasoning effort configured on the text route</strong> (<code>abstractcore config set-default
+   input.text --reasoning &lt;level&gt;</code>, or the gateway console). It applies only when the route
+   describes the instance serving the call: the same provider, or the same endpoint profile
+   (<code>endpoint:&lt;id&gt;</code>), and the same model. A route that sets only a reasoning effort, with no
+   provider or model, applies to every instance. An effort configured for another backend is
+   not a fact about this one, so it is not applied.</li>
+<li><strong>Nothing.</strong> The model or server default stays in effect.</li>
+</ol>
+<p>Before 2026-10-25, step 3 applied to every call that did not pass <code>thinking=</code>. A machine
+configured with <code>reasoning: minimal</code> for one route therefore sent <code>reasoning_effort: "low"</code>
+for <code>generate(..., reasoning_effort="high")</code> and on unrelated models.</p>
+<p><code>response.metadata["thinking_source"]</code> records which step applied: <code>"thinking"</code>,
+<code>"reasoning_effort"</code> (a raw field), or <code>"configured_default"</code>. For a raw <code>reasoning_effort=</code>,
+<code>thinking_requested</code> is the value you passed (<code>"none"</code> reads as <code>"off"</code>). <code>thinking_effective</code>
+repeats it only on providers that forward the field verbatim (OpenAI and the OpenAI-compatible
+family, LM Studio and vLLM included). OpenRouter is excluded, because it documents a
+<code>reasoning</code> object rather than a top-level <code>reasoning_effort</code>. The route summary in
+<code>response.metadata["_resolved_generate_route"]</code> reports a configured effort that was not applied
+as <code>reasoning: None</code>, with <code>reasoning_source</code> set to <code>not_applied:&lt;reason&gt;</code>.</p>
+<p>When a call passes both <code>thinking=</code> and <code>reasoning_effort=</code>, providers differ. OpenAI and
+generic OpenAI-compatible servers send the <code>thinking=</code> mapping in place of your field. LM Studio
+sends your field. vLLM and OpenRouter send your top-level field next to their own mapping
+(<code>chat_template_kwargs</code>, or the <code>reasoning</code> object), so the server decides between them. Pass
+one or the other.</p>
+<h2 id="what-each-provider-sends">What each provider sends</h2>
+<p>Two things are controlled separately: whether the model reasons at all, and how deeply.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Enable / disable</th>
+<th>Effort level</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OpenAI</td>
+<td><code>reasoning_effort</code> (<code>"none"</code> when the model accepts it)</td>
+<td><code>reasoning_effort</code></td>
+</tr>
+<tr>
+<td>Anthropic</td>
+<td><code>thinking</code> block</td>
+<td><code>output_config.effort</code> (adaptive models) or a thinking budget</td>
+</tr>
+<tr>
+<td>LM Studio</td>
+<td>top-level <code>reasoning_effort</code>: <code>"none"</code> for off, a non-<code>"none"</code> value for on</td>
+<td>top-level <code>reasoning_effort</code> with the model's declared level</td>
+</tr>
+<tr>
+<td>OpenAI-compatible servers</td>
+<td><code>chat_template_kwargs.&lt;template switch&gt;</code> when the server accepts template kwargs; otherwise <code>reasoning_effort</code> for models that declare levels</td>
+<td><code>chat_template_kwargs.&lt;effort kwarg&gt;</code>, or <code>reasoning_effort</code> for models with no template surface</td>
+</tr>
+<tr>
+<td>vLLM</td>
+<td>top-level <code>chat_template_kwargs.&lt;template switch&gt;</code>, or <code>reasoning_effort</code> for models that declare levels and no switch</td>
+<td><code>chat_template_kwargs.&lt;effort kwarg&gt;</code> or <code>reasoning_effort</code>; <code>thinking_token_budget</code> as a best-effort cap</td>
+</tr>
+<tr>
+<td>OpenRouter</td>
+<td><code>reasoning: {"effort": "none"}</code> / <code>reasoning: {"enabled": true}</code></td>
+<td><code>reasoning: {"effort": &lt;level&gt;}</code></td>
+</tr>
+<tr>
+<td>Portkey</td>
+<td>not mapped: the backend behind a config is unknown, so no control is sent and a warning says so</td>
+<td>not mapped</td>
+</tr>
+<tr>
+<td>MLX</td>
+<td>no-think prefill placed at the generation boundary of the rendered prompt</td>
+<td>the template's own effort instruction rendered into the system block</td>
+</tr>
+<tr>
+<td>HuggingFace (transformers)</td>
+<td><code>enable_thinking</code> passed to <code>apply_chat_template</code></td>
+<td>the effort kwarg passed to <code>apply_chat_template</code>; the cached renderer writes the effort instruction into the system block</td>
+</tr>
+<tr>
+<td>HuggingFace (GGUF)</td>
+<td>no-think prefill placed by the local renderer at the generation boundary</td>
+<td>the model's embedded template rendered with the effort kwarg, or the effort instruction written into the system block for plain ChatML builds</td>
+</tr>
+<tr>
+<td>Ollama</td>
+<td><code>think</code></td>
+<td><code>think</code> level for GPT-OSS; other models run with reasoning enabled</td>
+</tr>
+<tr>
+<td>GPT-OSS (Harmony)</td>
+<td><code>Reasoning:</code> system line (traces cannot be fully disabled)</td>
+<td><code>Reasoning: low \| medium \| high</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="per-model-family">Per model family</h3>
+<p>The registry decides which surface a model has; the provider decides how it travels. The
+table shows what reaches the server for <code>thinking="on"</code> / <code>"off"</code> / <code>"high"</code>.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model family (registry)</th>
+<th>LM Studio</th>
+<th>vLLM</th>
+<th>MLX / HF transformers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3.5 / 3.6, Laguna, Qwen3 (<code>template_kwarg</code>, assistant prefill; no levels)</td>
+<td><code>reasoning_effort</code> <code>medium</code> / <code>none</code> / <code>medium</code> (reported as <code>on</code>)</td>
+<td><code>chat_template_kwargs.enable_thinking</code> true / false / true, plus <code>thinking_token_budget</code> for a level (reported as <code>on</code>)</td>
+<td>template switch; MLX also the no-think prefill</td>
+</tr>
+<tr>
+<td>Qwen3.8 (<code>template_kwarg</code>, <code>effort_template_kwarg</code>, levels <code>low\|medium\|xhigh</code>)</td>
+<td><code>reasoning_effort</code> <code>medium</code> / <code>none</code> / <code>medium</code> (nearest level, warned)</td>
+<td><code>enable_thinking</code> plus <code>reasoning_effort</code> template kwarg</td>
+<td>switch plus the template's effort sentence</td>
+</tr>
+<tr>
+<td>HY V3 / Hy-Memory (effort switch, levels <code>low\|high</code>)</td>
+<td><code>reasoning_effort</code> <code>high</code> / <code>none</code> / <code>high</code></td>
+<td><code>chat_template_kwargs.reasoning_effort</code> <code>high</code> / <code>no_think</code> / <code>high</code></td>
+<td>the effort variable <code>no_think\|low\|high</code></td>
+</tr>
+<tr>
+<td>Gemma 4, Nemotron, GLM-5, LongCat (<code>template_kwarg</code> only)</td>
+<td><code>reasoning_effort</code> <code>medium</code> / <code>none</code> / <code>medium</code> (reported as <code>on</code>)</td>
+<td><code>chat_template_kwargs.enable_thinking</code>; Nemotron <code>low_effort</code> for <code>low</code>/<code>minimal</code></td>
+<td>HF: template switch; MLX: not mapped (warns)</td>
+</tr>
+<tr>
+<td>DeepSeek V4, Mistral Small 4 (levels incl. <code>none</code>, no template surface)</td>
+<td><code>reasoning_effort</code> <code>high</code> / <code>none</code> / <code>high</code></td>
+<td><code>reasoning_effort</code></td>
+<td>not mapped (warns)</td>
+</tr>
+<tr>
+<td>GPT-OSS (Harmony, levels <code>low\|medium\|high</code>)</td>
+<td><code>Reasoning:</code> system line plus <code>reasoning_effort</code></td>
+<td><code>reasoning_effort</code> (vLLM builds the Harmony system message from it) plus the system line</td>
+<td><code>Reasoning:</code> system line</td>
+</tr>
+<tr>
+<td>GLM-4.6V (<code>prompt_disable_token</code> only)</td>
+<td><code>/nothink</code> appended for off; on not mapped (warns)</td>
+<td><code>/nothink</code> for off; on not mapped</td>
+<td><code>/nothink</code> for off</td>
+</tr>
+<tr>
+<td>Kimi K2.6 (<code>request_param: thinking</code>), surface-less reasoning models</td>
+<td>not mapped (warns)</td>
+<td>not mapped (warns)</td>
+<td>not mapped (warns)</td>
+</tr>
+</tbody>
+</table></div>
+<p>"Not mapped" means no control artifact is sent, <code>thinking_effective</code> is absent, and a
+<code>RuntimeWarning</code> states that the model or server default stays in effect.</p>
+<h3 id="lm-studio-facts">LM Studio facts</h3>
+<p>LM Studio's OpenAI-compatible endpoint behaves differently from vLLM, so its lane is pinned
+by live evidence (2026-10-25, <code>qwen/qwen3.6-35b-a3b</code> MLX and <code>qwen/qwen3.8-27b</code>, rendered
+prompts read back with <code>lms log stream -s model --filter input</code>):</p>
+<ul>
+<li><code>chat_template_kwargs</code>, at the top level or under <code>extra_body</code>, and top-level template
+  variables such as <code>enable_thinking</code> are ignored. AbstractCore still sends them, but never
+  counts them as an applied control.</li>
+<li>The top-level <code>reasoning_effort</code> field reaches the chat template on every request shape:
+  plain prompts, message histories, and tool calls with tool-result history, on both the
+  sync and async paths. <code>"none"</code> renders the template's own empty think block. For an on/off
+  model such as Qwen3.6, every other value turns thinking on and produces the same
+  reasoning. For Qwen3.8, LM Studio applies the level, mapping <code>minimal</code> to <code>low</code> and
+  <code>high</code> to <code>xhigh</code> on its side.</li>
+<li>LM Studio's per-model default can be thinking off. <code>thinking=True</code> turns it on through
+  <code>reasoning_effort</code>, and the metadata reports what was sent.</li>
+<li>The assistant no-think prefill is not needed once <code>reasoning_effort: "none"</code> is sent.
+  Sending both renders the empty think block twice. AbstractCore uses the prefill only as
+  the off switch of last resort, when the server has rejected <code>reasoning_effort</code> earlier
+  in the session.</li>
+<li>The native REST endpoint (<code>POST /api/v1/chat</code>, field <code>reasoning</code>) cannot carry message
+  history, custom tools, or structured output, so <code>thinking=</code> does not route there. Pass
+  <code>reasoning=</code> explicitly to use that endpoint for a plain prompt.</li>
+</ul>
+<p>Local providers serialize prompts themselves, so their controls are prompt artifacts rather
+than API fields. AbstractCore reproduces the artifact the model's own chat template would
+produce, which keeps a controlled request inside the model's training distribution.</p>
+<h2 id="model-requirements">Model requirements</h2>
+<p>A level request is enforced only when the model's registry entry declares a control surface
+for it — <code>thinking_control.effort_template_kwarg</code> for backends that render the template, and
+<code>thinking_control.effort_system_lines</code> for lanes that serialize prompts locally, with
+<code>reasoning_levels</code> listing the accepted enum. Qwen3.8 declares all three and supports
+<code>low</code>, <code>medium</code>, and <code>xhigh</code>.</p>
+<p>Models whose templates expose only an on/off switch — Qwen3.6, for example — accept
+<code>thinking="off"</code> and <code>thinking="on"</code>, and treat a level request as "reasoning enabled" with a
+<code>RuntimeWarning</code> explaining that effort scaling is unavailable. To add support for a new
+model, declare its surfaces in <code>abstractcore/assets/architecture_formats.json</code> or
+<code>model_capabilities.json</code>; no provider code changes are required.</p>
+<h2 id="verify-what-actually-happened">Verify what actually happened</h2>
+<p>Every response carries the request and its outcome in <code>response.metadata</code>:</p>
+<div class="code-block"><pre><code class="language-python">response = llm.generate(&quot;Plan the migration&quot;, thinking=&quot;low&quot;)
+print(response.metadata[&quot;thinking_requested&quot;])      # &quot;low&quot;
+print(response.metadata[&quot;thinking_effective&quot;])      # &quot;low&quot; when enforced
+print(response.metadata[&quot;thinking_handled_level&quot;])  # True when a real artifact was applied
+</code></pre></div>
+<ul>
+<li><code>thinking_requested</code> / <code>thinking_effective</code> — what you asked for, and what the request
+  became after mapping.</li>
+<li><code>thinking_handled_enable_disable</code> / <code>thinking_handled_level</code> — whether the on/off switch and
+  the effort level were actually applied.</li>
+<li><code>thinking_supported_levels</code> — the model's advertised effort enum.</li>
+<li><code>thinking_supports_output</code> / <code>thinking_supports_control</code> — whether the model emits reasoning,
+  and whether it exposes a request-side knob.</li>
+</ul>
+<p><code>thinking_effective</code> reports a level only when a control artifact reached the model. When a
+request cannot be honored, the field reflects the weaker control that was applied and a
+<code>RuntimeWarning</code> states what remains in effect, so a silently ignored request never reads as a
+successful one.</p>
+<h2 id="requests-that-fall-back">Requests that fall back</h2>
+<p>A few request shapes are served by a code path that carries no control artifact. AbstractCore
+declines the claim for these rather than reporting an unenforced level:</p>
+<ul>
+<li><strong>Prefilled system blocs.</strong> In KV cache modes where the system block is already committed to
+  the cache, the effort instruction cannot be inserted. Disabling reasoning still works,
+  because that control lives at the generation boundary.</li>
+<li><strong>HuggingFace GGUF with structured output, media, tool-role or content-part histories</strong>, and
+  when <code>ABSTRACTCORE_GGUF_CONTROL_PLANE=0</code> disables the local renderer. These requests are
+  served by <code>llama-cpp-python</code>'s chat-completion path, which renders no control artifact.</li>
+<li><strong>Servers that reject <code>reasoning_effort</code>.</strong> AbstractCore drops the field, retries the
+  request once so it still succeeds, and warns that the level was not applied. On LM Studio
+  the rejection is remembered for the session: later requests decline the claim, and
+  <code>thinking="off"</code> falls back to the assistant no-think prefill when the model declares one.</li>
+</ul>
+<h2 id="reasoning-control-and-prompt-caching">Reasoning control and prompt caching</h2>
+<p>An effort instruction is part of the system block, so changing levels changes the first tokens
+of the prompt. A durable prompt-cache bloc built at one effort level will not prefix-match a
+request at another, and the prompt is recomputed. Pin one level per cached session to keep
+prefixes warm. See <a href="prompt-caching.html">Prompt Caching</a>.</p>
+<h2 id="related-documentation">Related documentation</h2>
+<ul>
+<li><a href="generation-parameters.html">Generation Parameters</a> — the full parameter vocabulary and
+  precedence rules.</li>
+<li><a href="fallbacks.html">Fallbacks</a> — the layered strategy behind the Qwen no-think switch.</li>
+<li><a href="capabilities.html">Capabilities</a> — what AbstractCore supports across providers.</li>
+<li><code>abstractcore/assets/README.md</code> — the registry fields that drive all of the above.</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

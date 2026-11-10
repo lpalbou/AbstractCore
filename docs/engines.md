@@ -1,0 +1,111 @@
+# Local engines: detect, install, open
+
+An **engine** is the software that runs local model weights: Ollama, LM Studio, MLX (`mlx-lm`),
+llama.cpp, vLLM, and the Hugging Face transformers stack. AbstractCore detects which engines are
+on this machine, whether their servers answer, and can install a missing engine with the
+vendor's documented command after showing you that command.
+
+Related pages: [Local models](models.md) (browse, download, delete weights),
+[Prerequisites](prerequisites.md) (provider setup and base URLs), [Server](server.md).
+
+## Status
+
+```bash
+abstractcore engines status            # installed / version / supported on this host
+abstractcore engines status --probe    # also GET each local server once (running, models_count)
+abstractcore engines status --json     # engines_status_v1
+```
+
+HTTP: `GET /acore/engines?probe=true`, `GET /acore/engines/{id}`. Python:
+`abstractcore.config.engines.engine_inventory(probe=True)`.
+
+Each row carries `id`, `name`, `kind` (`local_server`, `local_engine`, `remote_only`),
+`supported_on_host` and `unsupported_reason`, `installed`, `version`, `install_location`,
+`running`, `base_url`, `reachable`, `models_count`, `install` (the plan below) and `docs_url`.
+`running`/`reachable` are `null` unless you probe.
+
+| Engine | Detected by | Version from |
+|---|---|---|
+| `ollama` | `ollama` on PATH, `/Applications/Ollama.app`, `%LOCALAPPDATA%\Programs\Ollama` | `ollama --version` (app bundle version as fallback) |
+| `lmstudio` | the `lms` CLI (PATH or `~/.lmstudio/bin/lms`), `/Applications/LM Studio.app`, `%LOCALAPPDATA%\Programs\LM Studio` | app bundle version, else `lms version` (`cli-<commit>`) |
+| `mlx` | `import mlx` | package metadata (`mlx`, `mlx-lm`) |
+| `llamacpp` | `import llama_cpp`, or `llama-server` on PATH | `llama-cpp-python` metadata |
+| `vllm` | `import vllm` or `vllm` on PATH | package metadata |
+| `huggingface` | `import transformers` | package metadata |
+
+Servers are read at `OLLAMA_BASE_URL` (default `http://localhost:11434`),
+`LMSTUDIO_BASE_URL` (default `http://localhost:1234/v1`) and `VLLM_BASE_URL`.
+
+## Install plans
+
+`abstractcore engines install <id> --dry-run` shows the exact command for this host without
+running anything. Commands come from a fixed table; nothing in them comes from a request.
+
+| Engine | macOS | Linux | Windows |
+|---|---|---|---|
+| Ollama | `brew install ollama` when Homebrew is present, else the official script `curl -fsSL https://ollama.com/install.sh \| sh` (may ask for your password to link `/usr/local/bin/ollama`) | official script; **needs sudo** (installs to `/usr/local`, creates a systemd `ollama.service`) | `winget install --id Ollama.Ollama` (per-user), else `irm https://ollama.com/install.ps1 \| iex` |
+| LM Studio | desktop app from https://lmstudio.ai/download (or `brew install --cask lm-studio`); the command installs the headless daemon and `lms` CLI: `curl -fsSL https://lmstudio.ai/install.sh \| bash`. Apple silicon only | same headless install (may need `libatomic1`) | desktop app (or `winget install --id ElementLabs.LMStudio`); headless: `irm https://lmstudio.ai/install.ps1 \| iex` |
+| MLX | Apple silicon: `python -m pip install "abstractcore[apple]"` into this Python environment | not supported | not supported |
+| llama.cpp | Apple silicon: `python -m pip install "abstractcore[apple]"` (Metal build); Intel Macs: not available with the install settings. Alternative everywhere: `brew install llama.cpp` (the llama.cpp server binaries) | `python -m pip install "abstractcore[gpu]"` | x86_64: the AbstractFramework installer adds llama.cpp's prebuilt GPU build; with plain pip, llama.cpp is not part of abstractcore[gpu] on Windows (the row is `available: false`); alternative `winget install --id ggml.llamacpp` (the llama.cpp server binaries) |
+| vLLM | not supported: the row reads "vLLM needs Linux with an NVIDIA GPU (CUDA); use a remote vLLM server instead" (kind `remote_only`) | NVIDIA GPU only: `python -m pip install "abstractcore[gpu]"` | not supported (same reason) |
+| Hugging Face | Apple silicon: `python -m pip install "abstractcore[apple]"`; Intel Macs: not available with the install settings | `python -m pip install "abstractcore[gpu]"` | x86_64: `python -m pip install "abstractcore[gpu]"`; ARM: not available with the install settings |
+
+Every Python engine arrives with one of AbstractCore's install settings, never as a bare package.
+An Intel Mac or Windows on ARM has no local-engine setting (`abstractcore[apple]` does not resolve
+on Intel macOS, and `abstractcore[gpu]` has no wheels for its engines on Windows ARM), so those rows
+are `available: false` and their `notes` say the engine is not available on this machine with the
+install settings; use Ollama, LM Studio or a remote provider there. Windows x86_64 has the `gpu`
+setting (vLLM and llama.cpp are marked out of it there; see
+[Installation](installation.md#gpu-on-windows)).
+
+Python-package installs target the interpreter running AbstractCore. When that environment has
+no `pip` (a `uv` virtual environment), the plan uses
+`uv pip install --python <this interpreter> ...` instead. The plan block also lists
+`alternatives`, `requires_admin`, `url` and human `notes`.
+
+Ollama and LM Studio publish builds for x86_64 and arm64 only (LM Studio on macOS: Apple silicon
+only). On any other architecture (a 32-bit ARM board, RISC-V) or operating system (FreeBSD) the
+plan is `available: false` and its `notes` give the reason.
+
+## Installing
+
+```bash
+abstractcore engines install ollama --dry-run     # show the command
+abstractcore engines install ollama               # asks for confirmation, then streams the output
+abstractcore engines install ollama --yes --json  # NDJSON host_job_v1 lines, final job last
+abstractcore engines open lmstudio                # print and open the download page
+```
+
+`engines open` prints the link and launches nothing when there is no display: in an SSH
+session, or on Linux/BSD without `DISPLAY` or `WAYLAND_DISPLAY` (`--json` then carries
+`"opened": false` and the reason in `not_opened`).
+
+HTTP: `POST /acore/engines/{id}/install` with `{"dry_run": false, "force": false}` returns a
+job; follow it with `GET /acore/jobs/{id}`.
+
+- An engine that is already installed finishes immediately as `already_installed`; pass
+  `--force` to run the installer anyway.
+- Only one engine install runs at a time; a second request is refused (exit `2`, HTTP `409`).
+- The installer runs with no terminal input: a step that needs a password (for example `sudo`
+  in the Linux Ollama script) fails with the tool's own message. Run the shown command in a
+  terminal in that case.
+- Cancel (`abstractcore models cancel <job_id>`, `POST /acore/jobs/{id}/cancel`, or SIGTERM /
+  Ctrl-C on the CLI) stops the installer and every process it started.
+- After a successful install the result reports `installed_after` and `version_after`. A new
+  shell may be needed before a freshly installed command is on your PATH.
+
+## Safety and policy
+
+- Installs run on the machine that runs AbstractCore. For `abstractcore serve`, that is the
+  server host, not the browser's machine.
+- The CLI allows installs by default. The server allows them by default only when bound to a
+  loopback address (`abstractcore serve` binds `127.0.0.1` by default); set
+  `ABSTRACTCORE_ALLOW_ENGINE_INSTALL=1` or `=0` to override either default. `GET /acore/engines`
+  reports the effective `install_allowed`. A dry run is always allowed.
+- Every `POST` under `/acore/models`, `/acore/engines` and `/acore/jobs` needs a server
+  principal: the server's bearer token (on a loopback `abstractcore serve`, the one it
+  generated; `abstractcore serve --print-token` prints it), or
+  `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` for local development. An upstream provider key
+  alone does not authorize host actions.
+- Refusals are structured: `{"ok": false, "status": "refused", "reason": ..., "message": ...}`
+  with HTTP `403` (not allowed), `404` (unknown engine) or `409` (unsupported, busy).

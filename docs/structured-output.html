@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Structured Output - AbstractCore</title>
     <meta name="description" content="AbstractCore implements structured output generation using Pydantic models with automatic schema validation and provider-specific optimizations. The system…">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/structured-output.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -67,6 +69,7 @@
 <h2 id="overview">Overview</h2>
 <h3 id="what-is-structured-output">What is Structured Output?</h3>
 <p>Structured output constrains LLM responses to conform to predefined schemas, enabling direct deserialization into typed objects. AbstractCore uses Pydantic BaseModel classes to define schemas and validate responses.</p>
+<p>Over HTTP, the <a href="server.html#structured-outputs-response_format">server</a> exposes the same handler through OpenAI's <code>response_format</code> (<code>json_object</code> or <code>json_schema</code>) on <code>POST /v1/chat/completions</code>, for every provider.</p>
 <h3 id="basic-example">Basic Example</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 from pydantic import BaseModel
@@ -109,9 +112,9 @@ assert person.age == 35
 - HuggingFace GGUF models (via <code>response_format</code> parameter with llama-cpp-python)</p>
 <p><strong>Characteristics</strong>:
 - Server-side schema validation
-- Zero client-side validation retries required
-- Deterministic schema compliance
-- Optimal performance for production workloads</p>
+- Backend schema constraints where supported
+- Client-side validation, with fallback/retry for invalid native results
+- Success and latency depend on backend, model and schema</p>
 <p><strong>Validation</strong>:
 - Structured output behavior is covered by automated tests in this repo (see <code>tests/structured/</code>).
 - Exact success rates and latency depend on provider/model/schema complexity.</p>
@@ -264,7 +267,8 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 4. Schema compliance is enforced via constrained decoding (provider/model dependent)
 5. Automatic fallback to prompted approach if Outlines unavailable</p>
 <p><strong>Installation</strong>:</p>
-<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[huggingface]&quot;  # Includes Outlines automatically
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[apple]&quot;   # Apple silicon; includes Outlines
+pip install &quot;abstractcore[gpu]&quot;     # NVIDIA / AMD; includes Outlines
 </code></pre></div>
 <p><strong>Characteristics</strong>:
 - Schema compliance via constrained decoding (still validated client-side)
@@ -302,7 +306,7 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 4. Server-side schema enforcement
 5. Automatic fallback to prompted approach if Outlines unavailable</p>
 <p><strong>Installation</strong>:</p>
-<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[mlx]&quot;  # Includes Outlines automatically
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[apple]&quot;  # Includes Outlines automatically
 </code></pre></div>
 <p><strong>Models</strong>:
 - mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
@@ -337,7 +341,7 @@ result = llm.generate(
 
 print(f&quot;{result.name} ({result.age}): {result.email}&quot;)
 </code></pre></div>
-<h3 id="tools-structured-output-2-pass-hybrid">Tools + Structured Output (2-pass hybrid)</h3>
+<h3 id="tools--structured-output-2-pass-hybrid">Tools + Structured Output (2-pass hybrid)</h3>
 <p>If you pass both <code>tools=[...]</code> and <code>response_model=...</code> in the same <code>generate()</code> call, AbstractCore uses a 2-pass hybrid flow:
 1) a tool-capable call, then
 2) a structured-output call using the tool-context.</p>
@@ -534,7 +538,7 @@ class Person(BaseModel):
 </code></pre></div>
 <h3 id="complexity-guidelines">Complexity Guidelines</h3>
 <p>Schema complexity affects latency and cost; keep schemas as small as practical.</p>
-<h4 id="simple-schemas-10-fields-1-level">Simple Schemas (&lt; 10 fields, 1 level)</h4>
+<h4 id="simple-schemas--10-fields-1-level">Simple Schemas (&lt; 10 fields, 1 level)</h4>
 <p><strong>Example</strong>:</p>
 <div class="code-block"><pre><code class="language-python">class PersonInfo(BaseModel):
     name: str
@@ -619,34 +623,20 @@ Historical benchmark notes (non-authoritative) may exist under <code>docs/report
 <hr />
 <h2 id="error-handling">Error Handling</h2>
 <h3 id="error-categories">Error Categories</h3>
-<h4 id="1-infrastructure-errors-retriable">1. Infrastructure Errors (Retriable)</h4>
-<p>Network failures, timeouts, server unavailability—retry with exponential backoff:</p>
-<div class="code-block"><pre><code class="language-python">import time
-from requests.exceptions import ConnectionError, Timeout
-
-def generate_with_retry(llm, prompt, response_model, max_retries=3):
-    &quot;&quot;&quot;Retry infrastructure errors with exponential backoff&quot;&quot;&quot;
-    for attempt in range(max_retries):
-        try:
-            return llm.generate(
-                prompt,
-                response_model=response_model,
-                temperature=0
-            )
-        except (ConnectionError, Timeout) as e:
-            if attempt &lt; max_retries - 1:
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
-                time.sleep(wait_time)
-                continue
-            raise
-
-result = generate_with_retry(llm, &quot;Extract data...&quot;, DataModel)
-</code></pre></div>
-<p><strong>Retriable errors</strong>:
-- <code>ConnectionError</code>: Network connectivity issues
-- <code>TimeoutError</code>: Request timeout
-- HTTP 5xx: Server errors
-- Token limit exceeded (retry with simplified schema or chunking)</p>
+<h4 id="1-infrastructure-errors-and-retry-ownership">1. Infrastructure errors and retry ownership</h4>
+<p>Provider-level retry and structured-output validation retry are separate budgets. Handle
+<code>AbstractCoreError</code> and transport/backend errors at the application boundary as described in
+<a href="api.html#errors-and-retry-boundaries">API error handling</a>. Authentication errors require fixing
+configuration before another call. Do not add an unconditional outer retry around a provider
+that already retries.</p>
+<p>Use <code>RetryConfig.single_attempt()</code> when your host owns infrastructure retries, and
+<code>FeedbackRetry(max_attempts=1)</code> when it also needs one schema attempt. The default
+<code>FeedbackRetry</code> permits 3 attempts including the first. A length-cutoff response is rejected by
+default even if its JSON validates; the handler may retry with a larger output budget.
+See <a href="agent-usage.html#typed-extraction">bounded typed extraction</a> for a complete example.</p>
+<p>Known issue (2.26.4): a native response with <code>content=None</code> can raise <code>TypeError</code> while decoding
+JSON. Catch it at the extraction boundary and treat the extraction as failed. Do not replace
+missing model output with an empty object or invented fields.</p>
 <h4 id="2-validation-errors-non-retriable">2. Validation Errors (Non-Retriable)</h4>
 <p>Schema validation failures indicate schema or prompt issues—do not retry:</p>
 <div class="code-block"><pre><code class="language-python">from pydantic import ValidationError
@@ -817,8 +807,9 @@ retry = FeedbackRetry(max_attempts=3)
 <li><a href="getting-started.html#structured-output">Getting Started</a> - Quick introduction</li>
 <li><a href="api-reference.html">API Reference</a> - Complete API documentation</li>
 <li><a href="examples.html#structured-output-examples">Examples</a> - Real-world usage patterns</li>
-<li><a href="archive/structured-response-keyword.md">Response Model Parameter Analysis</a> - Why <code>response_model</code></li>
-<li><a href="archive/improved-structured-response.md">Native Implementation Test Results</a> - Detailed test data</li>
+<li><a href="server.html#structured-outputs-response_format">Server: structured outputs</a> - <code>response_format</code> over the OpenAI-compatible API</li>
+<li><a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/docs/archive/structured-response-keyword.md">Response Model Parameter Analysis</a> - Why <code>response_model</code></li>
+<li><a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/docs/archive/improved-structured-response.md">Native Implementation Test Results</a> - Detailed test data</li>
 </ul>
 <hr />
 <h2 id="references">References</h2>
@@ -839,11 +830,11 @@ pytest tests/structured -q
 </code></pre></div>
 <p>Some provider-specific tests require additional extras:</p>
 <ul>
-<li>HuggingFace / Outlines: <code>pip install -e ".[huggingface]"</code></li>
-<li>MLX: <code>pip install -e ".[mlx]"</code> (macOS + Apple Silicon only)</li>
+<li>MLX, HuggingFace / Outlines: <code>pip install -e ".[apple,test]"</code> (Apple silicon)</li>
+<li>vLLM, HuggingFace / Outlines: <code>pip install -e ".[gpu,test]"</code> (NVIDIA / AMD)</li>
 </ul>
-<p>If you're installing from PyPI and just want the test dependencies:</p>
-<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[test]&quot;
+<p>For the light install plus the test tooling:</p>
+<div class="code-block"><pre><code class="language-bash">pip install -e &quot;.[test]&quot;
 pytest -q
 </code></pre></div>
 <h3 id="notes">Notes</h3>
@@ -853,6 +844,13 @@ pytest -q
 </ul>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

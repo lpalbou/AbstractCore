@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vision in AbstractCore (Image/Video Input) - AbstractCore</title>
     <meta name="description" content="This document describes vision as an input modality in AbstractCore (images and video-understanding), and clarifies how it relates to: - vision fallback…">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/vision-capabilities.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -36,8 +38,9 @@
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-requirements" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick requirements</a>
 <a href="#1-imagevideo-input-modalities-owned-by-abstractcore" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">1) Image/video input modalities (owned by AbstractCore)</a>
+<a href="#1b-native-image-input-on-the-mlx-provider-apple-silicon" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">1b) Native image input on the MLX provider (Apple silicon)</a>
 <a href="#2-vision-fallback-for-text-only-models-optional-config-driven" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">2) Vision fallback for text-only models (optional; config-driven)</a>
-<a href="#3-generative-vision-output-is-not-part-of-abstractcores-default-install" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">3) Generative vision output is not part of AbstractCore’s default install</a>
+<a href="#3-generative-vision-output-is-dependency-light-by-default" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">3) Generative vision output is dependency-light by default</a>
 <a href="#troubleshooting-common" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting (common)</a>
 <a href="#related" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related</a></div>
 
@@ -45,9 +48,11 @@
 
 <h2 id="quick-requirements">Quick requirements</h2>
 <ul>
-<li><strong>Images</strong>: install <code>pip install "abstractcore[media]"</code> and use either:</li>
+<li><strong>Images</strong>: the light install (<code>pip install abstractcore</code>) and either:</li>
 <li>a <strong>vision-capable model</strong> (VLM/VL), or</li>
 <li>a text-only model with <strong>vision fallback</strong> configured (<code>abstractcore --set-vision-provider PROVIDER MODEL</code>).</li>
+<li>On Apple silicon, native image input on MLX checkpoints needs no extra step: <code>mlx-vlm</code>
+    ships with the MLX provider in <code>abstractcore[apple]</code> (see <a href="#1b-native-image-input-on-the-mlx-provider-apple-silicon">Native image input on the MLX provider</a>).</li>
 <li><strong>Video</strong>: native video input is model/provider dependent. For the portable frame-sampling path (<code>video_policy="frames_caption"</code> / <code>"auto"</code> fallback), you need:</li>
 <li><code>ffmpeg</code>/<code>ffprobe</code> available on <code>PATH</code>, and</li>
 <li>image/vision handling (a vision-capable model or configured vision fallback).</li>
@@ -74,6 +79,84 @@ print(resp.content)
 abstractcore --set-video-max-frames 6
 abstractcore --set-video-sampling-strategy keyframes
 </code></pre></div>
+<h2 id="1b-native-image-input-on-the-mlx-provider-apple-silicon">1b) Native image input on the MLX provider (Apple silicon)</h2>
+<p>Qwen3.8-Flash-Next (<code>qwen4_exp</code>) uses the full native MLX vision graph, including
+image input with embedded MTP and selectable draft depth. It requires MLX ≥0.32.2
+and mlx-vlm ≥0.7.1; see <a href="speculative-decoding.html#qwen38-flash-next-on-native-mlx">native MTP setup</a>.
+Its native path accepts multiple images and records measured expanded image
+tokens in <code>metadata["media_delivered"]</code>. Qwen3.8-27B also uses native vision when
+loaded with its separate MTP head or the scheduled native runtime. See
+<a href="native-mlx-runtime.html">native MLX concurrency</a>. The add-on limits below apply
+to the ordinary mlx-lm path, not these native VLM sessions.</p>
+<p>Both native checkpoints passed swapped-image checks with <strong>MTP off and on</strong>
+(depth 2), with actual draft/verify evidence for the enabled requests. See the
+<a href="native-mlx-benchmarks.html#vision-and-functional-coverage">vision results</a> and
+<a href="native-mlx-runtime.html#vision-with-mtp-off-or-on">Python example</a>. MTP controls
+do not disable or replace the vision encoder.</p>
+<p>The MLX provider reads images natively for vision-capable MLX checkpoints. Nothing extra to
+install — <code>mlx-vlm</code> is part of the MLX provider's dependency set, so any profile that gives you
+<code>mlx-lm</code> also gives you image input. Pass <code>media=[...]</code> as usual:</p>
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[apple]&quot;
+</code></pre></div>
+<p>If a sighted checkpoint still drops images with <code>mlx_vlm_not_installed</code>, the environment is
+missing half of a package set that is meant to arrive together — most often because the
+interpreter running the model is not the one that was installed into. Check with
+<code>&lt;the-python-that-runs-the-model&gt; -c "import mlx_vlm"</code> and repair with
+<code>pip install "abstractcore[apple]"</code>.</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3.5-4B-MLX-4bit&quot;)
+resp = llm.generate(&quot;Describe this image in one sentence.&quot;, media=[&quot;photo.png&quot;])
+print(resp.content)
+</code></pre></div>
+<h3 id="supported-checkpoints">Supported checkpoints</h3>
+<p>Support is decided from the checkpoint on disk and from the capability registry, not from the
+model name. A checkpoint is served when:</p>
+<ul>
+<li>the capability registry declares it vision-capable (<code>abstractcore/assets/model_capabilities.json</code>);</li>
+<li>its <code>config.json</code> declares a <code>vision_config</code> and the vision weights are present;</li>
+<li>it declares an image token so the image position can be rendered into the prompt; and</li>
+<li>the encoder and decoder agree on the embedding convention (probed at load, and reconciled
+  automatically where the difference is a uniform scale).</li>
+</ul>
+<p>Verified families include <code>qwen3_5</code>, <code>qwen3_5_moe</code>, <code>qwen3_vl</code> and <code>gemma4</code>. Text-only checkpoints
+are unaffected and never load the vision stack — <code>mlx_vlm</code> is imported only when an image is
+actually attached.</p>
+<h3 id="what-you-get-back">What you get back</h3>
+<p>A delivered image is reported positively in <code>response.metadata</code>:</p>
+<div class="code-block"><pre><code class="language-python">resp.metadata[&quot;media_delivered&quot;]
+# [{&quot;index&quot;: 0, &quot;kind&quot;: &quot;image&quot;, &quot;sha256&quot;: &quot;3da0b68c…&quot;,
+#   &quot;tokens&quot;: 1024, &quot;transport&quot;: &quot;mlx_vision_addon&quot;}]
+</code></pre></div>
+<ul>
+<li><code>tokens</code> is the measured number of image tokens the model actually consumed.</li>
+<li><code>sha256</code> identifies which image was delivered.</li>
+<li><code>fidelity</code>, when present, names any known precision trade-off for that checkpoint. For example
+  <code>rope_1d_substituted</code> appears on models whose positional encoding is approximated, which can
+  cost fine character-level detail in dense text.</li>
+</ul>
+<p>If the image could not be carried, <code>media_delivered</code> is absent and <code>response.metadata["media_dropped"]</code>
+names the reason. Use <code>abstractcore.media.delivery.media_delivery_verdict(response, provider="mlx")</code>
+when you need a single answer:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.media.delivery import media_delivery_verdict
+
+verdict = media_delivery_verdict(resp, provider=&quot;mlx&quot;)
+verdict.state  # &quot;delivered&quot; | &quot;not_delivered&quot; | &quot;unverified&quot;
+</code></pre></div>
+<p><code>unverified</code> means the provider does not participate in the delivery contract, not that the image
+was lost.</p>
+<h3 id="current-limits">Current limits</h3>
+<ul>
+<li><strong>One image per request.</strong> Multiple images in a single call are refused with
+  <code>vision_multi_image_unsupported</code>; the request still answers from text.</li>
+<li><strong>Structured output does not carry images.</strong> <code>response_model=</code> together with <code>media=[...]</code>
+  raises rather than dropping the image silently, because a validated model carries no metadata on
+  which the drop could be reported. Parse the text instead, or caption the image first.</li>
+<li><strong>Prompt-cache reuse is skipped on turns that carry an image.</strong> Text-only turns in the same
+  session keep the full prompt cache; see <a href="prompt-caching.html">Prompt caching</a>.</li>
+<li>Checkpoints the lane cannot serve fall through to the vision fallback below, so an image still
+  produces a caption when one is configured.</li>
+</ul>
 <h2 id="2-vision-fallback-for-text-only-models-optional-config-driven">2) Vision fallback for text-only models (optional; config-driven)</h2>
 <p>When a user attaches an image to a text-only model, AbstractCore can optionally run a <strong>two-stage fallback</strong>:
 1) run a configured vision-capable backend to produce <strong>short grounded observations</strong>, then
@@ -88,13 +171,120 @@ abstractcore --set-video-sampling-strategy keyframes
 <div class="code-block"><pre><code class="language-bash">abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
 abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-base
 </code></pre></div>
-<h2 id="3-generative-vision-output-is-not-part-of-abstractcores-default-install">3) Generative vision output is not part of AbstractCore’s default install</h2>
-<p>Creating/editing images and videos is a <strong>deterministic capability</strong> that lives in <code>abstractvision</code> and can be integrated in two ways:</p>
-<p>1) <strong>Capability plugin (library mode)</strong>: install <code>abstractvision</code> and use <code>llm.vision.*</code> (e.g. <code>t2i</code>, <code>i2i</code>).<br />
+<h2 id="3-generative-vision-output-is-dependency-light-by-default">3) Generative vision output is dependency-light by default</h2>
+<p>Creating/editing images and videos is a <strong>deterministic capability</strong> that can be integrated in two ways:</p>
+<p>1) <strong>Capability plugin (library mode)</strong>: <code>abstractvision</code> ships with the light install; use <code>llm.vision.*</code> (e.g. <code>t2i</code>, <code>i2i</code>, <code>upscale_image</code>, <code>t2v</code>, <code>i2v</code>) or the unified <code>llm.generate(..., output=...)</code> surface. Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled, and MLX-Gen local models are selected by exact repo id. The local MLX-Gen runtime comes with <code>abstractcore[apple]</code>.
    See: <code>abstractvision/docs/reference/abstractcore-integration.md</code></p>
-<p>2) <strong>AbstractCore Server (HTTP interop)</strong>: run the optional server and enable <code>/v1/images/*</code> endpoints delegated to <code>abstractvision</code>.<br />
+<p>2) <strong>AbstractCore Server (HTTP interop)</strong>: run the optional server and use <code>/v1/images/*</code> and <code>/v1/videos/*</code> as OpenAI-compatible media routes. The light install carries the AbstractVision plugin API surface; local Diffusers/sdcpp/MLX-Gen execution comes with <code>abstractcore[apple]</code> (Apple silicon, including MLX-Gen) or <code>abstractcore[gpu]</code> (NVIDIA / AMD) in the server environment. Omit <code>model</code> only when the server has a configured default, or use provider/model ids such as <code>model="diffusers/default"</code>, <code>model="diffusers/&lt;huggingface-repo&gt;"</code>, <code>model="mlx-gen/AbstractFramework/qwen-image-2512-4bit"</code>, <code>model="mlx-gen/AbstractFramework/seedvr2-3b-8bit"</code>, <code>model="mlx-gen/AbstractFramework/seedvr2-7b-4bit"</code>, <code>model="mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"</code>, <code>model="sdcpp/default"</code>, or <code>model="openai-compatible/gpt-image-2"</code> with a configured upstream media endpoint.
    See: <code>docs/server.md</code></p>
-<p>This separation keeps the default <code>abstractcore</code> install dependency-light: input handling lives in AbstractCore, and generative vision outputs live in <code>abstractvision</code>.</p>
+<p>AbstractVision remains the truth owner for route-specific model and adapter
+compatibility. AbstractCore hosts that truth and exposes it through:</p>
+<ul>
+<li><code>llm.vision.list_provider_models(task=...)</code></li>
+<li><code>llm.vision.list_provider_adapters(provider=..., model=..., task=...)</code></li>
+<li><code>GET /v1/vision/models</code></li>
+<li><code>GET /v1/vision/adapters</code></li>
+</ul>
+<p>Python progress callbacks can be supplied on the unified call for generated image/video outputs:</p>
+<div class="code-block"><pre><code class="language-python">def on_progress(event):
+    print(event)
+
+upscaled_direct = llm.vision.upscale_image(
+    &quot;input.png&quot;,
+    provider=&quot;mlx-gen&quot;,
+    model=&quot;AbstractFramework/seedvr2-3b-8bit&quot;,
+    resolution=&quot;2x&quot;,
+    softness=0.25,
+    on_progress=on_progress,
+)
+
+upscaled = llm.generate(
+    media={&quot;type&quot;: &quot;image&quot;, &quot;path&quot;: &quot;input.png&quot;, &quot;role&quot;: &quot;source&quot;},
+    on_progress=on_progress,
+    output={
+        &quot;task&quot;: &quot;image_upscale&quot;,
+        &quot;provider&quot;: &quot;mlx-gen&quot;,
+        &quot;model&quot;: &quot;AbstractFramework/seedvr2-3b-8bit&quot;,
+        &quot;resolution&quot;: &quot;2x&quot;,
+        &quot;softness&quot;: 0.25,
+    },
+)
+png = upscaled.outputs[&quot;image&quot;][0].data
+
+resp = llm.generate(
+    &quot;A slow camera move through a luminous data center.&quot;,
+    on_progress=on_progress,
+    output={
+        &quot;task&quot;: &quot;text_to_video&quot;,
+        &quot;provider&quot;: &quot;mlx-gen&quot;,
+        &quot;model&quot;: &quot;AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit&quot;,
+        &quot;width&quot;: 432,
+        &quot;height&quot;: 240,
+        &quot;num_frames&quot;: 41,
+        &quot;fps&quot;: 24,
+        &quot;steps&quot;: 20,
+        &quot;guidance_scale&quot;: 4.0,
+        &quot;guidance_2&quot;: 3.0,
+        &quot;extra&quot;: {&quot;max_sequence_length&quot;: 256},
+    },
+)
+mp4 = resp.outputs[&quot;video&quot;][0].data
+</code></pre></div>
+<p>For image-to-video, pass one source image and set <code>task="image_to_video"</code>:</p>
+<div class="code-block"><pre><code class="language-python">resp = llm.generate(
+    &quot;Slow camera push-in.&quot;,
+    media={&quot;type&quot;: &quot;image&quot;, &quot;path&quot;: &quot;first-frame.png&quot;, &quot;role&quot;: &quot;source&quot;},
+    output={
+        &quot;task&quot;: &quot;image_to_video&quot;,
+        &quot;provider&quot;: &quot;mlx-gen&quot;,
+        &quot;model&quot;: &quot;AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit&quot;,
+        &quot;width&quot;: 432,
+        &quot;height&quot;: 240,
+        &quot;num_frames&quot;: 41,
+        &quot;fps&quot;: 24,
+        &quot;steps&quot;: 20,
+        &quot;guidance_scale&quot;: 3.5,
+        &quot;guidance_2&quot;: 3.5,
+        &quot;extra&quot;: {&quot;max_sequence_length&quot;: 256},
+    },
+)
+</code></pre></div>
+<p>Batch generation uses the same Core surface. Set <code>count</code> / <code>n</code> plus either a
+base <code>seed</code> or an explicit <code>seeds=[...]</code> list. Core delegates the planning to
+AbstractVision instead of inventing a separate seed policy:</p>
+<div class="code-block"><pre><code class="language-python">resp = llm.generate(
+    &quot;An isometric research outpost on an icy exoplanet at blue hour.&quot;,
+    output={
+        &quot;task&quot;: &quot;text_to_image&quot;,
+        &quot;provider&quot;: &quot;mlx-gen&quot;,
+        &quot;model&quot;: &quot;AbstractFramework/qwen-image-2512-8bit&quot;,
+        &quot;count&quot;: 2,
+        &quot;seeds&quot;: [2512, 2513],
+        &quot;lora_adapters&quot;: [
+            {
+                &quot;source&quot;: &quot;prithivMLmods/Qwen-Image-2512-Pixel-Art-LoRA:Qwen-Image-2512-Master-Pixel-Art-LoRA.safetensors&quot;,
+                &quot;scale&quot;: 1.0,
+            }
+        ],
+    },
+)
+assert len(resp.outputs[&quot;image&quot;]) == 2
+</code></pre></div>
+<p>The same typed <code>lora_adapters=[...]</code> contract works for <code>text_to_image</code>,
+<code>image_to_image</code>, <code>text_to_video</code>, and <code>image_to_video</code>. Video routes also keep
+typed <code>guidance_2</code> and <code>flow_shift</code> fields instead of burying them inside
+generic <code>extra</code>.</p>
+<p>Image edits can also pass additional media items with <code>role="reference"</code> or
+<code>role="style"</code>; Core forwards those as AbstractVision <code>reference_images</code> for
+backends that support multi-image composition. Async HTTP routes under
+<code>/v1/vision/jobs/images/*</code> and <code>/v1/vision/jobs/videos/*</code> expose
+<code>progress.last_event</code> when the selected backend reports richer progress events.
+For MLX-Gen, <code>progress</code> is denoise-step progress; video frame context is exposed
+separately as <code>frame</code>, <code>total_frames</code>, and <code>frame_progress</code>.</p>
+<p>For task-specific Wan A14B video models, pass <code>guidance_2</code> as a normal output
+field when you need the second-stage/low-noise guidance control. Keep
+backend-specific fields such as <code>max_sequence_length</code> in <code>extra</code>.</p>
+<p>This separation keeps the default <code>abstractcore</code> install dependency-light: remote media proxying lives in the server, while local generative vision runtimes remain opt-in through <code>abstractvision</code>. Quantized MLX-Gen generation/edit/video models are selected by their published repo id. SeedVR2 upscaling follows the same rule for the canonical packages: use <code>AbstractFramework/seedvr2-3b-8bit</code> by default, <code>AbstractFramework/seedvr2-7b-8bit</code> when memory allows, or the matching q4 package when memory is tight. The default upscaler request uses <code>resolution="2x"</code> and <code>softness=0.25</code>. Core forwards the runtime <code>quantize</code> request field only for official/source SeedVR2 loads that need runtime quantization.</p>
 <h2 id="troubleshooting-common">Troubleshooting (common)</h2>
 <ul>
 <li><strong>“Image input is not supported by model …”</strong>: choose a vision-capable model, or configure vision fallback.</li>
@@ -110,6 +300,13 @@ abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-
 </ul>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

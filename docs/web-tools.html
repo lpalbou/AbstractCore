@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web and Document Tools - AbstractCore</title>
+    <meta name="description" content="AbstractCore ships four built-in tools for reading the open web, plus an optional headless-browser path for pages that build themselves in JavaScript. They…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/web-tools.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Web and Document Tools</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore ships four built-in tools for reading the open web, plus an optional headless-browser path for pages that build themselves in JavaScript. They share one extraction pipeline, so a skim and a fetch of the same URL agree about what the page says.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick start</a>
+<a href="#fetch_url" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">fetch_url</a>
+<a href="#skim_url" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">skim_url</a>
+<a href="#web_search-and-skim_websearch" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">web_search and skim_websearch</a>
+<a href="#safety" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Safety</a></div>
+
+            <div class="doc-content">
+
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Use it for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>skim_websearch</code></td>
+<td>A small, keyword-filtered list of candidate URLs</td>
+</tr>
+<tr>
+<td><code>web_search</code></td>
+<td>The full search result list</td>
+</tr>
+<tr>
+<td><code>skim_url</code></td>
+<td>A cheap look at one URL: title, description, heading outline, short preview</td>
+</tr>
+<tr>
+<td><code>fetch_url</code></td>
+<td>The full document as clean markdown, plus metadata and provenance</td>
+</tr>
+</tbody>
+</table></div>
+<p>The intended sequence is <code>skim_websearch</code> → <code>skim_url</code> → <code>fetch_url</code>: search for candidates, skim to
+decide which are worth opening, then fetch the ones that are.</p>
+<p>See also: <a href="tool-calling.html">Tool Calling</a> for how these are registered and executed,
+<a href="api-reference.html">API Reference</a> for the full tool surface.</p>
+<h2 id="quick-start">Quick start</h2>
+<div class="code-block"><pre><code class="language-python">from abstractcore.tools.common_tools import skim_websearch, skim_url, fetch_url
+
+hits = skim_websearch(query=&quot;python http caching&quot;, required_terms=[&quot;cache&quot;], num_results=5)
+preview = skim_url(url=&quot;https://example.com/article&quot;)
+page = fetch_url(url=&quot;https://example.com/article&quot;)
+
+print(page[&quot;title&quot;])
+print(page[&quot;content&quot;])          # structure-preserving markdown
+</code></pre></div>
+<h2 id="fetch_url"><code>fetch_url</code></h2>
+<p>Fetches a URL and returns the document as clean markdown alongside first-class metadata.</p>
+<div class="code-block"><pre><code class="language-python">fetch_url(
+    url,
+    method=&quot;GET&quot;,
+    headers=None,
+    data=None,
+    timeout=45,
+    include_binary_preview=False,
+    render_js=&quot;auto&quot;,
+    keep_links=True,
+    user_agent=&quot;AbstractCore-FetchTool/1.0 (+https://github.com/lpalbou/abstractcore)&quot;,
+    include_full_content=True,
+)
+</code></pre></div>
+<h3 id="what-you-get-back">What you get back</h3>
+<p><code>content</code> is the field to read. It is structure-preserving markdown: headings, lists, links, fenced
+code blocks with a language hint, and GFM pipe tables all survive. <code>title</code> and <code>description</code> are
+first-class fields rather than something to parse out of the text.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td>The document as markdown. This is the payload.</td>
+</tr>
+<tr>
+<td><code>content_chars</code></td>
+<td>Its length, so you can budget before reading it</td>
+</tr>
+<tr>
+<td><code>title</code>, <code>description</code></td>
+<td>Page metadata</td>
+</tr>
+<tr>
+<td><code>success</code>, <code>status_code</code>, <code>final_url</code></td>
+<td>Outcome and where the request landed</td>
+</tr>
+<tr>
+<td><code>detected_as</code></td>
+<td><code>html</code>, <code>json</code>, <code>xml</code>, <code>text</code>, <code>pdf</code>, <code>image</code>, or <code>binary</code></td>
+</tr>
+<tr>
+<td><code>link_dominant</code></td>
+<td>True when the page is a listing whose links are its content</td>
+</tr>
+<tr>
+<td><code>rendered_with_browser</code>, <code>render_note</code></td>
+<td>Whether a headless render produced this text, and why</td>
+</tr>
+<tr>
+<td><code>rendered</code></td>
+<td>A compact human-readable header, not a second copy of the document</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="one-canonical-copy">One canonical copy</h3>
+<p><code>content</code> is the only full copy of the document in the result. The raw source (<code>raw_text</code>), the
+post-JavaScript DOM (<code>rendered_dom</code>) and the flattened text (<code>normalized_text</code>) are <em>evidence</em>: they
+are withheld above <code>FETCH_URL_MAX_INLINE_EVIDENCE_CHARS</code> (2,000 characters) and replaced by a
+descriptor recording what was dropped.</p>
+<div class="code-block"><pre><code class="language-python">page = fetch_url(url=&quot;https://example.com/long-article&quot;)
+page[&quot;raw_text&quot;]            # None once the source is over the cap
+page[&quot;raw_text_withheld&quot;]   # {'chars': …, 'bytes': …, 'sha256': …, 'content_type': …, 'reason': …}
+</code></pre></div>
+<p>The keys always exist, so a consumer that reads them keeps working. Raise
+<code>FETCH_URL_MAX_INLINE_EVIDENCE_CHARS</code> if you want the evidence inline.</p>
+<p>When extraction produces very little text, the evidence is kept as a bounded excerpt instead of
+being withheld entirely, so you always have something to inspect.</p>
+<h3 id="links">Links</h3>
+<p>With <code>keep_links=True</code> (the default) links stay inline in <code>content</code> as markdown, so an agent can
+follow a citation without a second request. On a listing page — a news hub, a blog index — the links
+<em>are</em> the content, so they are kept even at <code>keep_links=False</code>; <code>link_dominant</code> tells you when that
+happened.</p>
+<h3 id="the-escalation-ladder">The escalation ladder</h3>
+<p><code>fetch_url</code> tries the cheapest thing that can work first and only pays for more when it has to. A
+page that extracts fine statically costs one HTTP request, exactly as before.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Rung</th>
+<th>Runs when</th>
+<th>Typical cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. Static fetch, honest <code>AbstractCore-FetchTool/1.0</code> User-Agent</td>
+<td>always</td>
+<td>0.3–1.2 s</td>
+</tr>
+<tr>
+<td>2. Site adapter (the machine-readable view a site publishes for itself)</td>
+<td>rung 1 produced no text and an adapter covers the URL</td>
+<td>+0.3 s</td>
+</tr>
+<tr>
+<td>3. Real-browser render</td>
+<td>rung 1 produced a JS shell/no text, <strong>or</strong> answered 403/429/451 with a challenge page (Cloudflare "Just a moment…", <code>Cf-Mitigated: challenge</code>, a script-only body)</td>
+<td>+2.5–5 s</td>
+</tr>
+<tr>
+<td>4. The site's own RSS/Atom feed</td>
+<td>the article was refused to every client, including the browser</td>
+<td>+0.1–0.5 s</td>
+</tr>
+<tr>
+<td>5. Classed failure</td>
+<td>nothing above produced readable text</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>A 403 that explains itself (a geo or licensing refusal with real text) never launches a browser.
+<code>render_js="never"</code> disables rung 3 only; adapters and feeds launch no browser.</p>
+<p><strong>Site adapters</strong> are deliberately few. Today there is one: a Reddit thread
+(<code>/r/&lt;sub&gt;/comments/&lt;id&gt;/…</code>) is read from the Atom feed Reddit publishes at <code>&lt;thread-url&gt;/.rss</code>
+(post, author, date and up to 60 comments), because Reddit serves every non-browser client an empty
+app shell, <code>old.reddit.com</code> redirects to a login page and the <code>.json</code> view answers 403. The result
+carries <code>adapter_used</code> and <code>adapter_source_url</code>.</p>
+<p><strong>Feed recovery</strong> (rung 4) reads the section feed (<code>/&lt;section&gt;/rss.xml</code>, then <code>/rss.xml</code>, <code>/feed</code>,
+…) and returns the entry whose link <em>is</em> the requested URL. The result is <code>success=True</code> with
+<code>degraded=True</code>, a <code>degraded_reason</code>, <code>recovered_from_feed</code>, and an <code>error_class</code> naming the refusal
+— so an agent sees the headline and standfirst <strong>and</strong> that the body was not available.</p>
+<h3 id="javascript-rendering">JavaScript rendering</h3>
+<p>Some pages ship a shell and build their content in the browser; others answer a non-browser with a
+JavaScript challenge. <code>fetch_url</code> re-fetches such a page in a real browser and runs the <em>same</em>
+extraction pipeline over the rendered DOM.</p>
+<p>The escalation renders the page the way the operator's own browser would: the <strong>full Chromium
+build</strong> (not <code>chrome-headless-shell</code>, which several sites recognise and serve a block page),
+ordinary viewport, locale and User-Agent, a persistent cookie/consent profile, a short settle, one
+scroll, and a bounded wait (≤10 s) for a self-clearing JavaScript interstitial to navigate to the
+page. The layout text (<code>innerText</code>) is captured beside the DOM, so pages built from web components —
+whose article lives in shadow roots that a serialised DOM does not contain — still yield text.
+<code>render_note</code> names the browser that ran (<code>persistent:chromium</code>, <code>fresh:chromium</code>,
+<code>fresh:headless-shell</code>).</p>
+<p>It does <strong>not</strong> solve CAPTCHAs, rotate proxies, or spoof TLS fingerprints, and it never logs in. When
+a site refuses, the result says so with a precise class (below).</p>
+<div class="code-block"><pre><code class="language-python">fetch_url(url=..., render_js=&quot;auto&quot;)    # render only when static extraction fails (default)
+fetch_url(url=..., render_js=&quot;always&quot;)  # always render; the static result is kept if it is better
+fetch_url(url=..., render_js=&quot;never&quot;)   # never launch a browser
+</code></pre></div>
+<p>Rendering needs Playwright, which is never part of the light install (<code>abstractcore[apple]</code> and
+<code>abstractcore[gpu]</code> include it):</p>
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[apple]&quot;                # or &quot;abstractcore[gpu]&quot;; carries Playwright
+python -m playwright install chromium            # full Chromium: what the fetch_url escalation prefers
+python -m playwright install --only-shell chromium  # smaller; used as a fallback if the full build is absent
+</code></pre></div>
+<p>Without it, pages that need JavaScript return their normal actionable error with the install hint
+attached. A page that extracts fine statically never launches a browser. If only the headless shell
+is installed the escalation still runs on it, with a lower success rate on sites that detect it.</p>
+<p><strong>The browser profile</strong> lives at <code>~/.abstractcore/browser-profile</code> — the package's own state
+directory, never a model-controlled path and never your real Chrome profile. It keeps cookies and
+consent choices so a second visit to a site is not a first-ever visit; it never holds credentials,
+because the tool never logs in. Deleting it is always safe. When two renders run at once, the second
+cannot share the profile (Chromium locks it) and falls back to a private context automatically.</p>
+<p>The render runs in a worker subprocess under one wall-clock budget taken from your <code>timeout</code>, with a
+process-tree kill, so it cannot hang or leave a browser behind. Every navigation and subresource is
+screened by the same SSRF guard the static path uses, so a page cannot redirect or script its way to
+a destination the static fetch would refuse. <code>final_url</code> reports where the browser actually landed,
+and <code>rendered_dom</code> carries the post-JavaScript DOM separately from <code>raw_text</code>, which always means
+the bytes the server sent.</p>
+<p>Rendering executes the page's JavaScript. Treat it as you would any untrusted code path.</p>
+<h3 id="errors-are-explicit">Errors are explicit</h3>
+<p>A fetch that cannot produce content fails with a class, a <code>retryable</code> flag and concrete
+<code>suggestions</code> — never a silent empty success.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th><code>error_class</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>js_required</code></td>
+<td>The page needs JavaScript and no browser was available</td>
+</tr>
+<tr>
+<td><code>empty_content</code></td>
+<td>A 2xx that yielded no extractable text</td>
+</tr>
+<tr>
+<td><code>empty_body</code></td>
+<td>A 2xx with a zero-byte body, usually bot mitigation</td>
+</tr>
+<tr>
+<td><code>bot_challenge</code></td>
+<td>An anti-bot challenge was detected; a retry or a render may clear it</td>
+</tr>
+<tr>
+<td><code>blocked_by_site</code></td>
+<td>A real browser was also refused (a challenge that did not clear, "you have been blocked"). Usually rate-based: waiting clears it.</td>
+</tr>
+<tr>
+<td><code>captcha_required</code></td>
+<td>The site demanded human verification. Out of scope by design; <code>retryable=False</code>.</td>
+</tr>
+<tr>
+<td><code>paywall</code></td>
+<td>The body is behind a subscription; the title/standfirst is what is legitimately readable</td>
+</tr>
+<tr>
+<td><code>login_required</code></td>
+<td>The page requires an account; the tool holds no credentials</td>
+</tr>
+<tr>
+<td><code>rate_limited</code></td>
+<td>Retry after the interval the server named</td>
+</tr>
+<tr>
+<td><code>auth_required</code>, <code>not_found</code>, <code>gone</code>, <code>client_error</code>, <code>server_error</code></td>
+<td>HTTP outcomes</td>
+</tr>
+<tr>
+<td><code>extraction_failed</code></td>
+<td>An internal extraction error, not a property of the page. Retryable.</td>
+</tr>
+<tr>
+<td><code>blocked_ssrf</code></td>
+<td>A non-public destination</td>
+</tr>
+<tr>
+<td><code>blocked_encoded_url</code></td>
+<td>The URL carried a base64-encoded payload</td>
+</tr>
+</tbody>
+</table></div>
+<p>Transient bot-challenge, rate-limit and 5xx statuses get a bounded retry with the same honest
+User-Agent, honouring <code>Retry-After</code>. The static fetch keeps that honest identity: a browser
+User-Agent on a non-browser HTTP stack is an incoherent fingerprint (measured: it turned
+economist.com's plain 403 into a full Cloudflare challenge and helped none of the tested sites). A
+browser identity is used only where a real browser is actually running — the render escalation.
+AbstractCore does not solve CAPTCHAs.</p>
+<p><code>degraded=True</code> with an <code>error_class</code> on a <code>success=True</code> result means "partial content, and here
+is why" — currently only the feed-recovery rung produces it.</p>
+<p>Set <code>ABSTRACTCORE_DEBUG_EXTRACTION=1</code> to print the traceback behind an <code>extraction_failed</code>.</p>
+<h3 id="documents">Documents</h3>
+<p>PDFs are extracted with page anchors (<code># Page 3</code>) so a model can cite a location, and typographic
+ligatures are expanded so the text stays searchable. The default backend is <code>pypdf</code>
+(BSD-3-Clause). Table recovery is available through <code>pymupdf4llm</code>, which is dual
+AGPL-3.0/commercial and therefore never selected automatically — request it explicitly:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.media.pdf_routing import route_pdf_bytes
+route_pdf_bytes(pdf_bytes, preferred_backend=&quot;pymupdf4llm&quot;)
+</code></pre></div>
+<p><strong>PDFs stay on this machine.</strong> Extraction is local by default. <code>fetch_url</code> sends a fetched PDF
+to a remote LLM (the configured OpenAI-compatible endpoint, for a summary and a text preview of
+scanned pages) only after the operator opts in with <code>abstractcore --allow-remote-pdf-extraction</code>
+(config key <code>offline.allow_remote_pdf_extraction</code>); a configured API key alone never uploads a
+document. Every PDF result says which extractor ran: <code>pdf_text_backend</code>, <code>pdf_summary_backend</code>,
+<code>pdf_backend_attempts</code> (the remote route shows <code>"reason": "remote_extraction_disabled"</code> when it
+was not allowed) and <code>pdf_remote_extraction_enabled</code>.</p>
+<p>See <a href="media-handling-system.html">Media Handling</a> for the wider document and image pipeline.</p>
+<h2 id="skim_url"><code>skim_url</code></h2>
+<p>A cheap look at one URL before deciding whether to fetch it.</p>
+<div class="code-block"><pre><code class="language-python">skim_url(url, timeout=15, max_bytes=10485760, max_preview_chars=2400, max_headings=8)
+</code></pre></div>
+<p><code>skim_url</code> uses the same extraction as <code>fetch_url</code> and then trims the <em>extracted</em> text to
+<code>max_preview_chars</code>. The heading outline is harvested from the same markdown as the preview, so the
+outline always describes content the preview came from.</p>
+<p><code>max_bytes</code> is a memory safety net, not the skim: it bounds the download at the same 10 MB limit
+<code>fetch_url</code> uses. Pass a smaller value for a deliberate cheap peek — the report then states that the
+extraction, not merely the transfer, was partial.</p>
+<p><code>skim_url</code> enforces the same SSRF guard as <code>fetch_url</code>, per redirect hop.</p>
+<h2 id="web_search-and-skim_websearch"><code>web_search</code> and <code>skim_websearch</code></h2>
+<div class="code-block"><pre><code class="language-python">web_search(query, num_results=10, safe_search=&quot;moderate&quot;, region=&quot;wt-wt&quot;, time_range=None)
+
+skim_websearch(query, required_terms=None, num_results=5, safe_search=&quot;moderate&quot;,
+               region=&quot;wt-wt&quot;, time_range=None, require_in=&quot;snippet&quot;, match=&quot;any&quot;)
+</code></pre></div>
+<p><code>skim_websearch</code> returns a smaller list and can require keywords before you spend a fetch on a
+result.</p>
+<h3 id="argument-values">Argument values</h3>
+<p><code>time_range</code> accepts <code>h</code>, <code>d</code>, <code>w</code>, <code>m</code>, <code>y</code> and plain-English equivalents — <code>day</code>, <code>today</code>,
+<code>past week</code>, <code>30 days</code>, <code>12 months</code> and similar all normalize. A value that cannot be mapped is
+dropped and reported in <code>warnings</code>/<code>limitations</code>; it is never forwarded to the search backend, so an
+unrecognised filter cannot cost you the primary backend.</p>
+<p><code>require_in</code> selects where <code>required_terms</code> must appear: <code>snippet</code>, <code>title</code>, <code>title_snippet</code>, or
+<code>all</code>. Common synonyms (<code>body</code>, <code>text</code>, <code>title,body</code>, <code>both</code>, <code>any</code>) resolve to the right scope. A
+value that cannot be resolved is substituted and reported, naming both what you sent and what was
+used.</p>
+<p><code>match</code> is <code>any</code> (default) or <code>all</code>. Backend snippets are short, so <code>any</code> with
+<code>require_in="title_snippet"</code> is usually the right combination.</p>
+<h3 id="result-quality-signals">Result quality signals</h3>
+<p>Payloads carry <code>warnings</code> and <code>limitations</code> describing anything that degraded the search: a dropped
+filter, a coerced argument, a fallback backend, or search-backend text with missing word separators
+(<code>fused_result_text</code>). <code>degraded</code> is set whenever the result is not what you asked for, so a
+consumer never has to guess.</p>
+<p><code>rank</code> is the result's position in the unfiltered backend list, so ranks are not contiguous after
+filtering.</p>
+<h2 id="safety">Safety</h2>
+<p>All four tools screen destinations against the SSRF guard: loopback, private, link-local and
+cloud-metadata addresses are refused, on the initial URL and on every redirect. Opt a specific
+host and port in with <code>ABSTRACTCORE_FETCH_URL_ALLOW=127.0.0.1:8080</code>.</p>
+<p><code>fetch_url</code> keeps URL query parameters and passes your headers through — stripping them breaks real
+fetches. The one screen is on base64-encoded payloads anywhere in the URL, which are refused with
+<code>blocked_encoded_url</code>. Detection decodes the candidate and flags it only when it decodes to
+meaningful data, so opaque identifiers such as Drive file ids, UUIDs and git SHAs fetch normally.</p>
+<p><code>fetch_url</code> is not read-only: <code>method</code> and <code>data</code> are caller-controlled, so it can issue writes. It
+is tagged <code>write</code>/<code>remote_write</code> for host guards.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

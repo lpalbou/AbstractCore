@@ -10,16 +10,12 @@ Deception indicators are always included in the structured output schema.
 ## Install
 
 ```bash
-# Core (lightweight)
+# Light: every remote provider, plus PDF / Office inputs in the CLI
 pip install abstractcore
 
-# Provider extras (install only what you use)
-pip install "abstractcore[openai]"
-pip install "abstractcore[anthropic]"
-pip install "abstractcore[huggingface]"  # heavy (torch/transformers)
-
-# Optional: read PDFs / Office docs in the CLI
-pip install "abstractcore[media]"
+# Or, for in-process local engines (MLX / vLLM, HuggingFace/GGUF):
+pip install "abstractcore[apple]"    # Apple silicon
+pip install "abstractcore[gpu]"      # NVIDIA / AMD
 ```
 
 ## Quick start (Python)
@@ -28,7 +24,7 @@ pip install "abstractcore[media]"
 from abstractcore import create_llm
 from abstractcore.processing import BasicIntentAnalyzer, IntentContext, IntentDepth
 
-llm = create_llm("openai", model="gpt-4o-mini")  # requires `abstractcore[openai]`
+llm = create_llm("openai", model="gpt-4o-mini")  # light install
 analyzer = BasicIntentAnalyzer(llm)
 
 result = analyzer.analyze_intent(

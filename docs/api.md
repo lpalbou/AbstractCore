@@ -4,6 +4,10 @@ This page is a user-facing map of the **public Python API** exposed from `abstra
 
 New to AbstractCore? Start with **[Getting Started](getting-started.md)**.
 
+For bounded, complete integration recipes and operating procedures, see
+[Integrating and operating AbstractCore](agent-usage.md) and the
+[`abstractcore` agent skill](../skills/abstractcore/SKILL.md).
+
 Implementation pointers (source of truth):
 - `create_llm`: `abstractcore/core/factory.py` → `abstractcore/providers/registry.py`
 - `BasicSession`: `abstractcore/core/session.py`
@@ -20,20 +24,39 @@ Create a provider instance:
 ```python
 from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")  # requires: pip install "abstractcore[openai]"
+llm = create_llm("openai", model="gpt-4o-mini")  # light install; set OPENAI_API_KEY
 resp = llm.generate("Hello!")
 print(resp.content)
 ```
 
-Provider IDs (common): `openai`, `anthropic`, `openrouter`, `portkey`, `ollama`, `lmstudio`, `vllm`, `openai-compatible`, `huggingface`, `mlx`.
+Provider IDs (common): `openai`, `anthropic`, `openrouter`, `portkey`, `ollama`, `lmstudio`, `vllm`, `openai-compatible`, `huggingface`, `mlx`; decision-only: `typesafe` (hosted Jev) and `systemone` (any System One host), see [Decision Models](decision-models.md).
+
+### Native MLX scheduling and MTP
+
+For supported Qwen3.8 checkpoints, `create_llm("mlx", ..., mlx_batching=True)`
+selects the shared in-process native runtime. Set constructor defaults with
+`speculation={"mode": "native_mtp", "num_draft_tokens": 2}`; override depth
+per `generate()` / `agenerate()` call or pass `speculation=False`.
+Depth counts draft proposals, excluding the target seed. Use `media=[...]`
+for native image input with MTP off or on.
+
+Inspect `response.metadata["speculation"]["used"]` for actual MTP execution,
+`metadata["execution"]` for scheduling diagnostics, and `response.usage` for
+request token counts. Supported scheduling, cache and HTTP options are in
+[Native MLX Runtime](native-mlx-runtime.md). The shared speculation contract
+does not itself enable MTP execution in HuggingFace or GGUF providers.
 
 ### Gateway providers (OpenRouter, Portkey)
 
 ```python
+import os
 from abstractcore import create_llm
 
 llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")
-llm_portkey = create_llm("portkey", model="gpt-5-mini", api_key="PORTKEY_API_KEY", config_id="pcfg_...")
+llm_portkey = create_llm(
+    "portkey", model="gpt-5-mini",
+    api_key=os.environ["PORTKEY_API_KEY"], config_id=os.environ["PORTKEY_CONFIG"],
+)
 ```
 
 Gateway notes:
@@ -48,7 +71,7 @@ Keep conversation state:
 ```python
 from abstractcore import BasicSession, create_llm
 
-session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # requires: abstractcore[anthropic]
+session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # light install
 print(session.generate("Give me 3 name ideas.").content)
 print(session.generate("Pick the best one.").content)
 ```
@@ -60,13 +83,45 @@ For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files
 ```python
 from abstractcore import CachedSession, create_llm
 
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")  # requires: abstractcore[mlx]
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[apple]
 session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
 session.attach_files(["/path/to/large_context.md"])
 print(session.generate("Summarize the attached file.").content)
 ```
 
 See **[Prompt Caching](prompt-caching.md)**.
+
+### Durable memory bloc artifacts
+
+For exact local-memory reuse, persist text/file content as a bloc, compile one provider/model
+artifact, then load it into a runtime prompt-cache key:
+
+```python
+from abstractcore import (
+    create_llm,
+    ensure_bloc_kv_artifact,
+    load_bloc_kv_artifact,
+    delete_bloc_kv_artifact,
+)
+from abstractcore.core.file_blocs import FileBlocStore
+
+llm = create_llm("huggingface", model="/path/to/local/text-model")
+store = FileBlocStore()
+
+record = store.upsert(file_meta={...}, content="stable memory text")
+ensure = ensure_bloc_kv_artifact(provider=llm, store=store, record=record)
+loaded = load_bloc_kv_artifact(provider=llm, store=store, record=record, key="work:memory")
+
+resp = llm.generate("Use the loaded memory.", prompt_cache_binding=loaded.prompt_cache_binding)
+```
+
+The public helpers are exported from both `abstractcore` and `abstractcore.core`:
+`ensure_bloc_kv_artifact`, `load_bloc_kv_artifact`, `compile_bloc_kv_artifact`,
+`read_bloc_kv_manifest`, `list_bloc_kv_artifacts`, `find_bloc_kv_live_bindings`,
+`delete_bloc_kv_artifact`, `prune_bloc_kv_artifacts`, and `delete_bloc`. Delete helpers are safe
+by default: a loaded artifact is blocked until you clear the bound runtime key or explicitly force
+the delete. The shared contract currently covers MLX, HuggingFace transformers, and supported
+HuggingFace GGUF exact-renderer paths. See **[Memory Blocs](memory-blocs.md)**.
 
 ### `tool` (decorator)
 
@@ -93,13 +148,64 @@ Most calls return a `GenerateResponse` object (or an iterator of them for stream
 - `usage`: token usage (provider-dependent)
 - `metadata`: provider/model specific fields (for example extracted reasoning text when configured)
 
+`finish_reason="length"` marks an incomplete answer. Tool-only or reasoning-only responses
+can have empty `content`; inspect those channels before treating a turn as an empty failure.
+`usage=None` means usage is unavailable, not zero. A call with `response_model=` returns a
+validated Pydantic instance instead of `GenerateResponse`. With `output=`, the result is a
+`MultimodalGenerateResponse` (see [Request and Output](request-output.md)).
+
+### Errors and retry boundaries
+
+Catch `abstractcore.exceptions.AbstractCoreError` at your application boundary. Its subclasses
+distinguish authentication, model/artifact selection, provider/API/rate-limit failures,
+unsupported features, media processing and cancellation. Authentication failures require a
+configuration fix before another request; `GenerationCancelledError` is never retried.
+Invalid arguments can raise `ValueError`, missing engines `ImportError`, exhausted schema
+validation `pydantic.ValidationError`, and backend/transport paths can raise `RuntimeError`
+or `httpx.HTTPError`. Structured cache-operation errors derive from `RuntimeError` and carry
+`operation`, `code` and `capabilities`; see [Prompt Caching](prompt-caching.md).
+
+Provider retries and structured-output validation retries are separate. Use
+`RetryConfig.single_attempt()` when your host owns retries, and `FeedbackRetry(max_attempts=1)`
+when limiting schema attempts. OpenAI and Anthropic SDK clients also default to 2 retries;
+AbstractCore's `RetryConfig` does not change the SDK layer. Defaults, bounded examples and
+failure handling are in
+[Integrating and operating AbstractCore](agent-usage.md).
+
+## Stopping a generation and progress events
+
+`generate()` accepts two host controls:
+
+- `cancel_event=`: a `threading.Event`. Providers that report `supports_generation_cancel()`
+  stop the running decode or sever the in-flight HTTP request when the event is set; the call
+  raises `abstractcore.exceptions.GenerationCancelledError`, which is never retried.
+  `unload_model()` cancels and drains in-flight calls before it frees memory.
+- `progress_callback=` (alias `on_progress=`): receives JSON-safe
+  `{"kind": "llm", "phase": "prefill" | "generate" | "complete", ...}` events with token counts
+  and throughput, on providers that report `supports_text_progress_events()` (MLX and
+  HuggingFace). Other providers never receive the callback.
+
+```python
+import threading
+from abstractcore.exceptions import GenerationCancelledError
+
+stop = threading.Event()
+try:
+    resp = llm.generate("Write a long story.", cancel_event=stop, progress_callback=print)
+except GenerationCancelledError:
+    print("stopped")
+```
+
+See [Stopping a generation and ejecting a model](generation-cancel.md) for the per-provider
+matrix.
+
 ## Model downloads (`download_model`, optional)
 
 `download_model(...)` is an **async generator** that yields `DownloadProgress` updates while a model is being fetched.
 
 Supported providers:
 - `ollama`: pulls via the Ollama HTTP API (`/api/pull`)
-- `huggingface` / `mlx`: downloads from HuggingFace Hub (requires `pip install "abstractcore[huggingface]"`; pass `token=` for gated models)
+- `huggingface` / `mlx`: downloads from HuggingFace Hub (requires `abstractcore[apple]` or `abstractcore[gpu]`; pass `token=` for gated models)
 
 Example:
 
@@ -115,6 +221,28 @@ asyncio.run(main())
 ```
 
 Implementation: `abstractcore/download.py`. For provider setup and base URLs, see [Prerequisites](prerequisites.md).
+
+## Local models and engines (catalog, fit, install)
+
+These functions back `abstractcore models ...`, `abstractcore engines ...` and the
+`/acore/models|engines|jobs` routes. Each returns a JSON-ready dict with a `schema` field.
+
+```python
+from abstractcore.utils.host_profile import host_profile          # host_profile_v1
+from abstractcore.utils.model_fit import estimate_fit             # fit verdict for one artifact
+from abstractcore.config.model_catalog import catalog             # model_catalog_v1
+from abstractcore.config.model_materializer import list_installed, delete_artifact
+from abstractcore.config.engines import engine_inventory, engine_install_plan, engine_install
+from abstractcore.config import host_jobs                         # host_job_v1 registry
+
+rows = catalog("qwen3 8b", fits=True)["rows"]
+installed = list_installed("ollama")["rows"]
+job = host_jobs.start_download_job("ollama", "qwen3:8b")          # background job
+print(host_jobs.default_registry().wait(job["job_id"])["status"])
+print(engine_install_plan("ollama")["argv"])                       # the exact command
+```
+
+See [Local Models](models.md) and [Local Engines](engines.md).
 
 ## Tool calling
 
@@ -134,13 +262,9 @@ print(resp.tool_calls)
 
 See **[Tool Calling](tool-calling.md)** and **[Tool Syntax Rewriting](tool-syntax-rewriting.md)**.
 
-### Built-in tools (optional)
+### Built-in tools
 
-If you want a ready-made toolset (web + filesystem helpers), install:
-
-```bash
-pip install "abstractcore[tools]"
-```
+The light install includes a ready-made toolset (web + filesystem helpers).
 
 Then import from `abstractcore.tools.common_tools` (for example `web_search`, `skim_websearch`, `skim_url`, `fetch_url`). See **[Tool Calling](tool-calling.md)** for usage patterns and when to use `skim_*` vs `fetch_*`.
 
@@ -163,15 +287,11 @@ print(result.bullets)
 
 See **[Structured Output](structured-output.md)**.
 
+Over HTTP, `POST /v1/chat/completions` accepts OpenAI's `response_format` (`json_object`, `json_schema`) on every provider and validates the answer against your schema; see [Server: structured outputs](server.md#structured-outputs-response_format).
+
 ## Media input
 
-Media handling is opt-in:
-
-```bash
-pip install "abstractcore[media]"
-```
-
-Then pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeline). Media behavior is **policy-driven**:
+Media handling is part of the light install. Pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeline). Media behavior is **policy-driven**:
 
 - Images: use a vision-capable model, or configure vision fallback (caption → inject short observations).
 - Video: controlled by `video_policy` (native when supported; otherwise frame sampling via `ffmpeg` + vision handling).
@@ -179,13 +299,226 @@ Then pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeli
 
 See **[Media Handling](media-handling-system.md)**, **[Vision Capabilities](vision-capabilities.md)**, and **[Centralized Config](centralized-config.md)**.
 
+## Generated media output
+
+The light install includes the vision, voice and music plugins with their remote backends; local
+image/video, voice and music engines come with `abstractcore[apple]` or `abstractcore[gpu]`.
+Use `output=...` for simple media-generation tasks:
+
+```python
+# Text-only generate remains unchanged.
+text = llm.generate("Explain cache invalidation.")
+
+# Image generation.
+image = llm.generate("A red ceramic mug on a white table.", output="image")
+
+# Image edit. Source plus optional reference/style media infers image edit.
+edited = llm.generate(
+    "Make the mug blue using the second image as a style reference.",
+    media=[
+        {"type": "image", "path": "mug.png", "role": "source"},
+        {"type": "image", "path": "style.png", "role": "style"},
+    ],
+    output="image",
+)
+
+# Text-to-video. Progress callbacks are forwarded to AbstractVision.
+video = llm.generate(
+    "A slow camera move through a luminous data center.",
+    on_progress=lambda event: print(event),
+    output={
+        "task": "text_to_video",
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
+        "fps": 24,
+        "steps": 20,
+        "guidance_scale": 4.0,
+        "guidance_2": 3.0,
+        "extra": {"max_sequence_length": 256},
+    },
+)
+
+# Image-to-video. Mark the image as the source frame.
+i2v = llm.generate(
+    "Slow camera push-in.",
+    media={"type": "image", "path": "first-frame.png", "role": "source"},
+    output={
+        "task": "image_to_video",
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
+        "fps": 24,
+        "steps": 20,
+        "guidance_scale": 3.5,
+        "guidance_2": 3.5,
+        "extra": {"max_sequence_length": 256},
+    },
+)
+
+# TTS.
+speech = llm.generate(text="Hello from AbstractCore.", output="voice")
+
+# Music generation.
+music = llm.generate(
+    text="A short calm piano loop.",
+    output={"modality": "music", "provider": "acemusic", "duration_s": 8, "format": "wav"},
+)
+
+# Voice clone/register. Audio media plus output="voice" returns a voice
+# resource id when the selected AbstractVoice backend supports cloning.
+clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
+voice_id = clone.resources["voice"][0].resource_id
+
+# Decision models (Kev family): text in, calibrated typed decisions out. The prompt is the
+# state; questions are choice / noul (yes-no probability) / score. See decision-models.md.
+decided = llm.generate(
+    "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
+    output="decision",
+    questions={
+        "department": {"type": "choice", "instructions": "Which team should handle this?",
+                       "criteria": {"returns": None, "shipping": None, "billing": None}},
+        "escalate": "Does this need urgent human attention?",
+    },
+)
+decided.decisions["department"].choice         # "returns"
+decided.decisions["escalate"].noul             # 0.72
+```
+
+`generate(..., output=...)` returns `MultimodalGenerateResponse` for non-text
+outputs. Binary artifacts are grouped under `outputs`, while reusable resources
+such as cloned voices are grouped under `resources`. A decision request fills
+`decision` (a `DecisionResponse`: `answers`, `usage`, `latency_ms`,
+`to_systemone()`) and the `decisions` property (answers by question name); see
+[Decision Models](decision-models.md). Plain `output="text"` with
+a prompt preserves the normal `GenerateResponse` path for compatibility.
+
+## Memory and model residency
+
+Managed local loaders reuse compatible resident weights or raise `InvalidRequestError` before
+a conflicting second allocation. Transformers callers must reuse the resident provider;
+creating another provider for the same base artifact is refused. The contract covers the
+supported Core loaders in one process, not independent servers or arbitrary plugin/raw-engine
+allocations. See [sharing rules](memory-management.md#one-resident-artifact-per-process).
+
+`get_memory_snapshot()` reports host RAM, this process and the accelerator in one call;
+`device["process_held_bytes"]` is the accelerator memory this process holds across MLX, torch and
+llama.cpp. `process_residency` lists and ejects models across every in-process backend (MLX,
+HuggingFace transformers and GGUF, embedding models):
+
+```python
+from abstractcore.utils.memory import get_memory_snapshot
+from abstractcore.providers.process_residency import eject_unclaimed, resident_rows
+
+print(get_memory_snapshot()["device"]["process_held_bytes"])
+print(resident_rows())                                    # every model alive in this process
+report = eject_unclaimed("mlx", "mlx-community/Qwen3-4B-4bit")  # skipped while another owner claims it
+```
+
+`eject(backend, model)` unloads every holder regardless of claims. See
+[Memory and Model Residency](memory-management.md) for the snapshot fields, the claims registry and
+the HTTP routes.
+
+## Email (`abstractcore.comms.email`)
+
+`abstractcore.comms.email` is the typed mail library behind the email tools, the CLI and the
+consoles. `EmailAccountStore` holds one account with encrypted credentials; its context applies
+the recipient policy and the send limits before every send:
+
+```python
+from abstractcore.comms.email import EmailAccountStore, SearchCriteria, OutgoingMessage
+
+ctx = EmailAccountStore().context()   # typed error when no account is connected or it is turned off
+client = ctx.client()
+found = client.search(SearchCriteria.build(from_domain="example.org", since="7d"), limit=20)
+ctx.send(OutgoingMessage(to=("me@example.com",), subject="Report", text="Done."))
+```
+
+`discover_servers(address)` finds a mailbox's IMAP and SMTP servers from its address, and
+`server_defaults(address, discovered)` gives the server fields a form pre-fills (the discovered
+ones, else the standard `imap.<domain>` 993 / `smtp.<domain>` 465 SSL).
+`EmailAccountStore.set_folder(name)` changes the folder that is read without connecting again.
+
+Reading never changes the mailbox. Changes (`client.mark`, `label`, `move`, `delete`) and sends
+need the account's access set to Read and write: `EmailAccount.access` is `"read"` or `"write"`
+(`access_text`: "Read only" / "Read and write"), `can_write` is that choice, `can_send` is
+`can_write` with an outgoing server, and `EmailAccountStore.set_access(access, *, smtp=None,
+test=True)` changes it without connecting again. A Read only account refuses a change or a send
+before connecting (`EmailMailboxReadOnly`, `email_mailbox_read_only`). TLS is always verified and
+errors are typed with a cause and a fix.
+Hosts bind a per-user account with `set_email_account_resolver` / `use_email_context`. See
+**[Email](email.md)** for the CLI, the recipient policy, send limits, OAuth2 and the tools.
+
+## Application identity (About screens)
+
+`abstractcore.utils.identity` gives AbstractFramework applications the facts an About screen
+shows, from a descriptor shipped with the package, without network access:
+
+```python
+from abstractcore.utils.identity import about_lines, app_identity, gateway_version_rows
+
+ident = app_identity("abstractcore")          # version defaults to the installed distribution
+print("\n".join(about_lines(ident)))
+rows = gateway_version_rows({"abstractgateway": "0.4.2", "abstractframework": "0.3.0", "packages": {}})
+```
+
+- `app_identity(app_id, version=None)` raises `KeyError` for an application the descriptor does not
+  know and `importlib.metadata.PackageNotFoundError` when no version is given and the distribution
+  is not installed; `known_app_ids()` lists the known ids.
+- `about_fields()` returns the ordered `(label, value)` rows (application, framework, author,
+  copyright, website, source, documentation, issues, feedback, contact); `about_lines()` renders
+  them as `label: value` text and `about_html()` as HTML with links.
+- `about_card_html(identity, framework, gateway, *, framework_note="", gateway_note="")` renders
+  the compact About card (the same markup as the UI kit's `AfAbout`, ui-kit 0.7.0): name and
+  version, the two versions (`about_version_facts`), the six links (`about_links`) and the
+  licence line, with no package list. The AbstractCore console uses it.
+- `gateway_version_rows(payload, error=None)` turns a `GET /api/gateway/about` payload into the
+  same gateway rows the web applications show; an error or a payload without a gateway version
+  gives a single `Gateway → unavailable (...)` row.
+
 ## HTTP API (optional)
 
 If you want an OpenAI-compatible `/v1` gateway, install and run the server:
 
 ```bash
-pip install "abstractcore[server]"
-python -m abstractcore.server.app
+pip install abstractcore
+abstractcore serve
 ```
 
 See **[Server](server.md)**.
+
+### Managed HTTP listener
+
+`abstractcore.server.managed.start_managed_server(*, host=None, port=None, timeout_s=15.0)`
+starts Core's authenticated app in the calling execution-owner process. Omitted host/port use
+Core's server configuration (default `127.0.0.1:8000`); `port=0` selects an available port.
+Importing the helper starts no listener and imports no HTTP app.
+
+It returns a `CoreHTTPServer` handle with `url`, `is_running`, `last_error`, `status()`
+(`running`, `url`, `error`) and `stop(*, timeout_s=6.0)`. Stopping is repeatable and retains
+resident models; a listener that fails to stop raises rather than reporting success.
+Timeouts must be finite, nonnegative numbers. The host owns supervision, and Core's
+authentication and bind-sensitive engine-install policy remain in force. See
+[managed listener lifecycle](server.md#managed-listener-in-an-execution-owner).
+
+## Request-scoped server authentication
+
+`abstractcore.server.auth_policy` exposes the host composition API:
+
+- `ServerAuthPolicy(token, allow_unauthenticated=False)`: immutable policy with
+  a required non-empty token and a strict boolean open-access flag. Its
+  representation omits the token.
+- `use_server_auth_policy(policy)`: context manager applying the policy to the
+  current execution context and restoring the previous policy on exit.
+- `current_server_auth_policy()`: the active host policy, or `None`.
+- `server_auth_token()` and `server_allows_unauthenticated()`: resolve the active
+  policy, or standalone server environment settings when no policy is active.
+
+Use this API when composing Core's ASGI server inside another host. It does not
+persist tokens, expose routes, or choose network access. Open access retains
+Core's restrictions on server-held provider credentials. See
+[Server composition](server.md#embedding-core-in-an-asgi-host) for an example.

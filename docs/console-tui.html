@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal console (`abstractcore-console`) - AbstractCore</title>
+    <meta name="description" content="abstractcore-console is AbstractCore&#x27;s keyboard-first terminal console. It configures abstractcore.json (default models, providers and API keys, capability…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/console-tui.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Terminal console (`abstractcore-console`)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">abstractcore-console is AbstractCore&#x27;s keyboard-first terminal console. It configures abstractcore.json (default models, providers and API keys, capability routes, media, embeddings, server) and manages local models and engines on this machine.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#screens" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Screens</a>
+<a href="#who-may-change-the-host" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Who may change the host</a>
+<a href="#same-screens-in-the-gateway-console" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Same screens in the gateway console</a></div>
+
+            <div class="doc-content">
+
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore               # the CLI the console drives
+cargo install abstractcore-console     # the console (Rust 1.87+)
+abstractcore-console                   # --wizard for the guided setup
+</code></pre></div>
+<p>The console reads the config file directly and runs the <code>abstractcore</code>
+CLI for everything derived or written. It finds the CLI through
+<code>$ABSTRACTCORE_CLI</code>, then <code>abstractcore</code> on <code>PATH</code>, then
+<code>~/.local/bin/abstractcore</code> (the <code>uv tool</code> shim), then
+<code>./.venv/bin/abstractcore</code> in the current directory.</p>
+<h2 id="screens">Screens</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Screen</th>
+<th>What it is for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Overview</td>
+<td>every config section's state; Enter jumps to its owner</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Model</td>
+<td>default models and app defaults</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Providers</td>
+<td>providers, endpoint profiles, API keys, model discovery</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Routes</td>
+<td>capability routes (vision, audio, image, video, embeddings); <code>w</code> downloads a route's weights, <code>a</code> applies the recommended routes</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Media</td>
+<td>vision / audio / video settings</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Embeddings</td>
+<td>the embeddings route</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Server</td>
+<td>server, logging, timeouts, cache</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Review</td>
+<td>the file identity and test evidence</td>
+</tr>
+<tr>
+<td>9</td>
+<td><strong>Models</strong></td>
+<td>the model catalog fitted to this host (see the keys below)</td>
+</tr>
+<tr>
+<td>0</td>
+<td><strong>Engines</strong></td>
+<td>Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face (see the keys below)</td>
+</tr>
+<tr>
+<td>@</td>
+<td><strong>Email</strong></td>
+<td>the email address and the mailbox of this install, card by card (see <a href="#email-keys">Email keys</a>) — the web console's Email tab, same cards and words; the password and client secret go to <code>abstractcore email connect</code> on stdin, never on its command line (see <a href="email.html">Email</a>)</td>
+</tr>
+</tbody>
+</table></div>
+<p>To move between screens, press the screen's key, <code>Ctrl+N</code> / <code>Ctrl+P</code>, or
+<code>←</code> / <code>→</code> for the next and previous screen (wrapping from Engines to
+Overview and back). The arrows keep their own meaning while a text field
+has the caret (they move it), while the screen bar has the focus (it moves
+itself), and in any open dialog. In the wizard the arrows do not jump
+screens; <code>Ctrl+N</code> walks the wizard.</p>
+<h3 id="switches">Switches</h3>
+<p>A persistent on/off setting is a switch, labelled by what it controls:
+<code>[x] Agent email tools</code> is on (accent, bold), <code>[ ] Agent email tools</code> is off,
+<code>[-] Agent email tools — Connect a mailbox first.</code> is unavailable (dimmed, with
+what unlocks it). <code>Space</code> or <code>Enter</code> switches the selected one and the status line
+names the new state ("Agent email tools are on."). On the Model, Media, Embeddings
+and Server screens every on/off field reads <code>[x] on</code> / <code>[ ] off</code> and switches at
+once; only switching on a flag AbstractCore marks UNSAFE
+(<code>server.allow_unauthenticated</code>, <code>server.allow_local_files</code>) asks first.</p>
+<h3 id="email-keys">Email keys</h3>
+<p><code>Tab</code> / <code>Shift+Tab</code> move between the controls, <code>Enter</code> presses a button or saves a
+field, <code>Space</code> switches a switch, <code>←</code> / <code>→</code> change the Mailbox tab while the tab
+bar has the focus. The screen has four cards:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Card</th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Email address</td>
+<td>one field with its own <strong>Save</strong> ("✓ Saved" for two seconds): the first address your agents may write to. With no address stored and no mailbox, the card says connecting sets it, and the mailbox form's address is the only address field</td>
+</tr>
+<tr>
+<td>Mailbox</td>
+<td>not connected: tabs <strong>IMAP</strong> (first, the default) / <strong>Google</strong> / <strong>Microsoft</strong>. The IMAP tab shows the mailbox address, the password, and the incoming (IMAP) and outgoing (SMTP) server, port and security, filled with <code>imap.&lt;domain&gt;</code> 993 SSL / <code>smtp.&lt;domain&gt;</code> 465 SSL as soon as the address has a domain, then with what <code>abstractcore email discover</code> finds (never over a field you edited); one line says where they come from. "My provider uses a different login name" reveals a Login field and "Custom certificate" the CA file. With an email address stored, the form shows "Mailbox account: <address>" and "› Use a different account" opens the field. One <strong>Connect</strong> stores and tests; its error says what failed. Google and Microsoft sign in through the provider (the device code or sign-in address shows while it waits; <strong>Cancel sign-in</strong> stops it); your own client goes under their Advanced. Connected: "Connected as … · method · Read only (or Read and write) · checked … ago", the <strong>Active</strong> switch, <strong>Test</strong> and <strong>Disconnect</strong> (asks inline first)</td>
+</tr>
+<tr>
+<td>Agent email tools</td>
+<td>the switch (off by default); unavailable until a mailbox is connected and in use</td>
+</tr>
+<tr>
+<td>Advanced (folded)</td>
+<td>three sentences: "Your agents may send to …" (only these recipients or everyone except these; entries added and removed at once), "At most N per hour and M per day." with this hour's and today's count, and "Watch folder …" (limits and folder saved on <code>Enter</code> or when the field loses focus); a failed change says its cause inline</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="models-keys">Models keys</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>w</code></td>
+<td>download the selected artifact; several downloads run at once</td>
+</tr>
+<tr>
+<td><code>d</code></td>
+<td>delete an installed artifact (the confirm names what blocks it: a loaded model, a shared cache)</td>
+</tr>
+<tr>
+<td><code>/</code></td>
+<td>filter by name, family, tag or artifact</td>
+</tr>
+<tr>
+<td><code>t</code></td>
+<td>cycle the model type: text, thinking, tools, vision, audio, embedding, voice, image, video</td>
+</tr>
+<tr>
+<td><code>f</code></td>
+<td>show only what fits this host</td>
+</tr>
+<tr>
+<td><code>e</code></td>
+<td>cycle the engine</td>
+</tr>
+<tr>
+<td><code>h</code></td>
+<td>search Hugging Face (an empty query returns to the catalog)</td>
+</tr>
+<tr>
+<td><code>u</code></td>
+<td>make the selected installed text model the default text model (<code>output.text</code>); the route becomes exactly that model</td>
+</tr>
+<tr>
+<td><code>v</code></td>
+<td>cycle catalog → installed → downloads (every download the backend knows, live)</td>
+</tr>
+<tr>
+<td><code>c</code></td>
+<td>cancel the selected download (asks first)</td>
+</tr>
+<tr>
+<td><code>r</code></td>
+<td>re-read the host, the catalog and what is installed</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="engines-keys">Engines keys</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>i</code></td>
+<td>install the selected engine (the confirm shows the command, the host it runs on, and any administrator step; a dry run is one of the answers)</td>
+</tr>
+<tr>
+<td><code>o</code></td>
+<td>open the vendor's download page</td>
+</tr>
+<tr>
+<td><code>r</code></td>
+<td>probe the local servers</td>
+</tr>
+<tr>
+<td><code>c</code></td>
+<td>cancel the engine's install</td>
+</tr>
+<tr>
+<td><code>s</code></td>
+<td>start or stop the engine's server (Ollama, LM Studio)</td>
+</tr>
+<tr>
+<td><code>a</code></td>
+<td>continue an install that waits for an administrator or for developer tools</td>
+</tr>
+<tr>
+<td><code>y</code></td>
+<td>copy that install's command</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>s</code>, <code>a</code> and <code>y</code>, the install location (just you or all users) and
+Hugging Face search are optional backend verbs: over a backend without
+them the key answers "not available here" and the footer says "not
+here". The <code>abstractcore</code> CLI backend offers <code>h</code>, <code>u</code> and the downloads
+view; the gateway console offers them all.</p>
+<p>Models and Engines speak the same vocabulary as the web console and the
+gateway console: weights <code>installed / not downloaded / unknown /
+remote</code>, fit <code>fits / tight / too large / partial offload / unknown</code>.
+Every action there is a CLI command you can run yourself:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Console action</th>
+<th>CLI equivalent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Models list</td>
+<td><code>abstractcore models catalog --json</code> / <code>models search &lt;q&gt; [--engine X] [--fits] --json</code></td>
+</tr>
+<tr>
+<td>Installed view</td>
+<td><code>abstractcore models list --json</code></td>
+</tr>
+<tr>
+<td><code>w</code> download</td>
+<td><code>abstractcore models download &lt;provider&gt; &lt;artifact&gt; --json</code></td>
+</tr>
+<tr>
+<td><code>d</code> delete</td>
+<td><code>abstractcore models delete &lt;provider&gt; &lt;artifact&gt; --yes [--force] --json</code></td>
+</tr>
+<tr>
+<td>Engines list</td>
+<td><code>abstractcore engines status [--probe] --json</code></td>
+</tr>
+<tr>
+<td><code>i</code> install</td>
+<td><code>abstractcore engines install &lt;id&gt; --yes [--dry-run] --json</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Downloads and installs run on the machine that runs the console.
+Downloads run in parallel. An install that waits for a person (an
+administrator password, developer tools) blocks nothing and shows the
+exact command to run. <code>q</code> will not quit while a download or install is
+working; a waiting install does not hold it.</p>
+<h2 id="who-may-change-the-host">Who may change the host</h2>
+<p><code>w</code>, <code>d</code>, <code>u</code> and <code>c</code> on Models and <code>i</code>, <code>s</code>, <code>a</code> and <code>c</code> on Engines
+change the host, so they are administrator verbs, as in the web console.
+In <code>abstractcore-console</code> you are the local operator and every verb is
+yours. In the gateway console they follow your sign-in: a non-admin
+browses freely, each of these keys answers "only an admin can … —
+<reason>", and the footer marks them "admin only".</p>
+<h2 id="same-screens-in-the-gateway-console">Same screens in the gateway console</h2>
+<p>The Models and Engines screens are a library inside the crate
+(<code>abstractcore_console::screens</code>). <code>abstractgateway-console</code> mounts them
+over an HTTP transport to the gateway's <code>/api/gateway/models/*</code> and
+<code>/api/gateway/engines/*</code> routes, so a gateway operator sees the same
+screens, acting on the gateway host, with the administrator rules of the
+gateway's sign-in. See the crate README
+(<code>console-tui/README.md</code>) for the library API.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

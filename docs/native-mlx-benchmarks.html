@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Native MLX benchmarks: Qwen3.8 on M5 Max - AbstractCore</title>
+    <meta name="description" content="This profile compares AbstractCore&#x27;s opt-in native MLX runtime with installed oMLX 0.6.4 on two quantized Qwen checkpoints. Use it to select an execution…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/native-mlx-benchmarks.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Native MLX benchmarks: Qwen3.8 on M5 Max</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This profile compares AbstractCore&#x27;s opt-in native MLX runtime with installed oMLX 0.6.4 on two quantized Qwen checkpoints. Use it to select an execution policy, not to rank model quality or predict every workload. See Architecture for ownership and request flow, and speculative decoding for MTP setup.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#hardware-artifacts-and-method" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Hardware, artifacts and method</a>
+<a href="#main-throughput-comparison" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Main throughput comparison</a>
+<a href="#explicit-flash-mtp-under-concurrency" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Explicit Flash MTP under concurrency</a>
+<a href="#staggered-arrivals" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Staggered arrivals</a>
+<a href="#vision-and-functional-coverage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Vision and functional coverage</a>
+<a href="#memory-cache-and-serving-policy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Memory, cache and serving policy</a>
+<a href="#choosing-a-configuration-and-interpreting-limits" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Choosing a configuration and interpreting limits</a></div>
+
+            <div class="doc-content">
+
+<h2 id="hardware-artifacts-and-method">Hardware, artifacts and method</h2>
+<p>Measurements: 2026-09-20, MacBook Pro 14-inch, Apple M5 Max, 128 GiB unified
+memory, macOS 26.3, AC power. Only one model/server was loaded at a time.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Artifact</th>
+<th>Revision</th>
+<th>Quantization / MTP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mlx-community/Qwen3.8-27B-4bit</code></td>
+<td><code>3e6447f082e89cc7f0bc6e5441afd38dfce760ff</code></td>
+<td>4-bit, group 64; ordinary target weights</td>
+</tr>
+<tr>
+<td><code>mlx-community/Qwen3.8-27B-MTP-4bit</code></td>
+<td><code>b643c01b6d3b094e325edb6ebd832e16c486c575</code></td>
+<td>Matching separate trained 4-bit head</td>
+</tr>
+<tr>
+<td><code>Jundot/Qwen3.8-Flash-Next-oQ4e-mtp</code></td>
+<td><code>2615fc0e976e65c2f3b55daca3a948f1cdc5b9f8</code></td>
+<td>Mixed-bit oQ4e, embedded head, PLE offload enabled</td>
+</tr>
+</tbody>
+</table></div>
+<p>These are MLX artifacts, not GGUF <code>IQ4_XS</code>. Flash uses a 4-bit default with
+higher-precision module overrides; it is not uniformly 4-bit.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Stack</th>
+<th>Measured versions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AbstractCore native</td>
+<td>AbstractCore 2.13.41; MLX 0.32.2, mlx-lm 0.31.3, mlx-vlm 0.7.1, Transformers 5.17.0</td>
+</tr>
+<tr>
+<td>oMLX</td>
+<td>0.6.4; MLX 0.32.0, mlx-lm 0.31.3 (<code>ab1806e8</code>), mlx-vlm 0.6.3 (<code>78b96eb</code>), Transformers 5.12.1</td>
+</tr>
+</tbody>
+</table></div>
+<p>This is an installed-stack comparison, not an isolated framework-overhead
+experiment. oMLX is a separate comparator, not an AbstractCore dependency.</p>
+<p>Main profile: concurrency 1/2/4, MTP off/depth 2, 256 output tokens per request,
+temperature 0, top-p 1, seed 6330, thinking disabled and prefix caching disabled.
+Each condition used a fresh server, excluded warmup and two measured bursts.
+At concurrency one, there is one code and one prose observation, not repeated
+trials of each prompt. GPU-idle intervals were 90 seconds after server unload
+and 60 seconds after warmup and before each measured burst. Cooldowns reduce
+thermal carryover but do not prove absence of hardware throttling.</p>
+<p><strong>Throughput</strong> is total actual output tokens divided by full HTTP burst wall
+time, including prompt evaluation and transport. It is not decode-only tokens/s.
+<strong>TTFT</strong> is time to first visible client text, including server chunk buffering.
+Two bursts do not establish statistical significance or reliable p95 latency.
+Per-condition values are available in the
+<a href="assets/native_mlx/20260920-m5max.csv">measurement CSV</a>.</p>
+<p>The 27B throughput profile preceded final lifecycle/async/Flash compatibility
+changes; source-path inspection found no material change to its timed decoder
+or admission path. It is not a byte-identical final-source timing. Later
+functional and HTTP correctness coverage includes those changes.</p>
+<h2 id="main-throughput-comparison">Main throughput comparison</h2>
+<p>Aggregate output tokens/s; C is simultaneous client requests.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Requested MTP</th>
+<th style="text-align: right;">C</th>
+<th style="text-align: right;">AbstractCore</th>
+<th style="text-align: right;">oMLX</th>
+<th>Actual execution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>27B</td>
+<td>Off</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">30.99</td>
+<td style="text-align: right;">31.33</td>
+<td>Target decoding</td>
+</tr>
+<tr>
+<td>27B</td>
+<td>Depth 2</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">49.36</td>
+<td style="text-align: right;">51.69</td>
+<td>Both use MTP</td>
+</tr>
+<tr>
+<td>27B</td>
+<td>Off</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">55.56</td>
+<td style="text-align: right;">56.74</td>
+<td>Target batching</td>
+</tr>
+<tr>
+<td>27B</td>
+<td>Depth 2</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">45.87</td>
+<td style="text-align: right;">57.08</td>
+<td>Native MTP cohort; oMLX target-only fallback</td>
+</tr>
+<tr>
+<td>27B</td>
+<td>Off</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">81.83</td>
+<td style="text-align: right;">84.11</td>
+<td>Target batching</td>
+</tr>
+<tr>
+<td>27B</td>
+<td>Depth 2</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">42.38</td>
+<td style="text-align: right;">83.83</td>
+<td>Native MTP cohort; oMLX target-only fallback</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>Off</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">28.20</td>
+<td style="text-align: right;">35.14</td>
+<td>Target decoding</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>Depth 2</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">42.19</td>
+<td style="text-align: right;">42.09</td>
+<td>Both use MTP; fixed versus adaptive depth</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>Off</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">51.82</td>
+<td style="text-align: right;">51.14</td>
+<td>Target batching</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>Depth 2</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">52.83</td>
+<td style="text-align: right;">51.42</td>
+<td>Native MTP cohort; oMLX target batching</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>Off</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">76.93</td>
+<td style="text-align: right;">81.61</td>
+<td>Target batching</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>Depth 2</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">69.68</td>
+<td style="text-align: right;">80.67</td>
+<td>Native MTP cohort; oMLX target batching</td>
+</tr>
+</tbody>
+</table></div>
+<p>Native singleton MTP improves its own off throughput by about <strong>1.59× on 27B</strong>
+and <strong>1.50× on Flash</strong>. Flash singleton MTP is essentially tied across stacks;
+the code/prose ranking reverses. Small native C2 advantages are descriptive,
+not established statistical wins. Target-only batching is the faster native
+C4 policy on both models.</p>
+<p>oMLX's concurrent 27B requests fall back on scheduler contention. Its default
+Flash multi-row policy also uses ordinary target batching; the main-profile
+singleton tails show zero draft cycles. Those enabled rows are not equivalent
+to native batched MTP. Native response diagnostics confirm actual batch sizes
+2/4 and MTP execution in the corresponding enabled rows.</p>
+<p>For target-only C1/C2/C4, median TTFT was 417/550/815 ms on native 27B versus
+489/661/1067 ms on oMLX. Flash was 1229/1134/1498 ms versus 936/1153/1600 ms.
+Lower client TTFT in a condition does not imply a faster token-generation kernel.</p>
+<h2 id="explicit-flash-mtp-under-concurrency">Explicit Flash MTP under concurrency</h2>
+<p>oMLX's optional <code>OMLX_MTP_ROWWISE_BATCH=1</code> policy was measured separately.
+Each measured burst had real multi-row activation and positive per-depth draft
+counts for every measured request; warmup and depth-zero probes were excluded.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th style="text-align: right;">C</th>
+<th style="text-align: right;">Native MTP cohort</th>
+<th style="text-align: right;">oMLX forced row-wise MTP</th>
+<th style="text-align: right;">oMLX default enabled setting, target batching</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">52.83</td>
+<td style="text-align: right;">39.20</td>
+<td style="text-align: right;">51.42</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">69.68</td>
+<td style="text-align: right;">39.02</td>
+<td style="text-align: right;">80.67</td>
+</tr>
+</tbody>
+</table></div>
+<p>Native is approximately <strong>35% faster at C2 and 79% faster at C4</strong> than the
+forced row-wise MTP policy in this sample. Its compatible cohort shares batched
+target verification; oMLX's opt-in implementation runs backbone work per row.
+This architectural difference is relevant, but versions, generated tokens and
+fixed/adaptive depth also differ, so it does not isolate the cause of the gap.
+The result does not establish superiority over oMLX's faster default C4 policy.</p>
+<h2 id="staggered-arrivals">Staggered arrivals</h2>
+<p>Two 256-token requests, with the second submitted 250 ms later. One cooled
+burst per condition; each TTFT is measured from that request's own submission.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>MTP</th>
+<th style="text-align: right;">Native tokens/s</th>
+<th style="text-align: right;">oMLX tokens/s</th>
+<th>Native TTFT first / second (s)</th>
+<th>oMLX TTFT first / second (s)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>27B</td>
+<td>Off</td>
+<td style="text-align: right;">55.16</td>
+<td style="text-align: right;">55.44</td>
+<td>0.650 / 0.332</td>
+<td>0.483 / 0.689</td>
+</tr>
+<tr>
+<td>27B</td>
+<td>Depth 2</td>
+<td style="text-align: right;">49.10</td>
+<td style="text-align: right;">37.67</td>
+<td>0.394 / 4.513</td>
+<td>0.469 / 0.637</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>Off</td>
+<td style="text-align: right;">51.13</td>
+<td style="text-align: right;">52.84</td>
+<td>1.161 / 0.809</td>
+<td>1.075 / 0.823</td>
+</tr>
+<tr>
+<td>Flash</td>
+<td>Depth 2</td>
+<td style="text-align: right;">47.02</td>
+<td style="text-align: right;">51.93</td>
+<td>0.843 / 4.975</td>
+<td>1.122 / 0.870</td>
+</tr>
+</tbody>
+</table></div>
+<p>Native target-only requests join active decoding. Native MTP requests instead
+run as successive singleton cohorts in this profile: the later request waits.
+For 27B, oMLX uses MTP for the first request and target decoding for the second;
+native's roughly 30% aggregate advantage comes with substantially worse second
+TTFT. For Flash, oMLX target batching is faster and more responsive here.
+Target-only continuous admission is the more responsive tested native policy
+for staggered multi-client service.</p>
+<h2 id="vision-and-functional-coverage">Vision and functional coverage</h2>
+<p><strong>AbstractCore vision worked with MTP off and on on both selected models.</strong>
+The HTTP profile swapped red/blue image halves and required the answer to
+follow the pixels. Both color arrangements passed for every engine/model/MTP
+combination; enabled requests had actual speculative execution evidence.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>AbstractCore off</th>
+<th>AbstractCore depth 2</th>
+<th>oMLX off</th>
+<th>oMLX depth 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>27B</td>
+<td>Pass</td>
+<td>Pass; actual MTP</td>
+<td>Pass</td>
+<td>Pass; actual MTP</td>
+</tr>
+<tr>
+<td>Flash-Next</td>
+<td>Pass</td>
+<td>Pass; actual MTP</td>
+<td>Pass</td>
+<td>Pass; actual MTP</td>
+</tr>
+</tbody>
+</table></div>
+<p>All 16 image answers were correct across eight conditions. These are image
+delivery/functionality checks, not OCR, general visual reasoning or concurrent
+multimodal throughput measurements. Prompt construction, buffered short-output
+timings and token accounting differ between stacks; no vision speed ranking is
+derived from them.</p>
+<p>The two-model native coverage additionally includes selectable depths 1/2/3,
+four-row MTP with different completion lengths, sync/async/stream behavior,
+stop strings, sampling controls, explicit tool dispatch, prompted structured
+output, cancellation, shared-owner lifecycle and prefix-cache restart/clear.
+The public concurrent arithmetic profile produced all 32 required answers
+correctly across eight conditions, with actual four-row native batches.
+Overall scope: 36 native functional phases and 50 comparison conditions; the
+scoped CPU suite passed 610 tests with two opt-in skips. This is not a
+full-project, all-provider or all-model certification.</p>
+<h2 id="memory-cache-and-serving-policy">Memory, cache and serving policy</h2>
+<p>Native lifecycle probes observed about <strong>15.18 GiB MLX active allocation for
+27B</strong> and <strong>69.39 GiB for Flash</strong> before final unload. Both returned to about
+1 KiB active allocation and zero allocator cache after final-owner release.
+These are workload-specific allocations, not maximum-context capacity estimates.
+Flash's roughly 50–55 GiB process high-water RSS across both stacks is a
+different measure, not its total unified-memory cost or a native RAM advantage.
+Native 27B MTP-off retains the head; oMLX off does not attach it.</p>
+<p>Both native models reused 732 of 733 prefix tokens after process restart;
+changed-suffix requests reused 512 tokens and answered the changed question.
+Explicit clear restored cold-cache behavior. Enable full-history keyed reuse
+and optional private SSD storage as described in <a href="native-mlx-runtime.html#bounded-ram-and-optional-ssd-prefix-reuse">native caching</a>.</p>
+<p>AbstractCore provides model load/unload controls, shared native weights and
+bounded caches. These differ from oMLX's automatic memory-pressure multi-model
+LRU eviction and idle-TTL unloading; AbstractCore's managed TTL is advisory.
+The <a href="concurrency.html">historical upstream batching profile</a> measures a different
+model/hardware/API path and must not be pooled with these results.</p>
+<h2 id="choosing-a-configuration-and-interpreting-limits">Choosing a configuration and interpreting limits</h2>
+<ul>
+<li>For a lower-memory, lower-latency option on this machine, use 27B. This profile
+  does not compare answer quality between 27B and Flash.</li>
+<li>Use depth-2 MTP for a single interactive request. Prefer target-only continuous
+  batching for concurrent/staggered clients, then measure your workload.</li>
+<li>Keep Flash PLE offload enabled on a busy 128-GiB machine; do not load both
+  models simultaneously without checking available memory.</li>
+<li>Native MTP cohorts cannot admit late requests. Sampled execution is exclusive.
+  Unsupported MTP logits penalties are refused or explicitly fall back when
+  acceleration is optional.</li>
+<li>Native Outlines and legacy manual cache artifact operations are unsupported.
+  Prompted structured output may retry; the Flash structured check used three
+  backend completions for one validated result.</li>
+<li>Native endpoint inline images are bounded and current-turn-only. Remote/file
+  URLs and image-bearing history are not supported by that endpoint path.</li>
+<li>The shared speculation contract is portable; HF/GGUF MTP tensor execution is
+  not provided by this upgrade. Upstream private interfaces remain version-sensitive.</li>
+<li>Long-context scaling, maximum concurrency, model-quality equivalence and
+  sustained-load tail latency were not measured. Finite-precision kernels and
+  generation policies can produce different text even at temperature zero.</li>
+</ul>
+<p>Installed oMLX uses additional routed gate/up, GDN and hyper-connection kernel
+optimizations on eligible target-only Flash paths. Native fusion at the actual
+decode helper is a possible optimization direction, not a delivered or measured
+speedup. Both stacks use PLE memory mapping; full PLE residency is not established
+as a remedy for the target-only gap.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

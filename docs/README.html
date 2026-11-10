@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AbstractCore Documentation Index - AbstractCore</title>
     <meta name="description" content="This folder contains the canonical user documentation for AbstractCore. The codebase is the source of truth; if you spot a mismatch, please open an issue.">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/README.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -45,6 +47,13 @@
 
             <div class="doc-content">
 
+<p>AI assistants and documentation indexers can use the repository-level
+<code>llms.txt</code> and <code>llms-full.txt</code> files. MCP clients such as Context7 can also
+query the public documentation directly.</p>
+<p>For agents writing integrations or operating an installation, load the
+<a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/skills/abstractcore/SKILL.md"><code>abstractcore</code> skill</a> with its <code>references/</code> folder.
+The <a href="agent-usage.html">integration and operations guide</a> is the canonical documentation for
+its bounded generation, tool-loop, configuration and lifecycle recipes.</p>
 <h2 id="abstractframework-ecosystem">AbstractFramework ecosystem</h2>
 <p>AbstractCore is one of the core packages of the <strong>AbstractFramework</strong> ecosystem:</p>
 <ul>
@@ -54,58 +63,88 @@
 </ul>
 <h2 id="start-here-recommended-reading-order">Start here (recommended reading order)</h2>
 <ol>
+<li><strong><a href="installation.html">Installation</a></strong> — the three install settings: light (<code>pip install abstractcore</code>), <code>abstractcore[apple]</code>, <code>abstractcore[gpu]</code></li>
 <li><strong><a href="prerequisites.html">Prerequisites</a></strong> — install/configure providers (Ollama, LMStudio, vLLM, HuggingFace, MLX, OpenAI, Anthropic, OpenRouter, Portkey, …)</li>
 <li><strong><a href="getting-started.html">Getting Started</a></strong> — first call (<code>create_llm</code>, <code>generate</code>), streaming, tools, structured output</li>
-<li><strong><a href="faq.html">FAQ</a></strong> — install extras, local servers, common gotchas</li>
+<li><strong><a href="faq.html">FAQ</a></strong> — install settings, local servers, common gotchas</li>
 <li><strong><a href="troubleshooting.html">Troubleshooting</a></strong> — actionable fixes for common failures</li>
 <li><strong><a href="api.html">API (Python)</a></strong> — user-facing map of the public API</li>
 <li><strong><a href="api-reference.html">API Reference</a></strong> — complete function/class reference (including events)</li>
+<li><strong><a href="architecture.html">Architecture</a></strong> — component ownership, provider boundaries, request lifecycle, native MLX execution, server routes and local model management</li>
 </ol>
 <h2 id="core-guides">Core guides</h2>
 <ul>
+<li><strong><a href="agent-usage.html">Integrating and operating AbstractCore</a></strong> — version verification, explicit endpoints, bounded Python recipes, host-controlled tools, model lifecycle, serving and troubleshooting; companion to the package agent skill</li>
 <li><strong><a href="tool-calling.html">Tool Calling</a></strong> — native + prompted tools; passthrough vs execution</li>
 <li><strong><a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a></strong> — normalize tool-call markup for different runtimes/clients</li>
+<li><strong><a href="email.html">Email</a></strong> — connect one IMAP/SMTP account (password or OAuth2), encrypted credentials, recipient policy (allowlist / denylist), send limits, Read only or Read and write access (<code>EmailAccount.access</code>, <code>set_access</code>), email tools, <code>abstractcore email ...</code>, the consoles' Email pages and the <code>abstractcore.comms.email</code> library</li>
+<li><strong><a href="web-tools.html">Web and Document Tools</a></strong> — <code>fetch_url</code>, <code>skim_url</code>, <code>web_search</code>, <code>skim_websearch</code>: extraction, result contract, optional JavaScript rendering, and safety</li>
 <li><strong><a href="structured-output.html">Structured Output</a></strong> — <code>response_model=...</code> strategies and limitations</li>
+<li><strong><a href="request-output.html">Request and Output</a></strong> — canonical <code>request=</code> + <code>output=</code> shape, structural task inference, and route-inspection basics</li>
 <li><strong><a href="session.html">Session Management</a></strong> — conversation state, persistence, compaction</li>
-<li><strong><a href="prompt-caching.html">Prompt Caching</a></strong> — <code>prompt_cache_key</code>, KV/prefix caches, and persistence (MLX)</li>
-<li><strong><a href="generation-parameters.html">Generation Parameters</a></strong> — unified parameter vocabulary + provider quirks</li>
+<li><strong><a href="chat-compaction.html">Chat Compaction</a></strong> — conversation reduction and continuity controls</li>
+<li><strong><a href="async-guide.html">Async Guide</a></strong> — async generation, streaming and concurrency patterns</li>
+<li><strong><a href="concurrency.html">Concurrency and Throughput</a></strong> — async versus tensor batching and the historical direct-backend MLX profile</li>
+<li><strong><a href="prompt-caching.html">Prompt Caching</a></strong> — <code>prompt_cache_key</code>, KV/prefix caches, persistence, durable memory bloc bindings, and the measured cold-vs-warm prefill matrix for the MLX, transformers and GGUF lanes</li>
+<li><strong><a href="generation-parameters.html">Generation Parameters</a></strong> — unified parameter vocabulary, default hierarchy, caller overrides, and provider quirks</li>
+<li><strong><a href="speculative-decoding.html">Speculative Decoding</a></strong> — native MTP controls, Qwen3.8-Flash-Next Q4 on the in-process MLX provider, selectable draft depth, prefix caching, and measured tradeoffs</li>
+<li><strong><a href="native-mlx-runtime.html">Native MLX Runtime</a></strong> — concurrent native requests, target continuous batching versus MTP cohorts, shared ownership, cancellation, bounded RAM/SSD prefix caches, and HTTP serving</li>
+<li><strong><a href="native-mlx-benchmarks.html">Native MLX Benchmarks</a></strong> — M5 Max 128-GiB measurements for Qwen3.8-27B and Flash-Next versus oMLX: actual MTP, concurrent requests, vision, memory and workload-dependent limits</li>
+<li><strong><a href="reasoning-control.html">Reasoning Control</a></strong> — the unified <code>thinking=</code> parameter, what each provider sends for on/off and effort levels, model requirements, and how to verify a request took effect</li>
+<li><strong><a href="huggingface-model-compatibility.html">HuggingFace Model Compatibility</a></strong> — Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets</li>
 <li><strong><a href="memory-blocs.html">Memory Blocs</a></strong> — persistent extracted text snapshots + per-model KV artifacts</li>
-<li><strong>Model/architecture registries (source of truth)</strong> — <code>abstractcore/assets/model_capabilities.json</code> + <code>abstractcore/assets/architecture_formats.json</code> (see <code>abstractcore/assets/README.md</code>)</li>
-<li><strong><a href="centralized-config.html">Centralized Config</a></strong> — config file + config CLI (<code>abstractcore --config</code>)</li>
+<li><strong><a href="generation-cancel.html">Stopping a Generation and Ejecting a Model</a></strong> — host <code>cancel_event</code> per lane (MLX, transformers, GGUF, LM Studio, Ollama, llama.cpp server / OpenAI-compatible), severed HTTP requests, what cannot be interrupted, and eject safety (in-flight calls stopped first, <code>load_model</code>, reload on demand)</li>
+<li><strong><a href="memory-management.html">Memory and Model Residency</a></strong> — process-local artifact sharing and configuration refusals, host memory snapshot (<code>get_memory_snapshot</code>), host-wide resident-model sweep (<code>sweep_loaded_models</code>), per-provider loaded-model listings, what <code>unload_model()</code> frees (weights + session caches) and how to verify it, ejecting a model from the whole process across MLX, HuggingFace (transformers and GGUF) and embedding models (<code>process_residency.eject</code> / <code>eject_unclaimed</code> with the claims registry), the one-figure <code>device.process_held_bytes</code>, gateway model locks (<code>/acore/models/lock</code>), and context calibration/estimation (<code>estimate_context_fit</code>)</li>
+<li><strong>Model/architecture registries (source of truth)</strong> — <code>abstractcore/assets/model_capabilities.json</code>, <code>abstractcore/assets/model_capabilities.schema.json</code>, and <code>abstractcore/assets/architecture_formats.json</code> (see <code>abstractcore/assets/README.md</code>)</li>
+<li><strong><a href="models.html">Local Models</a></strong> — browse the download catalog with fit verdicts for this machine (<code>abstractcore models catalog|search</code>), the recommended text model per machine, list installed models with sizes, download (with MTP companions and live progress) and delete weights, follow jobs, <code>models verify</code> and <code>models repair-refs</code></li>
+<li><strong><a href="knowledge-graph-extraction-models.html">Knowledge-Graph Extraction Models</a></strong> — measured comparison of local and hosted models for ontology-constrained entity and relationship extraction: precision, coverage and time per model, the prompt rules and second-pass strategies that change results, and recommendations</li>
+<li><strong><a href="decision-models.html">Decision Models</a></strong> — text in, calibrated typed decisions out: <code>generate(document, output="decision", questions=...)</code> with choice / noul / score questions; one abstraction over hosted Jev (<code>typesafe</code>), any System One host (<code>systemone</code>) and local Kev, Lev and Laya checkpoints (MLX / transformers / llama.cpp); <code>POST /v1/decisions</code>; conversion to quantized checkpoints and measured quality per precision</li>
+<li><strong><a href="recommended-models.html">Recommended Models</a></strong> — the recommended model per capability (text, image input, speech output and input, image, video, music) for Apple silicon by memory, NVIDIA Linux/Windows, processor-only machines and Intel Macs; <code>abstractcore models recommendations [--host] [--json]</code>; tables generated from the code</li>
+<li><strong><a href="engines.html">Local Engines</a></strong> — detect Ollama / LM Studio / MLX / llama.cpp / vLLM / transformers, the exact install command per OS, <code>abstractcore engines install</code>, and the install safety policy</li>
+<li><strong><a href="centralized-config.html">Centralized Config</a></strong> — config file, config CLI (<code>abstractcore --config</code>), and capability route defaults (<code>input.*</code>, <code>output.*</code>, <code>embedding.*</code>, <code>rerank.*</code>)</li>
+<li><strong><a href="data-registry.html">Data-Home Registry</a></strong> — machine-level registry of framework data directories (model/prompt caches, runs, sessions, logs, entity homes) with owner-declared safe-purge verbs</li>
 <li><strong><a href="events.html">Events</a></strong> and <strong><a href="structured-logging.html">Structured Logging</a></strong> — observability hooks</li>
 <li><strong><a href="interaction-tracing.html">Interaction Tracing</a></strong> — record prompts/responses/usage for debugging</li>
 <li><strong><a href="capabilities.html">Capabilities</a></strong> — what AbstractCore can and cannot do</li>
-<li><strong>Capability plugins (voice/audio/vision)</strong> — optional deterministic outputs via <code>llm.voice/llm.audio/llm.vision</code> (see <code>capabilities.md</code> and <code>server.md</code>)</li>
+<li><strong><a href="fallbacks.html">Fallbacks</a></strong> — explicit fallback behavior and compatibility boundaries</li>
+<li><strong><a href="known_issues.html">Model Compatibility and Issue Reporting</a></strong> — provider/artifact checks and useful issue reports</li>
+<li><strong><a href="examples.html">Practical Examples</a></strong> — end-to-end Python recipes</li>
+<li><strong><a href="comparison.html">Framework Comparison</a></strong> — AbstractCore and AbstractFramework alongside other LLM libraries</li>
+<li><strong>Capability plugins (voice/audio/vision/music/scene3d/camera)</strong> — optional deterministic outputs via <code>llm.voice/llm.audio/llm.vision/llm.music/llm.scene3d/llm.camera</code>, plus shared provider/model discovery (see <code>capabilities.md</code> and <code>server.md</code>)</li>
 </ul>
 <h2 id="media-embeddings-and-mcp-optional-subsystems">Media, embeddings, and MCP (optional subsystems)</h2>
 <ul>
 <li><strong><a href="media-handling-system.html">Media Handling System</a></strong> — images/audio/video + documents (policies + fallbacks)</li>
-<li><strong><a href="vision-capabilities.html">Vision Capabilities</a></strong> — image/video input, vision fallback, and how this differs from generative vision</li>
+<li><strong><a href="vision-capabilities.html">Vision Capabilities</a></strong> — image/video input, native MLX image input, vision fallback, and how this differs from generative vision</li>
 <li><strong><a href="glyphs.html">Glyph Visual-Text Compression</a></strong> — optional vision-based document compression (experimental)</li>
+<li><strong><a href="vision-compression.html">Vision Compression</a></strong> — rendering, configuration and quality tradeoffs for text-as-image workflows</li>
 <li><strong><a href="embeddings.html">Embeddings</a></strong> — <code>EmbeddingManager</code> and local embedding models (opt-in)</li>
 <li><strong><a href="mcp.html">MCP (Model Context Protocol)</a></strong> — consume MCP tool servers (HTTP/stdio) as tool sources</li>
 </ul>
 <h2 id="server-optional-http-api">Server (optional HTTP API)</h2>
 <ul>
-<li><strong><a href="server.html">Server</a></strong> — OpenAI-compatible <code>/v1</code> gateway (install <code>pip install "abstractcore[server]"</code>)</li>
-<li><strong><a href="endpoint.html">Endpoint</a></strong> — single-model OpenAI-compatible <code>/v1</code> endpoint (install <code>pip install "abstractcore[server]"</code>; run <code>abstractcore-endpoint</code>)</li>
+<li><strong><a href="server.html">Server</a></strong> — optional OpenAI-compatible <code>/v1</code> serving, Core authentication, standalone <code>abstractcore serve</code> and managed listener lifecycle in an execution owner</li>
+<li><strong><a href="console.html">Web Console</a></strong> — browser console at <code>/console</code> (responsive on phones and tablets): host profile, model catalog with fit badges, download/delete, engine install with confirmation, and the embedding contract for AbstractGateway</li>
+<li><strong><a href="console-tui.html">Terminal Console</a></strong> — <code>abstractcore-console</code>: the same Models and Engines screens in a terminal, plus config screens</li>
+<li><strong><a href="endpoint.html">Endpoint</a></strong> — single-model OpenAI-compatible <code>/v1</code> endpoint (install <code>pip install abstractcore</code>; run <code>abstractcore-endpoint</code>)</li>
 </ul>
 <h2 id="built-in-cli-apps">Built-in CLI apps</h2>
 <p>These are convenience CLIs built on top of the core library:</p>
 <ul>
-<li><strong><a href="apps/basic-summarizer.md">Summarizer</a></strong></li>
-<li><strong><a href="apps/basic-extractor.md">Extractor</a></strong></li>
-<li><strong><a href="apps/basic-judge.md">Judge</a></strong></li>
-<li><strong><a href="apps/basic-intent.md">Intent</a></strong></li>
-<li><strong><a href="apps/basic-deepsearch.md">DeepSearch</a></strong></li>
+<li><strong><a href="acore-cli.html">Interactive Chat CLI</a></strong> — <code>abstractcore-chat</code> usage and controls</li>
+<li><strong><a href="apps/basic-summarizer.html">Summarizer</a></strong></li>
+<li><strong><a href="apps/basic-extractor.html">Extractor</a></strong></li>
+<li><strong><a href="apps/basic-judge.html">Judge</a></strong></li>
+<li><strong><a href="apps/basic-intent.html">Intent</a></strong></li>
+<li><strong><a href="apps/basic-deepsearch.html">DeepSearch</a></strong></li>
 </ul>
 <h2 id="project-docs">Project docs</h2>
 <ul>
-<li><strong><a href="../CHANGELOG.md">Changelog</a></strong> — release notes and upgrade guidance</li>
-<li><strong><a href="../CONTRIBUTING.md">Contributing</a></strong> — dev setup and PR guidelines</li>
-<li><strong><a href="../SECURITY.md">Security</a></strong> — responsible vulnerability reporting</li>
-<li><strong><a href="../ACKNOWLEDGEMENTS.md">Acknowledgements</a></strong> — upstream projects and communities</li>
-<li><strong><a href="../LICENSE">License</a></strong> — MIT license text</li>
+<li><strong><a href="changelog.html">Changelog</a></strong> — release notes and upgrade guidance</li>
+<li><strong><a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/CONTRIBUTING.md">Contributing</a></strong> — dev setup and PR guidelines</li>
+<li><strong><a href="security.html">Security</a></strong> — responsible vulnerability reporting</li>
+<li><strong><a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/ACKNOWLEDGEMENTS.md">Acknowledgements</a></strong> — upstream projects and communities</li>
+<li><strong><a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/LICENSE">License</a></strong> — MIT license text</li>
 </ul>
 <h2 id="docs-layout-whats-where">Docs layout (what’s where)</h2>
 <p><code>docs/</code> is mostly a flat set of guides plus a few subfolders:</p>
@@ -123,6 +162,13 @@
 - <code>server.md</code> = HTTP server endpoints and deployment</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local models: browse, check fit, download, delete - AbstractCore</title>
+    <meta name="description" content="AbstractCore can show which local models suit your machine, where they are installed, and fetch or remove them with each engine&#x27;s own tool. The same data is…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/models.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Local models: browse, check fit, download, delete</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore can show which local models suit your machine, where they are installed, and fetch or remove them with each engine&#x27;s own tool. The same data is available from the CLI (abstractcore models ..., with --json), from the HTTP server (/acore/models/*), and from Python. AbstractGateway re-exposes the same payloads, so every console shows the same answers.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-this-covers" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What this covers</a>
+<a href="#artifact-references" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Artifact references</a>
+<a href="#are-the-weights-here-probe" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Are the weights here? (probe)</a>
+<a href="#the-host-profile" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">The host profile</a>
+<a href="#the-catalog" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">The catalog</a>
+<a href="#fit-verdicts" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Fit verdicts</a>
+<a href="#installed-models" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Installed models</a>
+<a href="#downloading" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Downloading</a>
+<a href="#deleting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Deleting</a>
+<a href="#jobs" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Jobs</a></div>
+
+            <div class="doc-content">
+
+<p>Related pages: <a href="engines.html">Engines</a> (installing Ollama, LM Studio, MLX, llama.cpp),
+<a href="centralized-config.html">Centralized Config</a> (which model each capability uses and
+<code>abstractcore models status</code>), <a href="memory-management.html">Memory and model residency</a>
+(what is loaded right now), <a href="server.html">Server</a>, and
+<a href="troubleshooting.html#local-model-downloads">Troubleshooting</a> for load and download failures.</p>
+<h2 id="what-this-covers">What this covers</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Verb</th>
+<th>CLI</th>
+<th>HTTP</th>
+<th>Python</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Describe this machine</td>
+<td><code>abstractcore host profile --json</code></td>
+<td><code>GET /acore/host/profile</code></td>
+<td><code>abstractcore.utils.host_profile.host_profile()</code></td>
+</tr>
+<tr>
+<td>Browse downloadable models</td>
+<td><code>abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json</code></td>
+<td><code>GET /acore/models/catalog?q=&amp;engine=&amp;fits=&amp;hub=&amp;tag=&amp;hub_page=&amp;hub_page_size=&amp;extended=</code></td>
+<td><code>abstractcore.config.model_catalog.catalog(...)</code></td>
+</tr>
+<tr>
+<td>Search</td>
+<td><code>abstractcore models search "&lt;query&gt;" [--engine X] [--fits] [--hub] --json</code></td>
+<td>same route with <code>q=</code></td>
+<td><code>model_catalog.search(q, ...)</code></td>
+</tr>
+<tr>
+<td>List installed models</td>
+<td><code>abstractcore models list [--provider X] --json</code></td>
+<td><code>GET /acore/models/installed?provider=</code></td>
+<td><code>model_materializer.list_installed(provider)</code></td>
+</tr>
+<tr>
+<td>Download</td>
+<td><code>abstractcore models download &lt;provider&gt; &lt;artifact&gt; [--dry-run] [--detach] [--json]</code></td>
+<td><code>POST /acore/models/download</code></td>
+<td><code>host_jobs.start_download_job(...)</code> / <code>model_materializer.download(...)</code></td>
+</tr>
+<tr>
+<td>Delete</td>
+<td><code>abstractcore models delete &lt;provider&gt; &lt;artifact&gt; [--yes] [--dry-run] [--force] [--json]</code></td>
+<td><code>POST /acore/models/delete</code></td>
+<td><code>model_materializer.delete_artifact(...)</code></td>
+</tr>
+<tr>
+<td>Follow background work</td>
+<td><code>abstractcore models jobs [&lt;job_id&gt;] [--kind K] [--status S] --json</code>, <code>abstractcore models cancel &lt;job_id&gt;</code></td>
+<td><code>GET /acore/jobs</code>, <code>GET /acore/jobs/{id}</code>, <code>POST /acore/jobs/{id}/cancel</code></td>
+<td><code>host_jobs.default_registry()</code></td>
+</tr>
+<tr>
+<td>Recommended model per capability and machine</td>
+<td><code>abstractcore models recommendations [--host] [--json]</code></td>
+<td>none</td>
+<td><code>abstractcore.config.recommendations.recommended_models()</code> / <code>recommendation_matrix()</code> (see <a href="recommended-models.html">Recommended Models</a>)</td>
+</tr>
+<tr>
+<td>Check that an installed model answers</td>
+<td><code>abstractcore models verify &lt;artifact&gt; [--provider P] [--json]</code></td>
+<td>none</td>
+<td><code>abstractcore.config.model_verify.verify_inference(...)</code></td>
+</tr>
+<tr>
+<td>Repair missing <code>refs/main</code></td>
+<td><code>abstractcore models repair-refs [--dry-run] [--cache-dir DIR] [--json]</code></td>
+<td>none</td>
+<td><code>model_materializer.repair_hf_refs(apply=...)</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Exit codes for every verb: <code>0</code> success, <code>1</code> error, <code>2</code> refused (a policy, a delete blocker, or
+a destructive action without <code>--yes</code>). A refusal still prints its JSON (<code>status</code>, <code>reason</code>,
+<code>message</code>, and <code>delete_blockers</code> for deletes).</p>
+<h2 id="artifact-references">Artifact references</h2>
+<p>An <strong>artifact</strong> names the exact weights to fetch, quantization included:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Example artifact</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ollama</code></td>
+<td><code>qwen3:8b</code></td>
+<td>An Ollama tag.</td>
+</tr>
+<tr>
+<td><code>lmstudio</code></td>
+<td><code>qwen/qwen3.5-9b@q4_k_m</code></td>
+<td>LM Studio model id with <code>@quant</code>. A bare id lets LM Studio pick its default build.</td>
+</tr>
+<tr>
+<td><code>mlx</code></td>
+<td><code>mlx-community/Qwen3-8B-4bit</code></td>
+<td>A Hugging Face repo; MLX repos hold one quantization.</td>
+</tr>
+<tr>
+<td><code>huggingface</code></td>
+<td><code>unsloth/Qwen3-8B-GGUF:Q4_K_M</code></td>
+<td>A GGUF repo plus <code>:QUANT</code>. Only the matching <code>*Q4_K_M*.gguf</code> files are fetched. Without <code>:QUANT</code> the whole repo is downloaded.</td>
+</tr>
+<tr>
+<td><code>mlx-gen</code>, <code>supertonic</code></td>
+<td><code>AbstractFramework/flux.2-klein-4b-8bit</code>, <code>AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit</code>, <code>supertonic-3</code></td>
+<td>Image starter (Apple silicon only), video starter (Apple silicon, only where its measured memory fits) and voice starter (every OS).</td>
+</tr>
+<tr>
+<td><code>diffusers</code></td>
+<td><code>black-forest-labs/FLUX.2-klein-4B</code></td>
+<td>A Diffusers repo, fetched whole. The image starter on an NVIDIA GPU.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="are-the-weights-here-probe">Are the weights here? (<code>probe</code>)</h2>
+<p><code>model_materializer.probe(provider, model)</code> answers, for one route's provider and model, whether
+the weights are on this computer: <code>installed</code> (with <code>location</code>, the snapshot or file),
+<code>absent</code> (with an <code>instruction</code>), <code>not_applicable</code> (remote providers) or <code>unknown</code> (the engine
+could not be asked). Every answer also carries <code>summary</code>, ONE short sentence a grid prints under
+the state ("In the Hugging Face cache.", "Not in Piper's voice folder."); the longer <code>detail</code>,
+<code>instruction</code> and <code>location</code> are for a tooltip or a detail line. It never downloads, opens a
+socket or imports an inference framework.</p>
+<p>A route stores the id the ENGINE accepts, so each engine's id is mapped to its storage with that
+engine's own table:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Route provider</th>
+<th>Model id on the route</th>
+<th>Where the probe looks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>faster-whisper</code> (also <code>whisper</code>; <code>local</code> on <code>input.voice</code>)</td>
+<td><code>large-v3</code>, <code>base</code>, ... or a repo id</td>
+<td>AbstractVoice's aliases (<code>large</code> -&gt; <code>large-v3</code>), then faster-whisper's own <code>_MODELS</code> table, read from its source without importing it: <code>large-v3</code> is <code>Systran/faster-whisper-large-v3</code> in the Hugging Face cache</td>
+</tr>
+<tr>
+<td><code>mlx-whisper</code> (Apple silicon, Apple GPU)</td>
+<td>the same ids (<code>large-v3</code>, <code>large-v3-turbo</code>, ...) or a repo id</td>
+<td>AbstractVoice's <code>MLXWhisperAdapter.MODEL_REPOS</code>: <code>large-v3</code> is <code>mlx-community/whisper-large-v3-mlx</code> in the Hugging Face cache</td>
+</tr>
+<tr>
+<td><code>transformers-asr</code> (<code>hf</code> on <code>input.voice</code>)</td>
+<td><code>whisper-large-v3-turbo</code>, ... or a repo id</td>
+<td>AbstractVoice's Transformers ASR aliases, then the Hugging Face cache</td>
+</tr>
+<tr>
+<td><code>audiodit</code>, <code>omnivoice</code>, <code>qwen3-tts</code></td>
+<td>a repo id or a local checkpoint</td>
+<td>the Hugging Face cache, or the folder</td>
+</tr>
+<tr>
+<td><code>piper</code></td>
+<td><code>en_US-amy-medium</code> (or a language: <code>en</code>)</td>
+<td>AbstractVoice's Piper voice folder (<code>~/.piper/models</code>); fetch with <code>abstractvoice-prefetch --piper en</code></td>
+</tr>
+<tr>
+<td><code>f5_tts</code>, <code>chroma</code></td>
+<td>any</td>
+<td>AbstractVoice's cloning folders (<code>~/.cache/abstractvoice/openf5</code>, <code>.../chroma</code>); fetch with <code>abstractvoice-prefetch --openf5</code> / <code>--chroma</code></td>
+</tr>
+<tr>
+<td><code>supertonic</code></td>
+<td><code>supertonic-3</code></td>
+<td>AbstractVoice's Supertonic cache</td>
+</tr>
+<tr>
+<td><code>stable-audio-3</code>, <code>stable-audio</code>, <code>acestep</code>, <code>diffusers</code></td>
+<td>a repo id</td>
+<td>the Hugging Face cache (<code>acemusic</code> and <code>elevenlabs-music</code> are remote)</td>
+</tr>
+<tr>
+<td><code>mlx-gen</code>, <code>mflux</code>, <code>sdcpp</code></td>
+<td>a repo id, or an AbstractVision preset name (<code>klein-4b</code>, <code>FLUX.2-dev</code>)</td>
+<td>the preset's repository in the Hugging Face cache; <code>sdcpp</code> also takes a local GGUF file</td>
+</tr>
+<tr>
+<td><code>triposr</code>, <code>trellis2</code>, <code>step1x</code>, <code>hunyuan3d</code> (and their <code>abstract3d:</code> ids)</td>
+<td>a repo id</td>
+<td>the Hugging Face cache</td>
+</tr>
+<tr>
+<td><code>mlx</code>, <code>mlx-vlm</code>, <code>huggingface</code>, <code>transformers</code></td>
+<td>a repo id (<code>:QUANT</code> for GGUF)</td>
+<td>the Hugging Face cache (MLX also checks its MTP companion)</td>
+</tr>
+<tr>
+<td><code>lmstudio</code>, <code>ollama</code></td>
+<td>the engine's model id</td>
+<td>the engine's own listing (<code>lms ls</code>, <code>GET /api/tags</code>)</td>
+</tr>
+</tbody>
+</table></div>
+<p>On a voice route the provider is first resolved the way the route runs it (core's
+<code>route_engines.voice_engine_id</code>, then AbstractVoice's own aliases: <code>remote</code>, <code>compatible</code> and
+<code>proxy</code> are <code>openai-compatible</code>, so they read as remote).</p>
+<p>The engines that resolve to a Hugging Face repo are downloaded the same way
+(<code>abstractcore models download faster-whisper large-v3</code> fetches <code>Systran/faster-whisper-large-v3</code>).
+Only a provider no route offers keeps <code>unknown</code> with evidence <code>no materializer</code>; its <code>detail</code>
+names the provider and its <code>instruction</code> says what to do (check the provider's own model list, or
+add a remote service as an endpoint so the route counts as remote). Helper companions some engines
+load besides the model (Stable Audio 3's T5Gemma encoder, AudioDiT's tokenizer, TRELLIS.2's DINOv3
+and RMBG, a sdcpp preset's VAE and text encoder) are not part of the answer.</p>
+<h2 id="the-host-profile">The host profile</h2>
+<p><code>abstractcore host profile --json</code> (<code>host_profile_v1</code>) reports:</p>
+<ul>
+<li><code>os</code>, <code>arch</code>, <code>accelerator</code> (<code>metal</code>, <code>cuda</code>, <code>rocm</code>, <code>none</code>), <code>gpu_name</code>, <code>unified_memory</code>;</li>
+<li><code>ram_bytes</code>, <code>vram_bytes</code> (CUDA, from <code>nvidia-smi</code>);</li>
+<li><code>ceiling_bytes</code> and <code>ceiling_source</code>: the most memory a model can use. On Apple silicon this is
+  the <code>iogpu.wired_limit_mb</code> sysctl when set (<code>metal_wired_limit</code>), else Metal's recommended
+  working set (<code>metal_recommended</code>, needs <code>mlx</code>), else 75% of RAM (<code>ram_75pct</code>). On NVIDIA it is
+  total VRAM (<code>cuda_total</code>). This is the same ceiling the context estimator uses;</li>
+<li><code>free_now_bytes</code>: memory available right now (available RAM capped at the ceiling; free VRAM on CUDA);</li>
+<li><code>disk</code>: free space for the Hugging Face cache, the LM Studio models folder and the Ollama store.</li>
+</ul>
+<p>Values that cannot be measured are <code>null</code>.</p>
+<h2 id="the-catalog">The catalog</h2>
+<p><code>abstractcore models catalog --json</code> returns <code>model_catalog_v1</code>: the host profile plus one row
+per model. The curated seed ships with AbstractCore
+(<code>abstractcore/assets/model_downloads_catalog.json</code>, schema alongside) and covers chat, coding,
+vision and embedding models across Qwen, Llama, Gemma, Mistral, DeepSeek, GPT-OSS, Phi,
+SmolLM, Granite, GLM and common embedding families, plus the recommended fresh-install set
+(the recommended text model below, FLUX.2 klein 4B, Supertonic 3). Where an 8-bit build exists
+upstream, a row lists it next to the 4-bit one: MLX <code>-8bit</code> repos, GGUF <code>Q8_0</code> files in the same
+repos as the <code>Q4_K_M</code> ones, and Ollama <code>-q8_0</code> tags.</p>
+<p>Each row carries <code>capabilities</code> (text, vision, audio, tools, thinking, max_tokens, embedding)
+joined from AbstractCore's model capability registry, and one entry per artifact with:</p>
+<ul>
+<li><code>presence.status</code>: <code>installed</code>, <code>absent</code>, <code>unknown</code> (the engine could not be asked), or
+  <code>not_applicable</code> (remote providers);</li>
+<li><code>quant</code> (the artifact's own quantization label, lowercased, or <code>null</code>), <code>bits</code> (effective bits
+  per weight used by the fit estimate), <code>quant_class</code> and <code>quant_class_source</code> (see below);</li>
+<li><code>options</code>: route options a recommendation copies with this artifact (the MTP builds carry
+  <code>speculation</code>); <code>{}</code> for most artifacts;</li>
+<li><code>companions</code>: repos downloaded together with this artifact (<code>[]</code> for most): an MLX build's MTP
+  drafter, as the MLX drafter registry names it (<code>speculation.mlx_companion_repos</code>, the same
+  answer the download job and the provider use; the seed holds no list of its own). For example
+  both <code>mlx-community/Qwen3.8-27B-4bit</code> and <code>Jundot/Qwen3.8-27B-oQ4e-mtp</code> list
+  <code>mlx-community/Qwen3.8-27B-MTP-4bit</code>; Qwen3.8 Flash-Next has its MTP head built in and lists
+  none. <code>companion_bytes</code> is their verified size (the seed's <code>companion_sizes</code>, read from the
+  Hugging Face file listing), and a catalog-sized <code>download_bytes</code> INCLUDES it, because the
+  download fetches both and the drafter stays in memory while the model decodes. <code>null</code> means
+  no companion, or a companion whose size is not recorded (then it is not included and the fit
+  notes say so). An engine-reported size is shown as the engine reports it;</li>
+<li><code>note</code>: one sentence about this build, when there is something to say (the MTP builds);</li>
+<li><code>download_bytes</code> and <code>size_source</code>: <code>catalog</code> (observed on a real engine store, or read from
+  the upstream file listing when the seed records an <code>upstream</code> check), <code>engine</code>
+  (reported by the installed engine), <code>hf_api</code> (Hugging Face file listing), <code>estimate</code>
+  (parameters x bits), or <code>unknown</code>;</li>
+<li><code>resident_bytes</code>: the MEASURED memory the engine needs while this artifact runs, for models
+  whose working memory is not their file size (the video rows), else <code>null</code>. The seed records it
+  with its source (machine, engine version, canvas and frame count); the fit uses it as <code>W</code> and the
+  download size only for the disk check, and the fit notes quote the source. It is measured at the
+  engine's default canvas; the seed may also record measured needs at smaller canvases
+  (<code>resident.smaller_canvases</code>, Wan2.2 TI2V-5B at 832x480), which
+  <a href="recommended-models.html">Recommended Models</a> reports where only the smaller size fits;</li>
+<li><code>smaller_canvas</code>: <code>{canvas, need_bytes, verdict}</code> when the default canvas does not fit this
+  machine but a measured smaller canvas does (<code>canvas</code> is <code>WIDTHxHEIGHTxFRAMES</code>), else <code>null</code>;</li>
+<li><code>fit</code> (see below), <code>downloadable</code>, <code>supported_on_host</code>, and the <code>cli_download</code> command;</li>
+<li><code>gguf_architecture</code>, <code>loadable</code>, <code>unloadable_reason</code> (llama.cpp builds, with <code>--hub</code>): the GGUF's
+  <code>general.architecture</code> as the Hugging Face API reports it (<code>gguf.architecture</code>), checked against this
+  computer's llama.cpp before anything downloads. <code>loadable: false</code> comes with the sentence ("This computer's
+  llama.cpp (llama-cpp-python 0.3.x) cannot load the spark2_5 architecture. Update llama-cpp-python, or choose
+  another model."), <code>downloadable: false</code>, and a fit note. <code>null</code> means it could not be told (no architecture from
+  the Hub, or no llama-cpp-python), and the build stays offered;</li>
+<li><code>recommended</code>: exactly one artifact per row is pre-selected for this machine. On Apple silicon
+  the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
+  LM Studio, Ollama, Hugging Face. Elsewhere the curated starter wins when the host can run it,
+  then the order is Ollama, LM Studio, Hugging Face. Both prefer artifacts that fit and engines
+  that are installed, and a curated pick whose engine is absent yields to an artifact an installed
+  engine serves (a Linux server with only llama.cpp pre-selects the row's GGUF). LM Studio and
+  Ollama builds stay listed and downloadable on a Mac;</li>
+<li><code>engine_installed</code>: whether the engine that serves this artifact is installed. A row lists its
+  pre-selection first, then installed engines' artifacts, then the rest;</li>
+<li><code>starter</code> (per row): part of this machine's recommended fresh-install set. Exactly one text
+  row is the starter: the row of the recommended text model.</li>
+</ul>
+<h3 id="the-recommended-text-model">The recommended text model</h3>
+<p>One function decides it for every surface (the catalog flags, the fresh-install defaults,
+<code>abstractcore config apply-recommended</code>, <code>abstractcore models download --recommended</code>, and the
+Gateway's first-run guide): <code>abstractcore.config.model_catalog.recommended_text_model()</code>.</p>
+<p>On Apple silicon it is an MLX build chosen by the computer's unified memory, as the host profile
+reports it (<code>ram_bytes</code>, in GiB):</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Unified memory</th>
+<th>Row</th>
+<th>Recommended build</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>below 24 GiB</td>
+<td><code>qwen3.5-9b</code></td>
+<td><code>mlx-community/Qwen3.5-9B-MLX-4bit</code></td>
+</tr>
+<tr>
+<td>24 GiB to below 128 GiB</td>
+<td><code>qwen3.8-27b</code></td>
+<td><code>mlx-community/Qwen3.8-27B-4bit</code></td>
+</tr>
+<tr>
+<td>128 GiB and above</td>
+<td><code>qwen3.8-flash-next</code></td>
+<td><code>mlx-community/Qwen3.8-Flash-Next-4bit</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Qwen3.5 9B fits from 16 GB; on an 8 GB Mac it is tight: it runs with a small context (verdict
+<code>tight</code>, <code>small_context</code>); close other apps first. On a 24 GB Mac, Qwen3.8 27B runs at macOS's
+default GPU memory limit with a small context too, and the pick's <code>warning</code> gives the <code>sysctl</code>
+command for more context (about 30k tokens at 20480 MB, measured on a 24 GB Mac mini). On a 128 GB Mac,
+Flash-Next fits once the GPU memory limit is raised. See <a href="recommended-models.html#gpu-memory-on-apple-silicon">GPU memory on Apple
+silicon</a>.</p>
+<p>A Mac whose memory cannot be read gets the smallest tier, and the pick says so in <code>tier</code>. Every
+other computer keeps the portable default, LM Studio <code>qwen/qwen3.5-9b@q4_k_m</code>.</p>
+<p>The recommendations for the other capabilities (image input, speech, image, video, music) and
+the full table per kind of machine are on <a href="recommended-models.html">Recommended Models</a>.</p>
+<p>The three larger tiers also list an MTP build (native multi-token prediction: <code>mlx-works/Qwen3.5-9B-oQ4e-mtp</code>,
+<code>Jundot/Qwen3.8-27B-oQ4e-mtp</code>, <code>Jundot/Qwen3.8-Flash-Next-oQ4e-mtp</code>). The module switch
+<code>MTP_RECOMMENDED</code> (off) decides whether the tier recommends the MTP build instead of the plain
+one. Either way the text route keeps the recommendation's MTP policy
+(<code>speculation = {mode: native_mtp, num_draft_tokens: 2, require_acceleration: false}</code>).</p>
+<p>The pick carries the catalog's fit verdict for this machine (<code>fit</code>, <code>fits</code>). A tier the estimate
+says will not fit stays the recommendation: <code>fits</code> is <code>false</code> and <code>warning</code> says so in one
+sentence, which the Gateway's guide shows on the <strong>Chat and text</strong> card. A <code>tight</code> verdict fits
+(<code>fits</code> is <code>true</code>) and <code>warning</code> says it fits tightly. The pick never moves to another tier on
+its own. The pick also carries <code>companions</code> and <code>companion_bytes</code>, and its fit counts the
+drafter's bytes.</p>
+<p>The three tier rows carry <code>kv_geometry</code>, read from each repo's upstream <code>config.json</code>: these
+models are hybrids where only one layer in four keeps a per-token KV cache (the others are linear
+attention with a fixed-size state), so the estimate counts only the full-attention layers. With
+the upstream weight size, a Qwen3.8 Flash-Next 4-bit build needs about 109 GiB (103.9 GiB of
+weights, 0.2 GiB of KV cache for 8,192 tokens, 5.2 GiB runtime overhead).</p>
+<h3 id="quant_class"><code>quant_class</code></h3>
+<p>A normalized quantization family for filtering, derived from the artifact's own <code>quant</code> label:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th><code>quant</code> label</th>
+<th><code>quant_class</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>2bit</code>, <code>q2_k</code>, <code>iq2_*</code></td>
+<td><code>2bit</code></td>
+</tr>
+<tr>
+<td><code>3bit</code>, <code>q3_k_*</code>, <code>iq3_*</code></td>
+<td><code>3bit</code></td>
+</tr>
+<tr>
+<td><code>4bit</code>, <code>q4_k_m</code>, <code>q4_0</code>, <code>iq4_xs</code>, <code>ud-q4_k_xl</code>, <code>mxfp4</code>, <code>nvfp4</code>, <code>int4</code>, <code>oq4e</code></td>
+<td><code>4bit</code></td>
+</tr>
+<tr>
+<td><code>5bit</code>, <code>q5_*</code></td>
+<td><code>5bit</code></td>
+</tr>
+<tr>
+<td><code>6bit</code>, <code>q6_k</code></td>
+<td><code>6bit</code></td>
+</tr>
+<tr>
+<td><code>8bit</code>, <code>q8_0</code>, <code>fp8</code>, <code>int8</code></td>
+<td><code>8bit</code></td>
+</tr>
+<tr>
+<td><code>bf16</code>, <code>f16</code>, <code>fp16</code></td>
+<td><code>16bit</code></td>
+</tr>
+<tr>
+<td><code>f32</code>, <code>fp32</code></td>
+<td><code>full</code></td>
+</tr>
+<tr>
+<td>no label, or one the table does not know (<code>iq1_s</code>)</td>
+<td><code>unknown</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>When only effective bits are known, <code>[N, N+1)</code> bits is <code>Nbit</code> (4.5 bits is <code>4bit</code>).</p>
+<p><code>quant_class_source</code> says where the class came from:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th><code>quant_class_source</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stated</code></td>
+<td>The reference names its quant (<code>q4_k_m</code>, <code>@4bit</code>, a <code>-8bit</code> repo).</td>
+</tr>
+<tr>
+<td><code>assumed</code></td>
+<td>A bare Ollama tag (<code>qwen3.5:9b</code>) or LM Studio id (<code>qwen/qwen3.5-9b</code>): the class of the build the engine fetches by default (Ollama Q4_K_M, LM Studio 4-bit), the same assumption the fit estimate makes. A console labels it "assumed".</td>
+</tr>
+<tr>
+<td><code>null</code></td>
+<td>No quant information at all: <code>quant_class</code> is <code>unknown</code>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>An assumption can be wrong for a given tag: the Ollama registry lists <code>qwen3.5:0.8b</code>,
+<code>qwen3.5:2b</code> and <code>qwen3-embedding:0.6b</code> as Q8_0 builds. <code>quant</code> and <code>bits</code> keep their meaning.</p>
+<p>Filters: <code>q</code> (every word must start a word of the id, name, vendor, tags or artifacts),
+<code>--engine</code> (<code>ollama</code>, <code>lmstudio</code>, <code>mlx</code>, <code>huggingface</code>, or <code>llamacpp</code> for GGUF artifacts),
+<code>--fits</code> (keep <code>fits</code> and <code>tight</code> only), <code>--tag</code> (<code>chat</code>, <code>coding</code>, <code>vision</code>, <code>embedding</code>, <code>image</code>, <code>voice</code>, <code>video</code>, ...).</p>
+<h3 id="hugging-face-enrichment---hub">Hugging Face enrichment (<code>--hub</code>)</h3>
+<p>The catalog works offline. With <code>--hub</code> (<code>hub=true</code>), AbstractCore asks the Hugging Face API
+for exact file sizes and parameter counts of the Hugging Face-hosted artifacts and, when a
+query is given, appends up to 20 <code>hf_search</code> rows per lane (MLX repos on Apple silicon, GGUF
+repos everywhere; a GGUF search result gets the best available quant, Q4_K_M first).
+Results come a page at a time: <code>hub_page</code> (1-based) and <code>hub_page_size</code> (20 by default, at most
+100; 200 results deep per lane). <code>hub.search</code> reports <code>{query, page, page_size, rows, has_more,
+handle, handle_found}</code>: <code>rows</code> is how many <code>hf_search</code> rows the page added, and <code>has_more</code> says
+whether another page exists. A query that is an exact repo handle (<code>Qwen/Qwen3.5-9B</code>) looks that
+repo up and lists it first (<code>exact: true</code>; a Transformers checkpoint is fetched whole), then
+searches the name (<code>Qwen3.5-9B</code>) for its GGUF and MLX builds. The query splits on <code>/ : @ _ , -</code>
+like the rows, so <code>Qwen/Qwen3.5-9B</code> and <code>qwen3.5-9B</code> both find the curated <code>qwen3.5-9b</code> row.
+With <code>extended=true</code> as well, each row also lists every quant its own GGUF repos ship (UD-IQ1_S
+to Q8_0, BF16), each with its exact size from the hub's file list and its fit, marked
+<code>extended: true</code>. A label whose <code>*LABEL*.gguf</code> download pattern would also fetch other files is
+left out: <code>Q6_K</code> also matches <code>UD-Q6_K_XL</code>, and an MTP drafter's file rides its quant's name. An
+extended quant is never the pre-selection.
+Answers are cached for 24 hours in <code>~/.abstractcore/config/cache/hf_hub_catalog.json</code>. A rate
+limit (HTTP 429) or an offline machine is reported in <code>hub.errors</code> and the offline answer is
+returned. Set <code>HF_TOKEN</code> for gated repos and higher rate limits.</p>
+<h2 id="fit-verdicts">Fit verdicts</h2>
+<p><code>fit</code> answers "will this run here" before any byte is downloaded:</p>
+<div class="code-block"><pre><code>W    weights       measured run-time memory (`resident_bytes`) when recorded, else the exact
+                   artifact size, else parameters x bits / 8 x 1.03
+KV   KV cache      n x 2 x layers x kv_heads x head_dim x 2 bytes (f16), when the geometry is known;
+                   otherwise n x 0.5 MiB x (parameters / 8e9)
+O    overhead      max(0.5 GiB, 5% of W)
+Ceff usable       Apple silicon: ceiling - 2 GiB (MLX's working memory beside weights and cache)
+                  elsewhere: ceiling - max(2 GiB, 5% of ceiling)
+need = W + KV + O          (n = min(8192, context window))
+</code></pre></div>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Verdict</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fits</code></td>
+<td><code>need &lt;= 0.8 x Ceff</code></td>
+</tr>
+<tr>
+<td><code>tight</code></td>
+<td><code>need &lt;= Ceff</code>: runs, with little headroom. On Apple silicon also when the weights fit under the GPU memory limit itself but not the budgeted context (<code>small_context: true</code>): it runs with a small context; <code>max_context</code> is then <code>null</code> (no estimate is claimed)</td>
+</tr>
+<tr>
+<td><code>partial_offload</code></td>
+<td>CUDA only: too big for VRAM, but fits VRAM + 75% of RAM (slower)</td>
+</tr>
+<tr>
+<td><code>too_large</code></td>
+<td>does not fit</td>
+</tr>
+<tr>
+<td><code>needs_gpu_limit</code></td>
+<td>Apple silicon: does not fit the current ceiling, but fits once macOS lets the GPU use more memory (see below)</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>no size and no parameter count, or no measurable ceiling</td>
+</tr>
+</tbody>
+</table></div>
+<p>On Apple silicon the GPU may use only part of unified memory by default (Metal's recommended
+working set: measured 17.8 GB, that is 16.6 GiB or about 69%, on a 24 GB Mac mini). When the host
+profile cannot read it, the ceiling is 75% of RAM. An administrator can raise that limit with
+<code>sudo sysctl iogpu.wired_limit_mb=&lt;MB&gt;</code>; the setting lasts until the Mac restarts. AbstractCore
+suggests one value, the highest safe limit, which leaves macOS max(4 GiB, 12.5% of RAM): 20480 MB on
+a 24 GB Mac, 114688 MB on a 128 GB Mac. When a model does not fit the current ceiling but fits under
+that limit, the verdict is <code>needs_gpu_limit</code> and the fit block carries <code>gpu_limit</code>:</p>
+<div class="code-block"><pre><code class="language-json">&quot;gpu_limit&quot;: {&quot;sysctl&quot;: &quot;iogpu.wired_limit_mb&quot;, &quot;current_mb&quot;: 0, &quot;required_mb&quot;: 114688,
+              &quot;command&quot;: &quot;sudo sysctl iogpu.wired_limit_mb=114688&quot;, &quot;needs_admin&quot;: true,
+              &quot;resets_at_restart&quot;: true, &quot;verdict_with_limit&quot;: &quot;tight&quot;}
+</code></pre></div>
+<p>A <code>tight</code> fit on Apple silicon carries <code>raised_limit</code> instead (same keys, without
+<code>verdict_with_limit</code>): the same value, for more context. AbstractCore only prints these commands;
+it never runs them.</p>
+<p><code>required_mb</code> is that highest safe limit, and
+<code>verdict_with_limit</code> is the verdict you get after running <code>command</code>. Once the limit is set, it is
+the ceiling (<code>ceiling_source: metal_wired_limit</code>) and the fit notes name it. The recommended text
+model of the 128 GiB tier is an example: Qwen3.8 Flash-Next 4-bit needs about 109 GiB with its
+cache and fits after <code>sudo sysctl iogpu.wired_limit_mb=114688</code>. The <code>--fits</code> filter keeps
+<code>needs_gpu_limit</code> artifacts, and both consoles print the command on the model's detail line.</p>
+<p>The block also reports <code>need_bytes</code> (W + KV + O), <code>usable_bytes</code> (Ceff, the amount the verdict
+compares <code>need_bytes</code> with), <code>reserve_bytes</code> (ceiling minus Ceff), <code>overhead_bytes</code> (O),
+<code>ceiling_bytes</code>, <code>accelerator</code>, <code>small_context</code>, <code>free_now_bytes</code>, <code>fits_now</code> (whether it
+fits in memory that is free right now), <code>disk_ok</code> (download size plus 5 GiB headroom against
+free disk), <code>max_context</code> (largest context beside the weights, capped at the model window),
+<code>confidence</code> (<code>exact</code>, <code>estimated</code>, <code>rough</code>, <code>unknown</code>) and human <code>notes</code>. Mixture-of-experts
+models are sized by total parameters: every expert is resident. Verdicts are advisory; nothing
+blocks a download or a load on them.</p>
+<p>Python:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.utils.host_profile import host_profile
+from abstractcore.utils.model_fit import estimate_fit
+
+fit = estimate_fit(host=host_profile(), params_total=8_200_000_000, quant=&quot;q4_k_m&quot;, max_tokens=131072)
+print(fit[&quot;verdict&quot;], fit[&quot;need_bytes&quot;], fit[&quot;max_context&quot;])
+</code></pre></div>
+<h2 id="installed-models">Installed models</h2>
+<p><code>abstractcore models list --json</code> returns <code>models_installed_v1</code>: one row per installed
+artifact with <code>provider</code>, <code>artifact</code>, <code>quant</code>, <code>size_bytes</code>, <code>params_total</code>, <code>location</code>,
+<code>loaded</code>, <code>catalog_id</code>, <code>deletable</code> and <code>delete_blockers</code>, plus <code>engines_probed</code>, per-engine
+<code>errors</code> and <code>totals</code>.</p>
+<p>Each row also says what the artifact is and what it can do, read from local evidence only
+(no model-card fetch):</p>
+<ul>
+<li><code>kind</code>: <code>model</code>, <code>adapter</code> (a LoRA or PEFT adapter, which cannot be loaded on its own),
+  <code>encoder</code> or <code>embedding</code>; <code>null</code> when the local files cannot tell.</li>
+<li><code>tasks</code>: AbstractCore task names such as <code>text_generation</code>, <code>image_to_text</code>,
+  <code>text_embedding</code>, <code>speech_to_text</code>, <code>text_to_image</code>, <code>image_to_image</code>; <code>[]</code> when unknown.</li>
+<li><code>tasks_source</code>: where the answer came from: <code>model_card</code> (the cached <code>README.md</code>
+  <code>pipeline_tag</code>, or a pipeline name among its tags), <code>config</code> (<code>config.json</code> architectures),
+  <code>adapter_config</code>, <code>files</code> (sentence-transformers files), <code>engine</code> (<code>lms ls --json</code> <code>type</code> and
+  <code>vision</code>), or <code>null</code>.</li>
+</ul>
+<p>The Hugging Face cache holds the model card only when the full repository was downloaded
+(mlx-lm's own fetch skips <code>README.md</code>), so a repository with no card and no recognisable
+<code>config.json</code> stays <code>null</code>/<code>[]</code>. Ollama rows are always <code>null</code>/<code>[]</code>: telling an embedding
+tag from a chat tag needs one <code>/api/show</code> call per model, which the listing does not make.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Engine</th>
+<th>Source</th>
+<th>Size fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ollama</td>
+<td><code>GET /api/tags</code> (<code>/api/ps</code> for <code>loaded</code>)</td>
+<td><code>size</code>, <code>details.parameter_size</code>, <code>details.quantization_level</code></td>
+</tr>
+<tr>
+<td>LM Studio</td>
+<td><code>lms ls --json</code> (<code>lms ps --json</code> for <code>loaded</code>)</td>
+<td><code>sizeBytes</code>, <code>paramsString</code>, <code>quantization.name</code>, <code>maxContextLength</code></td>
+</tr>
+<tr>
+<td>MLX / Hugging Face</td>
+<td>the Hugging Face cache (<code>scan_cache_dir()</code>)</td>
+<td>repo size on disk; rows split into <code>mlx</code> and <code>huggingface</code> by AbstractCore's MLX detection</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Which Hugging Face caches are read.</strong> Every lookup (a load, the provider model lists, the
+GGUF search, the ONNX probe of an embedding model, the capability probes) reads the same list
+of hub caches: the one <code>huggingface_hub</code> itself uses (so a cache you moved for
+<code>huggingface_hub</code> is honoured), then the <code>cache.huggingface_cache_dir</code> setting (<code>hub/</code> inside
+it), so a relocated cache is found wherever you moved it.</p>
+<p><strong>Where <code>abstractcore --download-vision-model</code> writes.</strong> Into the <code>cache.local_models_cache_dir</code>
+setting (default <code>~/.abstractcore/models</code>), one folder per model. Move it with
+<code>abstractcore --set-local-models-cache-dir PATH</code>.</p>
+<p>When the local Ollama server is not running, its tags are listed from the on-disk manifests
+(marked <code>engine_not_running</code>). An engine that cannot be read appears in <code>errors</code>, never as an
+empty list.</p>
+<p>An MLX row whose model has an MTP companion (see <a href="#mtp-companions">MTP companions</a>) carries
+<code>companions: [{artifact, role: "mtp_companion", installed, size_bytes, location, companion_of}]</code>.
+A cached companion is listed under its model, not as a row of its own; <code>totals.size_bytes</code>
+counts it once. A companion whose models are all deleted stays a row, with
+<code>role: "mtp_companion"</code> and <code>companion_of: []</code>, so it can still be found and deleted.</p>
+<h2 id="downloading">Downloading</h2>
+<div class="code-block"><pre><code class="language-bash">abstractcore models download ollama qwen3:8b
+abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m
+abstractcore models download huggingface unsloth/Qwen3-8B-GGUF:Q4_K_M
+abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m --dry-run     # show the command only
+</code></pre></div>
+<ul>
+<li>Every source reports real progress (bytes, total, percent, speed, time left, per file) from
+  the first second; see <a href="#download-progress">Download progress</a>.</li>
+<li>Ollama downloads use <code>POST /api/pull</code>; LM Studio uses <code>lms get &lt;artifact&gt; --yes</code> and verifies
+  afterwards that the requested model landed; Hugging Face (and MLX, mlx-gen) uses
+  <code>snapshot_download</code> (narrowed by <code>:QUANT</code>) with the file list and sizes read from the hub
+  first; Supertonic voice files are fetched file by file from the revision AbstractVoice pins.</li>
+<li>A download that cannot fit on disk with 5 GiB to spare is refused before it starts (Hugging
+  Face computes the size itself; <code>expected_bytes</code> arms the check for other engines).</li>
+<li><code>--json</code> streams one <code>host_job_v1</code> object per line while the download runs and ends with the
+  final job. SIGTERM or Ctrl-C cancels the download, stops the engine tool, and the last line
+  reports <code>cancelled</code>. <code>--detach</code> starts the download in the background and prints the job;
+  follow it with <code>abstractcore models jobs &lt;job_id&gt; --json</code>.</li>
+<li>A Hugging Face download is pinned to the commit the hub listed
+  (<code>snapshot_download(revision=&lt;sha&gt;)</code>), so the files watched are the files fetched.
+  huggingface_hub writes no <code>refs/main</code> for a commit-hash revision, so once every planned
+  file is verified whole, AbstractCore writes <code>&lt;repo&gt;/refs/main</code> = that commit itself. Any
+  loader that resolves the repo by id offline (transformers with <code>local_files_only</code>,
+  <code>mlx_lm.load("&lt;id&gt;")</code>, vLLM, your own scripts) then finds it. An existing <code>refs/main</code>
+  naming another commit is never overwritten; the completion message says which commit
+  loading by name resolves.</li>
+</ul>
+<h3 id="mtp-companions">MTP companions</h3>
+<p>Several MLX models accelerate with a <strong>separate</strong> MTP head repo, the companion. The registry
+(<code>model_capabilities.json</code>, <code>speculation.runtimes.mlx.drafter</code>) names it, and it is the same
+entry the MLX provider loads the head from. Loading never downloads, so AbstractCore treats
+the companion as part of the model:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Companion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mlx-works/Qwen3.5-9B-oQ4e-mtp</code>, <code>mlx-community/Qwen3.5-9B-MLX-4bit</code></td>
+<td><code>mlx-community/Qwen3.5-9B-MTP-4bit</code> (164 MB)</td>
+</tr>
+<tr>
+<td><code>Jundot/Qwen3.8-27B-oQ4e-mtp</code>, <code>mlx-community/Qwen3.8-27B-4bit</code></td>
+<td><code>mlx-community/Qwen3.8-27B-MTP-4bit</code> (270 MB)</td>
+</tr>
+<tr>
+<td><code>Jundot/Qwen3.8-Flash-Next-oQ4e-mtp</code></td>
+<td>none: the head is built into the model's own weights</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><code>abstractcore models download mlx &lt;model&gt;</code>, the Gateway's model downloads and
+  <code>--recommended</code> fetch the companion in the <strong>same job</strong>, after the model. The job's
+  <code>bytes_total</code> includes it from the start. Its files are rows of the job's <code>files</code>, named
+  <code>&lt;companion repo&gt;/&lt;file&gt;</code> with <code>role: "mtp_companion"</code>, and the result lists it under
+  <code>companions</code>. A cancel stops both.</li>
+<li>The job ends <code>done</code> only when both are whole. When the companion fails, the job fails with
+  a message naming it, and <code>models status</code> / the probe report the model <code>absent</code> with the
+  reason until the same download is retried. A retry fetches only what is missing.</li>
+<li><code>--dry-run</code> names the companion and its size.</li>
+<li><code>models delete mlx &lt;model&gt;</code> asks whether to delete the companion too, unless another installed
+  model uses it. <code>--with-companion</code> deletes it without asking and <code>--keep-companion</code> keeps it.
+  JSON and Gateway results carry <code>companion_offer</code> with the exact delete command. A companion
+  can also be deleted by its own name.</li>
+</ul>
+<h3 id="checking-a-fresh-install-models-verify">Checking a fresh install: <code>models verify</code></h3>
+<div class="code-block"><pre><code class="language-bash">abstractcore models verify mlx-works/Qwen3.5-9B-oQ4e-mtp
+abstractcore models verify mlx-community/Qwen3.8-27B-4bit --json
+</code></pre></div>
+<p>This loads ONE installed model through its provider with the default configuration. It never
+downloads. It asks "What is the boiling point of water at sea level in degrees Celsius?" at
+temperature 0 and checks that the answer contains <code>100</code>. For a model with an MTP companion it
+also checks that <code>speculation.used</code> is <code>true</code>. It unloads the model afterwards, and the exit
+code is <code>0</code> only when every check passed. Use it after a download to confirm that the model
+produces sensible output on this machine, not only that its files are present. <code>--provider</code>
+selects the provider (default <code>mlx</code>).</p>
+<h3 id="repairing-refsmain">Repairing <code>refs/main</code></h3>
+<p>A cached repo can hold a complete snapshot and no <code>refs/main</code>, for example one downloaded by
+an AbstractCore release before 2.15.0 (see the <a href="https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md">CHANGELOG</a>). It loads through AbstractCore
+(which resolves the snapshot directory itself) but not by id through other tools, which report
+"couldn't find them in the cached files". Write the missing refs once:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore models repair-refs --dry-run   # list what would be written
+abstractcore models repair-refs             # write it
+abstractcore models repair-refs --cache-dir ~/.cache/huggingface/hub --json
+</code></pre></div>
+<p>It scans every Hugging Face cache AbstractCore reads (or only <code>--cache-dir</code>, repeatable) and
+writes <code>refs/main</code> only for a repo with <strong>no</strong> <code>refs/main</code> and <strong>exactly one complete</strong>
+snapshot. Complete means: no <code>.incomplete</code> blob and no unfinished download marker in the repo,
+no dangling file in the snapshot, every shard a <code>*.index.json</code> names present, and at least a
+config or a weight file. Each repo that is not already healthy is listed with a status:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+<th>Written?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>repairable</code> / <code>repaired</code></td>
+<td>one complete snapshot; <code>refs/main</code> names it</td>
+<td>only without <code>--dry-run</code></td>
+</tr>
+<tr>
+<td><code>ambiguous</code></td>
+<td>several complete snapshots; which one was <code>main</code> cannot be known offline</td>
+<td>never</td>
+</tr>
+<tr>
+<td><code>no_complete_snapshot</code></td>
+<td>every snapshot is partial, README-only, or missing a shard (the reason is listed)</td>
+<td>never</td>
+</tr>
+<tr>
+<td><code>dangling_ref</code></td>
+<td><code>refs/main</code> names a snapshot that is not on disk</td>
+<td>never (left as found)</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>the cache or the ref could not be read or written</td>
+<td>exit code <code>1</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Healthy repos are counted as <code>ok</code>. Quarantined caches (<code>runtime/model-quarantine/*</code>) are not
+scanned. The command is idempotent.</p>
+<h2 id="deleting">Deleting</h2>
+<div class="code-block"><pre><code class="language-bash">abstractcore models delete ollama qwen3:8b --dry-run
+abstractcore models delete ollama qwen3:8b --yes
+abstractcore models delete lmstudio qwen/qwen3.8-27b@q4_k_m --yes --force
+</code></pre></div>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Engine</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ollama</td>
+<td><code>DELETE /api/delete</code> (with <code>--force</code>, a loaded model is unloaded first)</td>
+</tr>
+<tr>
+<td>LM Studio</td>
+<td><code>lms unload</code> when loaded (<code>--force</code>), then removal of the model's files under the LM Studio models folder and its hub entry</td>
+</tr>
+<tr>
+<td>MLX / Hugging Face</td>
+<td><code>scan_cache_dir().delete_revisions(...).execute()</code> for the whole repo, planned on that repo only (another repo that shares a commit hash is never touched)</td>
+</tr>
+<tr>
+<td>One GGUF quant (<code>org/repo:QUANT</code>)</td>
+<td>only that quant's files: its snapshot links and every blob no remaining file uses; the other quants stay. When it is the repo's last model file set, the whole repo goes. A quant that is not cached is <code>not_found</code>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A delete is refused (exit <code>2</code>, HTTP <code>409</code>) when a blocker applies, unless <code>--force</code>:</p>
+<ul>
+<li><code>loaded</code>: the model is in memory;</li>
+<li><code>remote_engine</code>: the Ollama server is on another machine;</li>
+<li><code>shared_cache:mlx,huggingface</code>: the Hugging Face cache entry is classified for the other
+  engine (the files are shared).</li>
+</ul>
+<p><code>unknown_location</code> (a model bundled inside LM Studio) and <code>engine_not_running</code> cannot be
+forced. Paths outside the known model stores are never removed.</p>
+<h2 id="jobs">Jobs</h2>
+<p>Downloads, deletes and engine installs are jobs (<code>host_job_v1</code>): <code>job_id</code>, <code>kind</code>
+(<code>download</code>, <code>delete</code>, <code>engine_install</code>), <code>status</code> (<code>queued</code>, <code>running</code>, <code>completed</code>, <code>failed</code>,
+<code>cancelled</code>), <code>percent</code>, <code>downloaded_bytes</code>, <code>total_bytes</code>, <code>message</code>, <code>log_tail</code> (last 60
+lines), <code>command</code>, <code>dry_run</code>, <code>started_at</code>, <code>finished_at</code>, <code>error</code>, <code>joined</code>,
+<code>cli_equivalent</code>, and <code>result</code> (the verb's own outcome).</p>
+<ul>
+<li>A second request for the same download joins the running job (<code>joined</code> counts them).</li>
+<li><code>cancelled</code> follows only a cancel request. <code>cancelled_by</code> says who made it (<code>console</code>, <code>api</code>,
+  <code>cli</code>, <code>other_process</code>) and <code>cancelled_by_user</code> the account when known. A job that stopped on
+  its own (dropped connection, timeout, Hub error, full disk, failed MTP companion, owning
+  process gone) is <code>failed</code>. Either way <code>ended_reason</code> says why in one plain sentence.</li>
+<li>A stopped Hugging Face download keeps the files that finished; the file that was in progress
+  starts over on the next download.</li>
+<li>At most 40 finished jobs are kept per process.</li>
+</ul>
+<h3 id="download-progress">Download progress</h3>
+<p>A download job also carries these fields (the web consoles and <code>--json</code> read them):</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>state</code></td>
+<td><code>queued</code>, <code>resolving</code>, <code>downloading</code>, <code>verifying</code>, <code>installing</code>, <code>done</code>, <code>failed</code>, <code>cancelled</code>, <code>stalled</code></td>
+</tr>
+<tr>
+<td><code>bytes_done</code>, <code>bytes_total</code></td>
+<td>bytes on disk so far and the total (same values as <code>downloaded_bytes</code>, <code>total_bytes</code>)</td>
+</tr>
+<tr>
+<td><code>size_unknown</code>, <code>size_note</code></td>
+<td><code>true</code> only when the source cannot say how big the download is, with the reason</td>
+</tr>
+<tr>
+<td><code>percent</code></td>
+<td><code>bytes_done / bytes_total</code>, 100 when done</td>
+</tr>
+<tr>
+<td><code>bytes_per_second</code>, <code>eta_s</code></td>
+<td>speed over the last 5 seconds (it falls to 0 when bytes stop) and seconds left</td>
+</tr>
+<tr>
+<td><code>files</code></td>
+<td><code>[{name, bytes_done, bytes_total, state}]</code>; <code>current_file</code> is the file arriving now</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>one sentence, e.g. <code>Downloading model.safetensors (2 of 5) · 1.2 GB of 4.8 GB · 38 MB/s · 1 min left</code></td>
+</tr>
+<tr>
+<td><code>detail</code></td>
+<td>the engine tool's own last line, unchanged</td>
+</tr>
+<tr>
+<td><code>updated_at</code></td>
+<td>refreshed at least every 0.5 s while the job runs</td>
+</tr>
+<tr>
+<td><code>transitions</code></td>
+<td>every state change with its time and reason</td>
+</tr>
+<tr>
+<td><code>stall_after_s</code>, <code>stalled_for_s</code></td>
+<td>the stall threshold and how long the current stall has lasted</td>
+</tr>
+</tbody>
+</table></div>
+<p>A download that receives no bytes for 15 seconds turns <code>stalled</code> and says so
+(<code>Stalled: no data for 23 s · 1.2 GB of 4.8 GB · still trying…</code>), is logged, and turns back
+to <code>downloading</code> by itself when bytes arrive again. Set the threshold with
+<code>ABSTRACTCORE_DOWNLOAD_STALL_S</code>. <code>verifying</code> and <code>installing</code> never count as stalls.</p>
+<p>What each source reports:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Progress</th>
+<th>Cancel</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hugging Face, MLX, mlx-gen</td>
+<td>file list and sizes from the hub before the first byte; per-file bytes from the files being written in the cache</td>
+<td>the transfer runs in a child process that is stopped at once; files already complete are kept and reused by the next download; a download that did not finish never reads as installed</td>
+</tr>
+<tr>
+<td>Ollama</td>
+<td>the layers of <code>/api/pull</code>, added up into one total</td>
+<td>the connection is closed at once; Ollama keeps the layers it has</td>
+</tr>
+<tr>
+<td>LM Studio</td>
+<td>the bytes, total and speed <code>lms get</code> prints</td>
+<td>answers <code>lms get</code>'s own "continue in the background?" question with No, so LM Studio stops too</td>
+</tr>
+<tr>
+<td>Supertonic (voice)</td>
+<td>per-file bytes, sizes read first</td>
+<td>stops at once; the partial file is removed</td>
+</tr>
+</tbody>
+</table></div>
+<p>When <code>lms get</code> prints no progress, the job reports the bytes landing in the LM Studio models
+folder instead ("LM Studio reports no progress; 850 MB on disk so far").</p>
+<p>An explicit download always reaches the Hub. <code>offline_first</code> stops on-demand downloads while
+a model is <em>loading</em>; it never blocks <code>abstractcore models download</code> or a download job. The
+download runs in a child process whose <code>HF_HUB_OFFLINE</code>, <code>TRANSFORMERS_OFFLINE</code> and
+<code>HF_DATASETS_OFFLINE</code> are the values set before the process started. A value written later
+inside the process (by a provider or a library during a load) is not passed on, and the job
+log says so ("explicit download: Hub offline flags set in this process after start are not
+passed to the download ..."). If you set <code>HF_HUB_OFFLINE=1</code> (or <code>TRANSFORMERS_OFFLINE=1</code>)
+yourself before starting the process, the download is refused at once with a message naming
+the variable. Unset it and restart to download.</p>
+<p>Hugging Face downloads started from a job use plain HTTP rather than Xet, because Xet writes
+a file only when it is complete, so no progress would show. Set <code>ABSTRACTCORE_HF_XET=1</code> to use
+Xet anyway; progress then moves one whole file at a time.</p>
+<p>Every progress update is also appended to <code>&lt;jobs dir&gt;/&lt;job_id&gt;.events.jsonl</code>.</p>
+<p>Job snapshots are written to <code>~/.abstractcore/config/jobs/</code> (override with
+<code>ABSTRACTCORE_JOBS_DIR</code>; disable with <code>ABSTRACTCORE_JOBS_PERSIST=0</code>), so
+<code>abstractcore models jobs</code> lists work started by <code>abstractcore serve</code> or by
+<code>--detach</code>, and <code>abstractcore models cancel &lt;job_id&gt;</code> can stop it.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

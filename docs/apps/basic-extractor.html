@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BasicExtractor - Knowledge Graph Extraction - AbstractCore</title>
+    <meta name="description" content="BasicExtractor is a production-ready tool for extracting structured knowledge graphs from text documents. It converts unstructured text into semantic…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/apps/basic-extractor.html">
+    <link rel="icon" type="image/x-icon" href="../../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">BasicExtractor - Knowledge Graph Extraction</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">BasicExtractor is a production-ready tool for extracting structured knowledge graphs from text documents. It converts unstructured text into semantic entities and relationships using large language models, outputting clean JSON-LD or RDF triple formats.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#installation--setup" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Installation &amp; Setup</a>
+<a href="#output-formats" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Output Formats</a>
+<a href="#python-api-reference" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Python API Reference</a>
+<a href="#command-line-interface" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Command Line Interface</a>
+<a href="#real-world-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Real-World Examples</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#schema--ontology" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Schema &amp; Ontology</a>
+<a href="#json-self-correction" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">JSON Self-Correction</a>
+<a href="#troubleshooting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting</a>
+<a href="#timeout-configuration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Timeout Configuration</a>
+<a href="#integration-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration Examples</a>
+<a href="#performance-notes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance notes</a></div>
+
+            <div class="doc-content">
+
+<h2 id="quick-start">Quick Start</h2>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicExtractor
+
+# Initialize with default model (Ollama qwen3:4b-instruct-2507-q4_K_M)
+extractor = BasicExtractor()
+
+# Extract knowledge graph
+result = extractor.extract(&quot;Google created TensorFlow in 2015. Microsoft uses TensorFlow for Azure AI.&quot;)
+
+# Result contains entities and relationships in JSON-LD format
+entities = [item for item in result['@graph'] if item.get('@id', '').startswith('e:')]
+relationships = [item for item in result['@graph'] if item.get('@id', '').startswith('r:')]
+</code></pre></div>
+<h2 id="installation--setup">Installation &amp; Setup</h2>
+<div class="code-block"><pre><code class="language-bash"># Light install: the default Ollama path and every cloud provider work with it.
+pip install abstractcore
+
+# Or, for in-process local engines:
+pip install &quot;abstractcore[apple]&quot;    # Apple silicon: MLX, HF/GGUF, local media engines
+pip install &quot;abstractcore[gpu]&quot;      # NVIDIA / AMD: vLLM, HF/GGUF, local media engines
+
+# Default model requires Ollama (free, runs locally)
+# 1. Install Ollama: https://ollama.com/
+# 2. Download model: ollama pull qwen3:4b-instruct-2507-q4_K_M
+# 3. Start Ollama service
+
+# Alternative: use a cloud provider (set its API key; no extra install)
+</code></pre></div>
+<h3 id="model-performance-recommendations">Model Performance Recommendations</h3>
+<p><strong>Default Model</strong>: <code>qwen3:4b-instruct-2507-q4_K_M</code>
+- <strong>Size</strong>: ~4GB model
+- <strong>RAM</strong>: ~8GB required
+- <strong>Speed</strong>: Good balance of speed and quality
+- <strong>Setup</strong>: <code>ollama pull qwen3:4b-instruct-2507-q4_K_M</code></p>
+<p><strong>For Optimal Performance</strong>:
+- <strong><code>qwen3-coder:30b</code></strong>: High quality for structured JSON-LD output (requires 32GB RAM)
+- <strong><code>gpt-oss:120b</code></strong>: Highest quality extraction (requires 120GB RAM)</p>
+<p><strong>For Production</strong>: Cloud providers (OpenAI GPT-4o-mini, Claude) offer the most reliable JSON-LD generation.</p>
+<p>For a measured comparison of local and hosted models on ontology-constrained extraction, including the prompt rules and second-pass strategies that change precision, see <a href="../knowledge-graph-extraction-models.html">Choosing a model for knowledge-graph extraction</a>.</p>
+<h2 id="output-formats">Output Formats</h2>
+<p>BasicExtractor supports three output formats optimized for different use cases:</p>
+<h3 id="1-json-ld-format-default">1. JSON-LD Format (Default)</h3>
+<p>Standard W3C JSON-LD with schema.org vocabulary - ideal for semantic web applications:</p>
+<div class="code-block"><pre><code class="language-python">result = extractor.extract(&quot;Apple acquired Siri in 2010&quot;, output_format=&quot;jsonld&quot;)
+</code></pre></div>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;@context&quot;: {
+    &quot;s&quot;: &quot;https://schema.org/&quot;,
+    &quot;e&quot;: &quot;http://example.org/entity/&quot;,
+    &quot;r&quot;: &quot;http://example.org/relation/&quot;,
+    &quot;confidence&quot;: &quot;http://example.org/confidence&quot;
+  },
+  &quot;@graph&quot;: [
+    {
+      &quot;@id&quot;: &quot;e:apple&quot;,
+      &quot;@type&quot;: &quot;s:Organization&quot;,
+      &quot;s:name&quot;: &quot;Apple&quot;,
+      &quot;s:description&quot;: &quot;Technology company&quot;,
+      &quot;confidence&quot;: 0.95
+    },
+    {
+      &quot;@id&quot;: &quot;r:1&quot;,
+      &quot;@type&quot;: &quot;s:Relationship&quot;,
+      &quot;s:name&quot;: &quot;acquires&quot;,
+      &quot;s:about&quot;: {&quot;@id&quot;: &quot;e:apple&quot;},
+      &quot;s:object&quot;: {&quot;@id&quot;: &quot;e:siri&quot;},
+      &quot;confidence&quot;: 0.90
+    }
+  ]
+}
+</code></pre></div>
+<h3 id="2-rdf-triples-format-new">2. RDF Triples Format (New)</h3>
+<p>SUBJECT PREDICATE OBJECT format following semantic web standards - perfect for graph databases:</p>
+<div class="code-block"><pre><code class="language-python">result = extractor.extract(&quot;Apple acquired Siri in 2010&quot;, output_format=&quot;triples&quot;)
+</code></pre></div>
+<p><strong>Simple output:</strong></p>
+<div class="code-block"><pre><code>Apple acquires Siri
+</code></pre></div>
+<p><strong>Detailed output (with metadata):</strong></p>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;format&quot;: &quot;triples&quot;,
+  &quot;simple_triples&quot;: [&quot;Apple acquires Siri&quot;],
+  &quot;triples&quot;: [
+    {
+      &quot;subject&quot;: &quot;e:apple&quot;,
+      &quot;subject_name&quot;: &quot;Apple&quot;,
+      &quot;predicate&quot;: &quot;acquires&quot;,
+      &quot;object&quot;: &quot;e:siri&quot;,
+      &quot;object_name&quot;: &quot;Siri&quot;,
+      &quot;confidence&quot;: 0.90
+    }
+  ],
+  &quot;entities&quot;: {...},
+  &quot;statistics&quot;: {&quot;entities_count&quot;: 2, &quot;relationships_count&quot;: 1}
+}
+</code></pre></div>
+<h3 id="3-minified-json-ld-format-new">3. Minified JSON-LD Format (New)</h3>
+<p>Compact JSON string without indentation - optimized for storage and transport:</p>
+<div class="code-block"><pre><code class="language-python">result = extractor.extract(&quot;Apple acquired Siri in 2010&quot;, output_format=&quot;jsonld_minified&quot;)
+</code></pre></div>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;format&quot;: &quot;jsonld_minified&quot;,
+  &quot;data&quot;: &quot;{\&quot;@context\&quot;:{\&quot;s\&quot;:\&quot;https://schema.org/\&quot;},\&quot;@graph\&quot;:[...]}&quot;,
+  &quot;entities_count&quot;: 2,
+  &quot;relationships_count&quot;: 1
+}
+</code></pre></div>
+<h2 id="python-api-reference">Python API Reference</h2>
+<h3 id="basicextractor-class">BasicExtractor Class</h3>
+<div class="code-block"><pre><code class="language-python">class BasicExtractor:
+    def __init__(
+        self,
+        llm: Optional[AbstractCoreInterface] = None,
+        max_chunk_size: int = 8000
+    )
+
+    def extract(
+        self,
+        text: str,
+        domain_focus: Optional[str] = None,
+        entity_types: Optional[List[str]] = None,
+        style: Optional[str] = None,
+        length: Optional[str] = None,
+        output_format: str = &quot;jsonld&quot;
+    ) -&gt; dict
+</code></pre></div>
+<h3 id="parameters">Parameters</h3>
+<ul>
+<li><strong><code>text</code></strong> (str): Text to extract knowledge from</li>
+<li><strong><code>domain_focus</code></strong> (str, optional): Focus area like "technology", "business", "medical"</li>
+<li><strong><code>entity_types</code></strong> (List[str], optional): Reserved for future use</li>
+<li><strong><code>style</code></strong> (str, optional): Reserved for future use</li>
+<li><strong><code>length</code></strong> (str, optional): Extraction depth</li>
+<li><code>"brief"</code> - 10 entities max (fast)</li>
+<li><code>"standard"</code> - 15 entities max (balanced)</li>
+<li><code>"detailed"</code> - 25 entities max (thorough)</li>
+<li><code>"comprehensive"</code> - 50 entities max (extensive)</li>
+<li><strong><code>output_format</code></strong> (str): Output format</li>
+<li><code>"jsonld"</code> - Standard JSON-LD (default)</li>
+<li><code>"triples"</code> - RDF SUBJECT PREDICATE OBJECT format</li>
+<li><code>"jsonld_minified"</code> - Compact JSON string</li>
+</ul>
+<h3 id="custom-llm-provider">Custom LLM Provider</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.processing import BasicExtractor
+
+# RECOMMENDED: Use cloud providers for complex JSON-LD extraction
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # Best for production
+extractor = BasicExtractor(llm)
+
+# OR use Anthropic Claude for high quality
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
+extractor = BasicExtractor(llm)
+
+# LOCAL MODELS: Work well for simple extraction, may struggle with complex JSON-LD
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3-coder:30b&quot;)  # Good for code and structured tasks
+extractor = BasicExtractor(llm)
+
+# For simple fact extraction with local models, use direct prompting:
+facts_prompt = &quot;&quot;&quot;Extract facts as JSON: [{&quot;entity&quot;: &quot;...&quot;, &quot;action&quot;: &quot;...&quot;, &quot;object&quot;: &quot;...&quot;}]&quot;&quot;&quot;
+facts = llm.generate(facts_prompt)  # Works reliably with local models
+</code></pre></div>
+<h2 id="command-line-interface">Command Line Interface</h2>
+<p>The <code>extractor</code> CLI provides direct terminal access for knowledge graph extraction without any Python programming.</p>
+<h3 id="quick-cli-usage">Quick CLI Usage</h3>
+<div class="code-block"><pre><code class="language-bash"># Simple usage (PDF and Office inputs work with the light install)
+extractor document.pdf
+
+# With specific format and focus
+extractor report.txt --format triples --focus technology
+
+# Extract specific entity types
+extractor data.md --entity-types person,organization --output entities.jsonld
+
+# High-quality extraction with iterations
+extractor doc.txt --iterate=3 --length=detailed --verbose
+</code></pre></div>
+<h3 id="alternative-usage-methods">Alternative Usage Methods</h3>
+<div class="code-block"><pre><code class="language-bash"># Method 1: Direct command (recommended after installation)
+extractor document.txt --format triples
+
+# Method 2: Via Python module (always works)
+python -m abstractcore.apps.extractor document.txt --format triples
+</code></pre></div>
+<h3 id="basic-usage">Basic Usage</h3>
+<div class="code-block"><pre><code class="language-bash"># Extract from file (default: JSON-LD)
+extractor document.txt
+# OR: python -m abstractcore.apps.extractor document.txt
+
+# Specify output format
+extractor document.txt --format triples
+# OR: python -m abstractcore.apps.extractor document.txt --format triples
+
+# Save to file
+extractor document.txt --output knowledge_graph.jsonld
+# OR: python -m abstractcore.apps.extractor document.txt --output knowledge_graph.jsonld
+</code></pre></div>
+<h3 id="advanced-options">Advanced Options</h3>
+<div class="code-block"><pre><code class="language-bash"># Domain-focused extraction
+extractor tech_report.txt --focus technology --length detailed
+# OR: python -m abstractcore.apps.extractor tech_report.txt --focus technology --length detailed
+
+# Custom provider and model
+extractor document.txt --provider openai --model gpt-4o-mini
+# OR: python -m abstractcore.apps.extractor document.txt --provider openai --model gpt-4o-mini
+
+# Minified output for storage
+extractor document.txt --format json-ld --minified
+# OR: python -m abstractcore.apps.extractor document.txt --format json-ld --minified
+
+# Iterative refinement for quality
+extractor document.txt --iterate 3 --verbose
+# OR: python -m abstractcore.apps.extractor document.txt --iterate 3 --verbose
+</code></pre></div>
+<h3 id="cli-parameters">CLI Parameters</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Options</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>file_path</code></td>
+<td>Any text file</td>
+<td>Required</td>
+<td>Path to the file to extract from</td>
+</tr>
+<tr>
+<td><code>--focus</code></td>
+<td>Any text</td>
+<td>None</td>
+<td>Specific focus area (e.g., "technology", "business")</td>
+</tr>
+<tr>
+<td><code>--style</code></td>
+<td><code>structured</code>, <code>focused</code>, <code>minimal</code>, <code>comprehensive</code></td>
+<td><code>structured</code></td>
+<td>Extraction style</td>
+</tr>
+<tr>
+<td><code>--length</code></td>
+<td><code>brief</code>, <code>standard</code>, <code>detailed</code>, <code>comprehensive</code></td>
+<td><code>brief</code></td>
+<td>Extraction depth</td>
+</tr>
+<tr>
+<td><code>--entity-types</code></td>
+<td>Comma-separated list</td>
+<td>All types</td>
+<td>Entity types to focus on</td>
+</tr>
+<tr>
+<td><code>--format</code></td>
+<td><code>json-ld</code>, <code>triples</code>, <code>json</code>, <code>yaml</code></td>
+<td><code>json-ld</code></td>
+<td>Output format</td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>File path</td>
+<td>Console</td>
+<td>Output file path</td>
+</tr>
+<tr>
+<td><code>--chunk-size</code></td>
+<td>1000-32000</td>
+<td>8000</td>
+<td>Chunk size in characters</td>
+</tr>
+<tr>
+<td><code>--provider</code></td>
+<td><code>openai</code>, <code>anthropic</code>, <code>ollama</code>, etc.</td>
+<td><code>ollama</code></td>
+<td>LLM provider</td>
+</tr>
+<tr>
+<td><code>--model</code></td>
+<td>Provider-specific</td>
+<td><code>qwen3:4b-instruct-2507-q4_K_M</code></td>
+<td>LLM model</td>
+</tr>
+<tr>
+<td><code>--iterate</code></td>
+<td>1-5</td>
+<td>1</td>
+<td>Number of refinement iterations</td>
+</tr>
+<tr>
+<td><code>--minified</code></td>
+<td>Flag</td>
+<td>False</td>
+<td>Output minified JSON</td>
+</tr>
+<tr>
+<td><code>--verbose</code></td>
+<td>Flag</td>
+<td>False</td>
+<td>Show detailed progress</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td>Seconds/none</td>
+<td>unlimited</td>
+<td>HTTP timeout for LLM requests. Use 'none' for unlimited or specify seconds (e.g., 600)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="entity-types">Entity Types</h3>
+<p>Available entity types for <code>--entity-types</code> parameter:
+- <code>person</code> - People and individuals
+- <code>organization</code> - Companies, institutions, groups<br />
+- <code>location</code> - Places, cities, countries, addresses
+- <code>concept</code> - Abstract concepts, ideas, theories
+- <code>event</code> - Occurrences, meetings, incidents
+- <code>technology</code> - Software, hardware, technical systems
+- <code>product</code> - Products, services, offerings
+- <code>date</code> - Temporal references, dates, times
+- <code>other</code> - Miscellaneous entities</p>
+<h3 id="output-format-examples">Output Format Examples</h3>
+<p><strong>Simple triples (no --verbose):</strong></p>
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.apps.extractor doc.txt --format triples
+# Output:
+# Google creates TensorFlow
+# Microsoft uses TensorFlow
+# OpenAI develops GPT-4
+</code></pre></div>
+<p><strong>Detailed triples (with --verbose):</strong></p>
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.apps.extractor doc.txt --format triples --verbose
+# Output: JSON with entities, relationships, confidence scores, statistics
+</code></pre></div>
+<p><strong>Minified JSON-LD:</strong></p>
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.apps.extractor doc.txt --format json-ld --minified
+# Output: {&quot;@context&quot;:{&quot;s&quot;:&quot;https://schema.org/&quot;},&quot;@graph&quot;:[...]}
+</code></pre></div>
+<h2 id="real-world-examples">Real-World Examples</h2>
+<h3 id="example-1-technology-documentation">Example 1: Technology Documentation</h3>
+<p><strong>Input:</strong></p>
+<div class="code-block"><pre><code>Google's TensorFlow is an open-source machine learning framework.
+Microsoft Azure integrates TensorFlow for cloud AI services.
+OpenAI's GPT models use transformer architecture developed by Google Research.
+</code></pre></div>
+<p><strong>Command:</strong></p>
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.apps.extractor tech.txt --focus technology --length detailed --format triples --verbose
+</code></pre></div>
+<p><strong>Expected Output:</strong></p>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;format&quot;: &quot;triples&quot;,
+  &quot;simple_triples&quot;: [
+    &quot;Google creates TensorFlow&quot;,
+    &quot;Microsoft integrates TensorFlow&quot;,
+    &quot;OpenAI develops GPT&quot;,
+    &quot;Google Research develops transformer architecture&quot;
+  ],
+  &quot;entities&quot;: {
+    &quot;e:google&quot;: {&quot;name&quot;: &quot;Google&quot;, &quot;type&quot;: &quot;s:Organization&quot;},
+    &quot;e:tensorflow&quot;: {&quot;name&quot;: &quot;TensorFlow&quot;, &quot;type&quot;: &quot;s:SoftwareApplication&quot;},
+    &quot;e:microsoft&quot;: {&quot;name&quot;: &quot;Microsoft&quot;, &quot;type&quot;: &quot;s:Organization&quot;}
+  },
+  &quot;statistics&quot;: {&quot;entities_count&quot;: 6, &quot;relationships_count&quot;: 4}
+}
+</code></pre></div>
+<h3 id="example-2-business-analysis">Example 2: Business Analysis</h3>
+<p><strong>Python API:</strong></p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicExtractor
+
+extractor = BasicExtractor()
+
+business_text = &quot;&quot;&quot;
+Amazon acquired Whole Foods for $13.7 billion in 2017.
+The acquisition expanded Amazon's grocery delivery capabilities.
+Jeff Bezos was CEO of Amazon during this strategic move.
+&quot;&quot;&quot;
+
+# Extract with business focus
+result = extractor.extract(
+    business_text,
+    domain_focus=&quot;business&quot;,
+    length=&quot;standard&quot;,
+    output_format=&quot;jsonld&quot;
+)
+
+# Access entities and relationships
+entities = [item for item in result['@graph'] if item.get('@id', '').startswith('e:')]
+relationships = [item for item in result['@graph'] if item.get('@id', '').startswith('r:')]
+
+print(f&quot;Found {len(entities)} entities and {len(relationships)} relationships&quot;)
+</code></pre></div>
+<h3 id="example-3-research-paper-processing">Example 3: Research Paper Processing</h3>
+<p><strong>Command:</strong></p>
+<div class="code-block"><pre><code class="language-bash"># Process academic paper with comprehensive extraction
+python -m abstractcore.apps.extractor research_paper.pdf \
+  --focus &quot;research&quot; \
+  --length comprehensive \
+  --iterate 2 \
+  --format json-ld \
+  --output paper_knowledge_graph.jsonld \
+  --verbose
+</code></pre></div>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="1-model-selection">1. Model Selection</h3>
+<p><strong>For Complex JSON-LD Extraction (RECOMMENDED):</strong></p>
+<div class="code-block"><pre><code class="language-python"># Best quality for structured knowledge graphs
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # $0.001-0.01 per request
+extractor = BasicExtractor(llm)
+
+# Alternative: High-quality Claude
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)  # Similar cost
+extractor = BasicExtractor(llm)
+</code></pre></div>
+<p><strong>For Simple Fact Extraction (Local):</strong></p>
+<div class="code-block"><pre><code class="language-python"># Works well with qwen3-coder:30b for basic structured output
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3-coder:30b&quot;)  # 18GB, free
+# Use simple JSON prompts instead of complex JSON-LD
+
+# Default option
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct-2507-q4_K_M&quot;)  # 4GB, balanced
+</code></pre></div>
+<p><strong>Note:</strong>
+- <strong>Cloud models</strong>: High quality at complex JSON-LD with schema.org vocabulary
+- ⚠️ <strong>Local models</strong>: Good for simple facts, struggle with complex structured formats
+- <strong>Best approach</strong>: Use cloud models for production knowledge graphs, local models for simple extraction</p>
+<h3 id="2-document-processing">2. Document Processing</h3>
+<p><strong>Small Documents (&lt;8000 chars):</strong>
+- Use <code>length="standard"</code> or <code>length="detailed"</code>
+- Single extraction pass is sufficient</p>
+<p><strong>Large Documents (&gt;8000 chars):</strong>
+- Automatic chunking with overlap
+- Use <code>--iterate=2</code> for better coverage
+- Consider <code>length="brief"</code> to avoid token limits</p>
+<p><strong>Domain-Specific Text:</strong>
+- Always use <code>domain_focus</code> parameter
+- Examples: "technology", "business", "medical", "legal", "academic"</p>
+<h3 id="3-output-format-selection">3. Output Format Selection</h3>
+<p><strong>Choose JSON-LD when:</strong>
+- Building semantic web applications
+- Need W3C standard compliance
+- Integrating with knowledge graph databases
+- Require full metadata and context</p>
+<p><strong>Choose Triples when:</strong>
+- Building graph databases (Neo4j, etc.)
+- Need simple SUBJECT PREDICATE OBJECT format
+- Implementing reasoning systems
+- Want human-readable relationships</p>
+<p><strong>Choose Minified when:</strong>
+- Storage space is limited
+- Network transmission efficiency matters
+- Building APIs with compact responses</p>
+<h3 id="4-quality-optimization">4. Quality Optimization</h3>
+<p><strong>For Higher Quality:</strong></p>
+<div class="code-block"><pre><code class="language-bash"># Use iterative refinement (finds missing entities)
+python -m abstractcore.apps.extractor doc.txt --iterate 3 --length detailed
+
+# Use better models
+python -m abstractcore.apps.extractor doc.txt --provider openai --model gpt-4o-mini
+</code></pre></div>
+<p><strong>For Faster Processing:</strong></p>
+<div class="code-block"><pre><code class="language-bash"># Use brief extraction with fast models
+python -m abstractcore.apps.extractor doc.txt --length brief
+</code></pre></div>
+<h2 id="schema--ontology">Schema &amp; Ontology</h2>
+<p>BasicExtractor uses standard vocabularies for maximum compatibility:</p>
+<h3 id="entity-types-schemaorg">Entity Types (schema.org)</h3>
+<ul>
+<li><code>s:Person</code> - People by name</li>
+<li><code>s:Organization</code> - Companies, institutions</li>
+<li><code>s:SoftwareApplication</code> - Software, frameworks, tools</li>
+<li><code>s:Place</code> - Locations, venues</li>
+<li><code>s:Product</code> - Products, services</li>
+<li><code>s:Event</code> - Events, meetings</li>
+<li><code>sk:Concept</code> - Abstract concepts, technologies</li>
+</ul>
+<h3 id="relationship-types">Relationship Types</h3>
+<ul>
+<li><code>creates</code> - Authorship, development</li>
+<li><code>uses</code> - Utilization, dependency</li>
+<li><code>supports</code> - Support, enablement</li>
+<li><code>partOf</code> - Structural relationships</li>
+<li><code>integrates</code> - Integration, compatibility</li>
+<li><code>provides</code> - Service provision</li>
+<li><code>memberOf</code> - Organizational membership</li>
+</ul>
+<h3 id="entity-structure">Entity Structure</h3>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;@id&quot;: &quot;e:entity_name&quot;,
+  &quot;@type&quot;: &quot;s:EntityType&quot;,
+  &quot;s:name&quot;: &quot;Human readable name&quot;,
+  &quot;s:description&quot;: &quot;Brief description&quot;,
+  &quot;confidence&quot;: 0.95
+}
+</code></pre></div>
+<h3 id="relationship-structure">Relationship Structure</h3>
+<div class="code-block"><pre><code class="language-json">{
+  &quot;@id&quot;: &quot;r:1&quot;,
+  &quot;@type&quot;: &quot;s:Relationship&quot;,
+  &quot;s:name&quot;: &quot;relationship_type&quot;,
+  &quot;s:about&quot;: {&quot;@id&quot;: &quot;e:subject_entity&quot;},
+  &quot;s:object&quot;: {&quot;@id&quot;: &quot;e:object_entity&quot;},
+  &quot;s:description&quot;: &quot;Relationship description&quot;,
+  &quot;confidence&quot;: 0.90,
+  &quot;strength&quot;: 0.85
+}
+</code></pre></div>
+<h2 id="json-self-correction">JSON Self-Correction</h2>
+<p>BasicExtractor includes automatic JSON self-correction that attempts to fix malformed LLM responses before giving up:</p>
+<p><strong>Automatic Recovery</strong>:
+- Extracts JSON from text with extra content
+- Fixes common formatting issues (trailing commas, quote problems)
+- Repairs truncated JSON by adding missing braces
+- Creates minimal valid structure from partial content</p>
+<p><strong>In Action</strong>:</p>
+<div class="code-block"><pre><code>⚠️  JSON parsing failed: Expecting ',' delimiter: line 3 column 45
+ℹ️  JSON self-fix: Fixed common formatting issues
+✅ JSON self-correction successful! Extracted 3 entities and 2 relationships
+</code></pre></div>
+<p>This significantly improves extraction reliability, especially with local models that may produce slightly malformed JSON.</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<p><strong>"Failed to initialize default Ollama model"</strong></p>
+<div class="code-block"><pre><code class="language-bash"># Install Ollama and download model
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama serve
+</code></pre></div>
+<p><strong>Empty extraction results</strong>
+- Try a different model: <code>--provider openai --model gpt-4o-mini</code>
+- Increase extraction length: <code>--length detailed</code>
+- Add domain focus: <code>--focus technology</code></p>
+<p><strong>JSON parsing errors</strong>
+- Automatic self-correction handles most cases
+- If persistent, try a more capable model
+- Check model output with <code>--verbose</code> flag</p>
+<p><strong>Large file processing slow</strong>
+- Use <code>length=brief</code> for fewer entities
+- Consider pre-processing to extract relevant sections</p>
+<p><strong>Poor entity quality</strong>
+- Use iterative refinement: <code>--iterate=2</code>
+- Try more capable models (GPT-4, Claude)
+- Add specific domain focus</p>
+<h3 id="error-messages">Error Messages</h3>
+<p><strong>"Chunk size must be at least 1000 characters"</strong>
+- Increase <code>--chunk-size</code> parameter
+- File might be too short for meaningful extraction</p>
+<p><strong>"Iterate cannot exceed 5"</strong>
+- Maximum 5 refinement iterations allowed
+- Diminishing returns beyond 3 iterations</p>
+<p><strong>"Provider/model required together"</strong>
+- Both <code>--provider</code> and <code>--model</code> must be specified together</p>
+<h2 id="timeout-configuration">Timeout Configuration</h2>
+<p>The extractor supports flexible timeout configuration for different use cases:</p>
+<h3 id="default-behavior-unlimited-timeout">Default Behavior (Unlimited Timeout)</h3>
+<div class="code-block"><pre><code class="language-bash"># Runs as long as needed - recommended for large documents or complex models
+python -m abstractcore.apps.extractor document.txt
+</code></pre></div>
+<h3 id="custom-timeout">Custom Timeout</h3>
+<div class="code-block"><pre><code class="language-bash"># Set specific timeout (useful for production environments)
+python -m abstractcore.apps.extractor document.txt --timeout 600  # 10 minutes
+python -m abstractcore.apps.extractor document.txt --timeout 1800 # 30 minutes
+
+# Explicit unlimited timeout
+python -m abstractcore.apps.extractor document.txt --timeout none
+</code></pre></div>
+<h3 id="programmatic-usage">Programmatic Usage</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicExtractor
+
+# Unlimited timeout (default)
+extractor = BasicExtractor()
+
+# Custom timeout
+extractor = BasicExtractor(timeout=600)  # 10 minutes
+
+# Explicit unlimited timeout
+extractor = BasicExtractor(timeout=None)
+</code></pre></div>
+<p><strong>When to Use Timeouts:</strong>
+- <strong>Production environments</strong>: Set reasonable timeouts (300-1800 seconds) to prevent hanging
+- <strong>Large documents</strong>: Use unlimited timeout for documents &gt;50KB or complex extractions
+- <strong>Large models</strong>: Models &gt;30B parameters may need longer processing time
+- <strong>Development</strong>: Use unlimited timeout to avoid interruptions during testing</p>
+<h2 id="integration-examples">Integration Examples</h2>
+<h3 id="web-application">Web Application</h3>
+<div class="code-block"><pre><code class="language-python">from flask import Flask, request, jsonify
+from abstractcore.processing import BasicExtractor
+
+app = Flask(__name__)
+extractor = BasicExtractor()
+
+@app.route('/extract', methods=['POST'])
+def extract_knowledge():
+    text = request.json.get('text')
+    format_type = request.json.get('format', 'jsonld')
+
+    result = extractor.extract(text, output_format=format_type)
+    return jsonify(result)
+</code></pre></div>
+<h3 id="data-pipeline">Data Pipeline</h3>
+<div class="code-block"><pre><code class="language-python">import pandas as pd
+from abstractcore.processing import BasicExtractor
+
+def process_documents(file_paths):
+    extractor = BasicExtractor()
+    results = []
+
+    for path in file_paths:
+        with open(path, 'r') as f:
+            text = f.read()
+
+        kg = extractor.extract(
+            text,
+            length=&quot;standard&quot;,
+            output_format=&quot;triples&quot;
+        )
+
+        results.append({
+            'file': path,
+            'entities': len(kg.get('entities', {})),
+            'triples': kg.get('simple_triples', [])
+        })
+
+    return pd.DataFrame(results)
+</code></pre></div>
+<h2 id="performance-notes">Performance notes</h2>
+<p>Extraction is an LLM call, so latency and cost vary by provider/model, input size, and retry behavior.</p>
+<p>Practical guidance:
+- For large documents, extract in chunks (or pre-summarize) to reduce latency and avoid context limits.
+- Use a smaller model for higher throughput; use a larger model when extraction quality matters most.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../../docs/README.html">Documentation index</a> &middot;
+                <a href="../../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../../assets/js/main.js"></script>
+</body>
+</html>

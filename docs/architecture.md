@@ -13,6 +13,7 @@ Related docs (user-facing):
 - OpenAI-compatible gateway server: `docs/server.md`
 - Single-model OpenAI-compatible endpoint: `docs/endpoint.md`
 - Tool calling semantics (passthrough vs execution): `docs/tool-calling.md`
+- Local models, engines and download jobs: `docs/models.md`, `docs/engines.md`, `docs/console.md`
 
 ## System Overview
 
@@ -43,6 +44,8 @@ graph TD
     G --> MM[vLLM Provider]
     G --> MN[OpenRouter Provider]
     G --> MP[Portkey Provider]
+    G --> MT[TypeSafe Provider: decisions]
+    G --> MS[System One-compatible endpoint: decisions]
 
     H --> N[OpenAI API]
     HH --> NN[OpenAI-Compatible /v1 Endpoint]
@@ -54,6 +57,8 @@ graph TD
     MM --> RR[vLLM Server]
     MN --> RO[OpenRouter API]
     MP --> RP[Portkey API Gateway]
+    MT --> RT[TypeSafe Jev API]
+    MS --> RS[System One decision API host]
 
     style B fill:#e1f5fe
     style BB fill:#4caf50
@@ -84,6 +89,72 @@ graph TD
 **Implementation**: OpenAI-compatible REST API built on core library
 
 ## Core Components
+
+### Native MLX execution ownership
+
+The opt-in `mlx_batching=True` runtime serves the documented Qwen3.8-27B and
+Flash-Next checkpoints in one process. Ordinary MLX execution and its cache
+artifact format remain separate. No oMLX component is required.
+
+```mermaid
+flowchart TD
+    PY[Python sync / async / streaming callers] --> P[MLXProvider: request-local normalization]
+    HTTP[HTTP chat clients] --> API[AbstractCore server or single-model endpoint]
+    API --> P
+    CONTRACT[Shared speculation contract: controls and outcomes] -.-> P
+    P --> Q[Immutable requests / bounded admission queue]
+    Q --> W[One execution worker per shared native session]
+    SESSION[NativeSession: target, processor, MTP head, owner leases] --> W
+    W --> POLICY{Compatible request policy}
+    POLICY --> TARGET[Greedy target-only: continuous admission]
+    POLICY --> MTP[Greedy MTP: fixed same-depth cohort]
+    POLICY --> EXCLUSIVE[Sampled / incompatible controls: exclusive]
+    TARGET --> ENGINE[mlx-vlm / mlx-lm on MLX Metal]
+    MTP --> ENGINE
+    EXCLUSIVE --> ENGINE
+    ENGINE <--> CACHE[Bounded RAM prefix cache / optional private SSD]
+    ENGINE --> OUT[Per-request bounded output / usage / execution metadata]
+    OUT --> P
+    CONTROL[Load / cache / unload control plane] -. serialized operations .-> SESSION
+```
+
+Component responsibilities:
+
+| Component | Responsibility |
+| --- | --- |
+| `providers/speculation.py` | Backend-independent request validation and observed-outcome types; no tensor execution |
+| `MLXProvider` | Public API, request-local thinking/tool/sampling controls, media handling and response normalization |
+| `mlx_native_session.py` | Shared target/head/processor identity and provider leases; sibling-safe lifecycle |
+| `mlx_runtime.py` | One execution owner, admission policies, bounded queues, cancellation and truthful per-request accounting |
+| `mlx_native_cache.py` | Bounded native prefix reuse, cache identity, private single-writer SSD persistence and owned-entry clearing |
+| `mlx_qwen4.py` | Flash-Next loading, embedded head, PLE offload and architecture-specific cache compatibility |
+| Upstream MLX / mlx-lm / mlx-vlm | Model graphs, image processing, tensor kernels, draft verification and cache rollback |
+| HTTP adapters / async stream bridge | Concurrent generation admission, backpressure, disconnect propagation and owner-thread iterator cleanup |
+
+Request flow:
+
+1. Normalize the public request once, render its complete context and retain
+   request-local controls. Image requests carry actual pixels to the native
+   processor/vision encoder; MTP off does not disable vision.
+2. Bind the request to its shared session and enqueue immutable execution data.
+   The worker prepares text/image embeddings and looks up an eligible prefix.
+3. Select continuous target decoding, a fixed MTP cohort, or exclusive execution.
+   MTP retains target hidden state, drafts `num_draft_tokens` proposals, verifies
+   them with the target, accepts a prefix and reconciles rejected cache state.
+4. Stream accepted output through the request's bounded channel. Final usage
+   counts request tokens; shared cohort draft counters remain separate diagnostics.
+5. Cancel at a safe backend boundary, or finish and retain an eligible prefix.
+   Final-owner unload flushes storage and releases weights; an idle sibling can
+   release its lease without unloading another owner's model.
+
+The 27B checkpoint uses a matching separate trained MTP head; Flash-Next embeds
+its head. Their ordinary target weights are still the verifier. Model-level
+MTP support requires both trained head tensors and a backend that executes them;
+the shared contract alone does not supply HuggingFace/GGUF MTP.
+
+See [runtime configuration and boundaries](native-mlx-runtime.md),
+[speculative decoding](speculative-decoding.md), and
+[measured scheduling tradeoffs](native-mlx-benchmarks.md).
 
 ### 1. Factory Pattern (`create_llm`)
 
@@ -169,12 +240,37 @@ This ensures:
 
 Configuration comes from `abstractcore/assets/architecture_formats.json` and `abstractcore/assets/model_capabilities.json`; implementation lives in `abstractcore/architectures/response_postprocessing.py`.
 
+#### Unified Thinking Control
+
+`thinking=...` is a single public generation parameter, not a per-provider option. `BaseProvider`
+normalizes the request, applies model-family rules, and then calls each provider's optional
+`_apply_provider_thinking_kwargs(...)` hook. The hook returns rewritten kwargs plus a
+`ThinkingControlHandling` record so AbstractCore can tell whether enable/disable and effort-level
+control were actually handled.
+
+Provider implementations should prefer native controls such as tokenizer `enable_thinking`,
+server `chat_template_kwargs`, or provider-native request fields. Prompt-marker fallbacks are only
+used when no cleaner control exists, and local cache renderers must apply the same thinking control
+during `prompt_cache_update(...)` and `generate(...)` so durable cache prefixes remain token
+compatible with live requests.
+
 #### Model Metadata Registry (Source of Truth)
 AbstractCore's model capability routing and architecture formatting are driven by two canonical JSON registries:
-- `abstractcore/assets/model_capabilities.json` — model limits, tool/structured output flags, multimodal support, aliases
+- `abstractcore/assets/model_capabilities.json` — model limits, tool/structured output flags, multimodal support, route-keyed `capability_routes`, aliases
+- `abstractcore/assets/model_capabilities.schema.json` — JSON Schema contract for model capability metadata
 - `abstractcore/assets/architecture_formats.json` — message formats, tool call syntax, response wrappers, detection patterns
 
 When a new model or architecture is released (or an existing one changes), update these files first. See `abstractcore/assets/README.md` for field requirements and update rules.
+
+A model name reaches its registry entry through its canonical key, a declared alias, or the
+re-packaging rules in `abstractcore/architectures/detection.py`: a provider prefix (`lmstudio/...`),
+a Hugging Face cache path, trailing precision and format tags (`-GGUF`, `-4bit`, `-Q4_K_M.gguf`,
+`-FP8`, `-NVFP4`, `-OptiQ-4bit`, `-i1-GGUF`, `-qat-q4_0-gguf`), an Ollama or LM Studio quant tag after a
+colon (`unsloth/Qwen3.8-27B-GGUF:Q4_K_M`, `hf.co/...:UD-Q4_K_XL`), a re-packager's underscored
+upstream org (`bartowski/MiniMaxAI_MiniMax-M2.7-GGUF`), and the bare tail of an `org/Model` alias.
+A name the registry does not know stays unknown rather than inheriting a base model: a fine-tune, a
+speculative-decoding drafter, or a quantization with its own entry (`qwen3.8-27b-fp8`) keeps its own
+identity. `resolve_registered_model_name()` answers that question without the partial-match ladder.
 
 #### Memory Management
 
@@ -184,10 +280,58 @@ The `unload_model(model_name)` method is a **best-effort resource cleanup hook**
 - **Local / self-hosted providers**: behavior is provider-specific:
   - some can actively release memory (or request server-side eviction),
   - others can only close client connections and rely on server-side TTL/auto-eviction.
-  - Example: **LMStudio** does not expose an explicit “unload model” API; `unload_model()` closes HTTP clients and relies on LMStudio TTL/auto-evict.
+  - Examples: **Ollama** uses native `keep_alive` load/unload semantics, and
+    **LM Studio** uses its native loaded-instance REST API when available.
+
+On in-process providers (MLX, HuggingFace), unloading also drops the instance's session
+prompt caches (KV cache store and MLX hybrid snapshots): they are only useful with the
+weights resident, and they are the memory hogs.
+
+Provider/server availability and model catalog membership are not loaded-model proof.
+When Core can verify residency, providers expose `get_model_residency(...)`; otherwise
+loaded state is reported as unknown/fail-closed. Instances list what they can verify via
+`list_loaded_models()`, and `abstractcore.utils.residency.sweep_loaded_models()` sweeps
+the host's local model servers (Ollama, LM Studio) best-effort.
+`abstractcore.utils.memory.get_memory_snapshot()` reports host RAM, process RSS,
+device allocation, and the host identity; `device.process_held_bytes` is the accelerator
+memory this process holds across MLX, torch and llama.cpp, and `device.allocated_bytes`
+verifies an MLX unload — not process RSS, which behaves as a high-water mark on Metal
+hosts. GGUF loads that settle their context through the probe ladder
+record the settled context to a per-machine calibration store, which seeds later loads
+and powers `abstractcore.utils.context_estimate.estimate_context_fit()` — an analytical
+context-fit answer that never loads weights.
+See [Memory and Model Residency](memory-management.md).
+
+`unload_model()` releases one instance's hold. Several compatible holders can keep one model's
+weights alive in a process. Managed local loaders share supported configurations or refuse a
+conflicting second allocation, using the existing backend registries and one process load lock.
+Transformers callers reuse the resident provider; a second provider for its base artifact is
+refused. See [sharing rules and scope](memory-management.md#one-resident-artifact-per-process).
+`abstractcore.providers.process_residency` gives one door to the managed in-process backends:
+`resident_rows()` lists every model alive in the process, `eject()` unloads every holder, and
+`eject_unclaimed()` ejects only when no registered owner (the server's managed runtimes,
+AbstractRuntime clients) still pools, locks or is loading the model. The claim check and the eject
+run under one process lock.
+
+```mermaid
+graph TD
+    UNLOAD["POST /acore/models/unload<br/>or unload_after"] --> RT["Managed runtime:<br/>unload_model()"]
+    RT --> EU["process_residency.eject_unclaimed()"]
+    CLIENT["AbstractRuntime client<br/>default switch"] --> EU
+    EU -->|"check under residency_lock()"| CLAIMS["Registered claimants:<br/>server managed runtimes,<br/>runtime client pools and locks"]
+    CLAIMS -->|"model still claimed"| SKIP["Skipped report;<br/>HTTP 409 model_locked / model_in_use<br/>for a process-only unload"]
+    CLAIMS -->|"no claim"| EJ["process_residency.eject()"]
+    EJ --> MLX["mlx_residency.eject_model():<br/>every holder, drafter, KV caches,<br/>MLX allocator cache"]
+    EJ --> HF["hf_residency.eject_model():<br/>transformers and GGUF instances,<br/>torch MPS pool"]
+    EJ --> EMB["eject_embedding_models():<br/>in-process EmbeddingManagers<br/>(reload on next embed)"]
+    MLX --> SNAP["get_memory_snapshot():<br/>device.process_held_bytes,<br/>resident block"]
+    HF --> SNAP
+    EMB --> SNAP
+```
 
 In the OpenAI-compatible AbstractCore server (`abstractcore.server.app`), requests can set `unload_after` (default `false`)
-to call `llm.unload_model(model)` after the request completes. For providers that can unload shared server state (e.g. Ollama),
+to unload the model after the request completes; it uses the same process-wide eject as `POST /acore/models/unload`
+and skips locked runtimes. For providers that can unload shared server state (e.g. Ollama),
 this is disabled by default and must be explicitly enabled by the server operator.
 
 ```python
@@ -244,7 +388,7 @@ graph TD
 - **AutoMediaHandler**: Intelligent coordinator that selects appropriate processors
 - **Specialized Processors**:
   - `ImageProcessor` (PIL-based for images)
-  - `PDFProcessor` (PyMuPDF4LLM for documents)
+  - `PDFProcessor` (pypdf by default for permissive PDF text/metadata extraction; optional PyMuPDF4LLM backend is explicit opt-in)
   - `OfficeProcessor` (Unstructured for DOCX/XLSX/PPTX)
   - `TextProcessor` (pandas for CSV/TSV data analysis)
 - **Provider Handlers**: Format media content for each provider's API requirements
@@ -275,8 +419,8 @@ graph TD
 "Analyze this\n\nImage description: A chart showing quarterly trends..."
 ```
 
-**Graceful Fallback Strategy:**
-1. **Advanced Processing**: PyMuPDF4LLM, Unstructured libraries
+**Document Processing Strategy:**
+1. **Specialized Processing**: pypdf for PDFs by default, Unstructured for Office documents
 2. **Basic Processing**: Simple text extraction
 3. **Metadata Fallback**: File information and properties
 4. **Degrades gracefully for documents**: PDFs/Office/text aim to return best-effort extracted text/metadata rather than crashing.
@@ -301,14 +445,22 @@ response = llm.generate(
 python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jpg"
 ```
 
-#### Capability plugins (voice/audio/vision)
+#### Capability plugins (voice/audio/vision/music)
 To keep the default `abstractcore` install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional **capability plugins**:
-- `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
+- `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT, voice discovery by engine and language, cloning, voice design, cloned-voice management).
 - `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
+- `abstractmusic` can provide `core.music` (text-to-music) when installed.
 
 Discovery:
 - `llm.capabilities.status()` returns a JSON-safe snapshot (which backends are available/selected, plus install hints).
-- Convenience facades exist as properties: `llm.voice`, `llm.audio`, `llm.vision` (lazy; missing plugins raise actionable errors).
+- `llm.capabilities.list_backend_infos()` returns registered backend metadata without instantiating backend factories.
+- `llm.capabilities.available_providers(capability, task=...)` and
+  `llm.capabilities.list_models(capability, task=..., provider=...)` expose the shared discovery
+  contract for plugins that implement it.
+- Convenience facades exist as properties: `llm.voice`, `llm.audio`, `llm.vision`, and `llm.music`
+  (lazy; missing plugins raise actionable errors).
+- Plugins that need LLM text planning can use `llm.capability_host_context.text`; this is a
+  text-only service wrapper, not access to the raw provider object.
 
 ### 4. Request Lifecycle
 
@@ -599,20 +751,22 @@ AbstractCore’s streaming system provides character-by-character streaming with
 
 ```mermaid
 graph TD
-    A[Stream Input] --> B[UnifiedStreamProcessor]
+    A[Provider chunks] --> B[UnifiedStreamProcessor]
+    B --> HS["IncrementalHarmonySplitter<br/>(raw Harmony transcripts)"]
+    HS -->|"final / commentary"| C
+    HS -->|"analysis"| R["metadata.reasoning_delta"]
+    HS -->|"to=functions.NAME"| TC
     B --> C[IncrementalToolDetector]
-    C --> D[Tag Rewriter]
-    D --> E[Tool Execution (optional)]
-    E --> F[Stream Output]
-
-    B --> G[Character-by-Character Handling]
-    G --> H[Intelligent Buffering]
-    H --> C
+    C -->|"text"| D["Tag Rewriter<br/>(when tool_call_tags is set)"]
+    C -->|"complete tool call"| TC["chunk.tool_calls"]
+    C -->|"unclosed or unparsable call"| U["metadata.unparsed_tool_call<br/>on the final chunk"]
+    D --> F[chunk.content]
+    B --> T["Terminal chunk (last):<br/>finish_reason, usage,<br/>prompt_cache on MLX"]
 
     style B fill:#4caf50
     style C fill:#2196f3
     style D fill:#ff9800
-    style E fill:#9c27b0
+    style HS fill:#9c27b0
 ```
 
 **Key Features**:
@@ -632,7 +786,18 @@ graph TD
    - Intelligent buffering for partial tool calls
    - Robust parsing with auto-repair for malformed JSON
 
-4. **Tool Call Tag Rewriting Integration**
+4. **Stream end parity**
+   - The last chunk carries the call's `finish_reason` and `usage`; on MLX it also carries
+     `metadata["prompt_cache"]` when the call has a `prompt_cache_key`, the same record a
+     non-streamed call returns
+   - A tool call that never closes, or that no parser accepts, is reported as
+     `metadata["unparsed_tool_call"]` instead of appearing in the text
+   - A ```` ```json ```` block is a tool call only when it names a tool offered for the call
+   - Raw Harmony (GPT-OSS) transcripts are split by channel as they arrive; framing tokens never
+     reach the text
+   - See [Tool Calling — Tool calls while streaming](tool-calling.md#tool-calls-while-streaming)
+
+5. **Tool Call Tag Rewriting Integration**
    - Real-time format conversion during streaming
    - Support for multiple formats (Qwen3, LLaMA3, Gemma, XML, custom)
    - Designed to avoid large buffering while keeping tool calls structured
@@ -689,14 +854,14 @@ graph LR
     A --> C[System Prompt]
     A --> D[Provider Reference]
 
-    B --> E[generate()]
+    B --> E["generate()"]
     C --> E
     D --> E
 
     E --> F[Add to History]
     F --> G[Return Response]
 
-    A --> H[save()/load()]
+    A --> H["save() / load()"]
     H --> I[JSON Persistence]
 
     style A fill:#2196f3
@@ -707,30 +872,54 @@ graph LR
 
 The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
 
+Python applications and native framework workflows can call Core without HTTP. A host can
+start Core's optional listener in its execution-owner process through
+[`start_managed_server`](server.md#managed-listener-in-an-execution-owner). The listener uses
+Core authentication and the same process-local resource admission as Python callers. Starting
+or stopping it does not create or eject model resources. A fatal execution-owner process
+failure still affects every inference in that process; a supervising Gateway can restart it.
+
 ```mermaid
-	graph TD
-	    A[HTTP Client] --> B[FastAPI Server]
-	    B --> C{Endpoint Router}
-	    
-	    C --> D[/v1/chat/completions]
-	    C --> E[/v1/embeddings]
-	    C --> F[/v1/models]
-	    C --> G[/providers]
-	    C --> Img[/v1/images/* (optional)]
-	    C --> Aud[/v1/audio/* (optional)]
-	    C --> Cache[/acore/prompt_cache/*]
-    
+flowchart LR
+    Native["Native framework clients"] --> GW["Gateway run APIs / Runtime ledger"]
+    GW --> RPC["Execution-owner Python client"]
+    Direct["Optional OpenAI-compatible clients"] --> HTTP["Core HTTP listener / Core token"]
+    subgraph Owner["One execution-owner process"]
+        RPC --> Core["Core provider calls"]
+        HTTP --> Core
+        Core --> Admission["Existing loader admission and resident resources"]
+    end
+```
+
+```mermaid
+graph TD
+    A[HTTP Client] --> B[FastAPI Server]
+    W[Browser] --> CON["/console web console"]
+    CON --> B
+    B --> C{Endpoint Router}
+
+    C --> D["/v1/chat/completions, /v1/responses"]
+    C --> E["/v1/embeddings"]
+    C --> F["/v1/models, /providers"]
+    C --> Img["/v1/images/*, /v1/audio/* (optional)"]
+    C --> Cache["/acore/prompt_cache/*, /acore/blocs/*"]
+    C --> Host["/acore/host, /acore/models/*, /acore/engines/*, /acore/jobs/*"]
+
     D --> H[Request Validation]
     E --> H
+    Img --> H
     F --> I[Provider Discovery]
-    G --> I
-    
+    D -->|"response_format"| SO["Structured-output handler<br/>(schema validation + retries)"]
+    SO --> J
+
     H --> J[AbstractCore Library]
     I --> J
-    
+    Cache --> J
+    Host --> LM[Local model management]
+
     J --> K[Provider Interface]
     K --> L[LLM Providers]
-    
+
     style B fill:#4caf50
     style J fill:#e1f5fe
     style K fill:#f3e5f5
@@ -748,12 +937,14 @@ The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top o
 - **OpenAI Compatibility**: Drop-in replacement for OpenAI API clients
 - **Universal Provider Access**: Single API for all providers (OpenAI, Anthropic, Ollama, etc.)
 - **Format Conversion**: Automatic tool call format conversion for agentic CLIs
+- **Structured Outputs**: OpenAI `response_format` (`json_object`, `json_schema`) on `/v1/chat/completions` for every provider; the answer goes through the structured-output handler and is validated against the caller's schema (see [Server](server.md#structured-outputs-response_format))
 - **Streaming Support**: Server-sent events for real-time responses
 - **Model Discovery**: Dynamic model listing across all providers
-- **Embedding Support**: Multi-provider embedding generation (HuggingFace, Ollama, LMStudio)
-- **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` (plus `/v1/vision/*` control plane) delegated to `abstractvision` (safe-by-default; requires explicit config).
-- **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`).
-- **Prompt Cache Control Plane**: `/acore/prompt_cache/*` proxy endpoints for cache stats/set/update/fork/clear (best-effort; typically targets an `abstractcore.endpoint` upstream).
+- **Embedding Support**: Multi-provider embedding generation (remote OpenAI-compatible providers plus local backends)
+- **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations`, `/v1/images/edits`, `/v1/videos/generations`, and `/v1/videos/edits` can proxy to an upstream media server without local vision runtimes; `/v1/vision/*` local model control remains delegated to `abstractvision` when installed and configured. Deep provider catalog discovery is exposed separately at `/v1/vision/providers/` and `/v1/vision/models`, and long image/video runs can use `/v1/vision/jobs/images/*` or `/v1/vision/jobs/videos/*` progress polling.
+- **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`). Voice/profile and TTS model discovery are exposed at `/v1/audio/voices` (with a `language` filter), `/v1/audio/languages` and `/v1/audio/speech/models`; voices are created and managed with `/v1/voice/clone`, `/v1/voice/design` and `/v1/voice/clones/{voice_id}`.
+- **Prompt Cache Control Plane**: `/acore/prompt_cache/*` endpoints for cache stats/set/update/fork/clear/key_meta on warm gateway runtimes or an upstream `abstractcore.endpoint` (best-effort).
+- **Runtime + Memory Visibility**: `/acore/models/*` runtime load/list/unload plus `lock`/`unlock` model locks (a locked runtime refuses unloading without `force`), `GET /acore/models/context_estimate` context-fit estimates, and `GET /acore/memory` host memory snapshot. Loaded listings merge the host's local model-server sweep and stamp text and sweep records with registry-declared `modalities`, and every record with the observing machine's `host_id`/`host_name` — see [Memory and Model Residency](memory-management.md).
 
 **Request Flow Example**:
 
@@ -770,8 +961,7 @@ sequenceDiagram
     Server->>Core: llm.generate(messages, tools)
     Core->>Provider: API call with retry logic
     Provider->>Core: Response
-    Core->>Core: Execute tools if needed
-    Core->>Server: GenerateResponse
+    Core->>Server: GenerateResponse (tool calls are returned, not executed)
     Server->>Server: Convert to OpenAI format
     Server->>Client: HTTP Response (streaming or complete)
 ```
@@ -784,6 +974,121 @@ sequenceDiagram
 - **Health Checks**: `/health` endpoint for monitoring
 - **Interactive Docs**: Auto-generated Swagger UI at `/docs`
 - **Multi-Worker Support**: Production deployment with multiple workers
+
+### 11. Local Model Management
+
+The CLI (`abstractcore host|models|engines ...`), the server's `/acore/host/profile`,
+`/acore/models/*`, `/acore/engines/*` and `/acore/jobs/*` routes, the web console at `/console`
+and the terminal console (`abstractcore-console`, which drives the CLI) all call the same Python
+modules, so every surface returns the same JSON payloads. AbstractGateway re-exposes those
+payloads.
+
+```mermaid
+graph TD
+    CLI["abstractcore host / models / engines"] --> CORE
+    TUI["abstractcore-console (terminal)"] --> CLI
+    WEB["/console (browser)"] --> HTTP
+    HTTP["/acore/host/profile, /acore/models/*, /acore/engines/*, /acore/jobs/*"] --> CORE
+
+    subgraph CORE[Shared modules]
+        HP["utils.host_profile: OS, accelerator, memory ceiling, free disk"]
+        FIT["utils.model_fit: fit verdict per artifact"]
+        CAT["config.model_catalog: curated seed, recommended_text_model()"]
+        MAT["config.model_materializer: installed models, download, delete, MTP companions"]
+        ENG["config.engines: engine detection and install plans"]
+        JOBS["config.host_jobs: host_job_v1 registry, progress, cancel"]
+    end
+
+    CAT --> HP
+    CAT --> FIT
+    CAT --> MAT
+    CAT --> REG["assets: model_downloads_catalog.json, model_capabilities.json"]
+    JOBS --> MAT
+    JOBS --> ENG
+    MAT --> STORES["Engine stores: Hugging Face cache, LM Studio models folder, Ollama"]
+    JOBS --> PERSIST["~/.abstractcore/config/jobs/: snapshots and events.jsonl"]
+```
+
+- **Reads never download.** The catalog, the installed-model listing and provider loads read
+  local evidence; only an explicit download (a CLI verb or a job) reaches the network. See
+  [Centralized Config](centralized-config.md#offline-section).
+- **Long work is a job.** Downloads, deletes and engine installs run as `host_job_v1` jobs with
+  progress, a plain end reason and cancellation. Hugging Face transfers run in a child process
+  that a cancel stops at once.
+- **One recommendation.** `model_catalog.recommended_text_model()` picks the recommended text
+  model for this machine on every surface.
+
+See [Local Models](models.md), [Local Engines](engines.md), [Web Console](console.md) and
+[Terminal Console](console-tui.md).
+
+### 12. Email
+
+`abstractcore.comms.email` holds one mailbox per install. The CLI (`abstractcore email ...`), the
+`/acore/email` routes used by the web console, the terminal console (which drives the CLI) and the
+email tools all go through `EmailAccountStore`, so every surface applies the same policy, limits
+and TLS rules.
+
+```mermaid
+graph TD
+    CLI["abstractcore email ..."] --> STORE
+    TUI["abstractcore-console (terminal)"] --> CLI
+    WEB["/console Email tab"] --> HTTP["/acore/email/* routes"]
+    HTTP --> STORE
+    HTTP --> DISC
+    TOOLS["email tools (Agent email tools on)"] --> CTX
+
+    subgraph EMAIL[abstractcore.comms.email]
+        STORE["store.EmailAccountStore: account, connect, folder, email address"]
+        DISC["discovery: discover_servers, server_defaults"]
+        VAULT["vault.SecretVault: AES-256-GCM secret.enc, key file secrets/sealing.key (no keychain)"]
+        CTX["context.EmailContext: guarded_send"]
+        POL["policy: allowlist / denylist"]
+        LIM["limits: per hour / per day, sends.json"]
+        CLIENT["client.EmailClient: IMAP reads (PEEK), changes and SMTP with Read and write access, verified TLS"]
+    end
+
+    CLI --> DISC
+    STORE --> VAULT
+    STORE --> CTX
+    CTX --> POL
+    CTX --> LIM
+    CTX --> CLIENT
+    CLIENT --> SERVERS["IMAP and SMTP servers"]
+```
+
+Discovery only reads public HTTPS and DNS answers and returns server settings; it never stores
+anything. See [Email](email.md).
+
+### 13. Decision Models
+
+`abstractcore.decision` turns a document (the *state*) and typed questions (`choice`, `noul`,
+`score`) into calibrated answers, without generating text. Every caller goes through one
+`DecisionRequest` / `DecisionResponse` contract, and every engine answers it, so callers never depend
+on the model behind it.
+
+```mermaid
+graph TD
+    GEN["generate(state, output='decision', questions=...)"] --> ROUTE{"route on the output spec"}
+    ROUTE -->|"the provider is a decision model"| OWN["provider.decision_model()"]
+    ROUTE -->|"output.decision default or explicit provider/model"| POOL
+    HTTP["POST /v1/decisions, /{provider}/v1/decisions"] --> POOL["decision.pool: at most 2 resident decision providers, LRU, shared per process"]
+    LOADS["/acore/models/load | unload, task=decision"] --> POOL
+    POOL -->|"one provider instance per resident model"| OWN
+    OWN --> LOADER["decision.loader: detect kind and layout (adapter, merged, GGUF, registry)"]
+    LOADER --> KEV["runtime.DecisionModel (kev pointer head, state-prefix cache)"]
+    LOADER --> LABELS["engines.labels (lev, openjev label logits, shared-prefix reuse)"]
+    LOADER --> LAYA["engines.laya (ModernBERT marker scorer, windowed long states)"]
+    LOADER --> REMOTE["engines.remote (typesafe, systemone over HTTP)"]
+    KEV --> BACK["backends: transformers, mlx-lm, llama.cpp"]
+    LABELS --> BACK
+    LAYA --> TF["transformers"]
+    REMOTE --> HOST["hosted System One API"]
+```
+
+`render` turns the state and questions into text and the probabilities into answers (confidence
+follows the System One conventions); `kinds` holds each kind's prompt layout, so every runtime
+renders the same prompt. A decision model refuses text generation and a chat completion against it
+answers 400 with a pointer to `/v1/decisions`. See [Decision Models](decision-models.md).
 
 ## Architecture Benefits
 
@@ -853,6 +1158,8 @@ Common levers:
 - **Local execution (optional)**: tool execution is local (never executed by the provider); by default tool calls are returned for your host/runtime to execute
 - **Event prevention**: Stop dangerous tools before execution
 - **Input validation**: Validate tool parameters
+- **Command sandbox**: `execute_command` and `shell_exec` run inside the OS sandbox built from the run's workspace set (`abstractcore.tools.sandbox`: macOS `sandbox-exec`, Linux bubblewrap or Landlock). The most specific workspace wins on every platform: an allowed folder inside a refused one is reachable (bubblewrap binds it after masking the refused parent), a refused folder inside an allowed one refuses its subtree. See [Tool Calling](tool-calling.md) (*Command sandbox*).
+- **Browser probe scope**: `browser_probe` serves a local page from a private loopback origin that answers only for files the run's sandbox can read; `file://` and out-of-scope loads are refused and listed in its report.
 
 ### 2. API Key Management
 - **Environment variables**: Secure key storage

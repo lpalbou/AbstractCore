@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BasicIntentAnalyzer — Intent analysis (with deception indicators) - AbstractCore</title>
+    <meta name="description" content="BasicIntentAnalyzer is a structured intent-analysis component built on AbstractCore. It can analyze:">
+    <link rel="canonical" href="https://abstractcore.ai/docs/apps/basic-intent.html">
+    <link rel="icon" type="image/x-icon" href="../../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">BasicIntentAnalyzer — Intent analysis (with deception indicators)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">BasicIntentAnalyzer is a structured intent-analysis component built on AbstractCore. It can analyze:</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#install" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Install</a>
+<a href="#quick-start-python" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick start (Python)</a>
+<a href="#cli-usage-intent" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">CLI usage (intent)</a>
+<a href="#interactive-chat-integration-intent" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Interactive chat integration (/intent)</a>
+<a href="#events-optional" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Events (optional)</a>
+<a href="#notes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Notes</a></div>
+
+            <div class="doc-content">
+
+<ul>
+<li>a single text input (<code>analyze_intent</code>)</li>
+<li>a multi-participant conversation (<code>analyze_conversation_intents</code>)</li>
+</ul>
+<p>Deception indicators are always included in the structured output schema.</p>
+<h2 id="install">Install</h2>
+<div class="code-block"><pre><code class="language-bash"># Light: every remote provider, plus PDF / Office inputs in the CLI
+pip install abstractcore
+
+# Or, for in-process local engines (MLX / vLLM, HuggingFace/GGUF):
+pip install &quot;abstractcore[apple]&quot;    # Apple silicon
+pip install &quot;abstractcore[gpu]&quot;      # NVIDIA / AMD
+</code></pre></div>
+<h2 id="quick-start-python">Quick start (Python)</h2>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.processing import BasicIntentAnalyzer, IntentContext, IntentDepth
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # light install
+analyzer = BasicIntentAnalyzer(llm)
+
+result = analyzer.analyze_intent(
+    &quot;I'm struggling to understand this concept and need help.&quot;,
+    context_type=IntentContext.STANDALONE,
+    depth=IntentDepth.UNDERLYING,
+)
+
+print(result.primary_intent.intent_type.value)
+print(result.primary_intent.underlying_goal)
+print(result.primary_intent.deception_analysis.deception_likelihood)
+</code></pre></div>
+<h2 id="cli-usage-intent">CLI usage (<code>intent</code>)</h2>
+<p>The <code>intent</code> CLI analyzes either direct text or a file path:</p>
+<div class="code-block"><pre><code class="language-bash"># Direct text
+intent &quot;I need help with this problem&quot; --depth underlying
+
+# File input
+intent ./email.txt --context document --depth comprehensive --format plain
+
+# Conversation log input (expects lines like `USER: ...` / `ASSISTANT: ...`)
+intent ./chat.txt --conversation-mode --focus-participant user --format plain
+
+# Session archive JSON created via `BasicSession.save(...)` (auto-enables conversation mode)
+intent ./saved_session.json --focus-participant user --depth comprehensive --format plain
+</code></pre></div>
+<h3 id="key-flags">Key flags</h3>
+<ul>
+<li><code>--context</code>: <code>standalone</code>, <code>conversational</code>, <code>document</code>, <code>interactive</code></li>
+<li><code>--depth</code>: <code>surface</code>, <code>underlying</code>, <code>comprehensive</code></li>
+<li><code>--conversation-mode</code>: parse multi-message inputs; use <code>--focus-participant</code> to target a role</li>
+<li><code>--provider</code> + <code>--model</code>: override the default app model (must be provided together)</li>
+<li><code>--format</code>: <code>json</code>, <code>yaml</code>, <code>plain</code></li>
+<li><code>--timeout</code>: HTTP timeout in seconds (<code>0</code> = unlimited)</li>
+</ul>
+<p>Tip: to see every option, run <code>intent --help</code>.</p>
+<h2 id="interactive-chat-integration-intent">Interactive chat integration (<code>/intent</code>)</h2>
+<p>The interactive chat CLI (<code>abstractcore-chat</code>) supports <code>/intent</code> to analyze the current conversation state:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore-chat --provider ollama --model gemma3:1b-it-qat
+
+# In the REPL:
+/intent
+/intent user
+/intent assistant
+</code></pre></div>
+<h2 id="events-optional">Events (optional)</h2>
+<p>You can monitor generations via the global event bus:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
+
+def monitor(event):
+    if event.type == EventType.GENERATION_COMPLETED:
+        duration_ms = event.data.get(&quot;duration_ms&quot;)
+        print(&quot;generation_completed&quot;, duration_ms)
+
+on_global(EventType.GENERATION_COMPLETED, monitor)
+</code></pre></div>
+<h2 id="notes">Notes</h2>
+<ul>
+<li>Long inputs are chunked and combined (map-reduce). Use <code>--chunk-size</code> in the CLI (or <code>max_chunk_size</code> in Python) to control chunk size.</li>
+<li>Output schemas live in <code>abstractcore/processing/basic_intent.py</code> (<code>IntentAnalysisOutput</code>, <code>IntentType</code>, <code>DeceptionIndicators</code>).</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../../docs/README.html">Documentation index</a> &middot;
+                <a href="../../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../../assets/js/main.js"></script>
+</body>
+</html>

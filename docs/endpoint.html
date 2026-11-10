@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Endpoint (single-model `/v1` server) - AbstractCore</title>
     <meta name="description" content="abstractcore-endpoint runs a single-model OpenAI-compatible server.">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/endpoint.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -38,7 +40,8 @@
 <a href="#install" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Install</a>
 <a href="#run" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Run</a>
 <a href="#use-with-an-openai-compatible-client" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Use with an OpenAI-compatible client</a>
-<a href="#prompt-cache-control-plane-optional" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Prompt cache control plane (optional)</a></div>
+<a href="#prompt-cache-control-plane-optional" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Prompt cache control plane (optional)</a>
+<a href="#memory-blocs-and-durable-provider-backed-bloc-kv-artifacts" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Memory blocs and durable provider-backed bloc KV artifacts</a></div>
 
             <div class="doc-content">
 
@@ -50,19 +53,19 @@
 <li>Use <strong>Endpoint</strong> when you want a dedicated “one worker = one model” process (simpler performance characteristics; fewer per-request initialization costs).</li>
 </ul>
 <h2 id="install">Install</h2>
-<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[server]&quot;
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore            # the endpoint itself (light)
 </code></pre></div>
-<p>Then install the provider extra you need:</p>
-<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[mlx]&quot;         # Apple Silicon local inference
-pip install &quot;abstractcore[huggingface]&quot; # Transformers / torch / llama-cpp-python (heavy)
+<p>To host a local model in-process (MLX, HuggingFace/GGUF), install the local engines for your machine:</p>
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[apple]&quot;   # Apple silicon: MLX, HuggingFace/GGUF
+pip install &quot;abstractcore[gpu]&quot;     # NVIDIA / AMD: vLLM, HuggingFace/GGUF
 </code></pre></div>
 <h2 id="run">Run</h2>
 <div class="code-block"><pre><code class="language-bash"># CLI flags
-abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B --host 0.0.0.0 --port 8001
+abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B-4bit --host 0.0.0.0 --port 8001
 
 # Or via env vars
 export ABSTRACTENDPOINT_PROVIDER=mlx
-export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B
+export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B-4bit
 export ABSTRACTENDPOINT_HOST=0.0.0.0
 export ABSTRACTENDPOINT_PORT=8001
 abstractcore-endpoint
@@ -80,6 +83,9 @@ resp = client.chat.completions.create(
 )
 print(resp.choices[0].message.content)
 </code></pre></div>
+<p>The endpoint accepts the same unified <code>thinking</code> control as the gateway on <code>/v1/chat/completions</code>, so a dedicated local worker can expose provider-native reasoning toggles without any extra adapter layer.
+It also accepts <code>prompt_cache_binding</code>, the optional exact durable bloc binding returned by
+<code>/acore/blocs/kv/load</code>.</p>
 <h2 id="prompt-cache-control-plane-optional">Prompt cache control plane (optional)</h2>
 <p>If the underlying provider exposes prompt-cache controls, the endpoint also exposes a small control plane under <code>/acore/prompt_cache/*</code> (see <code>abstractcore/endpoint/app.py</code>):</p>
 <ul>
@@ -100,10 +106,47 @@ print(resp.choices[0].message.content)
 <li>runtime/provider failure: <code>supported=false</code>, <code>code="prompt_cache_error"</code></li>
 </ul>
 <p>The <code>capabilities</code> object is always included on prompt-cache control-plane responses so callers can branch on <code>mode</code> / <code>supports_*</code> flags without re-probing the provider.</p>
+<p><code>POST /acore/prompt_cache/update</code> also accepts optional <code>thinking</code>, which is applied before the provider appends the cached fragment. This matters for local backends where reasoning control changes prompt serialization.</p>
 <p>For caching concepts, see <a href="session.html">Session Management</a> and <a href="architecture.html">Architecture</a>.
 For a dedicated overview, see <a href="prompt-caching.html">Prompt Caching</a>.</p>
+<h2 id="memory-blocs-and-durable-provider-backed-bloc-kv-artifacts">Memory blocs and durable provider-backed bloc KV artifacts</h2>
+<p><code>AbstractEndpoint</code> can also expose a small memory-bloc control plane for single-model local
+providers:</p>
+<ul>
+<li><code>POST /acore/blocs/upsert_text</code></li>
+<li><code>GET /acore/blocs/record</code></li>
+<li><code>GET /acore/blocs/kv/manifest</code></li>
+<li><code>POST /acore/blocs/kv/ensure</code></li>
+<li><code>POST /acore/blocs/kv/load</code></li>
+</ul>
+<p>Typical flow:</p>
+<ol>
+<li>persist extracted text into the endpoint-local bloc store with <code>POST /acore/blocs/upsert_text</code></li>
+<li>compile or validate the durable artifact with <code>POST /acore/blocs/kv/ensure</code></li>
+<li>load or fork it into an in-process cache key with <code>POST /acore/blocs/kv/load</code></li>
+<li>call <code>/v1/chat/completions</code> with the returned <code>artifact.prompt_cache_binding</code> when exact
+   request-time binding is required</li>
+</ol>
+<p>Important boundary:</p>
+<ul>
+<li>the durable artifact is <strong>bloc-only</strong>; it is not a full <code>system + tools + transcript</code> bootstrap</li>
+<li>the loaded cache key is <strong>worker-local</strong> to this <code>AbstractEndpoint</code> process</li>
+<li>stable reuse only works when subsequent requests hit the same long-lived endpoint worker/provider</li>
+<li>the shared route shape covers MLX, HuggingFace transformers, and supported HuggingFace GGUF
+  exact-renderer paths</li>
+<li><code>debug=true</code> on ensure/load returns verbose artifact proof fields, and stale
+  <code>prompt_cache_binding</code> use fails before generation</li>
+</ul>
+<p>For the storage contract and Python helpers, see <a href="memory-blocs.html">Memory Blocs</a>.</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

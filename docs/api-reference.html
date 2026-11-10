@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API Reference - AbstractCore</title>
     <meta name="description" content="Complete reference for the AbstractCore API. All examples work across any provider.">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/api-reference.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -283,11 +285,23 @@ print(capabilities)  # ['text_generation', 'tool_calling', 'streaming', 'vision'
 </code></pre></div>
 <p>For local providers (Ollama, MLX, HuggingFace, LMStudio), this explicitly frees model memory or releases client resources. For API providers (OpenAI, Anthropic), this is typically a no-op but safe to call.</p>
 <p><strong>Provider-specific behavior:</strong>
-- <strong>Ollama</strong>: Sends <code>keep_alive=0</code> to immediately unload from server
+- <strong>Ollama</strong>: Uses native <code>keep_alive</code> load/unload semantics and <code>/api/ps</code> for residency truth
 - <strong>MLX</strong>: Clears model/tokenizer references and forces garbage collection
 - <strong>HuggingFace</strong>: Closes llama.cpp resources (GGUF) or clears model references
-- <strong>LMStudio</strong>: Closes HTTP connection (server auto-manages via TTL)
+- <strong>LMStudio</strong>: Uses native loaded-instance REST load/unload when available
 - <strong>OpenAI/Anthropic</strong>: No-op (safe to call)</p>
+<p>On in-process providers (MLX, HuggingFace), unloading also drops the instance's session
+prompt caches — the prompt-cache store and, on MLX, the hybrid KV boundary snapshots.
+Session caches are only useful while the weights are resident, so unload frees them in
+the same call.</p>
+<p>To verify that memory was actually freed, read <code>device.allocated_bytes</code> from
+<code>abstractcore.utils.memory.get_memory_snapshot()</code>. Process RSS is not a reliable unload
+signal on Metal hosts: freed device buffers return to the process allocator, so RSS
+behaves as a high-water mark. See
+<a href="memory-management.html">Memory and Model Residency</a>.</p>
+<p><code>get_model_residency(...)</code> reports verified loaded state only when the provider can
+check the backing runtime. Client construction, configured defaults, and model catalogs
+are not treated as loaded-model proof.</p>
 <p><strong>Example:</strong></p>
 <div class="code-block"><pre><code class="language-python"># Load and use a large model
 llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3-coder:30b&quot;)
@@ -304,6 +318,30 @@ llm2 = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-30B-4bit&quot
 - Test suites testing multiple models sequentially
 - Memory-constrained environments (&lt;32GB RAM)
 - Sequential model loading in production systems</p>
+<h4 id="list_loaded_modelsfiltersnone">list_loaded_models(filters=None)</h4>
+<p>List the models this provider instance can verify as loaded.</p>
+<div class="code-block"><pre><code class="language-python">def list_loaded_models(self, filters: Optional[Dict[str, Any]] = None) -&gt; List[Dict[str, Any]]
+</code></pre></div>
+<p><strong>Returns:</strong> residency records (provider, model, <code>loaded</code>, <code>resident</code>, plus normalized
+<code>size_bytes</code> / <code>size_vram_bytes</code> when the backend reports sizes). Unknown residency yields
+an empty list, never a guess.</p>
+<p><strong>Provider-specific behavior:</strong>
+- <strong>Default</strong>: derived from <code>get_model_residency()</code> — the instance's own model when verified loaded
+- <strong>Ollama / LMStudio</strong>: all models resident on the instance's server (transport errors raise)
+- <strong>MLX</strong>: the in-process record plus a best-effort <code>est_weights_bytes</code> estimate</p>
+<p><code>OllamaProvider.list_server_loaded_models()</code> and <code>LMStudioProvider.list_server_loaded_models()</code>
+are classmethods for the same server-wide question without constructing a provider instance,
+and <code>abstractcore.utils.residency.sweep_loaded_models()</code> sweeps both servers best-effort
+(unreachable servers are skipped silently). <code>abstractcore.utils.memory.get_memory_snapshot()</code>
+reports host RAM, process RSS, device allocation, and the host identity in one call.
+<code>abstractcore.utils.context_estimate.estimate_context_fit(provider, model, context_length=None)</code>
+estimates how much context a model can sustain on this host without loading weights — every
+answer labeled <code>"calibrated"</code>, <code>"estimated"</code>, or <code>"unknown"</code>, and the function never raises.
+<code>abstractcore.utils.hostinfo.get_host_identity()</code> names the machine residency and memory records
+were observed on (<code>host_id</code>, <code>host_name</code>, <code>kind</code>), and
+<code>abstractcore.providers.model_capabilities.modalities_for_model()</code> returns the registry-declared
+modality routes for a model, or <code>None</code> on a registry miss (never a text-only guess). See
+<a href="memory-management.html">Memory and Model Residency</a> for the full surface.</p>
 <h3 id="generateresponse">GenerateResponse</h3>
 <p>Response object from LLM generation with <strong>consistent token terminology</strong> and <strong>generation time tracking</strong>.</p>
 <div class="code-block"><pre><code class="language-python">@dataclass
@@ -401,11 +439,11 @@ if response.has_tool_calls():
 - <code>provider</code> (AbstractCoreInterface): LLM provider
 - <code>system_prompt</code> (str): System prompt</p>
 <p><strong>Methods:</strong></p>
-<h4 id="generate_1">generate()</h4>
+<h4 id="generate-1">generate()</h4>
 <div class="code-block"><pre><code class="language-python">def generate(self, prompt: str, **kwargs) -&gt; GenerateResponse
 </code></pre></div>
 <p>Generate response and add to conversation history.</p>
-<h4 id="agenerate_1">agenerate()</h4>
+<h4 id="agenerate-1">agenerate()</h4>
 <div class="code-block"><pre><code class="language-python">async def agenerate(
     self,
     prompt: str,
@@ -579,17 +617,22 @@ class RetryConfig:
     use_jitter: bool = True
     failure_threshold: int = 5
     recovery_timeout: float = 60.0
-    half_open_max_calls: int = 2
+    half_open_max_calls: int = 3
+    max_total_wall_clock_s: Optional[float] = None
 </code></pre></div>
 <p><strong>Parameters:</strong>
-- <code>max_attempts</code> (int): Maximum retry attempts
+- <code>max_attempts</code> (int): Maximum attempts including the initial call
 - <code>initial_delay</code> (float): Initial delay in seconds
 - <code>max_delay</code> (float): Maximum delay in seconds
 - <code>exponential_base</code> (float): Base for exponential backoff
 - <code>use_jitter</code> (bool): Add randomness to delays
 - <code>failure_threshold</code> (int): Circuit breaker failure threshold
 - <code>recovery_timeout</code> (float): Circuit breaker recovery timeout
-- <code>half_open_max_calls</code> (int): Max calls in half-open state</p>
+- <code>half_open_max_calls</code> (int): Max calls in half-open state
+- <code>max_total_wall_clock_s</code> (float or None): Budget for starting further retries; does not interrupt an in-flight attempt. Constructor shorthand: <code>retry_wall_clock_budget_s</code>.</p>
+<p><code>RetryConfig.single_attempt()</code> sets <code>max_attempts=1</code> for hosts that already own retries.
+Structured-output <code>FeedbackRetry</code> is a separate validation budget; see the
+<a href="agent-usage.html">bounded integration recipes</a>.</p>
 <p><strong>Example:</strong></p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 from abstractcore.core.retry import RetryConfig
@@ -683,9 +726,29 @@ print(f&quot;Similarity: {similarity:.3f}&quot;)
 <div class="code-block"><pre><code class="language-python">class ProviderAPIError(AbstractCoreError):
     &quot;&quot;&quot;Provider API error.&quot;&quot;&quot;
 </code></pre></div>
+<h4 id="endpointunreachableerror">EndpointUnreachableError</h4>
+<div class="code-block"><pre><code class="language-python">class EndpointUnreachableError(ProviderError):
+    &quot;&quot;&quot;No TCP connection to the provider's endpoint could be made (machine off or asleep,
+    connection refused, DNS failure).&quot;&quot;&quot;
+    base_url: str | None       # the endpoint that did not answer
+    cause: str                 # transport exception class, e.g. &quot;httpx.ConnectError&quot;
+    errno: int | None          # OS error number when known (61 refused, 60 connect timed out)
+    elapsed_s: float | None    # seconds the attempt took before failing
+    retryable: bool            # False when the connect attempt itself timed out
+    counts_toward_breaker = False
+</code></pre></div>
+<p>Raised instead of a timeout message when the endpoint never accepted a connection. A host can
+catch it by type to park the step and probe the endpoint rather than fail the run; it never
+opens the circuit breaker.</p>
 <h4 id="modelnotfounderror">ModelNotFoundError</h4>
 <div class="code-block"><pre><code class="language-python">class ModelNotFoundError(AbstractCoreError):
     &quot;&quot;&quot;Model not found error.&quot;&quot;&quot;
+</code></pre></div>
+<h4 id="modelnotdownloadederror">ModelNotDownloadedError</h4>
+<div class="code-block"><pre><code class="language-python">class ModelNotDownloadedError(ModelNotFoundError):
+    &quot;&quot;&quot;The model is not on this computer, and loading never downloads (offline_first).&quot;&quot;&quot;
+    model: str | None     # the id to download
+    provider: str | None  # the provider that serves it
 </code></pre></div>
 <h4 id="authenticationerror">AuthenticationError</h4>
 <div class="code-block"><pre><code class="language-python">class AuthenticationError(ProviderAPIError):
@@ -782,6 +845,13 @@ on_global(EventType.RETRY_ATTEMPTED, production_monitor)
 - <a href="capabilities.html">Capabilities</a> - What AbstractCore can do</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

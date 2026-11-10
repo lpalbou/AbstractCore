@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integrating and operating AbstractCore - AbstractCore</title>
+    <meta name="description" content="Use this guide to write Python integrations and pilot an installation with explicit endpoint, model, budget and lifecycle choices. It complements Getting…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/agent-usage.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Integrating and operating AbstractCore</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">Use this guide to write Python integrations and pilot an installation with explicit endpoint, model, budget and lifecycle choices. It complements Getting Started, the API map and Contributing. The portable abstractcore agent skill distills these procedures for agents; copy the complete skill folder, including its references, when registering it.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#purpose-and-limits" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Purpose and limits</a>
+<a href="#install-and-verify" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Install and verify</a>
+<a href="#mental-model" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Mental model</a>
+<a href="#capability-map" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Capability map</a>
+<a href="#recipes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Recipes</a>
+<a href="#rules-and-sharp-edges" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Rules and sharp edges</a>
+<a href="#when-things-fail" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">When things fail</a>
+<a href="#python-integration-recipes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Python integration recipes</a>
+<a href="#operations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Operations</a>
+<a href="#related-documentation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related documentation</a></div>
+
+            <div class="doc-content">
+
+<h2 id="purpose-and-limits">Purpose and limits</h2>
+<p>Use AbstractCore as a provider layer for Python applications and OpenAI-compatible clients.
+Write integrations against <code>create_llm</code>, then choose an explicit provider, model and endpoint.
+It supplies generation, tools, typed output, sessions, media and model management; your host
+owns the execution loop, permissions and durable state. Use AbstractRuntime for durable agent
+orchestration; assemble retrieval yourself rather than expecting a complete RAG pipeline.</p>
+<h2 id="install-and-verify">Install and verify</h2>
+<p>Choose exactly one setting: <code>python -m pip install abstractcore</code> for remote inference, tools,
+media inputs, HTTP serving and remote capability plugins; <code>"abstractcore[apple]"</code> adds Apple
+silicon local engines; <code>"abstractcore[gpu]"</code> adds NVIDIA/AMD local engines. These commands install
+the published version. For a checkout containing this guide's version, install its source:</p>
+<div class="code-block"><pre><code class="language-bash">python -m pip install -e .                 # run at the AbstractCore repository root
+# For local engines instead: python -m pip install -e &quot;.[apple]&quot; or -e &quot;.[gpu]&quot;
+</code></pre></div>
+<p>Check imports and print both code and distribution versions without contacting a provider:</p>
+<div class="code-block"><pre><code class="language-python">from importlib.metadata import PackageNotFoundError, version
+
+try:
+    import abstractcore
+    installed = version(&quot;abstractcore&quot;)
+    assert callable(abstractcore.create_llm), &quot;create_llm is missing&quot;
+except (ImportError, PackageNotFoundError, AssertionError) as exc:
+    raise SystemExit(f&quot;Install verification failed: {exc}&quot;) from None
+print(f&quot;AbstractCore code={abstractcore.__version__}; distribution={installed}&quot;)
+if abstractcore.__version__ != installed:
+    raise SystemExit(&quot;Code/metadata mismatch: reinstall in this Python environment.&quot;)
+if installed != &quot;2.31.1&quot;:
+    raise SystemExit(&quot;Version differs from this guide; use the installed version's docs/skill.&quot;)
+</code></pre></div>
+<p>For cloud access, ask the user to set the provider's environment variable locally, never paste
+a key into chat. For a custom endpoint, use its own key explicitly; <code>api_key=""</code> on
+<code>openai-compatible</code> prevents ambient key fallback for an unauthenticated local server.
+Stop at the first authentication failure and fix configuration before another request.</p>
+<h2 id="mental-model">Mental model</h2>
+<ul>
+<li><strong>Provider + model + endpoint:</strong> provider IDs include <code>openai</code>, <code>anthropic</code>, <code>openrouter</code>,
+  <code>portkey</code>, <code>ollama</code>, <code>lmstudio</code>, <code>vllm</code>, <code>openai-compatible</code>, <code>huggingface</code>, <code>mlx</code>.
+  Model IDs belong to that backend. Compatible base URLs normally end in <code>/v1</code>; Ollama's
+  native provider normally uses <code>http://127.0.0.1:11434</code> without <code>/v1</code>.</li>
+<li><strong>Budgets:</strong> <code>max_tokens</code> is the total input plus output budget; <code>max_output_tokens</code> caps
+  generation. Set both explicitly. The public output attribute defaults to 2048 but providers
+  that allow uncapped output can omit the wire limit when you did not set it. Model metadata
+  can supply sampling defaults; explicit supported call parameters win. <code>thinking=False</code>
+  requests no thinking; effort strings are best-effort and can consume extra output tokens.
+  Ollama raises small caps while thinking: minimum output budgets are 1024 (<code>minimal</code>),
+  2048 (<code>low</code> or boolean on), 4096 (<code>medium</code>), 8192 (<code>high</code>). Disable thinking for a small cap.</li>
+<li><strong>Time and retries:</strong> config defaults for LLM and tool timeouts are 7200 seconds;
+  <code>timeout=None</code> is unlimited. Provider retry defaults are 3 attempts including the first,
+  1-second initial backoff, 60-second maximum delay, jitter, and no total retry budget.
+  <code>retry_wall_clock_budget_s</code> stops starting retries after that budget, not an in-flight call.
+  Use <code>RetryConfig.single_attempt()</code> when the host already retries. Structured validation has
+  a separate <code>FeedbackRetry</code> default of 3 attempts; tools plus <code>response_model</code> use two passes
+  and do not support streaming. OpenAI/Anthropic SDK clients additionally default to 2 retries;
+  <code>RetryConfig</code> controls the AbstractCore layer, not the SDK's own retry policy.</li>
+<li><strong>Results:</strong> ordinary generation returns <code>GenerateResponse</code>; <code>content</code>, <code>usage</code>, <code>metadata</code>
+  and <code>tool_calls</code> can be absent. Tool-only and reasoning-only responses can be legitimate.
+  A <code>response_model</code> call returns the Pydantic instance instead. Stream chunks are deltas;
+  the final chunk carries <code>finish_reason</code> and provider-reported usage. <code>length</code> means incomplete.</li>
+<li><strong>State:</strong> <code>BasicSession</code> owns conversation history; <code>CachedSession</code> also coordinates stable
+  prefixes. Cache capabilities vary by backend; inspect capabilities and hit metadata.
+  A cache hit is not a guarantee of byte-identical output. Blocs store text and native cache
+  artifacts, with live-binding checks on deletion.</li>
+<li><strong>Errors:</strong> handle <code>AbstractCoreError</code> subclasses, especially <code>AuthenticationError</code>,
+  <code>ModelNotFoundError</code>, <code>ModelArtifactMismatchError</code>, <code>ProviderAPIError</code>, <code>EndpointUnreachableError</code>
+  (the endpoint never accepted a connection; park and probe rather than fail), <code>RateLimitError</code>,
+  <code>UnsupportedFeatureError</code>, and <code>GenerationCancelledError</code>. Cancellation is not retried.
+  Invalid options can raise <code>ValueError</code>, missing engines <code>ImportError</code>, exhausted structured
+  validation <code>pydantic.ValidationError</code>; backend/transport failures can also surface as
+  <code>RuntimeError</code> or <code>httpx.HTTPError</code>. Catch those at the application boundary, report failure,
+  and do not treat partial or empty output as success.</li>
+</ul>
+<h2 id="capability-map">Capability map</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Job</th>
+<th>Entry point</th>
+<th>Guidance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Text, async, streaming</td>
+<td><code>create_llm</code>, <code>generate</code>, <code>agenerate</code></td>
+<td>Recipes below; <a href="#python-integration-recipes">integration recipes</a></td>
+</tr>
+<tr>
+<td>Conversations, prefix reuse</td>
+<td><code>BasicSession</code>, <code>CachedSession</code>, <code>prompt_cache_key</code></td>
+<td>Integration recipes; <code>get_prompt_cache_capabilities()</code> before cache operations</td>
+</tr>
+<tr>
+<td>Tools and coding helpers</td>
+<td><code>@tool</code>, <code>tools=</code>, <code>response.tool_calls</code>; <code>abstractcore.tools.common_tools</code></td>
+<td>Integration recipes; host validates and executes</td>
+</tr>
+<tr>
+<td>Typed output</td>
+<td><code>response_model=</code>, <code>FeedbackRetry</code></td>
+<td>Integration recipes</td>
+</tr>
+<tr>
+<td>Media inputs and outputs</td>
+<td><code>media=</code>, <code>request=</code>, <code>output=</code>; <code>llm.voice/audio/vision/music/scene3d/camera</code></td>
+<td>Integration recipes</td>
+</tr>
+<tr>
+<td>Embeddings</td>
+<td><code>abstractcore.embeddings.EmbeddingManager</code></td>
+<td>Integration recipes; explicitly select a route/model</td>
+</tr>
+<tr>
+<td>Summarize, extract, classify</td>
+<td><code>BasicSummarizer</code>, <code>BasicExtractor</code>; <code>abstractcore-summarizer/extractor/judge/intent/deepsearch</code></td>
+<td><a href="#operations">Operations</a></td>
+</tr>
+<tr>
+<td>Local models, engines, configuration</td>
+<td><code>abstractcore models</code>, <code>engines</code>, <code>config</code>, <code>--status</code></td>
+<td>Operations</td>
+</tr>
+<tr>
+<td>HTTP and chat</td>
+<td><code>abstractcore serve</code>, <code>abstractcore-endpoint</code>, <code>abstractcore-chat</code></td>
+<td>Operations</td>
+</tr>
+<tr>
+<td>Durable bloc caches and memory</td>
+<td><code>ensure_bloc_kv_artifact</code>, <code>load_bloc_kv_artifact</code>, <code>llm.unload_model(llm.model)</code></td>
+<td>Operations; inspect binding/ownership before deletion or unload</td>
+</tr>
+<tr>
+<td>Observability, cancellation</td>
+<td><code>enable_tracing=True</code>, events, <code>cancel_event</code>, <code>progress_callback</code></td>
+<td>Operations</td>
+</tr>
+<tr>
+<td>MCP tools</td>
+<td><code>abstractcore.mcp</code></td>
+<td>Integration recipes; tool source, not a built-in MCP server</td>
+</tr>
+</tbody>
+</table></div>
+<p>There is no automatic switch to a different model artifact and no complete autonomous agent
+runner. Local loads are offline/cache-first; downloading is an explicit operation. Remote
+providers, tools, and plugins can still use the network. Configuration normally lives under
+<code>~/.abstractcore/config/abstractcore.json</code>; caches, sessions, downloads and opt-in traces write
+local data. Logs/traces and prompt-cache artifacts can contain user content. Model management,
+file/command/email tools and capability outputs can change local or remote state.</p>
+<h2 id="recipes">Recipes</h2>
+<h3 id="connect-and-generate">Connect and generate</h3>
+<p>End-to-end: choose an endpoint you control, list its models (operations reference), select an
+exact ID, set budgets, make one call, inspect the result, then add tools or state only as needed.
+Set <code>ACORE_BASE_URL</code> and <code>ACORE_MODEL</code> locally; <code>ACORE_API_KEY</code> is the endpoint's optional key.
+These three variables are recipe inputs, not AbstractCore configuration variables.</p>
+<div class="code-block"><pre><code class="language-python">import os
+import httpx
+from abstractcore import create_llm
+from abstractcore.core.retry import RetryConfig
+from abstractcore.exceptions import AbstractCoreError
+
+try:
+    llm = create_llm(
+        &quot;openai-compatible&quot;, model=os.environ[&quot;ACORE_MODEL&quot;],
+        base_url=os.environ[&quot;ACORE_BASE_URL&quot;], api_key=os.environ.get(&quot;ACORE_API_KEY&quot;, &quot;&quot;),
+        timeout=30, max_tokens=4096, max_output_tokens=256,
+        retry_config=RetryConfig.single_attempt(), execute_tools=False, validate_model=False,
+    )
+    response = llm.generate(&quot;Reply with one sentence about HTTP caching.&quot;)
+except KeyError as exc:
+    raise SystemExit(f&quot;Set required recipe input: {exc}&quot;) from None
+except (AbstractCoreError, httpx.HTTPError, ValueError, ImportError, RuntimeError) as exc:
+    raise SystemExit(f&quot;Generation failed ({type(exc).__name__}); check endpoint/model/config.&quot;) from None
+if response.finish_reason == &quot;length&quot;:
+    raise SystemExit(&quot;Incomplete answer: increase the output budget or shorten the request.&quot;)
+if not (response.content or &quot;&quot;).strip():
+    raise SystemExit(&quot;No text answer: inspect tool_calls and reasoning before continuing.&quot;)
+print(response.content)
+</code></pre></div>
+<p>Success is nonempty text with no length cutoff. Use a longer explicit timeout for large local
+models. After explicit model discovery, <code>validate_model=False</code> skips the constructor's
+best-effort chat-catalog probe; generation still reports request/model errors.
+For <code>openai</code>/<code>anthropic</code>, use the provider's key variable and provider-specific model ID;
+the generic endpoint recipe does not validate those cloud dialects.</p>
+<h3 id="inspect-a-host-before-making-changes">Inspect a host before making changes</h3>
+<div class="code-block"><pre><code class="language-bash">python -c &quot;from abstractcore import __version__; print(__version__)&quot;
+abstractcore host profile --json
+abstractcore models list --json
+abstractcore models catalog --fits --json
+abstractcore engines status --json
+</code></pre></div>
+<p>These report the machine, installed weights, catalog fit and engines. Check exit status and
+payload state: missing/unknown measurements do not mean a model fits. Discovery can contact
+local model servers. Operations covers exact artifacts, dry-run plans and serving.</p>
+<h3 id="add-state-typed-answers-streaming-and-tools">Add state, typed answers, streaming and tools</h3>
+<p>Open <a href="#python-integration-recipes">integration recipes</a> for complete continuations of the client
+recipe: session history, typed extraction, streaming/async, an allowlisted tool round trip,
+embeddings and media routing. Keep tool execution in the host; never execute model-provided
+Python, shell text or an arbitrary function name.</p>
+<h2 id="rules-and-sharp-edges">Rules and sharp edges</h2>
+<ul>
+<li>Inference on hosted providers can incur charges; model downloads consume disk/network;
+  local inference and generated media can take minutes and hold substantial memory. Inspect
+  configuration, model IDs, catalog fit and dry-run plans first. Obtain user authorization for
+  paid calls, downloads, installs, deletions or external effects when the task has not already
+  authorized them. An already-authorized operation needs no repeated confirmation.</li>
+<li>Pin provider/model/base URL. Do not send a cloud credential to an arbitrary compatible host.
+  Portkey additionally needs <code>PORTKEY_CONFIG</code>; optional gateway sampler fields are forwarded
+  only when explicitly chosen.</li>
+<li>Execute only complete parsed tool calls; check <code>(response.metadata or {}).get("unparsed_tool_call")</code>
+  and reject a length-cutoff turn. Preserve call IDs in assistant/tool history. Bound loop turns.</li>
+<li>Audio defaults to <code>audio_policy="native_only"</code>; video defaults to <code>video_policy="auto"</code>.
+  Video frame sampling needs <code>ffmpeg</code>/<code>ffprobe</code>. An image needs native vision or a configured
+  captioning fallback. Fallbacks can make another model call; choose them deliberately.</li>
+<li>Native MLX batching/MTP is opt-in and checkpoint-specific (<code>mlx_batching=True</code>, <code>speculation</code>).
+  Inspect <code>metadata["speculation"]["used"]</code> and execution metadata; accepting an option is not
+  evidence it ran. The shared contract does not enable HuggingFace/GGUF MTP.</li>
+<li>When editing AbstractCore itself, read repository instructions and <code>CONTRIBUTING.md</code>, then
+  the relevant public docs and tests. Keep local-engine imports lazy and use the existing
+  three install settings. Route contributor work to those docs; do not invent private APIs.</li>
+</ul>
+<h2 id="when-things-fail">When things fail</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>401/403 or <code>AuthenticationError</code></td>
+<td>Stop; check the endpoint's own key and server-vs-upstream token distinction. Never retry login blindly.</td>
+</tr>
+<tr>
+<td>Connection refused/timeout</td>
+<td>Start the intended server; check host, port, <code>/v1</code> and explicit timeout. Do not switch providers silently.</td>
+</tr>
+<tr>
+<td>Model missing/artifact mismatch</td>
+<td>List installed/backend models; download the exact authorized artifact. Specify quantization rather than substituting another build.</td>
+</tr>
+<tr>
+<td>Empty text, <code>length</code>, unparsed call</td>
+<td>Inspect reasoning/tools and finish metadata. Treat cutoff as incomplete; adjust budgets and retry only within the task's policy.</td>
+</tr>
+<tr>
+<td>Import error, validation or media failure</td>
+<td>Install the matching engine setting, simplify the schema, or select a supported media policy/model; see the recipes and troubleshooting.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="python-integration-recipes">Python integration recipes</h2>
+<p>These snippets continue <strong>Connect and generate</strong> above: reuse its configured <code>llm</code>,
+<code>AbstractCoreError</code> and <code>httpx</code> imports. Run each recipe independently after that setup. Use the
+same application error boundary for provider, transport and configuration failures. An
+authentication failure ends the workflow; a failed/cutoff turn must not trigger tool execution.</p>
+<h3 id="conversation-history-and-prefix-reuse">Conversation history and prefix reuse</h3>
+<div class="code-block"><pre><code class="language-python"># Continues Connect and generate.
+from abstractcore import BasicSession
+
+session = BasicSession(llm, system_prompt=&quot;Answer briefly.&quot;)
+for prompt in (&quot;Remember the project name: Cedar.&quot;, &quot;What is the project name?&quot;):
+    try:
+        reply = session.generate(prompt)
+    except (AbstractCoreError, httpx.HTTPError, ValueError, RuntimeError) as exc:
+        raise SystemExit(f&quot;Session failed ({type(exc).__name__}).&quot;) from None
+    if reply.finish_reason == &quot;length&quot; or not (reply.content or &quot;&quot;).strip():
+        raise SystemExit(&quot;Session turn has no complete text answer.&quot;)
+    print(reply.content)
+</code></pre></div>
+<p><code>BasicSession.generate()</code> records turns; do not also append the same user message manually.
+<code>session.save(path)</code> writes conversation JSON; <code>BasicSession.load(path, provider=llm)</code> restores
+it. Choose a private output path. For prefix reuse, substitute
+<code>CachedSession(provider=llm, system_prompt="...", prompt_cache_strategy="auto")</code>, then optionally
+<code>attach_files([path])</code> before generating. Read <code>llm.get_prompt_cache_capabilities()</code> first;
+local key manipulation requires <code>local_control_plane</code>, not just <code>keyed</code> mode. Inspect
+<code>(reply.metadata or {}).get("prompt_cache")</code>; support and reuse depend on backend/model.</p>
+<h3 id="typed-extraction">Typed extraction</h3>
+<div class="code-block"><pre><code class="language-python"># Continues Connect and generate.
+from pydantic import BaseModel, Field, ValidationError
+from abstractcore.structured import FeedbackRetry
+
+class Ticket(BaseModel):
+    title: str = Field(min_length=1)
+    priority: int = Field(ge=1, le=3)
+
+try:
+    ticket = llm.generate(
+        &quot;Extract ticket: priority 2, title Fix cache expiry.&quot;, response_model=Ticket,
+        retry_strategy=FeedbackRetry(max_attempts=1),
+    )
+except (ValidationError, AbstractCoreError, httpx.HTTPError, ValueError, RuntimeError, TypeError) as exc:
+    raise SystemExit(f&quot;Extraction failed ({type(exc).__name__}); check schema/budget.&quot;) from None
+print(ticket.model_dump())
+</code></pre></div>
+<p>Success is a validated <code>Ticket</code>, not a <code>GenerateResponse</code>. Keep validation attempts explicit
+when limiting cost. Native schema support varies; client validation still matters. A truncated
+structured answer is rejected by default, even if its partial JSON happens to validate. The
+handler can retry with a larger output budget; one validation attempt disables that retry.</p>
+<p>Known issue (2.26.4): an empty native structured response with <code>content=None</code> can escape as
+<code>TypeError</code> during JSON decoding. Catch it at this extraction boundary and report failure;
+do not accept an empty object or supply invented field values.</p>
+<h3 id="streaming-and-async">Streaming and async</h3>
+<div class="code-block"><pre><code class="language-python"># Continues Connect and generate.
+last = None
+text_parts = []
+try:
+    for chunk in llm.generate(&quot;Describe HTTP caching in one sentence.&quot;, stream=True):
+        last = chunk
+        text_parts.append(chunk.content or &quot;&quot;)
+except (AbstractCoreError, httpx.HTTPError, ValueError, RuntimeError) as exc:
+    raise SystemExit(f&quot;Stream failed ({type(exc).__name__}); discard partial output.&quot;) from None
+if last is None or last.finish_reason in (None, &quot;length&quot;) or not &quot;&quot;.join(text_parts).strip():
+    raise SystemExit(&quot;No complete streamed text answer; inspect tools/reasoning/budget.&quot;)
+print(&quot;&quot;.join(text_parts))
+print(last.usage)  # may be None; absence is not zero token usage
+</code></pre></div>
+<p>Buffer until completion when downstream work requires a complete answer; a UI may display
+chunks provisionally. Reasoning deltas can appear in <code>chunk.metadata["reasoning_delta"]</code>.</p>
+<div class="code-block"><pre><code class="language-python"># Continues Connect and generate; standalone script entry point (not an existing event loop).
+import asyncio
+
+async def main():
+    try:
+        reply = await llm.agenerate(&quot;Reply with a short greeting.&quot;)
+    except (AbstractCoreError, httpx.HTTPError, ValueError, RuntimeError) as exc:
+        raise SystemExit(f&quot;Async generation failed ({type(exc).__name__}).&quot;) from None
+    if reply.finish_reason == &quot;length&quot; or not (reply.content or &quot;&quot;).strip():
+        raise SystemExit(&quot;No complete async text answer.&quot;)
+    print(reply.content)
+
+asyncio.run(main())
+</code></pre></div>
+<p>For async streaming: <code>stream = await llm.agenerate(..., stream=True)</code>, then
+<code>async for chunk in stream</code>. Inside an existing event loop, await your coroutine directly.</p>
+<h3 id="one-host-controlled-tool-round-trip">One host-controlled tool round trip</h3>
+<div class="code-block"><pre><code class="language-python"># Continues Connect and generate.
+import json
+from abstractcore import tool
+
+@tool
+def project_label(project: str) -&gt; str:
+    &quot;&quot;&quot;Return a label for the single permitted project, Cedar.&quot;&quot;&quot;
+    if project != &quot;Cedar&quot;:
+        raise ValueError(&quot;Project is outside this tool's scope&quot;)
+    return &quot;Cedar: documentation&quot;
+
+history = [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Use project_label for Cedar, then report its label.&quot;}]
+try:
+    for turn in range(3):
+        reply = llm.generate(&quot;&quot;, messages=history, tools=[project_label])
+        if reply.finish_reason == &quot;length&quot; or (reply.metadata or {}).get(&quot;unparsed_tool_call&quot;):
+            raise ValueError(&quot;Incomplete or unparsed tool turn; nothing will be executed&quot;)
+        calls = reply.tool_calls or []
+        if not calls:
+            if not (reply.content or &quot;&quot;).strip():
+                raise ValueError(&quot;No final text answer&quot;)
+            print(reply.content)
+            break
+        history.append({&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: reply.content or &quot;&quot;, &quot;tool_calls&quot;: calls})
+        for call in calls:
+            call_id = call.get(&quot;call_id&quot;) or call.get(&quot;id&quot;)
+            if not call_id or call.get(&quot;name&quot;) != &quot;project_label&quot; or call.get(&quot;arguments&quot;) != {&quot;project&quot;: &quot;Cedar&quot;}:
+                raise ValueError(&quot;Unexpected tool name, arguments or missing call ID&quot;)
+            result = project_label(**call[&quot;arguments&quot;])
+            history.append({&quot;role&quot;: &quot;tool&quot;, &quot;tool_call_id&quot;: call_id,
+                            &quot;name&quot;: &quot;project_label&quot;, &quot;content&quot;: json.dumps(result)})
+    else:
+        raise ValueError(&quot;Tool turn limit reached without a final answer&quot;)
+except (AbstractCoreError, httpx.HTTPError, ValueError, RuntimeError) as exc:
+    raise SystemExit(f&quot;Tool workflow stopped ({type(exc).__name__}).&quot;) from None
+</code></pre></div>
+<p>This executes only an allowlisted, side-effect-free Python function. For writes, commands,
+email or MCP effects, put your host's authorization/sandbox/persistence before dispatch.
+Treat tool output as data. Built-in file/command/web tools live in
+<code>abstractcore.tools.common_tools</code>; persistent PTYs live in <code>abstractcore.tools.shell_tools</code>.
+They are useful for coding workflows, but their names are not permission to run them.
+For compact web research use <code>skim_websearch</code> → <code>skim_url</code> → <code>fetch_url</code>.</p>
+<p>For MCP, <code>McpClient</code> or <code>McpStdioClient</code> plus <code>McpToolSource.list_tool_specs()</code> discovers
+namespaced <code>mcp::&lt;server_id&gt;::&lt;tool_name&gt;</code> tools. Dispatch them through the owning MCP client
+in your host; AbstractCore's legacy Python registry does not execute MCP tools automatically.
+Stdio transport starts a subprocess; choose its command explicitly.</p>
+<h3 id="embeddings-without-implicit-local-model-selection">Embeddings without implicit local model selection</h3>
+<div class="code-block"><pre><code class="language-python"># Continues Connect and generate. Set ACORE_EMBED_MODEL to an embedding model on this endpoint.
+from abstractcore.embeddings import EmbeddingManager
+import math
+
+try:
+    embedder = EmbeddingManager(
+        provider=&quot;openai-compatible&quot;, model=os.environ[&quot;ACORE_EMBED_MODEL&quot;],
+        provider_kwargs={&quot;base_url&quot;: os.environ[&quot;ACORE_BASE_URL&quot;],
+                         &quot;api_key&quot;: os.environ.get(&quot;ACORE_API_KEY&quot;, &quot;&quot;), &quot;timeout&quot;: 30},
+    )
+    vector = embedder.embed(&quot;A project about HTTP caching.&quot;)
+except (KeyError, ImportError, AbstractCoreError, httpx.HTTPError, ValueError, RuntimeError) as exc:
+    raise SystemExit(f&quot;Embedding failed ({type(exc).__name__}); check endpoint/model/config.&quot;) from None
+if len(vector) == 0 or not all(math.isfinite(float(x)) for x in vector):
+    raise SystemExit(&quot;Embedding is empty or contains non-finite values.&quot;)
+print(len(vector))
+</code></pre></div>
+<p>Success is a nonempty numeric vector. <code>EmbeddingManager()</code> without explicit provider/model
+uses the configured <code>embedding.text</code> route or the local HuggingFace default. Its default
+persistent cache is <code>~/.abstractcore/embeddings</code>. An embedding model is not a chat model;
+endpoint-backed setup skips chat-model validation. Preserve model and dimensions across a
+retrieval index; rebuild it when either changes.</p>
+<h3 id="media-inputs-and-generated-artifacts">Media inputs and generated artifacts</h3>
+<p>On the configured client, pass <code>media=["&lt;IMAGE_PATH&gt;"]</code> with a vision-capable model to
+describe an image. Fill the path with an existing user-authorized file. Audio/video policies,
+native capability and caption/STT fallbacks are described in the guide's sharp edges.
+For outputs, the canonical call is
+<code>llm.generate(request={"text": "..."}, output={"modality": "image", "format": "png"})</code>.
+Select the output provider/model explicitly or configure the matching capability route first;
+the text provider does not determine the generative vision backend.</p>
+<p>These are potentially costly operations. Before running, inspect <code>llm.capabilities.status()</code>
+and the configured output route. <code>MultimodalGenerateResponse</code> exposes <code>text</code>, <code>outputs</code>,
+<code>resources</code>, <code>warnings</code>, <code>errors</code>, <code>metadata</code>; <code>outputs</code> maps modalities to <code>GeneratedItem</code>
+lists with optional <code>data</code> and <code>artifact_ref</code>. Inspect errors and artifact references before
+claiming a file exists. <code>llm.voice.tts</code>/<code>llm.audio.transcribe</code> provide deterministic speech,
+<code>llm.vision</code> image/video, <code>llm.music</code> music, <code>llm.scene3d</code> 3D and <code>llm.camera</code> camera control.
+Plugin return/error types differ from text generation; use that plugin's documented contract.
+Glyph compression renders text/PDF pages as images and requires a vision model; evaluate
+answer quality before relying on the token savings.</p>
+<h3 id="further-documentation">Further documentation</h3>
+<ul>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/tool-calling.md">Tool calling</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/structured-output.md">Structured output</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/session.md">Sessions</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/prompt-caching.md">Prompt caching</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/media-handling-system.md">Media policies</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/request-output.md">Output contract</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/embeddings.md">Embeddings</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/mcp.md">MCP</a></li>
+</ul>
+<h2 id="operations">Operations</h2>
+<h3 id="choose-and-inspect-an-endpoint">Choose and inspect an endpoint</h3>
+<p>Use a backend's exact model listing rather than guessing model IDs. For an OpenAI-compatible
+endpoint with <code>/v1</code> in <code>ACORE_BASE_URL</code>, this read-only probe checks connectivity, authentication
+and a nonempty model catalog. <code>ACORE_API_KEY</code> is that endpoint's key, never an unrelated cloud key.</p>
+<div class="code-block"><pre><code class="language-python">import os
+import httpx
+
+try:
+    base = os.environ[&quot;ACORE_BASE_URL&quot;].rstrip(&quot;/&quot;)
+    key = os.environ.get(&quot;ACORE_API_KEY&quot;, &quot;&quot;)
+    headers = {&quot;Authorization&quot;: f&quot;Bearer {key}&quot;} if key else {}
+    response = httpx.get(base + &quot;/models&quot;, headers=headers, timeout=5)
+    if response.status_code in (401, 403):
+        raise SystemExit(&quot;Authentication failed; fix the endpoint key before another request.&quot;)
+    response.raise_for_status()
+    models = [item[&quot;id&quot;] for item in response.json()[&quot;data&quot;] if item.get(&quot;id&quot;)]
+except (KeyError, TypeError, ValueError, httpx.HTTPError):
+    raise SystemExit(&quot;Model discovery failed; check base URL, server availability and response shape.&quot;) from None
+if not models:
+    raise SystemExit(&quot;Endpoint returned no models; install/load the intended model first.&quot;)
+print(&quot;\n&quot;.join(models))
+</code></pre></div>
+<p>Success lists usable identifiers to select; it does not prove generation works. <code>/models</code>
+has no universal server-version field: verify server version through that backend's own
+version/health surface. Run the guide's bounded generation recipe next.</p>
+<h3 id="exact-local-artifacts">Exact local artifacts</h3>
+<p>After inspection, plan a download with an explicit engine and artifact. The example selector
+<code>unsloth/Qwen3-8B-GGUF:Q4_K_M</code> illustrates repo plus quantization; use the catalog's exact
+<code>cli_download</code> for the user's selected model. A GGUF repo without <code>:QUANT</code> can download all
+quantizations. MLX repos normally identify one quantization and can include MTP companions.</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore models download huggingface &quot;unsloth/Qwen3-8B-GGUF:Q4_K_M&quot; --dry-run --json
+abstractcore engines install ollama --dry-run
+</code></pre></div>
+<p>A plan is not installation. Review disk/memory fit and the exact command, then execute the
+authorized operation by dropping <code>--dry-run</code>. Downloads may start jobs; use <code>abstractcore models
+jobs --json</code> and inspect the final status before loading. <code>abstractcore models verify</code> performs
+real inference. Models CLI exit codes are <code>0</code> success, <code>1</code> error, <code>2</code> refusal; inspect <code>status</code>,
+<code>reason</code>, <code>message</code> and delete blockers. Unknown fit data is not a pass.</p>
+<p>For local calls use <code>create_llm("mlx", model="&lt;EXACT_MLX_REPO&gt;", ...)</code> or
+<code>create_llm("huggingface", model="&lt;EXACT_REPO_OR_FILE&gt;", ...)</code>. Supply the same explicit
+budgets/error handling as the main recipe. HF has separate Transformers and GGUF paths;
+<code>model_type="transformers"</code> or <code>"gguf"</code> can disambiguate. Engine rerouting between MLX and
+GGUF warns; artifact substitution is refused. Model load errors require fixing cache, engine
+dependencies or exact artifact selection, not silently choosing different weights.</p>
+<p>On Apple/MPS, half-precision Transformers SDPA on torch 2.8.x/2.10.x has documented correctness
+issues. Follow the load warning: use <code>ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager</code> or an
+appropriate newer torch. MLX cache, native batching and MTP support are checkpoint-specific.</p>
+<h3 id="configuration-and-serving">Configuration and serving</h3>
+<p><code>abstractcore --config</code> is interactive; <code>abstractcore --status</code> diagnoses configured routes.
+The config path can be isolated with <code>ABSTRACTCORE_CONFIG_DIR</code> or <code>ABSTRACTCORE_CONFIG_FILE</code>.
+The canonical text route is <code>input.text</code>; <code>output.text</code> is its read-only view.
+<code>embedding.text</code> selects retrieval embeddings. Image/video/voice/music/3D have separate routes.
+Use <code>abstractcore config --help</code> and the centralized-config guide before writing defaults.</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore serve --help
+abstractcore-endpoint --help
+abstractcore-chat --help
+</code></pre></div>
+<p><code>abstractcore serve</code> binds loopback port 8000 by default. On first local use it writes a server
+token under the config directory and prints a one-time console claim link. Keep the link/token
+private. Binding a non-loopback host requires <code>ABSTRACTCORE_AUTH_TOKEN</code>. In authenticated mode,
+<code>Authorization: Bearer ...</code> is the server token; <code>X-AbstractCore-Provider-API-Key</code> optionally
+overrides the selected upstream provider's key. Never interchange those credentials.</p>
+<p>The universal server routes <code>POST /v1/chat/completions</code> using model IDs such as
+<code>ollama/&lt;model&gt;</code>; the single-model <code>abstractcore-endpoint</code> hosts one provider/model.
+<code>response_format</code> enables JSON/schema validation over HTTP. <code>/console</code> manages the host.
+Do not start another server on an occupied port or treat a help command as proof of health.</p>
+<p>A framework execution owner can start the optional Core HTTP listener with
+<code>abstractcore.server.managed.start_managed_server</code>; stopping that listener retains its resident
+models. It uses Core's own token and configuration. Native framework clients continue through
+Gateway run APIs and Runtime's ledger. See <a href="server.html#managed-listener-in-an-execution-owner">Server</a>.</p>
+<h3 id="memory-caches-cancellation-and-diagnostics">Memory, caches, cancellation and diagnostics</h3>
+<ul>
+<li>Managed local loaders share compatible resident artifacts or refuse conflicting allocations
+  before loading. Reuse the resident configuration; Transformers callers reuse the provider.
+  Finish work and unload holders before changing engines, placement or native head profiles.
+  This contract is process-local and excludes arbitrary plugins/raw engine constructors and
+  independent external servers. See <a href="memory-management.html#one-resident-artifact-per-process">sharing scope</a>.</li>
+<li><code>llm.get_prompt_cache_capabilities()</code> describes <code>none</code>, <code>keyed</code>, or <code>local_control_plane</code>.
+  <code>llm.prompt_cache_supports_operation(...)</code> gates controls. Unsupported operations raise
+  structured cache errors with <code>operation</code>, <code>code</code> and <code>capabilities</code>.</li>
+<li><code>llm.get_prompt_cache_stats()</code> and response prompt-cache metadata describe reuse.
+  <code>ensure_bloc_kv_artifact</code> compiles an exact text/file bloc;
+  <code>load_bloc_kv_artifact</code> returns a binding for <code>generate(prompt_cache_binding=...)</code>.
+  Artifacts are provider/model/renderer-specific. List bindings before deleting/pruning;
+  live-bound artifacts are blocked by default. Do not bypass that check to make a cleanup pass.</li>
+<li><code>llm.unload_model(llm.model)</code> cancels/drains supported in-flight requests. In-process engines
+  release the calling instance's hold on weights/caches; another owner may retain a shared model.
+  Generic compatible endpoints only close/reset the connection; releasing server-side weights
+  needs that server's own control API (implemented for Ollama and LM Studio).
+  Inspect the host memory snapshot and loaded-model
+  sweep rather than inferring memory release from a successful method return. Unload affects
+  concurrent work; coordinate with the owner.</li>
+<li>Pass a <code>threading.Event</code> as <code>cancel_event=</code>. Set it to request cancellation; consult
+  <code>supports_generation_cancel()</code> for backend support. Cancellation raises
+  <code>GenerationCancelledError</code>; its partial output is diagnostic, not a finished answer.
+  Local lanes can report <code>progress_callback=</code> events when supported.</li>
+<li>Enable <code>enable_tracing=True</code> only when prompt/response capture is intended. Events/logging
+  provide observability; traces, sessions and cache artifacts need private storage.</li>
+</ul>
+<h3 id="built-in-application-clis">Built-in application CLIs</h3>
+<p>Inspect <code>--help</code> before selecting an input/output path:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore-summarizer --help
+abstractcore-extractor --help
+abstractcore-judge --help
+abstractcore-intent --help
+abstractcore-deepsearch --help
+</code></pre></div>
+<p>These run model-backed document/analysis tasks. Specify provider/model and output destinations
+as the app's help describes; inference, file writes and DeepSearch's web activity are effects,
+so a help-only inspection is the cheap first step. Python exposes <code>BasicSummarizer</code> and
+<code>BasicExtractor</code> from <code>abstractcore</code> for application integrations.</p>
+<h3 id="further-documentation-1">Further documentation</h3>
+<ul>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/models.md">Models</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/engines.md">Engines</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/centralized-config.md">Configuration</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/server.md">Server</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/endpoint.md">Endpoint</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/memory-management.md">Memory lifecycle</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/memory-blocs.md">Memory blocs</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/generation-cancel.md">Cancellation</a></li>
+<li><a href="https://raw.githubusercontent.com/lpalbou/AbstractCore/main/docs/examples.md">Examples</a></li>
+</ul>
+<h2 id="related-documentation">Related documentation</h2>
+<p>See the <a href="README.html">documentation index</a>, <a href="faq.html">FAQ</a>, and <a href="troubleshooting.html">Troubleshooting</a>.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

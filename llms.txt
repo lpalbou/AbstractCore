@@ -1,79 +1,86 @@
 # AbstractCore
 
-> Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
+> Unified Python interface for cloud and local LLMs: generation, streaming, host-controlled tools, typed output, sessions, media, embeddings and OpenAI-compatible HTTP serving.
 
-Last reviewed against source: 2026-05-04. Package version in source: 2.13.2. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
+Package version: 2.35.0
+Supported Python: 3.9+; CI tests Python 3.9–3.13.
 
-This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
+Use an explicit provider, exact model and endpoint. Local model loads are offline/cache-first;
+download weights deliberately. Tools are pass-through by default: the host authorizes and
+executes calls. For durable agent orchestration, use [AbstractRuntime](https://github.com/lpalbou/abstractruntime).
 
-Important notes:
-- Default tool execution is **pass-through**: AbstractCore returns tool calls; your host/runtime executes them.
-- AbstractCore is **offline-first** for local models: it will not silently download model weights (download/pull explicitly).
+## Agent Skill
 
-Ecosystem note:
-- AbstractCore is part of **AbstractFramework** (umbrella: https://github.com/lpalbou/AbstractFramework).
-- In the ecosystem, **AbstractRuntime** is the recommended runtime for executing `response.tool_calls` durably (policy, retries, persistence): https://github.com/lpalbou/abstractruntime
+- [AbstractCore skill](skills/abstractcore/SKILL.md): portable operating procedure for agents writing integrations and piloting an installation; keep its references folder.
+- [Python recipes](skills/abstractcore/references/integrations.md): sessions, typed extraction, streaming, async, allowlisted tools, embeddings and media.
+- [Operating recipes](skills/abstractcore/references/operations.md): endpoint discovery, models, engines, serving, caches and diagnostics.
 
-Quick start:
-- Install: `pip install abstractcore`
-- Hosted SDK bundle: `pip install "abstractcore[remote]"` (OpenAI + Anthropic SDKs; OpenRouter/Portkey/local `/v1` providers use core HTTP dependencies)
-- First steps: `docs/getting-started.md` -> `docs/prerequisites.md`
-- Run the gateway server: `pip install "abstractcore[server]"` then `python -m abstractcore.server.app`
-- Run the single-model endpoint: `pip install "abstractcore[server]"` then `abstractcore-endpoint --help` (see `docs/endpoint.md`)
-- Repo/dev checks: `pip install -e ".[dev,test]"` ; `pytest -q` ; `black .` ; `ruff check .`
+## Start Here
 
-## Read First
+- [README](README.md): project overview and quick start.
+- [Documentation index](docs/README.md): complete user documentation and reading paths.
+- [Installation](docs/installation.md): three settings: light, apple and gpu; platform requirements. One-line install: `curl -LsSf https://abstractframework.ai/core/install.sh | sh` (macOS/Linux) or `powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/core/install.ps1 | iex"` (Windows): detects the platform (Apple Silicon -> apple, NVIDIA/ROCm -> gpu, else light), installs uv and Python 3.12 when missing and the pinned `abstractcore`, `abstractcore[apple]` or `abstractcore[gpu]` as an isolated user tool with prebuilt wheels only (llama.cpp's CUDA build on NVIDIA); `--print` shows the plan; a re-run upgrades in place.
+- [Getting started](docs/getting-started.md): first provider call, sessions, tools and media.
+- [Integration and operations guide](docs/agent-usage.md): explicit endpoints, version checks, bounded recipes and lifecycle decisions.
+- [Prerequisites](docs/prerequisites.md): provider keys, base URLs and hardware.
+- [API map](docs/api.md): public entry points, response types and error boundaries.
+- [API reference](docs/api-reference.md): signatures and retry configuration.
+- [Architecture](docs/architecture.md): components, ownership, request lifecycle and native MLX runtime.
+- [FAQ](docs/faq.md): conceptual questions and supported limits.
+- [Troubleshooting](docs/troubleshooting.md): installation, authentication, generation and model-load failures.
 
-- [README](README.md): what AbstractCore is + install matrix
-- [Docs index](docs/README.md): recommended reading paths
-- [Getting Started](docs/getting-started.md): `create_llm(...)`, `generate(...)`, streaming, tools, structured output, media
-- [Prerequisites](docs/prerequisites.md): provider setup (keys/base URLs) + local hardware notes
-- [FAQ](docs/faq.md): common issues + setup gotchas
+## Python Integrations
 
-## Examples
+- [Tool calling](docs/tool-calling.md): native/prompted syntax, tool definitions and host execution.
+- [Tool rewriting](docs/tool-syntax-rewriting.md): tags and agent_format for clients.
+- [Structured output](docs/structured-output.md): response_model, validation and retry budgets.
+- [Generation parameters](docs/generation-parameters.md): token/sampling defaults and caller overrides.
+- [Reasoning](docs/reasoning-control.md): thinking controls, effort transports and effective metadata.
+- [Sessions](docs/session.md): history and persistence.
+- [Prompt caching](docs/prompt-caching.md): backend capability matrix, stable prefixes, hit metadata and measured limits.
+- [Async](docs/async-guide.md): asynchronous generation and streaming.
+- [Concurrency](docs/concurrency.md): async versus backend batching.
+- [Media input](docs/media-handling-system.md): images, documents, audio/video policies and fallbacks.
+- [Request and output](docs/request-output.md): canonical multimodal request/output contract.
+- [Capabilities](docs/capabilities.md): voice, vision, music, 3D and camera plugins; supported boundaries; voices by engine and language, voice design, cloned-voice management.
+- [Vision](docs/vision-capabilities.md): native image/video input and captioning fallbacks.
+- [Glyph compression](docs/glyphs.md): vision-based document compression and tradeoffs.
+- [Embeddings](docs/embeddings.md): local/remote vectors and the embedding.text route.
+- [MCP](docs/mcp.md): discover tool servers over HTTP/stdio; dispatch in the host.
+- [Examples](examples/README.md): runnable examples by task and a guided learning path.
 
-- [Examples index](examples/README.md): organized by topic + a guided learning path
-- [Learning path](examples/learning_path/README.md): 6 scripts in order (`01_...` → `06_...`)
-- [Prompt caching](examples/prompt_caching/README.md): `CachedSession` + attachments + REPL demo
-- [Media](examples/media/README.md): inspect pipeline + image/video/audio demos
-- [Tools](examples/tools/README.md): tool calling + host execution (ToolRegistry vs manual dispatcher)
+## Operating the Host
 
-## Core API + Concepts
+- [Local models](docs/models.md): catalog/fit, exact artifacts, downloads, jobs, deletion and verification.
+- [Knowledge-graph extraction models](docs/knowledge-graph-extraction-models.md): measured local vs hosted model comparison for ontology-constrained extraction, prompt rules and second-pass strategies.
+- [Recommended models](docs/recommended-models.md): capability choices by platform and memory.
+- [Decision models](docs/decision-models.md): text in, calibrated typed decisions out (`output="decision"`, choice / noul / score questions, `POST /v1/decisions`), hosted Jev and System One-compatible endpoints, the Kev / Lev / Laya families on MLX, transformers or GGUF, conversion and measured quality per precision.
+- [Engines](docs/engines.md): inventory, install plans and platform support.
+- [Configuration](docs/centralized-config.md): persistent routes, endpoint profiles, credentials and timeouts.
+- [Server](docs/server.md): optional multi-provider /v1 serving, Core authentication and managed listener lifecycle.
+- [Endpoint](docs/endpoint.md): one provider/model per HTTP worker.
+- [Web console](docs/console.md): model/engine/config management through the browser.
+- [Terminal console](docs/console-tui.md): terminal host management.
+- [Chat CLI](docs/acore-cli.md): interactive conversations.
+- [Memory and residency](docs/memory-management.md): process-local artifact sharing/refusals, loaded models, ownership, unload and memory accounting.
+- [Memory blocs](docs/memory-blocs.md): text snapshots and native KV artifacts with live-binding checks.
+- [Cancellation](docs/generation-cancel.md): cancel_event, per-lane support and safe eject.
+- [HF compatibility](docs/huggingface-model-compatibility.md): Transformers/GGUF artifacts and loading limits.
+- [Speculation](docs/speculative-decoding.md): native MTP controls and checkpoint support.
+- [Native MLX](docs/native-mlx-runtime.md): opt-in scheduling, MTP, caching and cancellation.
+- [MLX benchmarks](docs/native-mlx-benchmarks.md): measurements and comparison scope.
+- [Fallbacks](docs/fallbacks.md): explicit compatibility behavior; no model-artifact substitution.
+- [Events](docs/events.md): observability hooks.
+- [Logging](docs/structured-logging.md): log configuration.
+- [Tracing](docs/interaction-tracing.md): opt-in prompt/response/usage capture.
+- [Email](docs/email.md): account configuration, Read only or Read and write access (`EmailAccount.access`, `set_access`), mailbox verbs, recipient policy and read/send tools.
 
-- [API (Python)](docs/api.md): public API map and common patterns
-- [API Reference](docs/api-reference.md): full function/class listing
-- [Generation parameters](docs/generation-parameters.md): max tokens / thinking / temperature semantics across providers
-- [Prompt caching](docs/prompt-caching.md): `CachedSession`, cache keys, and file attachments
-- [Tool calling](docs/tool-calling.md): `@tool`, passthrough vs execution, built-in tools
-- [Tool syntax rewriting](docs/tool-syntax-rewriting.md): preserve tool-call markup (`tool_call_tags`, server `agent_format`)
-- [Structured output](docs/structured-output.md): `response_model=...`, native vs prompted, validation/retry behavior
-- [Media handling](docs/media-handling-system.md): `media=[...]`, audio/video policies, vision fallback and plugins
-- [Centralized config](docs/centralized-config.md): `abstractcore --config`, defaults, provider keys, HTTP server auth/hardening, logging, vision/audio/video strategies
+## Contributing and Project Information
 
-## Providers (IDs + setup)
-
-- [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
-- [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
-
-## Server (OpenAI-compatible `/v1`)
-
-- [Server docs](docs/server.md): run + env vars + auth + endpoints and extensions (`base_url`, `agent_format`, `thinking`, `prompt_cache_key`). Request body/query `api_key` is disabled; use server-side provider config, `X-AbstractCore-Provider-API-Key`, or `Authorization` only when server auth is not configured.
-- [Server implementation](abstractcore/server/app.py): FastAPI gateway source
-- [Endpoint docs](docs/endpoint.md): single-model OpenAI-compatible endpoint (`abstractcore-endpoint`)
-- [Endpoint implementation](abstractcore/endpoint/app.py): endpoint server source
-
-## Contributing
-
-- [Contributing](CONTRIBUTING.md): formatting/lint/test + release checklist
-- [Changelog](CHANGELOG.md): version history + upgrade notes
-- [pyproject.toml](pyproject.toml): extras + console scripts
-
-## Optional
-
-- [Architecture](docs/architecture.md): core/provider/session/tool/media/capabilities design
-- [Practical recipes](docs/examples.md): copy/paste code snippets (provider-agnostic)
-- [Troubleshooting](docs/troubleshooting.md): common errors and fixes
-- [Embeddings](docs/embeddings.md): EmbeddingManager (optional)
-- [Capabilities](docs/capabilities.md): `llm.voice` / `llm.audio` / `llm.vision` plugin model
-- [MCP](docs/mcp.md): MCP tool servers (HTTP/stdio)
-- [llms-full](llms-full.txt): self-contained agent handbook (this repo)
+- [Contributing](CONTRIBUTING.md): source setup, focused checks and contribution conventions.
+- [Changelog](CHANGELOG.md): version history and compatibility notes.
+- [Security](SECURITY.md): vulnerability reporting.
+- [Acknowledgements](ACKNOWLEDGEMENTS.md): upstream projects and communities.
+- [License](LICENSE): MIT license.
+- [Package metadata](pyproject.toml): install settings, dependencies and console scripts.
+- [Expanded documentation](llms-full.txt): canonical user pages in one file; the sources remain authoritative.

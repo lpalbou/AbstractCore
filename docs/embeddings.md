@@ -11,8 +11,12 @@ AbstractCore includes built-in support for vector embeddings with **7 providers*
 ### Installation
 
 ```bash
-# Install with embeddings support
-pip install "abstractcore[embeddings]"
+# Remote embedding providers (Ollama, LM Studio, OpenAI, OpenRouter, Portkey, ...) work with the light install
+pip install abstractcore
+
+# Local embedding models (such as the default all-MiniLM-L6-v2) come with the local engines
+pip install "abstractcore[apple]"   # Apple silicon
+pip install "abstractcore[gpu]"     # NVIDIA / AMD
 ```
 
 ### First Embeddings
@@ -47,6 +51,23 @@ similarity = embedder.compute_similarity(
 print(f"Similarity: {similarity:.3f}")  # 0.847
 ```
 
+### Default Embedding Route
+
+For framework-wide semantic retrieval, configure the `embedding.text`
+capability route. `EmbeddingManager()` uses that route when provider/model are
+not passed explicitly, and server-backed providers receive the configured
+`base_url`.
+
+```bash
+abstractcore config set-default embedding.text \
+  --provider lmstudio \
+  --model text-embedding-nomic-embed-text-v1.5 \
+  --base-url http://127.0.0.1:1234/v1
+```
+
+Gateway uses the same execution-host `embedding.text` route for
+`/api/gateway/embeddings` and KG semantic retrieval.
+
 ## Available Providers & Models
 
 AbstractCore supports multiple embedding providers:
@@ -75,6 +96,14 @@ embedder = EmbeddingManager(model="embeddinggemma")
 # Direct HuggingFace model ID
 embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 ```
+
+With the default offline settings, loading never downloads: the model must already be in the local Hugging Face cache
+(`abstractcore models download huggingface <repo>`), otherwise the manager raises
+`ModelNotDownloadedError` (a `ModelNotFoundError`) with that command; its `model` attribute is the id to download. It looks in every hub cache AbstractCore reads (the
+one `huggingface_hub` uses, then the `cache.huggingface_cache_dir` setting) and loads the
+cached snapshot directory directly; a local model directory can be passed as `model`. It
+changes no process environment variable. The `offline_first` and `force_local_files_only`
+settings control this; see [Centralized Config](centralized-config.md#offline-section).
 
 ### Ollama Provider
 
@@ -108,6 +137,11 @@ embedder = EmbeddingManager(
     model="text-embedding-all-minilm-l6-v2"
 )
 ```
+
+For embedding-only use, AbstractCore does not require the configured embedding
+model to appear in the server's chat model catalogue. This keeps LM Studio,
+vLLM, and generic OpenAI-compatible embeddings endpoints usable when `/models`
+reports only loaded chat models or omits embedding models.
 
 ### OpenAI Provider
 
@@ -150,6 +184,11 @@ embedder = EmbeddingManager(
     model="my-embedding-model"
 )
 ```
+
+Endpoint-backed embedding providers (`lmstudio`, `vllm`, and
+`openai-compatible`) send requests directly to `/v1/embeddings` and skip eager
+chat-model validation during embedding client setup. Request-time provider
+errors still surface from the embedding call itself.
 
 ### Provider Comparison
 
@@ -318,7 +357,7 @@ for ctx in contexts:
     print(f"- {ctx}")
 ```
 
-### Document Clustering (NEW)
+### Document Clustering
 
 ```python
 from abstractcore.embeddings import EmbeddingManager
@@ -396,7 +435,13 @@ embedding = embedder.embed("Test text")
 print(f"Truncated embedding dimension: {len(embedding)}")  # 256
 ```
 
-### Advanced Caching (NEW)
+### Advanced Caching
+
+The persistent caches (`<cache_dir>/<provider>_<model>_cache.pkl` and its `_normalized_`
+sibling; default `cache_dir` `~/.abstractcore/embeddings`) are safe to share between processes
+and apps using the same model: a save first re-reads the file and merges it with this process's
+entries, writes a temporary file and renames it over the cache, never writes an empty cache, and
+is skipped entirely when the process added nothing.
 
 ```python
 # Configure dual-layer caching system
@@ -595,8 +640,8 @@ If you prefer HTTP endpoints over Python code, use the AbstractCore server:
 
 ```bash
 # Start the server
-pip install "abstractcore[server]"
-python -m abstractcore.server.app
+pip install abstractcore
+abstractcore serve
 ```
 
 **HTTP Request:**

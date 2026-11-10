@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HuggingFace Model Compatibility - AbstractCore</title>
+    <meta name="description" content="This guide explains which HuggingFace local model formats AbstractCore can load directly and how to diagnose model-load failures. These checks are general…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/huggingface-model-compatibility.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">HuggingFace Model Compatibility</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This guide explains which HuggingFace local model formats AbstractCore can load directly and how to diagnose model-load failures. These checks are general provider compatibility checks; they are not specific to prompt caching, memory blocs, tools, or structured output.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#baseline-install" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Baseline Install</a>
+<a href="#quantized-transformers-checkpoints" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quantized Transformers Checkpoints</a>
+<a href="#trusted-model-selection" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Trusted Model Selection</a>
+<a href="#which-provider-lists-a-local-repository" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Which provider lists a local repository</a>
+<a href="#loading-from-the-local-cache-offline-first" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Loading from the local cache (offline-first)</a>
+<a href="#abstractcore-policy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">AbstractCore Policy</a></div>
+
+            <div class="doc-content">
+
+<h2 id="baseline-install">Baseline Install</h2>
+<p><code>pip install "abstractcore[apple]"</code> (Apple silicon) and <code>pip install "abstractcore[gpu]"</code> (NVIDIA /
+AMD) install the stable HuggingFace provider stack:</p>
+<ul>
+<li><code>transformers</code></li>
+<li><code>torch</code></li>
+<li><code>torchvision</code></li>
+<li><code>torchaudio</code></li>
+<li><code>sentencepiece</code></li>
+<li><code>llama-cpp-python</code></li>
+<li><code>outlines</code></li>
+</ul>
+<p>This baseline supports standard Transformers checkpoints and GGUF files. It intentionally does not
+install every optional Transformers quantization runtime, because those runtimes are
+platform-specific and can carry dependency pins that conflict with the rest of the local stack.
+Fresh installs resolve the newest compatible Transformers release allowed by AbstractCore's
+dependency range. Very new architectures such as Gemma4 require a recent Transformers build.
+The light install carries <code>abstractvoice&gt;=0.13.1</code> without OmniVoice, torch, or torchaudio. Local
+OmniVoice engines come with <code>abstractcore[apple]</code> and <code>abstractcore[gpu]</code>.</p>
+<h2 id="quantized-transformers-checkpoints">Quantized Transformers Checkpoints</h2>
+<p>Some HuggingFace Transformers repositories include a <code>quantization_config</code> in <code>config.json</code>. Common
+families include AWQ, GPTQ, bitsandbytes, and compressed-tensors. Those formats are not just smaller
+<code>.safetensors</code> files; they require the matching quantization runtime to map packed or compressed
+weights back into usable model modules.</p>
+<p>If the runtime is missing or incompatible, a model may appear to download but still fail as a valid
+runtime target. Treat these as model-load failures:</p>
+<ul>
+<li>missing base weights</li>
+<li>unexpected packed/compressed weight tensors</li>
+<li>mismatched weight shapes</li>
+<li>incorrect output for a trivial prompt such as <code>Reply with exactly: ready</code></li>
+</ul>
+<p>AbstractCore preflights known quantization configs and reports actionable errors for common cases
+instead of letting a broken quantized checkpoint initialize silently.</p>
+<h2 id="trusted-model-selection">Trusted Model Selection</h2>
+<p>Prefer official or widely maintained model/runtime pairs for release validation.</p>
+<p>For Qwen3.5 4B, the official Qwen namespace currently provides:</p>
+<ul>
+<li><code>Qwen/Qwen3.5-4B</code></li>
+<li><code>Qwen/Qwen3.5-4B-Base</code></li>
+</ul>
+<p>The official Qwen namespace does not currently provide a <code>Qwen/Qwen3.5-4B-GPTQ-Int4</code> or
+<code>Qwen/Qwen3.5-4B-AWQ</code> repository. Official Qwen3.5 GPTQ-Int4 repositories exist for larger model
+families such as 27B and 397B-A17B. Q4 4B artifacts are available through other ecosystems, for
+example MLX or GGUF conversions, but those are different provider/runtime paths.</p>
+<p>For Qwen3.6, the official Qwen namespace currently provides:</p>
+<ul>
+<li><code>Qwen/Qwen3.6-27B</code></li>
+<li><code>Qwen/Qwen3.6-27B-FP8</code></li>
+<li><code>Qwen/Qwen3.6-35B-A3B</code></li>
+<li><code>Qwen/Qwen3.6-35B-A3B-FP8</code></li>
+</ul>
+<p>The official Qwen namespace does not currently provide GPTQ-Int4 or AWQ repositories for Qwen3.6
+27B or 35B-A3B. Qwen3.6 Q4/AWQ/GPTQ artifacts exist through community or runtime-specific
+ecosystems, including GGUF, MLX, compressed-tensors, and AWQ conversions. Treat those as
+provider/runtime-specific targets rather than official Qwen Transformers proof targets.</p>
+<p>FP8 Transformers checkpoints are also runtime-specific. Hugging Face's fine-grained FP8
+documentation targets CUDA-class FP8 hardware, and the installed Transformers quantizer requires a
+CUDA or XPU runtime for native FP8 execution. Apple Silicon should use Apple-native quantization
+paths instead: Qwen's own local-use guidance points Apple users to MLX models, while Transformers
+documents Metal quantization separately for MPS with 2/4/8-bit affine kernels.</p>
+<p><code>Qwen/Qwen3.6-27B-FP8</code> is not supported through Transformers on Apple/MPS;
+AbstractCore rejects that pairing. A successful weight load alone does not
+establish correct execution for an unsupported quantization/runtime pair.
+Use an Apple-native MLX artifact or a compatible GGUF artifact instead.</p>
+<p>Use provider-native paths for those artifacts:</p>
+<ul>
+<li>MLX quantized models: <code>create_llm("mlx", model="mlx-community/...")</code></li>
+<li>GGUF quantized models: <code>create_llm("huggingface", model="/path/to/model.gguf")</code></li>
+<li>Transformers-native quantized models: require a compatible installed
+  quantization runtime and correct generation, not only successful weight loading</li>
+</ul>
+<p>Gemma4 official HF transformers targets such as <code>google/gemma-4-E4B-it</code> are valid
+HuggingFace-provider targets when the local Transformers build recognizes <code>model_type=gemma4</code>.
+Dense Gemma4 E4B-it was validated on Apple/MPS in an isolated Transformers 5.9.0 environment.
+Durable bloc cache support depends on preserving dynamic sliding-window cache sequence lengths
+across save/load; AbstractCore records that in the transformers cache artifact metadata.</p>
+<h3 id="tencent-hy-memory-30b-a3b-hy_v3">Tencent Hy-Memory-30B-A3B (<code>hy_v3</code>)</h3>
+<p><code>tencent/Hy-Memory-30B-A3B</code> is a 30B-total / 3B-active MoE whose specialty seems to be a
+long-term memory writer (the write path of Mem0, MemOS and Hy-Memory). AbstractCore runs it on
+all three local stacks:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Stack</th>
+<th>Target</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>huggingface</code> (transformers)</td>
+<td><code>tencent/Hy-Memory-30B-A3B</code> (BF16, 60 GB)</td>
+<td>needs a Transformers build with <code>model_type=hy_v3</code> (5.8.0 measured)</td>
+</tr>
+<tr>
+<td><code>huggingface</code> (llama.cpp)</td>
+<td><code>tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M</code> (also <code>Q6_K</code>, <code>Q8_0</code>)</td>
+<td>llama.cpp arch <code>hy_v3</code>; llama-cpp-python 0.3.35 measured</td>
+</tr>
+<tr>
+<td><code>mlx</code></td>
+<td><code>mlx-community/Hy-Memory-30B-A3B-4bit</code> (16.9 GB) or <code>-8bit</code> (32.0 GB)</td>
+<td>mlx-lm ships no <code>hy_v3</code> module; AbstractCore provides one, and the repos bundle it</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>tencent/Hy-Memory-30B-A3B-FP8</code> (F8_E4M3) is a vLLM/SGLang artifact and has no Apple path.</p>
+<p>Things AbstractCore handles for this model:</p>
+<ul>
+<li><strong>Expert width.</strong> <code>config.json</code> says <code>moe_intermediate_size: 1536</code>, but every routed and shared
+  expert tensor is 768 wide (<code>expert_hidden_dim: 768</code>). Transformers 5.8 sizes experts from
+  <code>moe_intermediate_size</code>, so a plain <code>from_pretrained</code> fails on a shape mismatch. The
+  transformers loader sizes them from <code>expert_hidden_dim</code> and logs the change.</li>
+<li><strong>MoE kernels.</strong> Transformers 5 runs MoE experts with <code>grouped_mm</code> whenever torch exposes the
+  op; torch 2.8 has no CPU or MPS kernel for it. The loader probes the device once and uses
+  Transformers' <code>eager</code> experts loop where the kernel is missing.</li>
+<li><strong>Thinking.</strong> The chat template has one variable, <code>reasoning_effort</code> (<code>high</code>, <code>low</code> or
+  <code>no_think</code>), and no <code>enable_thinking</code> switch. Unset, it renders <code>no_think</code>: thinking is off by
+  default. <code>thinking=False</code> sends <code>no_think</code>, and <code>thinking="low"</code> / <code>"high"</code> send that level
+  (registry <code>thinking_control.effort_disable_value</code>). A bare <code>thinking=True</code> picks the first of
+  medium, high, low that the model declares, which is <code>high</code> here: the most expensive level.
+  For a memory writer, ask for <code>thinking="low"</code> when you want reasoning at a lower cost.
+  vLLM receives the value as <code>chat_template_kwargs.reasoning_effort</code>; OpenAI-compatible servers
+  receive <code>low</code>/<code>high</code> as the top-level <code>reasoning_effort</code>, and <code>no_think</code> only inside
+  <code>chat_template_kwargs</code> (a validating server rejects it top-level).</li>
+<li><strong>GGUF lanes.</strong> The embedded template renders text requests, so all three values reach it.
+  Requests that leave that lane (tool-result history in <code>messages</code>, structured output, media)
+  go through llama-cpp-python's chat completion, which has no transport for the variable: there,
+  <code>thinking="off"</code> still holds because the template's default is <code>no_think</code>, but
+  <code>thinking="low"</code> or <code>"high"</code> cannot be applied, and a warning says so.</li>
+<li><strong>Tool calls.</strong> <code>&lt;tool_calls&gt;&lt;tool_call&gt;name&lt;tool_sep&gt;&lt;arg_key&gt;k&lt;/arg_key&gt;&lt;arg_value&gt;v&lt;/arg_value&gt;&lt;/tool_call&gt;&lt;/tool_calls&gt;</code>
+  is parsed on the plain, streaming and passthrough lanes.</li>
+</ul>
+<p>For memory extraction the model card uses <code>temperature=0.0</code>, <code>max_tokens=512</code> and no thinking:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(&quot;huggingface&quot;, model=&quot;tencent/Hy-Memory-30B-A3B-GGUF:Q4_K_M&quot;)
+resp = llm.generate(
+    &quot;My name is Alex. I live in Seattle and I'm vegetarian.&quot;,
+    system_prompt='Extract explicit user facts. Return only a JSON object with a &quot;memories&quot; list of strings.',
+    thinking=False,
+    temperature=0.0,
+    max_output_tokens=512,
+)
+</code></pre></div>
+<p>On Apple/MPS with torch 2.8.x or 2.10.x, causal <code>scaled_dot_product_attention</code> in bfloat16 or
+float16 can return numerically incorrect values beyond about 20 prompt tokens. torch 2.10.x
+also has a decode-with-KV-cache correctness issue (see <a href="prompt-caching.html">Prompt Caching</a>).
+AbstractCore warns at load on these versions. Set <code>ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager</code>
+or upgrade torch; the documented prompt-cache lane requires torch &gt;= 2.11 on Apple silicon.</p>
+<p>MLX conversions are made with mlx-lm's own <code>convert</code>, with AbstractCore's class registered as
+<code>mlx_lm.models.hy_v3</code>:</p>
+<div class="code-block"><pre><code class="language-python">import abstractcore.providers.mlx_hy_v3 as hy
+
+hy.register_with_mlx_lm()  # only when the installed mlx-lm has no hy_v3 module
+from mlx_lm.convert import convert
+
+convert(hf_path=&quot;tencent/Hy-Memory-30B-A3B&quot;, mlx_path=&quot;Hy-Memory-30B-A3B-4bit&quot;,
+        quantize=True, q_group_size=64, q_bits=4)
+</code></pre></div>
+<p>The class keeps the MoE router and its correction bias in full precision when quantizing
+(<code>Model.quant_predicate</code>). Copy <code>abstractcore/providers/mlx_hy_v3.py</code> into the output as
+<code>hy_v3.py</code> and add <code>"model_file": "hy_v3.py"</code> to its <code>config.json</code> so plain mlx-lm can load it.
+For checkpoints whose <code>config.json</code> says <code>model_type: hy_v3</code>, <code>create_llm("mlx", ...)</code> does not
+run a bundled <code>model_file</code>: it uses AbstractCore's class, or mlx-lm's own module once mlx-lm
+ships one. (A checkpoint that declares another <code>model_type</code> plus a <code>model_file</code> still runs that
+file through mlx-lm, as before.) Weights use the mlx-lm MoE names (<code>mlp.switch_mlp.*</code>,
+<code>mlp.router.gate</code>, <code>mlp.router.expert_bias</code>), as in <code>mlx-community/Hy3-preview-*</code>; the tencent,
+transformers and earlier community layouts are mapped onto them at load. A layout the selected
+class cannot load fails with an error that names the layout found.</p>
+<p>The MLX class follows transformers' <code>HYV3ForCausalLM</code> except in two places, both more precise:
+it sums the routed experts in float32 (transformers accumulates them in the model dtype), and it
+computes an unquantized <code>lm_head</code> in float32 when <code>enable_lm_head_fp32</code> is set (transformers
+ignores the flag). Small bf16 differences against transformers are therefore expected. Measured
+on the BF16 weights and a 100-token prompt: the same top-5 next tokens in the same order, logit
+correlation 0.9965 at the last position, the same most likely token at 96 of 100 positions.</p>
+<h2 id="which-provider-lists-a-local-repository">Which provider lists a local repository</h2>
+<p><code>mlx</code> and <code>huggingface</code> scan the same directories — the HuggingFace hub cache and the
+LM Studio store — so every local repo has to be assigned to exactly one of them. One
+rule decides, <code>abstractcore/providers/mlx_model_rules.py</code>, and both listings call it,
+so the two lists are complements: nothing appears in both pickers, nothing disappears
+from both. The same rule drives the <code>create_llm("huggingface", ...)</code> → <code>mlx</code> re-route
+and the MLX-artifact refusal in the Transformers loader.</p>
+<p>In order, first match wins:</p>
+<ol>
+<li><code>ABSTRACTCORE_NON_MLX_MODEL_PATTERNS</code> — operator override, never MLX.</li>
+<li><code>ABSTRACTCORE_MLX_MODEL_PATTERNS</code> — operator override, always MLX.</li>
+<li>A GGUF marker in the name — llama.cpp weights, which MLX cannot load.</li>
+<li><code>mlx</code> anywhere in the name (<code>mlx-community/*</code>, <code>*-MLX-4bit</code>, …).</li>
+<li>A publisher that ships MLX by construction: <code>mlx-community</code>, <code>Jundot</code> (oMLX/oQ).</li>
+<li>An MLX-only quantizer tag: oMLX's <code>oQ&lt;n&gt;</code>, as in <code>Jundot/Qwen3.8-27B-oQ4e-mtp</code>.
+   The leading <code>o</code> is what keeps this off llama.cpp's <code>Q4_K_M</code> / <code>q8_0</code> GGUF tags.</li>
+<li>The on-disk signature: <code>library_name: mlx</code> in the model card, or an MLX
+   <code>quantization</code> block in <code>config.json</code> (<code>bits</code> + <code>group_size</code>, no <code>quant_method</code>).
+   A card naming a generation library (<code>mlx-gen</code>, <code>mflux</code>) is MLX format but belongs
+   to the media backends, so it is not offered as an LLM.</li>
+</ol>
+<p>Rules 4–6 read the name alone, which is what makes them work for a repo whose weights
+are not downloaded yet: a hub entry that was only resolved has <code>refs/</code> and no
+<code>config.json</code> to inspect. Rule 7 is authoritative whenever the weights are present.</p>
+<p>Both override variables take patterns separated by commas or <code>os.pathsep</code>. A pattern
+containing <code>*</code>, <code>?</code> or <code>[</code> is matched against the whole lowercased <code>org/model</code> handle
+with <code>fnmatch</code>; anything else is a plain substring test:</p>
+<div class="code-block"><pre><code class="language-bash">export ABSTRACTCORE_MLX_MODEL_PATTERNS=&quot;acme/*-mlxq,someorg/one-model&quot;
+</code></pre></div>
+<p>Use these when a publisher ships MLX under a name no rule recognizes, rather than
+waiting for a new release of AbstractCore.</p>
+<h2 id="loading-from-the-local-cache-offline-first">Loading from the local cache (offline-first)</h2>
+<p>With <code>offline_first</code> on (the default), a transformers load never downloads. The provider
+finds the model's cached snapshot directory itself (<code>refs/main</code>, else the newest snapshot
+that has a <code>config.json</code> or an <code>adapter_config.json</code>). It passes that directory, with
+<code>local_files_only=True</code>, to <code>AutoConfig</code>, <code>AutoTokenizer</code> / <code>AutoProcessor</code> and the model
+class. It never sets <code>HF_HUB_OFFLINE</code> or related variables, so child processes are not
+affected.</p>
+<p>Loading from the snapshot directory rather than the repo id means a cached model loads even
+when its repo has no <code>refs/main</code> (transformers needs that ref to resolve a repo id offline),
+and transformers makes no Hub request for <code>adapter_config.json</code>. Other tools that load by repo
+id still need <code>refs/main</code>; <code>abstractcore models repair-refs</code> writes it (see
+<a href="models.html#repairing-refsmain">Repairing <code>refs/main</code></a>).</p>
+<p>What a snapshot can be loaded as depends on its files:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Cached snapshot holds</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>config.json</code> + weights</td>
+<td>loads, no network</td>
+</tr>
+<tr>
+<td><code>adapter_config.json</code> (PEFT / LoRA) with a cached base model</td>
+<td>the base loads from its snapshot and the adapter is attached from its own directory (needs <code>peft</code>)</td>
+</tr>
+<tr>
+<td><code>adapter_config.json</code> whose base is not cached</td>
+<td><code>ModelNotFoundError</code> naming the base and its download command</td>
+</tr>
+<tr>
+<td><code>config.json</code> without weights</td>
+<td><code>ModelNotFoundError</code>: the download did not finish</td>
+</tr>
+<tr>
+<td>no config at all (for example a README-only diffusion LoRA)</td>
+<td><code>ModelNotFoundError</code>: not a transformers model</td>
+</tr>
+<tr>
+<td>nothing</td>
+<td><code>ModelNotFoundError</code>: <code>download it first: abstractcore models download huggingface &lt;repo&gt;</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Adapters need a <code>peft</code> that matches your transformers.</strong> AbstractCore does not pin <code>peft</code> itself;
+it arrives with <code>abstractcore[apple]</code> and <code>abstractcore[gpu]</code> (through AbstractVision). The minimum is set by transformers itself (<code>transformers.integrations.peft.MIN_PEFT_VERSION</code>):
+<code>peft&gt;=0.18.2</code> for transformers 5.8, and <code>peft&gt;=0.19.1</code> for transformers 5.17. With transformers
+5.17, peft 0.18.x fails inside <code>load_adapter</code> with
+<code>cannot import name '_maybe_shard_state_dict_for_tp'</code>. The provider checks the installed pair
+before it loads the base model. If <code>peft</code> is missing, too old, or cannot be imported, the load
+raises <code>ProviderError</code>, and no raw <code>ImportError</code> gets through. For example:
+<code>adapter support needs peft &gt;= 0.19.1 compatible with transformers 5.17.0; installed: peft 0.18.1, transformers 5.17.0. Upgrade with: pip install -U "abstractcore[apple]".</code> (on Linux the message names
+<code>abstractcore[gpu]</code>, and so does Windows x86_64; on an Intel Mac or Windows on ARM, where no setting provides the Transformers engine,
+it says so).</p>
+<p>With <code>offline_first</code> and <code>force_local_files_only</code> both off, a model that is not fully
+cached is passed to transformers by repo id, which may download it. The provider logs
+this.</p>
+<h2 id="abstractcore-policy">AbstractCore Policy</h2>
+<p>AbstractCore should improve compatibility without making the default install fragile:</p>
+<ul>
+<li>Keep optional quantization runtimes out of the base <code>huggingface</code> extra unless they are stable
+  across supported platforms.</li>
+<li>Add lightweight preflight checks from model config before loading large weights.</li>
+<li>Fail with explicit model/runtime compatibility errors for known missing quantization runtimes.</li>
+<li>Reject quantized loads that report missing base weights or unexpected packed weights.</li>
+<li>Consider adding verified quantization runtimes (AWQ, GPTQ, compressed-tensors) to the <code>apple</code>
+  and <code>gpu</code> settings, only after dependency compatibility is verified.</li>
+<li>Use official or trusted model owners for release proofs; treat unknown third-party quantized
+  checkpoints as user-supplied compatibility targets, not AbstractCore proof targets.</li>
+</ul>
+<p>References:</p>
+<ul>
+<li>HuggingFace Transformers quantization overview:
+  <a href="https://huggingface.co/docs/transformers/quantization/overview">https://huggingface.co/docs/transformers/quantization/overview</a></li>
+<li>HuggingFace compressed-tensors integration:
+  <a href="https://huggingface.co/docs/transformers/quantization/compressed_tensors">https://huggingface.co/docs/transformers/quantization/compressed_tensors</a></li>
+<li>Qwen3.5 collection:
+  <a href="https://huggingface.co/collections/Qwen/qwen35">https://huggingface.co/collections/Qwen/qwen35</a></li>
+<li>Qwen3.6 27B:
+  <a href="https://huggingface.co/Qwen/Qwen3.6-27B">https://huggingface.co/Qwen/Qwen3.6-27B</a></li>
+<li>Qwen3.6 27B FP8:
+  <a href="https://huggingface.co/Qwen/Qwen3.6-27B-FP8">https://huggingface.co/Qwen/Qwen3.6-27B-FP8</a></li>
+<li>Qwen3.6 35B-A3B:
+  <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B">https://huggingface.co/Qwen/Qwen3.6-35B-A3B</a></li>
+<li>Qwen3.6 35B-A3B FP8:
+  <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8">https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8</a></li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

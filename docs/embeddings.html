@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vector Embeddings Guide - AbstractCore</title>
     <meta name="description" content="AbstractCore includes built-in support for vector embeddings with 7 providers: HuggingFace (local), Ollama, LMStudio, OpenAI, OpenRouter, Portkey, and any…">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/embeddings.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -35,7 +37,7 @@
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
-<a href="#available-providers-models" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Available Providers &amp; Models</a>
+<a href="#available-providers--models" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Available Providers &amp; Models</a>
 <a href="#core-features" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Core Features</a>
 <a href="#practical-applications" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Practical Applications</a>
 <a href="#performance-optimization" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Optimization</a>
@@ -54,8 +56,12 @@
 2. <strong>REST API</strong> - HTTP endpoints via AbstractCore server (see <a href="server.html#embeddings">Server API Reference</a>)</p>
 <h2 id="quick-start">Quick Start</h2>
 <h3 id="installation">Installation</h3>
-<div class="code-block"><pre><code class="language-bash"># Install with embeddings support
-pip install &quot;abstractcore[embeddings]&quot;
+<div class="code-block"><pre><code class="language-bash"># Remote embedding providers (Ollama, LM Studio, OpenAI, OpenRouter, Portkey, ...) work with the light install
+pip install abstractcore
+
+# Local embedding models (such as the default all-MiniLM-L6-v2) come with the local engines
+pip install &quot;abstractcore[apple]&quot;   # Apple silicon
+pip install &quot;abstractcore[gpu]&quot;     # NVIDIA / AMD
 </code></pre></div>
 <h3 id="first-embeddings">First Embeddings</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
@@ -86,11 +92,23 @@ similarity = embedder.compute_similarity(
 )
 print(f&quot;Similarity: {similarity:.3f}&quot;)  # 0.847
 </code></pre></div>
-<h2 id="available-providers-models">Available Providers &amp; Models</h2>
+<h3 id="default-embedding-route">Default Embedding Route</h3>
+<p>For framework-wide semantic retrieval, configure the <code>embedding.text</code>
+capability route. <code>EmbeddingManager()</code> uses that route when provider/model are
+not passed explicitly, and server-backed providers receive the configured
+<code>base_url</code>.</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore config set-default embedding.text \
+  --provider lmstudio \
+  --model text-embedding-nomic-embed-text-v1.5 \
+  --base-url http://127.0.0.1:1234/v1
+</code></pre></div>
+<p>Gateway uses the same execution-host <code>embedding.text</code> route for
+<code>/api/gateway/embeddings</code> and KG semantic retrieval.</p>
+<h2 id="available-providers--models">Available Providers &amp; Models</h2>
 <p>AbstractCore supports multiple embedding providers:</p>
 <h3 id="huggingface-provider-default">HuggingFace Provider (Default)</h3>
 <p>Local sentence-transformers models with optional ONNX acceleration (when available).</p>
-<table>
+<div class="table-scroll"><table>
 <thead>
 <tr>
 <th>Model</th>
@@ -130,7 +148,7 @@ print(f&quot;Similarity: {similarity:.3f}&quot;)  # 0.847
 <td>Enterprise applications</td>
 </tr>
 </tbody>
-</table>
+</table></div>
 <div class="code-block"><pre><code class="language-python"># Default: all-MiniLM-L6-v2 (fast and lightweight)
 embedder = EmbeddingManager()
 
@@ -143,6 +161,13 @@ embedder = EmbeddingManager(model=&quot;embeddinggemma&quot;)
 # Direct HuggingFace model ID
 embedder = EmbeddingManager(model=&quot;sentence-transformers/all-MiniLM-L6-v2&quot;)
 </code></pre></div>
+<p>With the default offline settings, loading never downloads: the model must already be in the local Hugging Face cache
+(<code>abstractcore models download huggingface &lt;repo&gt;</code>), otherwise the manager raises
+<code>ModelNotDownloadedError</code> (a <code>ModelNotFoundError</code>) with that command; its <code>model</code> attribute is the id to download. It looks in every hub cache AbstractCore reads (the
+one <code>huggingface_hub</code> uses, then the <code>cache.huggingface_cache_dir</code> setting) and loads the
+cached snapshot directory directly; a local model directory can be passed as <code>model</code>. It
+changes no process environment variable. The <code>offline_first</code> and <code>force_local_files_only</code>
+settings control this; see <a href="centralized-config.html#offline-section">Centralized Config</a>.</p>
 <h3 id="ollama-provider">Ollama Provider</h3>
 <p>Local embedding models via Ollama API. Requires Ollama running locally.</p>
 <div class="code-block"><pre><code class="language-python"># Setup: Install Ollama and pull an embedding model
@@ -168,6 +193,10 @@ embedder = EmbeddingManager(
     model=&quot;text-embedding-all-minilm-l6-v2&quot;
 )
 </code></pre></div>
+<p>For embedding-only use, AbstractCore does not require the configured embedding
+model to appear in the server's chat model catalogue. This keeps LM Studio,
+vLLM, and generic OpenAI-compatible embeddings endpoints usable when <code>/models</code>
+reports only loaded chat models or omits embedding models.</p>
 <h3 id="openai-provider">OpenAI Provider</h3>
 <p>Cloud embedding models via the OpenAI API. Requires <code>OPENAI_API_KEY</code>.</p>
 <div class="code-block"><pre><code class="language-python"># Use OpenAI text-embedding-3-small (1536 dimensions)
@@ -202,8 +231,12 @@ embedder = EmbeddingManager(
     model=&quot;my-embedding-model&quot;
 )
 </code></pre></div>
+<p>Endpoint-backed embedding providers (<code>lmstudio</code>, <code>vllm</code>, and
+<code>openai-compatible</code>) send requests directly to <code>/v1/embeddings</code> and skip eager
+chat-model validation during embedding client setup. Request-time provider
+errors still surface from the embedding call itself.</p>
 <h3 id="provider-comparison">Provider Comparison</h3>
-<table>
+<div class="table-scroll"><table>
 <thead>
 <tr>
 <th>Provider</th>
@@ -272,7 +305,7 @@ embedder = EmbeddingManager(
 <td>Custom endpoints, self-hosted</td>
 </tr>
 </tbody>
-</table>
+</table></div>
 <h2 id="core-features">Core Features</h2>
 <h3 id="single-text-embeddings">Single Text Embeddings</h3>
 <div class="code-block"><pre><code class="language-python">embedder = EmbeddingManager()
@@ -411,7 +444,7 @@ print(f&quot;\nUsed context:&quot;)
 for ctx in contexts:
     print(f&quot;- {ctx}&quot;)
 </code></pre></div>
-<h3 id="document-clustering-new">Document Clustering (NEW)</h3>
+<h3 id="document-clustering">Document Clustering</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
 
 embedder = EmbeddingManager()
@@ -479,7 +512,12 @@ embedder = EmbeddingManager(
 embedding = embedder.embed(&quot;Test text&quot;)
 print(f&quot;Truncated embedding dimension: {len(embedding)}&quot;)  # 256
 </code></pre></div>
-<h3 id="advanced-caching-new">Advanced Caching (NEW)</h3>
+<h3 id="advanced-caching">Advanced Caching</h3>
+<p>The persistent caches (<code>&lt;cache_dir&gt;/&lt;provider&gt;_&lt;model&gt;_cache.pkl</code> and its <code>_normalized_</code>
+sibling; default <code>cache_dir</code> <code>~/.abstractcore/embeddings</code>) are safe to share between processes
+and apps using the same model: a save first re-reads the file and merges it with this process's
+entries, writes a temporary file and renames it over the cache, never writes an empty cache, and
+is skipped entirely when the process added nothing.</p>
 <div class="code-block"><pre><code class="language-python"># Configure dual-layer caching system
 embedder = EmbeddingManager(
     cache_size=5000,  # Larger memory cache
@@ -657,8 +695,8 @@ print(f&quot;Calls per second: {stats['calls_per_second']:.1f}&quot;)
 <h2 id="using-embeddings-via-rest-api">Using Embeddings via REST API</h2>
 <p>If you prefer HTTP endpoints over Python code, use the AbstractCore server:</p>
 <div class="code-block"><pre><code class="language-bash"># Start the server
-pip install &quot;abstractcore[server]&quot;
-python -m abstractcore.server.app
+pip install abstractcore
+abstractcore serve
 </code></pre></div>
 <p><strong>HTTP Request:</strong></p>
 <div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/v1/embeddings \
@@ -713,6 +751,13 @@ python -m abstractcore.server.app
 <p><strong>Remember</strong>: Embeddings are the foundation for semantic understanding. Combined with AbstractCore's multi-provider LLM capabilities, you can build sophisticated AI applications that understand meaning, not just keywords.</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

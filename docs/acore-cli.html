@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AbstractCore CLI (acore-cli) - AbstractCore</title>
     <meta name="description" content="AbstractCore includes a built-in CLI tool for testing, demonstration, and interactive conversations. This is AbstractCore&#x27;s internal testing CLI, not to be…">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link rel="canonical" href="https://abstractcore.ai/docs/acore-cli.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -70,7 +72,7 @@ python examples/cli/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-
 - ✅ Event-driven progress feedback
 - ✅ Extensively commented code explaining each pattern</p>
 <p><strong>This is for LEARNING ONLY.</strong> For production use, stick with the standard CLI below.</p>
-<p><a href="../examples/cli/async_cli_demo.py">View the demo code →</a></p>
+<p><a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/examples/cli/async_cli_demo.py">View the demo code →</a></p>
 <h2 id="quick-start">Quick Start</h2>
 <div class="code-block"><pre><code class="language-bash"># Start the internal CLI (installed as `abstractcore-chat`)
 abstractcore-chat --provider ollama --model qwen3-coder:30b
@@ -105,13 +107,14 @@ summarize this clip @/path/to/video.mp4
 <p>Fallback behavior is explicit and policy-driven:</p>
 <ul>
 <li><strong>Images</strong>: a vision-capable model can process images natively. For text-only models, AbstractCore can use <strong>vision fallback</strong> (caption → inject short observations) when configured.</li>
-<li><strong>Audio</strong>: if the model is not audio-capable, <code>abstractcore-chat</code> defaults to <code>audio_policy="auto"</code> when audio is attached, so speech-to-text can run when <code>abstractvoice</code> is installed.</li>
-<li><strong>Video</strong>: <code>video_policy="auto"</code> uses native video when supported; otherwise it can sample frames via <code>ffmpeg</code>/<code>ffprobe</code> and route them through image/vision handling.</li>
+<li><strong>Audio</strong>: if the model is not audio-capable, <code>abstractcore-chat</code> defaults to <code>audio_policy="auto"</code> when audio is attached, so speech-to-text can run through the configured <code>input.voice</code> route.</li>
+<li><strong>Video</strong>: <code>video_policy="auto"</code> uses native video when supported; otherwise it can sample frames via <code>ffmpeg</code>/<code>ffprobe</code> and route them through visual support on <code>input.text</code> or an explicit <code>input.video</code> route.</li>
 </ul>
 <p>Configure defaults (optional):</p>
 <div class="code-block"><pre><code class="language-bash">abstractcore --config
 abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
-abstractcore --set-audio-strategy auto            # requires: pip install abstractvoice
+abstractcore config set-default input.voice --provider faster-whisper --model large-v3
+abstractcore --set-audio-strategy auto            # policy; STT route comes from input.voice
 abstractcore --set-video-strategy auto            # frames fallback requires ffmpeg
 </code></pre></div>
 <p>Per-run overrides:
@@ -125,7 +128,7 @@ abstractcore --set-video-strategy auto            # frames fallback requires ffm
 /max-tokens auto
 /max-output-tokens auto
 </code></pre></div>
-<h3 id="thinking-reasoning-control-thinking">Thinking / Reasoning Control (<code>/thinking</code>)</h3>
+<h3 id="thinking--reasoning-control-thinking">Thinking / Reasoning Control (<code>/thinking</code>)</h3>
 <p>Toggle unified thinking/reasoning mode (best-effort across providers/models):</p>
 <div class="code-block"><pre><code class="language-bash">/thinking auto
 /thinking on
@@ -139,7 +142,7 @@ abstractcore --set-video-strategy auto            # frames fallback requires ffm
 <p>Notes:
 - Not every provider/model supports request-side control; unsupported requests may warn and be ignored.
 - Some models expose reasoning in <code>response.metadata["reasoning"]</code> (and AbstractCore normalizes/strips it from visible content when configured).</p>
-<h3 id="prompt-kv-cache-cache">Prompt / KV Cache (<code>/cache</code>)</h3>
+<h3 id="prompt--kv-cache-cache">Prompt / KV Cache (<code>/cache</code>)</h3>
 <p>Persist or clear the local prompt/KV cache (currently <strong>MLX only</strong>; caches are <strong>model-locked</strong>):</p>
 <div class="code-block"><pre><code class="language-bash">/cache save chat_cache
 /cache save chat_cache --q8
@@ -161,7 +164,7 @@ abstractcore --set-video-strategy auto            # frames fallback requires ffm
 - Reasoning is printed in a visually distinct style (best-effort: grey/italic when the terminal supports it).
 - When shown, reasoning is printed <strong>before</strong> the assistant answer.
 - In <code>--stream</code> mode, <code>abstractcore-chat</code> may buffer output for reasoning-capable models to preserve “reasoning first” display.</p>
-<h3 id="compact-chat-history-compaction"><code>/compact</code> - Chat History Compaction</h3>
+<h3 id="compact---chat-history-compaction"><code>/compact</code> - Chat History Compaction</h3>
 <p>Compacts your chat history using the fast local <code>gemma3:1b</code> model to create a summary while preserving recent exchanges.</p>
 <div class="code-block"><pre><code class="language-bash"># In the CLI
 /compact
@@ -185,9 +188,9 @@ abstractcore --set-video-strategy auto            # frames fallback requires ffm
 - Long conversations that slow down responses
 - When you want to preserve context but reduce memory usage
 - Before switching to a different topic</p>
-<h3 id="facts-file-extract-facts-from-conversation"><code>/facts [file]</code> - Extract Facts from Conversation</h3>
+<h3 id="facts-file---extract-facts-from-conversation"><code>/facts [file]</code> - Extract Facts from Conversation</h3>
 <p>Extracts facts from your conversation history as simple triples (subject-predicate-object). Display them in chat or save as structured JSON-LD.</p>
-<h3 id="judge-evaluate-conversation-quality"><code>/judge</code> - Evaluate Conversation Quality</h3>
+<h3 id="judge---evaluate-conversation-quality"><code>/judge</code> - Evaluate Conversation Quality</h3>
 <p><strong>NEW</strong>: Evaluates the quality and interest of the current discussion using LLM-as-a-judge. This is a demonstrator showing objective assessment capabilities with constructive feedback.</p>
 <div class="code-block"><pre><code class="language-bash"># In the CLI
 /judge
@@ -223,7 +226,7 @@ abstractcore --set-video-strategy auto            # frames fallback requires ffm
 
 [INFO] Note: This is a demonstrator showing LLM-as-a-judge capabilities for objective assessment.
 </code></pre></div>
-<h3 id="intent-participant-analyze-conversation-intents"><code>/intent [participant]</code> - Analyze Conversation Intents</h3>
+<h3 id="intent-participant---analyze-conversation-intents"><code>/intent [participant]</code> - Analyze Conversation Intents</h3>
 <p><strong>NEW</strong>: Analyzes the psychological intents and motivations behind conversation messages, including deception detection. This provides insights into communication patterns and underlying goals.</p>
 <div class="code-block"><pre><code class="language-bash"># In the CLI
 /intent                    # Analyze all participants
@@ -315,7 +318,7 @@ User: USER INTENTS:
 - Create structured knowledge from chat sessions
 - Document facts for later reference or analysis
 - Generate semantic data for knowledge graphs</p>
-<h3 id="stream-toggle-streaming-mode"><code>/stream</code> - Toggle Streaming Mode</h3>
+<h3 id="stream---toggle-streaming-mode"><code>/stream</code> - Toggle Streaming Mode</h3>
 <p>Toggle real-time streaming of responses. You can also start with streaming enabled using the <code>--stream</code> flag.</p>
 <div class="code-block"><pre><code class="language-bash"># Toggle streaming mode in CLI
 /stream
@@ -338,7 +341,7 @@ Assistant: Assistant: Code flows like a stream... [appears word by word]
 - Real-time response display for better user experience
 - Immediate feedback during long responses
 - Interactive conversations where responsiveness matters</p>
-<h3 id="history-n-show-conversation-history"><code>/history [n]</code> - Show Conversation History</h3>
+<h3 id="history-n---show-conversation-history"><code>/history [n]</code> - Show Conversation History</h3>
 <p>Shows conversation history verbatim without truncation or numbering.</p>
 <div class="code-block"><pre><code class="language-bash"># Show all conversation history
 /history
@@ -422,7 +425,7 @@ This allows you to handle errors gracefully.
 - Review recent conversation context in full detail
 - Copy/paste previous responses or code examples
 - Verify exact wording of previous exchanges</p>
-<h3 id="system-prompt-system-prompt-management"><code>/system [prompt]</code> - System Prompt Management</h3>
+<h3 id="system-prompt---system-prompt-management"><code>/system [prompt]</code> - System Prompt Management</h3>
 <p>Control the system prompt that guides the AI's behavior.</p>
 <div class="code-block"><pre><code class="language-bash"># Show current system prompt
 /system
@@ -456,7 +459,7 @@ You are a helpful AI assistant.
 - Review what instructions the AI is currently following
 - Switch between different AI personas during conversation
 - Debug unexpected AI behavior by checking the active system prompt</p>
-<h3 id="tooltag-opening_tag-closing_tag-test-tool-call-tag-rewriting"><code>/tooltag &lt;opening_tag&gt; &lt;closing_tag&gt;</code> - Test Tool Call Tag Rewriting</h3>
+<h3 id="tooltag-opening_tag-closing_tag---test-tool-call-tag-rewriting"><code>/tooltag &lt;opening_tag&gt; &lt;closing_tag&gt;</code> - Test Tool Call Tag Rewriting</h3>
 <p>Test tool call tag rewriting with custom tags to verify compatibility with different agentic CLIs.</p>
 <div class="code-block"><pre><code class="language-bash"># Test LLaMA3 format (Crush CLI)
 /tooltag '&lt;function_call&gt;' '&lt;/function_call&gt;'
@@ -583,6 +586,13 @@ Assistant: Assistant: I am an AI assistant. [No tool calls]
 <p>All errors are clearly reported with helpful messages.</p>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

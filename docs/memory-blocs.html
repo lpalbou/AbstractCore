@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Memory Blocs (File → Bloc → KV Artifacts) - AbstractCore</title>
-    <meta name="description" content="AbstractCore can store memory blocs: content-addressed snapshots of extracted file text, plus optional derived artifacts.">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <title>Memory Blocs (Text/File -&gt; Bloc -&gt; Durable Cache) - AbstractCore</title>
+    <meta name="description" content="AbstractCore can store memory blocs: content-addressed snapshots of extracted text or file text, plus optional provider/model prompt-cache artifacts derived…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/memory-blocs.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -30,19 +32,23 @@
     <main style="padding-top: 5rem;">
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Memory Blocs (File → Bloc → KV Artifacts)</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore can store memory blocs: content-addressed snapshots of extracted file text, plus optional derived artifacts.</p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Memory Blocs (Text/File -&gt; Bloc -&gt; Durable Cache)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore can store memory blocs: content-addressed snapshots of extracted text or file text, plus optional provider/model prompt-cache artifacts derived from that exact text.</p>
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-is-a-bloc" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What is a “bloc”?</a>
 <a href="#on-disk-layout" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">On-disk layout</a>
-<a href="#minimal-usage-library" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Minimal usage (library)</a></div>
+<a href="#minimal-usage-library" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Minimal usage (library)</a>
+<a href="#supported-local-artifact-backends" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Supported local artifact backends</a>
+<a href="#binding-and-debug-proof" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Binding and debug proof</a>
+<a href="#api-exposure" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">API exposure</a></div>
 
             <div class="doc-content">
 
 <p>This is useful for apps that want:
 - durable, incremental “cached file text” across runs,
-- per-model prompt-cache/KV artifacts compiled from that text (so you don’t re-prefill the same file repeatedly),
+- per-model prompt-cache/KV artifacts compiled from that text (so you do not re-prefill the same
+  file or text bloc repeatedly),
 - stable selectors (<code>bloc_id</code>) for REPL/CLI workflows.</p>
 <h2 id="what-is-a-bloc">What is a “bloc”?</h2>
 <p>A <strong>bloc</strong> is an atomic extracted-text snapshot stored on disk. It is identified by a SHA256 of the <em>source file bytes</em> (or another stable content hash chosen by the app).</p>
@@ -50,7 +56,9 @@
 - <code>content.txt</code> — extracted text
 - <code>meta.json</code> — record metadata (path, size, timestamps, token estimate, etc.)
 - <code>meta.jsonld</code> (optional) — compact JSON-LD metadata for catalogs/search
-- <code>kv/…</code> (optional) — per-(provider, model) prompt-cache artifacts (derived)</p>
+- <code>kv/…</code> (optional) — per-(provider, model) prompt-cache artifacts (derived; <code>.safetensors</code> for
+  MLX/HF transformers, <code>.npz</code> for supported HF GGUF)
+- <code>kv/…manifest.json</code> (optional) — sidecar integrity/freshness metadata for those artifacts</p>
 <h2 id="on-disk-layout">On-disk layout</h2>
 <p>Default root:
 - <code>~/.abstractcore/blocs/</code></p>
@@ -59,20 +67,143 @@
   - <code>content.txt</code>
   - <code>meta.json</code>
   - <code>meta.jsonld</code> (optional)
-  - <code>kv/&lt;provider+model-slug&gt;.safetensors</code> (optional)</p>
-<p><code>FileBlocStore.kv_cache_path(...)</code> defines the exact naming convention for KV artifact files.</p>
+  - <code>kv/&lt;provider+model-slug&gt;.&lt;provider-extension&gt;</code> (optional)
+  - <code>kv/&lt;provider+model-slug&gt;.manifest.json</code> (optional)</p>
+<p><code>FileBlocStore.kv_cache_path(...)</code> and <code>FileBlocStore.kv_cache_manifest_path(...)</code> define the
+on-disk naming convention for KV artifacts and their manifest sidecars.</p>
 <h2 id="minimal-usage-library">Minimal usage (library)</h2>
 <p><code>FileBlocStore</code> does not extract files by itself; it expects extracted content + file metadata from the caller.</p>
 <p>Typical flow:
 1. extract a file to text (e.g. via <code>extract_file_box()</code> or your own pipeline)
 2. write/update the bloc record + <code>content.txt</code> via <code>FileBlocStore.upsert(...)</code>
-3. (optional) compile a per-model KV artifact with your provider and save it under <code>kv/</code>
-4. (optional) generate JSON-LD metadata with <code>generate_bloc_metadata_jsonld(...)</code></p>
+3. (optional) compile a per-model KV artifact with <code>ensure_bloc_kv_artifact(...)</code>
+4. (optional) load or fork it later with <code>load_bloc_kv_artifact(...)</code>
+5. (optional) generate JSON-LD metadata with <code>generate_bloc_metadata_jsonld(...)</code>
+6. (optional) list, delete, or prune bloc KV artifacts with
+   <code>list_bloc_kv_artifacts(...)</code>, <code>delete_bloc_kv_artifact(...)</code>, and
+   <code>prune_bloc_kv_artifacts(...)</code></p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, ensure_bloc_kv_artifact, load_bloc_kv_artifact
+from abstractcore.core.file_blocs import FileBlocStore
+
+store = FileBlocStore()
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B-4bit&quot;)
+
+record = store.upsert(
+    file_meta={
+        &quot;path&quot;: &quot;notes/orbit.txt&quot;,
+        &quot;sha256&quot;: &quot;...&quot;,
+        &quot;content_sha256&quot;: &quot;...&quot;,
+        &quot;media_type&quot;: &quot;text&quot;,
+        &quot;size_bytes&quot;: 1234,
+    },
+    content=&quot;Document title: Orbit Notes\n\nThe launch window is Tuesday.&quot;,
+)
+
+ensure = ensure_bloc_kv_artifact(provider=llm, store=store, record=record, debug=True)
+loaded = load_bloc_kv_artifact(provider=llm, store=store, record=record, key=&quot;work:orbit&quot;)
+
+response = llm.generate(
+    &quot;Summarize the loaded bloc.&quot;,
+    prompt_cache_binding=loaded.prompt_cache_binding,
+)
+</code></pre></div>
 <p>See:
 - <code>abstractcore/core/file_blocs.py</code> for the store and record schema
+- <code>abstractcore/core/bloc_kv.py</code> for the unified bloc artifact compiler/loader and deletion
+  helpers
 - <code>abstractcore/core/bloc_metadata.py</code> for JSON-LD schema + metadata generator/parser</p>
+<h2 id="supported-local-artifact-backends">Supported local artifact backends</h2>
+<p>The public API shape is shared. Provider internals and artifact formats remain backend-specific:</p>
+<ul>
+<li><strong>MLX</strong>: <code>.safetensors</code>, exact prompt fragment rendered by <code>MLXProvider</code>.</li>
+<li><strong>HuggingFace transformers</strong>: <code>.safetensors</code>, gated on local prompt-cache save/load support for
+  standard text-generation models and provider-native cache state AbstractCore can serialize and
+  reconstruct. Current coverage includes standard <code>DynamicCache</code> layer state, Qwen3.5/Qwen3Next
+  tensor-list hybrid state, and Mamba-style tensor state when the Transformers cache class can be
+  constructed from model config.</li>
+<li><strong>HuggingFace GGUF</strong>: <code>.npz</code>, gated on exact cached prompt renderers. Current exact renderer
+  paths are <code>chatml-function-calling</code>, <code>llama-3</code>, and Gemma4 <code>gemma_turn</code> via llama.cpp chat
+  templates; other GGUF chat formats remain keyed-only.</li>
+</ul>
+<p>Remote providers and generic OpenAI-compatible servers keep best-effort <code>prompt_cache_key</code>
+semantics. They do not expose local durable bloc artifacts.</p>
+<p>Artifact payloads are provider-native and model-bound. The portable contract is the manifest,
+binding object, Python helper, and server route shape, not a universal KV tensor layout.
+For general HuggingFace model-load compatibility, including quantized Transformers checkpoints, see
+<a href="huggingface-model-compatibility.html">HuggingFace Model Compatibility</a>.</p>
+<h2 id="binding-and-debug-proof">Binding and debug proof</h2>
+<p><code>load_bloc_kv_artifact(...)</code> returns:</p>
+<ul>
+<li><code>key</code>: the runtime prompt-cache key to use</li>
+<li><code>binding_id</code>: an opaque digest over the exact manifest identity</li>
+<li><code>prompt_cache_binding</code>: the compact object callers can pass to generation for strict checking</li>
+</ul>
+<p><code>prompt_cache_key</code> by itself remains best-effort. If you need to prove that a request is using the
+exact loaded bloc artifact, pass <code>prompt_cache_binding</code> (or the direct Python alias
+<code>expected_prompt_cache_binding</code>). If the key is missing or rebound to another artifact, generation
+fails before producing output.</p>
+<p>Verbose verification is available with <code>debug=True</code> on <code>ensure_bloc_kv_artifact(...)</code> and
+<code>load_bloc_kv_artifact(...)</code>, or by setting <code>ABSTRACTCORE_BLOC_KV_DEBUG=1</code>. Debug payloads include
+provider/backend ids, artifact paths, manifest path, artifact hash, binding id, rendered recipe
+hash, bloc/content hashes, and token count when available.</p>
+<h2 id="api-exposure">API exposure</h2>
+<p>For a long-lived single-model local runtime, <code>AbstractEndpoint</code> exposes:</p>
+<ul>
+<li><code>POST /acore/blocs/upsert_text</code></li>
+<li><code>GET /acore/blocs</code></li>
+<li><code>GET /acore/blocs/record</code></li>
+<li><code>POST /acore/blocs/delete</code></li>
+<li><code>GET /acore/blocs/kv/manifest</code></li>
+<li><code>GET /acore/blocs/kv/list</code></li>
+<li><code>POST /acore/blocs/kv/ensure</code></li>
+<li><code>POST /acore/blocs/kv/load</code></li>
+<li><code>POST /acore/blocs/kv/delete</code></li>
+<li><code>POST /acore/blocs/kv/prune</code></li>
+</ul>
+<p>The multi-provider gateway <code>abstractcore.server.app</code> now exposes two modes:</p>
+<ul>
+<li>direct gateway mode:</li>
+<li><code>POST /acore/models/load</code></li>
+<li><code>GET /acore/models/loaded</code></li>
+<li><code>POST /acore/models/unload</code></li>
+<li>local <code>POST /acore/blocs/upsert_text</code></li>
+<li>local <code>GET /acore/blocs</code></li>
+<li>local <code>GET /acore/blocs/record</code></li>
+<li>local <code>POST /acore/blocs/delete</code></li>
+<li>local <code>GET /acore/blocs/kv/manifest</code></li>
+<li>local <code>GET /acore/blocs/kv/list</code></li>
+<li>local <code>POST /acore/blocs/kv/ensure</code></li>
+<li>local <code>POST /acore/blocs/kv/load</code></li>
+<li>local <code>POST /acore/blocs/kv/delete</code></li>
+<li>local <code>POST /acore/blocs/kv/prune</code></li>
+<li>proxy mode:</li>
+<li>the same <code>/acore/blocs/*</code> routes with <code>base_url</code> pointing at an upstream <code>AbstractEndpoint</code></li>
+</ul>
+<p>Important boundary:</p>
+<ul>
+<li>the durable artifact is bloc-only</li>
+<li>in direct gateway mode, text loaded cache keys live on the loaded gateway runtime selected by <code>provider</code> + <code>model</code></li>
+<li><code>/acore/models/load</code> is task-aware; omitted <code>task</code> keeps the text runtime behavior used by bloc-KV, while <code>image_generation</code>, <code>tts</code>, and <code>stt</code> route to capability residency where supported</li>
+<li><code>runtime_id</code> from <code>/acore/models/load</code> is the most precise selector when multiple warm runtimes share the same <code>task</code> + <code>provider</code> + <code>model</code></li>
+<li>in proxy mode, loaded cache keys live on the upstream endpoint worker/provider instance</li>
+<li><code>/acore/blocs/kv/load</code> returns <code>artifact.key</code>, <code>artifact.binding_id</code>, and
+  <code>artifact.prompt_cache_binding</code></li>
+<li>use <code>artifact.prompt_cache_binding</code> on the next chat call when exact request-time binding is
+  required</li>
+<li>deletion is safe by default: deleting a loaded bloc KV artifact returns <code>409</code> until the caller
+  uses <code>clear_loaded=true</code> or explicitly opts into forced deletion</li>
+<li>use <code>dry_run=true</code> on delete/prune calls to inspect matched files and live bindings before
+  removing artifacts</li>
+</ul>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

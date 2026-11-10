@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Generation Parameters Architecture - AbstractCore</title>
-    <meta name="description" content="This document explains the design and implementation of unified generation parameters (temperature, seed, thinking/reasoning) across all AbstractCore providers.">
-    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <meta name="description" content="This document explains the design and implementation of unified generation parameters (temperature, top_p, top_k, seed, and thinking/reasoning controls)…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/generation-parameters.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -31,18 +33,16 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Generation Parameters Architecture</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document explains the design and implementation of unified generation parameters (temperature, seed, thinking/reasoning) across all AbstractCore providers.</p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document explains the design and implementation of unified generation parameters (temperature, top_p, top_k, seed, and thinking/reasoning controls) across AbstractCore providers.</p>
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#design-principles" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Design Principles</a>
 <a href="#architecture-overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Architecture Overview</a>
 <a href="#parameter-hierarchy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Parameter Hierarchy</a>
 <a href="#provider-specific-implementation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Provider-Specific Implementation</a>
-<a href="#thinking-reasoning-control-unified" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Thinking / Reasoning Control (Unified)</a>
+<a href="#thinking--reasoning-control-unified" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Thinking / Reasoning Control (Unified)</a>
 <a href="#session-integration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Session Integration</a>
-<a href="#code-quality-benefits" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Code Quality Benefits</a>
 <a href="#future-extensibility" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Future Extensibility</a>
-<a href="#testing-strategy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Testing Strategy</a>
 <a href="#performance-considerations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Considerations</a>
 <a href="#backward-compatibility" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Backward Compatibility</a>
 <a href="#empirical-verification-best-effort" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Empirical Verification (Best-Effort)</a></div>
@@ -69,15 +69,16 @@
 <h2 id="architecture-overview">Architecture Overview</h2>
 <div class="code-block"><pre><code class="language-python">AbstractCoreInterface (interface.py)
 ├── temperature: float = 0.7        # Interface-level default
-├── seed: Optional[int] = None       # Interface-level default
+├── seed: Optional[int] = -1         # Random; no seed forwarded
 ├── thinking: Optional[bool|str] = None  # Unified thinking/reasoning control (best-effort)
 └── _validate_parameters()           # Validation logic
 
 BaseProvider (base.py)
 ├── _prepare_generation_kwargs()     # Unified parameter processing
 ├── _extract_generation_params()     # Parameter extraction helper
+├── _metadata_inference_parameters() # Asset-driven model/architecture defaults
 ├── _apply_thinking_request()        # Provider-agnostic + provider-specific thinking mapping
-└── Parameter fallback hierarchy     # kwargs → instance → defaults
+└── Parameter fallback hierarchy     # kwargs → instance/assets → defaults
 
 Individual Providers
 ├── Provider-specific parameters only (top_p, frequency_penalty, etc.)
@@ -85,6 +86,15 @@ Individual Providers
 └── Native API integration
 </code></pre></div>
 <h2 id="parameter-hierarchy">Parameter Hierarchy</h2>
+<p>Token budgets use <code>max_tokens</code> for input plus output, and <code>max_output_tokens</code> for generation.
+Set the output cap explicitly: an omitted cap can use a provider's full output capability.
+A per-call cap above the model's registered output ceiling is reduced to that ceiling, with a
+<code>RuntimeWarning</code>. For a model that <code>model_capabilities.json</code> does not know, the ceiling is only a
+guessed default (4096), so a per-call cap is sent as given and the server enforces its real
+limit. A cap set on the constructor still bounds every per-call value.
+Ollama's thinking path raises a smaller cap to a minimum output budget: 1024 for <code>minimal</code>,
+2048 for <code>low</code> or boolean on, 4096 for <code>medium</code>, 8192 for <code>high</code>. Use <code>thinking=False</code> when
+enforcing a small output cap. See <a href="agent-usage.html">bounded integration recipes</a>.</p>
 <p>Parameters follow a clear precedence order:</p>
 <ol>
 <li>
@@ -98,19 +108,47 @@ Individual Providers
    llm = create_llm("openai", temperature=0.5, seed=42)</code></p>
 </li>
 <li>
+<p><strong>Loaded model generation metadata</strong>
+   Hugging Face Transformers models may publish <code>generation_config.json</code>; when present, AbstractCore reads safe defaults such as <code>temperature</code>, <code>top_p</code>, and <code>top_k</code> from the loaded model. Explicit kwargs and constructor values still win.</p>
+</li>
+<li>
+<p><strong>Static model / architecture metadata</strong>
+   <code>json
+   {
+     "inference_parameters": {
+       "temperature": 1.0,
+       "top_p": 0.95,
+       "top_k": 64
+     }
+   }</code></p>
+</li>
+<li>
 <p><strong>Interface defaults</strong> (lowest priority)
    <code>python
-   # temperature=0.7, seed=None (from AbstractCoreInterface)</code></p>
+   # temperature=0.7, seed=-1 (random; no seed forwarded)</code></p>
 </li>
 </ol>
+<h3 id="override-guarantee">Override Guarantee</h3>
+<p><code>inference_parameters</code> in <code>model_capabilities.json</code>, <code>architecture_formats.json</code>, and loaded HF <code>generation_config.json</code> are defaults only. They are never hard requirements. For providers/backends that accept a parameter, caller-supplied values always win:</p>
+<div class="code-block"><pre><code class="language-python">llm = create_llm(&quot;huggingface&quot;, model=&quot;google/gemma-4-E4B-it&quot;)  # metadata default: top_k=64
+llm.generate(&quot;Hello&quot;, temperature=0.2, top_p=0.6, top_k=12)      # uses caller values
+</code></pre></div>
+<p>If a backend does not support a parameter, provider-specific compatibility rules still apply. For example, strict gateway providers may drop unsupported parameters rather than forwarding invalid requests.</p>
 <h2 id="provider-specific-implementation">Provider-Specific Implementation</h2>
-<h3 id="native-support-openai-ollama-lmstudio-huggingface">Native Support (OpenAI, Ollama, LMStudio, HuggingFace)</h3>
+<h3 id="native-support-openai-ollama-lm-studio-hugging-face-mlx">Native Support (OpenAI, Ollama, LM Studio, Hugging Face, MLX)</h3>
 <div class="code-block"><pre><code class="language-python"># Direct parameter mapping to provider API
 call_params[&quot;temperature&quot;] = params[&quot;temperature&quot;]
+call_params[&quot;top_p&quot;] = params[&quot;top_p&quot;]
+call_params[&quot;top_k&quot;] = params[&quot;top_k&quot;]  # when the backend exposes this control
 if &quot;seed&quot; in params:
     call_params[&quot;seed&quot;] = params[&quot;seed&quot;]
 </code></pre></div>
-<h3 id="graceful-fallback-anthropic-mlx">Graceful Fallback (Anthropic, MLX)</h3>
+<p>Notes:
+- Hugging Face Transformers applies loaded <code>generation_config</code> defaults and forwards <code>temperature</code>, <code>top_p</code>, and <code>top_k</code> into <code>generate()</code> / pipeline calls where supported.
+- Hugging Face GGUF and Ollama forward sampling controls through their local runtime APIs.
+- MLX uses an <code>mlx-lm</code> sampler so <code>temperature</code>, <code>top_p</code>, and <code>top_k</code> affect actual decoding rather than only AbstractCore metadata.
+- LM Studio receives <code>top_k</code> when using the LM Studio provider; the generic OpenAI-compatible provider keeps stricter OpenAI-compatible behavior unless a backend-specific hook handles the parameter.</p>
+<h3 id="graceful-fallback-anthropic">Graceful Fallback (Anthropic)</h3>
 <div class="code-block"><pre><code class="language-python"># Accept parameters but log limitation
 if &quot;seed&quot; in params:
     self.logger.debug(f&quot;Seed {params['seed']} requested but not supported - logged for debugging&quot;)
@@ -122,7 +160,12 @@ if &quot;seed&quot; in params:
 <li>Drops unsupported parameters for OpenAI reasoning families (gpt-5/o1), and uses <code>max_completion_tokens</code> instead of <code>max_tokens</code> for those models.</li>
 <li>Keeps legacy <code>max_tokens</code> for non-reasoning families to preserve compatibility with older backends.</li>
 </ul>
-<h2 id="thinking-reasoning-control-unified">Thinking / Reasoning Control (Unified)</h2>
+<h2 id="thinking--reasoning-control-unified">Thinking / Reasoning Control (Unified)</h2>
+<blockquote>
+<p>For the full picture — per-provider transports, model requirements, how to verify a request
+took effect, and the interaction with prompt caching — see
+<strong><a href="reasoning-control.html">Reasoning Control</a></strong>.</p>
+</blockquote>
 <p>Modern models may expose “thinking”/“reasoning effort” as either:
 - a <strong>request-side control</strong> (enable/disable or low/medium/high), and/or
 - a <strong>separate output channel</strong> (provider fields or inline tags).</p>
@@ -137,25 +180,28 @@ response = llm.generate(&quot;Solve this&quot;, thinking=&quot;high&quot;)    # 
 print(response.reasoning)
 </code></pre></div>
 <p><strong>Accepted values</strong>: <code>None|"auto"|"on"|"off"|"none"|True|False|"low"|"medium"|"high"</code> (legacy aliases: <code>"minimal"</code>, <code>"xhigh"</code>, <code>"extra high"</code>).</p>
-<p><strong>Best-effort mappings (as of Mar 2026):</strong>
+<p><strong>Best-effort mappings (as of May 2026):</strong>
 - <strong>OpenAI</strong> (<code>OpenAIProvider</code>): Chat Completions <code>reasoning_effort</code> (values come from <code>reasoning_levels</code> in <code>model_capabilities.json</code>). <code>thinking="off"</code> maps to <code>reasoning_effort="none"</code> when supported; otherwise it falls back to the minimum supported effort with a warning (e.g., <code>gpt-5.2-pro</code> → <code>"medium"</code>).
 - <strong>Anthropic</strong> (<code>AnthropicProvider</code>): Messages API <code>thinking</code> + (for Claude 4.6 adaptive thinking) <code>output_config.effort</code>.
   - Unified levels map to effort: <code>low|medium|high|xhigh</code> → <code>low|medium|high|max</code> (when supported); <code>xhigh</code> falls back to <code>high</code> with a warning when <code>max</code> is unavailable.
   - For older models, AbstractCore falls back to manual thinking budgets via <code>thinking: {type:\"enabled\", budget_tokens: ...}</code> (best-effort; newer models deprecate this).
 - <strong>LM Studio / OpenAI-compatible local servers</strong> (<code>LMStudioProvider</code>, <code>OpenAICompatibleProvider</code>):
-  - <strong>Qwen3 / Qwen3.5 / Nemotron</strong>: <code>chat_template_kwargs.enable_thinking</code> (and <code>enableThinking</code> for LM Studio’s custom-field naming).
-    - This is the “clean” LM Studio approach: it matches the model’s own <code>Enable Thinking</code> custom field and does <strong>not</strong> rely on system-prompt injection.
-    - <strong>LM Studio robustness note (Qwen3/Qwen3.5)</strong>: some LM Studio runtimes do not consistently honor <code>chat_template_kwargs</code> for all model formats. As a fallback for <code>thinking="off"/"none"</code>, AbstractCore can append an empty Qwen think block right before generation (<code>&lt;think&gt;\n\n&lt;/think&gt;\n\n</code>) to hard-disable thinking without polluting the system prompt.
+  - <strong>Qwen3 / Qwen3.5 / Nemotron</strong>: <code>chat_template_kwargs.enable_thinking</code> on OpenAI-compatible servers that accept template kwargs.
+    - <strong>LM Studio</strong>: its OpenAI-compatible endpoint ignores <code>chat_template_kwargs</code>; the top-level <code>reasoning_effort</code> field is what reaches the template (<code>"none"</code> = off, any other value = on for on/off models, the declared level for models with levels). See <a href="reasoning-control.html#lm-studio-facts">Reasoning Control</a>. The empty think block (<code>&lt;think&gt;\n\n&lt;/think&gt;\n\n</code>) is used as the off switch only when the server rejected <code>reasoning_effort</code>.
     - Qwen also supports a “soft” <code>/no_think</code> / <code>/think</code> instruction (stateful across turns), but AbstractCore prefers the stateless hard-switch where needed. See <code>docs/fallbacks.md</code>.
-    - <strong>Effort levels</strong>: for Qwen3/Qwen3.5 on LM Studio, <code>thinking="low|medium|high"</code> currently maps to “thinking enabled” (boolean). Most templates do not expose a stable per-effort budget knob, so effort scaling is best-effort and may be a no-op beyond on/off.
-    - <strong>Nemotron</strong>: <code>thinking="low"</code> additionally maps to <code>chat_template_kwargs.low_effort=True</code> when supported by the template.
-  - <strong>Seed‑OSS</strong>: <code>chat_template_kwargs.thinking_budget</code> (levels map to budgets: low=512, medium=1024, high=4096, xhigh=8192; <code>off</code> → 0).
+    - <strong>Effort levels</strong>: models whose registry entry declares <code>thinking_control.effort_template_kwarg</code> (for example Qwen3.8) receive the OpenAI-standard <code>reasoning_effort</code> request field, which LM Studio maps into the model's chat template. Templates that expose only a boolean switch treat a level request as “thinking enabled” and warn.
+    - <strong>Nemotron</strong>: <code>thinking="low"</code> additionally maps to <code>chat_template_kwargs.low_effort=True</code> on servers that accept template kwargs (not LM Studio, which ignores them).
+  - <strong>Seed‑OSS</strong>: <code>chat_template_kwargs.thinking_budget</code> on servers that accept template kwargs (levels map to budgets: low=512, medium=1024, high=4096, xhigh=8192; <code>off</code> → 0). On LM Studio, Seed-OSS's declared levels travel as <code>reasoning_effort</code> instead.
+- <strong>MLX</strong> (<code>MLXProvider</code>): the provider serializes prompts locally, so both controls are prompt artifacts. <code>thinking="off"/"none"</code> places the empty think block at the generation boundary; a level declared in <code>thinking_control.effort_system_lines</code> renders the template's own effort instruction into the system block.
+- <strong>HuggingFace (transformers)</strong> (<code>HuggingFaceProvider</code>): <code>enable_thinking</code> and the declared effort kwarg are passed to <code>tokenizer.apply_chat_template(...)</code>, so the model's own template produces the prompt. The cached (KV) renderer writes the same effort instruction into its system block.
 - <strong>HuggingFace (GGUF / llama-cpp-python)</strong> (<code>HuggingFaceProvider</code> with GGUF models):
-  - llama.cpp’s CLI/server supports template kwargs (e.g., <code>--chat-template-kwargs '{"enable_thinking":false}'</code>), but <code>llama-cpp-python</code>’s <code>Llama.create_chat_completion()</code> does not currently expose/forward per-request template kwargs like <code>enable_thinking</code>. As a result, Qwen3/Qwen3.5 <code>thinking="off"/"none"</code> uses the Qwen hard-switch marker (<code>&lt;think&gt;\n\n&lt;/think&gt;\n\n</code>) as a robust input-side control.
-  - <code>thinking="low|medium|high"</code> is treated as “thinking enabled” (best-effort) and may be a no-op beyond on/off for Qwen templates.
+  - <code>llama-cpp-python</code>’s <code>Llama.create_chat_completion()</code> does not forward per-request template kwargs, so thinking-controlled requests are served by AbstractCore's local renderer. Builds that ship an embedded chat template are rendered through it with <code>enable_thinking</code> and the declared effort kwarg; plain ChatML builds get the empty think block at the generation boundary and the effort instruction in the system block.
+  - Structured output, media, tool-role or content-part histories are served by <code>create_chat_completion</code> instead. Those requests carry no control artifact, so AbstractCore reports the control as unhandled and warns rather than claiming it.
   - <strong>Local context note</strong>: model cards may advertise extremely large context windows (e.g. 262k). For GGUF loads, AbstractCore will first try the advertised <code>max_tokens</code> (context window); if allocation fails locally it retries with smaller llama.cpp <code>n_ctx</code> values (best-effort). Pass <code>max_tokens=...</code> to <code>HuggingFaceProvider()</code> to explicitly control the runtime <code>n_ctx</code>.
-- <strong>vLLM</strong>: <code>extra_body.chat_template_kwargs.enable_thinking</code> (commonly used by Qwen3/Qwen3.5 templates)
-  - When <code>thinking</code> is a level (<code>low|medium|high|xhigh</code>), AbstractCore also sets <code>extra_body.thinking_token_budget</code> (vLLM reasoning-budget feature).
+- <strong>vLLM</strong>: top-level <code>chat_template_kwargs.&lt;template switch&gt;</code> (the name the model declares, e.g. <code>enable_thinking</code>), or top-level <code>reasoning_effort</code> for models that declare levels and no switch. vLLM ignores a literal nested <code>extra_body</code> field, so AbstractCore sends every vLLM extension at the top level of the request.
+  - When <code>thinking</code> is a level, AbstractCore also sets <code>thinking_token_budget</code> (vLLM reasoning budget; effective only when the server runs with <code>--reasoning-parser</code>). The budget alone is never reported as an applied effort level.
+- <strong>OpenRouter</strong>: the normalized <code>reasoning</code> object — <code>{"effort": &lt;level&gt;}</code>, <code>{"effort": "none"}</code> for off (the lowest declared effort, with a warning, for models whose reasoning is mandatory), <code>{"enabled": true}</code> for a bare on. An explicit <code>reasoning={...}</code> argument wins.
+- <strong>Portkey</strong>: not mapped (the backend behind a config is unknown); a warning says no control was sent.
 - <strong>Ollama</strong>: request field <code>think</code> (bool for most models; <code>"low"|"medium"|"high"</code> for GPT‑OSS)
 - <strong>GPT‑OSS (Harmony)</strong>: inject system line <code>Reasoning: low|medium|high</code> (traces can’t be fully disabled; <code>"off"</code> maps to <code>"low"</code> with a warning)</p>
 <p><strong>Output semantics</strong>: when a provider/model exposes reasoning, AbstractCore normalizes it into <code>GenerateResponse.metadata["reasoning"]</code> and keeps <code>GenerateResponse.content</code> clean using <code>abstractcore/architectures/response_postprocessing.py</code> (asset-driven via <code>assets/model_capabilities.json</code> + <code>assets/architecture_formats.json</code>).</p>
@@ -163,6 +209,7 @@ print(response.reasoning)
 <ul>
 <li>If the model advertises <code>reasoning_levels</code>, AbstractCore maps the requested level to the nearest supported level (generic ordering: <code>minimal &lt; low &lt; medium &lt; high &lt; xhigh</code>) and reports the effective level in the warning.</li>
 <li>If a provider/model can only toggle reasoning on/off (no effort scaling), AbstractCore still enables reasoning for level requests and warns that the requested effort level may be ignored.</li>
+<li><code>thinking_effective</code> reports a level only when a control artifact actually reached the model, so an unenforced request never reads as an enforced one.</li>
 </ul>
 <h3 id="observability-requested-vs-effective-thinking">Observability: requested vs effective thinking</h3>
 <p>When <code>thinking=</code> is provided, AbstractCore records the requested and effective thinking mode in <code>GenerateResponse.metadata</code>:</p>
@@ -195,38 +242,13 @@ response2 = session.generate(&quot;Be creative!&quot;, temperature=0.9)
 session = CachedSession(provider=llm, system_prompt=&quot;You are helpful.&quot;, prompt_cache_strategy=&quot;auto&quot;)
 session.generate(&quot;Hello&quot;)
 </code></pre></div>
-<h2 id="code-quality-benefits">Code Quality Benefits</h2>
-<h3 id="before-duplicated-code">Before (Duplicated Code)</h3>
-<div class="code-block"><pre><code class="language-python"># In each provider:
-self.temperature = kwargs.get(&quot;temperature&quot;, 0.7)
-self.seed = kwargs.get(&quot;seed&quot;, None)
-# ... parameter extraction logic in each provider
-</code></pre></div>
-<h3 id="after-centralized">After (Centralized)</h3>
-<div class="code-block"><pre><code class="language-python"># In AbstractCoreInterface:
-def __init__(self, ..., temperature: float = 0.7, seed: Optional[int] = None):
-    self.temperature = temperature
-    self.seed = seed
-
-# In BaseProvider:
-def _extract_generation_params(self, **kwargs) -&gt; Dict[str, Any]:
-    return {
-        &quot;temperature&quot;: kwargs.get(&quot;temperature&quot;, self.temperature),
-        &quot;seed&quot;: kwargs.get(&quot;seed&quot;, self.seed) if self.seed is not None else None
-    }
-</code></pre></div>
 <h2 id="future-extensibility">Future Extensibility</h2>
-<p>Adding new parameters requires only:
+<p>Adding new common parameters requires:
 1. Declaration in <code>AbstractCoreInterface</code>
 2. Logic in <code>BaseProvider._extract_generation_params()</code>
-3. Provider-specific mapping where supported</p>
-<p>No changes needed in individual provider <code>__init__</code> methods.</p>
-<h2 id="testing-strategy">Testing Strategy</h2>
-<p>Parameters are tested at multiple levels:
-- <strong>Interface level</strong>: Parameter inheritance and defaults
-- <strong>Provider level</strong>: Native API integration and fallback behavior
-- <strong>Session level</strong>: Parameter persistence and override behavior
-- <strong>Integration level</strong>: End-to-end parameter flow</p>
+3. Optional static metadata in <code>assets/model_capabilities.json</code> or <code>assets/architecture_formats.json</code>
+4. Provider-specific mapping where supported</p>
+<p>Provider constructors should only keep provider-specific state. Common defaults should flow through the base fallback hierarchy.</p>
 <h2 id="performance-considerations">Performance Considerations</h2>
 <ul>
 <li><strong>Minimal Overhead</strong>: Parameter extraction happens once per generation call</li>
@@ -242,9 +264,9 @@ def _extract_generation_params(self, **kwargs) -&gt; Dict[str, Any]:
 <p>Determinism across LLM providers is <strong>not guaranteed</strong>. When supported, AbstractCore passes seed-like
 controls to providers/backends and recommends <code>temperature=0</code> to reduce randomness, but results can
 still vary with backend settings, hardware, and model/server updates.</p>
-<p>To verify determinism for your exact provider/model/backend, run:</p>
-<div class="code-block"><pre><code class="language-bash">python tests/manual_seed_verification.py
-</code></pre></div>
+<p>To compare repeatability, keep the prompt, exact weights, backend, seed and generation budgets
+fixed, then compare complete outputs from repeated calls. A matching seed is not a guarantee
+of identical output across machines or backends.</p>
 <p><strong>Provider-Specific Implementations</strong>:
 - <strong>OpenAI</strong>: Native <code>seed</code> parameter in API
 - <strong>MLX</strong>: <code>mx.random.seed()</code> before generation
@@ -261,6 +283,13 @@ python tests/manual_seed_verification.py --provider openai
 </code></pre></div>
 
             </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
         </div>
     </main>
 

@@ -1,0 +1,484 @@
+# Email
+
+AbstractCore connects one email account per install: it reads the mailbox over IMAP and sends
+over SMTP. Its access is your choice: **Read only**, or **Read and write** (changes to the mailbox
+and sends; see [Access](#searching-conversations-and-changing-the-mailbox)). The same account is used by the `abstractcore email` CLI, the Email page of
+the [web console](console.md), the Email screen of the [terminal console](console-tui.md), the
+email tools ([Tool Calling](tool-calling.md)) and the Python library `abstractcore.comms.email`.
+
+What you can rely on:
+
+- **Settings, not environment variables.** The account lives in the `email` section of
+  AbstractCore's config file ([Centralized Config](centralized-config.md)); credentials are given as
+  direct parameters (`--password <value>`), or on stdin from scripts (`--password-stdin`), and
+  stored encrypted.
+- **Encrypted credentials.** The password (or OAuth2 tokens) is sealed with AES-256-GCM in
+  `<config dir>/email/secret.enc`, under ONE key file, `<config dir>/secrets/sealing.key` (0600 in
+  a 0700 folder, 32 random bytes, made on first use). No OS keychain is used, on any OS (2.26.0):
+  the same file and the same guarantees on macOS, Linux and Windows (on Windows the modes are best
+  effort, so the folder and the key also get an owner-only ACL through `icacls`; when that
+  cannot be applied, the folder's NTFS permissions protect it). The key file protects copies of the config
+  folder taken without `secrets/`; code running as your OS user can read it (as it could read your
+  keychain before), and a copy of the whole folder carries it, so protect the folder like a
+  password and include `secrets/` in backups. No command, page, tool result or error ever shows a
+  password or token.
+- **Upgrading from 2.25 or older.** Credentials sealed with the old keychain key are never opened
+  (no keychain call, no password prompt): `abstractcore email status` says "sealed with the old OS
+  keychain key (never read): connect the account again", and connecting again seals them under the
+  new key. Credentials sealed with the old per-store key file are re-sealed automatically. The old
+  keychain items (service `abstractcore-email`) can be deleted on macOS with
+  `while security delete-generic-password -s abstractcore-email >/dev/null 2>&1; do :; done`.
+- **Verified TLS on every connection.** IMAP and SMTP use SSL (implicit TLS) or STARTTLS; the
+  certificate chain and the host name are always checked, and a failure is refused before any
+  password is sent. There is no plaintext mode. A self-hosted server signed by a private CA is
+  trusted by giving that CA's PEM file (`--ca-file`).
+- **Reading never changes the mailbox.** Reads open folders with EXAMINE and fetch messages with
+  BODY.PEEK: nothing is marked read, moved or deleted by reading. Changes (mark, label, move,
+  delete) and sends happen only on an account set to **Read and write**; a **Read only** account
+  refuses them before connecting (`email_mailbox_read_only`).
+- **A recipient policy** decides who can receive mail at all, and **send limits** cap how much is
+  sent, for every sender (the CLI, the consoles, tools, and hosts such as the gateway).
+- **Whole messages.** Bodies are returned in full, never cut. Reading a message fetches its
+  structure and then only its text and HTML parts; attachments are listed (name, type, size) and
+  downloaded one at a time on request. A message whose bodies exceed the reading limit (25 MiB by
+  default) is returned with its headers, its attachment list and a typed skip record instead of
+  the bodies.
+- **Agents only with your consent.** Agents get the email tools only when you turn on **Agent email tools**
+  (off by default).
+
+This page describes the account of an AbstractCore install, kept in AbstractCore's own settings.
+An AbstractGateway keeps a separate account for each of its users (see
+[One install, one gateway: two accounts](#one-install-one-gateway-two-accounts)).
+
+## Connect an account
+
+```bash
+abstractcore email connect \
+  --address me@example.com \
+  --imap-host imap.example.com --smtp-host smtp.example.com \
+  --password <value>
+```
+
+`connect` signs in to IMAP and SMTP first and stores nothing if either fails; the error says what
+went wrong and what to do.
+
+**Without `--imap-host` and `--smtp-host`, the servers are found from the address** (see
+[Server discovery](#server-discovery)):
+
+```bash
+abstractcore email connect --address me@example.com --password <value>
+```
+
+When nothing is found the command stops with `email_discovery_failed` and lists the steps it
+tried; give the servers yourself then.
+
+**From a script or another program, pass the password on stdin.** A command line is visible to
+every local user (`ps`) while the command runs; stdin is not. `--password-stdin` reads exactly one
+line from stdin and removes only its trailing newline (spaces are kept):
+
+```bash
+printf '%s\n' "$MAIL_PASSWORD" | abstractcore email connect \
+  --address me@example.com \
+  --imap-host imap.example.com --smtp-host smtp.example.com \
+  --password-stdin
+```
+
+`--password-stdin` cannot be combined with `--password` or `--oauth`; the terminal console passes
+the password this way. Useful options:
+
+| Option | Meaning |
+|---|---|
+| `--username <name>` | Sign-in name when it differs from the address (default: the discovered form, else the address) |
+| `--display-name <name>` | Name shown to recipients (default: the stored one, else the address's local part) |
+| `--imap-port`, `--imap-security ssl\|starttls`, `--imap-folder` | IMAP settings (default SSL on 993, folder `INBOX`) |
+| `--smtp-port`, `--smtp-security ssl\|starttls` | SMTP settings (default SSL on 465; port 587 selects STARTTLS) |
+| `--ca-file <pem>` | Trust a private CA (also `--imap-ca-file`, `--smtp-ca-file`) |
+| `--registered-address <address>` | Your own address, the default allowlist entry (default: the stored one, else `--address`) |
+| `--no-test` | Store without the connection test |
+| `--key-storage auto\|file` | Kept for compatibility (before the verb): credentials are always sealed with `<config dir>/secrets/sealing.key`; `keyring` is no longer accepted |
+
+Many providers require an **app password** when two-step verification is on (Gmail, iCloud,
+Fastmail, Yahoo).
+
+Other verbs:
+
+```bash
+abstractcore email status            # account, credentials storage, policy, limits, last test
+abstractcore email test              # sign in to IMAP and SMTP with the stored account
+abstractcore email folders           # list the mailbox folders
+abstractcore email folder Archive    # read another folder, without connecting again ("" = INBOX)
+abstractcore email discover me@example.com   # find the IMAP and SMTP servers of an address
+abstractcore email registered-address me@example.com   # your email address ("" clears it)
+abstractcore email disable           # turn email off (no reading, no sending; settings kept)
+abstractcore email enable
+abstractcore email agent-tools on    # let agents use the email tools (default off)
+abstractcore email agent-tools off
+abstractcore email disconnect --yes  # delete the stored credentials and account (policy and limits kept)
+```
+
+Every verb accepts `--json`. Exit codes: 0 success, 1 error, 2 refused (a failed connection test,
+or `disconnect` without `--yes`).
+
+### Server discovery
+
+`abstractcore email discover <address>`, `POST /acore/email/discover` and
+`abstractcore.comms.email.discovery.discover_servers(address)` look for a mailbox's servers in
+this order, stopping at the first step that finds both:
+
+1. known providers: a built-in table of common providers (Gmail, Outlook.com, iCloud, Yahoo,
+   Fastmail, GMX, Zoho and others; values from the Thunderbird ISPDB);
+2. the domain's own autoconfig file (`https://autoconfig.<domain>/mail/config-v1.1.xml`, then
+   `https://<domain>/.well-known/autoconfig/mail/config-v1.1.xml`);
+3. the Thunderbird ISPDB online (`https://autoconfig.thunderbird.net/v1.1/<domain>`);
+4. DNS SRV records (`_imaps._tcp`, `_submissions._tcp`, `_submission._tcp`);
+5. the domain's MX hosts, matched to a known provider (Google Workspace, Microsoft 365,
+   Fastmail).
+
+Only encrypted servers are returned (SSL or STARTTLS). Lookups use HTTPS only (redirects too),
+refuse hosts that resolve to loopback, private or other non-public addresses, and parse XML with
+every DTD and entity declaration refused; each step has a timeout and the whole lookup a time
+budget. The result is `{address, domain, found, source, provider, imap, smtp, username, tried}`: `tried`
+lists every step with its outcome, and `username` is the sign-in form (the address, or the local
+part for the providers that use it).
+
+`discovery.server_defaults(address, discovered=None)` turns that result into the values a form
+pre-fills: the discovered servers and login, else the standard `imap.<domain>` 993 SSL and
+`smtp.<domain>` 465 SSL with the address as login, plus a one-sentence `message` saying which
+(`source`: `discovered` or `standard`). `POST /acore/email/discover` and `abstractcore email
+discover --json` return it as `defaults`.
+
+### OAuth2 (Google, Microsoft)
+
+Instead of a password you can sign in with OAuth2. The sign-in uses an OAuth client registered
+with the provider:
+
+- **Your own client** (bring your own): a Google Cloud OAuth client with the Gmail scope, or a
+  Microsoft Entra app with the IMAP and SMTP scopes. Pass `--client-id <value>` (and
+  `--client-secret <value>` when the provider issued one; from a script, `--client-secret-stdin`
+  reads it from stdin as one line, like `--password-stdin`).
+- **The built-in AbstractFramework client**: used when you omit `--client-id` and this version
+  ships a registered client for the provider (`abstractcore.comms.email.BUILTIN_CLIENTS`). When
+  none is registered, the command stops before contacting the provider and asks for your own
+  client. `status` shows which client signed in (`client_source`: `own` or `builtin`).
+
+```bash
+# Microsoft: device code (prints a URL and a code to enter, from any browser on any machine)
+abstractcore email connect --address me@outlook.com --oauth microsoft --client-id <value> --client-secret <value>
+
+# Google: a browser on this machine (a one-shot listener on 127.0.0.1 receives the sign-in)
+abstractcore email connect --address me@gmail.com --oauth google --client-id <value> --client-secret <value>
+```
+
+Google does not allow Gmail scopes in its device flow, so Google accounts use the browser flow
+(`--oauth-flow loopback`, the default for Google). Provider presets fill in the IMAP/SMTP hosts
+and scopes; `--tenant` selects a Microsoft tenant; `--oauth custom` takes explicit
+`--token-endpoint`, `--authorization-endpoint`, `--device-endpoint` and `--scope`. The refresh
+token and client secret are sealed like a password; access tokens are refreshed before they expire.
+When the provider revokes the grant, the error says to sign in again.
+
+With `--json`, stdout carries only the result document; while the command waits for your approval
+it prints the sign-in prompt to stderr as one JSON line, which the terminal console displays:
+
+```json
+{"oauth_prompt": {"flow": "device", "user_code": "WDJB-MJHT", "verification_uri": "https://...", "verification_uri_complete": "", "expires_at": 1790000000.0}}
+{"oauth_prompt": {"flow": "loopback", "authorization_url": "https://...", "expires_at": 1790000000.0}}
+```
+
+The web console and the terminal console (the Google and Microsoft tabs of the Email page's
+Mailbox card) offer the same sign-in with the same fields: address, and your own
+client id, client secret, Microsoft tenant, and flow. The browser flow listens on 127.0.0.1 of the machine running
+AbstractCore, so open its sign-in page in a browser on that machine; the device-code flow works
+from any browser.
+
+## Agent email tools
+
+The email tools (`list_emails`, `read_email`, `send_email`, ...; see [Tool Calling](tool-calling.md))
+use this account only when **Agent email tools** is on. It is off by default, and it takes effect
+only while the account is connected and turned on:
+
+```bash
+abstractcore email agent-tools on
+abstractcore email agent-tools off
+```
+
+The same switch is on the Email tab of the web console and the Email screen of the terminal
+console (`a`), and at `PUT /acore/email/agent-tools`. `status` shows its state as
+`agent_tools: {enabled, active, reason}`: `enabled` is your choice, `active` says whether agents
+have the tools right now, and `reason` says why not. While it is off, every email tool answers
+`email_agent_tools_off` with the command that turns it on. You still use the account yourself
+from the CLI and the consoles; every send by an agent still passes the recipient policy, the send
+limits and the host's approval gate.
+
+## Recipient policy
+
+The policy decides who can receive mail from this account:
+
+- `allowlist` — only the listed recipients;
+- `denylist` — everyone except the listed recipients.
+
+Entries are exact addresses (`boss@example.com`) or domains (`example.com`, also written
+`@example.com`). A domain entry matches that domain only; a subdomain matches only when it is
+written as its own entry. Patterns (`*`, `?`, regular expressions) are refused. Comparison ignores
+letter case and display names, and internationalized domains are compared in their IDNA form.
+
+The policy applies to To, Cc and Bcc. A message with any refused recipient is not sent at all; the
+error lists each refused address, the field it was in and the rule that refused it.
+
+A newly connected account starts with an **allowlist holding only your registered address**.
+
+```bash
+abstractcore email policy show
+abstractcore email policy set --add example.org --add colleague@example.net
+abstractcore email policy set --mode denylist --clear --add competitor.example
+abstractcore email policy set --remove example.org
+abstractcore email policy check someone@example.org   # exit 0 allowed, 2 refused
+```
+
+In hosts that approve tool calls (AbstractRuntime, AbstractGateway), approval still applies on top:
+the policy decides who *can* receive mail; approval decides whether a given send runs unattended.
+
+## Send limits
+
+Each account has a limit per rolling hour and per rolling day (default 100 and 1000). The count is
+kept in `<config dir>/email/sends.json`, shared by every process using the account; a message the
+server did not accept does not count. `0` means no sending in that window.
+
+```bash
+abstractcore email limits show
+abstractcore email limits set --per-hour 100 --per-day 1000
+abstractcore email limits reset     # forget the stored limits: follow the defaults
+```
+
+Limits you set are stored and kept across upgrades; an account where nobody set them follows the
+defaults, including a later change of the defaults. `limits show --json` reports the origin as
+`source`: `default`, `user` or `legacy`.
+
+Upgrading from 2.21 or earlier: those versions stored 20 per hour and 100 per day at connect,
+without marking who set them. Exactly that unmarked pair follows the defaults; any other unmarked
+value is kept as `legacy` (`limits show` marks it "stored by an earlier version") until you run
+`limits reset` or set new values. See the [CHANGELOG](../CHANGELOG.md) for details.
+
+## Errors
+
+Every failure has a stable code, a cause and a fix, for example:
+
+| Code | Typical cause |
+|---|---|
+| `email_auth_failed` | wrong user name or password (IMAP `[AUTHENTICATIONFAILED]`, SMTP 535) |
+| `email_tls_failed` | certificate not trusted for the host name, or SSL/STARTTLS used on the wrong port |
+| `email_unreachable` | host not found, connection refused, timeout |
+| `email_mailbox_missing` | the folder does not exist |
+| `email_quota_exceeded` | mailbox over quota, or message too large (SMTP 452/552) |
+| `email_recipient_refused` | the server refused a recipient (SMTP 550/553) |
+| `email_policy_refused` | the recipient policy refused the message |
+| `email_rate_limited` | a send limit is reached |
+| `email_agent_tools_off` | an agent used an email tool while **Agent email tools** is off |
+| `email_message_too_large` | a message's bodies (or an attachment) exceed the reading limit: the read returns a skip record, a download is refused |
+| `email_oauth_reauthorize` | the OAuth2 grant expired or was revoked: sign in again |
+| `email_not_configured`, `email_disabled`, `email_secret_unavailable` | no account, email turned off, credentials missing |
+
+Errors are classified from protocol reply codes and exception types, never from message text.
+
+## Consoles
+
+- **Web console** (`abstractcore serve`, then `/console`): the **Email** tab shows, in order:
+  - **Email address**: your own address (the registered address: the first address your agents
+    may write to; empty means the mailbox's own address), with its own **Save**.
+  - **Mailbox**: tabs **IMAP** (first, the default), **Google** and **Microsoft**. The address is
+    asked once: with no email address stored, the mailbox form's address is the only address
+    field and connecting sets the email address from it; with one stored, the form shows
+    "Mailbox account: <address>" and **Use a different account** opens the field, prefilled.
+    The IMAP pane shows every field: **Mailbox address**, **Password** (an app password if your provider needs
+    one), **Incoming mail (IMAP)** and **Outgoing mail (SMTP)**, each as Server / Port /
+    Security. As soon as the address has a domain the servers are filled with `imap.<domain>` 993
+    SSL and `smtp.<domain>` 465 SSL, then with what [discovery](#server-discovery) finds, never
+    over a field you edited; one line says where the values came from. The link **My provider
+    uses a different login name** shows a Login field, and **Custom certificate** shows the CA
+    file. **Connect** tests reading and sending, then stores; an error names the step that
+    failed. Google and Microsoft sign in with the provider (your own client under **Sign-in app**).
+    Once connected: the status line ("Connected as ... · Password · checked 2 min ago"), the
+    **Active** switch (off pauses watching and sending; your settings are kept), **Test**, and
+    **Disconnect** with an inline confirmation.
+  - **Agent email tools**: a switch (off by default; unavailable until a mailbox is connected).
+  - **Recipients and limits**, three sentences saved as you edit: "Your agents may send to" (Only these
+    recipients / Everyone except these, with the entries as chips), "At most N per hour and N
+    per day" (with this hour's and today's count), and "Watch folder".
+
+  Switches and those fields apply at once; the Email address is the only field with a Save
+  button. A connection stores no display name you did not give: it keeps the stored one, else
+  uses the address's local part. The tab uses the `/acore/email` routes ([Server](server.md)).
+- **Terminal console** (`abstractcore-console`): the **Email** screen (`@`) has the same cards
+  with the same words: the email address with its own Save, the Mailbox card (tabs IMAP, Google,
+  Microsoft; the IMAP tab with the address, password and server fields pre-filled from the
+  address, one Connect; connected: "Connected as … · method · Read only (or Read and write) ·
+  checked … ago", the **Active** switch, Test and Disconnect), the **Agent email
+  tools** switch, and Advanced (who your agents may send to, the send limits, the watched
+  folder). Switches read `[x]` on, `[ ]` off, `[-]` unavailable with the reason; `Space`
+  switches ([Terminal console](console-tui.md#email-keys)).
+
+Both consoles name the account they configure: the account of this AbstractCore install, with the
+path of its settings file.
+
+## One install, one gateway: two accounts
+
+AbstractCore and AbstractGateway keep separate email settings:
+
+| Where | Whose account | Configured with |
+|---|---|---|
+| AbstractCore settings (`<config dir>/abstractcore.json`, `<config dir>/email/`) | the account of this AbstractCore install, used by `abstractcore email`, the AbstractCore consoles and the email tools in plain Python use | `abstractcore email ...`, the AbstractCore web and terminal consoles |
+| AbstractGateway data folder (one store per user) | each gateway user's own account, used by that user's agents, automations and notifications | the gateway console (**My email**), `abstractgateway email ...` |
+
+On a single-user machine that runs both, you may therefore see two accounts. The gateway never
+reads the AbstractCore account: connect the mailbox you want your gateway agents to use in the
+gateway console. Each store has its own **Agent email tools** switch. The only automatic transfer
+is the one-time import of the pre-2.20 environment configuration described below; the gateway
+does the same once for its administrator (see the gateway's email documentation).
+
+## Python
+
+```python
+from abstractcore.comms.email import (
+    EmailAccountStore, EmailAccount, ImapSettings, SmtpSettings, EmailSecret,
+    SearchCriteria, OutgoingMessage,
+)
+
+store = EmailAccountStore()          # the local AbstractCore settings
+ctx = store.context()                # raises a typed error when not connected or turned off
+
+client = ctx.client()
+found = client.search(SearchCriteria.build(from_domain="example.org", since="7d"), limit=20)
+message = client.get(found["messages"][0].uid)
+
+ctx.send(OutgoingMessage(to=("me@example.com",), subject="Report", text="Done."))  # policy + limits
+```
+
+`SearchCriteria` takes typed fields only: `from_address`, `from_domain`, `to_address`,
+`subject_contains` (a literal, case-insensitive substring), `since`, `before`, `unseen` and
+`has_attachment` (checked on each message's MIME structure). `client.search(...)` returns
+`has_more` and `next_before_uid` when it stopped at `limit`; pass `before_uid=` to continue.
+
+Message summaries carry `uid`, `subject`, `from`, `to`, `cc`, `date`, `internaldate`, `flags`,
+`seen`, `size`, `has_attachments`, `reply_to`, `in_reply_to`, `list_unsubscribe` (the header is
+present) and the priority headers as typed values: `importance` (`low` | `normal` | `high`),
+`x_priority` (1 highest to 5 lowest) and `priority` (`normal` | `urgent` | `non-urgent`); a value
+outside those sets is `None`. Two more fields mark automatic mail: `auto_submitted` (RFC 3834
+`Auto-Submitted`, the lower-cased keyword such as `auto-generated`, `auto-replied` or `no`;
+`None` when the header is absent) and `framework_marker` (the `X-AbstractFramework-Automation`
+header AbstractFramework puts on the mail it sends automatically; `""` when absent). On a Gmail
+server (it advertises `X-GM-EXT-1`) summaries also carry `labels`, the message's Gmail labels; elsewhere
+`labels` is empty and IMAP keywords are in `flags`.
+
+### Automatic mail
+
+Mail that software sends on its own (notifications, automation results, auto-replies) should say
+so, so that other automations and auto-responders never answer it in a loop. Set it per message
+with `OutgoingMessage(auto_submitted="auto-generated", automation_marker="<id>")`
+(`auto-replied` for an automatic answer to one message), or for every send through a context
+with `EmailContext.automation_marker`: `guarded_send` then adds `Auto-Submitted`
+(`auto-replied` when `in_reply_to` is set, else `auto-generated`) and
+`X-AbstractFramework-Automation: <marker>`, and `on_sent` reports both next to the Message-ID.
+A marker is one line of printable ASCII, at most 200 characters.
+
+`client.get(uid)` fetches the message structure, then only its text/plain and text/html parts.
+Attachments are listed with `filename`, `content_type`, `size` (the size on the wire, encoded, as
+the server reports it), `encoding`, `disposition` and `content_id`. When the bodies exceed the
+reading limit (`max_message_bytes`, default 25 MiB, set on `EmailClient(...)`, on
+`EmailContext`, or per call), the detail has `skipped = {code: "email_message_too_large", cause,
+fix, uid, folder, size, limit}` and no bodies (`body_text` / `body_html` are `None` in
+`to_dict()`, with `body_skipped` holding the record).
+`client.fetch_new(cursor)` returns the messages that arrived after a stored
+`{uidvalidity, last_uid}` cursor, and reports `reset=True` when the server rebuilt the folder;
+when nothing is left to resynchronise it returns a new baseline (`reset=True, baseline=True`, the
+cursor at the newest message), so a rebuilt folder is never replayed.
+To read many messages, `client.get_many(uids)` returns `{uid: detail}`, each detail exactly what
+`get(uid)` returns, read on one connection: one FETCH of headers and structure per 100 UIDs, then
+one FETCH per distinct body section (usually one or two), all with `PEEK` (nothing is marked
+read). A UID the folder no longer holds is an `EmailMessageNotFound` value in the result; a server
+that refuses the batch raises a typed error (a message-level code such as `email_protocol_error`:
+read those UIDs one by one with `get` to find the one it refuses). Wrap reads in
+`with client.session():` to sign in once for all of them:
+
+```python
+with client.session():                       # one connection, one sign-in
+    new = client.fetch_new(cursor)
+    details = client.get_many([m.uid for m in new.messages])
+```
+
+An exception of your own raised inside the block (storing the mail fails) passes through as is.
+`client.download_attachment(uid, index, folder_path)` fetches only that attachment, saves it under
+a sanitized name and never overwrites a file (above the reading limit it raises
+`EmailMessageTooLarge`). `client.build_reply(uid, text=...)` prepares a reply with
+`In-Reply-To` / `References` set and the recipient taken from `Reply-To` (else `From`).
+
+### Searching, conversations and changing the mailbox
+
+`client.search(...)` also takes a typed query: `from_` (an address, or a domain such as
+`acme.test`), `to`, `subject` (a substring), `text` (anywhere in the message, the server decides),
+`since` / `until` (days; `until` is exclusive), `unseen`, `flagged` and `labels` (all of them),
+plus `folder` and `limit`; results are newest first. `client.thread(uid)` returns the
+conversation of a message in its folder, oldest first: the messages its `References` /
+`In-Reply-To` name and the ones that reference it.
+
+```python
+hits = client.search(from_="acme.test", subject="invoice", unseen=True, limit=50)["messages"]
+uids = [m.uid for m in hits]
+with client.session(write=True):                 # one connection for every change below
+    client.label(uids, add=["Invoices"])         # Gmail labels on Gmail, IMAP keywords elsewhere
+    client.mark(uids, seen=True, flagged=False)  # \Seen / \Flagged; None leaves a flag unchanged
+    client.move(uids, "Archive")                 # UID MOVE, else COPY + \Deleted + UID EXPUNGE
+client.delete([old_uid])                         # to the trash folder; permanent=True expunges
+```
+
+- `mark(uids, *, seen=None, flagged=None, folder=None)` -> `{folder, uids, seen, flagged}`.
+- `label(uids, *, add=(), remove=(), folder=None)` -> `{folder, uids, added, removed, mode}`: on a
+  server that advertises Gmail's `X-GM-EXT-1` the labels are Gmail labels (`mode:
+  "gmail_labels"`, any text); elsewhere IMAP keywords (`mode: "keywords"`: one word without spaces
+  or IMAP specials, never a `\system` flag; otherwise `EmailInvalidMessage`).
+- `move(uids, to_folder, *, folder=None)` -> `{folder, to, uids, method: "move" | "copy_expunge"}`;
+  without MOVE, only those messages are expunged (`UID EXPUNGE`, UIDPLUS).
+- `delete(uids, *, permanent=False, folder=None)` -> `{folder, uids, to, permanent}`: the trash is
+  the RFC 6154 special-use `\Trash` folder, else a usual name (`Trash`, `[Gmail]/Trash`,
+  `Deleted Items`, ...); none found -> `EmailMailboxMissing` (delete with `permanent=True`).
+  Messages already in the trash are deleted permanently.
+
+Every change runs on a connection limited to the commands these verbs send (a body FETCH is still
+PEEK-only: reading never marks a message read). `session(write=True)` holds one connection for
+reads and changes; inside a read-only `session()` a change opens its own connection.
+
+**Access: Read only or Read and write.** `EmailAccount.access` is the person's explicit choice,
+`"read"` or `"write"` (`build(..., access=...)`, stored in `to_dict()` as `access`; `access_text`
+says it in words: "Read only" / "Read and write"). `can_write` is `access == "write"`: changes
+(`mark`, `label`, `move`, `delete`) and sends need it, otherwise they are refused before connecting
+with `EmailMailboxReadOnly` (`email_mailbox_read_only`). `can_send` is `can_write` and an outgoing
+server (SMTP) set; read and write without one can change the mailbox but `guarded_send` refuses
+with `EmailNotConfigured`. An account stored without a choice (before 2.29) keeps what it could do:
+`"write"` when it has an outgoing server, else `"read"`. `EmailAccountStore.set_access(access, *,
+smtp=None, test=True)` changes it without connecting again: with `"write"` and `smtp`, an account
+without an outgoing server gets that one, signed in to first with the stored password or token (a
+refusal raises and stores nothing); `"read"` keeps a stored outgoing server, unused. `public()` and
+`abstractcore email status` show it (`access`, `access_text`; "Access: Read and write").
+
+To answer or pass on a message, use the context, so the recipient policy and the send limits apply
+exactly as for `ctx.send`: `ctx.reply(uid, text, *, html="", reply_all=False, folder=None)` (reply
+headers and recipients from `client.build_reply`) and `ctx.forward(uid, to, *, note="",
+include_attachments=True, folder=None)` ("Fwd:", the note, the original's headers and text, its
+attachments read within the reading limit; `client.build_forward` builds it without sending).
+
+A host that serves several users (the gateway) keeps one `EmailAccountStore(config_file=...)` per
+user and gives the tools the account of the run they execute for, with
+`abstractcore.tools.comms_tools.use_email_context(ctx)` or `set_email_account_resolver(fn)`. While a
+resolver is installed, the tools never fall back to the install's own account.
+
+Hermetic test servers (IMAP, SMTP with SSL/STARTTLS, an OAuth2 token endpoint, a throwaway CA) are
+available in `abstractcore.testing.mailserver`; the SMTP server needs `aiosmtpd` (part of the
+`test` extra).
+
+## Upgrading from the environment-variable configuration
+
+Releases before 2.20 read the account from `ABSTRACT_EMAIL_*` environment variables, an accounts
+file named by `ABSTRACT_EMAIL_ACCOUNTS_CONFIG`, or the flat `email.smtp_*` / `email.imap_*` config
+fields, with the password in the environment variable named by `*_password_env_var`. The first time
+email is used without a configured account, that configuration is imported once into the settings
+(the password is read from its variable and sealed) and `abstractcore email status` reports the
+import. From then on those variables are ignored, and `status` names each one still set together
+with the setting that replaced it. Only the default account of a multi-account file is imported.

@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basic Summarizer - AbstractCore</title>
+    <meta name="description" content="The Basic Summarizer demonstrates how to build sophisticated text processing capabilities on top of AbstractCore using clean, zero-shot structured prompting…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/apps/basic-summarizer.html">
+    <link rel="icon" type="image/x-icon" href="../../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Basic Summarizer</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">The Basic Summarizer demonstrates how to build sophisticated text processing capabilities on top of AbstractCore using clean, zero-shot structured prompting techniques.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Overview</a>
+<a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#command-line-interface" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Command Line Interface</a>
+<a href="#memory-and-token-management" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Memory and Token Management</a>
+<a href="#configuration-options" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration Options</a>
+<a href="#advanced-usage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Advanced Usage</a>
+<a href="#output-structure" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Output Structure</a>
+<a href="#real-world-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Real-World Examples</a>
+<a href="#event-monitoring" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Event Monitoring</a>
+<a href="#error-handling" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Error Handling</a>
+<a href="#performance-considerations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Considerations</a>
+<a href="#implementation-details" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Implementation Details</a>
+<a href="#timeout-configuration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Timeout Configuration</a>
+<a href="#integration-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration Examples</a>
+<a href="#extending-the-summarizer" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Extending the Summarizer</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#conclusion" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Conclusion</a></div>
+
+            <div class="doc-content">
+
+<p><strong>Recommended Setup</strong>: For optimal performance, use the free local model <code>gemma3:1b-it-qat</code> with Ollama, which provides fast processing (29s), high quality (95% confidence), and zero API costs.</p>
+<h2 id="overview">Overview</h2>
+<p>The <code>BasicSummarizer</code> showcases AbstractCore's core strengths:</p>
+<ul>
+<li><strong>Structured Output</strong>: Uses Pydantic models for type-safe, validated responses</li>
+<li><strong>Provider Agnostic</strong>: Works with any LLM provider through AbstractCore's unified interface</li>
+<li><strong>Built-in Reliability</strong>: Inherits AbstractCore's retry mechanisms and error handling</li>
+<li><strong>Chunking Support</strong>: Automatically handles long documents using map-reduce approach</li>
+<li><strong>Event Integration</strong>: All operations emit events for monitoring and debugging</li>
+</ul>
+<h2 id="quick-start">Quick Start</h2>
+<p><strong>Prerequisites</strong>: For local processing, install <a href="https://ollama.ai">Ollama</a> and download the recommended model:</p>
+<div class="code-block"><pre><code class="language-bash"># Install Ollama, then download the fast, high-quality model
+ollama pull gemma3:1b-it-qat
+</code></pre></div>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.processing import BasicSummarizer, SummaryStyle, SummaryLength
+
+# Recommended: Fast local model for cost-effective processing
+llm = create_llm(&quot;ollama&quot;, model=&quot;gemma3:1b-it-qat&quot;)
+
+# Alternative: Cloud provider for highest quality
+# llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+
+# Create summarizer
+summarizer = BasicSummarizer(llm)
+
+# Basic usage
+result = summarizer.summarize(&quot;Your long text here...&quot;)
+print(result.summary)
+print(f&quot;Confidence: {result.confidence:.2f}&quot;)
+</code></pre></div>
+<h2 id="command-line-interface">Command Line Interface</h2>
+<p>The <code>summarizer</code> CLI provides direct terminal access for document summarization without any Python programming.</p>
+<h3 id="quick-cli-usage">Quick CLI Usage</h3>
+<div class="code-block"><pre><code class="language-bash"># Simple usage (PDF and Office inputs work with the light install)
+summarizer document.pdf
+
+# With specific style and length
+summarizer report.txt --style executive --length brief
+
+# Focus on specific aspects
+summarizer data.md --focus &quot;technical details&quot; --output summary.txt
+
+# Use different provider
+summarizer large.txt --provider openai --model gpt-4o-mini --verbose
+</code></pre></div>
+<h3 id="cli-parameters">CLI Parameters</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Options</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>file_path</code></td>
+<td>Any text file</td>
+<td>Required</td>
+<td>Path to the file to summarize</td>
+</tr>
+<tr>
+<td><code>--style</code></td>
+<td><code>structured</code>, <code>narrative</code>, <code>objective</code>, <code>analytical</code>, <code>executive</code>, <code>conversational</code></td>
+<td><code>structured</code></td>
+<td>Summary presentation style</td>
+</tr>
+<tr>
+<td><code>--length</code></td>
+<td><code>brief</code>, <code>standard</code>, <code>detailed</code>, <code>comprehensive</code></td>
+<td><code>standard</code></td>
+<td>Summary length and depth</td>
+</tr>
+<tr>
+<td><code>--focus</code></td>
+<td>Any text</td>
+<td>None</td>
+<td>Specific focus area for summarization</td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>File path</td>
+<td>Console</td>
+<td>Output file path (prints to console if not provided)</td>
+</tr>
+<tr>
+<td><code>--chunk-size</code></td>
+<td>1000-32000</td>
+<td>8000</td>
+<td>Chunk size in characters for large documents</td>
+</tr>
+<tr>
+<td><code>--provider</code></td>
+<td><code>openai</code>, <code>anthropic</code>, <code>ollama</code>, etc.</td>
+<td><code>ollama</code></td>
+<td>LLM provider (requires --model)</td>
+</tr>
+<tr>
+<td><code>--model</code></td>
+<td>Provider-specific</td>
+<td><code>gemma3:1b-it-qat</code></td>
+<td>LLM model (requires --provider)</td>
+</tr>
+<tr>
+<td><code>--verbose</code></td>
+<td>Flag</td>
+<td>False</td>
+<td>Show detailed progress information</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="cli-examples">CLI Examples</h3>
+<div class="code-block"><pre><code class="language-bash"># Basic document summarization
+summarizer document.pdf
+summarizer report.txt --verbose
+
+# Executive summary for business documents
+summarizer quarterly_report.pdf --style executive --length brief --output exec_summary.txt
+
+# Technical focus with detailed analysis
+summarizer technical_spec.md --focus &quot;implementation details&quot; --style analytical --length detailed
+
+# Large document processing with custom chunking
+summarizer large_manual.txt --chunk-size 15000 --verbose
+
+# Using cloud providers for highest quality
+summarizer important_doc.pdf --provider openai --model gpt-4o-mini --style executive
+
+# Batch processing with shell scripting
+for file in *.pdf; do
+    summarizer &quot;$file&quot; --style structured --output &quot;${file%.pdf}_summary.txt&quot;
+done
+</code></pre></div>
+<h3 id="alternative-usage-methods">Alternative Usage Methods</h3>
+<div class="code-block"><pre><code class="language-bash"># Method 1: Direct command (recommended after installation)
+summarizer document.txt --style executive
+
+# Method 2: Via Python module (always works)
+python -m abstractcore.apps.summarizer document.txt --style executive
+</code></pre></div>
+<h3 id="supported-file-types">Supported File Types</h3>
+<p>The CLI supports most text-based file formats:
+- <code>.txt</code>, <code>.md</code>, <code>.py</code>, <code>.js</code>, <code>.html</code>, <code>.json</code>, <code>.csv</code>
+- Most other text-based files</p>
+<h3 id="default-model-setup">Default Model Setup</h3>
+<p>The CLI uses <code>gemma3:1b-it-qat</code> by default for fast, cost-effective processing:</p>
+<div class="code-block"><pre><code class="language-bash"># Install Ollama: https://ollama.com/
+# Download the default model
+ollama pull gemma3:1b-it-qat
+
+# Then use directly
+summarizer document.txt
+</code></pre></div>
+<h2 id="memory-and-token-management">Memory and Token Management</h2>
+<p><strong>Important</strong>: Just because a model <em>can</em> handle 100K tokens doesn't mean your deployment environment has the GPU memory for it.</p>
+<h3 id="token-budget-control">Token Budget Control</h3>
+<p>Use <code>max_tokens</code> to control memory usage:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.processing import BasicSummarizer
+
+# AUTO mode: Uses model's full capability (default)
+summarizer = BasicSummarizer(llm, max_tokens=-1)
+
+# Hard limit: 16K tokens (e.g., 8GB GPU constraint)
+summarizer = BasicSummarizer(llm, max_tokens=16000)
+
+# Hard limit: 24K tokens (e.g., 16GB GPU)
+summarizer = BasicSummarizer(llm, max_tokens=24000)
+</code></pre></div>
+<h3 id="token-budget-modes">Token Budget Modes</h3>
+<p><strong>AUTO Mode (<code>max_tokens=-1</code>):</strong>
+- Uses model's full context window capability
+- Optimal performance when resources are available
+- <strong>Default behavior</strong></p>
+<p><strong>Hard Limit (<code>max_tokens=N</code>):</strong>
+- Enforces specific token limit for deployment constraints
+- Example: <code>max_tokens=16000</code> limits to 16K even if model supports 128K
+- <strong>Use when:</strong>
+  - Memory-constrained environments (limited GPU/RAM)
+  - Docker containers with hard memory limits
+  - Shared infrastructure with strict resource limits
+  - Batch processing requiring predictable memory usage</p>
+<div class="code-block"><pre><code class="language-python"># Example: 8GB GPU deployment
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+summarizer = BasicSummarizer(llm, max_tokens=16000)  # Hard limit
+
+# Example: 16GB GPU with plenty of memory
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+summarizer = BasicSummarizer(llm, max_tokens=-1)  # Use model's full capability
+</code></pre></div>
+<h3 id="cli-usage">CLI Usage</h3>
+<div class="code-block"><pre><code class="language-bash"># AUTO mode (default, uses model's full capability)
+summarizer document.txt
+
+# Explicit AUTO mode
+summarizer document.txt --max-tokens auto
+
+# Hard limit for 8GB GPU
+summarizer document.txt --max-tokens 16000
+
+# Hard limit for memory-constrained Docker
+summarizer document.txt --max-tokens 12000
+
+# Debug: See token decisions
+summarizer document.txt --max-tokens 16000 --debug
+</code></pre></div>
+<h2 id="configuration-options">Configuration Options</h2>
+<h3 id="summary-styles">Summary Styles</h3>
+<p>Control how the summary is presented:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import SummaryStyle
+
+# Available styles
+SummaryStyle.STRUCTURED     # Bullet points, clear sections
+SummaryStyle.NARRATIVE      # Flowing, story-like prose
+SummaryStyle.OBJECTIVE      # Neutral, factual tone
+SummaryStyle.ANALYTICAL     # Critical analysis with insights
+SummaryStyle.EXECUTIVE      # Business-focused, action-oriented
+SummaryStyle.CONVERSATIONAL # Chat history preservation with context
+</code></pre></div>
+<h3 id="summary-lengths">Summary Lengths</h3>
+<p>Control the detail level:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import SummaryLength
+
+# Available lengths
+SummaryLength.BRIEF         # 2-3 sentences, key point only
+SummaryLength.STANDARD      # 1-2 paragraphs, main ideas
+SummaryLength.DETAILED      # Multiple paragraphs, comprehensive
+SummaryLength.COMPREHENSIVE # Full analysis with context
+</code></pre></div>
+<h2 id="advanced-usage">Advanced Usage</h2>
+<h3 id="focus-areas">Focus Areas</h3>
+<p>Specify what aspect of the text to emphasize:</p>
+<div class="code-block"><pre><code class="language-python"># Focus on specific aspects
+result = summarizer.summarize(
+    text,
+    focus=&quot;business implications&quot;,
+    style=SummaryStyle.EXECUTIVE,
+    length=SummaryLength.DETAILED
+)
+
+print(f&quot;Focus alignment: {result.focus_alignment:.2f}&quot;)
+</code></pre></div>
+<h3 id="different-providers">Different Providers</h3>
+<p>The same code works with any provider:</p>
+<div class="code-block"><pre><code class="language-python"># OpenAI
+llm_openai = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+summarizer_openai = BasicSummarizer(llm_openai)
+
+# Anthropic
+llm_claude = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
+summarizer_claude = BasicSummarizer(llm_claude)
+
+# Local models
+llm_ollama = create_llm(&quot;ollama&quot;, model=&quot;llama3.2&quot;)
+summarizer_local = BasicSummarizer(llm_ollama)
+
+# Same API surface (results vary by model/provider)
+result = summarizer_openai.summarize(text)
+result = summarizer_claude.summarize(text)
+result = summarizer_local.summarize(text)
+</code></pre></div>
+<h3 id="long-document-processing">Long Document Processing</h3>
+<p>Automatically handles documents of any length:</p>
+<div class="code-block"><pre><code class="language-python"># Works with short documents
+short_result = summarizer.summarize(short_article)
+
+# Automatically chunks long documents
+long_result = summarizer.summarize(entire_book_text)
+
+# Customize chunking and memory usage
+summarizer = BasicSummarizer(
+    llm,
+    max_chunk_size=6000,      # Character-based chunks
+    max_tokens=16000          # Token budget (hard limit for deployment)
+)
+
+# AUTO mode (uses model's full capability)
+summarizer_auto = BasicSummarizer(
+    llm,
+    max_tokens=-1             # AUTO: use model's capability
+)
+
+# Memory-constrained environment
+summarizer_constrained = BasicSummarizer(
+    llm,
+    max_tokens=8000           # Hard limit for 4GB GPU
+)
+</code></pre></div>
+<h2 id="output-structure">Output Structure</h2>
+<p>The <code>SummaryOutput</code> provides rich, structured information:</p>
+<div class="code-block"><pre><code class="language-python">result = summarizer.summarize(text)
+
+# Main summary
+print(result.summary)
+
+# Key points (3-5 most important)
+for point in result.key_points:
+    print(f&quot;• {point}&quot;)
+
+# Quality metrics
+print(f&quot;Confidence: {result.confidence:.2f}&quot;)
+print(f&quot;Focus alignment: {result.focus_alignment:.2f}&quot;)
+
+# Word counts
+print(f&quot;Original: {result.word_count_original} words&quot;)
+print(f&quot;Summary: {result.word_count_summary} words&quot;)
+print(f&quot;Compression: {result.word_count_original / result.word_count_summary:.1f}x&quot;)
+</code></pre></div>
+<h2 id="real-world-examples">Real-World Examples</h2>
+<h3 id="executive-summary">Executive Summary</h3>
+<div class="code-block"><pre><code class="language-python">result = summarizer.summarize(
+    quarterly_report,
+    focus=&quot;financial performance and strategic initiatives&quot;,
+    style=SummaryStyle.EXECUTIVE,
+    length=SummaryLength.STANDARD
+)
+
+print(&quot;Executive Summary:&quot;)
+print(result.summary)
+print(&quot;\nKey Action Items:&quot;)
+for point in result.key_points:
+    print(f&quot;• {point}&quot;)
+</code></pre></div>
+<h3 id="research-paper-analysis">Research Paper Analysis</h3>
+<div class="code-block"><pre><code class="language-python">result = summarizer.summarize(
+    research_paper,
+    focus=&quot;methodology and findings&quot;,
+    style=SummaryStyle.ANALYTICAL,
+    length=SummaryLength.DETAILED
+)
+
+if result.confidence &gt; 0.8:
+    print(&quot;High-confidence analysis:&quot;)
+    print(result.summary)
+else:
+    print(&quot;Consider manual review - confidence low&quot;)
+</code></pre></div>
+<h3 id="technical-documentation">Technical Documentation</h3>
+<div class="code-block"><pre><code class="language-python">result = summarizer.summarize(
+    technical_docs,
+    focus=&quot;implementation details and requirements&quot;,
+    style=SummaryStyle.STRUCTURED,
+    length=SummaryLength.COMPREHENSIVE
+)
+
+print(&quot;Technical Overview:&quot;)
+print(result.summary)
+</code></pre></div>
+<h2 id="event-monitoring">Event Monitoring</h2>
+<p>Monitor summarization progress with AbstractCore's event system:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
+
+def monitor_summarization(event):
+    if event.type == EventType.GENERATION_STARTED:
+        print(&quot;Starting summarization...&quot;)
+    elif event.type == EventType.GENERATION_COMPLETED:
+        duration_ms = event.data.get(&quot;duration_ms&quot;)
+        if isinstance(duration_ms, (int, float)):
+            print(f&quot;Completed in {float(duration_ms):.0f}ms&quot;)
+
+on_global(EventType.GENERATION_STARTED, monitor_summarization)
+on_global(EventType.GENERATION_COMPLETED, monitor_summarization)
+
+result = summarizer.summarize(text)
+</code></pre></div>
+<h2 id="error-handling">Error Handling</h2>
+<p>Built-in reliability through AbstractCore:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.core.retry import RetryConfig
+
+# Configure retry behavior
+config = RetryConfig(max_attempts=3, initial_delay=1.0)
+llm = create_llm(&quot;ollama&quot;, model=&quot;gemma3:1b-it-qat&quot;, retry_config=config)
+
+summarizer = BasicSummarizer(llm)
+
+# Automatic retry on failures
+try:
+    result = summarizer.summarize(text)
+except Exception as e:
+    print(f&quot;Summarization failed after retries: {e}&quot;)
+</code></pre></div>
+<h2 id="performance-considerations">Performance Considerations</h2>
+<h3 id="document-length-guidelines">Document Length Guidelines</h3>
+<p>Token limits depend on your deployment environment's GPU/RAM:</p>
+<ul>
+<li><strong>&lt; 8,000 tokens</strong>: Single-pass summarization (fastest)</li>
+<li><strong>8,000-50,000 tokens</strong>: Automatic chunking with minimal overhead</li>
+<li><strong>&gt; 50,000 tokens</strong>: Map-reduce approach, handles unlimited size</li>
+</ul>
+<p><strong>Memory Guidelines by Hardware:</strong>
+- <strong>4-8GB GPU/RAM</strong>: Use <code>max_tokens=8000-16000</code>
+- <strong>16GB GPU/RAM</strong>: Use <code>max_tokens=24000-32000</code>
+- <strong>24GB+ GPU</strong>: Use <code>max_tokens=48000+</code> or <code>-1</code> (AUTO)
+- <strong>CPU-only</strong>: Use <code>max_tokens=8000-16000</code></p>
+<div class="code-block"><pre><code class="language-python"># Example: AUTO mode (default, uses model's full capability)
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+summarizer = BasicSummarizer(llm)  # max_tokens=-1 by default
+
+# Example: 8GB GPU deployment (hard limit)
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+summarizer = BasicSummarizer(llm, max_tokens=16000)
+
+# Example: CPU-only or constrained (hard limit)
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+summarizer = BasicSummarizer(llm, max_tokens=8000)
+</code></pre></div>
+<h3 id="provider-selection">Provider Selection</h3>
+<p><strong>Recommended for Production:</strong>
+- <strong>Ollama gemma3:1b-it-qat</strong>: Fast (29s), high quality (95% confidence), cost-effective local processing
+- <strong>Ollama qwen3-coder:30b</strong>: Premium quality (98% confidence), slower (119s), suitable for critical tasks</p>
+<p><strong>Cloud Alternatives:</strong>
+- <strong>OpenAI GPT-4o-mini</strong>: Excellent quality with API costs, good for low-volume
+- <strong>Anthropic Claude</strong>: Great for analytical and narrative styles</p>
+<p><strong>Performance Comparison:</strong></p>
+<div class="code-block"><pre><code>Model              Speed    Quality  Cost    Suitable For
+gemma3:1b-it-qat  Fast     High     Free    Production, high-volume
+qwen3-coder:30b   Slow     Premium  Free    Critical accuracy
+GPT-4o-mini       Medium   High     Paid    Occasional use
+Claude-3.5        Medium   High     Paid    Narrative summaries
+</code></pre></div>
+<h3 id="cost-optimization">Cost Optimization</h3>
+<div class="code-block"><pre><code class="language-python"># Free local processing with high quality
+llm = create_llm(&quot;ollama&quot;, model=&quot;gemma3:1b-it-qat&quot;)  # Fast, free, high quality
+summarizer = BasicSummarizer(llm)
+
+# Brief summaries for even faster processing
+result = summarizer.summarize(
+    text,
+    length=SummaryLength.BRIEF  # Fastest processing
+)
+
+# Cloud option for occasional use
+# llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # vs gpt-4o
+</code></pre></div>
+<h2 id="implementation-details">Implementation Details</h2>
+<h3 id="chunking-strategy">Chunking Strategy</h3>
+<p>For long documents:</p>
+<ol>
+<li><strong>Smart splitting</strong>: Breaks at sentence boundaries when possible</li>
+<li><strong>Overlap</strong>: 200-character overlap between chunks to maintain context</li>
+<li><strong>Map-reduce</strong>: Summarizes chunks independently, then combines</li>
+<li><strong>Coherence</strong>: Final combination step ensures unified narrative</li>
+</ol>
+<h3 id="prompt-engineering">Prompt Engineering</h3>
+<p>The summarizer uses sophisticated prompts that:</p>
+<ul>
+<li><strong>Adapt to style</strong>: Different instructions for each presentation style</li>
+<li><strong>Scale with length</strong>: Appropriate guidance for brief vs comprehensive</li>
+<li><strong>Handle focus</strong>: Specific attention to user-specified focus areas</li>
+<li><strong>Validate quality</strong>: Self-assessment of confidence and focus alignment</li>
+</ul>
+<h3 id="quality-assurance">Quality Assurance</h3>
+<ul>
+<li><strong>Pydantic validation</strong>: Ensures structured output conforms to schema</li>
+<li><strong>Confidence scoring</strong>: LLM self-assesses summary accuracy</li>
+<li><strong>Focus alignment</strong>: Measures how well summary addresses specified focus</li>
+<li><strong>Word counting</strong>: Tracks compression ratios</li>
+</ul>
+<h2 id="timeout-configuration">Timeout Configuration</h2>
+<p>The summarizer supports flexible timeout configuration for different document processing scenarios:</p>
+<h3 id="default-behavior-unlimited-timeout">Default Behavior (Unlimited Timeout)</h3>
+<div class="code-block"><pre><code class="language-bash"># Runs as long as needed - recommended for large documents
+python -m abstractcore.apps.summarizer document.txt
+</code></pre></div>
+<h3 id="custom-timeout">Custom Timeout</h3>
+<div class="code-block"><pre><code class="language-bash"># Set specific timeout (useful for production environments)
+python -m abstractcore.apps.summarizer document.txt --timeout 300   # 5 minutes
+python -m abstractcore.apps.summarizer document.txt --timeout 600   # 10 minutes
+
+# Explicit unlimited timeout
+python -m abstractcore.apps.summarizer document.txt --timeout none
+</code></pre></div>
+<h3 id="programmatic-usage">Programmatic Usage</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicSummarizer
+
+# Unlimited timeout (default)
+summarizer = BasicSummarizer()
+
+# Custom timeout
+summarizer = BasicSummarizer(timeout=300)  # 5 minutes
+
+# Explicit unlimited timeout
+summarizer = BasicSummarizer(timeout=None)
+</code></pre></div>
+<p><strong>When to Use Timeouts:</strong>
+- <strong>Production environments</strong>: Set reasonable timeouts (300-600 seconds) to prevent hanging
+- <strong>Large documents</strong>: Use unlimited timeout for documents &gt;100KB
+- <strong>Batch processing</strong>: Consider timeouts to handle individual document failures gracefully
+- <strong>Development</strong>: Use unlimited timeout to avoid interruptions during testing</p>
+<h2 id="integration-examples">Integration Examples</h2>
+<h3 id="with-abstractcore-session">With AbstractCore Session</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import BasicSession
+
+session = BasicSession(llm, system_prompt=&quot;You are an expert summarizer&quot;)
+summarizer = BasicSummarizer(session)
+
+# Maintains conversation context
+result1 = summarizer.summarize(doc1, focus=&quot;technical aspects&quot;)
+result2 = summarizer.summarize(doc2, focus=&quot;how this relates to the previous document&quot;)
+</code></pre></div>
+<h3 id="batch-processing">Batch Processing</h3>
+<div class="code-block"><pre><code class="language-python">documents = [doc1, doc2, doc3, doc4]
+summaries = []
+
+for doc in documents:
+    result = summarizer.summarize(
+        doc.content,
+        focus=&quot;key insights&quot;,
+        style=SummaryStyle.STRUCTURED,
+        length=SummaryLength.STANDARD
+    )
+    summaries.append({
+        'title': doc.title,
+        'summary': result.summary,
+        'key_points': result.key_points,
+        'confidence': result.confidence
+    })
+
+# Filter high-confidence summaries
+high_quality = [s for s in summaries if s['confidence'] &gt; 0.8]
+</code></pre></div>
+<h2 id="extending-the-summarizer">Extending the Summarizer</h2>
+<p>The Basic Summarizer serves as a foundation for more advanced processing:</p>
+<div class="code-block"><pre><code class="language-python">class CustomSummarizer(BasicSummarizer):
+    def summarize_with_keywords(self, text: str, keywords: List[str]) -&gt; SummaryOutput:
+        focus = f&quot;these specific keywords: {', '.join(keywords)}&quot;
+        return self.summarize(text, focus=focus, style=SummaryStyle.ANALYTICAL)
+
+    def comparative_summarize(self, texts: List[str]) -&gt; List[SummaryOutput]:
+        focus = &quot;comparative analysis and differences&quot;
+        return [self.summarize(text, focus=focus) for text in texts]
+</code></pre></div>
+<h2 id="best-practices">Best Practices</h2>
+<ol>
+<li><strong>Choose appropriate length</strong>: Match summary length to use case</li>
+<li><strong>Use focus effectively</strong>: Specific focus areas improve relevance</li>
+<li><strong>Monitor confidence</strong>: Low confidence may indicate need for manual review</li>
+<li><strong>Provider selection</strong>: Match provider capabilities to content type</li>
+<li><strong>Batch processing</strong>: Process similar documents together for consistency</li>
+<li><strong>Error handling</strong>: Always handle potential failures gracefully</li>
+</ol>
+<h2 id="conclusion">Conclusion</h2>
+<p>The Basic Summarizer demonstrates how AbstractCore's infrastructure enables building sophisticated text processing capabilities with minimal complexity. It showcases:</p>
+<ul>
+<li><strong>Clean API design</strong> with powerful customization options</li>
+<li><strong>Automatic reliability</strong> through built-in retry and error handling</li>
+<li><strong>Universal compatibility</strong> across all LLM providers</li>
+<li><strong>Scalable architecture</strong> handling documents of any size</li>
+<li><strong>Production readiness</strong> with comprehensive error handling and monitoring</li>
+</ul>
+<p>This implementation serves both as a useful tool for real summarization needs and as a reference for building other text processing capabilities on top of AbstractCore.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../../docs/README.html">Documentation index</a> &middot;
+                <a href="../../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../../assets/js/main.js"></script>
+</body>
+</html>

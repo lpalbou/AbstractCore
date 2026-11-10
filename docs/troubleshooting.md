@@ -4,10 +4,12 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 
 ## Table of Contents
 
+- [Agent Integration Failures](#agent-integration-failures)
 - [Common Mistakes to Avoid](#common-mistakes-to-avoid)
 - [Quick Diagnosis](#quick-diagnosis)
 - [Installation Issues](#installation-issues)
 - [Core Library Issues](#core-library-issues)
+- [Local Model Downloads](#local-model-downloads)
 - [Server Issues](#server-issues)
 - [Provider-Specific Issues](#provider-specific-issues)
 - [Performance Issues](#performance-issues)
@@ -15,6 +17,23 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 - [Debug Techniques](#debug-techniques)
 
 ---
+
+## Agent integration failures
+
+For a version/import check, explicit endpoint discovery, bounded generation and complete-result
+checks, use [Integrating and operating AbstractCore](agent-usage.md). The portable
+[`abstractcore` skill](../skills/abstractcore/SKILL.md) contains the same procedures.
+
+- **Code and installed version differ:** run the verification recipe in that guide and reinstall
+  in the same Python environment; check for a source checkout shadowing another installation.
+- **401/403:** stop and check the selected endpoint's credential. With server authentication,
+  the bearer token authenticates to AbstractCore; `X-AbstractCore-Provider-API-Key` selects an
+  upstream override. Do not interchange them or retry a login automatically.
+- **No text or `finish_reason="length"`:** inspect tool calls and reasoning, reject cutoff
+  output, then adjust the output budget or prompt. Never execute incomplete/unparsed tools.
+- **Known issue (2.26.4), `TypeError` decoding a native structured response:** a provider can
+  return `content=None`. Catch `TypeError` at the extraction boundary and report failed
+  extraction; do not substitute default field values. See the guide's typed-extraction recipe.
 
 ## Common Mistakes to Avoid
 
@@ -32,9 +51,9 @@ Understanding common pitfalls helps prevent issues before they occur.
    - *Quick Fix*: Use `@tool` decorator and handle tool calls properly
    - See: [Tool Calls Not Working](#issue-tool-calls-not-working)
 
-3. **Missing provider extras**
+3. **Missing local engines or an outdated install**
    - *Symptom*: `ModuleNotFoundError` for providers
-   - *Quick Fix*: Install provider-specific packages with `pip install "abstractcore[provider]"`
+   - *Quick Fix*: `pip install -U abstractcore` for remote providers; `pip install "abstractcore[apple]"` or `pip install "abstractcore[gpu]"` for MLX, vLLM and HuggingFace
    - See: [ModuleNotFoundError](#issue-modulenotfounderror)
 
 4. **LM Studio server not enabled**
@@ -159,17 +178,18 @@ def generate_with_fallback(prompt):
 
 **Solution:**
 ```python
-# Optimize memory and performance
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini", timeout=30, max_tokens=4096)
 response = llm.generate(
     "Complex task",
-    max_tokens=1000,  # Limit response length
-    timeout=30,       # Set reasonable timeout
-    temperature=0.7   # Control creativity/randomness
+    max_output_tokens=1000,  # Output cap; max_tokens is the input + output budget
+    temperature=0.7,
 )
 ```
 
 **Prevention:**
-- Always set `max_tokens`
+- Set total context (`max_tokens`) and generation (`max_output_tokens`) budgets explicitly
 - Use streaming for long responses
 - Monitor memory usage in production
 - See: [Performance Issues](#performance-issues)
@@ -242,19 +262,13 @@ ModuleNotFoundError: No module named 'openai'
 
 **Solutions:**
 ```bash
-# Install AbstractCore
-pip install abstractcore
+# Light: OpenAI, Anthropic, OpenRouter, Portkey, Ollama, LM Studio, a vLLM server,
+# any OpenAI-compatible endpoint (upgrade an older install that lacks a provider SDK)
+pip install -U abstractcore
 
-# Install hosted SDKs or a specific provider
-pip install "abstractcore[remote]"
-pip install "abstractcore[openai]"
-pip install "abstractcore[anthropic]"
-# Local OpenAI-compatible servers and gateways (Ollama, LMStudio, OpenRouter,
-# Portkey, llama.cpp, ...) work with the core install.
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
+# Local engines (MLX, vLLM in-process, HuggingFace/GGUF)
+pip install "abstractcore[apple]"    # Apple silicon
+pip install "abstractcore[gpu]"      # NVIDIA / AMD
 
 # Verify installation
 pip list | grep abstract
@@ -277,12 +291,9 @@ source .venv/bin/activate  # Linux/Mac
 
 # Fresh install
 pip install --upgrade pip
-pip install "abstractcore[remote,tools,media]"  # API-first app
-# or: pip install "abstractcore[all-apple]"     # Apple Silicon local stack
-# or: pip install "abstractcore[all-gpu]"       # NVIDIA GPU local stack
-
-# If still failing, try one provider at a time
-pip install "abstractcore[openai]"
+pip install abstractcore                  # light (remote providers)
+# or: pip install "abstractcore[apple]"   # Apple silicon local engines
+# or: pip install "abstractcore[gpu]"     # NVIDIA / AMD local engines
 ```
 
 ---
@@ -442,7 +453,95 @@ if hasattr(response, 'tool_calls') and response.tool_calls:
 
 ---
 
+## Local Model Downloads
+
+These entries cover models loaded from local caches (MLX, HuggingFace, embeddings) and the
+`abstractcore models ...` download verbs. See [Local Models](models.md) for the full reference.
+
+### Issue: "download it first" when loading a local model
+
+**Symptoms:** `create_llm("mlx", ...)`, `create_llm("huggingface", ...)` or `EmbeddingManager(...)`
+raises `ModelNotFoundError` with `download it first: abstractcore models download huggingface <repo>`.
+
+**Cause:** with the default offline settings, loading reads the local caches only and never
+downloads. The model is not cached, or its snapshot is incomplete (a config without weights, a
+README only, or an adapter whose base model is missing).
+
+**Fix:**
+```bash
+abstractcore models download mlx mlx-community/Qwen3-4B-4bit      # MLX builds
+abstractcore models download huggingface <repo>                  # transformers / GGUF repos
+abstractcore models list --provider huggingface                  # confirm it is installed
+```
+
+To let loads fetch from the Hub instead, turn off `offline_first` and `force_local_files_only`
+(see [Centralized Config](centralized-config.md#offline-section)).
+
+### Issue: A download is refused because the Hub is offline
+
+**Symptoms:** `abstractcore models download ...` or a console download fails at once with a
+message naming `HF_HUB_OFFLINE` or `TRANSFORMERS_OFFLINE`.
+
+**Cause:** the variable was set in the environment before the process started. AbstractCore never
+lifts an offline flag you set yourself; `offline_first` alone never blocks an explicit download.
+
+**Fix:** unset the variable, restart the process (or the server), and download again.
+
+### Issue: A download is `stalled` or ends `failed`
+
+**Symptoms:** the job's `state` is `stalled` ("no data for N s"), or the job ends `failed`.
+
+**Checks:** `abstractcore models jobs <job_id> --json` shows `ended_reason` (one plain sentence:
+dropped connection, Hub error, full disk, owning process gone, failed MTP companion) and
+`log_tail`.
+
+**Fix:** a stalled download resumes by itself when bytes arrive again. For a failed one, fix the
+stated reason and run the same download again: files that finished are kept, and the file that was
+in progress starts over. Set `HF_TOKEN` for gated repositories.
+
+### Issue: Other tools cannot find a model AbstractCore downloaded
+
+**Symptoms:** `mlx_lm.load("<repo>")`, transformers with `local_files_only=True` or vLLM report
+"couldn't find them in the cached files", while AbstractCore loads the same model.
+
+**Cause:** the cached repo has a complete snapshot but no `refs/main`.
+
+**Fix:**
+```bash
+abstractcore models repair-refs --dry-run   # list what would be written
+abstractcore models repair-refs
+```
+
+See [Repairing `refs/main`](models.md#repairing-refsmain).
+
+### Issue: A model loads but answers nonsense, or MTP is not used
+
+**Checks:**
+```bash
+abstractcore models verify <repo>            # default provider: mlx
+abstractcore models verify qwen3:8b --provider ollama
+```
+
+The command loads the installed model, asks a fixed question and checks the answer. For a model
+with an MTP companion it also checks that `speculation.used` is `true`. When the companion is
+missing, the response's `speculation.message` names it and the command that downloads it (see
+[MTP companions](models.md#mtp-companions) and
+[Speculative Decoding](speculative-decoding.md#mtp-preserving-checkpoints-never-load-through-mlx-lm)).
+For quantized transformers checkpoints, see
+[the entry below](#issue-huggingface-quantized-transformers-model-loads-but-generates-nonsense).
+
+---
+
 ## Server Issues
+
+### Issue: Managed listener is unavailable while native inference works
+
+The optional Core HTTP listener and native framework execution have separate readiness.
+Inspect the listener handle's `status()` and `last_error`, or its supervising host's service
+status. Check the configured bind, a port collision and Core's own token; a Gateway token is
+not a direct Core credential. Fix the listener configuration before asking the host to retry.
+Stopping or restarting HTTP serving does not require unloading the execution owner's models.
+See [managed listeners](server.md#managed-listener-in-an-execution-owner).
 
 ### Issue: Server Won't Start
 
@@ -459,12 +558,13 @@ Port 8000 is already allocated
 lsof -i :8000  # Linux/Mac
 netstat -ano | findstr :8000  # Windows
 
-# Kill process on port
-kill -9 $(lsof -t -i:8000)  # Linux/Mac
-
 # Use different port
 uvicorn abstractcore.server.app:app --port 3000
 ```
+
+Identify the process holding the port before changing it. Reuse the intended service or choose
+an available port; a separate server process has its own model pool. Direct uvicorn serving
+requires explicit Core authentication configuration; see [Server](server.md).
 
 ### Issue: Client complains about missing API key
 
@@ -566,7 +666,58 @@ See [Server](server.md#agentic-cli-integration) for details and supported format
 
 ---
 
+### Issue: A mailbox does not connect
+
+**Symptoms:**
+- `abstractcore email connect` (or **Connect** on the console's Email tab) stops with
+  `email_discovery_failed`, `email_auth_failed`, `email_tls_failed` or `email_unreachable`.
+
+**Checks and fixes:**
+
+```bash
+abstractcore email discover me@example.com   # which servers the address leads to, and every step tried
+```
+
+- `email_discovery_failed`: no step found both servers. Give them yourself
+  (`--imap-host`, `--smtp-host`, or the Server fields on the IMAP tab); your provider's help pages
+  list them.
+- `email_auth_failed`: the password was refused. Many providers need an **app password** when
+  two-step verification is on; if your provider signs in with a name other than the address, pass
+  `--username` (in the console: **My provider uses a different login name**).
+- `email_tls_failed`: the port and security do not match (993 SSL or 143 STARTTLS for IMAP,
+  465 SSL or 587 STARTTLS for SMTP), or the server is signed by a private CA (`--ca-file`, in the
+  console: **Custom certificate**).
+- `email_unreachable`: the host name is wrong or a firewall blocks the port.
+
+`abstractcore email test` checks the stored account again once it connects. See
+[Email](email.md#errors).
+
+---
+
 ## Provider-Specific Issues
+
+### Native MLX concurrency and MTP
+
+**Requests overlap but do not batch:** enable `mlx_batching=True` when constructing
+the supported Qwen3.8 provider, or in `options` on `/acore/models/load` before
+sending chat requests. Inspect `metadata["execution"]["mode"]` and
+`peak_batch_size`; concurrent HTTP clients alone do not prove tensor batching.
+
+**A later request waits while MTP is running:** MTP cohorts cannot admit late
+arrivals. Use `speculation=False` for compatible greedy continuous admission.
+Sampled or incompatible controls run exclusively. Compare policies using your
+own prompts; see [measured concurrency tradeoffs](native-mlx-benchmarks.md).
+
+**Requested MTP is unavailable:** check the actual `speculation.used` outcome,
+trained head availability and dependency versions. Non-neutral logits penalties
+and logit bias require target decoding or explicit optional fallback; strict
+acceleration raises. The 27B head is a separate artifact; Flash-Next requires
+a checkpoint containing its trained head tensors.
+
+**Unload is refused or SSD storage is locked:** finish/cancel the owning
+provider's requests and close its streams before retrying unload. Give each
+independent process a private SSD cache path. Do not remove another running
+process's lock. See [native lifecycle and cache configuration](native-mlx-runtime.md).
 
 ### Ollama
 
@@ -665,7 +816,7 @@ curl http://localhost:1234/v1/models
 #### Issue: Context Length Too Small (400 Bad Request, Truncated Responses)
 ```bash
 # Problem: LLM returns 400 Bad Request, truncated output, or errors with long inputs
-# Root Cause: Insufficient context length configured for the model or server
+# Check: configured context length for the model and server
 
 # Solution 1: Increase Default Context Length (RECOMMENDED)
 # This is the most robust way to ensure all models use maximum available context
@@ -746,6 +897,19 @@ response = llm.generate(
 )
 ```
 
+### Issue: Model is already loaded with another configuration
+
+`InvalidRequestError` messages that say a second copy is never loaded are deterministic
+resource-admission refusals. Keep the resident device, backend, GPU-layer placement or MLX
+target/head/PLE configuration, or finish active work and unload all holders before changing
+it. Transformers callers reuse the existing provider rather than constructing another for
+the same base artifact. A retry of the same conflicting request will not help.
+
+List `resident_rows()` or the host's loaded-models surface to find the owner; do not disable
+model sharing or launch another standalone server to bypass the refusal. Separate contexts
+can legitimately allocate separate KV while sharing GGUF weights. See
+[managed-loader sharing rules](memory-management.md#one-resident-artifact-per-process).
+
 ### Issue: High Memory Usage
 
 **Solutions:**
@@ -760,6 +924,45 @@ ollama pull gemma3:1b  # 1GB instead of 30GB
 # Use 4-bit quantized models
 llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 ```
+
+### Issue: Memory stays high after unloading a model
+
+**Symptoms:** `unload_model()` or `POST /acore/models/unload` succeeds, but the process still holds
+the model's memory.
+
+**Causes:** another compatible holder or owner (a managed runtime, an AbstractRuntime client)
+still uses the resident model. Holder count does not imply a separate weight copy.
+
+**Check:**
+
+```python
+from abstractcore.utils.memory import get_memory_snapshot
+from abstractcore.providers.process_residency import claims_for, resident_rows
+
+snap = get_memory_snapshot()
+print(snap["device"]["process_held_bytes"], snap["device"]["process_held_basis"])
+print(resident_rows())                                         # holders per model
+print(claims_for("mlx", "mlx-community/Qwen3-4B-4bit"))         # who still claims it
+```
+
+Over HTTP, `GET /acore/models/loaded` shows `process:` rows and `process_holders`.
+
+**Fix:** unload the claiming owner's runtime first, then eject the model from the whole process
+(`eject_unclaimed()` in Python, or `POST /acore/models/unload` with the `process:` row's
+`runtime_id`). A `409 model_in_use` or `409 model_locked` names the owner in `claims`. An embedding
+unload that reports `in_flight` succeeds once the running embeddings finish.
+
+**Verify:** `device.process_held_bytes` drops and the model no longer appears in
+`resident_rows()`. Do not use process RSS for this on Metal hosts. See
+[Memory and Model Residency](memory-management.md#ejecting-a-model-from-the-whole-process).
+
+### Issue: HuggingFace quantized Transformers model loads but generates nonsense
+
+Treat this as a model/runtime compatibility issue. AWQ, GPTQ, bitsandbytes, and
+compressed-tensors checkpoints require the matching optional Transformers quantization runtime; a
+downloaded `.safetensors` file is not enough. If loading reports missing base weights, unexpected
+packed weights, or mismatched shapes, choose a compatible runtime/model pair or use MLX/GGUF for
+that quantized artifact. See [HuggingFace Model Compatibility](huggingface-model-compatibility.md).
 
 ---
 
@@ -789,7 +992,7 @@ Follow these best practices to avoid issues:
 - Monitor error rates in production
 
 ### Performance
-- Always set `max_tokens`
+- Set total context (`max_tokens`) and generation (`max_output_tokens`) budgets explicitly
 - Use streaming for long responses
 - Batch similar requests when possible
 - Monitor memory usage
@@ -887,7 +1090,7 @@ cat debug_report.txt
 
 | Error | Meaning | Solution |
 |-------|---------|----------|
-| `ModuleNotFoundError` | Package not installed | `pip install abstractcore` (then add provider extras as needed) |
+| `ModuleNotFoundError` | Package not installed | `pip install -U abstractcore`, or `abstractcore[apple]` / `abstractcore[gpu]` for local engines |
 | `Authentication Error` | Invalid API key | Check API key environment variable |
 | `Connection refused` | Service not running | Start Ollama/LMStudio/server |
 | `LM Studio connection failed` | LM Studio server not enabled | Enable "Status: Running" toggle in LM Studio GUI |

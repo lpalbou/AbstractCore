@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speculative decoding (native MTP) - AbstractCore</title>
+    <meta name="description" content="Multi-token prediction (MTP) makes a model draft several of its own next tokens and verify them with the target model in one pass. Speed depends on draft…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/speculative-decoding.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Speculative decoding (native MTP)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">Multi-token prediction (MTP) makes a model draft several of its own next tokens and verify them with the target model in one pass. Speed depends on draft acceptance and verification cost. Compare outputs using the same loaded runtime: finite-precision kernels and changes of runtime can affect exact token choices.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick start</a>
+<a href="#qwen38-flash-next-on-native-mlx" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Qwen3.8-Flash-Next on native MLX</a>
+<a href="#from-the-cli" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">From the CLI</a>
+<a href="#comparing-fairly" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Comparing fairly</a>
+<a href="#the-request-block" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">The request block</a>
+<a href="#which-providers-can-actually-do-it" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Which providers can actually do it</a>
+<a href="#which-models-have-an-mtp-head" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Which models have an MTP head</a>
+<a href="#measured-results" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Measured results</a>
+<a href="#native-backend-boundaries" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Native backend boundaries</a></div>
+
+            <div class="doc-content">
+
+<p>The native MLX provider exposes this through an optional <code>speculation</code> block.
+It reports actual execution in <code>response.metadata["speculation"]</code>, with a named
+reason when acceleration is unavailable. The shared contract does not implement
+tensor execution or guarantee MTP support in other provider backends.</p>
+<h2 id="quick-start">Quick start</h2>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(
+    &quot;mlx&quot;,
+    model=&quot;mlx-community/Qwen3.8-27B-4bit&quot;,
+    speculation={&quot;mode&quot;: &quot;native_mtp&quot;},
+)
+
+r = llm.generate(&quot;Write an LRU cache in Python.&quot;, max_output_tokens=400, thinking=False)
+print(r.metadata[&quot;speculation&quot;])
+# {'requested': True, 'mode': 'native_mtp', 'used': True,
+#  'drafter': 'mlx-community/Qwen3.8-27B-MTP-4bit', 'num_draft_tokens': 3,
+#  'runtime': 'mlx_vlm', 'draft_kind': 'mtp'}
+</code></pre></div>
+<h2 id="qwen38-flash-next-on-native-mlx">Qwen3.8-Flash-Next on native MLX</h2>
+<p>Install <code>abstractcore[apple]</code> with MLX ≥0.32.2 and mlx-vlm ≥0.7.1. The <code>mlx</code>
+provider executes locally in your Python process; no HTTP endpoint or oMLX
+installation is used.</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(
+    &quot;mlx&quot;,
+    model=&quot;Jundot/Qwen3.8-Flash-Next-oQ4e-mtp&quot;,
+    speculation={&quot;mode&quot;: &quot;native_mtp&quot;, &quot;num_draft_tokens&quot;: 3,
+                 &quot;require_acceleration&quot;: True},
+)
+result = llm.generate(&quot;Write a small LRU cache.&quot;, thinking=False,
+                      temperature=0, max_output_tokens=256)
+print(result.content)
+print(result.metadata[&quot;speculation&quot;])
+
+# Change depth for one request; the following request returns to depth 3.
+result = llm.generate(&quot;Explain cache expiry.&quot;, thinking=False,
+                      speculation={&quot;num_draft_tokens&quot;: 5})
+baseline = llm.generate(&quot;Explain cache expiry.&quot;, thinking=False, speculation=False)
+llm.unload_model(llm.model)
+</code></pre></div>
+<p><code>num_draft_tokens</code> counts proposed tokens, excluding the target seed token.
+Depth is fixed per request, not an adaptive ceiling. This is distinct from the
+checkpoint's <strong>one trained MTP layer</strong>, which can be reused recurrently.
+Direct-mode measurements cover depths 1, 3 and 5; the scheduled two-model
+comparison covers depths 1, 2 and 3. Larger depths are accepted but can cost more
+memory and run slower. Invalid depths raise immediately. Response metadata
+reports actual drafted/accepted counts, rounds and acceptance rate.</p>
+<p>The <a href="https://huggingface.co/Jundot/Qwen3.8-Flash-Next-oQ4e-mtp">Jundot Q4 MTP artifact</a>
+occupies approximately 106.32 GB on disk. It uses mixed MLX affine quantization,
+not GGUF <code>IQ4_XS</code>. Its MTP tensors are embedded and checked during loading.
+The <a href="https://huggingface.co/mlx-community/Qwen3.8-Flash-Next-4bit">mlx-community 4-bit artifact</a>
+does not include those tensors. An MTP-related config field alone does not
+establish that a quantization includes the trained head.</p>
+<p>In the direct-mode M5 Max/128-GiB profile, a 45-token coding prompt generating
+256 tokens at temperature 0 measured <strong>59–61 decode tokens/s at depth 3</strong> versus
+<strong>37–38 tokens/s with MTP off</strong> (two runs each, same loaded model). Depth 1
+measured 54 tokens/s and depth 5 measured 41–43 tokens/s. Outputs matched exactly
+across these runs. These are workload-specific measurements, not a guarantee
+that every prompt or depth is faster. Peak MLX allocation was approximately
+76 GB, excluding OS memory and filesystem cache. These are not measurements of
+scheduled-runtime or HTTP throughput. For those metrics and the oMLX comparison,
+use the <a href="native-mlx-benchmarks.html">native MLX benchmark profile</a>.</p>
+<p><code>mlx_ple_offload=True</code> is the default: n-gram embedding rows are read from the
+existing safetensors files with a bounded row cache. No second checkpoint is
+written. Full residency is available with <code>mlx_ple_offload=False</code>, but needs
+approximately 30 GiB more weight memory and is not recommended on a busy
+128 GiB machine. Native model weights are shared between provider instances.
+Direct mode refuses overlapping calls. Set <code>mlx_batching=True</code> for the
+<a href="native-mlx-runtime.html">native concurrent runtime</a>: target-only continuous
+batching, MTP cohorts, cancellation and optional bounded SSD prefix caching.
+Finish or close active streams before unloading their owning provider.</p>
+<h3 id="native-prefix-caching-and-sampling">Native prefix caching and sampling</h3>
+<p>Pass complete conversation history with each cached request. Use <code>messages=[]</code>
+for a standalone prompt; an omitted history is rejected to avoid confusing
+prefix reuse with hidden-context append semantics.</p>
+<div class="code-block"><pre><code class="language-python">result = llm.generate(long_prompt, messages=history, prompt_cache_key=&quot;session-1&quot;,
+                      thinking=False, temperature=0)
+print(result.usage[&quot;cached_input_tokens&quot;])
+llm.prompt_cache_clear()
+</code></pre></div>
+<p>Direct mode uses a memory-only cache bounded to 512 MiB with two recurrent-state
+checkpoints. Scheduled mode (<code>mlx_batching=True</code>) adds a configurable RAM budget
+and opt-in SSD persistence; see <a href="native-mlx-runtime.html#bounded-ram-and-optional-ssd-prefix-reuse">native cache controls</a>.
+Manual prefill, append, fork, save and load are unsupported. Clearing a specific
+key clears the shared native cache and emits an explicit warning.</p>
+<p>Temperature, top-p, top-k, min-p and seed are supported with MTP. Non-neutral
+presence/frequency/repetition penalties and logit bias require target-only
+decoding: use <code>speculation=False</code>. With optional acceleration, these controls
+produce an explicit unaccelerated outcome; with <code>require_acceleration=True</code>,
+they raise before generation. They are never silently ignored. Prompted Pydantic
+structured output is supported; the Outlines mlx-lm adapter is not used for
+Qwen4. Image input is handled by the native vision graph; audio/video containers
+must be converted to supported inputs (for video, image frames).</p>
+<h2 id="from-the-cli">From the CLI</h2>
+<div class="code-block"><pre><code class="language-bash"># start a chat with the drafter loaded (drafter auto-resolves from the registry)
+abstractcore-chat --provider mlx --model mlx-community/Qwen3.8-27B-4bit \
+                  --speculation native_mtp
+
+# a drafter that isn't registered, or a hand-tuned draft width
+abstractcore-chat --provider mlx --model &lt;target&gt; \
+                  --drafter mlx-community/Qwen3.8-27B-MTP-4bit --num-draft-tokens 3
+
+# refuse to start rather than run unaccelerated
+abstractcore-chat --provider mlx --model &lt;target&gt; \
+                  --speculation native_mtp --require-acceleration
+</code></pre></div>
+<p>Inside the REPL, <code>/speculation</code> reports what is actually loaded and lets you
+toggle the drafter per turn:</p>
+<div class="code-block"><pre><code>&gt; /speculation
+⚡ speculation: native MTP lane LOADED
+   drafter        : mlx-community/Qwen3.5-4B-MTP-4bit
+   draft tokens   : 2
+   per-call state : auto (on)
+
+&gt; /speculation off      # lane stays loaded; the drafter is skipped
+</code></pre></div>
+<p><code>--speculation</code> is a <strong>startup</strong> flag, not a runtime one: choosing it decides
+which runtime loads the weights. <code>/speculation off</code> works mid-session because
+skipping a drafter needs no reload; <code>/speculation on</code> cannot conjure a lane that
+was never loaded, and says so instead of pretending.</p>
+<h2 id="comparing-fairly">Comparing fairly</h2>
+<p>This trips people up, so it is worth being explicit. There are two different
+comparisons and they answer different questions:</p>
+<div class="code-block"><pre><code class="language-python"># ❌ measures TWO changes at once
+slow = create_llm(&quot;mlx&quot;, model=M)                                  # runs on mlx-lm
+fast = create_llm(&quot;mlx&quot;, model=M, speculation={&quot;mode&quot;: &quot;native_mtp&quot;})  # runs on mlx-vlm
+#   -&gt; difference = the drafter AND the library switch
+
+# ✅ measures ONE change
+llm = create_llm(&quot;mlx&quot;, model=M, speculation={&quot;mode&quot;: &quot;native_mtp&quot;})
+with_mtp    = llm.generate(PROMPT, thinking=False)
+without_mtp = llm.generate(PROMPT, thinking=False, speculation={&quot;mode&quot;: &quot;off&quot;})
+#   -&gt; same object, same weights, same library; only the drafter differs
+</code></pre></div>
+<p>The second snippet reuses <strong>the same <code>llm</code></strong> — that is why no model name appears
+on the last line. Nothing is reloaded; <code>speculation={"mode": "off"}</code> just tells
+that one call to skip the drafter.</p>
+<p>Use the first comparison to answer <em>"is my session faster than before?"</em> and the
+second to answer <em>"what is MTP itself worth?"</em>. They can disagree, because
+enabling speculation on MLX also swaps mlx-lm for mlx-vlm, and mlx-vlm's own
+unaccelerated decoding is not always the same speed — or even the same text —
+as mlx-lm's.</p>
+<h2 id="the-request-block">The request block</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>field</th>
+<th>default</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mode</code></td>
+<td><code>"native_mtp"</code></td>
+<td><code>"native_mtp"</code> or <code>"off"</code></td>
+</tr>
+<tr>
+<td><code>drafter</code></td>
+<td>from the registry</td>
+<td>repo/path of the MTP head, when the runtime needs a separate one</td>
+</tr>
+<tr>
+<td><code>num_draft_tokens</code></td>
+<td>from the drafter config</td>
+<td>how many tokens to draft per step</td>
+</tr>
+<tr>
+<td><code>require_acceleration</code></td>
+<td><code>False</code></td>
+<td><code>True</code> raises <code>SpeculationUnavailableError</code> instead of running unaccelerated</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>speculation=True</code> is shorthand for <code>{"mode": "native_mtp"}</code>; <code>speculation=False</code>
+pins it off. A malformed block (unknown key, unknown mode, <code>num_draft_tokens=0</code>)
+raises immediately rather than becoming a silent no-op.</p>
+<h2 id="which-providers-can-actually-do-it">Which providers can actually do it</h2>
+<p>Whether the weights contain an MTP head and whether your runtime can <em>execute</em>
+it are two different questions, and they have different answers per provider.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>provider</th>
+<th>native MTP</th>
+<th>how</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>mlx</strong></td>
+<td><strong>yes, in-process</strong></td>
+<td><code>speculation={"mode": "native_mtp"}</code> — this is the only lane AbstractCore accelerates itself</td>
+</tr>
+<tr>
+<td><strong>lmstudio</strong></td>
+<td>yes, at load time</td>
+<td><code>lms load &lt;model&gt; --speculative-draft-mtp</code>, then use the provider normally</td>
+</tr>
+<tr>
+<td>openai-compatible → <code>llama-server</code></td>
+<td>yes, at launch time</td>
+<td><code>llama-server --spec-type draft-mtp --spec-draft-n-max 3</code></td>
+</tr>
+<tr>
+<td><strong>huggingface</strong> (GGUF, in-process)</td>
+<td><strong>no</strong></td>
+<td>see below</td>
+</tr>
+<tr>
+<td>huggingface (transformers)</td>
+<td>no</td>
+<td>no MTP execution path</td>
+</tr>
+<tr>
+<td>vllm</td>
+<td>server-side</td>
+<td>set <code>speculative_config</code> on the vLLM server</td>
+</tr>
+<tr>
+<td>ollama</td>
+<td>no</td>
+<td>not exposed</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="why-in-process-gguf-cannot-do-it">Why in-process GGUF cannot do it</h3>
+<p>llama.cpp itself implements MTP self-speculation, and the graphs are compiled
+into the <code>libllama</code> that ships with <code>llama-cpp-python</code>. What is missing is the
+<em>driver</em> (<code>common_speculative_impl_draft_mtp</code>), which lives in
+<code>libllama-common</code> — not part of the Python wheel — and <code>Llama.__init__</code> exposes
+neither <code>load_mtp</code> nor <code>ctx_type</code>, so there is no way to switch the graphs on.</p>
+<p>The provider detects this honestly. It reads the GGUF header for a
+<code>&lt;arch&gt;.nextn_predict_layers</code> key (evidence, not the filename) and, when a head
+is present, warns once with the exact escape hatches. Serve the same file from
+<code>llama-server</code> or LM Studio and point AbstractCore at it over HTTP.</p>
+<h2 id="which-models-have-an-mtp-head">Which models have an MTP head</h2>
+<p>The head is a property of the <strong>artifact</strong>, not the model family, and the two
+distributions of the same model differ:</p>
+<ul>
+<li><strong>GGUF</strong>: the head is embedded. <code>lmstudio-community/Qwen3.8-27B-GGUF</code>
+  (Q4_K_M) carries <code>qwen35.nextn_predict_layers=1</code> and the <code>blk.64.nextn.*</code>
+  tensors. No sidecar download.</li>
+<li><strong>MLX</strong>: the head ships <strong>separately</strong>. <code>mlx-community/Qwen3.8-27B-4bit</code>
+  contains no MTP tensors at all; the head is the 256 MB
+  <code>mlx-community/Qwen3.8-27B-MTP-4bit</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Do not trust <code>mtp_num_hidden_layers</code>.</strong> That config key is present in <em>both</em>
+MLX repos, including the one whose weights have no MTP tensors. A capability
+probe based on it returns a false positive. AbstractCore's registry entries
+cite artifact-level evidence instead.</p>
+</blockquote>
+<p>Models with a <code>speculation</code> block in <code>model_capabilities.json</code> today, with the
+MLX drafter that gets auto-resolved:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>model</th>
+<th>MLX drafter (auto)</th>
+<th>status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qwen3.8-27b</code></td>
+<td><code>mlx-community/Qwen3.8-27B-MTP-4bit</code></td>
+<td>tested end-to-end, <strong>1.2–1.5x</strong></td>
+</tr>
+<tr>
+<td><code>qwen3.6-27b</code></td>
+<td><code>mlx-community/Qwen3.6-27B-MTP-4bit</code></td>
+<td>drafter config verified, not benchmarked</td>
+</tr>
+<tr>
+<td><code>qwen3.6-35b-a3b</code></td>
+<td><code>mlx-community/Qwen3.6-35B-A3B-MTP-4bit</code></td>
+<td>drafter config verified, not benchmarked</td>
+</tr>
+<tr>
+<td><code>qwen3.5-9b</code></td>
+<td><code>mlx-community/Qwen3.5-9B-MTP-4bit</code></td>
+<td>drafter config verified, not benchmarked</td>
+</tr>
+<tr>
+<td><code>qwen3.5-4b</code></td>
+<td><code>mlx-community/Qwen3.5-4B-MTP-4bit</code></td>
+<td>tested; <strong>too small to benefit</strong></td>
+</tr>
+<tr>
+<td><code>gemma-4-26b-a4b-it</code></td>
+<td><code>mlx-community/gemma-4-26B-A4B-it-qat-assistant-4bit</code></td>
+<td>tested, <strong>1.12–1.48x</strong>; not output-preserving</td>
+</tr>
+<tr>
+<td><code>qwen3.6-27b-mtp-gguf</code></td>
+<td>— (GGUF only)</td>
+<td>llama.cpp / LM Studio</td>
+</tr>
+<tr>
+<td><code>qwen3.6-35b-a3b-mtp-gguf</code></td>
+<td>— (GGUF only)</td>
+<td>llama.cpp / LM Studio</td>
+</tr>
+</tbody>
+</table></div>
+<p>"drafter config verified" means the repo's <code>config.json</code> was fetched and reports
+<code>model_type: qwen3_5_mtp</code> with a <code>text_config.hidden_size</code> matching its target —
+artifact evidence, not a timing measurement.</p>
+<p>Any drafter can also be pointed at explicitly, whether or not it is registered:</p>
+<div class="code-block"><pre><code class="language-python">create_llm(&quot;mlx&quot;, model=&quot;&lt;target&gt;&quot;,
+           speculation={&quot;mode&quot;: &quot;native_mtp&quot;, &quot;drafter&quot;: &quot;&lt;drafter repo&gt;&quot;})
+</code></pre></div>
+<p>The MLX drafter is a <strong>companion</strong> of the model: <code>abstractcore models download mlx &lt;model&gt;</code>
+(and the Gateway's model downloads) fetch it in the same job, and the model counts as
+installed only when both are there (see <a href="models.html#mtp-companions">MTP companions</a>). When
+the companion is missing, the model still loads and answers, without MTP. The response's
+<code>speculation</code> block then says so in words, and the Gateway consoles show that text:</p>
+<div class="code-block"><pre><code class="language-text">{'used': False, 'reason': 'mtp_head_not_cached',
+ 'message': 'MTP acceleration off: companion mlx-community/Qwen3.5-9B-MTP-4bit (the MTP head
+             for mlx-works/Qwen3.5-9B-oQ4e-mtp) is not downloaded; download it with
+             `abstractcore models download mlx mlx-community/Qwen3.5-9B-MTP-4bit` ...'}
+</code></pre></div>
+<h3 id="mtp-preserving-checkpoints-never-load-through-mlx-lm">MTP-preserving checkpoints never load through mlx-lm</h3>
+<p>Some MLX checkpoints keep the model's <code>mtp.*</code> tensors in their own weights, for example
+<code>mlx-works/Qwen3.5-9B-oQ4e-mtp</code>, <code>Jundot/Qwen3.8-27B-oQ4e-mtp</code> and Flash-Next. The MLX
+provider loads these checkpoints through <strong>mlx-vlm in every lane</strong>: with or without a drafter,
+<code>speculation</code> on, off or inherited, batching or not. It detects them from the checkpoint's
+<code>model.safetensors.index.json</code> <code>weight_map</code> (or, for a single file, its safetensors header), a
+local read of a few KB. If mlx-vlm cannot load such a checkpoint, the provider raises a
+<code>ProviderAPIError</code> that names the model and the reason; it never falls back to mlx-lm. The
+native lane is also the one that runs the MTP drafter and prefix caching.</p>
+<p>If you load these checkpoints outside AbstractCore, use mlx-vlm as well. The <code>qwen3_5</code> loader
+in released mlx-lm versions (0.31.3 and earlier) treats any <code>mtp.</code> tensor as a sign of an
+unconverted checkpoint and shifts the RMSNorm weights a second time, which produces meaningless
+output without an error (the loader on mlx-lm <code>main</code> is corrected by ml-explore/mlx-lm#1623).
+<code>abstractcore models verify &lt;repo&gt;</code> checks that an installed model answers sensibly (see
+<a href="models.html#checking-a-fresh-install-models-verify">Checking a fresh install</a>).</p>
+<p>mlx-community also publishes drafters for <code>Qwen3.5-122B-A10B</code>,
+<code>DeepSeek-V4-Flash</code> (bf16 only) and <code>Hy3-preview</code>. Of these, mlx-vlm has a
+drafter implementation for DeepSeek-V4 (<code>deepseek_v4_mtp</code>) but <strong>not</strong> for Hy3,
+so the Hy3 drafter has no in-process consumer here.</p>
+<h3 id="other-families--surveyed-from-gguf-headers-not-model-names">Other families — surveyed from GGUF headers, not model names</h3>
+<p>Each row below was checked by range-fetching the first 3 MB of a real Q4 GGUF
+and reading its <code>&lt;arch&gt;.nextn_predict_layers</code> key, so "MTP" means the head is in
+the file, not that the name says so.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>family</th>
+<th>example artifact</th>
+<th>arch</th>
+<th>MTP head</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DeepSeek-V4</td>
+<td><code>antirez/deepseek-v4-gguf</code></td>
+<td><code>deepseek4</code></td>
+<td><strong>yes (1)</strong></td>
+</tr>
+<tr>
+<td>GLM-5.2</td>
+<td><code>unsloth/GLM-5.2-GGUF</code></td>
+<td><code>glm-dsa</code></td>
+<td><strong>yes (1)</strong></td>
+</tr>
+<tr>
+<td>GLM-5.3-Flash</td>
+<td><code>unsloth/GLM-5.3-Flash-GGUF</code></td>
+<td><code>glm5next</code></td>
+<td><strong>yes (1)</strong></td>
+</tr>
+<tr>
+<td>Hunyuan Hy3</td>
+<td><code>AngelSlim/Hy3-GGUF</code></td>
+<td><code>hy_v3</code></td>
+<td><strong>yes (1)</strong></td>
+</tr>
+<tr>
+<td>MiMo</td>
+<td><code>AesSedai/MiMo-V2.5-GGUF</code></td>
+<td><code>mimo2</code></td>
+<td><strong>yes (3)</strong></td>
+</tr>
+<tr>
+<td>Ling 3.0 flash</td>
+<td><code>bloomer010/Ling-3.0-flash-REAP288-73B-A5B-GGUF</code></td>
+<td><code>bailingmoe3</code></td>
+<td><strong>yes (1)</strong></td>
+</tr>
+<tr>
+<td>Nemotron Labs 3</td>
+<td><code>RemySkye/NVIDIA-Nemotron-Labs-3-Puzzle-75B-A9B-GGUF</code></td>
+<td><code>nemotron_h_moe</code></td>
+<td><strong>yes (2)</strong></td>
+</tr>
+<tr>
+<td>Qwen3-Next 80B</td>
+<td><code>Qwen/Qwen3-Next-80B-A3B-Instruct-GGUF</code></td>
+<td><code>qwen3next</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Step 3.5 Flash</td>
+<td><code>ggml-org/Step-3.5-Flash-GGUF</code></td>
+<td><code>step35</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Cohere command-a</td>
+<td><code>bartowski/command-a-plus-05-2026-GGUF</code></td>
+<td><code>cohere2moe</code></td>
+<td>no</td>
+</tr>
+</tbody>
+</table></div>
+<p>The last three are cases where llama.cpp implements the MTP graph for the
+architecture but the published quants carry no head — the runtime is ready and
+the weights are not.</p>
+<p>Caveat on the two GLM rows: <code>glm5next</code> is <strong>not</strong> among the <code>graph_mtp</code> symbols
+in the llama.cpp build used here, so that one needs a newer runtime than
+<code>glm-dsa</code> does.</p>
+<p>llama.cpp additionally implements MTP graphs for <code>deepseek2/32/4</code>, <code>glm4_moe</code>,
+<code>glm_dsa</code>, <code>qwen35</code>, <code>qwen35moe</code>, <code>qwen3next</code>, <code>bailingmoe3</code>, <code>cohere2moe</code>,
+<code>hy_v3</code>, <code>mimo2</code>, <code>nemotron_h_moe</code> and <code>step35</code> — so a GGUF of any of those that
+carries nextn tensors will accelerate under <code>llama-server</code>, whether or not it
+has a registry entry yet.</p>
+<h2 id="measured-results">Measured results</h2>
+<p>The following tables describe the legacy direct adapter and its original
+seed-inclusive backend block sizes, not the scheduled native runtime. Use a
+matched runtime/version when reproducing them; do not compare these decode
+figures directly with HTTP end-to-end throughput.</p>
+<p>M5 Max (128 GB), 4-bit, batch 1, greedy, 200 tokens, medians of 3 interleaved
+reps with nothing else resident.</p>
+<p><strong>Read the control carefully.</strong> The MLX baseline here is the <em>same provider with
+<code>speculation={"mode": "off"}</code> per call</em> — not a separate non-speculating
+provider. That matters: turning speculation on also switches the MLX lane from
+mlx-lm to mlx-vlm, so comparing against a plain provider measures two changes at
+once. The numbers below isolate the drafter.</p>
+<p><strong>MLX, Qwen3.8-27B-4bit:</strong></p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>prompt</th>
+<th>drafter off</th>
+<th>MTP</th>
+<th>speedup</th>
+<th>output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>code</td>
+<td>19.9 tok/s</td>
+<td>28.5 tok/s</td>
+<td><strong>1.43x</strong></td>
+<td>identical</td>
+</tr>
+<tr>
+<td>prose</td>
+<td>20.2 tok/s</td>
+<td>24.0 tok/s</td>
+<td><strong>1.19x</strong></td>
+<td>identical</td>
+</tr>
+<tr>
+<td>repetitive table</td>
+<td>19.1 tok/s</td>
+<td>28.0 tok/s</td>
+<td><strong>1.47x</strong></td>
+<td>identical</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>MLX, Qwen3.5-4B-4bit — MTP does not pay here:</strong></p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>prompt</th>
+<th>drafter off</th>
+<th>MTP</th>
+<th>speedup</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>code</td>
+<td>106.0 tok/s</td>
+<td>100.5 tok/s</td>
+<td><strong>0.95x</strong></td>
+</tr>
+<tr>
+<td>prose</td>
+<td>110.7 tok/s</td>
+<td>80.4 tok/s</td>
+<td><strong>0.73x</strong></td>
+</tr>
+<tr>
+<td>repetitive table</td>
+<td>103.6 tok/s</td>
+<td>116.6 tok/s</td>
+<td>1.13x</td>
+</tr>
+</tbody>
+</table></div>
+<p>A 4B target is cheap enough per decode step that the drafter — a full extra
+block plus a pass over the 248k-row LM head per drafted token — barely
+amortises. <strong>MTP is a big-model optimisation.</strong> Measure before enabling it on
+anything small.</p>
+<p><strong>llama.cpp (<code>llama-server --spec-type draft-mtp --spec-draft-n-max 3</code>), same GGUF:</strong></p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>prompt</th>
+<th>baseline</th>
+<th>MTP</th>
+<th>speedup</th>
+<th>acceptance</th>
+<th>mean accepted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>code</td>
+<td>26.3 tok/s</td>
+<td>36.9 tok/s</td>
+<td>1.40x</td>
+<td>0.88</td>
+<td>3.63</td>
+</tr>
+<tr>
+<td>prose</td>
+<td>20.1 tok/s</td>
+<td>24.6 tok/s</td>
+<td>1.22x</td>
+<td>0.50</td>
+<td>2.51</td>
+</tr>
+<tr>
+<td>repetitive table</td>
+<td>19.2 tok/s</td>
+<td>35.7 tok/s</td>
+<td>1.86x</td>
+<td>1.00</td>
+<td>3.98</td>
+</tr>
+</tbody>
+</table></div>
+<p>Speedup tracks the acceptance rate, which is prompt-dependent: predictable,
+structured output (code, tables, reformatting) drafts well; discursive prose
+drafts worst. Expect roughly 1.2x–1.9x on a 27B, not a fixed number.</p>
+<h3 id="output-fidelity--two-different-questions">Output fidelity — two different questions</h3>
+<ol>
+<li><strong>Does the drafter change the answer?</strong> <em>Algorithmically, no</em> — mlx-vlm's
+   acceptance test is exact (<code>target token == drafted token</code>, otherwise reject
+   and keep the target's token). <em>Numerically, sometimes.</em> Verification
+   recomputes logits from a batched hidden state, which changes Metal's
+   reduction order, so a near-tie argmax can flip. Measured: both Qwen pairings
+   were byte-identical on all three prompts (that is what the gated live test
+   pins), while <code>gemma-4-26B-A4B</code> diverged on 2 of 3 — deterministically, at
+   ~0.87 similarity. Registry entries carry <code>output_preserving: false</code> where a
+   divergence has been observed, and the response metadata repeats it.
+   Do not assume bit-reproducibility on an untested pairing.</li>
+<li><strong>Does turning speculation on change the answer?</strong> On MLX it can, because the
+   lane switches library. On <code>Qwen3.5-4B-4bit</code>, mlx-lm and mlx-vlm produce
+   <em>different</em> greedy text for the same prompt with no drafter involved; on
+   <code>Qwen3.8-27B-4bit</code> they agreed. Both are deterministic run to run.
+   The llama.cpp lane likewise differed from its own baseline on the prose
+   prompt (batched verification changes matmul shapes, so a near-tie flips).</li>
+</ol>
+<h3 id="tuning-num_draft_tokens">Tuning <code>num_draft_tokens</code></h3>
+<p>The drafter's config declares a <code>block_size</code>, but that is an architecture
+property, not a tuned runtime value — and following it blindly can cost you the
+whole win. Measured sweeps (200 tokens, code prompt):</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>backend block size (seed included)</th>
+<th>Qwen3.5-4B</th>
+<th>Qwen3.8-27B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>0.14x</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>1.16x</strong></td>
+<td>1.39x</td>
+</tr>
+<tr>
+<td>3</td>
+<td>1.09x</td>
+<td>1.56x</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0.98x <em>(its config's value)</em></td>
+<td><strong>1.57x</strong></td>
+</tr>
+<tr>
+<td>5</td>
+<td>0.89x</td>
+<td>1.49x</td>
+</tr>
+</tbody>
+</table></div>
+<p>Backend block size 1 in that measurement has <strong>zero proposals</strong>. The public
+<code>num_draft_tokens=1</code> means one proposal and maps to backend block size 2; it is
+not that pathological setting. Registry defaults are starting points, not
+universal optima. Sweep proposal depth with your prompts and concurrency.</p>
+<h2 id="native-backend-boundaries">Native backend boundaries</h2>
+<ul>
+<li>The Qwen3.8-27B separate-head native path and Flash-Next embedded-head path
+  both accept images and native automatic prefix reuse. Full histories remain
+  required. Native caches cannot consume ordinary mlx-lm durable append-cache
+  artifacts; see <a href="native-mlx-runtime.html">native runtime caching</a>.</li>
+<li><strong>mlx-lm's own <code>draft_model</code> does not work here</strong> and is deliberately not
+  offered: Qwen3.5/3.8 are hybrids with linear-attention layers, and mlx-lm
+  raises <code>Speculative decoding requires a trimmable prompt cache
+  (got {'ArraysCache'})</code>.</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

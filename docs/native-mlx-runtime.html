@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Native MLX concurrency and prefix caching - AbstractCore</title>
+    <meta name="description" content="The MLX provider serves concurrent Qwen3.8-27B and Qwen3.8-Flash-Next requests inside your Python process with mlx_batching=True. Execution uses…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/native-mlx-runtime.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Native MLX concurrency and prefix caching</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">The MLX provider serves concurrent Qwen3.8-27B and Qwen3.8-Flash-Next requests inside your Python process with mlx_batching=True. Execution uses AbstractCore, MLX, mlx-lm and mlx-vlm; it does not import or run oMLX. See speculative decoding for checkpoints and MTP controls. For component ownership and request flow, see Architecture. The M5 Max measurements compare both models with oMLX, including vision and concurrent/staggered requests. Every MLX lane renders its prompt through the model&#x27;s own chat template, so tool calls in history, tool results and the thinking opener match what the model was trained on; see tool calling.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#vision-with-mtp-off-or-on" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Vision with MTP off or on</a>
+<a href="#scheduling-and-request-controls" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Scheduling and request controls</a>
+<a href="#bounded-ram-and-optional-ssd-prefix-reuse" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Bounded RAM and optional SSD prefix reuse</a>
+<a href="#http-serving" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">HTTP serving</a>
+<a href="#live-phase-feedback-prefill-vs-generation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Live phase feedback (prefill vs generation)</a>
+<a href="#supported-boundaries" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Supported boundaries</a></div>
+
+            <div class="doc-content">
+
+<p>For a source checkout, install the Apple provider stack with
+<code>pip install -e ".[apple]"</code>. Released packages use <code>pip install -U "abstractcore[apple]"</code>;
+see the <a href="changelog.html">changelog</a> for release availability.
+The native runtime requires MLX ≥0.32.2, mlx-lm ≥0.31.3 and mlx-vlm ≥0.7.1,&lt;0.8.0.
+Download target and head weights explicitly before loading; AbstractCore's model
+cache is offline-first. See <a href="api.html#model-downloads-download_model-optional">model downloads</a>.</p>
+<div class="code-block"><pre><code class="language-python">from concurrent.futures import ThreadPoolExecutor
+from abstractcore import create_llm
+
+llm = create_llm(
+    &quot;mlx&quot;, model=&quot;mlx-community/Qwen3.8-27B-4bit&quot;,
+    speculation={&quot;mode&quot;: &quot;native_mtp&quot;, &quot;num_draft_tokens&quot;: 2,
+                 &quot;require_acceleration&quot;: True},
+    mlx_batching=True, mlx_max_batch_size=4,
+)
+
+def answer(question):
+    return llm.generate(question, thinking=False, temperature=0,
+                        max_output_tokens=256)
+
+with ThreadPoolExecutor(max_workers=2) as pool:
+    answers = list(pool.map(answer, [&quot;Explain TTL caches.&quot;, &quot;Explain LRU caches.&quot;]))
+for answer in answers:
+    print(answer.content, answer.metadata[&quot;execution&quot;])
+llm.unload_model(llm.model)
+</code></pre></div>
+<p>For Flash-Next, use <code>model="Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"</code>; its MTP head
+is embedded. Keep the default PLE offload on 128 GiB machines. Both large models
+should not be loaded simultaneously without checking available memory.</p>
+<h2 id="vision-with-mtp-off-or-on">Vision with MTP off or on</h2>
+<p>Both documented checkpoints accept native image input with speculation disabled
+or enabled. The same vision encoder supplies image embeddings to the target;
+MTP changes token generation, not image delivery. The 27B target uses the matching
+<code>mlx-community/Qwen3.8-27B-MTP-4bit</code> head; Flash-Next embeds its head.</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(
+    &quot;mlx&quot;, model=&quot;mlx-community/Qwen3.8-27B-4bit&quot;, mlx_batching=True,
+    speculation={&quot;mode&quot;: &quot;native_mtp&quot;, &quot;num_draft_tokens&quot;: 2},
+)
+# The target/head remain resident for both requests.
+for setting in (False, {&quot;mode&quot;: &quot;native_mtp&quot;, &quot;num_draft_tokens&quot;: 2,
+                        &quot;require_acceleration&quot;: True}):
+    response = llm.generate(
+        &quot;Describe the left and right halves of this image.&quot;,
+        media=[&quot;halves.png&quot;], speculation=setting,
+        thinking=False, temperature=0, max_output_tokens=64,
+    )
+    print(response.content)
+    print(response.metadata[&quot;speculation&quot;][&quot;used&quot;])
+llm.unload_model(llm.model)
+</code></pre></div>
+<p>Swapped red/blue image checks passed on both models with MTP off/on; see
+<a href="native-mlx-benchmarks.html#vision-and-functional-coverage">vision measurements</a>.
+These establish image delivery and behavior for those inputs, not general OCR
+accuracy, image-history compatibility or concurrent multimodal throughput.</p>
+<h2 id="scheduling-and-request-controls">Scheduling and request controls</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Request</th>
+<th>Execution policy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Compatible greedy target-only requests (<code>speculation=False</code>)</td>
+<td>Continuous admission into available batch slots</td>
+</tr>
+<tr>
+<td>Compatible greedy MTP requests with the same depth</td>
+<td>Fixed cohort; later requests wait for another cohort</td>
+</tr>
+<tr>
+<td>Sampled or incompatible requests</td>
+<td>Exclusive execution with their requested controls</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>num_draft_tokens</code> counts proposals, excluding the target seed token, on both
+models. Change depth or disable MTP per request without reloading. MTP does not
+support non-neutral logits penalties or logit bias: strict acceleration refuses
+them; optional acceleration reports an explicit unaccelerated outcome. Stop
+strings work with the scheduled runtime.</p>
+<p>Benchmark MTP against <code>speculation=False</code> for your workload. Speculative cohorts
+can improve a single request while reducing aggregate throughput under load;
+target-only continuous batching can be the better choice for concurrent clients.
+Change the request control without unloading the resident target/head pair.</p>
+<p>Batch compatibility also depends on prefix-cache manager identity. Requests using
+different cache managers are separate scheduling groups; concurrent submission
+does not guarantee a shared batch across independently keyed application sessions.
+Keep cache isolation intact and measure the session/key pattern your application uses.</p>
+<h3 id="abstractruntime-integration">AbstractRuntime integration</h3>
+<p>Use the existing <code>mlx</code> provider with scheduler/head options at construction.
+AbstractRuntime's local client consults the loaded instance's concurrency capability;
+ordinary MLX instances retain serialized generation. Per-call <code>params.speculation</code>
+accepts <code>False</code> or a native-MTP control object, and <code>params.thinking</code> accepts boolean
+on/off or a reasoning level. The remote client forwards these controls to Core HTTP
+and preserves actual execution/speculation metadata. Head loading and scheduler
+configuration remain load-time choices; forwarding a request does not load a head.
+Applications can inherit the configured MTP policy or override it per run or node;
+see the default policy below.</p>
+<h3 id="mtp-defaults-and-application-overrides">MTP defaults and application overrides</h3>
+<p>A fresh Core configuration seeds native MTP at draft depth <strong>2</strong> for compatible
+models. Existing configuration files are not reseeded. Depth 2 is a starting
+policy, not a guarantee of best performance for every model or workload.</p>
+<p>The policy is stored at <code>capability_defaults.routes.input.text.options.speculation</code>;
+the <code>output.text</code> route exposes the same setting. Core's console-TUI and Gateway's
+web/TUI capability-default editors edit this Core-owned configuration. The CLI
+also preserves other route options when changing only MTP:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore config set-default output.text --speculation 2
+abstractcore config set-default output.text --speculation off
+abstractcore config set-default output.text --speculation inherit
+</code></pre></div>
+<p><code>inherit</code> removes the configured policy; it does not restore a fresh-install seed.
+With no policy and no constructor/request setting, a model whose MTP support is
+verified (registry drafter or embedded head) runs optional MTP
+(<code>require_acceleration: false</code>, falling back to the target-only decoder when the
+head is unavailable); other models run without speculation. Only <code>off</code> (<code>false</code>)
+switches it off for a verified model (2.23.1; before, no policy meant off).
+An inherited policy prepares an available matching cached head during model load;
+it never downloads weights. Unsupported backends remain non-speculative. A model
+already loaded without a head requires explicit provisioning/reloading before
+an application can enable MTP.</p>
+<p>Flow, Assistant and Code leave <code>speculation</code> unset when using the Gateway default.
+Their Off choice sends <code>false</code>; an explicit depth sends a native-MTP object with
+<code>num_draft_tokens</code>. Explicit call/node settings win over inherited run settings,
+which win over the provider's default. An explicit constructor default wins over
+the Core policy. Changes to depth or Off do not unload a prepared target/head.
+Strict requests require MTP execution, not a measured speedup.</p>
+<p><code>get_execution_capabilities(model_name, provider=..., instance=...)</code> in
+<code>abstractcore.providers.speculation</code>, and <code>GET /v1/models/execution-capabilities</code>,
+describe backend support, instance readiness, available depth choices and the
+effective default without loading a model. A missing readiness value is unknown,
+not proof that the head is ready. Inspect each response's <code>speculation.used</code> for
+what actually executed; unsupported explicit requests fail when strict or return
+a named non-speculative outcome when fallback is allowed.</p>
+<p><code>metadata["execution"]</code> reports <code>mode</code>, observed <code>peak_batch_size</code>, queue time
+and time to first backend token. Multi-request MTP counters are shared cohort
+diagnostics, not independent per-request token totals; inspect <code>accounting</code> and
+<code>counter_semantics</code> before aggregating them. Use response <code>usage</code> for actual
+prompt/completion tokens. Client first-token latency also includes transport.</p>
+<p>Defaults: four batch slots, 32 waiting requests, a 10 ms collection window,
+a 120-second queue timeout and 256 buffered output records per request.
+Controls: <code>mlx_max_batch_size</code>, <code>mlx_max_queue_size</code>, <code>mlx_batch_wait_ms</code>,
+<code>mlx_queue_timeout_s</code>, and <code>mlx_output_queue_size</code>. Full queues, expired requests
+and stalled stream consumers raise actionable errors. Close abandoned streams,
+including <code>await stream.aclose()</code> for async streams. Cancellation suppresses
+output immediately; GPU state is reclaimed at the next safe backend boundary,
+which can follow an in-progress prefill.</p>
+<p>Providers sharing a target/head pair share weights and one execution owner.
+They must agree on scheduler/cache settings. Releasing an idle provider does
+not unload another provider's model. Unloading an owner with active requests is
+refused. Direct and scheduled execution cannot share a resident native session.
+Garbage collection retires a scheduled provider's owner without blocking on an
+in-flight request; final cleanup occurs at a safe worker boundary. Prefer explicit
+unload after finishing or closing streams when you need deterministic SSD flush
+and error reporting. A live-worker shutdown timeout keeps resources owned for a
+later retry. A flush failure after the worker stops is reported, but does not
+leave a closed model permanently resident.</p>
+<h2 id="bounded-ram-and-optional-ssd-prefix-reuse">Bounded RAM and optional SSD prefix reuse</h2>
+<p>Use an explicit <code>prompt_cache_key</code> and the complete conversation in <code>messages</code>
+(<code>messages=[]</code> for standalone prompts). Native prefix reuse does not append
+hidden history. Requests without a key do not use the automatic cache.</p>
+<div class="code-block"><pre><code class="language-python">llm = create_llm(
+    &quot;mlx&quot;, model=&quot;mlx-community/Qwen3.8-27B-4bit&quot;,
+    speculation={&quot;mode&quot;: &quot;native_mtp&quot;}, mlx_batching=True,
+    mlx_cache_disk_path=&quot;./private-mlx-cache&quot;,
+    mlx_cache_disk_max_gb=4, mlx_cache_memory_max_gb=8,  # RAM cap is optional
+)
+result = llm.generate(long_prompt, messages=[], prompt_cache_key=&quot;conversation-1&quot;,
+                      thinking=False, temperature=0, max_output_tokens=128)
+print(result.usage[&quot;cached_input_tokens&quot;])
+print(llm.get_prompt_cache_stats())
+llm.unload_model(llm.model)  # Flushes SSD storage for compatible future processes.
+</code></pre></div>
+<p>The RAM budget is sized to the machine: <code>min(8 GiB, recommended working set / 4)</code>
+(8 GiB on a 64 GB+ Mac, 5 GiB on a 24 GB Mac whose GPU limit is 20 GiB, about
+2.7 GiB on 16 GB), with a fixed 512 MiB reserve on top of the measured free
+memory (mlx-vlm evicts the oldest snapshot before a store would eat into it).
+Sizing rule: a 27B hybrid snapshot measures about 98 KB per prompt token, so a
+10k-token conversation needs about 1 GB and the budget holds several turns.
+(Before 2.23.1 mlx-vlm's own shape applied: <code>working_set / 10</code> plus a
+<code>max(1 GiB, working_set / 10)</code> reserve, which on a 24 GB Mac running a 27B
+model left no room for any snapshot.) The budget caps EACH retained snapshot: a
+snapshot larger than the budget, or one the free memory cannot hold, is not
+retained and the next turn re-prefills the whole
+conversation, which the response reports as <code>prompt_cache.degraded_reason</code>
+with the call's <code>prompt_cache.apc</code> store/skip counters. A hybrid model's
+snapshot grows roughly 27-50 KB per prompt token, so set
+<code>mlx_cache_memory_max_gb</code> only to a value larger than your longest
+conversation's snapshot. Two recurrent-state checkpoints are kept. SSD storage
+is opt-in, defaulting to a 4 GiB budget. One runtime shares budgets across keys and
+depths. Cache identity includes weights, tokenizer/configuration, engine versions,
+execution layout, MTP depth and image content; changes can prevent reuse.
+A private namespace has one live writer; concurrent processes need separate
+paths. <code>mlx_cache_scope</code> partitions local identity, not authenticated tenants.
+Treat local checkpoint directories as immutable. Hub snapshots carry revision
+identity; arbitrary local checkpoints use bounded file/header fingerprints,
+not a full hash of every tensor value. Clear caches after manually editing weights.</p>
+<p><code>prompt_cache_clear()</code> invalidates owned RAM and SSD cache entries. Key-specific
+clear also clears the whole shared native namespace and warns about its scope.
+Weights and other namespaces are untouched. Native APC is separate from the
+ordinary MLX durable append-cache artifact format: manual prefill, append, fork,
+save and load are unsupported. See <a href="prompt-caching.html">prompt caching</a> and
+<a href="memory-management.html">model residency</a>.</p>
+<h2 id="http-serving">HTTP serving</h2>
+<p><code>abstractcore.endpoint.app.create_app(provider_instance=llm)</code> serves the same
+provider. The AbstractCore server accepts these constructor controls inside
+<code>options</code> on <code>/acore/models/load</code>. Load before sending concurrent chat requests;
+changing resident execution options requires unloading first. Both chat APIs
+accept per-request <code>speculation</code> or <code>false</code>. Native chat responses expose
+diagnostics under the additive <code>abstractcore</code> field, including terminal streaming
+events. Cache and lifecycle controls remain serialized through the owner.</p>
+<p>The single-model native endpoint accepts inline base64 PNG/JPEG/WebP/GIF
+<code>image_url</code> parts in the final user message, up to 10 MiB per image, 32 MiB total
+and 16 images. Remote/file image URLs, unsupported part types and image-bearing
+history are rejected explicitly. Supply complete text history plus current-turn
+images, or use the Python <code>media=</code> API for local files. Image detail metadata does
+not override the native processor's resizing policy.</p>
+<p>Use one server process per resident model session: web workers do not share
+an in-process scheduler or weight allocation. These controls do not enable
+batching or MTP for Hugging Face/GGUF providers.</p>
+<h2 id="live-phase-feedback-prefill-vs-generation">Live phase feedback (prefill vs generation)</h2>
+<p>A 6,900-token prompt on this lane spends ~1.6 s in prefill before the first
+token, then decodes at ~150 tok/s. From outside, both look like "the call has
+not returned yet", so a host renders one undifferentiated spinner over two very
+different states. Pass a callback and the provider reports the boundary:</p>
+<div class="code-block"><pre><code class="language-python">def on_phase(event: dict) -&gt; None:
+    print(event[&quot;phase&quot;], event.get(&quot;prompt_tokens&quot;), event.get(&quot;generated_tokens&quot;))
+
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3.5-4B-4bit&quot;)
+llm.generate(&quot;&quot;, messages=messages, system_prompt=system, tools=tools,
+             prompt_cache_key=&quot;session:chat&quot;, on_progress=on_phase)
+</code></pre></div>
+<p><code>on_progress=</code>, <code>progress_callback=</code> and <code>progress_event_callback=</code> are accepted
+(the first callable wins) and receive plain JSON-safe dicts:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>key</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind</code></td>
+<td>always <code>"llm"</code> — the discriminator that separates these from generated-media progress, which shares the event name downstream</td>
+</tr>
+<tr>
+<td><code>phase</code></td>
+<td><code>"prefill"</code>, <code>"generate"</code> or <code>"complete"</code></td>
+</tr>
+<tr>
+<td><code>prompt_tokens</code></td>
+<td>total prompt tokens for this call. <strong>Only ever grows</strong>: on a warm cache the backend reports the tokens IT processed (e.g. <code>1</code>), which is a narrower measurement of the same prompt, not news</td>
+</tr>
+<tr>
+<td><code>cached_tokens</code> / <code>fed_tokens</code></td>
+<td>prompt tokens restored from KV vs actually prefilled</td>
+</tr>
+<tr>
+<td><code>generated_tokens</code></td>
+<td>tokens sampled so far</td>
+</tr>
+<tr>
+<td><code>ttft_s</code></td>
+<td>time to first token, set on the first-token event and stable afterwards</td>
+</tr>
+<tr>
+<td><code>tokens_per_second</code></td>
+<td>generation rate; absent until a second token exists (one token divided by a near-zero interval is not a rate)</td>
+</tr>
+<tr>
+<td><code>prefill_processed_tokens</code></td>
+<td><code>prefill</code> events only: prompt tokens already in the KV cache — restored tokens count at once, then fed tokens as each chunk is evaluated. Cumulative, monotone, never above <code>prompt_tokens</code>. <strong>Absent</strong> when the lane cannot observe its prefill</td>
+</tr>
+<tr>
+<td><code>prefill_tokens_per_second</code></td>
+<td><code>prefill</code> events only: rate over the tokens NEWLY processed since the first mid-prefill observation</td>
+</tr>
+<tr>
+<td><code>prompt_tokens_per_second</code>, <code>elapsed_s</code>, <code>event_index</code>, <code>final</code>, <code>finish_reason</code></td>
+<td>as named</td>
+</tr>
+</tbody>
+</table></div>
+<p>Keys with no known value are absent rather than zero: on the native APC lane the
+cached/fed split is only known once prefill has started on the worker, so it
+appears from the first mid-prefill event on (or the first-token event when the
+prompt is too short to observe), while the mlx-lm key-mode lane already knows it
+and puts it on the <code>prefill</code> event.</p>
+<p><strong>Mid-prefill progress.</strong> After the start event, <code>prefill</code> events keep arriving
+at the same cadence while the prompt is processed, each carrying
+<code>prefill_processed_tokens</code> — what a UI renders as
+<code>Prefill · 2,100 / 5,642 tokens (37%)</code>. Every lane reports from a real
+per-chunk observation, never an estimate:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>lane</th>
+<th>seam</th>
+<th>granularity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mlx-lm (<code>mlx_batching=False</code>, no speculation)</td>
+<td>mlx-lm's <code>prompt_progress_callback(processed, total)</code></td>
+<td>per <code>prefill_step_size</code> chunk (2,048)</td>
+</tr>
+<tr>
+<td>native runtime, batched (temperature 0)</td>
+<td>upstream <code>PromptProcessingBatch</code> row counters, read after every <code>BatchGenerator.next()</code></td>
+<td>per 256-token chunk</td>
+</tr>
+<tr>
+<td>native runtime, exclusive (sampling) and in-process mlx-vlm (MTP included)</td>
+<td>mlx-vlm's chunked-prefill "Prefill" bar, observed per thread by <code>mlx_prefill_observer</code></td>
+<td>per chunk (256 native / 2,048 in-process)</td>
+</tr>
+<tr>
+<td>HuggingFace transformers</td>
+<td>the 2,048-token chunk loop (<code>ABSTRACTCORE_TRANSFORMERS_PREFILL_STEP</code>), device-synchronized per chunk</td>
+<td>per chunk; a prompt short enough for one forward reports no position</td>
+</tr>
+<tr>
+<td>HuggingFace llama.cpp (control plane)</td>
+<td><code>n_batch</code> slices (512)</td>
+<td>per slice; the <code>create_chat_completion</code> fallback reports no position</td>
+</tr>
+<tr>
+<td>HTTP providers (LM Studio, Ollama, llama.cpp server, …)</td>
+<td>none — the server does not expose it</td>
+<td>no callback, no event</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>NativeRuntime.stream(request, on_prefill_progress=...)</code> delivers
+<code>NativePrefillProgress</code> observations on the iterating thread and never yields
+them, so a consumer that did not ask sees the stream it saw before. No
+<code>prefill</code> event is emitted after the first token.</p>
+<p><strong>Cost.</strong> Time-limited, never count-capped (ADR-0026). <code>prefill</code>, the
+first-token event and the terminal <code>complete</code> always fire; every other event
+(mid-prefill or decode cadence) is dropped unless at least
+<code>ABSTRACTCORE_PROGRESS_MIN_INTERVAL_S</code> (default 0.5) seconds have passed since
+the previous one, so events flow for the whole call at about two per second.
+A 3.7 s answer costs 9 events; a 6 s prefill of 21,066 tokens adds 11. Subscribing also routes the call through <code>stream_generate</code> instead of
+<code>generate</code> — byte-identical output, since mlx-lm's <code>generate</code> is exactly
+<code>"".join(r.text for r in stream_generate(...))</code> — and costs one extra tokenizer
+encode to report the prompt size before the GPU work starts. With no subscriber
+nothing is computed and nothing changes.</p>
+<p><code>BaseProvider.supports_text_progress_events()</code> gates this and defaults to
+<strong>False</strong>. For a provider that answers False the host's callback is consumed at
+the provider boundary and dropped — it never reaches provider kwargs, so no
+strict SDK sees an unknown callable — and no phase is invented. AbstractRuntime
+turns each event into one durable <code>abstract.progress</code> ledger record; see
+AbstractRuntime's <code>docs/integrations/abstractcore.md</code>.</p>
+<h2 id="supported-boundaries">Supported boundaries</h2>
+<ul>
+<li>MTP is fixed-cohort scheduling, not late-join continuous batching. Sampled
+  execution is exclusive; larger draft depths need workload-specific measurement.</li>
+<li>Native prefix reuse requires full history and an explicit key. Legacy manual
+  append/prefill/fork/save/load artifacts are not supported by this native cache.</li>
+<li>Prompted structured output is supported and may validate/retry. The Outlines
+  adapter is not supported by this native runtime.</li>
+<li>One process owns a resident session; additional web workers do not share its
+  tensors. Native SSD namespaces are private and single-writer.</li>
+<li>Model load/unload controls do not provide automatic multi-model memory-pressure
+  LRU eviction; managed model TTL is advisory. See <a href="memory-management.html">model residency</a>.</li>
+<li>Upstream private batching/cache interfaces are version-sensitive. Use the
+  documented dependency range and revalidate before changing the execution stack.</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

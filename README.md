@@ -9,6 +9,14 @@
 Unified LLM Interface
 > Write once, run everywhere
 
+What's new in 2.35.0: the model capability registry covers the current vendor lineups (GPT-6 and GPT-6.1, Claude 5.5 and Fable 5.1, Grok 4.3 to 4.7, Qwen 3.8, DeepSeek V4.1 Flash, GLM 5.3, MiniMax M3.1 Flash, Kimi K3 and K3.1 Pro, LFM3, Spark X2.5/X2.6, Nemotron 3.5, Bonsai 2 and more), so an image, video or voice route can name them; and a GGUF or MLX re-packaging of a registered model (`unsloth/...-GGUF:Q4_K_M`, `mlx-community/...-4bit`, bartowski's `Org_Model-GGUF`) resolves to that model's entry instead of the text-only default. Transcriptions report `language` and `detected_language`. See the [changelog](CHANGELOG.md#2350---2026-11-07).
+
+What's new in 2.34.0: a local model that no call has used for 60 minutes is unloaded from memory and loads
+again on its next call; a model kept loaded (Keep loaded) never is, and no running call is interrupted
+(`process_residency.set_idle_unload(seconds)`, `0` turns it off). A provider key you send to the server's discovery
+routes now reaches only the provider you name, never every provider those routes check. The web console's themes
+match ui-kit 0.9.14. See the [changelog](CHANGELOG.md#2340---2026-11-03).
+
 AbstractCore is an offline-capable, open-source-first LLM infrastructure layer
 for Python applications. It gives you one `create_llm(...)` API across local
 runtimes, self-hosted servers, cloud APIs, and OpenAI-compatible gateways.
@@ -24,11 +32,12 @@ application code portable while the model underneath moves between OpenAI,
 Anthropic, Ollama, LM Studio, MLX, HuggingFace/GGUF, vLLM, OpenRouter, Portkey,
 or any OpenAI-compatible backend.
 
-The default install is intentionally lightweight; add providers and optional
-subsystems via explicit install extras. For local runtimes, AbstractCore is
+The default install (`pip install abstractcore`) runs every remote provider with
+no further setup; `abstractcore[apple]` and `abstractcore[gpu]` add the local
+engines for Apple silicon and NVIDIA / AMD machines. For local runtimes, AbstractCore is
 cache-first and offline-first: it will not silently download model weights; you
-pull or prefetch the models you want, then run without internet when your
-chosen provider and tools are local.
+download the models you want (`abstractcore models download ...`), then run
+without internet when your chosen provider and tools are local.
 
 First-class support for:
 - offline-capable local operation with explicit model setup (no silent downloads)
@@ -39,16 +48,44 @@ First-class support for:
 - universal tool calling (native + prompted tool syntax)
 - structured output (Pydantic)
 - unified generation parameters, capability detection, and provider quirks
-- session memory, prompt caching, events, tracing, and retry-aware reliability hooks
+- session memory, prompt caching, durable memory bloc cache artifacts, events, tracing, and retry-aware reliability hooks
 - media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
-- optional capability plugins (`core.voice/core.audio/core.vision`) for deterministic TTS/STT and generative vision (via `abstractvoice` / `abstractvision`)
+- optional capability plugins (`core.voice/core.audio/core.vision/core.music/core.scene3d/core.camera`) for deterministic TTS/STT, generative vision, music, 3D generation, and real-camera piloting (via packages such as `abstractvoice`, `abstractvision`, `abstractmusic`, `abstract3d`, and `abstractcamera`)
+- decision models (text in, calibrated typed decisions out): `generate(document, output="decision", questions=...)` with one abstraction over hosted Jev (`typesafe`), any System One host (`systemone`), and local Kev / Lev / Laya checkpoints on MLX, transformers or GGUF; the server speaks the System One API (`POST /v1/decisions`); see [Decision Models](docs/decision-models.md)
 - glyph visual-text compression for long documents (**)
-- optional OpenAI-compatible `/v1` gateway server (multi-provider) and single-model endpoint
+- optional OpenAI-compatible `/v1` gateway server (multi-provider, including `response_format`
+  structured outputs validated against your schema) and single-model endpoint
 
 (*) Media input is policy-driven (no silent semantic changes). If a model doesn’t support images, AbstractCore can use a configured vision model to generate short visual observations and inject them into your text-only request (vision fallback). Audio/video attachments are also policy-driven (`audio_policy`, `video_policy`) and may require capability plugins for fallbacks. See [Media Handling](docs/media-handling-system.md) and [Centralized Config](docs/centralized-config.md).
-(**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (install `pip install "abstractcore[compression]"`; for PDFs also install `pip install "abstractcore[media]"`).
+(**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (included in the light install).
+
+Generative vision uses `abstractvision` when installed. In server mode, omit
+`model` only when the server has a configured default, or use explicit
+provider/model ids such as `diffusers/default`, `diffusers/<huggingface-repo>`,
+`mlx-gen/AbstractFramework/qwen-image-2512-4bit`,
+`mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, `sdcpp/default`, or
+`openai-compatible/<model>`. Quantized MLX-Gen models are selected by their
+published repo id; Core does not add a separate quant override.
 
 Docs: [Getting Started](docs/getting-started.md) · [FAQ](docs/faq.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
+
+For AI assistants and doc-indexing tools, this repository also publishes
+[`llms.txt`](llms.txt) and [`llms-full.txt`](llms-full.txt). MCP clients such as
+Context7 can query the public documentation directly as well.
+
+## For AI agents
+
+Register and use the [`abstractcore` agent skill](https://github.com/lpalbou/AbstractCore/tree/main/skills/abstractcore)
+to write integrations and operate the Python API, CLI and HTTP server. Start by reading
+[`skills/abstractcore/SKILL.md`](https://raw.githubusercontent.com/lpalbou/AbstractCore/main/skills/abstractcore/SKILL.md);
+keep its `references/` folder alongside it when copying the skill into your agent's skill directory.
+In a source checkout, tell another agent: **Read `skills/abstractcore/SKILL.md` and use its
+references for this task.**
+
+The skill covers provider and artifact selection, token/time/cost limits, host-controlled
+tools, sessions, typed output, media and diagnostics. The canonical
+[integration and operations guide](docs/agent-usage.md) contains the same supported workflows;
+source contributors should also read [Contributing](CONTRIBUTING.md).
 
 ## Why AbstractCore
 
@@ -99,42 +136,64 @@ graph LR
 
 ## Install
 
-Choose the smallest install that matches where your models run. Extras compose,
-so you can start with `abstractcore[remote]` and add `media`, `tools`, `server`,
-or local runtime extras as your app grows.
+**Install in one line** (no admin rights, no Python needed):
+
+- **macOS / Linux:**
+
+  ```bash
+  curl -LsSf https://abstractframework.ai/core/install.sh | sh
+  ```
+
+- **Windows 10 / 11** (PowerShell):
+
+  ```powershell
+  powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/core/install.ps1 | iex"
+  ```
+
+The script detects the machine (Apple Silicon with macOS 14+: `abstractcore[apple]`; an NVIDIA or
+ROCm card: `abstractcore[gpu]`; anything else: the light install) and installs AbstractCore alone
+with uv and Python 3.12, giving you the `abstractcore`, `abstractcore-chat` and
+`abstractcore-endpoint` commands and the apps; run it again to upgrade. It never starts a compiler,
+so echo cancellation and stable-diffusion.cpp are left out (Diffusers / MLX-Gen cover image
+generation; with a C compiler you can add them yourself). Options and details:
+[One-line install](docs/installation.md#one-line-install).
+
+**With pip**, in your own Python environment, AbstractCore has three install settings:
 
 ```bash
-# Core: local HTTP servers and gateways that need no SDK
-# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
+# Light: every remote provider (OpenAI, Anthropic, OpenRouter, Portkey, any OpenAI-compatible
+# endpoint, LM Studio, Ollama, a vLLM server), tools, media inputs, the HTTP server,
+# and the voice / vision / music / 3D capability plugins
 pip install abstractcore
 
-# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
-pip install "abstractcore[remote]"
+# Apple silicon: light + every local engine a Mac can run (MLX text and vision,
+# HuggingFace/GGUF, local embeddings, local voice, image, video and music engines)
+pip install "abstractcore[apple]"
 
-# Individual provider SDKs / local runtimes
-pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
-pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm (heavy)
-
-# Optional application features
-pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
-pip install "abstractcore[media]"       # images, PDFs, Office docs
-pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
-pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
-pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
-
-# Combine extras (zsh: keep quotes)
-pip install "abstractcore[remote,media,tools]"
-
-# Turnkey local-runtime installs
-pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
+# NVIDIA / AMD GPU: light + every local engine a GPU machine can run (vLLM,
+# HuggingFace/GGUF, local embeddings, local voice, image, video and music engines)
+pip install "abstractcore[gpu]"
 ```
 
+`apple` and `gpu` each include everything in light. See [Installation](docs/installation.md)
+for what each setting contains, platform requirements, and the optional headless browser.
+
 ## Quickstart
+
+Pick, download and run a local model from the browser:
+
+```bash
+pip install "abstractcore[apple]"    # Apple silicon; "abstractcore[gpu]" on NVIDIA / AMD
+abstractcore serve
+# open the printed link: http://127.0.0.1:8000/console#claim=...
+```
+
+The **Models** tab lists models that fit this machine and downloads one in a click; the
+**Engines** tab installs Ollama, LM Studio, MLX or llama.cpp with one confirmation that shows
+the exact command. Each action prints its CLI twin (`abstractcore models download ...`,
+`abstractcore engines install ...`). See [Local Models](docs/models.md),
+[Recommended Models](docs/recommended-models.md),
+[Local Engines](docs/engines.md) and [Web Console](docs/console.md).
 
 Local/offline example (requires Ollama running with `ollama pull qwen3:4b`
 already done):
@@ -147,7 +206,7 @@ response = llm.generate("Draft a privacy-preserving onboarding checklist.")
 print(response.content)
 ```
 
-Remote API example (requires `pip install "abstractcore[openai]"`):
+Remote API example (works with the light install; set `OPENAI_API_KEY`):
 
 ```python
 from abstractcore import create_llm
@@ -156,6 +215,26 @@ llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("What is the capital of France?")
 print(response.content)
 ```
+
+### Request/output form
+
+The prompt-first API remains fully supported, but the lower-level multimodal shape is now the
+keyword `request=` plus `output=` form:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+resp = llm.generate(
+    request={"text": "A red ceramic mug on a white table."},
+    output={"modality": "image", "format": "png"},
+)
+```
+
+Legacy `prompt`, `text`, `messages`, and `media` kwargs normalize into the same internal request
+contract. Manual provider/model/base URL selection remains available on output specs and provider
+construction; the new contract is additive, not a breaking API change. For debugging, responses may
+also expose a bounded `_resolved_generate_route` metadata summary.
 
 ### Conversation state (`BasicSession`)
 
@@ -215,7 +294,7 @@ Open-source-first: local providers (Ollama, LMStudio, vLLM, openai-compatible, H
 - `ollama`: local server at `OLLAMA_BASE_URL` (or legacy `OLLAMA_HOST`)
 - `lmstudio`: OpenAI-compatible local server at `LMSTUDIO_BASE_URL` (default: `http://localhost:1234/v1`)
 - `vllm`: OpenAI-compatible server at `VLLM_BASE_URL` (default: `http://localhost:8000/v1`)
-- `openai-compatible`: generic OpenAI-compatible endpoints via `OPENAI_COMPATIBLE_BASE_URL` (default: `http://localhost:1234/v1`)
+- `openai-compatible`: generic OpenAI-compatible endpoints via `OPENAI_BASE_URL` (default: `http://localhost:1234/v1`)
 - `huggingface`: local models via Transformers (optional `HUGGINGFACE_TOKEN` for gated downloads)
 - `mlx`: Apple Silicon local models (optional `HUGGINGFACE_TOKEN` for gated downloads)
 
@@ -223,7 +302,7 @@ You can also persist settings (including API keys) via the config CLI:
 - `abstractcore --status`
 - `abstractcore --configure` (alias: `--config`)
 - `abstractcore --set-api-key openai sk-...`
-- `abstractcore --set-server-api-key acore-server-secret`
+- `abstractcore --set-server-auth-token acore-server-secret`
 
 ## What’s inside (quick tour)
 
@@ -232,11 +311,12 @@ You can also persist settings (including API keys) via the config CLI:
 - Tool syntax rewriting: `tool_call_tags` (Python) and `agent_format` (server) → [Tool Syntax Rewriting](docs/tool-syntax-rewriting.md)
 - Structured output: Pydantic-first with provider-aware strategies → [Structured Output](docs/structured-output.md)
 - Media input: images/audio/video + documents (policies + fallbacks) → [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](docs/vision-capabilities.md)
-- Capability plugins (optional): deterministic `llm.voice/llm.audio/llm.vision` surfaces → [Capabilities](docs/capabilities.md)
+- Capability plugins (optional): deterministic `llm.voice/llm.audio/llm.vision/llm.music` surfaces and shared provider/model discovery → [Capabilities](docs/capabilities.md)
 - Glyph visual-text compression: scale long-context document analysis via VLMs → [Glyph Visual-Text Compression](docs/glyphs.md)
 - Embeddings and semantic search → [Embeddings](docs/embeddings.md)
 - Observability: global event bus + interaction traces → [Architecture](docs/architecture.md), [API Reference (Events)](docs/api-reference.md#eventtype), [Interaction Tracing](docs/interaction-tracing.md)
 - MCP (Model Context Protocol): discover tools from MCP servers (HTTP/stdio) → [MCP](docs/mcp.md)
+- Email: one IMAP/SMTP account (password or OAuth2; servers found from the address), encrypted credentials, recipient policy, send limits, Read only or Read and write access, and email tools → [Email](docs/email.md)
 - OpenAI-compatible server: one `/v1` gateway for chat + optional `/v1/images/*` and `/v1/audio/*` endpoints → [Server](docs/server.md)
 
 ## Tool calling (passthrough by default)
@@ -279,7 +359,7 @@ print(answer.bullets)
 
 ## Media input (images/audio/video)
 
-Requires `pip install "abstractcore[media]"`.
+Media handling is part of the light install.
 
 ```python
 from abstractcore import create_llm
@@ -292,7 +372,8 @@ print(resp.content)
 Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
-- **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractvoice` for speech-to-text.
+- **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` for speech-to-text through AbstractVoice (part of the light install).
+  `abstractvoice` installs its base plugin path on Python 3.9 without OmniVoice, torch, or torchaudio. Local voice engines and clone backends are part of explicit local aggregate profiles.
 
 Configure defaults (optional):
 
@@ -305,19 +386,183 @@ abstractcore --set-video-strategy auto
 
 See [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](docs/vision-capabilities.md).
 
+## Generated media output
+
+Optional capability plugins can also generate media through the normal
+`generate(...)` surface:
+
+```python
+# Image generation via abstractvision.
+image = llm.generate("A red ceramic mug on a white table.", output="image")
+png_bytes = image.outputs["image"][0].data
+
+# Image edit: source plus optional reference/style media infers image-to-image.
+edited = llm.generate(
+    "Make the mug blue using the second image as a style reference.",
+    media=[
+        {"type": "image", "path": "mug.png", "role": "source"},
+        {"type": "image", "path": "style.png", "role": "style"},
+    ],
+    output="image",
+)
+
+def progress(event):
+    print("media progress", event)
+
+# Image upscale via the AbstractVision plugin. Canonical q8 packages do not
+# need runtime quantize; pass a local prepared folder as model when needed.
+upscaled_direct = llm.vision.upscale_image(
+    "mug.png",
+    provider="mlx-gen",
+    model="AbstractFramework/seedvr2-3b-8bit",
+    scale="2x",
+    on_progress=progress,
+)
+
+upscaled = llm.generate(
+    media={"type": "image", "path": "mug.png", "role": "source"},
+    on_progress=progress,
+    output={
+        "task": "image_upscale",
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/seedvr2-3b-8bit",
+        "scale": "2x",
+    },
+)
+upscaled_png = upscaled.outputs["image"][0].data
+
+# Text-to-video via abstractvision. The callback is forwarded to the plugin.
+video = llm.generate(
+    "A red fox walking through a snowy forest, cinematic.",
+    on_progress=progress,
+    output={
+        "modality": "video",
+        "task": "text_to_video",
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
+        "fps": 24,
+        "steps": 20,
+        "guidance_scale": 4.0,
+        "guidance_2": 3.0,
+        "extra": {"max_sequence_length": 256},
+    },
+)
+mp4_bytes = video.outputs["video"][0].data
+
+# Image-to-video uses image media plus task="image_to_video".
+i2v = llm.generate(
+    "Slow camera push-in.",
+    media={"type": "image", "path": "first-frame.png", "role": "source"},
+    output={
+        "task": "image_to_video",
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
+        "fps": 24,
+        "steps": 20,
+        "guidance_scale": 3.5,
+        "guidance_2": 3.5,
+        "extra": {"max_sequence_length": 256},
+    },
+)
+
+# TTS via abstractvoice.
+speech = llm.generate(text="Hello from AbstractCore.", output="voice")
+wav_bytes = speech.outputs["voice"][0].data
+
+# Music via abstractmusic.
+music = llm.generate(
+    text="A short calm piano loop.",
+    output={"modality": "music", "provider": "acemusic", "duration_s": 8, "format": "wav"},
+)
+music_wav = music.outputs["music"][0].data
+
+# Voice clone/register: audio media + voice output returns a reusable voice id
+# when the selected AbstractVoice backend supports local or remote cloning.
+clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
+voice_id = clone.resources["voice"][0].resource_id
+```
+
+Text-only `generate(...)` is unchanged. For advanced/provider-specific work,
+the direct `llm.vision.*`, `llm.voice.*`, `llm.audio.*`, and `llm.music.*` facades remain
+available. Configure `abstractvision` and `abstractvoice` backends first for
+real generation; configure `abstractmusic` for music generation. With
+`abstractmusic>=0.1.15`, the default music backend is the lightweight remote
+ACE Music path; set `ACEMUSIC_API_KEY` before use. Local music engines come
+with `abstractcore[apple]` or `abstractcore[gpu]`.
+
+Catalog helpers are available for UI/dropdown preflight:
+
+```python
+image_models = llm.vision.list_provider_models(task="text_to_image")
+voices = llm.voice.voice_catalog()
+tts_models = llm.voice.list_tts_models()
+stt_models = llm.voice.list_stt_models()
+music_models = llm.capabilities.list_models("music", task="text_to_music")
+```
+
+Voices are navigable by engine and by language, and you can create your own:
+
+```python
+french = llm.voice.list_voices(language="fr")      # native French voices first
+piper = llm.voice.list_voices(provider="piper")    # one engine's voices
+languages = llm.voice.list_languages(kind="tts")   # languages per engine, no model loaded
+# Each record: voice_id (pass as voice=), name, kind (profile|clone), provider, model, languages, language
+
+mira = llm.voice.design_voice("A calm, warm female voice in her thirties.", name="Mira")
+wav = llm.voice.tts("Good morning.", voice=mira["voice_id"], one_shot=True)
+llm.voice.rename_cloned_voice(mira["voice_id"], "Mira (narrator)")
+llm.voice.delete_cloned_voice(mira["voice_id"])
+```
+
+`one_shot=True` synthesizes the whole text as one generation, so the take keeps one
+voice from start to end (Qwen3-TTS voices, up to 1000 characters).
+
+The HTTP server exposes equivalent discovery at
+`/v1/vision/providers/`, `/v1/vision/models`, `/v1/audio/voices` (with `language`),
+`/v1/audio/languages`, `/v1/audio/speech/models`, `/v1/audio/transcriptions/models`,
+`/v1/voice/clone/providers` and `/v1/voice/clones`, plus `/v1/audio/music/providers`
+and `/v1/audio/music/models`. Voices are created and managed with
+`POST /v1/voice/clone`, `POST /v1/voice/design` and
+`GET|PATCH|DELETE /v1/voice/clones/{voice_id}`; see [Server](docs/server.md).
+Generated media HTTP routes include `/v1/images/generations`,
+`/v1/images/edits`, `/v1/videos/generations`, `/v1/videos/edits`, and
+async polling routes under `/v1/vision/jobs/images/*` and
+`/v1/vision/jobs/videos/*`; image and video jobs include the latest backend
+progress event when the selected backend reports it.
+`/v1/models` remains focused on LLM and embedding provider models.
+Use `capability_route` to filter those models by precise route-keyed support:
+`/v1/models?capability_route=input.image,output.text`,
+`/v1/models?capability_route=input.sound,output.text`,
+`/v1/models?capability_route=input.music,output.text`, or
+`/v1/models?capability_route=embedding.text`. Generated-media provider
+readiness and download/setup status remain on the capability plugin catalog
+routes, not in `/v1/models`.
+
 ## HTTP server (OpenAI-compatible gateway)
 
 ```bash
-pip install "abstractcore[server]"
-python -m abstractcore.server.app
+pip install abstractcore                  # the server is part of the light install
+abstractcore serve                        # 127.0.0.1:8000; prints a one-time console link
+export ABSTRACTCORE_AUTH_TOKEN="$(abstractcore serve --print-token)"
 ```
+
+On your own machine the server creates its bearer token on first run; on a network, set
+`ABSTRACTCORE_AUTH_TOKEN` yourself and pass `--host 0.0.0.0`. See
+[First run](docs/server.md#first-run-on-your-machine).
 
 Use any OpenAI-compatible client, and route to any provider/model via `model="provider/model"`:
 
 ```python
+import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_AUTH_TOKEN"])
 resp = client.chat.completions.create(
     model="ollama/qwen3:4b",
     messages=[{"role": "user", "content": "Hello from the gateway!"}],
@@ -326,6 +571,10 @@ print(resp.choices[0].message.content)
 ```
 
 See [Server](docs/server.md).
+
+The server also serves a web console at `/console` (open the link `abstractcore serve` prints):
+see what this machine can run, browse and download models with fit badges, delete weights, and install engines such as
+Ollama with one confirmation. Every action shows its CLI equivalent. See [Web Console](docs/console.md).
 
 Single-model `/v1` endpoint (one provider/model per worker): see [Endpoint](docs/endpoint.md) (`abstractcore-endpoint`).
 
@@ -343,6 +592,27 @@ Token limits:
 - startup: `abstractcore-chat --max-tokens 8192 --max-output-tokens 1024 ...`
 - in-REPL: `/max-tokens 8192` and `/max-output-tokens 1024`
 
+Local models and engines (see [Local Models](docs/models.md) and [Local Engines](docs/engines.md)):
+
+```bash
+abstractcore host profile                        # accelerator, memory ceiling, free disk
+abstractcore models catalog --fits               # downloadable models that fit this machine
+abstractcore models download ollama qwen3:8b
+abstractcore models list                         # installed models per engine, with sizes
+abstractcore models verify qwen3:8b --provider ollama   # load it once and check the answer
+abstractcore models delete ollama qwen3:8b --yes
+abstractcore engines status --probe              # Ollama / LM Studio / MLX / llama.cpp / ...
+abstractcore engines install ollama --dry-run    # the exact install command
+```
+
+Email (see [Email](docs/email.md)):
+
+```bash
+abstractcore email connect --address me@example.com --password <value>   # servers found from the address
+abstractcore email test
+abstractcore email status
+```
+
 ## Built-in CLI apps
 
 AbstractCore also ships with ready-to-use CLI apps:
@@ -352,6 +622,7 @@ AbstractCore also ships with ready-to-use CLI apps:
 
 Start here:
 - [Docs Index](docs/README.md) — navigation for all docs
+- [Installation](docs/installation.md) — the three install settings: light, `apple`, `gpu`
 - [Prerequisites](docs/prerequisites.md) — provider setup (keys, local servers, hardware notes)
 - [Getting Started](docs/getting-started.md) — first call + core concepts
 - [FAQ](docs/faq.md) — common questions and setup gotchas
@@ -360,26 +631,35 @@ Start here:
 - [Troubleshooting](docs/troubleshooting.md) — common failures and fixes
 
 Core features:
+
+- [Native MLX Runtime](docs/native-mlx-runtime.md) — in-process Qwen3.8 inference, vision, selectable MTP depth, concurrent requests and RAM/SSD prefix reuse; [M5 Max measurements](docs/native-mlx-benchmarks.md)
+- [Stopping a Generation](docs/generation-cancel.md) — `cancel_event=` per provider, `GenerationCancelledError`, safe eject and reload
 - [Tool Calling](docs/tool-calling.md) — universal tools across providers (native + prompted)
 - [Tool Syntax Rewriting](docs/tool-syntax-rewriting.md) — rewrite tool-call syntax for different runtimes/clients
 - [Structured Output](docs/structured-output.md) — schema enforcement + retry strategies
 - [Media Handling](docs/media-handling-system.md) — images/audio/video + documents (policies + fallbacks)
 - [Vision Capabilities](docs/vision-capabilities.md) — image/video input, vision fallback, and how this differs from generative vision
 - [Glyph Visual-Text Compression](docs/glyphs.md) — compress long documents into images for VLMs
-- [Generation Parameters](docs/generation-parameters.md) — unified parameter vocabulary and provider quirks
+- [Generation Parameters](docs/generation-parameters.md) — unified parameter vocabulary, default hierarchy, caller overrides, and provider quirks
 - [Session Management](docs/session.md) — conversation history, persistence, and compaction
 - [Embeddings](docs/embeddings.md) — embeddings API and RAG building blocks
+- [Local Models](docs/models.md) — model catalog with fit verdicts, installed models, download and delete
+- [Recommended Models](docs/recommended-models.md) — the recommended model for text, vision, speech, image, video and music on every kind of machine (`abstractcore models recommendations`)
+- [Local Engines](docs/engines.md) — engine detection and one-command installs
 - [Async Guide](docs/async-guide.md) — async patterns, concurrency, best practices
 - [Centralized Config](docs/centralized-config.md) — `~/.abstractcore/config/abstractcore.json` + CLI config commands
 - [Capabilities](docs/capabilities.md) — supported features and current limitations
 - [Interaction Tracing](docs/interaction-tracing.md) — inspect prompts/responses/usage for observability
 - [MCP](docs/mcp.md) — consume MCP tool servers (HTTP/stdio) as tool sources
+- [Email](docs/email.md) — connect a mailbox, recipient policy, send limits, email tools and the `abstractcore.comms.email` library
 
 Reference and internals:
 - [Architecture](docs/architecture.md) — system overview + event system
 - [API (Python)](docs/api.md) — how to use the public API
 - [API Reference](docs/api-reference.md) — Python API (including events)
 - [Server](docs/server.md) — OpenAI-compatible gateway with tool/media support
+- [Web Console](docs/console.md) — `/console`: models, engines and providers in the browser; embeddable screens
+- [Terminal Console](docs/console-tui.md) — `abstractcore-console`: the same Models and Engines screens in a terminal
 - [CLI Guide](docs/acore-cli.md) — interactive `abstractcore-chat` walkthrough
 
 Project:

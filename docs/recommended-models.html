@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recommended models - AbstractCore</title>
+    <meta name="description" content="AbstractCore recommends one model for each capability of the framework: text and chat, image input (vision), speech output, speech input, image generation,…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/recommended-models.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Recommended models</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore recommends one model for each capability of the framework: text and chat, image input (vision), speech output, speech input, image generation, video generation and music. The recommendation depends on the machine: its platform, its GPU, and on Apple silicon its unified memory. This page lists every recommendation for every kind of machine, explains how each one is chosen, and shows how to read the same data from the CLI, from Python and as JSON.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#read-the-recommendations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Read the recommendations</a>
+<a href="#how-the-recommendation-is-chosen" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How the recommendation is chosen</a>
+<a href="#recommended-models-by-machine" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Recommended models by machine</a>
+<a href="#gpu-memory-on-apple-silicon" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">GPU memory on Apple silicon</a>
+<a href="#the-json-export" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">The JSON export</a></div>
+
+            <div class="doc-content">
+
+<p>Related pages: <a href="models.html">Local Models</a> (the download catalog, fit verdicts and downloads),
+<a href="centralized-config.html">Centralized Config</a> (capability routes, <code>apply-recommended</code>), and
+<a href="engines.html">Local Engines</a> (installing LM Studio, Ollama and MLX).</p>
+<h2 id="read-the-recommendations">Read the recommendations</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>What</th>
+<th>CLI</th>
+<th>Python</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Every machine class, every capability</td>
+<td><code>abstractcore models recommendations [--json \| --markdown]</code></td>
+<td><code>abstractcore.config.recommendations.recommendation_matrix()</code></td>
+</tr>
+<tr>
+<td>This machine</td>
+<td><code>abstractcore models recommendations --host [--json]</code></td>
+<td><code>abstractcore.config.recommendations.recommended_models()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>The command only reads: it evaluates the curated catalog on reference machines and never probes
+a model hub or downloads anything. <code>--host</code> runs the full host probe of this machine (GPU memory
+limit included), so its fit verdicts are this machine's own. <code>--output PATH</code> writes the result to
+a file instead of standard output.</p>
+<h2 id="how-the-recommendation-is-chosen">How the recommendation is chosen</h2>
+<p>One table in AbstractCore holds the recommended model per capability,
+<code>abstractcore.config.capability_defaults.RECOMMENDED_MODELS</code>, and one function answers per
+machine, <code>recommended_models(host)</code>. Every surface reads them: the fresh-install defaults,
+<code>abstractcore config apply-recommended</code>, <code>abstractcore models download --recommended</code>, the model
+catalog's <code>starter</code> flags, the Gateway's first-run guide, this page and the AbstractFramework
+website.</p>
+<ul>
+<li><strong>Text</strong> follows <code>recommended_text_model()</code>. On Apple silicon it is an MLX build chosen by
+  unified memory: below 24 GiB Qwen3.5 9B (4-bit; it fits from 16 GB, and on an 8 GB Mac it is
+  tight: it runs with a small context; close other apps first), 24 to below 128 GiB Qwen3.8 27B
+  (4-bit; on a 24 GB Mac it runs with a small context by default, and with about 30k tokens after
+  <code>sudo sysctl iogpu.wired_limit_mb=20480</code>, measured), 128 GiB
+  and above Qwen3.8 Flash-Next (on a 128 GB Mac after raising the GPU memory limit). Where MLX is
+  not installed (the light install profile), the tier's model runs on LM Studio instead:
+  <code>qwen/qwen3.5-9b</code> below 24 GiB and <code>qwen/qwen3.8-27b</code> from 24 GiB (Flash-Next has no LM Studio
+  build). Other
+  computers use the LM Studio build <code>qwen/qwen3.5-9b@q4_k_m</code>, or the same model's Ollama build where
+  LM Studio has no build (Intel Macs).</li>
+<li><strong>Image input</strong> is read by the recommended text model where it accepts images, so <code>input.image</code>
+  is covered by <code>input.text</code> and needs no second model. Every recommended text model reads
+  images; where it does not (or no text engine runs), <code>input.image</code> is reported unavailable with
+  the reason.</li>
+<li><strong>Speech output</strong> is Supertonic 3 on ONNX Runtime, on the processor, on every desktop platform.</li>
+<li><strong>Speech input</strong> is Whisper base on AbstractVoice's faster-whisper engine (CTranslate2). It uses
+  CUDA on an NVIDIA GPU and the processor elsewhere, including Apple silicon.</li>
+<li><strong>Image generation</strong> is FLUX.2 klein 4B. On Apple silicon it is the 8-bit build on MLX-Gen
+  (Apple silicon only). On an NVIDIA GPU it is the Diffusers repo <code>black-forest-labs/FLUX.2-klein-4B</code>
+  on AbstractVision's <code>diffusers</code> backend (CUDA, float16). Its 14.9 GiB of float16 weights do not
+  fit a 16 GB card whole, so AbstractVision turns on model CPU offload by itself there: measured on
+  a 16 GB Quadro RTX 5000, 768x768 in about 17 s with a GPU peak of about 8.3 GiB, while about
+  15 GiB of system RAM holds the idle weights. Processor-only computers get no image
+  recommendation.</li>
+<li><strong>Video generation</strong> is Wan2.2 TI2V 5B (8-bit) on MLX-Gen: one checkpoint for text-to-video
+  and image-to-video, on Apple silicon only. The memory figures are AbstractVision/mlx-gen's,
+  measured at 1280x704x121 (about 60.5 GiB) and at 832x480x121 (32.7 GiB), with the text encoder
+  and VAE kept in memory. They are this engine's figures, not the model's own requirement:
+  runtimes that offload those parts need far less (Wan 2.2 runs TI2V-5B at 720p on one 24 GB GPU
+  with offloading). The recommendation follows AbstractVision's default canvas; where only
+  832x480 fits (64 GB Macs) the table says so and you set the route yourself.</li>
+<li><strong>Music</strong> is ACE-Step 1.5 XL turbo on AbstractMusic's <code>acestep</code> backend (Diffusers on PyTorch:
+  CUDA, Apple MPS in bfloat16, or the processor in float32).</li>
+</ul>
+<p>A capability is <strong>not available</strong> on a machine when its engine has no build for the platform, when
+the engine runs in-process and is not installed in your Python environment (MLX-Gen or PyTorch on
+the light install profile; the reason names the install command), or,
+for image, video and music, when the model does not fit the machine's memory; the entry then says
+why and what to use instead. Text always has an entry: a tier whose estimate doubts it (8 GB) is
+still the tier, with its warning.</p>
+<h3 id="starter-set-and-opt-in-recommendations">Starter set and opt-in recommendations</h3>
+<p>Text, speech output, speech input, image and video form the <strong>starter set</strong>: a fresh install
+writes them as capability defaults where the machine can run them, and <code>apply-recommended</code> and
+<code>models download --recommended</code> act on them. A store written by an earlier fresh install
+(<code>seeded: recommended-v1</code>) gains speech input the next time it loads, unless you set that route
+yourself. Select speech input alone with <code>abstractcore config apply-recommended --only stt</code>.</p>
+<p>Music is a recommendation you apply yourself:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore config set-default output.music --provider acestep --model ACE-Step/acestep-v15-xl-turbo-diffusers
+abstractcore models download diffusers ACE-Step/acestep-v15-xl-turbo-diffusers
+</code></pre></div>
+<p>faster-whisper downloads Whisper base on first use. AbstractMusic loads ACE-Step from the local
+Hugging Face cache only, so download it first. Both engines are local: they install with
+<code>pip install "abstractcore[apple]"</code> (Apple silicon) or <code>pip install "abstractcore[gpu]"</code> (NVIDIA / AMD).</p>
+<h3 id="fit-verdicts-on-this-page">Fit verdicts on this page</h3>
+<p>Download sizes and memory needs come from the catalog (see <a href="models.html#fit-verdicts">Local Models</a>).
+Memory needs are estimates from the model files, except where the catalog records a peak measured
+with AbstractVision/mlx-gen (video). On Apple silicon the verdicts assume macOS's default GPU
+memory limit of 75% of unified memory, AbstractCore's fallback when it cannot read your Mac's own
+(see <a href="#gpu-memory-on-apple-silicon">GPU memory on Apple silicon</a>). "fits after raising the GPU
+memory limit" shows the <code>sysctl</code> command that makes the model fit, and "tight: runs with a small
+context by default" shows the command that gives it more context (both ask for your password and
+last until the Mac restarts). No table states an estimated context size; the one token count shown
+was measured. The other machine classes are
+evaluated on the reference machine each row names. Run <code>abstractcore models recommendations
+--host</code> for your own machine's verdicts.</p>
+<p>Reference machines:</p>
+<ul>
+<li>Apple silicon: every unified memory size Apple ships (8 to 512 GB). Sizes with identical answers
+  share one row.</li>
+<li>Linux or Windows with an NVIDIA GPU: x86_64, a GPU with 24 GB of memory, 64 GB of RAM.</li>
+<li>Linux or Windows, processor only: x86_64 (Linux arm64 answers the same), 16 GB of RAM.</li>
+<li>Intel Mac: 16 GB of RAM.</li>
+</ul>
+<h2 id="recommended-models-by-machine">Recommended models by machine</h2>
+<!-- BEGIN GENERATED: recommended-models (scripts/update_recommended_models_doc.py) -->
+
+<h3 id="text-and-chat">Text and chat</h3>
+<p>Route <code>input.text</code> (text generation).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Machine</th>
+<th>Recommended model</th>
+<th>Engine, device</th>
+<th>Download</th>
+<th>Memory need</th>
+<th>Fit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apple silicon Mac, 8 GB</td>
+<td><code>mlx-community/Qwen3.5-9B-MLX-4bit</code></td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>5.7 GiB</td>
+<td>6.4 GiB</td>
+<td>tight: runs with a small context by default</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 16 GB</td>
+<td><code>mlx-community/Qwen3.5-9B-MLX-4bit</code></td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>5.7 GiB</td>
+<td>6.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 18 GB</td>
+<td><code>mlx-community/Qwen3.5-9B-MLX-4bit</code></td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>5.7 GiB</td>
+<td>6.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 24 GB</td>
+<td><code>mlx-community/Qwen3.8-27B-4bit</code></td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>15.2 GiB</td>
+<td>16.4 GiB</td>
+<td>tight: runs with a small context by default; about 30k tokens after <code>sudo sysctl iogpu.wired_limit_mb=20480</code> (measured on a 24 GB Mac mini)</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB</td>
+<td><code>mlx-community/Qwen3.8-27B-4bit</code></td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>15.2 GiB</td>
+<td>16.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 128 GB</td>
+<td><code>mlx-community/Qwen3.8-Flash-Next-4bit</code></td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>103.9 GiB</td>
+<td>109.2 GiB</td>
+<td>fits after raising the GPU memory limit: <code>sudo sysctl iogpu.wired_limit_mb=114688</code></td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 192 GB, 256 GB or 512 GB</td>
+<td><code>mlx-community/Qwen3.8-Flash-Next-4bit</code></td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>103.9 GiB</td>
+<td>109.2 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows with an NVIDIA GPU</td>
+<td><code>qwen/qwen3.5-9b</code> (download <code>qwen/qwen3.5-9b@q4_k_m</code>)</td>
+<td>LM Studio, NVIDIA GPU (CUDA)</td>
+<td>unknown</td>
+<td>6.0 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows, processor only</td>
+<td><code>qwen/qwen3.5-9b</code> (download <code>qwen/qwen3.5-9b@q4_k_m</code>)</td>
+<td>LM Studio, processor</td>
+<td>unknown</td>
+<td>6.0 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Intel Mac</td>
+<td><code>qwen3.5:9b</code></td>
+<td>Ollama, processor</td>
+<td>unknown</td>
+<td>6.0 GiB</td>
+<td>fits</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="image-input-vision">Image input (vision)</h3>
+<p>Route <code>input.image</code> (image understanding).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Machine</th>
+<th>Recommended model</th>
+<th>Engine, device</th>
+<th>Download</th>
+<th>Memory need</th>
+<th>Fit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apple silicon Mac, 8 GB</td>
+<td>the text model (<code>mlx-community/Qwen3.5-9B-MLX-4bit</code>)</td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>5.7 GiB</td>
+<td>6.4 GiB</td>
+<td>tight: runs with a small context by default</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 16 GB</td>
+<td>the text model (<code>mlx-community/Qwen3.5-9B-MLX-4bit</code>)</td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>5.7 GiB</td>
+<td>6.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 18 GB</td>
+<td>the text model (<code>mlx-community/Qwen3.5-9B-MLX-4bit</code>)</td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>5.7 GiB</td>
+<td>6.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 24 GB</td>
+<td>the text model (<code>mlx-community/Qwen3.8-27B-4bit</code>)</td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>15.2 GiB</td>
+<td>16.4 GiB</td>
+<td>tight: runs with a small context by default; about 30k tokens after <code>sudo sysctl iogpu.wired_limit_mb=20480</code> (measured on a 24 GB Mac mini)</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB</td>
+<td>the text model (<code>mlx-community/Qwen3.8-27B-4bit</code>)</td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>15.2 GiB</td>
+<td>16.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 128 GB</td>
+<td>the text model (<code>mlx-community/Qwen3.8-Flash-Next-4bit</code>)</td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>103.9 GiB</td>
+<td>109.2 GiB</td>
+<td>fits after raising the GPU memory limit: <code>sudo sysctl iogpu.wired_limit_mb=114688</code></td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 192 GB, 256 GB or 512 GB</td>
+<td>the text model (<code>mlx-community/Qwen3.8-Flash-Next-4bit</code>)</td>
+<td>MLX (AbstractCore), Apple GPU (Metal)</td>
+<td>103.9 GiB</td>
+<td>109.2 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows with an NVIDIA GPU</td>
+<td>the text model (<code>qwen/qwen3.5-9b</code>)</td>
+<td>LM Studio, NVIDIA GPU (CUDA)</td>
+<td>unknown</td>
+<td>6.0 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows, processor only</td>
+<td>the text model (<code>qwen/qwen3.5-9b</code>)</td>
+<td>LM Studio, processor</td>
+<td>unknown</td>
+<td>6.0 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Intel Mac</td>
+<td>the text model (<code>qwen3.5:9b</code>)</td>
+<td>Ollama, processor</td>
+<td>unknown</td>
+<td>6.0 GiB</td>
+<td>fits</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="speech-output-text-to-speech">Speech output (text to speech)</h3>
+<p>Route <code>output.voice</code> (text to speech).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Machine</th>
+<th>Recommended model</th>
+<th>Engine, device</th>
+<th>Download</th>
+<th>Memory need</th>
+<th>Fit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apple silicon Mac, 8 GB</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 16 GB</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 18 GB</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 24 GB</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 128 GB</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 192 GB, 256 GB or 512 GB</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows with an NVIDIA GPU</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows, processor only</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Intel Mac</td>
+<td><code>supertonic-3</code></td>
+<td>Supertonic on ONNX Runtime (AbstractVoice), processor</td>
+<td>383 MiB</td>
+<td>895 MiB</td>
+<td>fits</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="speech-input-speech-to-text">Speech input (speech to text)</h3>
+<p>Route <code>input.voice</code> (speech to text).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Machine</th>
+<th>Recommended model</th>
+<th>Engine, device</th>
+<th>Download</th>
+<th>Memory need</th>
+<th>Fit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apple silicon Mac, 8 GB</td>
+<td><code>large-v3</code> (download <code>mlx-community/whisper-large-v3-mlx</code>)</td>
+<td>mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal)</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits, tightly</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 16 GB</td>
+<td><code>large-v3</code> (download <code>mlx-community/whisper-large-v3-mlx</code>)</td>
+<td>mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal)</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 18 GB</td>
+<td><code>large-v3</code> (download <code>mlx-community/whisper-large-v3-mlx</code>)</td>
+<td>mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal)</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 24 GB</td>
+<td><code>large-v3</code> (download <code>mlx-community/whisper-large-v3-mlx</code>)</td>
+<td>mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal)</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB</td>
+<td><code>large-v3</code> (download <code>mlx-community/whisper-large-v3-mlx</code>)</td>
+<td>mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal)</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 128 GB</td>
+<td><code>large-v3</code> (download <code>mlx-community/whisper-large-v3-mlx</code>)</td>
+<td>mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal)</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 192 GB, 256 GB or 512 GB</td>
+<td><code>large-v3</code> (download <code>mlx-community/whisper-large-v3-mlx</code>)</td>
+<td>mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal)</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows with an NVIDIA GPU</td>
+<td><code>large-v3</code> (download <code>Systran/faster-whisper-large-v3</code>)</td>
+<td>faster-whisper on CTranslate2 (AbstractVoice), NVIDIA GPU (CUDA)</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows, processor only</td>
+<td><code>large-v3</code> (download <code>Systran/faster-whisper-large-v3</code>)</td>
+<td>faster-whisper on CTranslate2 (AbstractVoice), processor</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Intel Mac</td>
+<td><code>large-v3</code> (download <code>Systran/faster-whisper-large-v3</code>)</td>
+<td>faster-whisper on CTranslate2 (AbstractVoice), processor</td>
+<td>2.9 GiB</td>
+<td>3.4 GiB</td>
+<td>fits</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>Apple silicon Mac, 8 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.</li>
+<li>Apple silicon Mac, 16 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.</li>
+<li>Apple silicon Mac, 18 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.</li>
+<li>Apple silicon Mac, 24 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.</li>
+<li>Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.</li>
+<li>Apple silicon Mac, 128 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.</li>
+<li>Apple silicon Mac, 192 GB, 256 GB or 512 GB: mlx-whisper comes with the abstractcore[apple] setting; the light install transcribes with faster-whisper on the processor instead.</li>
+<li>Linux or Windows, processor only: On the processor large-v3 takes about as long as the speech itself (about 20 s for a 17 s clip on an M5 Max); large-v3-turbo is faster on the processor (about 6 s), with slightly lower accuracy.</li>
+<li>Intel Mac: On the processor large-v3 takes about as long as the speech itself (about 20 s for a 17 s clip on an M5 Max); large-v3-turbo is faster on the processor (about 6 s), with slightly lower accuracy.</li>
+</ul>
+<h3 id="image-generation">Image generation</h3>
+<p>Route <code>output.image</code> (text to image).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Machine</th>
+<th>Recommended model</th>
+<th>Engine, device</th>
+<th>Download</th>
+<th>Memory need</th>
+<th>Fit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apple silicon Mac, 8 GB</td>
+<td>Not available: FLUX.2 [klein] 4B needs about 8.5 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use a Mac with more unified memory, or a cloud image provider</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 16 GB</td>
+<td><code>AbstractFramework/flux.2-klein-4b-8bit</code></td>
+<td>MLX-Gen (AbstractVision), Apple GPU (Metal)</td>
+<td>8.0 GiB</td>
+<td>8.5 GiB</td>
+<td>fits, tightly</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 18 GB</td>
+<td><code>AbstractFramework/flux.2-klein-4b-8bit</code></td>
+<td>MLX-Gen (AbstractVision), Apple GPU (Metal)</td>
+<td>8.0 GiB</td>
+<td>8.5 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 24 GB</td>
+<td><code>AbstractFramework/flux.2-klein-4b-8bit</code></td>
+<td>MLX-Gen (AbstractVision), Apple GPU (Metal)</td>
+<td>8.0 GiB</td>
+<td>8.5 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB</td>
+<td><code>AbstractFramework/flux.2-klein-4b-8bit</code></td>
+<td>MLX-Gen (AbstractVision), Apple GPU (Metal)</td>
+<td>8.0 GiB</td>
+<td>8.5 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 128 GB</td>
+<td><code>AbstractFramework/flux.2-klein-4b-8bit</code></td>
+<td>MLX-Gen (AbstractVision), Apple GPU (Metal)</td>
+<td>8.0 GiB</td>
+<td>8.5 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 192 GB, 256 GB or 512 GB</td>
+<td><code>AbstractFramework/flux.2-klein-4b-8bit</code></td>
+<td>MLX-Gen (AbstractVision), Apple GPU (Metal)</td>
+<td>8.0 GiB</td>
+<td>8.5 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows with an NVIDIA GPU</td>
+<td><code>black-forest-labs/FLUX.2-klein-4B</code></td>
+<td>Diffusers on PyTorch (AbstractVision), NVIDIA GPU (CUDA)</td>
+<td>22.1 GiB</td>
+<td>8.3 GiB (measured with AbstractVision/diffusers with model CPU offload)</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows, processor only</td>
+<td>Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Intel Mac</td>
+<td>Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>Linux or Windows with an NVIDIA GPU: AbstractVision runs it in float16 and turns on model CPU offload by itself when its 14.9 GiB of weights do not fit the GPU's free memory (a 16 GB card): the GPU then peaks at about 8.3 GiB (measured) and about 15 GiB of system RAM holds the idle weights. A GPU with room loads it whole.</li>
+</ul>
+<h3 id="video-generation">Video generation</h3>
+<p>Route <code>output.video</code> (text to video, image to video).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Machine</th>
+<th>Recommended model</th>
+<th>Engine, device</th>
+<th>Download</th>
+<th>Memory need</th>
+<th>Fit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apple silicon Mac, 8 GB</td>
+<td>Not available: Wan2.2 TI2V 5B (text/image to video) needs about 16.6 GiB of memory while it generates (measured with AbstractVision/mlx-gen at 832x480x121 for image-to-video, its larger task, text-to-video needing 16.3 GiB; the engine keeps the text encoder and VAE in memory; this engine's figure, not the model's minimum), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 16 GB</td>
+<td>Not available: Wan2.2 TI2V 5B (text/image to video) needs about 16.6 GiB of memory while it generates (measured with AbstractVision/mlx-gen at 832x480x121 for image-to-video, its larger task, text-to-video needing 16.3 GiB; the engine keeps the text encoder and VAE in memory; this engine's figure, not the model's minimum), and macOS's GPU memory limit on this Mac is about 12.0 GiB, about 10.0 GiB of it left for a model after working buffers; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 18 GB</td>
+<td>Not available: Wan2.2 TI2V 5B (text/image to video) needs about 16.6 GiB of memory while it generates (measured with AbstractVision/mlx-gen at 832x480x121 for image-to-video, its larger task, text-to-video needing 16.3 GiB; the engine keeps the text encoder and VAE in memory; this engine's figure, not the model's minimum), and macOS's GPU memory limit on this Mac is about 13.5 GiB, about 11.5 GiB of it left for a model after working buffers; use an Apple silicon Mac with more unified memory, or an OpenAI-compatible video endpoint (abstractvision openai-compatible backend)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 24 GB</td>
+<td>Not available: Wan2.2 TI2V 5B (text/image to video) needs about 16.6 GiB of memory while it generates (measured with AbstractVision/mlx-gen at 832x480x121 for image-to-video, its larger task, text-to-video needing 16.3 GiB; the engine keeps the text encoder and VAE in memory; this engine's figure, not the model's minimum), and macOS's GPU memory limit on this Mac is about 18.0 GiB, about 16.0 GiB of it left for a model after working buffers. It fits once macOS lets the GPU use 20 GiB: run <code>sudo sysctl iogpu.wired_limit_mb=20480</code> in a terminal (asks for your password; lasts until the Mac restarts), then load it.</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB</td>
+<td><code>AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit</code></td>
+<td>MLX-Gen (AbstractVision), Apple GPU (Metal)</td>
+<td>16.9 GiB</td>
+<td>16.6 GiB (measured with AbstractVision/mlx-gen)</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 128 GB</td>
+<td><code>AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit</code></td>
+<td>MLX-Gen (AbstractVision), Apple GPU (Metal)</td>
+<td>16.9 GiB</td>
+<td>16.6 GiB (measured with AbstractVision/mlx-gen)</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 192 GB, 256 GB or 512 GB</td>
+<td><code>AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit</code></td>
+<td>MLX-Gen (AbstractVision), Apple GPU (Metal)</td>
+<td>16.9 GiB</td>
+<td>16.6 GiB (measured with AbstractVision/mlx-gen)</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows with an NVIDIA GPU</td>
+<td>Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Linux or Windows, processor only</td>
+<td>Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Intel Mac</td>
+<td>Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="music-generation">Music generation</h3>
+<p>Route <code>output.music</code> (text to music).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Machine</th>
+<th>Recommended model</th>
+<th>Engine, device</th>
+<th>Download</th>
+<th>Memory need</th>
+<th>Fit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Apple silicon Mac, 8 GB</td>
+<td>Not available: ACE-Step 1.5 XL turbo (music) needs about 10.9 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 6.0 GiB, about 4.0 GiB of it left for a model after working buffers; use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, with its API key)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 16 GB</td>
+<td>Not available: ACE-Step 1.5 XL turbo (music) needs about 10.9 GiB of memory while it generates (estimated), and macOS's GPU memory limit on this Mac is about 12.0 GiB, about 10.0 GiB of it left for a model after working buffers; use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, with its API key)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 18 GB</td>
+<td><code>ACE-Step/acestep-v15-xl-turbo-diffusers</code></td>
+<td>ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16)</td>
+<td>10.3 GiB</td>
+<td>10.9 GiB</td>
+<td>fits, tightly</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 24 GB</td>
+<td><code>ACE-Step/acestep-v15-xl-turbo-diffusers</code></td>
+<td>ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16)</td>
+<td>10.3 GiB</td>
+<td>10.9 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB</td>
+<td><code>ACE-Step/acestep-v15-xl-turbo-diffusers</code></td>
+<td>ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16)</td>
+<td>10.3 GiB</td>
+<td>10.9 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 128 GB</td>
+<td><code>ACE-Step/acestep-v15-xl-turbo-diffusers</code></td>
+<td>ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16)</td>
+<td>10.3 GiB</td>
+<td>10.9 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Apple silicon Mac, 192 GB, 256 GB or 512 GB</td>
+<td><code>ACE-Step/acestep-v15-xl-turbo-diffusers</code></td>
+<td>ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16)</td>
+<td>10.3 GiB</td>
+<td>10.9 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows with an NVIDIA GPU</td>
+<td><code>ACE-Step/acestep-v15-xl-turbo-diffusers</code></td>
+<td>ACE-Step on Diffusers and PyTorch (AbstractMusic), NVIDIA GPU (CUDA)</td>
+<td>10.3 GiB</td>
+<td>10.9 GiB</td>
+<td>fits</td>
+</tr>
+<tr>
+<td>Linux or Windows, processor only</td>
+<td>Not available: ACE-Step 1.5 XL turbo (music) needs about 10.9 GiB of memory while it generates (estimated), and this computer can give a model about 10.0 GiB; use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, with its API key)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Intel Mac</td>
+<td>Not available: ACE-Step music generation runs on PyTorch, and current PyTorch builds for macOS require Apple Silicon (arm64); the last Intel-Mac build is 2.2.2; set output.music to a cloud music backend (acemusic or elevenlabs-music, with its API key)</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<!-- END GENERATED: recommended-models -->
+
+<h2 id="gpu-memory-on-apple-silicon">GPU memory on Apple silicon</h2>
+<p>macOS lets the GPU use only part of unified memory. On a 24 GB Mac mini that limit was measured at
+17.8 GB (16.6 GiB, about 69% of its memory). AbstractCore reads the real limit on your Mac
+(<code>abstractcore models recommendations --host</code>); when it cannot, and in the tables above, it
+assumes 75% of unified memory.</p>
+<p>A model runs when its weights fit under that limit; what is left holds the context (KV cache) and
+the working memory MLX needs beside it (about 2 GiB). On a 24 GB Mac, Qwen3.8 27B 4-bit (about
+16.2 GB of weights) therefore runs out of the box with a small context. Raising the limit gives it
+more:</p>
+<div class="code-block"><pre><code class="language-bash">sudo sysctl iogpu.wired_limit_mb=20480
+</code></pre></div>
+<p>That value is safe on a 24 GB Mac and gives about 30k tokens of context (measured). Do not go
+beyond 21504 MB on a 24 GB Mac: apps may crash. The one value AbstractCore suggests, whenever a
+model needs more GPU memory or more context, leaves macOS max(4 GiB, 12.5% of RAM): 20480 MB on a
+24 GB Mac, 28672 MB on 32 GB, 114688 MB on 128 GB. AbstractCore only prints the command; it never
+runs <code>sudo</code>. The setting lasts until the Mac restarts, and
+<code>sudo sysctl iogpu.wired_limit_mb=0</code> returns to the default.</p>
+<h3 id="keeping-the-limit-across-restarts">Keeping the limit across restarts</h3>
+<p>To keep it, an administrator can add a LaunchDaemon that runs the command at boot. AbstractCore
+never installs this; it is your machine's configuration. Save as
+<code>/Library/LaunchDaemons/local.iogpu.wired-limit.plist</code>:</p>
+<div class="code-block"><pre><code class="language-xml">&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot; &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;
+&lt;plist version=&quot;1.0&quot;&gt;
+&lt;dict&gt;
+  &lt;key&gt;Label&lt;/key&gt;
+  &lt;string&gt;local.iogpu.wired-limit&lt;/string&gt;
+  &lt;key&gt;ProgramArguments&lt;/key&gt;
+  &lt;array&gt;
+    &lt;string&gt;/usr/sbin/sysctl&lt;/string&gt;
+    &lt;string&gt;iogpu.wired_limit_mb=20480&lt;/string&gt;
+  &lt;/array&gt;
+  &lt;key&gt;RunAtLoad&lt;/key&gt;
+  &lt;true/&gt;
+&lt;/dict&gt;
+&lt;/plist&gt;
+</code></pre></div>
+<p>Then load it:</p>
+<div class="code-block"><pre><code class="language-bash">sudo chown root:wheel /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+sudo chmod 644 /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+</code></pre></div>
+<p>Use 20480 on a 24 GB Mac. Do not use 21504 unless you know what you're doing. To remove it:</p>
+<div class="code-block"><pre><code class="language-bash">sudo launchctl bootout system /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+sudo rm /Library/LaunchDaemons/local.iogpu.wired-limit.plist
+sudo sysctl iogpu.wired_limit_mb=0
+</code></pre></div>
+<h2 id="the-json-export">The JSON export</h2>
+<p><code>abstractcore models recommendations --json</code> emits <code>model_recommendations_v1</code>:</p>
+<ul>
+<li><code>capabilities[]</code>: <code>{id, route, label, tasks}</code> in display order. The ids are <code>text</code>, <code>vision</code>,
+  <code>speech_output</code>, <code>speech_input</code>, <code>image</code>, <code>video</code> and <code>music</code>.</li>
+<li><code>classes[]</code>: <code>{id, family, label, reference, platform: {os, arch, accelerator}, entries}</code>.
+  Apple silicon bands also carry <code>memory_gib</code> (the sizes the row covers), <code>memory_gib_min</code> and
+  <code>memory_gib_below</code> (the next row's first size, <code>null</code> for the last). The other classes carry
+  <code>variants</code>, the platforms that answer the same as the reference.</li>
+<li><code>entries.&lt;capability&gt;</code>: <code>capability</code> (the id), <code>label</code>, <code>route</code> and <code>tasks</code> (the
+  capability's <code>capabilities[]</code> fields, repeated so an entry reads on its own), <code>status</code>
+  (<code>recommended</code>, <code>covered</code> or <code>unavailable</code>), <code>starter</code>, <code>provider</code>, <code>engine</code>, <code>device</code>, <code>model</code>
+  (what the route stores), <code>artifact</code> and <code>download_provider</code> (what <code>abstractcore models
+  download</code> fetches), <code>catalog_id</code>, <code>display_name</code>, <code>download_bytes</code> (<code>null</code> when the catalog has
+  no exact size), <code>memory_need_bytes</code>, <code>memory_need_source</code> (<code>measured</code> or <code>estimated</code>), <code>fit</code>,
+  <code>gpu_limit_command</code> (for <code>needs_gpu_limit</code>, and for a text fit that is <code>tight</code> on Apple
+  silicon: the command for more context), <code>context</code> (<code>null</code>, or <code>{small, measured}</code> for such a
+  text fit: whether it runs only with a small context by default, and the measured context after
+  the command where one was measured, else <code>null</code>; no estimated token count), <code>covered_by</code>, <code>smaller_canvas</code> (<code>null</code>, or
+  <code>{canvas, memory_need_bytes, memory_need_source, fit}</code>: the largest measured smaller output
+  size, <code>WIDTHxHEIGHTxFRAMES</code>, at which an <code>unavailable</code> video model still fits), <code>reason</code> (for
+  <code>unavailable</code>), <code>warning</code> (the sentence surfaces show for a doubtful fit) and <code>notes</code>. The text
+  entry also carries <code>basis</code> and <code>tier</code> from <code>recommended_text_model()</code>.</li>
+</ul>
+<p><code>--host --json</code> emits the same schema with <code>host: {os, arch, accelerator, memory_gib,
+ceiling_bytes, ceiling_source}</code> and one <code>entries</code> object.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

@@ -2241,3 +2241,78 @@ section {
 .token.variable {
     color: #d16969;
 }
+
+/* Documentation pages: tables, inline code, images, footer (2.35.0 refresh) */
+.doc-content p,
+.doc-content li {
+    overflow-wrap: anywhere;
+}
+
+.doc-content img {
+    max-width: 100%;
+    height: auto;
+}
+
+.doc-content :not(pre) > code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--background-secondary);
+    border: 1px solid var(--border-light);
+    padding: 0.05em 0.35em;
+    border-radius: var(--radius-sm);
+}
+
+.doc-content .table-scroll {
+    overflow-x: auto;
+    margin: 0 0 var(--spacing-6);
+    -webkit-overflow-scrolling: touch;
+}
+
+.doc-content table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.9rem;
+}
+
+.doc-content th,
+.doc-content td {
+    border: 1px solid var(--border-color);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+    color: var(--text-secondary);
+    min-width: 7rem;
+}
+
+.doc-content th {
+    background: var(--background-secondary);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.doc-content .mermaid {
+    overflow-x: auto;
+    margin-bottom: var(--spacing-6);
+}
+
+.doc-footer {
+    margin: var(--spacing-16) 0 var(--spacing-8);
+    padding-top: var(--spacing-6);
+    border-top: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.8;
+}
+
+/* Documentation page header: long words wrap on a phone */
+.doc-header h1,
+.doc-header p {
+    overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+    .doc-header h1 { font-size: 1.9rem !important; }
+    .doc-header p { font-size: 1.05rem !important; }
+}
+
+/* The AbstractCore hexagon (shared with abstractframework.ai) as the navbar mark */
+.brand-mark { width: 2rem; height: 2rem; border-radius: 6px; display: block; }

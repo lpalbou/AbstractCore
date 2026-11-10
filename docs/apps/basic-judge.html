@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BasicJudge - LLM-as-a-Judge for Objective Evaluation - AbstractCore</title>
+    <meta name="description" content="BasicJudge is a production-ready LLM-as-a-judge tool for objective evaluation and critical assessment. It provides structured, transparent evaluation with…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/apps/basic-judge.html">
+    <link rel="icon" type="image/x-icon" href="../../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">BasicJudge - LLM-as-a-Judge for Objective Evaluation</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">BasicJudge is a production-ready LLM-as-a-judge tool for objective evaluation and critical assessment. It provides structured, transparent evaluation with constructive skepticism, delivering clear, simple and actionable feedback using established evaluation practices.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#installation--setup" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Installation &amp; Setup</a>
+<a href="#evaluation-framework" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Evaluation Framework</a>
+<a href="#python-api-reference" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Python API Reference</a>
+<a href="#command-line-interface" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Command Line Interface</a>
+<a href="#focus-areas-impact-on-evaluation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Focus Areas: Impact on Evaluation</a>
+<a href="#real-world-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Real-World Examples</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#assessment-interpretation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Assessment Interpretation</a>
+<a href="#integration-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration Examples</a>
+<a href="#performance-notes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance notes</a>
+<a href="#llm-as-a-judge-best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">LLM-as-a-Judge Best Practices</a>
+<a href="#timeout-configuration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Timeout Configuration</a>
+<a href="#troubleshooting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting</a></div>
+
+            <div class="doc-content">
+
+<h2 id="quick-start">Quick Start</h2>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicJudge
+
+# Initialize with default model (Ollama qwen3:4b-instruct-2507-q4_K_M)
+judge = BasicJudge()
+
+# Evaluate content against default criteria
+result = judge.evaluate(&quot;This code is well-structured and solves the problem elegantly.&quot;)
+
+# Access enhanced assessment results
+print(f&quot;Judge's Summary: {result['judge_summary']}&quot;)
+print(f&quot;Source: {result['source_reference']}&quot;)
+print(f&quot;Overall score: {result['overall_score']}/5&quot;)
+print(f&quot;Strengths: {result['strengths']}&quot;)
+print(f&quot;Recommendations: {result['actionable_feedback']}&quot;)
+
+# Include detailed criteria explanations (optional)
+result_with_criteria = judge.evaluate(
+    &quot;Code review content&quot;,
+    context=&quot;code review&quot;,
+    include_criteria=True  # Add detailed criteria explanations
+)
+print(f&quot;Criteria Details: {result_with_criteria['evaluation_criteria_details']}&quot;)
+</code></pre></div>
+<h2 id="installation--setup">Installation &amp; Setup</h2>
+<div class="code-block"><pre><code class="language-bash"># Light install: the default Ollama path and every cloud provider work with it.
+pip install abstractcore
+
+# Or, for in-process local engines:
+pip install &quot;abstractcore[apple]&quot;    # Apple silicon: MLX, HF/GGUF, local media engines
+pip install &quot;abstractcore[gpu]&quot;      # NVIDIA / AMD: vLLM, HF/GGUF, local media engines
+
+# Default model requires Ollama (free, runs locally)
+# 1. Install Ollama: https://ollama.com/
+# 2. Download model: ollama pull qwen3:4b-instruct-2507-q4_K_M
+# 3. Start Ollama service
+
+# Alternative: use a cloud provider (set its API key; no extra install)
+</code></pre></div>
+<h3 id="model-performance-recommendations">Model Performance Recommendations</h3>
+<p><strong>Default Model</strong>: <code>qwen3:4b-instruct-2507-q4_K_M</code>
+- <strong>Size</strong>: ~4GB model
+- <strong>RAM</strong>: ~8GB required
+- <strong>Temperature</strong>: 0.1 (low for consistent evaluation)
+- <strong>Setup</strong>: <code>ollama pull qwen3:4b-instruct-2507-q4_K_M</code></p>
+<p><strong>For Optimal Evaluation Quality</strong>:
+- <strong><code>qwen3-coder:30b</code></strong>: Good for detailed assessment (requires 32GB RAM)
+- <strong><code>gpt-oss:120b</code></strong>: Highest quality evaluation (requires 120GB RAM)</p>
+<p><strong>For Production</strong>: Cloud providers (OpenAI GPT-4o-mini, Claude) offer the most reliable and consistent evaluation.</p>
+<h2 id="evaluation-framework">Evaluation Framework</h2>
+<p>BasicJudge implements LLM-as-a-judge practices with structured assessment and chain-of-thought reasoning.</p>
+<h3 id="core-evaluation-criteria">Core Evaluation Criteria</h3>
+<p>The system evaluates content across nine standard quality dimensions:</p>
+<ul>
+<li><strong>Clarity</strong>: How clear, understandable, and well-explained is the content?</li>
+<li><strong>Simplicity</strong>: Is it appropriately simple vs unnecessarily complex for its purpose?</li>
+<li><strong>Actionability</strong>: Does it provide actionable insights, recommendations, or next steps?</li>
+<li><strong>Soundness</strong>: Is the reasoning logical, well-founded, and free of errors?</li>
+<li><strong>Innovation</strong>: Does it show creativity, novel thinking, or fresh approaches?</li>
+<li><strong>Effectiveness</strong>: Does it actually solve the intended problem or achieve its purpose?</li>
+<li><strong>Relevance</strong>: Is it relevant and appropriate to the context and requirements?</li>
+<li><strong>Completeness</strong>: Does it address all important aspects comprehensively?</li>
+<li><strong>Coherence</strong>: Is the flow logical, consistent, and well-structured?</li>
+</ul>
+<h3 id="scoring-system">Scoring System</h3>
+<p>Uses a <strong>1-5 scale</strong> with clear definitions:
+- <strong>Score 5</strong>: Exceptional - Exceeds expectations in this dimension
+- <strong>Score 4</strong>: Good - Meets expectations well with minor room for improvement
+- <strong>Score 3</strong>: Adequate - Meets basic expectations but has notable areas for improvement
+- <strong>Score 2</strong>: Poor - Falls short of expectations with significant issues
+- <strong>Score 1</strong>: Very Poor - Fails to meet basic standards in this dimension</p>
+<p><strong>Context-Aware Scoring (v2.6.3+)</strong>:
+- <strong>Rigorous evaluation</strong>: Avoids grade inflation, most adequate responses score 2-3, not 3-4
+- <strong>Task-appropriate criteria</strong>: Innovation scored 1-2 for routine tasks (e.g., basic arithmetic), 4-5 for breakthrough thinking
+- <strong>Criterion applicability</strong>: If a criterion doesn't meaningfully apply to the task, scores 1-2, not 3
+- <strong>Examples</strong>:
+  - Routine calculations: innovation 1-2, soundness 4-5 (if correct)
+  - Creative explanations: innovation 3-4 if novel approach shown
+  - Complex problem-solving: innovation 4-5 if breakthrough thinking demonstrated</p>
+<h3 id="assessment-structure">Assessment Structure</h3>
+<p>Each evaluation returns a structured assessment with:
+- <strong>Judge's summary</strong> (experiential note from judge's perspective about the assessment task and key findings)
+- <strong>Source reference</strong> (clear indication of what was evaluated)
+- <strong>Predefined criterion scores</strong> (1-5 for each enabled standard criterion: clarity, simplicity, etc.)
+- <strong>Custom criterion scores</strong> (1-5 for each user-defined criterion - v2.6.3+)
+- <strong>Overall score</strong> (calculated average considering all enabled criteria)
+- <strong>Strengths</strong> (specific positive aspects identified)
+- <strong>Weaknesses</strong> (areas for improvement)
+- <strong>Actionable feedback</strong> (specific implementable recommendations)
+- <strong>Chain-of-thought reasoning</strong> (transparent evaluation process)
+- <strong>Evaluation criteria details</strong> (optional detailed explanation when include_criteria=True)</p>
+<p><strong>New in v2.6.3</strong>: Complete score visibility - all predefined and custom criterion scores are now included in assessment results (previously only overall_score and custom_scores were visible).</p>
+<h2 id="python-api-reference">Python API Reference</h2>
+<h3 id="basicjudge-class">BasicJudge Class</h3>
+<div class="code-block"><pre><code class="language-python">class BasicJudge:
+    def __init__(
+        self,
+        llm: Optional[AbstractCoreInterface] = None,
+        temperature: float = 0.1  # Low temperature for consistent evaluation
+    )
+
+    def evaluate(
+        self,
+        content: str,
+        context: Optional[str] = None,
+        criteria: Optional[JudgmentCriteria] = None,
+        focus: Optional[str] = None,
+        reference: Optional[str] = None,
+        include_criteria: bool = False,
+        custom_criteria: Optional[Dict[str, str]] = None  # New in v2.6.3
+    ) -&gt; dict
+
+    def evaluate_files(
+        self,
+        file_paths: Union[str, List[str]],
+        context: Optional[str] = None,
+        criteria: Optional[JudgmentCriteria] = None,
+        focus: Optional[str] = None,
+        reference: Optional[str] = None,
+        include_criteria: bool = False,
+        max_file_size: int = 1000000
+    ) -&gt; Union[dict, List[dict]]
+</code></pre></div>
+<h3 id="parameters">Parameters</h3>
+<p><strong>evaluate() method:</strong>
+- <strong><code>content</code></strong> (str): The content to evaluate
+- <strong><code>context</code></strong> (str, optional): Description of what is being evaluated (e.g., "code review", "documentation assessment")
+- <strong><code>criteria</code></strong> (JudgmentCriteria, optional): Object specifying which standard criteria to use
+- <strong><code>focus</code></strong> (str, optional): Specific areas to focus evaluation on (e.g., "technical accuracy, performance")
+- <strong><code>reference</code></strong> (str, optional): Reference content for comparison-based evaluation
+- <strong><code>include_criteria</code></strong> (bool, optional): Include detailed explanation of evaluation criteria in assessment (default: False)
+- <strong><code>custom_criteria</code></strong> (Dict[str, str], optional): Custom domain-specific criteria as name-&gt;description mapping (default: None) <strong>[New in v2.6.3]</strong>
+  - Example: <code>{"logical_coherence": "Are the results logically consistent?", "domain_accuracy": "Is the domain knowledge correct?"}</code>
+  - Each custom criterion receives an individual 1-5 score in the <code>custom_scores</code> dict
+  - Context-aware scoring applies (rigorous evaluation, task-appropriate expectations)</p>
+<p><strong>evaluate_files() method:</strong>
+- <strong><code>file_paths</code></strong> (str or List[str]): Single file path or list of file paths to evaluate sequentially
+- <strong><code>context</code></strong> (str, optional): Description of evaluation context (default: "file content evaluation")
+- <strong><code>criteria</code></strong> (JudgmentCriteria, optional): Object specifying which standard criteria to use
+- <strong><code>focus</code></strong> (str, optional): Specific areas to focus evaluation on (e.g., "technical accuracy, performance")
+- <strong><code>reference</code></strong> (str, optional): Reference content for comparison-based evaluation
+- <strong><code>include_criteria</code></strong> (bool, optional): Include detailed explanation of evaluation criteria in assessment (default: False)
+- <strong><code>max_file_size</code></strong> (int, optional): Maximum file size in bytes to prevent context overflow (default: 1MB)
+- <strong><code>exclude_global</code></strong> (bool, optional): Skip global assessment for multiple files (default: False)</p>
+<p><strong>Returns:</strong>
+- <code>evaluate()</code>: Single assessment dictionary
+- <code>evaluate_files()</code>: Single dict if one file
+- <code>evaluate_files()</code>: <code>{"global": global_assessment, "files": [individual_assessments]}</code> if multiple files (default)
+- <code>evaluate_files()</code>: <code>[individual_assessments]</code> if multiple files and <code>exclude_global=True</code></p>
+<h3 id="judgmentcriteria-configuration">JudgmentCriteria Configuration</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import JudgmentCriteria
+
+# Enable specific criteria only
+criteria = JudgmentCriteria(
+    is_clear=True,        # Evaluate clarity
+    is_simple=True,       # Evaluate simplicity
+    is_actionable=True,   # Evaluate actionability
+    is_sound=False,       # Skip soundness evaluation
+    is_innovative=False,  # Skip innovation evaluation
+    is_working=True,      # Evaluate effectiveness
+    is_relevant=True,     # Evaluate relevance
+    is_complete=True,     # Evaluate completeness
+    is_coherent=True      # Evaluate coherence
+)
+</code></pre></div>
+<h3 id="custom-llm-provider">Custom LLM Provider</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.processing import BasicJudge, create_judge
+
+# RECOMMENDED: Use cloud providers for optimal evaluation quality
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;, temperature=0.1)
+judge = BasicJudge(llm)
+
+# OR use create_judge helper
+judge = create_judge(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;, temperature=0.05)
+
+# LOCAL MODELS: Work well for basic evaluation
+judge = create_judge(&quot;ollama&quot;, model=&quot;qwen3-coder:30b&quot;, temperature=0.1)
+</code></pre></div>
+<h3 id="multiple-file-evaluation">Multiple File Evaluation</h3>
+<p>BasicJudge can evaluate multiple files sequentially to avoid context overflow:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicJudge, JudgmentCriteria
+
+judge = BasicJudge()
+
+# Evaluate single file
+result = judge.evaluate_files(&quot;document.py&quot;, context=&quot;code review&quot;)
+print(f&quot;File assessment: {result['overall_score']}/5&quot;)
+
+# Evaluate multiple files sequentially (returns list of assessments)
+files = [&quot;src/main.py&quot;, &quot;src/utils.py&quot;, &quot;tests/test_main.py&quot;]
+results = judge.evaluate_files(files, context=&quot;code review&quot;,
+                               criteria=JudgmentCriteria(is_clear=True, is_sound=True))
+
+for i, result in enumerate(results):
+    file_name = files[i].split('/')[-1]
+    print(f&quot;{file_name}: {result['overall_score']}/5&quot;)
+    print(f&quot;  Judge Summary: {result['judge_summary']}&quot;)
+    print(f&quot;  Key Issues: {result['weaknesses']}&quot;)
+
+# Configure file size limit (default 1MB)
+large_files = [&quot;big_doc.md&quot;, &quot;large_code.py&quot;]
+try:
+    results = judge.evaluate_files(large_files, max_file_size=2000000)  # 2MB limit
+except ValueError as e:
+    print(f&quot;File too large: {e}&quot;)
+</code></pre></div>
+<h3 id="global-assessment-for-multiple-files">Global Assessment for Multiple Files</h3>
+<p>When evaluating multiple files, BasicJudge automatically generates a global assessment that synthesizes all individual evaluations:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicJudge
+
+judge = BasicJudge()
+
+# Evaluate multiple files - returns global + individual assessments
+result = judge.evaluate_files(
+    [&quot;src/main.py&quot;, &quot;src/utils.py&quot;, &quot;tests/test_main.py&quot;],
+    context=&quot;Python code review&quot;
+)
+
+# Access global assessment (appears first)
+global_assessment = result['global']
+print(f&quot;Global Score: {global_assessment['overall_score']}/5&quot;)
+print(f&quot;Global Summary: {global_assessment['judge_summary']}&quot;)
+
+# Access individual file assessments
+individual_assessments = result['files']
+for assessment in individual_assessments:
+    print(f&quot;File: {assessment['source_reference']}&quot;)
+    print(f&quot;Score: {assessment['overall_score']}/5&quot;)
+
+# Optional: Get original format (list of assessments only)
+results = judge.evaluate_files(
+    [&quot;file1.py&quot;, &quot;file2.py&quot;],
+    exclude_global=True  # Skip global assessment
+)
+# Returns: [assessment1, assessment2] (original behavior)
+</code></pre></div>
+<p><strong>Global Assessment Features:</strong>
+- <strong>Synthesis</strong>: Combines patterns across all individual file evaluations
+- <strong>Score Distribution</strong>: Shows how many files scored at each level (1-5)
+- <strong>Pattern Analysis</strong>: Identifies common strengths and weaknesses
+- <strong>Aggregate Scoring</strong>: Provides overall quality assessment
+- <strong>Appears First</strong>: Global assessment is shown before individual file results</p>
+<p><strong>CLI Global Assessment:</strong></p>
+<div class="code-block"><pre><code class="language-bash"># Default: Includes global assessment
+judge file1.py file2.py file3.py --context &quot;code review&quot;
+
+# Skip global assessment (original behavior)
+judge file1.py file2.py file3.py --context &quot;code review&quot; --exclude-global
+</code></pre></div>
+<h2 id="command-line-interface">Command Line Interface</h2>
+<p>The <code>judge</code> CLI provides comprehensive evaluation capabilities for files and direct text input.</p>
+<h3 id="quick-cli-usage">Quick CLI Usage</h3>
+<div class="code-block"><pre><code class="language-bash"># Simple usage (after installing AbstractCore)
+judge &quot;This code is well-structured and efficient.&quot;
+
+# Evaluate single file with context
+judge document.py --context &quot;code review&quot;
+
+# Multiple files with specific criteria
+judge file1.py file2.py file3.py --context &quot;code review&quot; --criteria clarity,soundness
+
+# Custom output format and file
+judge proposal.txt --format plain --output assessment.txt
+</code></pre></div>
+<h3 id="alternative-usage-methods">Alternative Usage Methods</h3>
+<div class="code-block"><pre><code class="language-bash"># Method 1: Direct command (recommended after installation)
+judge document.txt --context &quot;code review&quot;
+
+# Method 2: Via Python module (always works)
+python -m abstractcore.apps.judge document.txt --context &quot;code review&quot;
+</code></pre></div>
+<h3 id="basic-usage">Basic Usage</h3>
+<div class="code-block"><pre><code class="language-bash"># Simple command (after package installation)
+judge &quot;This code is well-structured and efficient.&quot;
+
+# Evaluate single file
+judge document.py --context &quot;code review&quot;
+
+# Evaluate multiple files sequentially (avoids context overflow)
+judge file1.py file2.py file3.py --context &quot;code review&quot;
+
+# Specify output format
+judge content.md --format plain
+
+# Save to file
+judge proposal.txt --output assessment.json
+
+# Multiple files with wildcard patterns
+judge src/*.py --context &quot;Python code review&quot; --format json --output review.json
+</code></pre></div>
+<h3 id="advanced-options">Advanced Options</h3>
+<div class="code-block"><pre><code class="language-bash"># Focus on specific criteria
+judge doc.py --criteria clarity,soundness,effectiveness
+
+# Focus on specific evaluation areas
+judge api_docs.md --focus &quot;technical accuracy,examples,error handling&quot;
+
+# Comparison-based evaluation
+judge draft.md --reference ideal_solution.md
+
+# Custom provider and model
+judge content.txt --provider openai --model gpt-4o-mini
+
+# Include detailed criteria explanations
+judge content.txt --include-criteria --format plain
+
+# Verbose output with progress
+judge large_doc.md --verbose
+</code></pre></div>
+<h3 id="cli-parameters">CLI Parameters</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Choices/Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td>Content to evaluate: single text string, single file path, or multiple file paths</td>
+<td>Required (one or more arguments)</td>
+</tr>
+<tr>
+<td><code>--context</code></td>
+<td>Evaluation context description</td>
+<td>Free text</td>
+</tr>
+<tr>
+<td><code>--criteria</code></td>
+<td>Comma-separated standard criteria</td>
+<td>clarity, simplicity, actionability, soundness, innovation, effectiveness, relevance, completeness, coherence</td>
+</tr>
+<tr>
+<td><code>--focus</code></td>
+<td>Specific focus areas for evaluation</td>
+<td>Free text (comma-separated)</td>
+</tr>
+<tr>
+<td><code>--reference</code></td>
+<td>Reference content for comparison</td>
+<td>File path or text</td>
+</tr>
+<tr>
+<td><code>--include-criteria</code></td>
+<td>Include detailed criteria explanations in assessment</td>
+<td>Flag</td>
+</tr>
+<tr>
+<td><code>--exclude-global</code></td>
+<td>Skip global assessment for multiple files</td>
+<td>Flag (default: False, global assessment included)</td>
+</tr>
+<tr>
+<td><code>--format</code></td>
+<td>Output format</td>
+<td><code>json</code> (default), <code>plain</code>, <code>yaml</code></td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>Output file path</td>
+<td>Console if not provided</td>
+</tr>
+<tr>
+<td><code>--provider</code></td>
+<td>LLM provider</td>
+<td><code>ollama</code>, <code>openai</code>, <code>anthropic</code>, etc.</td>
+</tr>
+<tr>
+<td><code>--model</code></td>
+<td>LLM model</td>
+<td>Provider-specific model name</td>
+</tr>
+<tr>
+<td><code>--temperature</code></td>
+<td>Evaluation temperature</td>
+<td>0.0-2.0 (default: 0.1)</td>
+</tr>
+<tr>
+<td><code>--verbose</code></td>
+<td>Detailed progress</td>
+<td>Flag</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="output-format-examples">Output Format Examples</h3>
+<p><strong>JSON Format (default):</strong></p>
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.apps.judge content.txt --format json
+# Output: Structured JSON with scores, feedback, and reasoning
+</code></pre></div>
+<p><strong>Plain Text Format:</strong></p>
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.apps.judge content.txt --format plain
+# Output: Human-readable assessment report
+</code></pre></div>
+<p><strong>Filtered Criteria:</strong></p>
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.apps.judge code.py --criteria clarity,soundness,effectiveness
+# Output: Only evaluates specified criteria
+</code></pre></div>
+<p><strong>Enhanced Assessment with Criteria Details:</strong></p>
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.apps.judge content.txt --include-criteria --format plain
+# Output: Includes judge's summary, source reference, and detailed criteria explanations
+</code></pre></div>
+<h2 id="focus-areas-impact-on-evaluation">Focus Areas: Impact on Evaluation</h2>
+<p>The <code>--focus</code> parameter dramatically changes evaluation outcomes by treating specified areas as <strong>PRIMARY FOCUS AREAS</strong>. Here are real examples showing the impact:</p>
+<p><strong>Key Difference:</strong>
+- <strong>Without focus</strong>: Judge evaluates general quality (clarity, coherence) → High score
+- <strong>With focus</strong>: Judge prioritizes specified areas → Low score when focus areas are missing</p>
+<h3 id="real-readme-evaluation-comparison">Real README Evaluation Comparison</h3>
+<p><strong>Command:</strong></p>
+<div class="code-block"><pre><code class="language-bash">judge README.md --focus &quot;technicalities, architectural diagrams and data flow, explanations of technical choices and comparison with SOTA approaches&quot;
+</code></pre></div>
+<p><strong>Results:</strong>
+- <strong>Overall Score</strong>: 3/5 (down from 5/5 without focus)
+- <strong>Judge Summary</strong>: "However, it critically lacks architectural diagrams and technical comparisons to SOTA approaches—core requirements..."
+- <strong>Weaknesses</strong>: Directly address focus areas:
+  - "No architectural diagrams or data flow visualizations"
+  - "Lacks technical comparisons with SOTA approaches like LangChain, LlamaIndex"
+  - "No explanation of how tool calling is unified across providers"</p>
+<p><strong>Key Insight</strong>: Focus areas become the <strong>primary evaluation targets</strong>. Even high quality documentation gets lower scores when it lacks the specified focus areas.</p>
+<blockquote>
+<p><strong>Fun Fact</strong>: We used our own judge to evaluate our README.md with focus on "architectural diagrams and SOTA comparisons" and got a humbling 3/5 score. Turns out eany documentation can be improved! 😅</p>
+</blockquote>
+<h3 id="focus-vs-criteria-understanding-the-difference">Focus vs Criteria: Understanding the Difference</h3>
+<div class="code-block"><pre><code class="language-bash"># --criteria: HOW to evaluate (evaluation methods)
+judge doc.txt --criteria &quot;clarity,soundness,effectiveness&quot;
+
+# --focus: WHAT to focus on (evaluation subjects)
+judge doc.txt --focus &quot;performance benchmarks,security analysis&quot;
+
+# Combined: Evaluate specific areas using specific criteria
+judge doc.txt --criteria &quot;clarity,completeness&quot; --focus &quot;API documentation,error handling&quot;
+</code></pre></div>
+<p><strong>Pro Tip</strong>: Use <code>--focus</code> when you want to evaluate <strong>specific content areas</strong>. Use <code>--criteria</code> when you want to change <strong>evaluation dimensions</strong>.</p>
+<h2 id="real-world-examples">Real-World Examples</h2>
+<h3 id="example-1-code-review">Example 1: Code Review</h3>
+<p><strong>Input:</strong></p>
+<div class="code-block"><pre><code class="language-python">def calculate_total(items):
+    total = 0
+    for item in items:
+        total += item.price
+    return total
+</code></pre></div>
+<p><strong>Command:</strong></p>
+<div class="code-block"><pre><code class="language-bash">judge &quot;def calculate_total...&quot; --context &quot;code review&quot; --criteria clarity,soundness,effectiveness --format plain
+</code></pre></div>
+<p><strong>Expected Assessment:</strong>
+- <strong>Clarity</strong>: 4/5 - Clear function purpose and implementation
+- <strong>Soundness</strong>: 3/5 - Missing error handling for None values
+- <strong>Effectiveness</strong>: 4/5 - Solves the problem efficiently
+- <strong>Actionable Feedback</strong>: Add input validation, consider using sum() built-in</p>
+<h3 id="example-2-documentation-review">Example 2: Documentation Review</h3>
+<p><strong>Python API:</strong></p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicJudge, JudgmentCriteria
+
+judge = BasicJudge()
+
+doc_content = &quot;&quot;&quot;
+# API Documentation
+This API provides user management functionality.
+Available endpoints: /users, /users/{id}
+&quot;&quot;&quot;
+
+# Focus on documentation-specific criteria
+criteria = JudgmentCriteria(
+    is_clear=True,
+    is_complete=True,
+    is_actionable=True,
+    is_innovative=False,  # Not relevant for docs
+    is_working=False      # Not applicable
+)
+
+assessment = judge.evaluate(
+    content=doc_content,
+    context=&quot;API documentation review&quot;,
+    criteria=criteria,
+    focus=&quot;examples, error handling, API completeness&quot;
+)
+
+print(f&quot;Completeness: {assessment['completeness_score']}/5&quot;)
+print(f&quot;Recommendations: {assessment['actionable_feedback']}&quot;)
+</code></pre></div>
+<h3 id="example-3-multiple-file-code-review">Example 3: Multiple File Code Review</h3>
+<p><strong>Evaluate an entire codebase:</strong></p>
+<div class="code-block"><pre><code class="language-bash"># Review all Python files in a project
+judge src/*.py tests/*.py \
+  --context=&quot;Python project review&quot; \
+  --criteria clarity,soundness,effectiveness \
+  --format json \
+  --output project_review.json \
+  --verbose
+</code></pre></div>
+<p><strong>Expected Output:</strong>
+- List of assessments for each file
+- Individual scores and feedback per file
+- Consistent evaluation criteria across all files
+- Identification of problematic files requiring attention</p>
+<p><strong>Python API for Multiple Files:</strong></p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicJudge
+import glob
+
+judge = BasicJudge()
+
+# Get all Python files in project
+python_files = glob.glob(&quot;src/**/*.py&quot;, recursive=True)
+
+# Evaluate all files
+results = judge.evaluate_files(
+    file_paths=python_files,
+    context=&quot;code quality review&quot;,
+    criteria=JudgmentCriteria(is_clear=True, is_sound=True, is_working=True)
+)
+
+# Analyze results
+problematic_files = [r for r in results if r['overall_score'] &lt; 3]
+high_quality_files = [r for r in results if r['overall_score'] &gt;= 4]
+
+print(f&quot;Files needing attention: {len(problematic_files)}&quot;)
+print(f&quot;High-quality files: {len(high_quality_files)}&quot;)
+</code></pre></div>
+<h3 id="example-4-academic-writing-evaluation">Example 4: Academic Writing Evaluation</h3>
+<p><strong>Command:</strong></p>
+<div class="code-block"><pre><code class="language-bash">judge research_paper.pdf \
+  --context=&quot;academic paper review&quot; \
+  --criteria clarity,soundness,innovation,completeness \
+  --reference conference_guidelines.txt \
+  --format json \
+  --output review_assessment.json \
+  --verbose
+</code></pre></div>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="1-model-selection-for-evaluation">1. Model Selection for Evaluation</h3>
+<p><strong>For Critical Assessments (RECOMMENDED):</strong></p>
+<div class="code-block"><pre><code class="language-python"># Best quality for important evaluations
+judge = create_judge(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;, temperature=0.1)
+
+# Alternative: High-quality Claude
+judge = create_judge(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;, temperature=0.05)
+</code></pre></div>
+<p><strong>For High-Volume Evaluation (Local):</strong></p>
+<div class="code-block"><pre><code class="language-python"># Good balance of quality and speed
+judge = create_judge(&quot;ollama&quot;, model=&quot;qwen3-coder:30b&quot;, temperature=0.1)
+
+# Fastest option (basic evaluation)
+judge = create_judge(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct-2507-q4_K_M&quot;, temperature=0.1)
+</code></pre></div>
+<h3 id="2-criteria-selection-strategy">2. Criteria Selection Strategy</h3>
+<p><strong>For Code Reviews:</strong></p>
+<div class="code-block"><pre><code class="language-python">criteria = JudgmentCriteria(
+    is_clear=True,
+    is_simple=True,
+    is_sound=True,
+    is_working=True,
+    is_innovative=False  # Usually not the focus
+)
+</code></pre></div>
+<p><strong>For Documentation:</strong></p>
+<div class="code-block"><pre><code class="language-python">criteria = JudgmentCriteria(
+    is_clear=True,
+    is_complete=True,
+    is_actionable=True,
+    is_relevant=True,
+    is_coherent=True,
+    is_innovative=False,  # Not typically relevant
+    is_sound=False        # Different meaning for docs
+)
+</code></pre></div>
+<p><strong>For Creative Content:</strong></p>
+<div class="code-block"><pre><code class="language-python">criteria = JudgmentCriteria(
+    is_clear=True,
+    is_innovative=True,
+    is_coherent=True,
+    is_working=False,     # Not applicable
+    is_sound=False        # Different context
+)
+</code></pre></div>
+<h3 id="3-evaluation-context-guidelines">3. Evaluation Context Guidelines</h3>
+<p><strong>Be Specific:</strong>
+- "code review for production deployment"
+- "user-facing API documentation"
+- "academic research proposal"
+- "general review"</p>
+<p><strong>Match Context to Criteria:</strong>
+- Code reviews: focus on soundness, clarity, effectiveness
+- Documentation: focus on completeness, clarity, actionability
+- Creative work: focus on innovation, coherence, clarity</p>
+<h3 id="4-using-custom-criteria-v263">4. Using Custom Criteria (v2.6.3+)</h3>
+<p>Custom criteria enable domain-specific evaluation with individual scores per criterion:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicJudge
+
+judge = BasicJudge()
+
+# Data Analysis Evaluation
+assessment = judge.evaluate(
+    content=&quot;Statistical analysis report...&quot;,
+    context=&quot;data analysis review&quot;,
+    custom_criteria={
+        &quot;logical_coherence&quot;: &quot;Are the results logically consistent throughout?&quot;,
+        &quot;result_plausibility&quot;: &quot;Are the findings plausible given the data?&quot;,
+        &quot;assumption_validity&quot;: &quot;Were statistical assumptions properly validated?&quot;
+    }
+)
+
+# Access custom scores
+print(assessment['custom_scores'])
+# {'logical_coherence': 5, 'result_plausibility': 4, 'assumption_validity': 3}
+
+# Code Review with Custom Criteria
+assessment = judge.evaluate(
+    content=&quot;Pull request code...&quot;,
+    context=&quot;code review&quot;,
+    custom_criteria={
+        &quot;follows_style_guide&quot;: &quot;Does the code follow team style conventions?&quot;,
+        &quot;has_tests&quot;: &quot;Are there comprehensive unit tests?&quot;,
+        &quot;handles_edge_cases&quot;: &quot;Are edge cases and error conditions handled?&quot;
+    }
+)
+
+# Medical Diagnosis Evaluation
+assessment = judge.evaluate(
+    content=&quot;Diagnostic reasoning...&quot;,
+    context=&quot;medical diagnosis review&quot;,
+    custom_criteria={
+        &quot;safety&quot;: &quot;Are patient safety considerations addressed?&quot;,
+        &quot;evidence_based&quot;: &quot;Is reasoning grounded in medical evidence?&quot;,
+        &quot;risk_assessment&quot;: &quot;Are patient risks properly evaluated?&quot;
+    }
+)
+</code></pre></div>
+<p><strong>Custom Criteria Best Practices</strong>:
+- Use clear, specific questions as descriptions
+- Each criterion gets an individual 1-5 score
+- Context-aware scoring applies (task-appropriate expectations)
+- Combine with predefined criteria for comprehensive evaluation</p>
+<h3 id="5-reference-based-evaluation">5. Reference-Based Evaluation</h3>
+<div class="code-block"><pre><code class="language-bash"># Compare against ideal solution
+judge student_solution.py \
+  --reference expert_solution.py \
+  --context=&quot;programming assignment grading&quot;
+
+# Compare against standards
+judge company_policy.md \
+  --reference industry_standards.md \
+  --context=&quot;policy compliance review&quot;
+</code></pre></div>
+<h2 id="assessment-interpretation">Assessment Interpretation</h2>
+<h3 id="understanding-scores">Understanding Scores</h3>
+<p><strong>5 (Exceptional)</strong>: Content exceeds expectations and demonstrates mastery
+<strong>4 (Good)</strong>: Content meets expectations well with minor improvements possible
+<strong>3 (Adequate)</strong>: Content meets basic standards but has notable gaps
+<strong>2 (Poor)</strong>: Content falls short with significant issues requiring attention
+<strong>1 (Very Poor)</strong>: Content fails to meet basic standards</p>
+<h3 id="actionable-feedback">Actionable Feedback</h3>
+<p>The judge provides three types of feedback:
+- <strong>Strengths</strong>: What works well (build upon these)
+- <strong>Weaknesses</strong>: What needs improvement (prioritize addressing these)
+- <strong>Actionable Recommendations</strong>: Specific steps to improve (implement these)</p>
+<h3 id="chain-of-thought-reasoning">Chain-of-Thought Reasoning</h3>
+<p>Each assessment includes transparent reasoning showing:
+1. How each criterion was evaluated
+2. Evidence supporting the scores
+3. Calculation of the overall score
+4. Justification for feedback and recommendations</p>
+<h2 id="integration-examples">Integration Examples</h2>
+<h3 id="content-management-system">Content Management System</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicJudge
+
+def evaluate_article(article_content):
+    judge = BasicJudge()
+
+    assessment = judge.evaluate(
+        content=article_content,
+        context=&quot;blog article review&quot;,
+        criteria=JudgmentCriteria(
+            is_clear=True,
+            is_actionable=True,
+            is_relevant=True,
+            is_coherent=True
+        )
+    )
+
+    return {
+        'quality_score': assessment['overall_score'],
+        'ready_to_publish': assessment['overall_score'] &gt;= 4,
+        'improvements_needed': assessment['actionable_feedback']
+    }
+</code></pre></div>
+<h3 id="code-review-automation">Code Review Automation</h3>
+<div class="code-block"><pre><code class="language-python">def automated_code_review(code_diff, context=&quot;code review&quot;):
+    judge = BasicJudge()
+
+    assessment = judge.evaluate(
+        content=code_diff,
+        context=context,
+        focus=&quot;code conventions, test coverage, error handling&quot;
+    )
+
+    return {
+        'approval_recommended': assessment['overall_score'] &gt;= 4,
+        'concerns': assessment['weaknesses'],
+        'required_changes': assessment['actionable_feedback']
+    }
+</code></pre></div>
+<h3 id="academic-grading-assistant">Academic Grading Assistant</h3>
+<div class="code-block"><pre><code class="language-python">def grade_assignment(student_submission, rubric_reference):
+    judge = BasicJudge()
+
+    assessment = judge.evaluate(
+        content=student_submission,
+        context=&quot;academic assignment grading&quot;,
+        reference=rubric_reference,
+        criteria=JudgmentCriteria(
+            is_clear=True,
+            is_sound=True,
+            is_complete=True,
+            is_coherent=True
+        )
+    )
+
+    return {
+        'grade': assessment['overall_score'],
+        'feedback': assessment['actionable_feedback'],
+        'strengths': assessment['strengths']
+    }
+</code></pre></div>
+<h2 id="performance-notes">Performance notes</h2>
+<p>Judging is an LLM call, so latency and cost vary by provider/model, input size, and retry behavior (for example, structured output validation).</p>
+<p>Practical guidance:
+- Prefer smaller/faster models for routine scoring.
+- Keep inputs short (or summarize first) for lower latency.
+- Use low temperature for more consistent scores.</p>
+<h2 id="llm-as-a-judge-best-practices">LLM-as-a-Judge Best Practices</h2>
+<p>BasicJudge follows common best practices for LLM-based evaluation:</p>
+<h3 id="1-structured-output">1. Structured Output</h3>
+<ul>
+<li><strong>JSON format</strong> for easy parsing and integration</li>
+<li><strong>Consistent schema</strong> across all evaluations</li>
+<li><strong>Rich metadata</strong> for comprehensive analysis</li>
+</ul>
+<h3 id="2-chain-of-thought-evaluation">2. Chain-of-Thought Evaluation</h3>
+<ul>
+<li><strong>Step-by-step reasoning</strong> for transparency</li>
+<li><strong>Evidence-based scoring</strong> with clear justification</li>
+<li><strong>Explicit calculation</strong> of overall scores</li>
+</ul>
+<h3 id="3-low-temperature-generation">3. Low-Temperature Generation</h3>
+<ul>
+<li><strong>Consistent evaluation</strong> across multiple runs</li>
+<li><strong>Reduced randomness</strong> in scoring decisions</li>
+<li><strong>Reliable comparative assessments</strong></li>
+</ul>
+<h3 id="4-comprehensive-error-handling">4. Comprehensive Error Handling</h3>
+<ul>
+<li><strong>Graceful failure</strong> with fallback assessments</li>
+<li><strong>Retry mechanisms</strong> for transient failures</li>
+<li><strong>Clear error messages</strong> for debugging</li>
+</ul>
+<h3 id="5-configurable-criteria">5. Configurable Criteria</h3>
+<ul>
+<li><strong>Domain-specific evaluation</strong> with relevant criteria</li>
+<li><strong>Custom criteria support</strong> for specialized needs</li>
+<li><strong>Flexible assessment scope</strong> based on context</li>
+</ul>
+<p>BasicJudge is designed for production use with built-in error handling, retry logic, and efficient evaluation of content from short snippets to comprehensive documents.</p>
+<h2 id="timeout-configuration">Timeout Configuration</h2>
+<p>The judge supports flexible timeout configuration for different evaluation scenarios:</p>
+<h3 id="default-behavior-unlimited-timeout">Default Behavior (Unlimited Timeout)</h3>
+<div class="code-block"><pre><code class="language-bash"># Runs as long as needed - recommended for complex evaluations
+python -m abstractcore.apps.judge document.txt
+</code></pre></div>
+<h3 id="custom-timeout">Custom Timeout</h3>
+<div class="code-block"><pre><code class="language-bash"># Set specific timeout (useful for production environments)
+python -m abstractcore.apps.judge document.txt --timeout 300   # 5 minutes
+python -m abstractcore.apps.judge document.txt --timeout 900   # 15 minutes
+
+# Explicit unlimited timeout
+python -m abstractcore.apps.judge document.txt --timeout none
+</code></pre></div>
+<h3 id="programmatic-usage">Programmatic Usage</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.processing import BasicJudge
+
+# Unlimited timeout (default)
+judge = BasicJudge()
+
+# Custom timeout
+judge = BasicJudge(timeout=300)  # 5 minutes
+
+# Explicit unlimited timeout
+judge = BasicJudge(timeout=None)
+</code></pre></div>
+<p><strong>When to Use Timeouts:</strong>
+- <strong>Production environments</strong>: Set reasonable timeouts (300-900 seconds) to prevent hanging
+- <strong>Large documents</strong>: Use unlimited timeout for comprehensive evaluations
+- <strong>Multiple files</strong>: Consider longer timeouts when evaluating many files
+- <strong>Complex criteria</strong>: Detailed evaluations may need more time</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<p><strong>"Failed to initialize default Ollama model"</strong></p>
+<div class="code-block"><pre><code class="language-bash"># Install Ollama and download model
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama serve
+</code></pre></div>
+<p><strong>Inconsistent evaluation results</strong>
+- Use lower temperature: <code>--temperature=0.05</code>
+- Try a more capable model: <code>--provider openai --model gpt-4o-mini</code>
+- Ensure context description is specific and consistent</p>
+<p><strong>Low-quality assessments</strong>
+- Use more capable models (GPT-4, Claude)
+- Provide specific evaluation context
+- Focus criteria on relevant dimensions only</p>
+<p><strong>JSON parsing errors</strong>
+- Automatic retry handles most cases
+- If persistent, try a more capable model
+- Check input content with <code>--verbose</code> flag</p>
+<h3 id="error-messages">Error Messages</h3>
+<p><strong>"Temperature must be between 0.0 and 2.0"</strong>
+- Adjust <code>--temperature</code> parameter to valid range
+- Recommended: 0.1 for consistency, up to 0.3 for slight variation</p>
+<p><strong>"Provider/model required together"</strong>
+- Both <code>--provider</code> and <code>--model</code> must be specified together</p>
+<p><strong>"Unknown criterion"</strong>
+- Check spelling of criteria names
+- Use available standard criteria or custom criteria</p>
+<p>BasicJudge provides reliable, transparent evaluation suitable for critical assessment across various domains, from code review to content evaluation to academic grading.</p>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../../docs/README.html">Documentation index</a> &middot;
+                <a href="../../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../../assets/js/main.js"></script>
+</body>
+</html>

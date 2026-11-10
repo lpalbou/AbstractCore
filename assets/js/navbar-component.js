@@ -39,18 +39,7 @@ class AbstractCoreNavbar {
         
         return `
             <a href="${logoHref}" class="brand-link">
-                <div class="logo-abstract">
-                    <div class="logo-circle"></div>
-                    <div class="orbit-container">
-                        <div class="orbit-dot orbit-dot-1"></div>
-                        <div class="orbit-dot orbit-dot-2"></div>
-                    </div>
-                    <div class="logo-lines">
-                        <div class="logo-line"></div>
-                        <div class="logo-line"></div>
-                        <div class="logo-line"></div>
-                    </div>
-                </div>
+                <img src="/assets/img/logos/core.png" alt="" class="brand-mark" width="32" height="32">
                 <span class="brand-text">AbstractCore</span>
             </a>
         `;
@@ -163,8 +152,12 @@ class AbstractCoreNavbar {
 
         // Find navbar placeholder and inject HTML
         const placeholder = document.querySelector('.navbar-placeholder');
+        const existing = document.querySelector('nav.navbar');
         if (placeholder) {
             placeholder.outerHTML = this.getNavbarHTML();
+        } else if (existing) {
+            // A page that configures its own menu replaces the default navbar instead of adding a second one
+            existing.outerHTML = this.getNavbarHTML();
         } else {
             // If no placeholder, inject at the beginning of body
             document.body.insertAdjacentHTML('afterbegin', this.getNavbarHTML());
@@ -182,9 +175,25 @@ class AbstractCoreNavbar {
         const navMenu = document.getElementById('nav-menu');
 
         if (navToggle && navMenu) {
+            // This component owns the mobile menu; main.js leaves a bound toggle alone
+            navToggle.dataset.bound = '1';
             navToggle.addEventListener('click', () => {
                 navToggle.classList.toggle('active');
                 navMenu.classList.toggle('active');
+            });
+            navMenu.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    navToggle.classList.remove('active');
+                    navMenu.classList.remove('active');
+                });
+            });
+            document.addEventListener('click', (event) => {
+                const toggle = document.getElementById('nav-toggle');
+                const menu = document.getElementById('nav-menu');
+                if (toggle && menu && !toggle.contains(event.target) && !menu.contains(event.target)) {
+                    toggle.classList.remove('active');
+                    menu.classList.remove('active');
+                }
             });
         }
     }

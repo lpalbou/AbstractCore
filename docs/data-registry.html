@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data-Home Registry - AbstractCore</title>
+    <meta name="description" content="One machine-level registry of every data directory the framework writes — so an operator can always answer &quot;what is on my disk, where, and what is safe to…">
+    <link rel="canonical" href="https://abstractcore.ai/docs/data-registry.html">
+    <link rel="icon" type="image/x-icon" href="../favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Data-Home Registry</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">One machine-level registry of every data directory the framework writes — so an operator can always answer &quot;what is on my disk, where, and what is safe to delete&quot; from one view instead of digging through app folders.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#why-it-exists" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why it exists</a>
+<a href="#the-registry-file" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">The registry file</a>
+<a href="#row-shape" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Row shape</a>
+<a href="#api" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">API</a>
+<a href="#safety-model-what-purge-will-and-will-not-do" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Safety model (what purge will and will not do)</a>
+<a href="#cores-own-registrations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Core&#x27;s own registrations</a>
+<a href="#notes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Notes</a></div>
+
+            <div class="doc-content">
+
+<h2 id="why-it-exists">Why it exists</h2>
+<p>AbstractFramework packages co-locate their own data: model caches, prompt-cache artifacts, run/session stores, logs, entity homes. After months of experiments this data spreads across the machine with no map. The ruled design (cross-package vote + operator sign-off, 2026-07-13):</p>
+<ul>
+<li><strong>Data stays co-located per app</strong> — each package keeps owning its files.</li>
+<li><strong>Every package registers its data homes</strong> in one machine-level registry at first write.</li>
+<li><strong>One management surface</strong> (the AbstractGateway console) enumerates all registered homes with live sizes and offers purge actions; observability apps get read-only telemetry.</li>
+<li><strong>AbstractCore owns the primitive</strong> (this module); everything else reads it, nothing re-derives it.</li>
+</ul>
+<h2 id="the-registry-file">The registry file</h2>
+<p><code>~/.abstractframework/data_registry.json</code> — override with the <code>ABSTRACTFRAMEWORK_DATA_REGISTRY</code> environment variable. Writes are atomic (temp file + <code>os.replace</code>) under a cross-process lock (<code>fcntl.flock</code> on POSIX, <code>msvcrt.locking</code> on Windows), so many processes can register at first write concurrently.</p>
+<p>A corrupt registry file is refused loudly and never silently regenerated — repair or remove it explicitly.</p>
+<h2 id="row-shape">Row shape</h2>
+<p>Each registered home is one row:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>Unique row id (e.g. <code>huggingface-hub-cache</code>)</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>Absolute, resolved directory path</td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td>One of the ruled set below</td>
+</tr>
+<tr>
+<td><code>owner</code></td>
+<td>Package/app id that owns the data (e.g. <code>abstractgateway</code>)</td>
+</tr>
+<tr>
+<td><code>safe_to_purge</code></td>
+<td><strong>Owner-declared.</strong> <code>False</code> rows are structurally refused by the purge verb</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td>Human sentence for the management view (include re-download/restore cost)</td>
+</tr>
+<tr>
+<td><code>meta</code></td>
+<td>Optional owner dict</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>kind</code> is a closed set, widened only by owning-seat proposal + a vocabulary ruling:</p>
+<ul>
+<li><code>model-cache</code> — downloadable model weights (e.g. the Hugging Face hub cache)</li>
+<li><code>prompt-cache</code> — KV/prefix cache artifacts</li>
+<li><code>runs</code> — durable run/ledger stores</li>
+<li><code>sessions</code> — session/conversation state</li>
+<li><code>logs</code> — log directories</li>
+<li><code>entity-home</code> — a summoned entity's home (a LIFE: memory + book + spark + artifacts). Registers <code>safe_to_purge=False</code> by construction; an entity home's <code>artifacts/</code> stays inside its <code>entity-home</code> row, never a separate registration</li>
+<li><code>artifacts</code> — content-addressed artifact stores with rebuildable catalogs; purge semantics are per-store (prunable run-media vs load-bearing stores are separate rows)</li>
+</ul>
+<h2 id="api">API</h2>
+<div class="code-block"><pre><code class="language-python">from abstractcore.utils import (
+    register_data_home, list_data_homes, get_data_home,
+    data_home_size, purge_data_home, unregister_data_home,
+    register_core_data_homes, DataHome, DataRegistryError, DATA_HOME_KINDS,
+)
+
+# Register-at-first-write (idempotent upsert; call when your app first writes the dir)
+register_data_home(
+    &quot;myapp-logs&quot;,
+    path=&quot;~/.myapp/logs&quot;,
+    kind=&quot;logs&quot;,
+    owner=&quot;myapp&quot;,
+    safe_to_purge=True,
+    description=&quot;MyApp rotating logs; safe to purge anytime.&quot;,
+)
+
+# Enumerate (the management view's read)
+rows = list_data_homes(include_sizes=True)   # + size_bytes (recursive), + exists
+
+# Purge safely (dry_run first for a confirm dialog)
+plan = purge_data_home(&quot;myapp-logs&quot;, dry_run=True)   # would-purge accounting
+result = purge_data_home(&quot;myapp-logs&quot;)               # deletes CONTENTS only
+</code></pre></div>
+<h3 id="best-effort-lane-for-hot-paths">Best-effort lane for hot paths</h3>
+<p><code>register_data_home</code> refuses loudly — right for a management surface, wrong
+inside a data-writing code path. Hot paths call the best-effort twin:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.utils import ensure_data_home_registered, ensure_core_data_homes
+
+# Never raises: dedupes per process, degrades to ONE #FALLBACK warning per
+# name when the registry refuses or the disk write fails, retries silently
+# on the next call. A broken registry must never break embeddings/logging.
+ensure_data_home_registered(&quot;myapp-logs&quot;, path=&quot;~/.myapp/logs&quot;, kind=&quot;logs&quot;,
+                            owner=&quot;myapp&quot;, safe_to_purge=True)
+
+# Once-per-process register_core_data_homes() (providers call this).
+ensure_core_data_homes()
+</code></pre></div>
+<p>Kill switch: set <code>ABSTRACTFRAMEWORK_DATA_REGISTRY_DISABLE=1</code> to turn all
+best-effort registration off (the strict verbs are unaffected).</p>
+<h2 id="safety-model-what-purge-will-and-will-not-do">Safety model (what purge will and will not do)</h2>
+<ul>
+<li><strong>Owner-declared safety is enforced</strong>: purging a <code>safe_to_purge=False</code> row raises, naming the owner and the rule. Entity homes are the canonical case — deleting one is the owner's designed lifecycle act, never a cache cleanup.</li>
+<li><strong>Contents only</strong>: the home directory itself and its registration survive a purge.</li>
+<li><strong>No nesting</strong>: registering a home that is an ancestor or descendant of an existing home is refused — an ancestor purged as "safe" must never eat a nested home that declared itself unsafe. The directory containing the registry file itself is also refused.</li>
+<li><strong>No symlink escapes</strong>: symlinks inside a home are unlinked, never followed. If the registered path itself no longer resolves to its registration-time location (a component was swapped for a symlink), purge refuses instead of deleting through the swap.</li>
+<li><strong>Hand-edited registries still can't cross-purge</strong>: at purge time, other registered homes and the registry file are skipped with <code>skipped_protected</code> accounting even if a nesting guard was bypassed by editing the JSON directly.</li>
+<li><strong>Unregistered paths cannot be purged</strong> through this API at all; <code>unregister_data_home</code> removes the row only and never touches disk.</li>
+</ul>
+<h2 id="cores-own-registrations">Core's own registrations</h2>
+<p>Core registers its data homes at first write (no setup call needed):</p>
+<ul>
+<li><strong>Hugging Face hub cache</strong> (<code>HF_HUB_CACHE</code> &gt; <code>HUGGINGFACE_HUB_CACHE</code> &gt; <code>$HF_HOME/hub</code> &gt; <code>~/.cache/huggingface/hub</code>) — <code>model-cache</code>, safe to purge (models re-download on demand; large models cost bandwidth/time to restore). Registered when a HuggingFace/MLX/LMStudio provider or a local embedding model is constructed (<code>register_core_data_homes()</code> via the once-per-process ensure lane).</li>
+<li><strong>LM Studio model directory</strong> (when present) — <code>model-cache</code>, <strong>report-only</strong> (<code>safe_to_purge=False</code>, owner <code>lmstudio</code>): that directory belongs to LM Studio and is never touched by the framework.</li>
+<li><strong><code>abstractcore-blocs</code></strong> — <code>~/.abstractcore/blocs</code>, the file-bloc store (extracted file-text snapshots + per-(provider, model) KV prompt-cache artifacts; the KV artifacts are the bulk — hundreds of GB on long-lived machines). <code>prompt-cache</code>, safe to purge: content re-extracts and KV recompiles on demand, but strict durable-bloc bindings go cold until recompiled. Registered by <code>FileBlocStore.upsert</code> at first write and by the core probe when the directory exists.</li>
+<li><strong><code>abstractcore-prompt-cache-repl-sessions</code></strong> — <code>~/.abstractcore/prompt_cache_repl_sessions</code>, saved sessions from the RETIRED save feature of the prompt-cache REPL demo (no current writer). <code>sessions</code>, <strong>report-only</strong>: the <code>*.artifacts</code> KV files are re-derivable bulk but the JSON transcripts are user-elected saves — review and delete manually.</li>
+<li><strong><code>abstractcore-logs</code></strong> — the file-logging directory, registered when file logging first creates it (<code>logs</code>, safe to purge).</li>
+<li><strong><code>abstractcore-embeddings-cache</code></strong> — the default <code>~/.abstractcore/embeddings</code> vector cache (<code>artifacts</code>, safe to purge: vectors recompute). Only the machine-level default dir registers; a constructor-custom cache dir lives inside its caller's data home and rides that container's row (self-registering ephemeral dirs spammed 372 pytest-tmp rows in the live incident that set this rule).</li>
+<li><strong><code>abstractcore-glyph-cache</code></strong> — glyph-compression PNG renders from PDFs (<code>artifacts</code>, safe to purge: re-rendered from source documents), registered at first render.</li>
+<li><strong><code>abstractcore-local-models</code></strong> — <code>~/.abstractcore/models</code> vision/caption model downloads (<code>model-cache</code>, safe to purge), registered by <code>abstractcore --download-vision-model</code>.</li>
+</ul>
+<h2 id="notes">Notes</h2>
+<ul>
+<li><code>size_bytes</code> is an apparent-size estimate (per-name <code>lstat</code>, symlinks not followed, hardlinks counted once per name) — a management view number, not <code>du</code> disk accounting.</li>
+<li>Consumers rendering rows should display unknown <code>kind</code> values labeled-unknown rather than refusing — the closed set is enforced at registration, not at read.</li>
+</ul>
+
+            </div>
+
+            <footer class="doc-footer">
+                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../docs/README.html">Documentation index</a> &middot;
+                <a href="../llms.txt">llms.txt</a> &middot;
+                Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
+            </footer>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

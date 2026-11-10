@@ -1,0 +1,131 @@
+/* abstractcore.ai home page. The look comes from abstractframework.ai (assets/css/framework.css,
+   a copy of its main.css); this file adds the AbstractCore pieces and the fixed tab footprint. */
+
+/* ── Device frame: browser window (copied from abstractframework.ai assets/css/components.css) ── */
+/* ── dv: device frames ────────────────────────────────────────────────── */
+
+.dv { margin: 0; position: relative; }
+.dv-display { position: relative; overflow: hidden; background: #000; }
+.dv-display > img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.dv-cap { margin-top: .85rem; text-align: center; font-size: var(--text-sm); color: var(--text-muted); line-height: 1.45; }
+.dv-cap strong { color: var(--text); font-weight: 600; }
+
+/* Browser window: traffic lights + address bar. */
+.dv-browser, .dv-terminal {
+  width: 100%;
+  border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--border-hover);
+  background: #101018;
+  box-shadow: var(--shadow-lg), 0 0 50px rgba(6, 182, 212, .08);
+}
+.dv-chrome {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .55rem .75rem;
+  background: linear-gradient(180deg, #1c1c27, #16161f);
+  border-bottom: 1px solid var(--border);
+}
+.dv-lights { display: flex; gap: 6px; flex: none; }
+.dv-lights i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+.dv-lights i:nth-child(1) { background: #ff5f57; }
+.dv-lights i:nth-child(2) { background: #febc2e; }
+.dv-lights i:nth-child(3) { background: #28c840; }
+.dv-url {
+  flex: 1; min-width: 0; max-width: 68%; margin-inline: auto;
+  display: flex; align-items: center; justify-content: center; gap: .35rem;
+  padding: .22rem .7rem; border-radius: 7px;
+  background: rgba(255, 255, 255, .05); border: 1px solid var(--border);
+  font-family: var(--mono); font-size: .7rem; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dv-url svg { flex: none; opacity: .7; }
+.dv-title { flex: 1; min-width: 0; text-align: center; font-family: var(--mono); font-size: .7rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 50px; }
+.dv-browser .dv-display { aspect-ratio: 16 / 10; }
+.dv-terminal { background: #07070c; box-shadow: var(--shadow-lg), 0 0 50px rgba(16, 185, 129, .08); }
+.dv-terminal .dv-display { aspect-ratio: 16 / 10; background: #07070c; }
+.dv-terminal pre {
+  margin: 0; padding: .9rem 1rem; height: 100%; overflow: hidden;
+  font-family: var(--mono); font-size: .72rem; line-height: 1.6; color: #c9d1d9; white-space: pre-wrap;
+}
+
+
+/* ── Hero: the package-page proportions (smaller than the framework home's 72 px title) ── */
+.hero { min-height: auto; padding: 6.25rem var(--space-xl) 3rem; }
+.hero-inner { max-width: 860px; }
+.hero h1 { font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.25rem); margin-bottom: .9rem; }
+.hero-sub { font-size: var(--text-base); line-height: 1.7; max-width: 760px; margin-bottom: 1.4rem; }
+.hero-actions { margin-bottom: 1.4rem; }
+.hero-badge { margin-bottom: 1.1rem; }
+.qs { max-width: 760px; margin-bottom: 0; }
+
+/* ── Fixed footprint for every tabbed block. All variants share one grid cell, so a block is as
+   tall as its tallest variant whichever tab is selected; nothing below it moves. ── */
+.qs-cmd-stack { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 auto; min-width: 0; }
+.qs-cmd-stack > code { grid-area: 1 / 1; }
+.qs-cmd-stack > .qs-cmd { align-self: center; }
+@media (max-width: 560px) { .qs-term { align-items: center; } .qs-prompt { min-width: 3ch; } }
+.qs-cmd-sizer { visibility: hidden; color: transparent; background: none; border: 0; padding: 0; font-size: inherit; white-space: nowrap; overflow: hidden; min-width: 0; }
+@media (max-width: 560px) { .qs-cmd-sizer { white-space: pre-wrap; word-break: break-all; } }
+.qs-note { display: grid; grid-template-columns: minmax(0, 1fr); }
+.qs-note > span { grid-area: 1 / 1; }
+.qs-note-sizer { visibility: hidden; }
+.tab-stack { display: grid; grid-template-columns: minmax(0, 1fr); }
+.tab-stack > .tab-panel { grid-area: 1 / 1; display: block; visibility: hidden; min-width: 0; }
+.tab-stack > .tab-panel.active { visibility: visible; }
+.tab-stack .code-block pre { white-space: pre; overflow-x: auto; }
+.code-tabs .tab-nav { overflow-x: auto; scrollbar-width: none; }
+.code-tabs .tab-nav::-webkit-scrollbar { display: none; }
+.code-tabs .tab-btn { white-space: nowrap; }
+
+/* ── Capability hub: providers underneath, interchangeable ── */
+.mm-under { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px dashed var(--border-hover); text-align: center; }
+.mm-under-title { font: 600 .68rem var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); margin-bottom: .75rem; }
+.mm-chips { display: flex; flex-wrap: wrap; gap: .45rem; justify-content: center; list-style: none; }
+.mm-chips li { display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .7rem; border-radius: var(--radius-full); border: 1px solid var(--border); background: var(--bg-card); font-size: .78rem; color: var(--text-secondary); }
+.mm-chips li img { width: 16px; height: 16px; }
+.mm-chips li b { color: var(--text); font-weight: 600; }
+.mm-dir { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+.hero-code { text-align: left; }
+
+/* ── Capability cards: hear it ── */
+.hear-it { display: grid; gap: .5rem; margin-top: .9rem; }
+.hear-it figure { margin: 0; }
+.hear-it figcaption { font-size: .72rem; color: var(--text-muted); margin-bottom: .25rem; }
+.hear-it audio { width: 100%; height: 2.2rem; }
+.comp-card p code, .comp-card li code { white-space: normal; overflow-wrap: anywhere; }
+
+/* ── Console capture ── */
+.shot { max-width: 1040px; margin: 0 auto; }
+.shot .dv-display { aspect-ratio: auto; }
+.shot .dv-display > img { height: auto; }
+
+/* ── Providers: runs on these today ── */
+.prov-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .75rem; }
+.prov { display: flex; align-items: center; gap: .7rem; padding: .8rem .9rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); min-width: 0; transition: border-color var(--duration) var(--ease); }
+.prov:hover { border-color: var(--border-hover); }
+.prov img { width: 26px; height: 26px; flex: none; }
+.prov b { display: block; font-size: .86rem; color: var(--text); }
+.prov span { display: block; font-size: .72rem; color: var(--text-muted); line-height: 1.4; }
+
+/* ── Documentation lists in cards ── */
+.doc-list { list-style: none; display: grid; gap: .55rem; margin-top: .4rem; }
+.doc-list a { color: var(--primary-light); font-weight: 500; font-size: .9rem; }
+.doc-list small { display: block; color: var(--text-muted); font-size: .76rem; line-height: 1.4; }
+
+/* ── Examples two by two (code needs the width); documentation four across ── */
+.components-grid.ex-grid { grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr)); }
+.components-grid.doc-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .components-grid.doc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .components-grid.doc-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Part of AbstractFramework ── */
+.fw-band { position: relative; max-width: 980px; margin: 0 auto; text-align: center; padding: 2.25rem 2rem; border-radius: var(--radius-lg); border: 1px solid rgba(129,140,248,.25); background: radial-gradient(ellipse 70% 80% at 50% 0%, rgba(99,102,241,.14), transparent), var(--bg-card); box-shadow: 0 0 60px rgba(99,102,241,.10); }
+.fw-band .hero-actions { margin: 1.25rem 0 0; }
+
+@media (max-width: 1100px) { .prov-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .mm-dir { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) {
+  .hero { padding: 5.25rem 1rem 2.5rem; }
+  .prov-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fw-band { padding: 1.5rem 1.1rem; }
+}
+@media (max-width: 480px) { .mm-dir { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
