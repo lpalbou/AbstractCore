@@ -153,7 +153,9 @@ graph LR
 The script detects the machine (Apple Silicon with macOS 14+: `abstractcore[apple]`; an NVIDIA or
 ROCm card: `abstractcore[gpu]`; anything else: the light install) and installs AbstractCore alone
 with uv and Python 3.12, giving you the `abstractcore`, `abstractcore-chat` and
-`abstractcore-endpoint` commands and the apps; run it again to upgrade. Options and details:
+`abstractcore-endpoint` commands and the apps; run it again to upgrade. It never starts a compiler,
+so echo cancellation and stable-diffusion.cpp are left out (Diffusers / MLX-Gen cover image
+generation; with a C compiler you can add them yourself). Options and details:
 [One-line install](docs/installation.md#one-line-install).
 
 **With pip**, in your own Python environment, AbstractCore has three install settings:

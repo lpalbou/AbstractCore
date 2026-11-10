@@ -37,22 +37,25 @@
 #   llama-cpp-python             llama.cpp (GGUF models): PyPI has only the sdist, so it comes
 #                                from upstream's prebuilt wheels (--find-links on abetlen's wheel
 #                                index, pinned with --with): Metal 0.3.28 on Apple Silicon, CPU
-#                                0.3.36 on glibc Linux x86_64/aarch64. Elsewhere, or when that
+#                                0.3.36 on Linux x86_64/aarch64 (glibc or musl). When that
 #                                install fails, it is dropped and the summary says so.
+# The summary names what is left out (echo cancellation, stable-diffusion.cpp).
 #
 # llama.cpp's CUDA build (gpu profile, Linux, an NVIDIA GPU; the framework installer's swap, root
 # backlog 0989). abetlen also publishes manylinux CUDA builds. They link libcudart/libcublas
 # without bundling them; the NVIDIA wheels PyTorch depends on carry them (AbstractCore preloads
 # them before importing llama_cpp), so the build follows the CUDA major of the installed torch:
 # CUDA 13 -> cu130 (driver 580 or newer), CUDA 12 -> cu125 (driver 525 or newer), glibc 2.35 or
-# newer. The install itself always takes the cpu wheel (it never fails on a GPU detail); then
+# newer, x86_64 only (the CUDA pages carry manylinux_2_35_x86_64 wheels alone; aarch64 keeps the
+# cpu build). The install itself always takes the cpu wheel (it never fails on a GPU detail); then
 #   uv pip install --python "$(uv tool dir)/abstractcore/bin/python" --no-index --no-deps \
 #       --find-links https://abetlen.github.io/llama-cpp-python/whl/cu130/llama-cpp-python/ \
 #       --reinstall-package llama-cpp-python "llama-cpp-python==0.3.36"
 # swaps the CUDA build in, kept only when it loads the way AbstractCore loads it and
 # llama_supports_gpu_offload() is True; otherwise the cpu build goes back and the summary says
 # why (ROCm: llama.cpp publishes no prebuilt ROCm build, so the cpu build stays). Same version as
-# the pin, so `uv tool upgrade` and a re-run keep the CUDA build in place.
+# the pin, so `uv tool upgrade` and a re-run keep the CUDA build in place (after
+# `uv tool upgrade --reinstall`, run the installer again to get it back).
 #
 # Upgrade: run the same line again: "AbstractCore <old> found: upgrading to <new>" (or "already
 # up to date"); the previous profile is kept unless --profile says otherwise.
@@ -64,7 +67,7 @@
 #                            ships with, below; latest = the newest on PyPI)    [AC_PIN]
 #   --from PATH              install from a checkout, sdist or wheel (testing)  [AC_FROM]
 #   --no-modify-path         do not run `uv tool update-shell`
-#   --print, --dry-run       show the plan and the commands; change nothing
+#   --print, --dry-run, -n   show the plan and the commands; change nothing
 #   -v, --verbose            show the full output of every command
 #   -h, --help               this help
 # =============================================================================
@@ -88,31 +91,12 @@ AC_LLAMA_CPU_PIN="0.3.36"
 AC_LLAMA_CUDA13="cu130"
 AC_LLAMA_CUDA12="cu125"
 
-PROFILE="${AC_PROFILE:-auto}"; PIN="${AC_PIN:-}"; FROM="${AC_FROM:-}"
-NO_MODIFY_PATH=0; PRINT=0; VERBOSE=0
 usage() {  # the header above when this runs as a file; a short form through curl | sh
     if [ -f "$0" ] && head -n 3 "$0" 2>/dev/null | grep -q "AbstractCore standalone installer"; then
         awk 'NR > 4 && /^# =+$/ { exit } NR > 4 { sub(/^# ?/, ""); print }' "$0"
     else printf 'Usage: install.sh [--profile auto|light|apple|gpu] [--pin VERSION|latest] [--from PATH] [--print]\nFull help: %s\n' "$AC_DOCS"; fi
 }
 need_arg() { [ $# -ge 2 ] && [ -n "$2" ] || { echo "ERROR: $1 needs a value" >&2; exit 2; }; }
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --profile) need_arg "$@"; PROFILE="$2"; shift ;;  --profile=*) PROFILE="${1#*=}" ;;
-        --pin) need_arg "$@"; PIN="$2"; shift ;;          --pin=*) PIN="${1#*=}" ;;
-        --from) need_arg "$@"; FROM="$2"; shift ;;        --from=*) FROM="${1#*=}" ;;
-        --no-modify-path) NO_MODIFY_PATH=1 ;;
-        --print|--dry-run|-n) PRINT=1 ;;
-        -v|--verbose) VERBOSE=1 ;;
-        -h|--help) usage; exit 0 ;;
-        *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 2 ;;
-    esac
-    shift
-done
-
-C_B=""; C_D=""; C_R=""; C_G=""; C_Y=""; C_C=""; C_0=""
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then E="$(printf '\033')"
-    C_B="${E}[1m"; C_D="${E}[2m"; C_R="${E}[31m"; C_G="${E}[32m"; C_Y="${E}[33m"; C_C="${E}[36m"; C_0="${E}[0m"; fi
 STEP=0; step() { STEP=$((STEP + 1)); printf '\n%s[%s] %s%s\n' "$C_B" "$STEP" "$1" "$C_0"; }
 ok()   { printf '  %s✓%s %s\n' "$C_G" "$C_0" "$1"; }
 info() { printf '  %s·%s %s\n' "$C_C" "$C_0" "$1"; }
@@ -159,10 +143,12 @@ UV=""; find_uv() {
     return 1
 }
 # The framework installer's nvidia_info: NV_OK (1 when nvidia-smi answers), NV_DRIVER, NV_MAJOR,
-# NV_CC10 (the lowest compute capability x10, empty when the driver cannot report it), NV_NAME.
+# NV_CC10 (the lowest compute capability x10, empty when the driver cannot report it), NV_NAME,
+# NV_ERR (why an installed nvidia-smi gives no GPU; empty when there is no nvidia-smi at all).
 nvidia_info() {
-    NV_OK=0; NV_DRIVER=""; NV_MAJOR=0; NV_CC10=""; NV_NAME=""
-    have nvidia-smi && nvidia-smi -L >/dev/null 2>&1 || return 0
+    NV_OK=0; NV_DRIVER=""; NV_MAJOR=0; NV_CC10=""; NV_NAME=""; NV_ERR=""
+    have nvidia-smi || return 0
+    nvidia-smi -L >/dev/null 2>&1 || { NV_ERR="nvidia-smi is installed but does not answer (driver not loaded?)"; return 0; }
     _nv="$(nvidia-smi --query-gpu=driver_version,compute_cap,name --format=csv,noheader 2>/dev/null)" || _nv=""
     if [ -n "$_nv" ]; then NV_NAME="$(printf '%s\n' "$_nv" | head -n 1 | cut -d, -f3- | sed 's/^ *//')"
         NV_CC10="$(printf '%s\n' "$_nv" | cut -d, -f2 | tr -d ' ' | awk -F. '$1 ~ /^[0-9]+$/ { v = $1 * 10 + ($2 == "" ? 0 : substr($2, 1, 1)); if (m == "" || v < m) m = v } END { print m }')"
@@ -170,7 +156,7 @@ nvidia_info() {
         _nv="$(nvidia-smi --query-gpu=driver_version,name --format=csv,noheader 2>/dev/null)" || _nv=""
         NV_NAME="$(printf '%s\n' "$_nv" | head -n 1 | cut -d, -f2- | sed 's/^ *//')"; fi
     NV_DRIVER="$(printf '%s\n' "$_nv" | head -n 1 | cut -d, -f1 | tr -d ' ')"; NV_MAJOR="${NV_DRIVER%%.*}"
-    case "$NV_MAJOR" in ''|*[!0-9]*) NV_MAJOR=0 ;; *) NV_OK=1 ;; esac
+    case "$NV_MAJOR" in ''|*[!0-9]*) NV_MAJOR=0; NV_ERR="nvidia-smi gave no driver version" ;; *) NV_OK=1 ;; esac
 }
 # The framework installer's llama_cuda_build TORCH_CUDA_MAJOR TORCH_SEES_GPU: sets LLAMA_CUDA_BUILD
 # to the llama.cpp CUDA build folder for this driver and torch, or to empty with the reason in
@@ -192,6 +178,30 @@ llama_cuda_build() {
     return 0
 }
 
+# The install is one function, called by the brace group on the last line, so a `curl | sh` cut
+# mid-download runs nothing: a cut inside main() or inside `{ main "$@"; }` is a syntax error
+# (a bare last line `main "$@"` cut after `main` would run it without its arguments). The body
+# is not indented, so multi-line messages stay flush.
+main() {
+PROFILE="${AC_PROFILE:-auto}"; PIN="${AC_PIN:-}"; FROM="${AC_FROM:-}"
+NO_MODIFY_PATH=0; PRINT=0; VERBOSE=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --profile) need_arg "$@"; PROFILE="$2"; shift ;;  --profile=*) PROFILE="${1#*=}" ;;
+        --pin) need_arg "$@"; PIN="$2"; shift ;;          --pin=*) PIN="${1#*=}" ;;
+        --from) need_arg "$@"; FROM="$2"; shift ;;        --from=*) FROM="${1#*=}" ;;
+        --no-modify-path) NO_MODIFY_PATH=1 ;;
+        --print|--dry-run|-n) PRINT=1 ;;
+        -v|--verbose) VERBOSE=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+    shift
+done
+C_B=""; C_D=""; C_R=""; C_G=""; C_Y=""; C_C=""; C_0=""
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then E="$(printf '\033')"
+    C_B="${E}[1m"; C_D="${E}[2m"; C_R="${E}[31m"; C_G="${E}[32m"; C_Y="${E}[33m"; C_C="${E}[36m"; C_0="${E}[0m"; fi
+
 # --- 1. Preflight -------------------------------------------------------------
 OS="$(uname -s)"; ARCH="$(uname -m)"
 case "$OS" in
@@ -207,7 +217,6 @@ slow Intel version without the Apple Silicon engines. Run it natively: curl -LsS
 fi
 MACOS_VERSION=""; MACOS_MAJOR=0
 [ "$OS_ID" = macos ] && { MACOS_VERSION="$(sw_vers -productVersion 2>/dev/null || echo 0)"; MACOS_MAJOR="${MACOS_VERSION%%.*}"; }
-MUSL=0; [ "$OS_ID" = linux ] && ldd --version 2>&1 | grep -qi musl && MUSL=1
 
 printf '%sAbstractCore installer%s  %s%s%s\n' "$C_B" "$C_0" "$C_D" \
     "$([ "$PRINT" = 1 ] && echo '(--print: preflight only, nothing is installed)' || echo "$AC_SCRIPT_URL")" "$C_0"
@@ -244,6 +253,7 @@ case "$PROFILE" in
             _why="macOS $MACOS_VERSION: the Apple Silicon engines (MLX) need macOS 14 or later; update macOS and run the installer again"
         elif [ "$HAS_NVIDIA" = 1 ]; then PROFILE=gpu; _why="nvidia-smi found ${NV_NAME:-a GPU}"
         elif [ "$HAS_ROCM" = 1 ]; then PROFILE=gpu; _why="rocminfo found a GPU"
+        elif [ -n "$NV_ERR" ]; then PROFILE=light; _why="$NV_ERR, so remote providers and servers only; once the driver works, run the installer again"
         else PROFILE=light; _why="no GPU found, so remote providers and servers only"; fi
         ok "profile: $PROFILE ($_why; override with --profile)" ;;
     light) ok "profile: light (every remote provider, the tools and the HTTP server; no local engine)" ;;
@@ -253,26 +263,30 @@ case "$PROFILE" in
         ok "profile: apple (MLX and the other local engines on the Apple GPU)" ;;
     gpu)
         [ "$OS_ID" = linux ] || die "the gpu profile targets Linux (Windows: install.ps1); on a Mac use --profile apple"
-        [ "$HAS_NVIDIA" = 1 ] || [ "$HAS_ROCM" = 1 ] || warn "gpu profile requested but neither nvidia-smi nor rocminfo works: its engines will run on the processor"
+        [ "$HAS_NVIDIA" = 1 ] || [ "$HAS_ROCM" = 1 ] || warn "gpu profile requested, but ${NV_ERR:-neither nvidia-smi nor rocminfo works}: its engines will run on the processor"
         ok "profile: gpu (CUDA/ROCm engines when a card works, else the processor)" ;;
     *) die "unknown profile '$PROFILE' (expected auto, light, apple or gpu)" ;;
 esac
 case "$PROFILE" in apple) EXTRAS=apple ;; gpu) EXTRAS=gpu ;; *) EXTRAS="" ;; esac
 
 # llama.cpp (GGUF): upstream's prebuilt wheel for this machine (see the top of this script).
-GGUF=0; GGUF_PIN=""; GGUF_KIND=""; GGUF_LINKS=""; GGUF_RESULT="not applicable ($PROFILE profile)"
+GGUF=0; GGUF_PIN=""; GGUF_KIND=""; GGUF_LINKS=""; GGUF_RESULT="not applicable ($PROFILE profile)"; CUDA_SKIP=""
 case "$PROFILE/$OS_ID/$ARCH" in
     apple/macos/arm64) GGUF_PIN="$AC_LLAMA_METAL_PIN"; GGUF_KIND=metal ;;
-    gpu/linux/x86_64|gpu/linux/aarch64|gpu/linux/arm64) [ "$MUSL" = 1 ] || { GGUF_PIN="$AC_LLAMA_CPU_PIN"; GGUF_KIND=cpu; } ;;
+    gpu/linux/x86_64|gpu/linux/aarch64|gpu/linux/arm64) GGUF_PIN="$AC_LLAMA_CPU_PIN"; GGUF_KIND=cpu ;;
 esac
 if [ -n "$GGUF_KIND" ]; then
     GGUF=1; GGUF_LINKS="$AC_LLAMA_INDEX/$GGUF_KIND/llama-cpp-python/"
     ok "llama.cpp (GGUF): llama-cpp-python $GGUF_PIN, upstream's prebuilt $GGUF_KIND wheel"
-    if [ "$PROFILE" = gpu ] && [ "$HAS_NVIDIA" = 1 ]; then ok "NVIDIA: ${NV_NAME:-GPU}, driver $NV_DRIVER$([ -n "$NV_CC10" ] && echo ", compute capability $((NV_CC10 / 10)).$((NV_CC10 % 10))"): llama.cpp's CUDA build is swapped in after the install"
-    elif [ "$PROFILE" = gpu ] && [ "$HAS_ROCM" = 1 ]; then info "llama.cpp keeps its CPU build: llama.cpp publishes no prebuilt ROCm build"
-    elif [ "$PROFILE" = gpu ]; then info "llama.cpp keeps its CPU build: no NVIDIA GPU answers nvidia-smi"; fi
+    if [ "$PROFILE" = gpu ]; then
+        if [ "$HAS_NVIDIA" = 0 ] && [ "$HAS_ROCM" = 1 ]; then CUDA_SKIP="llama.cpp publishes no prebuilt ROCm build"
+        elif [ "$HAS_NVIDIA" = 0 ]; then CUDA_SKIP="${NV_ERR:-no NVIDIA GPU answers nvidia-smi}"
+        elif [ "$ARCH" != x86_64 ]; then CUDA_SKIP="llama.cpp publishes CUDA builds for x86_64 only"; fi
+        if [ -n "$CUDA_SKIP" ]; then info "llama.cpp keeps its CPU build: $CUDA_SKIP"
+        else ok "NVIDIA: ${NV_NAME:-GPU}, driver $NV_DRIVER$([ -n "$NV_CC10" ] && echo ", compute capability $((NV_CC10 / 10)).$((NV_CC10 % 10))"): llama.cpp's CUDA build is swapped in after the install"; fi
+    fi
 elif [ -n "$EXTRAS" ]; then
-    GGUF_RESULT="skipped: no prebuilt llama.cpp wheel for $OS_ID $ARCH$([ "$MUSL" = 1 ] && echo ' (musl)'), and this installer never starts a compiler"
+    GGUF_RESULT="skipped: no prebuilt llama.cpp wheel for $OS_ID $ARCH, and this installer never starts a compiler"
     info "llama.cpp (GGUF) $GGUF_RESULT"
 fi
 
@@ -305,7 +319,7 @@ if [ -z "$BEFORE" ]; then
         [ -e "$TOOL_BIN/$_n" ] || [ -L "$TOOL_BIN/$_n" ] || continue
         _owner="$([ -z "$UV" ] || "$UV" tool list 2>/dev/null | awk -v n="$_n" '/^[^ -]/ { t = $1 } $1 == "-" && $2 == n { print t; exit }')"
         _msg="$TOOL_BIN/$_n already exists ($([ -n "$_owner" ] && echo "from the uv tool '$_owner'" || echo "another program's"))"
-        [ "$_owner" != abstractgateway ] || _msg="$_msg: AbstractFramework is installed here and already includes AbstractCore; upgrade it with: curl -LsSf https://abstractframework.ai/install.sh | sh"
+        [ "$_owner" != abstractgateway ] || _msg="$_msg: AbstractFramework is installed here and already includes AbstractCore; upgrade it with: curl -LsSf https://abstractframework.ai/install.sh | sh. A standalone AbstractCore beside the framework's gateway tool is not supported (there is no --force: both would own the same commands)"
         [ "$PRINT" = 1 ] && { warn "$_msg (the real run stops here; nothing is changed)"; break; }
         die "$_msg
 Nothing was changed."
@@ -327,8 +341,7 @@ if [ -z "$FROM" ] && [ "$PIN" != latest ] && ! http "https://pypi.org/pypi/abstr
     _m="abstractcore $PIN is not on PyPI (yet): use --pin latest for the newest published version"
     if [ "$PRINT" = 1 ]; then warn "$_m"; else die "$_m. Nothing was changed."; fi
 fi
-DL=""; if have curl; then DL="curl -LsSf"; elif have wget; then DL="wget -qO-"; fi
-[ -n "$UV" ] || [ -n "$DL" ] || die "neither curl nor wget is installed, so uv cannot be downloaded"
+[ -n "$UV" ] || have curl || have wget || die "neither curl nor wget is installed, so uv cannot be downloaded"
 WORK="${XDG_CACHE_HOME:-$HOME/.cache}/abstractcore/installer"
 [ "$PRINT" = 1 ] || { mkdir -p "$WORK"; LOG="$WORK/install.log"; : >"$LOG"; }
 
@@ -337,8 +350,9 @@ step "uv (Python toolchain manager)"
 if [ -n "$UV" ]; then ok "uv found: $UV ($("$UV" --version 2>/dev/null | awk '{print $2}'))"
 else
     info "installing uv from astral.sh into ~/.local/bin (no admin)"
-    RUN_SHOW="$DL https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh"
-    run "install uv" sh -c "$DL https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh"
+    if have curl; then run "download uv's installer" curl -LsSf https://astral.sh/uv/install.sh -o "$WORK/uv-install.sh"
+    else run "download uv's installer" wget -qO "$WORK/uv-install.sh" https://astral.sh/uv/install.sh; fi
+    run "install uv" env UV_NO_MODIFY_PATH=1 sh "$WORK/uv-install.sh"
     if [ "$PRINT" = 1 ]; then UV=uv
     else find_uv || die "uv was installed but cannot be found (looked in \$UV_INSTALL_DIR, \$XDG_BIN_HOME, ~/.local/bin)"
         ok "uv installed: $UV"; TOOL_BIN="$("$UV" tool dir --bin)"; TOOL_DIR="$("$UV" tool dir)"; fi
@@ -401,8 +415,8 @@ if [ "$PRINT" = 0 ]; then
 fi
 
 # --- 4. llama.cpp's CUDA build (see the top of this script) --------------------
-if [ "$GGUF" = 1 ] && [ "$PROFILE" = gpu ] && [ "$HAS_NVIDIA" = 0 ]; then
-    GGUF_RESULT="$GGUF_RESULT; CPU ($([ "$HAS_ROCM" = 1 ] && echo 'llama.cpp publishes no prebuilt ROCm build' || echo 'no NVIDIA GPU answers nvidia-smi'))"
+if [ "$GGUF" = 1 ] && [ "$PROFILE" = gpu ] && [ -n "$CUDA_SKIP" ]; then
+    GGUF_RESULT="$GGUF_RESULT; CPU ($CUDA_SKIP)"
 elif [ "$GGUF" = 1 ] && [ "$PROFILE" = gpu ]; then
     step "llama.cpp's CUDA build (NVIDIA)"
     TOOL_PY="$TOOL_DIR/abstractcore/bin/python"
@@ -446,11 +460,8 @@ except BaseException as e:
             LLAMA_CUDA_WHY="llama.cpp's CUDA builds need glibc 2.35 or newer (this system has glibc $_glibc)"; _lb=""
         fi
         _llama_check='try:
-    try:
-        from abstractcore.utils.windows_dll import prepare_llama_cpp_import
-        prepare_llama_cpp_import()
-    except ImportError:
-        pass
+    from abstractcore.utils.windows_dll import prepare_llama_cpp_import
+    prepare_llama_cpp_import()
     import llama_cpp
     print("ACSMOKE import=1")
     print("ACSMOKE version=" + str(getattr(llama_cpp, "__version__", "")))
@@ -507,8 +518,11 @@ case ":$PATH:" in
     *":$TOOL_BIN:"*) ok "$TOOL_BIN is on PATH" ;;
     *)
         _hand="add it yourself: export PATH=\"$TOOL_BIN:\$PATH\" in your shell's startup file"
-        if grep -qsF "$TOOL_BIN" "$HOME/.zshenv" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" \
-            "$HOME/.profile" "${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/uv.env.fish"; then
+        # The startup files may name it as written here, as $HOME/..., ${HOME}/... or ~/..., or through
+        # uv's `. "$HOME/.local/bin/env"` (which contains $HOME/.local/bin).
+        _rel="${TOOL_BIN#"$HOME"}"; [ "$_rel" != "$TOOL_BIN" ] || _rel="//none"
+        if grep -qsF -e "$TOOL_BIN" -e "\$HOME$_rel" -e "\${HOME}$_rel" -e "~$_rel" "$HOME/.zshenv" "$HOME/.zshrc" "$HOME/.bashrc" \
+            "$HOME/.bash_profile" "$HOME/.profile" "${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/uv.env.fish"; then
             ok "$TOOL_BIN is already on PATH in your shell profile (new terminals have it)"
         elif [ "$NO_MODIFY_PATH" = 1 ]; then warn "$TOOL_BIN is not on PATH (--no-modify-path); $_hand"
         elif RUN_SOFT=1 run "add $TOOL_BIN to PATH in your shell profile" "$UV" tool update-shell; then
@@ -521,6 +535,7 @@ _ver="${AFTER:-$TARGET}"; [ "$PRINT" = 1 ] && _ver="$TARGET"
 echo "  version:   $_ver$([ "$PRINT" = 0 ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "$AFTER" ] && echo " (was $BEFORE)")"
 echo "  profile:   $PROFILE ($(spec "$EXTRAS"))"
 echo "  llama.cpp: $GGUF_RESULT"
+[ -z "$EXTRAS" ] || echo "  left out:  echo cancellation, stable-diffusion.cpp (Diffusers / MLX-Gen cover image generation; they need a C compiler: uv pip install --python \"$TOOL_DIR/abstractcore/bin/python\" aec-audio-processing stable-diffusion-cpp-python)"
 echo "  commands:  $TOOL_BIN/abstractcore, abstractcore-config, abstractcore-chat, abstractcore-endpoint"
 echo "             and the apps summarizer, extractor, judge, intent, deepsearch (each also abstractcore-<app>)"
 [ "$PRINT" = 1 ] || echo "  log:       $LOG"
@@ -529,3 +544,6 @@ echo "Try it:"
 echo "  abstractcore --help"
 echo "  abstractcore config defaults"
 echo "Docs: $AC_DOCS"
+}
+
+{ main "$@"; }

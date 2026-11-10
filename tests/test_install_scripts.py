@@ -70,6 +70,60 @@ def test_install_sh_parses_and_prints_help():
         assert opt in out
 
 
+@pytest.mark.skipif(shutil.which("sh") is None, reason="no POSIX sh")
+def test_install_sh_cut_mid_download_runs_nothing():
+    """The body is one function called by `{ main "$@"; }` on the last line: a truncated `curl | sh`
+    stream executes nothing, also when it ends inside that last line (a bare `main "$@"` cut after
+    `main` would run the install without its arguments, since sh runs an unterminated last line)."""
+    text = SH.read_text(encoding="utf-8")
+    assert text.rstrip().splitlines()[-1] == '{ main "$@"; }'
+    data = text.encode("utf-8")
+    last = len(data.rstrip()) - len(b'{ main "$@"; }')
+    cuts = [int(len(data) * frac) for frac in (0.2, 0.5, 0.55, 0.65, 0.75, 0.85, 0.95, 0.99)]
+    cuts += list(range(last - 2, len(data.rstrip())))  # every byte up to the closing brace
+    for cut in cuts:
+        out = subprocess.run(["sh", "-s", "--", "--print"], input=data[:cut], capture_output=True).stdout
+        assert b"AbstractCore installer" not in out, f"a stream cut at byte {cut} of {len(data)} ran the installer"
+    out = subprocess.run(["sh", "-s", "--", "--print", "--profile", "light"], input=data, capture_output=True).stdout
+    assert b"AbstractCore installer" in out  # the whole stream does run
+
+
+def test_option_parity_between_scripts():
+    sh, ps1 = _sh(), _ps1()
+    for opt in ("--profile", "--pin", "--from", "--no-modify-path", "--print", "--dry-run", "--verbose"):
+        assert opt in sh, f"install.sh lacks {opt}"
+    assert "[Alias('Profile')]" in ps1 and "[Alias('DryRun')]" in ps1
+    for param in ("$Pin", "$From", "$NoModifyPath", "$Print"):
+        assert f"]{param}" in ps1, f"install.ps1 lacks {param}"
+    assert "[CmdletBinding()]" in ps1 and "$VerbosePreference -eq 'Continue'" in ps1  # -Verbose
+
+
+def test_review_fixes_carried_from_abstractvoice():
+    sh, ps1 = _sh(), _ps1()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    install = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+    # nvidia-smi installed but not answering keeps its reason, in both scripts.
+    for text in (sh, ps1):
+        assert "nvidia-smi is installed but does not answer (driver not loaded?)" in text
+        assert "A standalone AbstractCore beside the framework" in text
+    assert "${NV_ERR:-" in sh and "$gpu.Error" in ps1
+    # uv's installer is a downloaded file run as its own step, never `curl | sh` inside sh -c.
+    assert 'env UV_NO_MODIFY_PATH=1 sh "$WORK/uv-install.sh"' in sh and "sh -c" not in sh
+    # The PATH check accepts $HOME/..., ${HOME}/..., ~/... (and so uv's . "$HOME/.local/bin/env").
+    assert '-e "\\$HOME$_rel" -e "\\${HOME}$_rel" -e "~$_rel"' in sh
+    # llama.cpp's CUDA pages carry x86_64 wheels only; the cpu page has musl wheels, so no musl gate.
+    assert 'CUDA_SKIP="llama.cpp publishes CUDA builds for x86_64 only"' in sh
+    assert "MUSL" not in sh
+    # The AbstractCore seam is imported without a fallback, so a rename fails by name.
+    assert "except ImportError" not in sh and "except ImportError" not in ps1
+    # What the overrides leave out is said in the summary, the README and the docs.
+    assert "left out:  echo cancellation, stable-diffusion.cpp" in sh
+    for doc in (readme, install):
+        assert "echo cancellation and stable-diffusion.cpp are left out" in doc or "are left out by the overrides file" in doc
+    assert "uv tool upgrade --reinstall" in install
+    assert "cu130 -> cu132 -> cpu" in ps1 and "no\n             Vulkan step" in ps1.replace("\r", "")
+
+
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="no PowerShell")
 def test_install_ps1_parses():
     cmd = (

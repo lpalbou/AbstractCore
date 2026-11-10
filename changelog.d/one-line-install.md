@@ -16,5 +16,9 @@
   included). On Windows the `gpu` setting also gets PyTorch's CUDA build for the driver. Every step prints its command; `--print`
   shows the plan and changes nothing; running it again upgrades in place and keeps the setting;
   `--profile`, `--pin VERSION|latest` and `--from PATH` choose otherwise. On a machine where
-  AbstractFramework's installer already provides the `abstractcore` command, it stops and says so.
+  AbstractFramework's installer already provides the `abstractcore` command, it stops and says so
+  (a standalone AbstractCore beside the framework's gateway tool is not supported). A `curl | sh`
+  cut mid-download runs nothing (the script runs from one function called on its last line); an
+  `nvidia-smi` that does not answer is named as the reason; the summary names what the prebuilt-only
+  rule leaves out (echo cancellation, stable-diffusion.cpp); Windows takes `-DryRun` and `-Verbose`.
   See [One-line install](docs/installation.md#one-line-install).

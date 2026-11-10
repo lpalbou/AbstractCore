@@ -56,11 +56,12 @@ abstractcore config defaults   # the capability routes this install resolves to
 
 | macOS / Linux | Windows | |
 |---|---|---|
-| `--print` | `-Print` | show the plan and every command; change nothing |
+| `--print` (or `--dry-run`, `-n`) | `-Print` (or `-DryRun`) | show the plan and every command; change nothing |
 | `--profile auto\|light\|apple\|gpu` | `-Profile auto\|light\|gpu` | the profile (default `auto`; `AC_PROFILE`) |
-| `--pin VERSION\|latest` | `-Pin` | the version: by default the release the script ships with, `latest` = the newest on PyPI (`AC_PIN`) |
-| `--from PATH` | `-From` | install from a checkout, sdist or wheel, for testing (`AC_FROM`) |
+| `--pin VERSION\|latest` | `-Pin VERSION\|latest` | the version: by default the release the script ships with, `latest` = the newest on PyPI (`AC_PIN`) |
+| `--from PATH` | `-From PATH` | install from a checkout, sdist or wheel, for testing (`AC_FROM`) |
 | `--no-modify-path` | `-NoModifyPath` | do not run `uv tool update-shell` |
+| `-v`, `--verbose` | `-Verbose` | show the full output of every command |
 
 Options go after `sh -s --` (`curl -LsSf https://abstractframework.ai/core/install.sh | sh -s -- --print`)
 or into a script block on Windows
@@ -71,23 +72,28 @@ or into a script block on Windows
 profile unless `--profile` says otherwise, ends with `abstractcore 2.34.0 -> 2.35.0`, and
 reinstalls in place when the command no longer starts. Remove it with
 `uv tool uninstall abstractcore`. AbstractFramework's installer already includes AbstractCore and
-its commands: on such a machine this script stops and says so, and nothing is changed.
+its commands: on such a machine this script stops and says so, and nothing is changed. A standalone
+AbstractCore beside the framework's gateway tool is not supported (there is no `--force`: both
+would own the same commands); upgrade AbstractFramework instead.
 
 **Prebuilt wheels only**: the installer never starts a compiler (no Xcode tools, no build
 toolchain). Three packages of the `apple` and `gpu` trees publish no usable wheel on PyPI, so on
 macOS and Linux:
 
 - **llama.cpp** (GGUF models; `llama-cpp-python`, a source build on PyPI) comes from upstream's
-  prebuilt wheels instead: the Metal build on Apple Silicon, the CPU build on Linux (glibc, x86_64
-  or aarch64). Where no such wheel exists (musl Linux), or when it does not install, it is left
-  out and the summary says so.
+  prebuilt wheels instead: the Metal build on Apple Silicon, the CPU build on Linux (x86_64 or
+  aarch64, glibc or musl). When it does not install, it is left out and the summary says so.
   With an NVIDIA card (`gpu` profile) the installer then swaps in llama.cpp's CUDA build matching
   PyTorch's CUDA (`cu130` for CUDA 13 with driver 580 or newer, `cu125` for CUDA 12 with driver 525
-  or newer; on Windows `cu130`, then `cu132`, or `cu125`) and keeps it only when it loads and
-  `llama_supports_gpu_offload()` is True; otherwise, and with ROCm (no prebuilt ROCm build), the CPU
-  build stays and the summary says why.
+  or newer, x86_64 only; on Windows `cu130`, then `cu132`, or `cu125`) and keeps it only when it
+  loads and `llama_supports_gpu_offload()` is True; otherwise, and with ROCm (no prebuilt ROCm
+  build) or on aarch64, the CPU build stays and the summary says why. After
+  `uv tool upgrade --reinstall` (or when the first Windows build did not install), run the
+  installer again to get the CUDA build back.
 - **Echo cancellation** (`aec-audio-processing`) and **stable-diffusion.cpp**
-  (`stable-diffusion-cpp-python`), both optional, are left out; Diffusers covers image generation.
+  (`stable-diffusion-cpp-python`), both optional, are left out by the overrides file and the
+  summary says so (Diffusers / MLX-Gen cover image generation; with a C compiler you can add them
+  to the tool's environment yourself).
 
 On Windows x64 every package of these settings has a wheel, so nothing is left out beyond what
 [GPU on Windows](#gpu-on-windows) describes. Windows on ARM is not supported by the installer:

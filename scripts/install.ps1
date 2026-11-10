@@ -28,7 +28,9 @@
              then cu132 for CUDA 13, cu125 for CUDA 12; its first choice goes into the install
              itself, so the uv receipt keeps it), kept only when it loads the way AbstractCore
              loads it and llama_supports_gpu_offload() is True; else the CPU build, with the
-             reason. Asked for without a card: the same stack, on the processor.
+             reason. The order is cu130 -> cu132 -> cpu (or cu125 -> cpu) on purpose, with no
+             Vulkan step, unlike the framework installer: a GPU build that does not offload falls
+             back to the CPU build. Asked for without a card: the same stack, on the processor.
       light  abstractcore with no extra: every remote provider, the built-in tools, media inputs
              and the HTTP server
       apple  Apple Silicon Macs only: refused here
@@ -40,7 +42,8 @@
 
     Options (environment twins AC_PROFILE, AC_PIN, AC_FROM): -Profile auto|light|gpu;
     -Pin VERSION|latest (default: the release this script ships with; latest = the newest on PyPI);
-    -From PATH (a checkout, sdist or wheel, for testing); -NoModifyPath; -Print.
+    -From PATH (a checkout, sdist or wheel, for testing); -NoModifyPath; -Print (alias -DryRun);
+    -Verbose (every command's full output). The body runs only from Main, called on the last lines.
 
 .EXAMPLE
     .\install.ps1 -Print
@@ -53,6 +56,7 @@ param(
     [string]$Pin = '',
     [string]$From = '',
     [switch]$NoModifyPath,
+    [Alias('DryRun')]
     [switch]$Print
 )
 
@@ -74,11 +78,8 @@ $AcLlamaSmoke = @'
 import json
 r = {"import": False, "offload": False, "error": ""}
 try:
-    try:
-        from abstractcore.utils.windows_dll import prepare_llama_cpp_import
-        prepare_llama_cpp_import()
-    except ImportError:
-        pass
+    from abstractcore.utils.windows_dll import prepare_llama_cpp_import
+    prepare_llama_cpp_import()
     import llama_cpp
     r["import"] = True
     r["version"] = getattr(llama_cpp, "__version__", "")
@@ -101,6 +102,7 @@ print("ACSMOKE " + json.dumps(r))
 '@
 
 $script:RanAsFile = [bool]$PSCommandPath; $script:DryRun = [bool]$Print; $script:LogFile = ''; $script:StepNo = 0
+$script:ShowAll = ($VerbosePreference -eq 'Continue')   # -Verbose (CmdletBinding): show every command's output
 
 function Write-Step([string]$Text) { $script:StepNo++; Write-Host ''; Write-Host "[$($script:StepNo)] $Text" -ForegroundColor White }
 function Write-Ok([string]$Text) { Write-Host '  + ' -ForegroundColor Green -NoNewline; Write-Host $Text }
@@ -110,7 +112,7 @@ function Stop-Install([string]$Text) { throw "ACBOOT: $Text" }
 function Test-Command([string]$Name) { return [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
 function Format-Arg([string]$Value) { if ($Value -match '^[A-Za-z0-9_./:=@,+%\\-]+$') { return $Value }; return "'" + ($Value -replace "'", "''") + "'" }
 function Format-Cmd([string[]]$Argv) { return (($Argv | ForEach-Object { Format-Arg $_ }) -join ' ') }
-function Get-Http([string]$Url) { try { return [string](Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop).Content } catch { return $null } }
+function Get-Http([string]$Url) { try { return [string](Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop -Verbose:$false).Content } catch { return $null } }
 
 # Run a native command: print it, log its output (and show it with -Live), return $true on exit 0.
 # A failure stops the install unless -Soft, which warns and returns $false.
@@ -125,7 +127,7 @@ function Invoke-Native {
         Add-Content -Path $script:LogFile -Value "`r`n`$ $Shown" -Encoding UTF8
         & $exe @rest 2>&1 | ForEach-Object {
             $line = "$_"; Add-Content -Path $script:LogFile -Value $line -Encoding UTF8
-            if ($Live) { Write-Host "    $line" -ForegroundColor DarkGray }
+            if ($Live -or $script:ShowAll) { Write-Host "    $line" -ForegroundColor DarkGray }
         }
         $code = $LASTEXITCODE
     } catch { Add-Content -Path $script:LogFile -Value "$_" -Encoding UTF8; $code = 1 } finally { $ErrorActionPreference = $old }
@@ -136,9 +138,11 @@ function Invoke-Native {
 }
 
 # The framework installer's Get-NvidiaInfo: Ok, Driver, DriverMajor, Cc (the lowest compute
-# capability, $null when the driver cannot report it), Name. Any error: no NVIDIA GPU.
+# capability, $null when the driver cannot report it), Name, Error (why an installed nvidia-smi
+# gives no GPU; empty when there is no nvidia-smi at all).
 function Get-NvidiaInfo {
-    $info = @{ Ok = $false; Driver = ''; DriverMajor = 0; Cc = $null; Name = '' }
+    $info = @{ Ok = $false; Driver = ''; DriverMajor = 0; Cc = $null; Name = ''; Error = '' }
+    $noAnswer = 'nvidia-smi is installed but does not answer (driver not loaded?)'
     if (-not (Test-Command 'nvidia-smi')) { return $info }
     $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     try {
@@ -146,8 +150,8 @@ function Get-NvidiaInfo {
         $lines = @(& nvidia-smi '--query-gpu=driver_version,compute_cap,name' '--format=csv,noheader' 2>$null | ForEach-Object { "$_" })
         if ($LASTEXITCODE -ne 0) {   # drivers too old to report compute_cap: the driver alone
             $withCc = $false; $lines = @(& nvidia-smi '--query-gpu=driver_version,name' '--format=csv,noheader' 2>$null | ForEach-Object { "$_" }) }
-        if ($LASTEXITCODE -ne 0) { return $info }
-    } catch { return $info } finally { $ErrorActionPreference = $old }
+        if ($LASTEXITCODE -ne 0) { $info.Error = $noAnswer; return $info }
+    } catch { $info.Error = $noAnswer; return $info } finally { $ErrorActionPreference = $old }
     $inv = [Globalization.CultureInfo]::InvariantCulture; $nameAt = if ($withCc) { 2 } else { 1 }
     foreach ($l in ($lines | Where-Object { $_.Trim() })) {
         $parts = $l.Split(',', $nameAt + 1); $major = 0; $cc = 0.0
@@ -158,7 +162,7 @@ function Get-NvidiaInfo {
         }
         if (-not $info.Name -and $parts.Count -gt $nameAt) { $info.Name = $parts[$nameAt].Trim() }
     }
-    $info.Ok = [bool]$info.Driver; return $info
+    $info.Ok = [bool]$info.Driver; if (-not $info.Ok) { $info.Error = 'nvidia-smi gave no driver version' }; return $info
 }
 
 function Find-Uv([string]$HomeDir) {
@@ -227,12 +231,13 @@ function Main {
         'auto' {
             if ($prevProfile) { $profileName = $prevProfile; $why = 'kept from the previous install' }
             elseif ($gpu.Ok) { $profileName = 'gpu'; $why = "nvidia-smi found $(if ($gpu.Name) { $gpu.Name } else { 'a GPU' })" }
+            elseif ($gpu.Error) { $profileName = 'light'; $why = "$($gpu.Error), so remote providers and servers only; once the driver works, run the installer again" }
             else { $profileName = 'light'; $why = 'no GPU found, so remote providers and servers only' }
             Write-Ok "profile: $profileName ($why; override with -Profile)"
         }
         'light' { Write-Ok 'profile: light (every remote provider, the tools and the HTTP server; no local engine)' }
         'gpu' {
-            if (-not $gpu.Ok) { Write-Warn2 'gpu profile requested but nvidia-smi does not work: its engines will run on the processor' }
+            if (-not $gpu.Ok) { Write-Warn2 "gpu profile requested, but $(if ($gpu.Error) { $gpu.Error } else { 'there is no nvidia-smi' }): its engines will run on the processor" }
             Write-Ok 'profile: gpu (CUDA engines when a card works, else the processor)'
         }
         'apple' { Stop-Install 'the apple profile is for Apple Silicon Macs; use -Profile light or gpu' }
@@ -262,7 +267,7 @@ function Main {
         elseif ($torchArgs -contains 'cu126') { $llamaVariants = @('cu125', 'cpu') }
         else {
             $llamaVariants = @('cpu')
-            $llamaCpuWhy = if (-not $gpu.Ok) { 'no NVIDIA GPU answers nvidia-smi' } elseif ($torch) { "this uv has no --torch-backend, so PyTorch is a CPU build" } else { "driver $($gpu.Driver) is older than 525 (CUDA 12)" }
+            $llamaCpuWhy = if (-not $gpu.Ok) { $(if ($gpu.Error) { $gpu.Error } else { 'no NVIDIA GPU answers nvidia-smi' }) } elseif ($torch) { "this uv has no --torch-backend, so PyTorch is a CPU build" } else { "driver $($gpu.Driver) is older than 525 (CUDA 12)" }
         }
         if ($llamaCpuWhy) { Write-Info "llama.cpp (GGUF): its CPU build ($llamaCpuWhy)" }
         else { Write-Ok "llama.cpp (GGUF): llama-cpp-python $AcLlamaPin, builds tried in order: $($llamaVariants -join ', then ')" }
@@ -300,7 +305,7 @@ function Main {
             $owner = ''; $t = ''
             foreach ($l in (Get-ToolList $uv)) { if ($l -match '^(\S+) v') { $t = $Matches[1] } elseif ($l -eq "- $n") { $owner = $t; break } }
             $msg = "$exe already exists ($(if ($owner) { "from the uv tool '$owner'" } else { "another program's" }))"
-            if ($owner -eq 'abstractgateway') { $msg += ': AbstractFramework is installed here and already includes AbstractCore; upgrade it with: powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/install.ps1 | iex"' }
+            if ($owner -eq 'abstractgateway') { $msg += ': AbstractFramework is installed here and already includes AbstractCore; upgrade it with: powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/install.ps1 | iex". A standalone AbstractCore beside the framework''s gateway tool is not supported (there is no -Force: both would own the same commands)' }
             if ($script:DryRun) { Write-Warn2 "$msg (the real run stops here; nothing is changed)"; break }
             Stop-Install "$msg`nNothing was changed."
         }
