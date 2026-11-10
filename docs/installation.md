@@ -42,7 +42,7 @@ It picks the setting from the machine (`--profile` chooses another one):
 | Machine | Profile | What it installs |
 |---|---|---|
 | Apple Silicon Mac, macOS 14 or later | `apple` | `abstractcore[apple]` (below), with llama.cpp's prebuilt Metal build |
-| NVIDIA card (`nvidia-smi -L` works) or, on Linux, ROCm (`rocminfo`) | `gpu` | `abstractcore[gpu]` (below); on Linux with llama.cpp's prebuilt CPU build, on Windows with PyTorch's CUDA build for the driver (`--torch-backend cu130` or `cu126`) |
+| NVIDIA card (`nvidia-smi -L` works) or, on Linux, ROCm (`rocminfo`) | `gpu` | `abstractcore[gpu]` (below); with an NVIDIA card, llama.cpp's prebuilt CUDA build (below); on Windows, PyTorch's CUDA build for the driver (`--torch-backend cu130` or `cu126`) |
 | Anything else (an Intel Mac, an older macOS, no GPU) | `light` | `abstractcore` with no extra: every remote provider, the built-in tools, media inputs and the HTTP server |
 
 `--profile gpu` on a machine without a card installs the same stack, whose engines then run on the
@@ -81,6 +81,11 @@ macOS and Linux:
   prebuilt wheels instead: the Metal build on Apple Silicon, the CPU build on Linux (glibc, x86_64
   or aarch64). Where no such wheel exists (musl Linux), or when it does not install, it is left
   out and the summary says so.
+  With an NVIDIA card (`gpu` profile) the installer then swaps in llama.cpp's CUDA build matching
+  PyTorch's CUDA (`cu130` for CUDA 13 with driver 580 or newer, `cu125` for CUDA 12 with driver 525
+  or newer; on Windows `cu130`, then `cu132`, or `cu125`) and keeps it only when it loads and
+  `llama_supports_gpu_offload()` is True; otherwise, and with ROCm (no prebuilt ROCm build), the CPU
+  build stays and the summary says why.
 - **Echo cancellation** (`aec-audio-processing`) and **stable-diffusion.cpp**
   (`stable-diffusion-cpp-python`), both optional, are left out; Diffusers covers image generation.
 

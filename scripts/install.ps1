@@ -22,9 +22,13 @@
     Profiles (-Profile auto|light|gpu; auto takes the first that fits):
       gpu    nvidia-smi answers: abstractcore[gpu] with PyTorch's CUDA build for the driver
              (580+ and compute capability 7.5+: --torch-backend cu130; 525+: cu126; else PyPI's
-             CPU build). On Windows it carries neither vLLM (Linux only) nor llama.cpp (a source
-             build on PyPI; AbstractFramework's installer adds its prebuilt build). Asked for
-             without a card: the same stack, on the processor.
+             CPU build). On Windows abstractcore[gpu] carries neither vLLM (Linux only) nor
+             llama.cpp (a source build on PyPI), so llama.cpp comes from upstream's prebuilt
+             builds, as in the framework installer: the CUDA build for the driver first (cu130
+             then cu132 for CUDA 13, cu125 for CUDA 12; its first choice goes into the install
+             itself, so the uv receipt keeps it), kept only when it loads the way AbstractCore
+             loads it and llama_supports_gpu_offload() is True; else the CPU build, with the
+             reason. Asked for without a card: the same stack, on the processor.
       light  abstractcore with no extra: every remote provider, the built-in tools, media inputs
              and the HTTP server
       apple  Apple Silicon Macs only: refused here
@@ -60,6 +64,41 @@ $AcDocs = 'https://github.com/lpalbou/AbstractCore/blob/main/docs/installation.m
 # Every name of [project.scripts] in pyproject.toml (the test compares them): uv refuses the
 # whole install when one of them already exists.
 $AcCommands = @('abstractcore', 'abstractcore-config', 'abstractcore-chat', 'abstractcore-endpoint', 'summarizer', 'abstractcore-summarizer', 'extractor', 'abstractcore-extractor', 'judge', 'abstractcore-judge', 'intent', 'abstractcore-intent', 'deepsearch', 'abstractcore-deepsearch')
+# llama.cpp (gpu profile): upstream's prebuilt Windows builds, the same pin as install.sh's CPU wheel.
+$AcLlamaIndex = 'https://abetlen.github.io/llama-cpp-python/whl'
+$AcLlamaPin = '0.3.36'
+# The framework installer's llama.cpp check, in a fresh process of the tool's environment (no torch
+# import, which would mask missing DLLs): AbstractCore's DLL preparation, import, backend init, GPU
+# offload, and the CPU instructions the build needs. One JSON line "ACSMOKE {...}".
+$AcLlamaSmoke = @'
+import json
+r = {"import": False, "offload": False, "error": ""}
+try:
+    try:
+        from abstractcore.utils.windows_dll import prepare_llama_cpp_import
+        prepare_llama_cpp_import()
+    except ImportError:
+        pass
+    import llama_cpp
+    r["import"] = True
+    r["version"] = getattr(llama_cpp, "__version__", "")
+    init = getattr(llama_cpp, "llama_backend_init", None)
+    if callable(init):
+        init()
+    r["offload"] = bool(llama_cpp.llama_supports_gpu_offload())
+    # A build made with AVX-512 imports here but ends the process with an illegal instruction at
+    # its first model load on a CPU without it (most desktop Intel CPUs).
+    info = llama_cpp.llama_print_system_info()
+    info = info.decode("utf-8", "replace") if isinstance(info, bytes) else str(info or "")
+    built = [k.strip() for k, _, v in (p.partition("=") for p in info.split("|")) if v.strip() == "1"]
+    import ctypes
+    pf = {"AVX": 39, "AVX2": 40, "AVX512": 41}
+    have = ctypes.windll.kernel32.IsProcessorFeaturePresent
+    r["cpu_missing"] = [k for k in built if k in pf and not have(pf[k])]
+except BaseException as e:
+    r["error"] = "%s: %s" % (type(e).__name__, e)
+print("ACSMOKE " + json.dumps(r))
+'@
 
 $script:RanAsFile = [bool]$PSCommandPath; $script:DryRun = [bool]$Print; $script:LogFile = ''; $script:StepNo = 0
 
@@ -136,6 +175,22 @@ function Get-ToolList([string]$Uv) {  # `uv tool list` lines (none without uv)
     try { return @(& $Uv tool list 2>$null | ForEach-Object { "$_" }) } catch { return @() } finally { $ErrorActionPreference = $old }
 }
 function Get-ToolVersion([string]$Uv) { foreach ($l in (Get-ToolList $Uv)) { if ($l -match '^abstractcore v(\S+)') { return $Matches[1] } }; return '' }
+# Run one smoke script with the tool environment's Python: the parsed JSON, or $null. From a file,
+# not `-c`: Windows PowerShell 5.1 mangles double quotes inside native arguments.
+function Invoke-Smoke([string]$Python, [string]$Code) {
+    if (-not $Python -or -not (Test-Path -LiteralPath $Python)) { return $null }
+    $file = Join-Path ([System.IO.Path]::GetTempPath()) ("ac-smoke-{0}-{1}.py" -f $PID, [guid]::NewGuid().ToString('N'))
+    [System.IO.File]::WriteAllText($file, $Code, (New-Object System.Text.UTF8Encoding($false)))
+    $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { $out = @(& $Python $file 2>&1 | ForEach-Object { "$_" }) } catch { $out = @("$_") } finally {
+        $ErrorActionPreference = $old
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+    }
+    if ($script:LogFile) { Add-Content -Path $script:LogFile -Value (@("`r`n`$ $Python <smoke check>") + $out) -Encoding UTF8 }
+    $line = $out | Where-Object { $_ -like 'ACSMOKE *' } | Select-Object -Last 1
+    if (-not $line) { return $null }
+    try { return ($line.Substring(8) | ConvertFrom-Json) } catch { return $null }
+}
 
 function Main {
     $onWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or ($IsWindows -eq $true)
@@ -184,7 +239,7 @@ function Main {
         default { Stop-Install "unknown profile '$profileName' (expected auto, light or gpu)" }
     }
     $extras = if ($profileName -eq 'gpu') { 'gpu' } else { '' }
-    $ggufResult = if ($profileName -eq 'gpu') { 'not part of abstractcore[gpu] on Windows (PyPI ships llama.cpp as a source build only; AbstractFramework''s installer adds its prebuilt build)' } else { "not applicable ($profileName profile)" }
+    $ggufResult = "not applicable ($profileName profile)"
 
     # PyTorch's build (gpu profile; the framework installer's Select-GpuStack, without llama.cpp).
     $torchArgs = @()
@@ -197,6 +252,20 @@ function Main {
             if ($help -match '--torch-backend') { $torchArgs = @('--torch-backend', $torch); Write-Ok "PyTorch: CUDA build $torch (driver $($gpu.Driver))" }
             else { Write-Warn2 "this uv has no --torch-backend: PyTorch's CPU build is installed; update uv (uv self update) and run the installer again" }
         } else { Write-Info "PyTorch: PyPI's CPU build ($(if ($gpu.Ok) { "driver $($gpu.Driver) is older than 525" } else { 'no NVIDIA GPU' }))" }
+    }
+    # llama.cpp's builds to try, in order (the framework installer's Select-GpuStack): CUDA 13 ->
+    # cu130 then cu132 (cu130 is built with AVX-512, cu132 is not); CUDA 12 -> cu125; then cpu.
+    # The CUDA builds load cuBLAS/cudart from PyTorch's CUDA build, so without one only cpu.
+    $llamaVariants = @(); $llamaCpuWhy = ''
+    if ($profileName -eq 'gpu') {
+        if ($torchArgs -contains 'cu130') { $llamaVariants = @('cu130', 'cu132', 'cpu') }
+        elseif ($torchArgs -contains 'cu126') { $llamaVariants = @('cu125', 'cpu') }
+        else {
+            $llamaVariants = @('cpu')
+            $llamaCpuWhy = if (-not $gpu.Ok) { 'no NVIDIA GPU answers nvidia-smi' } elseif ($torch) { "this uv has no --torch-backend, so PyTorch is a CPU build" } else { "driver $($gpu.Driver) is older than 525 (CUDA 12)" }
+        }
+        if ($llamaCpuWhy) { Write-Info "llama.cpp (GGUF): its CPU build ($llamaCpuWhy)" }
+        else { Write-Ok "llama.cpp (GGUF): llama-cpp-python $AcLlamaPin, builds tried in order: $($llamaVariants -join ', then ')" }
     }
 
     if ($From) {
@@ -277,16 +346,24 @@ function Main {
     # Prebuilt wheels only: on Windows x64 every package of these profiles has a wheel for Python
     # 3.12 (aec-audio-processing too); vLLM, llama-cpp-python and stable-diffusion-cpp-python are
     # marked out of abstractcore[gpu] there, so no override is needed (install.sh needs three).
+    # llama.cpp is added with --with from upstream's page for one build (--find-links, recorded in
+    # the uv receipt), never built (--no-build-package).
     Write-Step 'AbstractCore'
-    function Install-Tool([string]$Extras, [string[]]$More = @()) {
+    function Install-Tool([string]$Extras, [string]$Llama = '', [switch]$Soft, [string[]]$More = @()) {
         $argv = @($uv, 'tool', 'install', '--python', $AcPython) + $More
         if ($Extras -eq 'gpu') { $argv += $torchArgs }
+        if ($Llama) { $argv += @('--with', "llama-cpp-python==$AcLlamaPin", '--find-links', "$AcLlamaIndex/$Llama/llama-cpp-python/", '--no-build-package', 'llama-cpp-python') }
         if ($From) { $argv += @('--reinstall-package', 'abstractcore') }        # same version number, new code
         elseif ($Pin -eq 'latest') { $argv += '--upgrade' }                     # else uv keeps a satisfying install
         $argv += (Get-Spec $Extras)
-        return (Invoke-Native -Description "install $(Get-Spec $Extras)" -Argv $argv -Live)
+        $desc = "install $(Get-Spec $Extras)$(if ($Llama) { " with llama.cpp's $Llama build" })"
+        return (Invoke-Native -Description $desc -Argv $argv -Live -Soft:$Soft)
     }
-    Install-Tool $extras | Out-Null
+    $llamaInstalled = ''   # the llama.cpp build the install itself included
+    if ($llamaVariants.Count) {
+        if (Install-Tool $extras -Llama $llamaVariants[0] -Soft) { $llamaInstalled = $llamaVariants[0] }
+        else { Write-Warn2 "the install with llama.cpp's $($llamaVariants[0]) build did not succeed: retrying without llama.cpp (it is tried again afterwards)"; Install-Tool $extras | Out-Null }
+    } else { Install-Tool $extras | Out-Null }
     $acExe = Join-Path $toolBin 'abstractcore.exe'
     $after = $before
     if (-not $script:DryRun) {
@@ -294,7 +371,7 @@ function Main {
         & $acExe --help *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Warn2 'the installed abstractcore does not start (an earlier install was interrupted or damaged): reinstalling it'
-            Install-Tool $extras -More @('--reinstall') | Out-Null
+            Install-Tool $extras -Llama $llamaInstalled -More @('--reinstall') | Out-Null
             & $acExe --help *> $null
             if ($LASTEXITCODE -ne 0) { Stop-Install "abstractcore still does not start after reinstalling it (log: $($script:LogFile))" }
         }
@@ -303,6 +380,50 @@ function Main {
         elseif ($before -ne $after) { Write-Ok "abstractcore $before -> $after" }
         elseif ($From) { Write-Ok "abstractcore $after reinstalled from $From" }
         else { Write-Ok "abstractcore $after already installed" }
+    }
+
+    # --- 3b. llama.cpp: keep the first build that loads ------------------------------------------
+    # Swapped with uv pip inside the tool's environment (--no-index: only that build's page);
+    # a CUDA build is kept when llama_supports_gpu_offload() is True, the cpu build when it loads;
+    # none left behind when no build loads (never a broken import).
+    if ($llamaVariants.Count) {
+        Write-Step "llama.cpp's build (GGUF)"
+        $toolPy = [IO.Path]::Combine($toolDir, 'abstractcore', 'Scripts', 'python.exe')
+        $twin = 'from abstractcore.utils.windows_dll import prepare_llama_cpp_import; prepare_llama_cpp_import(); import llama_cpp; print(llama_cpp.llama_supports_gpu_offload())'
+        function Get-SwapArgv([string]$V) { return @($uv, 'pip', 'install', '--python', $toolPy, '--no-index', '--find-links', "$AcLlamaIndex/$V/llama-cpp-python/", '--no-deps', '--reinstall-package', 'llama-cpp-python', '--refresh-package', 'llama-cpp-python', "llama-cpp-python==$AcLlamaPin") }
+        if ($script:DryRun) {
+            Write-Info "builds tried in this order: $($llamaVariants -join ', then '); one is kept when it loads the way AbstractCore loads it (CUDA builds: when llama_supports_gpu_offload() is True), else none"
+            if ($llamaVariants.Count -gt 1) { Write-Host "  `$ $(Format-Cmd (Get-SwapArgv $llamaVariants[1]))   # only when the build before it does not work" -ForegroundColor DarkGray }
+            Write-Host "  `$ $(Format-Cmd @($toolPy, '-c', $twin))" -ForegroundColor DarkGray
+            $ggufResult = "planned: llama-cpp-python $AcLlamaPin, $($llamaVariants -join ' then ') build$(if ($llamaCpuWhy) { " ($llamaCpuWhy)" })"
+        } else {
+            $current = $llamaInstalled; $notKept = @(); $kept = ''; $where = ''
+            foreach ($v in $llamaVariants) {
+                if ($current -ne $v) {
+                    Write-Info "llama.cpp: installing its $v build"
+                    if (-not (Invoke-Native -Description "install llama.cpp's $v build" -Argv (Get-SwapArgv $v) -Soft -Live)) { $notKept += "${v}: did not install"; $current = ''; continue }
+                    $current = $v
+                }
+                Write-Host "  `$ $(Format-Cmd @($toolPy, '-c', $twin))" -ForegroundColor DarkGray
+                $r = Invoke-Smoke $toolPy $AcLlamaSmoke
+                $cpuMissing = @(if ($r -and $r.cpu_missing) { $r.cpu_missing })
+                if ($r -and $r.import -and -not $cpuMissing.Count -and ($v -eq 'cpu' -or $r.offload)) {
+                    $kept = $v; $where = if ($r.offload) { 'GPU offload' } else { 'CPU' }
+                    Write-Ok "llama.cpp $($r.version) ($v build): loads, $(if ($r.offload) { 'llama_supports_gpu_offload() = True' } else { 'CPU' })"
+                    break
+                }
+                $reason = if (-not $r) { 'no answer from the check' } elseif (-not $r.import) { "does not load: $($r.error)" } elseif ($cpuMissing.Count) { "is built for CPU instructions this processor lacks ($($cpuMissing -join ', '))" } else { 'loads, but reports no GPU offload' }
+                Write-Warn2 "llama.cpp $v build $reason$(if ($v -ne $llamaVariants[-1]) { '; trying the next build' })"
+                $notKept += "${v}: $reason"
+            }
+            if ($kept) {
+                $ggufResult = "llama-cpp-python $AcLlamaPin ($kept build, $where)$(if ($llamaCpuWhy) { "; CPU because $llamaCpuWhy" })$(if ($notKept.Count) { "; not kept: $($notKept -join '; ')" })"
+            } else {
+                if ($current) { Invoke-Native -Description 'remove llama.cpp (no build loads here)' -Argv @($uv, 'pip', 'uninstall', '--python', $toolPy, 'llama-cpp-python') -Soft | Out-Null }
+                $ggufResult = "skipped: no llama.cpp build loads on this machine ($($notKept -join '; ')); GGUF models run in Ollama or LM Studio"
+                Write-Warn2 "llama.cpp: $ggufResult"
+            }
+        }
     }
 
     # --- 4. PATH and summary -----------------------------------------------------------------------

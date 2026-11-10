@@ -141,3 +141,28 @@ def test_scripts_and_docs_name_the_exact_one_liners():
     assert PS1_LINE in _ps1()
     assert "docs/installation.md#one-line-install" in _sh()
     assert "docs/installation.md#one-line-install" in _ps1()
+
+
+def test_nvidia_gets_llama_cpp_cuda_build_checked_the_way_abstractcore_loads_it():
+    sh, ps1 = _sh(), _ps1()
+    install = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+    # The CUDA build follows PyTorch's CUDA major (install.sh) / the driver's stack (install.ps1).
+    assert _one(r'^AC_LLAMA_CUDA13="([^"]+)"', sh, "AC_LLAMA_CUDA13") == "cu130"
+    assert _one(r'^AC_LLAMA_CUDA12="([^"]+)"', sh, "AC_LLAMA_CUDA12") == "cu125"
+    assert "$llamaVariants = @('cu130', 'cu132', 'cpu')" in ps1
+    assert "$llamaVariants = @('cu125', 'cpu')" in ps1
+    # Same llama.cpp version on both scripts (a swap is a same-version reinstall, which is what
+    # keeps the CUDA build through `uv tool upgrade` and re-runs).
+    assert _one(r"^\$AcLlamaPin = '([^']+)'", ps1, "$AcLlamaPin") == _one(r'^AC_LLAMA_CPU_PIN="([^"]+)"', sh, "AC_LLAMA_CPU_PIN")
+    # The swap: that build's page only, llama-cpp-python alone, reinstalled.
+    assert '--find-links "$AC_LLAMA_INDEX/$1/llama-cpp-python/" --no-deps --reinstall-package llama-cpp-python' in sh
+    assert "'--no-index', '--find-links', \"$AcLlamaIndex/$V/llama-cpp-python/\", '--no-deps', '--reinstall-package', 'llama-cpp-python'" in ps1
+    # Kept only when it loads the way AbstractCore loads it (the Linux CUDA build needs AbstractCore's
+    # preload of PyTorch's CUDA libraries) and reports GPU offload.
+    from abstractcore.utils.windows_dll import prepare_llama_cpp_import  # the seam both scripts call
+
+    assert callable(prepare_llama_cpp_import)
+    for text in (sh, ps1):
+        assert "from abstractcore.utils.windows_dll import prepare_llama_cpp_import" in text
+        assert "llama_supports_gpu_offload()" in text
+    assert "llama.cpp's CUDA build" in install and "llama_supports_gpu_offload()" in install
