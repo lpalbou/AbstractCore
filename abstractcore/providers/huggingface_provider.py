@@ -7056,8 +7056,8 @@ class HuggingFaceProvider(BaseProvider):
         # don't need to import PyTorch.
         supports_gpu_offload = False
         try:
-            # Linux + NVIDIA: a plain pip install carries the processor build of llama.cpp; the CUDA
-            # build is swapped in once per environment before the first import (llama_cuda_swap).
+            # Linux + NVIDIA: an install from PyPI alone carries the processor build of llama.cpp; the
+            # CUDA build is swapped in once per environment before the first import (llama_cuda_swap).
             from ..utils.llama_cuda_swap import ensure_llama_cpp_cuda_build
 
             self.gguf_cuda_swap = ensure_llama_cpp_cuda_build()

@@ -1961,6 +1961,15 @@ incorrect output for a trivial prompt, treat it as a model/runtime compatibility
 
 **NVIDIA CUDA only.** If you’re on Apple Silicon, use MLX. If you’re on CPU-only, use Ollama/HuggingFace.
 
+**Cards older than Ampere (compute capability 7.x: Turing T4, RTX 20xx, Quadro RTX, Volta V100)**
+work as they are (measured 2026-11-10 on a Quadro RTX 5000 with vLLM 0.30.0, the version
+`abstractcore[gpu]` resolves): those cards have no bfloat16, and vLLM says so and falls back to
+float16 by itself ("doesn't support torch.bfloat16. Falling back to torch.float16"; pass
+`--dtype half` to say it explicitly, which older vLLM releases required); it also logs that
+FlashAttention 2 needs compute capability 8.0 and uses its Triton attention backend instead.
+Qwen2.5-0.5B-Instruct answered at 236 tokens/s through `create_llm("vllm", ...)` either way. No
+other flag and no other vLLM version is needed for those cards.
+
 #### ⚠️ Hardware Compatibility Warning
 
 **vLLM ONLY works with NVIDIA CUDA GPUs.** It will NOT work on:

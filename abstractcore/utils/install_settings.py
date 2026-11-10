@@ -116,6 +116,11 @@ def light_repair_hint() -> str:
     return f"the AbstractCore install is incomplete; repair it with: {LIGHT_INSTALL}"
 
 
+LLAMA_CPP_LINUX_NOTE = (
+    "llama.cpp has no prebuilt wheel on PyPI; the AbstractCore installer adds the right build for this "
+    "machine (curl -LsSf https://abstractframework.ai/core/install.sh | sh), and "
+    + GPU_INSTALL + " alone builds it from source (needs a C compiler)"
+)
 LLAMA_CPP_WINDOWS_NOTE = (
     "on Windows the AbstractFramework installer adds llama.cpp's prebuilt GPU build; with plain pip, "
     "llama.cpp is not part of abstractcore[gpu] on Windows"
@@ -137,4 +142,12 @@ def llama_cpp_hint(what: str = "GGUF models (llama.cpp)") -> str:
 
     if sys.platform == "win32" and local_engines_setting() == "gpu":
         return f"{what}: {LLAMA_CPP_WINDOWS_NOTE}"
+    if sys.platform.startswith("linux") and local_engines_setting() == "gpu":
+        # PyPI has llama-cpp-python as a source build only: `abstractcore[gpu]` compiles it (a C
+        # compiler and, for CUDA, the toolkit), while the installer adds the prebuilt wheel for this
+        # machine (CPU, or CUDA swapped in by AbstractCore itself; utils/llama_cuda_swap). Found on a
+        # processor-only Linux host during the 0.14.0 profile proof (2.35.1).
+        return (
+            f"{what}: {LLAMA_CPP_LINUX_NOTE}"
+        )
     return local_engines_hint(what)

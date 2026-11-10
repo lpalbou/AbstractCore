@@ -76,10 +76,12 @@ dependencies = [
     # Built-in tools (fetch_url, web_search, skim_url, system probes).
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
-    "lxml>=4.9.0,<6.0.0",
+    "lxml>=4.9.0,<7.0.0",
     "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9,<8",
+    # `abstractcore models download` and the Hugging Face cache helpers (light; pure Python).
+    "huggingface_hub>=0.20.0,<2.0.0",
     # Media inputs: images, PDF (pypdf, permissive licence), Office documents, spreadsheets;
     # Pillow also renders Glyph visual-text compression.
     "Pillow>=10.0.0,<13.0.0",
@@ -96,7 +98,7 @@ dependencies = [
     # Email (abstractcore.comms.email): credentials encrypted at rest (AES-256-GCM) under one
     # sealing-key file (<config dir>/secrets/sealing.key) — no OS keychain on any OS (2.26.0).
     "cryptography>=41.0.0",
-    "abstractvoice>=0.20.0",
+    "abstractvoice>=0.21.1",
     "abstractvision>=0.3.34",
     "abstractmusic>=0.1.17; python_version >= '3.10'",
     "abstract3d>=0.3.2; python_version >= '3.10'",
@@ -168,7 +170,7 @@ apple = [
     "numpy>=2.1.0,<3.0.0",
     "Pillow>=12.1.1,<13.0.0",
     # Local voice (TTS/STT), image/video and music engines.
-    "abstractvoice[all-apple]>=0.20.0",
+    "abstractvoice[all-apple]>=0.21.1",
     "omnivoice>=0.1.5",
     "abstractvision[all-apple]>=0.3.34",
     "abstractmusic[all-apple]>=0.1.17",
@@ -199,7 +201,7 @@ gpu = [
     "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     # Local voice (TTS/STT), image/video and music engines.
-    "abstractvoice[all-gpu]>=0.20.0",
+    "abstractvoice[all-gpu]>=0.21.1",
     "omnivoice>=0.1.5",
     "abstractvision[all-gpu]>=0.3.34",  # 0.3.32: no MLX-Gen; stable-diffusion.cpp marked out on Windows; 0.3.33: sequential CPU offload when model offload does not fit
     "abstractmusic[all-gpu]>=0.1.17",

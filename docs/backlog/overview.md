@@ -25,6 +25,8 @@ work (honour nested `.gitignore`s, wider default excludes, scan-cost footer, no 
 fails on Python 3.14 because the light install pins `lxml<6` and lxml 5.x has no cp314 wheels (found on a Linux host;
 the installers' Python 3.12 is unaffected); lift the ceiling to `<7` and add 3.14 to CI, or state the ceiling.
 
+2026-11-10 (night): 2.35.1 cut (one release, operator's rule): llama.cpp CUDA self-swap for bare pip [gpu] installs, GGUF embedding atexit release (Mac abort), processor-only Linux hints, huggingface_hub in light, abstractvoice>=0.21.1, `0886` completed (lxml<7).
+
 2026-11-10 (evening): added proposed `0887`: `abstractcore[gpu]` pulls vllm, which pins torch 2.13.0 for the whole framework `gpu` profile (+2 GB, cuDNN 9.20) and a bare pip gets the CPU llama.cpp wheel on NVIDIA hosts (measured on the Quadro RTX 5000 matrix install).
 
 2026-11-07 hygiene pass (code audit by two reviewers, verified in the repository): completed `0233`, `0840`, `0842`,

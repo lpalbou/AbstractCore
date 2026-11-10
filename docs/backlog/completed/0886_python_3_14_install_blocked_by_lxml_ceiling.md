@@ -3,6 +3,7 @@
 > Type: packaging
 > Created: 2026-11-10
 > Priority: normal
+> Status: completed 2026-11-10 (2.35.1): `lxml>=4.9.0,<7.0.0`; BeautifulSoup's `lxml` and `xml` parser names are unchanged in lxml 6; Python 3.14 is not in the CI matrix yet (classifiers stop at 3.13).
 > Labels: packaging, dependencies, ci
 > Links: `pyproject.toml` (`lxml<6.0.0,>=4.9.0`), `abstractcore/tools/common_tools.py` (`BS4_PARSER`)
 

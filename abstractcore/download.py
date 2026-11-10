@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
-from .utils.install_settings import local_engines_hint
+from .utils.install_settings import light_repair_hint, local_engines_hint
 
 
 class DownloadStatus(Enum):
@@ -226,10 +226,8 @@ async def _download_huggingface(
     except ImportError:
         yield DownloadProgress(
             status=DownloadStatus.ERROR,
-            message=(
-                "huggingface_hub is not installed. "
-                f"{local_engines_hint('Downloading Hugging Face models')}"
-            ),
+            # huggingface_hub is part of the light set (2.35.1): missing means a broken install.
+            message=f"huggingface_hub is not installed: {light_repair_hint()}",
         )
         return
 

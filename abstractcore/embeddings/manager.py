@@ -250,6 +250,35 @@ def _refuse_resident_gguf_embedding(path: Any) -> None:
                 )
 
 
+def release_shared_gguf_embeddings_at_exit() -> int:
+    """Close every resident GGUF embedding encoder (llama.cpp) before the interpreter tears modules
+    down. Without this, a process that embedded with a GGUF model on Apple silicon aborted at exit
+    with ``ggml-metal-device.m: GGML_ASSERT([rsets->data count] == 0)`` (exit code 134) after every
+    call had succeeded: the llama.cpp context was freed during module teardown, after the Metal
+    device, instead of before it (found on the Mac during the 0.14.0 profile proof, 2.35.1).
+    SentenceTransformer models need nothing here. Returns the number of encoders closed."""
+    closed = 0
+    with _SHARED_EMBEDDING_LOCK:
+        entries = list(_SHARED_EMBEDDING_MODELS.values())
+    for entry in entries:
+        model = entry.model
+        close = getattr(model, "close", None)
+        if model is None or not callable(close) or not hasattr(model, "_llm"):
+            continue
+        try:
+            close()
+            closed += 1
+        except Exception:
+            pass
+        entry.model = None
+    return closed
+
+
+# Registered once at import: atexit handlers run before module teardown, in reverse order of
+# registration, so the encoders go first (see release_shared_gguf_embeddings_at_exit).
+atexit.register(release_shared_gguf_embeddings_at_exit)
+
+
 def _atexit_save_caches(ref: "weakref.ReferenceType") -> None:
     manager = ref()
     if manager is None:

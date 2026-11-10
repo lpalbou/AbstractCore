@@ -196,5 +196,12 @@ def test_llama_cpp_hint_on_windows_names_the_installer_not_plain_pip(monkeypatch
         assert "pip install" not in hint
     elif expected == "none":
         assert "not available on this machine" in hint and "pip install" not in hint
+    elif expected == "gpu":
+        # Linux (2.35.1): PyPI has no prebuilt llama.cpp, so the hint names the installer (which adds
+        # the right build) and says what abstractcore[gpu] alone does (a source build). Still only
+        # the gpu setting as a pip target.
+        assert hint.startswith("GGUF models (llama.cpp): llama.cpp has no prebuilt wheel on PyPI")
+        assert "curl -LsSf https://abstractframework.ai/core/install.sh | sh" in hint
+        assert 'pip install "abstractcore[gpu]"' in hint and "builds it from source" in hint
     else:
         assert hint == f'Install with: pip install "abstractcore[{expected}]"'
