@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud and local LLMs: generation, streaming, host-controlled tools, typed output, sessions, media, embeddings and OpenAI-compatible HTTP serving.
 
-Package version: 2.34.0
+Package version: 2.35.0
 Supported Python: 3.9+; CI tests Python 3.9–3.13.
 
 Use an explicit provider, exact model and endpoint. Local model loads are offline/cache-first;
@@ -19,7 +19,7 @@ executes calls. For durable agent orchestration, use [AbstractRuntime](https://g
 
 - [README](README.md): project overview and quick start.
 - [Documentation index](docs/README.md): complete user documentation and reading paths.
-- [Installation](docs/installation.md): three settings: light, apple and gpu; platform requirements.
+- [Installation](docs/installation.md): three settings: light, apple and gpu; platform requirements. One-line install: `curl -LsSf https://abstractframework.ai/core/install.sh | sh` (macOS/Linux) or `powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/core/install.ps1 | iex"` (Windows): detects the platform (Apple Silicon -> apple, NVIDIA/ROCm -> gpu, else light), installs uv and Python 3.12 when missing and the pinned `abstractcore`, `abstractcore[apple]` or `abstractcore[gpu]` as an isolated user tool with prebuilt wheels only (llama.cpp's CUDA build on NVIDIA); `--print` shows the plan; a re-run upgrades in place.
 - [Getting started](docs/getting-started.md): first provider call, sessions, tools and media.
 - [Integration and operations guide](docs/agent-usage.md): explicit endpoints, version checks, bounded recipes and lifecycle decisions.
 - [Prerequisites](docs/prerequisites.md): provider keys, base URLs and hardware.
