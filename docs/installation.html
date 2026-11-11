@@ -83,10 +83,10 @@ own environment, with its commands in <code>~/.local/bin</code>: <code>abstractc
 <code>engines</code>, <code>serve</code>), <code>abstractcore-config</code>, <code>abstractcore-chat</code>, <code>abstractcore-endpoint</code> and the
 apps <code>summarizer</code>, <code>extractor</code>, <code>judge</code>, <code>intent</code> and <code>deepsearch</code>.</p>
 <div class="code-block"><pre><code class="language-bash"># macOS / Linux
-curl -LsSf https://abstractframework.ai/core/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.1/scripts/install.sh | sh
 </code></pre></div>
 <div class="code-block"><pre><code class="language-powershell"># Windows 10 / 11
-powershell -ExecutionPolicy ByPass -c &quot;irm https://abstractframework.ai/core/install.ps1 | iex&quot;
+powershell -ExecutionPolicy ByPass -c &quot;irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.1/scripts/install.ps1 | iex&quot;
 </code></pre></div>
 <div class="code-block"><pre><code class="language-bash"># With pip, in your own Python environment
 pip install abstractcore              # light
@@ -167,9 +167,9 @@ abstractcore config defaults   # the capability routes this install resolves to
 </tr>
 </tbody>
 </table></div>
-<p>Options go after <code>sh -s --</code> (<code>curl -LsSf https://abstractframework.ai/core/install.sh | sh -s -- --print</code>)
+<p>Options go after <code>sh -s --</code> (<code>curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.1/scripts/install.sh | sh -s -- --print</code>)
 or into a script block on Windows
-(<code>&amp; ([scriptblock]::Create((irm https://abstractframework.ai/core/install.ps1))) -Print</code>).</p>
+(<code>&amp; ([scriptblock]::Create((irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.1/scripts/install.ps1))) -Print</code>).</p>
 <p><strong>Upgrade</strong>: run the same line again. It finds the install, says
 <code>AbstractCore 2.34.0 found: upgrading to AbstractCore 2.35.0</code> (or <code>already up to date</code>), keeps the
 profile unless <code>--profile</code> says otherwise, ends with <code>abstractcore 2.34.0 -&gt; 2.35.0</code>, and
