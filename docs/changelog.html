@@ -37,6 +37,7 @@
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#unreleased" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[Unreleased]</a>
+<a href="#2351---2026-11-10" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.35.1] - 2026-11-10</a>
 <a href="#2350---2026-11-10" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.35.0] - 2026-11-10</a>
 <a href="#2340---2026-11-03" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.34.0] - 2026-11-03</a>
 <a href="#2330---2026-11-03" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.33.0] - 2026-11-03</a>
@@ -62,9 +63,68 @@
 
 <p>The format is based on <a href="https://keepachangelog.com/en/1.0.0/">Keep a Changelog</a>,
 and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semantic Versioning</a>.</p>
-<p>Unreleased changes live in <a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/changelog.d/README.md"><code>changelog.d/</code></a>, one file per pull request;
+<p>Unreleased changes live in <a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.1/changelog.d/README.md"><code>changelog.d/</code></a>, one file per pull request;
 <code>python scripts/changelog.py assemble X.Y.Z</code> writes them here at release.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="2351---2026-11-10">[2.35.1] - 2026-11-10</h2>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>AbstractVision 0.3.36 is the floor</strong> (base dependency, the <code>all-apple</code> / <code>all-gpu</code> extras and the <code>vision-*</code>
+  extras): the release proven on Linux NVIDIA and processor-only hosts and on Apple silicon (CPU float32 default,
+  8-bit GGUF first on CUDA, trimmed Diffusers downloads, <code>GpuOutOfMemoryError</code>), whose one-shot commands run on
+  the machine's own engine with FLUX.2 [klein] 4B in 8 bits by default.</li>
+<li><strong>AbstractVoice 0.21.1 is the floor</strong> (base dependency and the <code>all-apple</code> / <code>all-gpu</code> extras): 0.21.0's
+  <code>gpu</code> extra added a second cuDNN wheel next to torch's on Linux and every CUDA convolution failed with
+  <code>CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH</code> once abstractcore's <code>gpu</code> extra (vllm, torch 2.13) was in the
+  same environment; 0.21.1 keeps cuDNN Windows-only.</li>
+<li><strong>lxml up to 6.x</strong> (<code>lxml&gt;=4.9.0,&lt;7.0.0</code>, backlog 0886): lxml 5 has no CPython 3.14 wheels, so a plain
+  <code>pip install abstractcore</code> on Python 3.14 tried to build it from source and failed without the libxml2
+  headers; 6.1 ships them. BeautifulSoup's <code>lxml</code> and <code>xml</code> parsers are unchanged.</li>
+<li><strong>vLLM on cards older than Ampere</strong> (<code>docs/prerequisites.md</code>): measured on a Quadro RTX 5000 (compute
+  capability 7.5) with vLLM 0.30.0, the version <code>abstractcore[gpu]</code> resolves: it falls back to float16 by
+  itself and uses its Triton attention backend; 236 tokens/s on Qwen2.5-0.5B through <code>create_llm("vllm")</code>.
+  No flag and no other version needed.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>A release inside Context7's refresh window no longer ends with a failed job</strong> (<code>.github/workflows/release.yml</code>,
+  <code>context7-refresh.yml</code>). Context7 allows one re-index per project every 10 days; the 2.35.0 release asked two days
+  after the previous refresh and the last job of the run failed with <code>HTTP 400 too-early</code> although everything was
+  published. That answer is now a notice on the run (Context7 re-indexes on its own schedule, and the on-demand
+  workflow can be run after the window); any other non-200 answer still fails the job visibly.</li>
+<li><strong><code>pip install "abstractcore[gpu]"</code> on a Linux NVIDIA host now runs GGUF models on the GPU</strong>
+  (<code>abstractcore/utils/llama_cuda_swap.py</code>). PyPI carries <code>llama-cpp-python</code> as a source build only, so pip
+  resolved abetlen's prebuilt <em>processor</em> wheel and every GGUF model ran on the CPU while PyTorch saw the
+  card (<code>llama_supports_gpu_offload()</code> False; on a Quadro RTX 5000 a 4B Q4_K_M answered in 9 s on the
+  processor, 0.7 s on the card). The CUDA builds live on abetlen's
+  own index, which a pip extra cannot name, and are too large for PyPI. The one-line installers already
+  swapped the CUDA build in; AbstractCore now does the same swap itself, once per environment, before its
+  first <code>import llama_cpp</code> on an x86_64 Linux host where <code>torch/version.py</code> says CUDA 12 or 13 and
+  <code>nvidia-smi</code> reports a driver new enough (525 / 580): the installers' command (<code>pip</code>, or <code>uv pip</code> when the
+  environment has no pip, <code>--no-index --no-deps --find-links &lt;index&gt;/&lt;cu130|cu125&gt;/llama-cpp-python/</code>, the
+  installed version), one line on the console before and one after, whatever the log level, the outcome written to
+  <code>llama_cpp/.abstractcore-cuda-swap.json</code> so a failed swap is not retried at every load. A host set up by
+  the installer has the CUDA build already and nothing runs. When the swap cannot happen (offline,
+  read-only site-packages, no driver, <code>ABSTRACTCORE_LLAMA_CUDA_SWAP=0</code>) GGUF stays on the processor and the
+  HuggingFace provider's runtime info (<code>llama_cuda_swap</code>) and a warning say why. Proven from a bare <code>uv pip</code>
+  install on the GPU host: the swap ran by itself in 0.8 s and the next answer came from the card; a second
+  process ran no swap. Tests: the swap runs once with the right build for torch's CUDA major (both the plain and the
+  annotated <code>cuda = '13.0'</code> forms of <code>torch/version.py</code>) and never again; never on a CUDA build; never with
+  the opt-out, without a CUDA torch, or with a driver too old; a failed swap is recorded and not retried.</li>
+<li><strong>A process that embedded with a GGUF model no longer aborts at exit on Apple silicon</strong>
+  (<code>abstractcore/embeddings/manager.py</code>, <code>release_shared_gguf_embeddings_at_exit</code>). After every call had
+  succeeded, the interpreter died in <code>exit()</code> with <code>ggml-metal-device.m: GGML_ASSERT([rsets-&gt;data count] ==
+  0)</code> (exit code 134): the llama.cpp context was freed during module teardown, after the Metal device.
+  The resident GGUF encoders are now closed by an <code>atexit</code> handler, before teardown (verified with
+  <code>CompendiumLabs/bge-small-en-v1.5-gguf</code> on Apple silicon).</li>
+<li><strong>Install hints on a processor-only Linux host say what works.</strong> With no llama.cpp installed, the hint
+  for GGUF models said <code>pip install "abstractcore[gpu]"</code>, which compiles llama-cpp-python from source
+  (PyPI has no wheel) and, on a host without a card, installs the CUDA stack for nothing. On Linux the hint
+  now names the AbstractCore installer, which adds the prebuilt build for the machine (then the CUDA swap
+  above), and says that the <code>gpu</code> setting alone builds from source; still only the three settings as pip
+  targets. <code>huggingface_hub</code> is part of the light set (<code>abstractcore models download</code> failed on a plain
+  install with the same <code>gpu</code> hint; a missing one now reads as a broken install to repair).</li>
+</ul>
 <h2 id="2350---2026-11-10">[2.35.0] - 2026-11-10</h2>
 <h3 id="added">Added</h3>
 <ul>
@@ -99,8 +159,8 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
     <code>qat</code>, <code>unquantized</code>, <code>ct</code>, <code>mobile</code>, <code>transformers</code> and <code>wNaM</code> packaging tokens strip like any other variant suffix.</li>
 <li>Transcription language facts: <code>generate(..., output={"task": "transcription"})</code> records <code>language</code> (what the engine was told; <code>None</code> = it detected the language) and <code>detected_language</code> (what it reported) in the transcript's metadata, through the audio facade's <code>transcribe_detailed</code> (<code>AudioCapability</code> may implement it — AbstractVoice does; a backend with <code>transcribe</code> only reports neither). <code>POST /v1/audio/transcriptions</code> on a local engine answers <code>{text, language, detected_language}</code>.</li>
 <li><strong>AbstractCore installs in one line, with no admin rights and no Python needed</strong> (<code>scripts/install.sh</code>,
-  <code>scripts/install.ps1</code>). <code>curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh</code> on macOS and
-  Linux, <code>powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.ps1 | iex"</code>
+  <code>scripts/install.ps1</code>). <code>curl -LsSf https://abstractframework.ai/core/install.sh | sh</code> on macOS and
+  Linux, <code>powershell -ExecutionPolicy ByPass -c "irm https://abstractframework.ai/core/install.ps1 | iex"</code>
   on Windows: the script gets uv when it is missing and Python 3.12 through uv, picks the install
   setting from the machine (Apple Silicon with macOS 14 or later: <code>abstractcore[apple]</code>; an NVIDIA
   card or ROCm: <code>abstractcore[gpu]</code>; anything else: the light install), and installs AbstractCore
@@ -121,13 +181,13 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
   rule leaves out (echo cancellation, stable-diffusion.cpp); Windows takes <code>-DryRun</code> and <code>-Verbose</code>.
   See <a href="installation.html#one-line-install">One-line install</a>.</li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed-1">Changed</h3>
 <ul>
 <li><strong>Console theme copy regenerated from ui-kit 0.9.27</strong> (<code>abstractcore/console/themes.py</code>,
   <code>abstractcore/console/theme_sync.py</code>). The colours and fonts are unchanged; the recorded kit version and the floor
   the theme test checks against (<code>KIT_THEME_FLOOR</code>) move to 0.9.27, the kit the apps are built on.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed-1">Fixed</h3>
 <ul>
 <li><strong>A settings file that cannot be parsed stops the program instead of being renamed and replaced by defaults</strong>
   (<code>abstractcore/config/manager.py</code>, <code>abstractcore/config/provider_profiles.py</code>, <code>abstractcore/server/app.py</code>). The
@@ -200,13 +260,13 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><strong>Rows:</strong> <code>resident_model_states()</code> covers MLX and embeddings too (also for the ADR 0010 fit failsafe), with
     <code>last_used_at</code>, <code>in_use</code>, <code>locked_by</code> and <code>idle_unload_at</code>.</li>
 </ul>
-<h3 id="changed-1">Changed</h3>
+<h3 id="changed-2">Changed</h3>
 <ul>
 <li><strong>Docs and the agent skill describe 2.34.0</strong> (<code>skills/abstractcore/</code>, <code>llms.txt</code>, <code>docs/native-mlx-runtime.md</code>).
   The skill (<code>package-version</code> 2.34.0) teaches the idle unload and the one-provider rule for a caller's key on the
   discovery routes; <code>docs/native-mlx-runtime.md</code> no longer calls the shipped AbstractRuntime integration unreleased.</li>
 </ul>
-<h3 id="fixed-1">Fixed</h3>
+<h3 id="fixed-2">Fixed</h3>
 <ul>
 <li><strong>The release-PR changelog check refuses an empty release section, and sees every fragment</strong>
   (<code>scripts/changelog.py</code>). A release PR whose <code>## [X.Y.Z] - &lt;date&gt;</code> section had no entries passed when its
@@ -259,7 +319,7 @@ decisions), and a config that keeps a provider profile it cannot read instead of
   nothing on this computer: embeddings (<code>EmbeddingManager</code>), transformers (not cached, or a download that did not
   finish), GGUF, MLX, and an MLX drafter. Existing <code>except ModelNotFoundError</code> handlers still catch it.</li>
 </ul>
-<h3 id="changed-2">Changed</h3>
+<h3 id="changed-3">Changed</h3>
 <ul>
 <li><strong>AbstractVoice floor 0.20.0</strong> (<code>pyproject.toml</code>: the base install, <code>[apple]</code> and <code>[gpu]</code>; <code>ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR</code>).</li>
 <li><strong>The changelog check recognises a release pull request</strong> (<code>scripts/changelog.py check</code>). A PR that bumps
@@ -283,7 +343,7 @@ decisions), and a config that keeps a provider profile it cannot read instead of
   mirroring the gateway's <code>tests/timing.py</code>. The session's terminal summary lists every measure ("timing budgets",
   over-budget first), so the numbers are in every CI log. A blowup guard also passes <code>ceiling=</code>: a generous bound
   asserted always (a ReDoS regression is never a slow green). Test-only.</p>
-<h3 id="fixed-2">Fixed</h3>
+<h3 id="fixed-3">Fixed</h3>
 <ul>
 <li><strong>A key check on an OpenAI-compatible endpoint with a public model list checks the KEY</strong>
   (<code>openai_compatible_provider.py</code>). OVH AI Endpoints answers <code>GET /v1/models</code> with 200 for no key and for a wrong
@@ -465,7 +525,7 @@ that lists every installed or cached asset by its exact identity.</p>
   architecture (86 repos, 28 architectures, checked 2026-10-29) is in the 0.3.36 table.</li>
 <li>Start and stop an authenticated Core HTTP listener with <code>abstractcore.server.managed.start_managed_server</code> while retaining its host's resident model resources. The listener uses Core's server configuration and first-run token handling.</li>
 </ul>
-<h3 id="changed-3">Changed</h3>
+<h3 id="changed-4">Changed</h3>
 <ul>
 <li><strong><code>abstractvoice&gt;=0.19.5</code></strong> (base install, <code>[apple]</code> and <code>[gpu]</code>; <code>ABSTRACTVOICE_ENGINE_RUNTIME_FLOOR</code>):
   each <code>tts_stream</code> audio event carries at most 2 s of audio, so a client on a slow link starts playing a long
@@ -499,7 +559,7 @@ that lists every installed or cached asset by its exact identity.</p>
   calibration seed no longer shrinks a load. Measured numbers for Kimi-9B on the 16 GB card: about 135k of 262,144
   (was 65,536). Logged, and on the claim as <code>context_reservation</code>.</li>
 </ul>
-<h3 id="fixed-3">Fixed</h3>
+<h3 id="fixed-4">Fixed</h3>
 <ul>
 <li><strong>A GGUF this computer's llama.cpp cannot load says so before it is chosen</strong> (backlog 0867).
   XHToken/Spark-X2.6-4B (architecture <code>spark2_5</code>) downloaded fine and failed only at its first call. An installed
@@ -665,7 +725,7 @@ that lists every installed or cached asset by its exact identity.</p>
   checked on Hugging Face on 2026-10-28; the capability registry gains <code>lfm2.5-24b-a2b</code> and the repo-id aliases.
   Searching "lfm" in a Models catalog listed one row before.</li>
 </ul>
-<h3 id="fixed-4">Fixed</h3>
+<h3 id="fixed-5">Fixed</h3>
 <ul>
 <li><strong>GGUF residency rows report the KV cache llama.cpp really allocates, and the context it was built
   with.</strong> The estimate counted every block as an attention layer: <code>Qwen3.5-9B-Kimi-k3-Distilled-GGUF</code>
@@ -724,7 +784,7 @@ that lists every installed or cached asset by its exact identity.</p>
   <code>abstractvoice</code> 0.19.0 or later) and to remote AbstractVoice-compatible servers (OpenAI custom
   voices do not take it). Without it, the cloner identifies the language from the transcript.</li>
 </ul>
-<h3 id="fixed-5">Fixed</h3>
+<h3 id="fixed-6">Fixed</h3>
 <ul>
 <li><strong>Streamed tool calls carry the declared tool name</strong>: a native tool whose name is not wire-safe
   (an MCP tool such as <code>mcp::RAGnarok::query</code>, declared to strict APIs as
@@ -789,7 +849,7 @@ plugins are pinned to their latest releases.</p>
   <code>public()</code> has <code>access</code> / <code>access_text</code>; <code>abstractcore email status</code> and the terminal console's
   Email line say "Read only" / "Read and write".</li>
 </ul>
-<h3 id="changed-4">Changed</h3>
+<h3 id="changed-5">Changed</h3>
 <ul>
 <li><strong>Plugin floors</strong>: <code>abstractvoice&gt;=0.18.2</code>, <code>abstractvision&gt;=0.3.34</code>, <code>abstractmusic&gt;=0.1.17</code>,
   <code>abstract3d&gt;=0.3.2</code> (base install and the <code>apple</code>, <code>gpu</code>, <code>all-apple</code>, <code>all-gpu</code> and <code>vision-*</code>
@@ -805,7 +865,7 @@ plugins are pinned to their latest releases.</p>
   send from it." (<code>email_mailbox_read_only</code>). <code>guarded_send</code> on a read-only account with an
   outgoing server now refuses with <code>EmailMailboxReadOnly</code> before connecting.</li>
 </ul>
-<h3 id="fixed-6">Fixed</h3>
+<h3 id="fixed-7">Fixed</h3>
 <ul>
 <li>The HuggingFace provider's MoE experts fallback no longer raises <code>ModuleNotFoundError</code> when
   <code>transformers</code> is not installed; it answers "not applicable" as intended.</li>
@@ -898,7 +958,7 @@ plugins are pinned to their latest releases.</p>
   failure of the others. A mail watcher reading 50 new messages now signs in once and sends at most four
   FETCHes (it opened one connection per message before, about 10 s each on a remote server).</li>
 </ul>
-<h3 id="fixed-7">Fixed</h3>
+<h3 id="fixed-8">Fixed</h3>
 <ul>
 <li><code>session()</code> types only its own connection and sign-in failures: an error of the caller's own raised
   inside the block (a full disk while storing what was read) passes unchanged instead of reading as a
@@ -939,7 +999,7 @@ plugins are pinned to their latest releases.</p>
   template ignores. OpenAI-compatible servers get <code>no_think</code> only inside <code>chat_template_kwargs</code>,
   never as the top-level <code>reasoning_effort</code>. Metadata reports <code>no_think</code> as <code>off</code>.</li>
 </ul>
-<h3 id="fixed-8">Fixed</h3>
+<h3 id="fixed-9">Fixed</h3>
 <ul>
 <li>Tool calls in the <code>&lt;tool_calls&gt;&lt;tool_call&gt;name&lt;tool_sep&gt;&lt;arg_key&gt;…</code> form are parsed, including
   calls without arguments, and the wrapper no longer leaks into streamed or cleaned content.
@@ -975,7 +1035,7 @@ plugins are pinned to their latest releases.</p>
   <code>scaled_dot_product_attention</code> in float16/bfloat16 is wrong past about 20 prompt tokens
   (<code>ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager</code> avoids it).</li>
 </ul>
-<h3 id="changed-5">Changed</h3>
+<h3 id="changed-6">Changed</h3>
 <ul>
 <li>Documentation includes agent-skill registration, explicit credential handling, retry and
   timeout defaults, and matching AI-readable indexes for version 2.26.4.</li>
@@ -985,7 +1045,7 @@ plugins are pinned to their latest releases.</p>
 </ul>
 <h2 id="2263---2026-10-18">[2.26.3] - 2026-10-18</h2>
 <p>2.26.1 and 2.26.2 were not published on PyPI; their Windows fixes ship in this release.</p>
-<h3 id="fixed-9">Fixed</h3>
+<h3 id="fixed-10">Fixed</h3>
 <ul>
 <li><strong>Hugging Face (transformers) prompt cache with transformers 5.20 or newer</strong>: a warm call
   feeds only the new part of the conversation again. transformers 5.20 removed <code>Cache.crop</code>
@@ -995,7 +1055,7 @@ plugins are pinned to their latest releases.</p>
 </ul>
 <h2 id="2261---2026-10-17">[2.26.1] - 2026-10-17</h2>
 <p>Windows fixes.</p>
-<h3 id="fixed-10">Fixed</h3>
+<h3 id="fixed-11">Fixed</h3>
 <ul>
 <li><strong>Console output</strong>: <code>abstractcore</code> (<code>--status</code>, <code>--config</code>), <code>abstractcore-chat</code>,
   <code>abstractcore-endpoint</code> and the apps (<code>summarizer</code>, <code>extractor</code>, <code>judge</code>, <code>intent</code>,
@@ -1022,7 +1082,7 @@ plugins are pinned to their latest releases.</p>
 <li><strong>No OS keychain, on any OS</strong> (operator ruling 2026-10-10). <code>abstractcore.comms.email.SecretVault</code> seals with AES-256-GCM under ONE key file — by default <code>&lt;config dir&gt;/secrets/sealing.key</code> (0600 in a 0700 folder, 32 bytes from <code>os.urandom</code>, made on first use); a host passes its own (<code>SecretVault(dir, key_file=...)</code>, <code>EmailAccountStore(..., key_file=..., vault=...)</code>; AbstractGateway uses <code>&lt;data dir&gt;/secrets/sealing.key</code> for every store of its data folder). Each seal binds the store's place relative to the key root, so a folder moved or restored with its <code>secrets/</code> keeps working and a sealed file copied into another store does not open. The <code>keyring</code> dependency is removed and nothing imports it (the email test suite fails any test during which <code>keyring</code> is imported). On Windows, where Python's modes only toggle the read-only flag, the key folder and file also get a best-effort owner-only ACL (<code>icacls /inheritance:r /grant:r &lt;user&gt;</code>). New helpers <code>ensure_key_file</code>, <code>read_key_file</code>, <code>key_fingerprint</code>.</li>
 <li>Credentials sealed by an older version with the key in a keychain are <strong>never opened</strong> (no keychain call, no password prompt): <code>load()</code> raises <code>EmailSecretUnavailable</code> (<code>email_secret_sealed_with_keychain</code>, or the host's own sentence and code), <code>legacy_keychain()</code> / <code>retire_legacy_keychain()</code> let a host mark or move such a store, and <code>public()</code> says <code>secret_storage: "old-keychain"</code> with the sentence in <code>secret_warning</code>. Stores sealed with the older per-store key file (<code>secret.key</code>) are opened and re-sealed under the sealing key (<code>reseal_legacy=False</code> reads without writing). <code>secret_storage</code> is now <code>sealing-key</code> | <code>old-keychain</code> | <code>key-file</code> (was <code>os-keychain</code> | <code>key-file</code>); <code>--key-storage</code> accepts <code>auto</code> / <code>file</code> only (both mean the key file), <code>key_backend="keyring"</code> is refused. What the key file protects (copies without <code>secrets/</code>; not code running as the same user, as before) is in docs/email.md.</li>
 </ul>
-<h3 id="changed-6">Changed</h3>
+<h3 id="changed-7">Changed</h3>
 <ul>
 <li>Requires AbstractVoice 0.15.0 or newer in the base install and in the <code>[apple]</code> and <code>[gpu]</code> extras (<code>abstractvoice[all-apple]</code>, <code>abstractvoice[all-gpu]</code>), the version whose engine runtime carries the mlx-whisper engine; the route engine check's floor moves with it.</li>
 <li>Speech input (<code>input.voice</code>) recommends Whisper <code>large-v3</code> on every host (was <code>base</code>). On Apple silicon with the apple setting the pick is AbstractVoice's <code>mlx-whisper</code> engine, which runs it on the Apple GPU (about 1.4 s for a 17-second clip on an M5 Max, against about 20 s on the processor); the light install and every other host keep <code>faster-whisper</code> (CUDA on an NVIDIA GPU). Stored routes are never changed; fresh installs and <code>apply-recommended</code> follow the new pick. On a processor, the recommendation notes that <code>large-v3-turbo</code> is faster (about 6 s for that clip).</li>
@@ -1032,7 +1092,7 @@ plugins are pinned to their latest releases.</p>
 <li><code>mlx-whisper</code> speech-input provider: route alias, weights probe and download (<code>abstractcore models download mlx-whisper large-v3</code>), catalog rows <code>whisper-large-v3</code> and <code>whisper-large-v3-turbo</code> (both Whisper engines).</li>
 <li><code>recommendations.voice_input_hint(route, host)</code>: the served one-line hint for a configured speech-input route (on Apple silicon, a faster-whisper route runs on the processor while mlx-whisper runs the same model on the GPU). The capability-defaults grid carries it on the <code>input.voice</code> row as <code>route_hint</code> <code>{code, sentence, route}</code>.</li>
 </ul>
-<h3 id="fixed-11">Fixed</h3>
+<h3 id="fixed-12">Fixed</h3>
 <ul>
 <li>The Hugging Face weights probe counts <code>.npz</code> weight files (MLX checkpoints such as <code>mlx-community/whisper-large-v3-mlx</code>), which it reported as not downloaded.</li>
 </ul>
@@ -1057,7 +1117,7 @@ plugins are pinned to their latest releases.</p>
   model-facing schema). Side effect: ES-module and <code>fetch()</code> pages render as they do over http (the
   <code>file://</code> CORS blank no longer happens). Tests: <code>tests/tools/test_browser_probe.py</code>.</li>
 </ul>
-<h3 id="fixed-12">Fixed</h3>
+<h3 id="fixed-13">Fixed</h3>
 <ul>
 <li><strong>Linux command sandbox: an allowed folder inside a refused one is reachable under bubblewrap.</strong>
   The bwrap profile masked a refused folder with a tmpfs and remounted it read-only at once, so
@@ -1143,7 +1203,7 @@ plugins are pinned to their latest releases.</p>
   last model file set. A quant that is not in the cache answers <code>not_found</code>.</p>
 </li>
 </ul>
-<h3 id="fixed-13">Fixed</h3>
+<h3 id="fixed-14">Fixed</h3>
 <ul>
 <li>
 <p><code>POST /v1/audio/music</code> with <code>task: "text_to_audio"</code> returns the generated sound effect; it read
@@ -1158,7 +1218,7 @@ plugins are pinned to their latest releases.</p>
   could be deleted in place of (or along with) the requested one.</p>
 </li>
 </ul>
-<h3 id="changed-7">Changed</h3>
+<h3 id="changed-8">Changed</h3>
 <ul>
 <li>
 <p>The music plugin floor is <code>abstractmusic&gt;=0.1.16</code> (base, <code>[apple]</code> and <code>[gpu]</code>): 0.1.16 runs the requested Stable Audio 3 checkpoint (the SFX checkpoint for sound effects) for the requested <code>seconds</code>.</p>
@@ -1177,14 +1237,14 @@ plugins are pinned to their latest releases.</p>
   across concurrent requests and restore after errors. Optional unauthenticated
   access preserves restrictions on server-held provider credentials.</li>
 </ul>
-<h3 id="fixed-14">Fixed</h3>
+<h3 id="fixed-15">Fixed</h3>
 <ul>
 <li>Prompted tool-call parsing exposes structured <code>tool_call_error</code> diagnostics for
   rejected calls; streaming malformed envelopes expose the same diagnostic so
   agents can recover.</li>
 </ul>
 <h2 id="2231---2026-10-02">[2.23.1] - 2026-10-02</h2>
-<h3 id="fixed-15">Fixed</h3>
+<h3 id="fixed-16">Fixed</h3>
 <ul>
 <li>MLX native lane, prefix cache on small Macs: the prompt cache now sizes itself to the machine — budget <code>min(8 GiB, working_set / 4)</code> and a 512 MiB reserve on top of the measured free memory — instead of mlx-vlm's automatic <code>working_set / 10</code> budget plus a <code>max(1 GiB, working_set / 10)</code> reserve. On a 24 GB Mac running a 27B model that reserve alone was more than the model left free, so every snapshot store was skipped (<code>native_apc_store_skipped</code>) and every turn re-prefilled the whole conversation. <code>mlx_cache_memory_max_gb</code> still sets the budget explicitly; the degraded reason now also names free memory as a cause.</li>
 <li>MLX native MTP: a text route with no <code>speculation</code> key now inherits optional MTP (<code>native_mtp</code>, <code>require_acceleration: false</code>) for an artifact whose MTP support is verified, as the console's "Workflow / Gateway default" label always said. Only an explicit <code>false</code> turns it off. Before, absence meant off, so any save that dropped the key (a provider move, an MTP picker left on "default") silently disabled speculation (9 instead of 17 tok/s on Qwen3.8-27B oQ4e).</li>
@@ -1199,7 +1259,7 @@ plugins are pinned to their latest releases.</p>
 <li><code>McpStdioClient(..., inherit_env=False)</code> starts the server with exactly the given <code>env</code>
   instead of this process's environment plus <code>env</code>.</li>
 </ul>
-<h3 id="changed-8">Changed</h3>
+<h3 id="changed-9">Changed</h3>
 <ul>
 <li>A stored policy written before the two lists existed migrates on load: an allowlist's entries
   become Always allowed, a denylist's entries become Always denied, the mode is kept. The stored
@@ -1210,7 +1270,7 @@ plugins are pinned to their latest releases.</p>
 <li>The account's own addresses (registered address and mailbox address) are always allowed; the
   email context, <code>POST /acore/email/policy/check</code> and <code>abstractcore email policy check</code> pass them.</li>
 </ul>
-<h3 id="fixed-16">Fixed</h3>
+<h3 id="fixed-17">Fixed</h3>
 <ul>
 <li><code>McpClient</code> (Streamable HTTP) now sends <code>initialize</code> and the <code>notifications/initialized</code>
   notification before its first request, sends the server's <code>MCP-Session-Id</code> on every later
@@ -5453,7 +5513,7 @@ Previous version history is available in the git commit log.
             </div>
 
             <footer class="doc-footer">
-                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../index.html">AbstractCore</a> 2.35.1 &middot;
                 <a href="../docs/README.html">Documentation index</a> &middot;
                 <a href="../llms.txt">llms.txt</a> &middot;
                 Part of <a href="https://abstractframework.ai/">AbstractFramework</a>

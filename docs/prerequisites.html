@@ -328,6 +328,14 @@ incorrect output for a trivial prompt, treat it as a model/runtime compatibility
 - 16GB+ VRAM recommended
 - <strong>NOT compatible with</strong>: Apple Silicon, AMD GPUs, CPU-only systems</p>
 <p><strong>NVIDIA CUDA only.</strong> If you’re on Apple Silicon, use MLX. If you’re on CPU-only, use Ollama/HuggingFace.</p>
+<p><strong>Cards older than Ampere (compute capability 7.x: Turing T4, RTX 20xx, Quadro RTX, Volta V100)</strong>
+work as they are (measured 2026-11-10 on a Quadro RTX 5000 with vLLM 0.30.0, the version
+<code>abstractcore[gpu]</code> resolves): those cards have no bfloat16, and vLLM says so and falls back to
+float16 by itself ("doesn't support torch.bfloat16. Falling back to torch.float16"; pass
+<code>--dtype half</code> to say it explicitly, which older vLLM releases required); it also logs that
+FlashAttention 2 needs compute capability 8.0 and uses its Triton attention backend instead.
+Qwen2.5-0.5B-Instruct answered at 236 tokens/s through <code>create_llm("vllm", ...)</code> either way. No
+other flag and no other vLLM version is needed for those cards.</p>
 <h4 id="-hardware-compatibility-warning">⚠️ Hardware Compatibility Warning</h4>
 <p><strong>vLLM ONLY works with NVIDIA CUDA GPUs.</strong> It will NOT work on:
 - ❌ Apple Silicon (M1/M2/M3/M4) - Use MLX provider instead
@@ -666,7 +674,7 @@ if __name__ == &quot;__main__&quot;:
             </div>
 
             <footer class="doc-footer">
-                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../index.html">AbstractCore</a> 2.35.1 &middot;
                 <a href="../docs/README.html">Documentation index</a> &middot;
                 <a href="../llms.txt">llms.txt</a> &middot;
                 Part of <a href="https://abstractframework.ai/">AbstractFramework</a>

@@ -54,7 +54,7 @@
 <section class="hero" id="top">
   <div class="hero-grid"></div>
   <div class="hero-inner">
-    <div class="hero-badge"><span class="dot"></span> Open Source &middot; MIT Licensed &middot; v2.35.0</div>
+    <div class="hero-badge"><span class="dot"></span> Open Source &middot; MIT Licensed &middot; v2.35.1</div>
     <h1>Build on AI capabilities.<br><span class="gradient">Write once, run on any model.</span></h1>
     <p class="hero-sub">AbstractCore is an abstraction layer over AI capabilities. Write your program once against what it needs: text, documents, images, audio and video in; text, speech, images, video and music out, through one <code>llm.generate(...)</code>, with typed output, tools, sessions and embeddings. The same code runs on open and closed models, local or cloud. Providers and models change; your program talks to the capability. From Python, or through its OpenAI-compatible server from any language.</p>
     <div class="hero-actions">
@@ -69,16 +69,16 @@
     </div>
     <div class="qs" id="install" aria-label="Install">
       <div class="qs-tabs" role="tablist" aria-label="Install on">
-        <button type="button" class="qs-tab" role="tab" id="qs-mac" aria-controls="qs-term" aria-selected="true" data-os="mac" data-prompt="$" data-cmd="curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh" data-note="No admin rights and no Python needed: it gets uv and Python 3.12, picks &lt;code&gt;abstractcore&lt;/code&gt;, &lt;code&gt;abstractcore[apple]&lt;/code&gt; or &lt;code&gt;abstractcore[gpu]&lt;/code&gt; from the machine and installs it with its commands; running it again upgrades. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">macOS / Linux</button>
-        <button type="button" class="qs-tab" role="tab" id="qs-win" aria-controls="qs-term" aria-selected="false" tabindex="-1" data-os="win" data-prompt="PS&gt;" data-cmd="powershell -ExecutionPolicy ByPass -c &quot;irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.ps1 | iex&quot;" data-note="Windows 10 or 11 on x64, no administrator rights: &lt;code&gt;abstractcore[gpu]&lt;/code&gt; with an NVIDIA card, otherwise &lt;code&gt;abstractcore&lt;/code&gt;; running it again upgrades. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">Windows</button>
+        <button type="button" class="qs-tab" role="tab" id="qs-mac" aria-controls="qs-term" aria-selected="true" data-os="mac" data-prompt="$" data-cmd="curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.1/scripts/install.sh | sh" data-note="No admin rights and no Python needed: it gets uv and Python 3.12, picks &lt;code&gt;abstractcore&lt;/code&gt;, &lt;code&gt;abstractcore[apple]&lt;/code&gt; or &lt;code&gt;abstractcore[gpu]&lt;/code&gt; from the machine and installs it with its commands; running it again upgrades. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">macOS / Linux</button>
+        <button type="button" class="qs-tab" role="tab" id="qs-win" aria-controls="qs-term" aria-selected="false" tabindex="-1" data-os="win" data-prompt="PS&gt;" data-cmd="powershell -ExecutionPolicy ByPass -c &quot;irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.1/scripts/install.ps1 | iex&quot;" data-note="Windows 10 or 11 on x64, no administrator rights: &lt;code&gt;abstractcore[gpu]&lt;/code&gt; with an NVIDIA card, otherwise &lt;code&gt;abstractcore&lt;/code&gt;; running it again upgrades. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">Windows</button>
         <button type="button" class="qs-tab" role="tab" id="qs-py" aria-controls="qs-term" aria-selected="false" tabindex="-1" data-os="py" data-prompt="$" data-cmd="pip install abstractcore" data-note="Python 3.9 or later: every remote provider, media inputs, the server and the plugins. Add &lt;code&gt;[apple]&lt;/code&gt; or &lt;code&gt;[gpu]&lt;/code&gt; for the local engines. &lt;a href=&quot;docs/installation.html&quot;&gt;All install options &amp;rarr;&lt;/a&gt;">Python</button>
       </div>
       <div class="qs-term" id="qs-term" role="tabpanel" aria-labelledby="qs-mac">
         <span class="qs-prompt" aria-hidden="true">$</span>
         <span class="qs-cmd-stack">
-          <code class="qs-cmd">curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh</code>
-          <code class="qs-cmd-sizer" aria-hidden="true">curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh</code>
-          <code class="qs-cmd-sizer" aria-hidden="true">powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.ps1 | iex"</code>
+          <code class="qs-cmd">curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.1/scripts/install.sh | sh</code>
+          <code class="qs-cmd-sizer" aria-hidden="true">curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.1/scripts/install.sh | sh</code>
+          <code class="qs-cmd-sizer" aria-hidden="true">powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.1/scripts/install.ps1 | iex"</code>
           <code class="qs-cmd-sizer" aria-hidden="true">pip install abstractcore</code>
         </span>
       </div>
@@ -318,7 +318,7 @@ image = llm.<span class="line-fn">generate</span>(<span class="line-str">"A red 
     <div class="section-header reveal">
       <div class="section-label">In code</div>
       <h2 class="section-title">A Few Lines Each</h2>
-      <p class="section-desc">Every example uses the public API as documented for 2.35.0. Media outputs need the matching plugin backend configured once (<code>abstractcore config</code> or the console).</p>
+      <p class="section-desc">Every example uses the public API as documented for 2.35.1. Media outputs need the matching plugin backend configured once (<code>abstractcore config</code> or the console).</p>
     </div>
     <div class="code-tabs reveal" style="max-width:960px;margin:0 auto">
       <div class="tab-nav">
@@ -587,38 +587,38 @@ decided.decisions[<span class="line-str">"department"</span>].choice</code></pre
 <section id="whats-new">
   <div class="container">
     <div class="section-header reveal">
-      <div class="section-label">Release 2.35.0</div>
-      <h2 class="section-title">What&rsquo;s New in 2.35.0</h2>
+      <div class="section-label">Release 2.35.1</div>
+      <h2 class="section-title">What&rsquo;s New in 2.35.1</h2>
       <p class="section-desc">Released 10 November 2026. <a href="docs/changelog.html#2350---2026-11-10">Full changelog &rarr;</a></p>
     </div>
     <div class="components-grid">
       <div class="comp-card t-app reveal">
-        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="comp-tag app">2.35.0</span></div>
+        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="comp-tag app">2.35.1</span></div>
         <h3>Install in one line</h3>
         <p>No admin rights and no Python needed, on macOS, Linux and Windows (<a href="#install">the command above</a>). The installer picks <code>abstractcore</code>, <code>abstractcore[apple]</code> or <code>abstractcore[gpu]</code> from the machine, uses prebuilt packages only (it never starts a compiler), prints every step and upgrades in place when you run it again.</p>
       </div>
       <div class="comp-card t-app reveal">
-        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M18.36 6.64a9 9 0 11-12.73 0M12 2v10"/></svg><span class="comp-tag app">2.35.0</span></div>
+        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M18.36 6.64a9 9 0 11-12.73 0M12 2v10"/></svg><span class="comp-tag app">2.35.1</span></div>
         <h3>An unreachable endpoint says so</h3>
         <p>When the provider&rsquo;s machine is off or asleep, refuses the connection or its name does not resolve, you get <code>EndpointUnreachableError</code> with the address, the cause and the time spent, instead of a misleading &ldquo;timed out&rdquo;. These failures no longer trip the circuit breaker, and a connection attempt that itself timed out is not retried.</p>
       </div>
       <div class="comp-card t-app reveal">
-        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg><span class="comp-tag app">2.35.0</span></div>
+        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg><span class="comp-tag app">2.35.1</span></div>
         <h3>MCP servers that check the handshake</h3>
         <p>The MCP client&rsquo;s handshake now follows the specification, so strict servers such as Context7 accept it and their tools reach the model. When a server restarts mid-session, the client opens a new session and replays the request once.</p>
       </div>
       <div class="comp-card t-app reveal">
-        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg><span class="comp-tag app">2.35.0</span></div>
+        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg><span class="comp-tag app">2.35.1</span></div>
         <h3>Tool parameters carry their meaning</h3>
         <p>A tool&rsquo;s parameters take their descriptions from its docstring (<code>Args:</code> or <code>:param name:</code>), so the model sees what each argument is for instead of bare names. Every built-in tool parameter is described.</p>
       </div>
       <div class="comp-card t-app reveal">
-        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span class="comp-tag app">2.35.0</span></div>
+        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span class="comp-tag app">2.35.1</span></div>
         <h3>Your settings file is never replaced</h3>
         <p>A settings file that cannot be parsed now stops the program with its path and the parse error (<code>ConfigParseError</code>). It is never renamed, shadowed by defaults or overwritten later; <code>abstractcore config</code> exits with status 1 and the server refuses to start.</p>
       </div>
       <div class="comp-card t-app reveal">
-        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2zM22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg><span class="comp-tag app">2.35.0</span></div>
+        <div class="comp-card-header"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" stroke-width="2" aria-hidden="true"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2zM22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg><span class="comp-tag app">2.35.1</span></div>
         <h3>Up-to-date docs for coding agents</h3>
         <p>The user documentation is re-indexed on <a href="https://context7.com/lpalbou/abstractcore">Context7</a> after each release, so coding agents that read AbstractCore through the Context7 MCP server see the published version.</p>
       </div>
@@ -633,7 +633,7 @@ decided.decisions[<span class="line-str">"department"</span>].choice</code></pre
     <div class="section-header reveal">
       <div class="section-label">Providers</div>
       <h2 class="section-title">Runs on These Today</h2>
-      <p class="section-desc">The providers behind the capabilities in 2.35.0. Changing one is one argument, not a rewrite. The light install (<code>pip install abstractcore</code>) runs every remote provider; <code>abstractcore[apple]</code> and <code>abstractcore[gpu]</code> add the local engines.</p>
+      <p class="section-desc">The providers behind the capabilities in 2.35.1. Changing one is one argument, not a rewrite. The light install (<code>pip install abstractcore</code>) runs every remote provider; <code>abstractcore[apple]</code> and <code>abstractcore[gpu]</code> add the local engines.</p>
     </div>
     <div class="prov-grid reveal">
       <div class="prov"><img src="assets/providers/ollama.svg" alt=""><div><b>Ollama</b><span>local server</span></div></div>
@@ -656,7 +656,7 @@ decided.decisions[<span class="line-str">"department"</span>].choice</code></pre
     <div class="section-header reveal">
       <div class="section-label">Documentation</div>
       <h2 class="section-title">Read the Docs</h2>
-      <p class="section-desc">The full guide set for 2.35.0, also on <a href="https://github.com/lpalbou/AbstractCore/tree/main/docs">GitHub</a>.</p>
+      <p class="section-desc">The full guide set for 2.35.1, also on <a href="https://github.com/lpalbou/AbstractCore/tree/main/docs">GitHub</a>.</p>
     </div>
     <div class="components-grid doc-grid">
       <div class="comp-card reveal">
@@ -733,7 +733,7 @@ decided.decisions[<span class="line-str">"department"</span>].choice</code></pre
         AbstractCore
       </a>
       <p>Build on AI capabilities. Write once, run on any model.</p>
-      <p style="margin-top:.5rem">MIT Licensed &middot; AbstractCore 2.35.0 &middot; part of <a href="https://abstractframework.ai/">AbstractFramework</a></p>
+      <p style="margin-top:.5rem">MIT Licensed &middot; AbstractCore 2.35.1 &middot; part of <a href="https://abstractframework.ai/">AbstractFramework</a></p>
       <p style="margin-top:.75rem">
         <a href="https://github.com/lpalbou/AbstractCore" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:.4rem;color:var(--text-secondary)">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>

@@ -83,10 +83,10 @@ own environment, with its commands in <code>~/.local/bin</code>: <code>abstractc
 <code>engines</code>, <code>serve</code>), <code>abstractcore-config</code>, <code>abstractcore-chat</code>, <code>abstractcore-endpoint</code> and the
 apps <code>summarizer</code>, <code>extractor</code>, <code>judge</code>, <code>intent</code> and <code>deepsearch</code>.</p>
 <div class="code-block"><pre><code class="language-bash"># macOS / Linux
-curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh
+curl -LsSf https://abstractframework.ai/core/install.sh | sh
 </code></pre></div>
 <div class="code-block"><pre><code class="language-powershell"># Windows 10 / 11
-powershell -ExecutionPolicy ByPass -c &quot;irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.ps1 | iex&quot;
+powershell -ExecutionPolicy ByPass -c &quot;irm https://abstractframework.ai/core/install.ps1 | iex&quot;
 </code></pre></div>
 <div class="code-block"><pre><code class="language-bash"># With pip, in your own Python environment
 pip install abstractcore              # light
@@ -167,9 +167,9 @@ abstractcore config defaults   # the capability routes this install resolves to
 </tr>
 </tbody>
 </table></div>
-<p>Options go after <code>sh -s --</code> (<code>curl -LsSf https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.sh | sh -s -- --print</code>)
+<p>Options go after <code>sh -s --</code> (<code>curl -LsSf https://abstractframework.ai/core/install.sh | sh -s -- --print</code>)
 or into a script block on Windows
-(<code>&amp; ([scriptblock]::Create((irm https://raw.githubusercontent.com/lpalbou/AbstractCore/v2.35.0/scripts/install.ps1))) -Print</code>).</p>
+(<code>&amp; ([scriptblock]::Create((irm https://abstractframework.ai/core/install.ps1))) -Print</code>).</p>
 <p><strong>Upgrade</strong>: run the same line again. It finds the install, says
 <code>AbstractCore 2.34.0 found: upgrading to AbstractCore 2.35.0</code> (or <code>already up to date</code>), keeps the
 profile unless <code>--profile</code> says otherwise, ends with <code>abstractcore 2.34.0 -&gt; 2.35.0</code>, and
@@ -191,7 +191,18 @@ macOS and Linux:</p>
   loads and <code>llama_supports_gpu_offload()</code> is True; otherwise, and with ROCm (no prebuilt ROCm
   build) or on aarch64, the CPU build stays and the summary says why. After
   <code>uv tool upgrade --reinstall</code> (or when the first Windows build did not install), run the
-  installer again to get the CUDA build back.</li>
+  installer again to get the CUDA build back.
+  <strong>Plain <code>pip install "abstractcore[gpu]"</code> on Linux</strong> gets the same result without the installer
+  (2.35.1): pip can only resolve the processor build, so the first time AbstractCore is about to load
+  a GGUF model on an x86_64 host where PyTorch is a CUDA build and <code>nvidia-smi</code> answers with a driver
+  new enough (580 for CUDA 13, 525 for CUDA 12), it runs that swap itself, once per environment
+  (<code>pip</code> or <code>uv pip</code>, same index, same pinned version), prints one line on the console before and one after
+  (the failure reason too, whatever the log level), and records
+  the outcome next to the package (<code>llama_cpp/.abstractcore-cuda-swap.json</code>). A host set up by the
+  installer already has the CUDA build and nothing runs. If the swap cannot happen (offline,
+  read-only site-packages, no driver), GGUF models stay on the processor and the provider's runtime
+  info (<code>llama_cuda_swap</code>) and a warning say why; <code>ABSTRACTCORE_LLAMA_CUDA_SWAP=0</code> keeps the
+  processor build on purpose.</li>
 <li><strong>Echo cancellation</strong> (<code>aec-audio-processing</code>) and <strong>stable-diffusion.cpp</strong>
   (<code>stable-diffusion-cpp-python</code>), both optional, are left out by the overrides file and the
   summary says so (Diffusers / MLX-Gen cover image generation; with a C compiler you can add them
@@ -319,7 +330,7 @@ for compatibility: use light (no extra), <code>apple</code> or <code>gpu</code>.
 </tr>
 </tbody>
 </table></div>
-<p>Contributor tooling (<code>dev</code>, <code>test</code>, <code>docs</code>) is described in <a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.0/CONTRIBUTING.md">Contributing</a>; it
+<p>Contributor tooling (<code>dev</code>, <code>test</code>, <code>docs</code>) is described in <a href="https://github.com/lpalbou/AbstractCore/blob/v2.35.1/CONTRIBUTING.md">Contributing</a>; it
 is not an install setting.</p>
 <h2 id="related-docs">Related docs</h2>
 <ul>
@@ -331,7 +342,7 @@ is not an install setting.</p>
             </div>
 
             <footer class="doc-footer">
-                <a href="../index.html">AbstractCore</a> 2.35.0 &middot;
+                <a href="../index.html">AbstractCore</a> 2.35.1 &middot;
                 <a href="../docs/README.html">Documentation index</a> &middot;
                 <a href="../llms.txt">llms.txt</a> &middot;
                 Part of <a href="https://abstractframework.ai/">AbstractFramework</a>
