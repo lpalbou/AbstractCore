@@ -32,6 +32,9 @@ def _fresh(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(swap, "installed_version", lambda: "0.3.36")
     monkeypatch.setattr(swap, "nvidia_driver_major", lambda: 595)
     monkeypatch.setattr(swap, "swap_command", lambda build, version: ["fake-pip", build, version])
+    # Hermetic: in the local-model CI job an earlier test has imported the real llama_cpp, and the swap then
+    # (correctly) reports "swapped-restart-needed". The restart test sets the module back explicitly.
+    monkeypatch.delitem(sys.modules, "llama_cpp", raising=False)
 
 
 def _fake_packages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, cuda_build: bool, torch_cuda: str | None):
