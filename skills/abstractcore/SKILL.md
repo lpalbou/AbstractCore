@@ -241,3 +241,13 @@ Python, shell text or an arbitrary function name.
 - [Contributing](https://raw.githubusercontent.com/lpalbou/AbstractCore/main/CONTRIBUTING.md): source changes and development checks.
 - [Integration recipes](references/integrations.md): load for tools, structured output, async, sessions, media or embeddings.
 - [Operations](references/operations.md): load for CLI, serving, model/cache lifecycle and diagnostics.
+
+## Bounded Hub discovery
+
+`abstractcore models search qwen --hub --json` searches bulk summaries without per-result
+metadata calls. For one repo's full metadata use `--detail-repo org/repo --extended --json`.
+Missing sizes are unknown or estimates. A 429 shares a cooldown across discovery queries
+and details; inspect `hub.rate_limited` and `retry_after_seconds` and wait. Repeating
+queries cannot bypass it. Exact handles add at most one metadata lookup; ordinary pages
+use one listing per lane. Never interpret a summary's missing filenames as a verified
+download target. See `docs/models.md`; downloads use their own transport.

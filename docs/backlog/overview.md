@@ -295,3 +295,5 @@ Completed in 2.31.0: [0856 — streaming MCP wire-alias restoration](completed/0
 2026-10-30: [0875 Discovered cached assets in the catalogue](completed/0875_discovered_cached_assets_in_catalog.md), operator follow-up for the remaining HF cache inventory.
 
 2026-10-30: [0876 Adapter catalogue metadata](completed/0876_adapter_catalogue_metadata.md), operator correction to the model/adapter distinction.
+
+2026-11-14: added planned [1213](planned/1213_bounded_huggingface_discovery.md) for the accepted release-recovery scope (root 1209).

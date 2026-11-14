@@ -10,6 +10,12 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ## [Unreleased]
 
+## [2.35.2] - 2026-11-14
+
+### Fixed
+
+- Hugging Face catalog searches use bounded summary pages without per-result or curated-repository metadata fanout. A shared credential-scoped cooldown honors quota responses across queries; cached results remain available. Full metadata is explicit through `detail_repo` or `models catalog --detail-repo org/repo`. Missing sizes remain unknown or labelled estimates. Discovery uses finite transport limits and leaves download clients unchanged.
+
 ## [2.35.1] - 2026-11-10
 
 ### Changed

@@ -9,19 +9,21 @@ exist elsewhere and must not be re-derived by any surface:
   fit               utils.model_fit.estimate_fit() against utils.host_profile()
   hub (opt-in)      Hugging Face sizes/params (+ free-text search rows)
 
-THE HUB IS OPT-IN AND CACHED. `hub=False` (the default) never touches the
-network: sizes come from the seed (observed on real engine stores) or are
-labelled `estimate` from parameters x bits. `hub=True` asks the Hugging Face
-API for exact file sizes and parameter counts, caches every answer on disk
-for 24 hours under the AbstractCore config directory, stops at the first 429
-(rate limit) and reports it in `hub.errors`, and degrades to the offline
-answer when the hub is unreachable. A browser that hammered the hub on every
-keystroke would be rate-limited within minutes.
+THE HUB IS OPT-IN AND CACHED. `hub=False` never contacts the network. Search
+uses bounded bulk summary pages, not per-result enrichment. Full file metadata
+requires one explicit `detail_repo` (or an exact handle). Discovery shares a
+credential-scoped rate-limit cooldown, follows bounded cursor pages without SDK
+retries, and uses its own finite transport limits. Missing sizes stay unknown
+or labelled estimates. Successful answers are cached for 24 hours.
+
 """
 
 from __future__ import annotations
 
 import functools
+import hashlib
+import math
+from email.utils import parsedate_to_datetime
 import json
 import os
 import re
@@ -1289,6 +1291,8 @@ class _HubCache:
             if isinstance(loaded, dict):
                 self.data["models"] = dict(loaded.get("models") or {})
                 self.data["searches"] = dict(loaded.get("searches") or {})
+                self.data["scope"] = loaded.get("scope")
+                self.data["retry_at"] = loaded.get("retry_at")
         except Exception:
             pass
 
@@ -1302,6 +1306,9 @@ class _HubCache:
 
     def put(self, bucket: str, key: str, value: Dict[str, Any]) -> None:
         self.data[bucket][key] = dict(value, fetched_at=time.time())
+        while len(self.data[bucket]) > 512:
+            oldest = min(self.data[bucket], key=lambda k: self.data[bucket][k].get("fetched_at", 0))
+            del self.data[bucket][oldest]
         self.dirty = True
 
     def save(self) -> None:
@@ -1317,7 +1324,52 @@ class _HubCache:
 
 
 class _RateLimited(Exception):
-    pass
+    def __init__(self, message: str, retry_at: Optional[float] = None):
+        super().__init__(message)
+        self.retry_at = retry_at or time.time() + 60
+
+
+def _rate_limit(exc: BaseException, api: Any) -> _RateLimited:
+    now = time.time()
+    headers = getattr(getattr(exc, "response", None), "headers", {}) or {}
+    retry = headers.get("Retry-After")
+    delay = None
+    try:
+        candidate = float(retry)
+        if math.isfinite(candidate) and candidate > 0:
+            delay = candidate
+    except (TypeError, ValueError, OverflowError):
+        try:
+            candidate = parsedate_to_datetime(retry).timestamp() - now
+            if math.isfinite(candidate) and candidate > 0:
+                delay = candidate
+        except (TypeError, ValueError, OverflowError):
+            pass
+    if delay is None:
+        reset = re.search(r"(?:^|;)\s*t\s*=\s*(\d+)", str(headers.get("RateLimit") or ""), re.I)
+        try:
+            if reset:
+                candidate = float(reset.group(1))
+            else:
+                raw = float(headers.get("X-RateLimit-Reset") or headers.get("RateLimit-Reset"))
+                candidate = raw - now if raw > now else raw
+            if math.isfinite(candidate) and candidate > 0:
+                delay = candidate
+        except (TypeError, ValueError, OverflowError):
+            pass
+    deadline = now + max(1, delay if delay is not None else 60)
+    for key in list(_hub_cooldowns):
+        if _hub_cooldowns[key] <= now:
+            del _hub_cooldowns[key]
+    _hub_cooldowns[_hub_scope(api)] = deadline
+    return _RateLimited(str(exc), deadline)
+
+
+_hub_cooldowns: Dict[str, float] = {}
+
+
+def _hub_scope(api: Any) -> str:
+    return str(getattr(api, "scope", "") or hashlib.sha256((str(getattr(api, "endpoint", "https://huggingface.co")) + "\0" + str(getattr(api, "token", "") or "")).encode()).hexdigest())
 
 
 def _status_code(exc: BaseException) -> Optional[int]:
@@ -1330,10 +1382,10 @@ def _status_code(exc: BaseException) -> Optional[int]:
 
 
 def _default_hf_api() -> Any:
-    from huggingface_hub import HfApi  # type: ignore
+    from .hub_discovery import HubDiscovery
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or None
-    return HfApi(token=token)
+    return HubDiscovery(token=token)
 
 
 def _hub_model_facts(api: Any, cache: _HubCache, repo_id: str) -> Dict[str, Any]:
@@ -1348,9 +1400,15 @@ def _hub_model_facts(api: Any, cache: _HubCache, repo_id: str) -> Dict[str, Any]
         info = api.model_info(repo_id, files_metadata=True)
     except Exception as exc:
         if _status_code(exc) == 429:
-            raise _RateLimited(str(exc)) from exc
+            raise _rate_limit(exc, api) from exc
         cache.put("models", repo_id, {"error": f"{type(exc).__name__}: {str(exc)[:200]}"})
         raise LookupError(str(exc)) from exc
+    facts = _hub_info_facts(info)
+    cache.put("models", repo_id, facts)
+    return facts
+
+
+def _hub_info_facts(info: Any) -> Dict[str, Any]:
     siblings = []
     for s in getattr(info, "siblings", None) or []:
         name = getattr(s, "rfilename", None)
@@ -1374,7 +1432,6 @@ def _hub_model_facts(api: Any, cache: _HubCache, repo_id: str) -> Dict[str, Any]
         "gated": bool(getattr(info, "gated", False)),
         "gguf_architecture": str(arch).strip() if isinstance(arch, str) and arch.strip() else None,
     }
-    cache.put("models", repo_id, facts)
     return facts
 
 
@@ -1386,6 +1443,8 @@ def _size_for(facts: Mapping[str, Any], patterns: Optional[List[str]]) -> Option
     for name, size in facts.get("siblings") or []:
         if patterns and not _matches_any(str(name), patterns):
             continue
+        if not isinstance(size, int):
+            return None
         if isinstance(size, int):
             total += size
             counted = True
@@ -1401,17 +1460,14 @@ def _hub_search(
     *,
     page: int = 1,
     page_size: int = _HUB_SEARCH_LIMIT,
+    cache_only: bool = False,
 ) -> Tuple[List[Dict[str, Any]], bool]:
-    """Free-text hub search, one page -> (`[{repo_id, provider, downloads}]`, more pages exist).
-
-    Each lane (GGUF; MLX on Apple silicon) is asked for the results up to the end of `page`
-    plus one, most downloaded first, and cached per depth; the page is that slice. A handle
-    (`Qwen/Qwen3.5-9B`) searches its name (`Qwen3.5-9B`): the GGUF and MLX builds of a model
-    live under other organisations (`catalog` looks the handle itself up)."""
-
+    """Cached summary pages: one listing per lane, never per-hit metadata."""
     term = query.split("/", 1)[1] if _HUB_HANDLE_RE.match(query) else query
     start = (page - 1) * page_size
-    want = min(_HUB_SEARCH_MAX_RESULTS, start + page_size + 1)
+    if start >= _HUB_SEARCH_MAX_RESULTS:
+        return [], False
+    limit = min(page_size, _HUB_SEARCH_MAX_RESULTS - start)
     lanes: List[Tuple[str, str]] = []
     if engine in (None, "", "mlx") and (accelerator == "metal" or engine == "mlx"):
         lanes.append(("mlx", "mlx"))
@@ -1420,25 +1476,33 @@ def _hub_search(
     out: List[Dict[str, Any]] = []
     more = False
     for tag, provider in lanes:
-        key = f"{tag}:{term.lower()}" + ("" if want == _HUB_SEARCH_LIMIT + 1 else f"#{want}")
+        prefix = f"summary-v2:{tag}:{term.lower()}:{page_size}:"
+        key = prefix + str(page)
         hit = cache.get("searches", key)
+        if hit is None and cache_only:
+            continue
         if hit is None:
+            previous = cache.get("searches", prefix + str(page - 1)) if page > 1 else None
+            if page > 1 and previous is not None and not previous.get("next"):
+                cache.put("searches", key, {"results": [], "next": None})
+                continue  # this lane is exhausted; other lanes can still advance
+            if page > 1 and previous is None:
+                raise LookupError("Search page expired; start the search again before requesting the next page")
             try:
-                results = api.list_models(search=term, filter=tag, sort="downloads", limit=want)
-                rows = [
-                    {"repo_id": str(getattr(m, "id", None) or getattr(m, "modelId", "")), "downloads": getattr(m, "downloads", None)}
-                    for m in results
-                ]
+                results, cursor = api.list_models_page(search=term, filter=tag, limit=limit,
+                                                       cursor=previous.get("next") if previous else None)
+                rows = [{"repo_id": str(getattr(m, "id", None) or getattr(m, "modelId", "")),
+                         "downloads": getattr(m, "downloads", None), "facts": _hub_info_facts(m)} for m in results]
             except Exception as exc:
                 if _status_code(exc) == 429:
-                    raise _RateLimited(str(exc)) from exc
+                    raise _rate_limit(exc, api) from exc
                 raise LookupError(str(exc)) from exc
-            cache.put("searches", key, {"results": rows})
-            hit = {"results": rows}
-        rows = [r for r in hit.get("results") or [] if r.get("repo_id")]
-        more = more or (len(rows) > start + page_size and start + page_size < _HUB_SEARCH_MAX_RESULTS)
-        for r in rows[start : start + page_size]:
-            out.append({"repo_id": r["repo_id"], "provider": provider, "downloads": r.get("downloads")})
+            hit = {"results": rows, "next": cursor}
+            cache.put("searches", key, hit)
+        more = more or (bool(hit.get("next")) and start + limit < _HUB_SEARCH_MAX_RESULTS)
+        for row in hit.get("results") or []:
+            if row.get("repo_id"):
+                out.append(dict(row, provider=provider))
     return out, more
 
 
@@ -1920,6 +1984,7 @@ def catalog(
     hub_page: int = 1,
     hub_page_size: int = _HUB_SEARCH_LIMIT,
     extended: bool = False,
+    detail_repo: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Contract C: the `model_catalog_v1` payload.
 
@@ -1929,18 +1994,19 @@ def catalog(
     fits     keep only artifacts that fit this host (`FITS_FILTER_VERDICTS`:
              `fits`, `tight`, or `needs_gpu_limit` -- fits once the Mac's GPU
              memory limit is raised, the command in `fit.gpu_limit`)
-    hub      enrich HF-hosted artifacts with exact sizes from the Hugging Face
-             API and, when `q` is given, append `hf_search` rows
+    hub      append bounded Hugging Face summary search rows when `q` is given;
+             curated rows keep their catalog sizes (no eager metadata enrichment)
+    detail_repo
+             one exact org/repo whose full metadata is explicitly requested (with hub)
     tags     keep only rows carrying every tag (e.g. ["embedding"])
     hub_page, hub_page_size
              which page of Hugging Face search results to append (1-based; 20 per lane
              by default). `hub.search` reports the page, how many rows it added and
              whether another page exists. A query that is an exact handle
              (`Qwen/Qwen3.5-9B`) also looks that repo up and lists it first (page 1).
-    extended with `hub`: every quant the row's own GGUF repos ship (UD-IQ1_S ... Q8_0,
-             BF16), each with its exact size from the hub's file list (cached 24 h) and
-             its fit, marked `extended: true`; a label the download pattern cannot
-             fetch exactly is left out. Never the pre-selection.
+    extended lists verified quant labels from available summary/detail facts;
+             it never causes additional repo lookups. Sizes may be unknown until
+             explicit details. Variants are marked `extended`, never preselected.
     """
 
     from ..utils.host_profile import host_profile, utc_now_iso
@@ -1958,7 +2024,11 @@ def catalog(
         page_size = min(100, max(1, int(hub_page_size)))
     except (TypeError, ValueError):
         page_size = _HUB_SEARCH_LIMIT
-    handle = query if _HUB_HANDLE_RE.match(query) else None
+    if detail_repo and not hub:
+        raise ValueError("detail_repo requires hub=True")
+    if detail_repo and not _HUB_HANDLE_RE.fullmatch(detail_repo):
+        raise ValueError("detail_repo must be one exact org/repo handle")
+    handle = detail_repo or (query if _HUB_HANDLE_RE.match(query) else None)
     search_more = False
     want_tags = [_norm(t) for t in (tags or []) if _norm(t)]
     seed = load_seed()
@@ -1999,42 +2069,53 @@ def catalog(
                 hub_block.update(ok=False)
                 hub_block["errors"].append(f"huggingface_hub unavailable: {exc}")
             if api is not None:
-                repos: List[str] = []
-                for r in seed_rows:
-                    for a in r["artifacts"]:
-                        if a["provider"] in _HF_REPO_PROVIDERS and (eng is None or _artifact_matches_engine(a, eng) or a["provider"] == eng):
-                            repo = mm.hf_artifact_parts(a["artifact"])[0]
-                            if repo not in repos:
-                                repos.append(repo)
+                # Partition cache by endpoint and effective credentials; no token is serialized.
+                scope = _hub_scope(api)
+                if cache.data.get("scope") != scope:
+                    cache.data = {"models": {}, "searches": {}, "scope": scope}
                 try:
+                    cooldown = max(float(cache.data.get("retry_at") or 0), _hub_cooldowns.get(scope, 0))
+                    if cooldown > time.time():
+                        raise _RateLimited("discovery cooldown active", cooldown)
                     if handle and page == 1:
                         try:
-                            exact = _hub_handle_hit(_hub_model_facts(api, cache, handle), handle)
+                            was_cached = cache.get("models", handle) is not None
+                            facts = _hub_model_facts(api, cache, handle)
+                            hub_ctx["facts"][handle] = facts
+                            hub_block["cached" if was_cached else "fetched"] += 1
+                            exact = _hub_handle_hit(facts, handle)
                         except LookupError:
-                            exact = None  # no such repo (or private): the name search still runs
+                            exact = None
                         if exact is not None:
                             search_hits.append(exact)
-                    if query:
+                    if query and not detail_repo:
                         hits, search_more = _hub_search(api, cache, query, eng, accelerator, page=page, page_size=page_size)
                         search_hits.extend(hits)
-                        for hit in search_hits:
-                            if hit["repo_id"] not in repos:
-                                repos.append(hit["repo_id"])
-                    for repo in repos:
-                        was_cached = cache.get("models", repo) is not None
-                        try:
-                            hub_ctx["facts"][repo] = _hub_model_facts(api, cache, repo)
-                            hub_block["cached" if was_cached else "fetched"] += 1
-                        except LookupError as exc:
-                            hub_block["errors"].append(f"{repo}: {str(exc)[:160]}")
+                        for hit in hits:
+                            repo = hit["repo_id"]
+                            # An explicitly fetched detail may enrich a listing, never trigger another request.
+                            hub_ctx["facts"].setdefault(repo, cache.get("models", repo) or hit.get("facts") or {})
+                    # Curated rows keep their verified catalog sizes. Enrichment is explicit and single-repo.
+                    if not query and not detail_repo:
+                        hub_block["mode"] = "offline"
                 except _RateLimited as exc:
-                    hub_block.update(ok=False)
-                    hub_block["errors"].append(f"rate limited by the Hugging Face API (429); showing cached/offline data: {str(exc)[:160]}")
+                    cache.data["retry_at"] = exc.retry_at
+                    cache.dirty = True
+                    hub_block.update(ok=False, rate_limited=True, retry_at=exc.retry_at,
+                                     retry_after_seconds=max(1, math.ceil(exc.retry_at - time.time())))
+                    hub_block["errors"].append("rate limited by the Hugging Face API (429); wait until the retry deadline")
+                    if query and not detail_repo:
+                        cached_hits, search_more = _hub_search(api, cache, query, eng, accelerator,
+                                                               page=page, page_size=page_size, cache_only=True)
+                        seen = {hit["repo_id"] for hit in search_hits}
+                        for hit in cached_hits:
+                            if hit["repo_id"] not in seen:
+                                search_hits.append(hit)
+                            hub_ctx["facts"].setdefault(hit["repo_id"], hit.get("facts") or {})
+                        hub_block["cached_results"] = bool(cached_hits)
                 except LookupError as exc:
                     hub_block.update(ok=False)
-                    hub_block["errors"].append(f"hub search failed (offline?): {str(exc)[:200]}")
-                if repos and not (hub_block["fetched"] or hub_block["cached"]):
-                    hub_block["ok"] = False  # every lookup failed: offline or blocked
+                    hub_block["errors"].append(f"hub search failed: {str(exc)[:200]}")
                 cache.save()
 
     try:
@@ -2159,8 +2240,7 @@ def catalog(
                 quant = _pick_gguf_quant(facts)
                 if quant:
                     artifact = f"{artifact}:{quant}"
-                elif not hit.get("exact"):
-                    continue  # a GGUF repo with no recognisable quant file is not one click
+                # Missing summary siblings remain discoverable; require explicit details before download.
                 # else: the exact handle of a Transformers checkpoint, fetched whole
             elif provider == "mlx":
                 import re as _re
@@ -2179,6 +2259,8 @@ def catalog(
                 hub_ctx,
                 installed_sizes,
             )
+            if provider == "huggingface" and not quant and not hit.get("exact"):
+                art.update(downloadable=False, recommended=False, details_required=True)
             name = hit["repo_id"].rsplit("/", 1)[-1]
             row = {
                 "id": "hf:" + hit["repo_id"].lower(),
@@ -2191,6 +2273,7 @@ def catalog(
                 "license": None,
                 "capabilities": caps,
                 "source": "hf_search",
+                "detail_repo": hit["repo_id"],
                 "tags": tags_hit,
                 "starter": False,
                 "notes": (
@@ -2202,6 +2285,8 @@ def catalog(
                 "exact": bool(hit.get("exact")),
                 "artifacts": [art],
             }
+            if extended and detail_repo and quant:
+                row["artifacts"] += _extended_quant_artifacts(row, row["artifacts"], caps, profile, support, hub_ctx, installed_sizes)
             if asset_kind == "adapter":
                 art["asset_kind"] = "adapter"
                 art["fit"] = {"verdict":"unknown", "notes":[]}
