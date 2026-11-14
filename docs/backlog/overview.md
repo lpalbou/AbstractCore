@@ -9,7 +9,7 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 32
+- Planned: 33
 - Proposed: 28
 - Completed: 53
 - Deprecated: 6
