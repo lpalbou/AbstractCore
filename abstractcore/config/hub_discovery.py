@@ -28,7 +28,9 @@ class HubDiscovery:
         from huggingface_hub import constants
         from huggingface_hub.utils._headers import get_token_to_send
         self.endpoint = (endpoint or constants.ENDPOINT).rstrip('/')
-        self.token = get_token_to_send(token) or ''
+        # Older SDKs resolve the cached token before checking this setting.
+        # Anonymous discovery must not even read that credential when disabled.
+        self.token = '' if token is None and constants.HF_HUB_DISABLE_IMPLICIT_TOKEN else (get_token_to_send(token) or '')
         # SDK user-agent construction can fetch an agent registry. Discovery
         # owns every HTTP attempt, so do not invoke that telemetry path.
         self.headers = {'user-agent': 'abstractcore-hub-discovery'}
