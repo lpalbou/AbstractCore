@@ -296,7 +296,9 @@ def _handle_repair_refs(args: argparse.Namespace) -> int:
 def _catalog_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--engine", default=None, help="Only artifacts for this engine/provider (ollama, lmstudio, mlx, huggingface, llamacpp)")
     parser.add_argument("--fits", action="store_true", help="Only artifacts that fit this machine (fits or tight)")
-    parser.add_argument("--hub", action="store_true", help="Ask Hugging Face for exact sizes (and search results); cached 24 h")
+    parser.add_argument("--hub", action="store_true", help="Search Hugging Face summary pages; cached 24 h")
+    parser.add_argument("--detail-repo", default=None, help="Read full metadata for one selected org/repo (implies --hub)")
+    parser.add_argument("--extended", action="store_true", help="List verified quant variants from available metadata")
     parser.add_argument("--tag", action="append", default=None, help="Only rows with this tag (repeatable): chat, coding, vision, embedding...")
     parser.add_argument("--json", action="store_true", help="Emit model_catalog_v1 JSON")
 
@@ -337,8 +339,10 @@ def _handle_catalog(args: argparse.Namespace) -> int:
         getattr(args, "query", None),
         engine=args.engine,
         fits=bool(args.fits),
-        hub=bool(args.hub),
+        hub=bool(args.hub or getattr(args, "detail_repo", None)),
         tags=args.tag,
+        **({"detail_repo": args.detail_repo} if getattr(args, "detail_repo", None) else {}),
+        **({"extended": True} if getattr(args, "extended", False) else {}),
     )
     if args.json:
         _print_json(payload)

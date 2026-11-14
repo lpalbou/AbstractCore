@@ -23,6 +23,7 @@ ASSETS = Path(mc.__file__).resolve().parent.parent / "assets"
 
 @pytest.fixture
 def host(tmp_path, monkeypatch):
+    monkeypatch.setattr(mc, "_hub_cooldowns", {})
     return isolate_host(tmp_path, monkeypatch)
 
 
@@ -337,7 +338,7 @@ def test_hub_enrichment_uses_exact_file_sizes_for_the_named_quant(host, tmp_path
         }
     )
     cache = tmp_path / "hub.json"
-    payload = mc.catalog("qwen3 8b", hub=True, hf_api=api, hub_cache=cache, host=synthetic_host("metal128"))
+    payload = mc.catalog("qwen3 8b", detail_repo="unsloth/Qwen3-8B-GGUF", hub=True, hf_api=api, hub_cache=cache, host=synthetic_host("metal128"))
     row = next(r for r in payload["rows"] if r["id"] == "qwen3-8b")
     gguf = next(a for a in row["artifacts"] if a["provider"] == "huggingface")
     assert gguf["download_bytes"] == 5_027_783_488
@@ -347,7 +348,7 @@ def test_hub_enrichment_uses_exact_file_sizes_for_the_named_quant(host, tmp_path
 
     # Second call inside the TTL: served from the on-disk cache, no API call.
     before = [c for c in api.calls if c[0] == "model_info"]
-    mc.catalog("qwen3 8b", hub=True, hf_api=api, hub_cache=cache, host=synthetic_host("metal128"))
+    mc.catalog("qwen3 8b", detail_repo="unsloth/Qwen3-8B-GGUF", hub=True, hf_api=api, hub_cache=cache, host=synthetic_host("metal128"))
     after = [c for c in api.calls if c[0] == "model_info"]
     assert len(after) == len(before)
 
@@ -492,7 +493,7 @@ def test_extended_lists_every_quant_of_the_rows_own_gguf_repos(host, tmp_path):
     }
     api = FakeHfApi(repos={repo: {"files": files}})
     kw = dict(hub=True, hf_api=api, hub_cache=tmp_path / "hub.json", host=synthetic_host("cuda24"))
-    row = next(r for r in mc.catalog("qwen3 8b", extended=True, **kw)["rows"] if r["id"] == "qwen3-8b")
+    row = next(r for r in mc.catalog("qwen3 8b", detail_repo=repo, extended=True, **kw)["rows"] if r["id"] == "qwen3-8b")
     ext = {a["artifact"].split(":", 1)[1]: a for a in row["artifacts"] if a.get("extended")}
     assert sorted(ext) == ["BF16", "Q3_K_M", "UD-IQ1_S", "UD-Q6_K_XL"]
     assert ext["BF16"]["download_bytes"] == 16_300_000_000 and ext["Q3_K_M"]["download_bytes"] == 4_100_000_000
@@ -521,7 +522,7 @@ def test_offline_hub_is_reported_not_raised(host, tmp_path):
     assert payload["rows"]
     # Without a query (enrichment only) every lookup fails -> still not ok.
     browse = mc.catalog(hub=True, hf_api=api, hub_cache=tmp_path / "hub2.json", host=synthetic_host("metal128"))
-    assert browse["hub"]["ok"] is False and browse["hub"]["errors"]
+    assert browse["hub"]["ok"] is True and browse["hub"]["mode"] == "offline"
 
 
 def test_the_lfm_families_are_in_the_catalog_with_gguf_and_mlx(host):

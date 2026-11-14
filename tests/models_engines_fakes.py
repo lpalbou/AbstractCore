@@ -496,6 +496,21 @@ class FakeHfApi:
         gg = {"architecture": spec["architecture"]} if spec.get("architecture") else None
         return SimpleNamespace(id=repo_id, siblings=siblings, safetensors=st, gguf=gg, gated=False)
 
+    def list_models_page(self, *, search, filter, limit, cursor=None):
+        self.calls.append(("list_models", search, filter))
+        if self.fail_with is not None:
+            raise self.fail_with
+        offset = int(cursor or 0)
+        hits = self.search_results.get(f"{filter}:{search}", [])
+        rows = []
+        for repo in hits[offset:offset + limit]:
+            spec = self.repos.get(repo, {})
+            rows.append(SimpleNamespace(id=repo, downloads=1000,
+                siblings=[SimpleNamespace(rfilename=n, size=size) for n, size in spec.get("files", {}).items()],
+                safetensors=SimpleNamespace(total=spec["params"]) if spec.get("params") else None,
+                gguf={"architecture": spec["architecture"]} if spec.get("architecture") else None, gated=False))
+        return rows, str(offset + limit) if len(hits) > offset + limit else None
+
     def list_models(self, search: str = "", filter: Any = None, sort: Any = None, limit: Any = None, **_: Any) -> Any:
         self.calls.append(("list_models", search, filter))
         if self.fail_with is not None:

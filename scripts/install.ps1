@@ -61,7 +61,7 @@ param(
 )
 
 # The release this script ships with = abstractcore/utils/version.py (tests/test_install_scripts.py).
-$AcPinDefault = '2.35.1'
+$AcPinDefault = '2.35.2'
 $AcPython = '3.12'
 $AcScriptUrl = 'https://abstractframework.ai/core/install.ps1'
 $AcDocs = 'https://github.com/lpalbou/AbstractCore/blob/main/docs/installation.md#one-line-install'

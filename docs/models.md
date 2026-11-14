@@ -243,25 +243,35 @@ Filters: `q` (every word must start a word of the id, name, vendor, tags or arti
 
 ### Hugging Face enrichment (`--hub`)
 
-The catalog works offline. With `--hub` (`hub=true`), AbstractCore asks the Hugging Face API
-for exact file sizes and parameter counts of the Hugging Face-hosted artifacts and, when a
-query is given, appends up to 20 `hf_search` rows per lane (MLX repos on Apple silicon, GGUF
-repos everywhere; a GGUF search result gets the best available quant, Q4_K_M first).
-Results come a page at a time: `hub_page` (1-based) and `hub_page_size` (20 by default, at most
-100; 200 results deep per lane). `hub.search` reports `{query, page, page_size, rows, has_more,
-handle, handle_found}`: `rows` is how many `hf_search` rows the page added, and `has_more` says
-whether another page exists. A query that is an exact repo handle (`Qwen/Qwen3.5-9B`) looks that
-repo up and lists it first (`exact: true`; a Transformers checkpoint is fetched whole), then
-searches the name (`Qwen3.5-9B`) for its GGUF and MLX builds. The query splits on `/ : @ _ , -`
-like the rows, so `Qwen/Qwen3.5-9B` and `qwen3.5-9B` both find the curated `qwen3.5-9b` row.
-With `extended=true` as well, each row also lists every quant its own GGUF repos ship (UD-IQ1_S
-to Q8_0, BF16), each with its exact size from the hub's file list and its fit, marked
-`extended: true`. A label whose `*LABEL*.gguf` download pattern would also fetch other files is
-left out: `Q6_K` also matches `UD-Q6_K_XL`, and an MTP drafter's file rides its quant's name. An
-extended quant is never the pre-selection.
-Answers are cached for 24 hours in `~/.abstractcore/config/cache/hf_hub_catalog.json`. A rate
-limit (HTTP 429) or an offline machine is reported in `hub.errors` and the offline answer is
-returned. Set `HF_TOKEN` for gated repos and higher rate limits.
+The catalog works offline. With `--hub` (`hub=true`), a query appends up to 20
+`hf_search` summary rows per lane: MLX on Apple silicon and GGUF on supported hosts.
+A page makes at most two listing requests on Apple silicon or one on CUDA/CPU. It
+never fetches metadata separately for each result or every matching curated model.
+Curated rows retain their catalog sizes. Missing summary sizes remain unknown or
+labelled estimates; a result without verified filenames offers details before download.
+
+`hub_page` (1-based) and `hub_page_size` (default 20, maximum 100) follow cached cursors,
+up to 200 results per lane. Start with page 1 before requesting later pages. `hub.search`
+reports `{query, page, page_size, rows, has_more, handle, handle_found}`. An exact repo
+handle additionally looks up that one repo, lists it first, then searches its name for
+GGUF/MLX builds. This adds at most one metadata request.
+
+For full metadata of one selected repository, use `detail_repo="org/repo"` with `hub=True`,
+or `abstractcore models catalog --detail-repo org/repo --extended --json`. This performs
+at most one metadata request and no broad search. `extended=true` lists verified quant
+variants from the available facts; it never initiates per-result lookups. A quant whose
+download pattern would also fetch a different quant is omitted. Variants are never
+preselected. Full metadata can supply exact file sizes; missing data remains unknown.
+
+Successful search/detail answers are cached for 24 hours. HTTP 429 sets a shared cooldown
+for the endpoint and effective credential identity, across queries and details, honoring
+`Retry-After` or the Hub's rate-limit reset. During it, no new discovery request is sent;
+cached search results remain available and `hub.rate_limited`, `retry_at` and
+`retry_after_seconds` explain when to retry. Other failures appear in `hub.errors` beside
+available offline data. Discovery uses finite connection/read limits and no automatic retries.
+These caches and in-flight coordination are process-local; they are not a cross-process lock.
+Set `HF_TOKEN` explicitly for authenticated access; implicit cached credentials follow
+`HF_HUB_DISABLE_IMPLICIT_TOKEN`. Model downloads keep their own transport and timeout policy.
 
 ## Fit verdicts
 
