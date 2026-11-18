@@ -34,6 +34,21 @@ class ProviderAPIError(ProviderError):
     pass
 
 
+class CircuitBreakerOpenError(ProviderAPIError):
+    """The call was not made: the provider's last calls failed and it is given a pause.
+
+    The message says why (the last failure, as the provider reported it) and when the next
+    call is tried, because this is the error a person sees for every turn sent during the
+    pause. `retryable` is False: trying again before `retry_after_s` has passed gets the same
+    answer, so no retry layer should spend its attempts on it."""
+
+    retryable = False
+
+    def __init__(self, message: str, *, retry_after_s: float = 0.0) -> None:
+        super().__init__(message)
+        self.retry_after_s = float(retry_after_s)
+
+
 class EndpointUnreachableError(ProviderError):
     """No TCP connection to the provider's endpoint could be made.
 

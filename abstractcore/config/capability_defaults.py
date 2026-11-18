@@ -469,6 +469,20 @@ RECOMMENDED_MODELS: Dict[str, RecommendedModel] = {
         download={"provider": "diffusers", "artifact": "ACE-Step/acestep-v15-xl-turbo-diffusers"},
         starter=False,
     ),
+    # Text embeddings: Qwen3 Embedding 0.6B on every host (operator ruling 2026-11-18: THE
+    # default embedding model of every install), on AbstractCore's own embedder (Sentence
+    # Transformers on PyTorch: CUDA, Apple MPS or the processor). The route stores the
+    # embedder's name for it (`embeddings.models.EMBEDDING_MODELS`, 1024-dim vectors); the
+    # download is the Hugging Face repo that name loads. A STARTER row: a fresh install is
+    # seeded with it, and `apply-recommended` fills an EMPTY embedding route with it. A store
+    # seeded before 2.36 is not given it automatically (no `RECOMMENDED_SEED_ADDITIONS`
+    # entry): vectors already stored with another model would stop matching. With no route
+    # at all the embedder keeps its built-in fallback (all-MiniLM-L6-v2), for the same reason.
+    "embedding.text": RecommendedModel(
+        route=CapabilityRouteDefault(provider="huggingface", model="qwen3-embedding"),
+        download={"provider": "huggingface", "artifact": "Qwen/Qwen3-Embedding-0.6B"},
+        starter=True,
+    ),
 }
 
 # The STARTER views of the table: what the fresh-install seed,
@@ -543,6 +557,9 @@ _RECOMMENDED_PROVIDER_ENGINE = {
     "mlx-whisper": "mlx",
     "acestep": "torch",
     "diffusers": "torch",
+    # As a ROUTE provider a recommendation names it only for text embeddings
+    # (`embedding.text`): AbstractCore's embedder, Sentence Transformers on PyTorch.
+    "huggingface": "torch",
 }
 # How a provider that runs ON another engine words the engine's refusal.
 _ENGINE_VIA = {
@@ -551,6 +568,7 @@ _ENGINE_VIA = {
     "mlx-whisper": "mlx-whisper speech input runs on MLX, and ",
     "acestep": "ACE-Step music generation runs on PyTorch, and ",
     "diffusers": "Diffusers image generation runs on PyTorch, and ",
+    "huggingface": "The embedding model runs on PyTorch (Sentence Transformers), and ",
 }
 
 # CONFIGURED routes whose engine runs INSIDE this process (AbstractCore's MLX
@@ -1072,6 +1090,7 @@ RECOMMENDED_SELECTORS: Dict[str, str] = {
     "stt": "input.voice",
     "image": "output.image",
     "video": "output.video",
+    "embeddings": "embedding.text",
 }
 
 
@@ -1105,7 +1124,12 @@ def plan_recommended_capability_defaults(
     recommendation". This plan is that action, and it stays honest about the
     difference between filling a gap and overruling a choice:
 
-      `apply`      the route is empty -> the recommendation is written
+      `apply`      the route is empty -> the recommendation is written. So is a
+                   route that still holds the value the fresh-install seed wrote
+                   where the seed could not see this host's GPU (`_seed_host_view`:
+                   an NVIDIA host is seeded the portable text model, and its GPU
+                   memory may recommend a larger one): that value was never the
+                   operator's choice
       `already`    the route already names the recommended provider/model
       `kept`       the operator configured something else -> UNTOUCHED unless
                    `force`, and reported so they can see what was skipped
@@ -1149,6 +1173,7 @@ def plan_recommended_capability_defaults(
     recommended_routes = recommended_capability_default_routes(profile)
     recommended_downloads = recommended_model_downloads(profile)
     unavailable = recommended_unavailable_routes(profile)
+    seeded_routes = recommended_capability_default_routes(_seed_host_view(profile))
     broken = configured_routes_unavailable(
         {key: routes[key] for key in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES if key in routes}, profile
     )
@@ -1185,9 +1210,15 @@ def plan_recommended_capability_defaults(
             str(before.get("provider") or "") == str(recommended.provider or "")
             and str(before.get("model") or "") == str(recommended.model or "")
         )
+        seed = seeded_routes.get(key)
+        seed_value = (
+            seed is not None
+            and str(before.get("provider") or "") == str(seed.provider or "")
+            and str(before.get("model") or "") == str(seed.model or "")
+        )
         if matches:
             action = "already"
-        elif not configured:
+        elif not configured or seed_value:
             action = "apply"
         elif force:
             action = "overwrite"
@@ -1227,6 +1258,17 @@ def plan_recommended_capability_defaults(
         if flag is not None:
             entry["engine_missing"] = flag
     return tuple(plan)
+
+
+def _seed_host_view(host: Mapping[str, Any]) -> Dict[str, Any]:
+    """`host` as the fresh-install seed saw it (`host_profile(light=True)`): the seed runs on
+    import, where no GPU tool may run, so off Apple silicon it sees no accelerator and no GPU
+    memory. Apple silicon is read the same way by both, so the view is the host itself."""
+
+    if str(host.get("accelerator") or "") == "metal":
+        return dict(host)
+    view = {key: host[key] for key in ("os", "arch", "ram_bytes", "engines_installed") if key in host}
+    return dict(view, accelerator="none", unified_memory=False, light=True)
 
 
 def seed_recommended_capability_defaults(

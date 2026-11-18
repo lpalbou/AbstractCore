@@ -82,7 +82,30 @@ def test_apple_silicon_tier_by_unified_memory(kind, tier, mtp_switch):
     assert pick["options"] == OPERATOR_MTP_OPTIONS == cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"].options
 
 
-@pytest.mark.parametrize("kind", ["cuda24", "cpu16", "rocm32"])
+@pytest.mark.parametrize("gib, gpus, model, fit", [
+    (12, 1, "qwen/qwen3.5-9b", "fits"),
+    (16, 1, "qwen/qwen3.5-9b", "fits"),
+    (20, 1, "qwen/qwen3.5-9b", "fits"),
+    (23.99, 1, "qwen/qwen3.8-27b", "tight"),   # a "24 GB" card
+    (31.84, 2, "qwen/qwen3.8-27b", "fits"),    # two 16 GB cards: the host probe sums them
+    (48, 1, "qwen/qwen3.8-27b", "fits"),
+])
+def test_an_nvidia_gpu_follows_its_total_memory(gib, gpus, model, fit):
+    """Windows, 2026-11-18: two RTX 5070 Ti (32 GB together) were recommended the 9B."""
+
+    vram = int(gib * 1024**3)
+    host = dict(synthetic_host("cuda24"), vram_bytes=vram, ceiling_bytes=vram, gpu_count=gpus)
+    pick = mc.recommended_text_model(host)
+    assert (pick["provider"], pick["model"], pick["artifact"]) == ("lmstudio", model, model + "@q4_k_m")
+    assert pick["fit"]["verdict"] == fit
+    assert pick["basis"] == ("nvidia_gpu_tiers" if "27b" in model else "portable_default")
+    assert pick["options"] == cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"].options
+    # The writers download and route the same pick.
+    assert cd.recommended_model_downloads(host)["input.text"] == {"provider": "lmstudio", "artifact": model + "@q4_k_m"}
+    assert cd.recommended_capability_default_routes(host)["input.text"].model == model
+
+
+@pytest.mark.parametrize("kind", ["cpu16", "rocm32"])
 def test_other_hosts_keep_the_portable_default(kind, mtp_switch):
     pick = mc.recommended_text_model(synthetic_host(kind))
     route = cd.RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"]
@@ -708,3 +731,39 @@ def test_the_route_tables_use_the_light_host_reading(monkeypatch):
     cd.recommended_capability_default_routes()
     cd.recommended_model_downloads()
     assert calls and all(c.get("light") is True for c in calls), calls
+
+
+def test_apply_recommended_replaces_the_value_the_seed_wrote_without_seeing_the_gpu():
+    """The fresh-install seed runs on import, where no GPU tool may run: an NVIDIA host is
+    seeded the portable 9B. `apply-recommended` then writes the GPU-memory tier over it (it
+    was never the operator's choice), and still keeps a model the operator chose."""
+
+    vram = 32 * 1024**3
+    host = dict(synthetic_host("cuda24"), vram_bytes=vram, ceiling_bytes=vram, gpu_count=2)
+    seeded = {"input.text": cd.CapabilityRouteDefault(provider="lmstudio", model="qwen/qwen3.5-9b")}
+    entry = next(e for e in cd.plan_recommended_capability_defaults(seeded, host=host) if e["key"] == "input.text")
+    assert entry["action"] == "apply" and entry["after"]["model"] == "qwen/qwen3.8-27b"
+
+    chosen = {"input.text": cd.CapabilityRouteDefault(provider="ollama", model="llama3.3")}
+    entry = next(e for e in cd.plan_recommended_capability_defaults(chosen, host=host) if e["key"] == "input.text")
+    assert entry["action"] == "kept" and entry["after"]["model"] == "llama3.3"
+
+    # Where the seed saw the same host (below the tier), its value simply matches.
+    small = dict(synthetic_host("cuda24"), vram_bytes=16 * 1024**3, ceiling_bytes=16 * 1024**3)
+    entry = next(e for e in cd.plan_recommended_capability_defaults(seeded, host=small) if e["key"] == "input.text")
+    assert entry["action"] == "already"
+
+
+def test_qwen3_embedding_is_the_embedding_model_every_install_is_seeded_with():
+    from abstractcore.embeddings.models import get_model_config
+
+    DEFAULT_EMBEDDING_MODEL = "qwen3-embedding"
+    assert get_model_config(DEFAULT_EMBEDDING_MODEL).model_id == "Qwen/Qwen3-Embedding-0.6B"
+    rec = cd.RECOMMENDED_MODELS["embedding.text"]
+    assert rec.starter and (rec.route.provider, rec.route.model) == ("huggingface", DEFAULT_EMBEDDING_MODEL)
+    assert dict(rec.download) == {"provider": "huggingface", "artifact": "Qwen/Qwen3-Embedding-0.6B"}
+    for kind in ("cuda24", "cpu16", "metal128"):
+        host = synthetic_host(kind)
+        assert cd.recommended_capability_default_routes(host)["embedding.text"].model == DEFAULT_EMBEDDING_MODEL, kind
+        entry = next(e for e in cd.plan_recommended_capability_defaults({}, host=host) if e["key"] == "embedding.text")
+        assert entry["action"] == "apply", kind

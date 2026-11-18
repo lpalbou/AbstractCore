@@ -29,7 +29,7 @@ from abstractcore.config import recommendations as rec
 from tests.models_engines_fakes import synthetic_host
 
 ROOT = Path(__file__).resolve().parents[2]
-CAPABILITY_IDS = ["text", "vision", "speech_output", "speech_input", "image", "video", "music"]
+CAPABILITY_IDS = ["text", "vision", "speech_output", "speech_input", "image", "video", "music", "embeddings"]
 STATUSES = {"recommended", "covered", "unavailable"}
 
 
@@ -55,7 +55,7 @@ def test_the_matrix_covers_every_capability_and_machine_class(matrix):
     assert matrix["schema"] == "model_recommendations_v1"
     assert [c["id"] for c in matrix["capabilities"]] == CAPABILITY_IDS
     families = [c["family"] for c in matrix["classes"]]
-    assert families[-3:] == ["nvidia", "cpu", "intel_mac"]
+    assert families[-4:] == ["nvidia", "nvidia", "cpu", "intel_mac"]
     # Every Apple memory size lands in exactly one band, in order.
     apple = [c for c in matrix["classes"] if c["family"] == "apple_silicon"]
     assert [g for c in apple for g in c["memory_gib"]] == list(rec.APPLE_MEMORY_SIZES_GIB)
@@ -110,7 +110,9 @@ TEXT_BY_APPLE_GIB = {
     **{g: "mlx-community/Qwen3.8-Flash-Next-4bit" for g in (128, 192, 256, 512)},
 }
 TEXT_BY_CLASS = {
-    "nvidia": ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m"),
+    # An NVIDIA GPU follows its total memory: 27B from 22 GiB (`model_catalog.CUDA_TEXT_TIERS`).
+    "nvidia_16gb": ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m"),
+    "nvidia": ("lmstudio", "qwen/qwen3.8-27b", "qwen/qwen3.8-27b@q4_k_m"),
     "cpu": ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m"),
     "intel_mac": ("ollama", "qwen3.5:9b", "qwen3.5:9b"),
 }
@@ -136,6 +138,7 @@ def test_the_starter_set_the_writers_use_is_unchanged():
         "output.image": ("mlx-gen", "AbstractFramework/flux.2-klein-4b-8bit"),
         "output.video": ("mlx-gen", "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
         "input.voice": ("faster-whisper", "large-v3"),
+        "embedding.text": ("huggingface", "qwen3-embedding"),
     }
     assert cd.RECOMMENDED_MODEL_DOWNLOADS == {
         "input.text": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@q4_k_m"},
@@ -143,6 +146,7 @@ def test_the_starter_set_the_writers_use_is_unchanged():
         "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
         "output.video": {"provider": "mlx-gen", "artifact": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"},
         "input.voice": {"provider": "huggingface", "artifact": "Systran/faster-whisper-large-v3"},
+        "embedding.text": {"provider": "huggingface", "artifact": "Qwen/Qwen3-Embedding-0.6B"},
     }
     # ...and they are views of the one table, never a second copy.
     assert {k for k, r in cd.RECOMMENDED_MODELS.items() if r.starter} == set(cd.RECOMMENDED_MODEL_DOWNLOADS)
@@ -195,10 +199,10 @@ def test_class_labels_never_over_claim_their_variants():
 
 
 def test_apple_only_engines_are_unavailable_elsewhere_with_the_reason(matrix):
-    for class_id in ("nvidia", "cpu", "intel_mac"):
+    for class_id in ("nvidia_16gb", "nvidia", "cpu", "intel_mac"):
         entries = _cls(matrix, class_id)["entries"]
         # An NVIDIA GPU's image row is Diffusers (see the test below), not MLX-Gen.
-        for cid in ("video",) if class_id == "nvidia" else ("image", "video"):
+        for cid in ("video",) if class_id.startswith("nvidia") else ("image", "video"):
             assert entries[cid]["status"] == "unavailable", (class_id, cid)
             assert "MLX runs only on Apple Silicon" in entries[cid]["reason"]
 
@@ -220,7 +224,7 @@ def test_an_nvidia_gpu_recommends_diffusers_image_generation(matrix):
     card16 = dict(spec["host"], vram_bytes=16 * 1024**3, ceiling_bytes=16 * 1024**3)
     assert rec.recommended_models(card16)["image"]["fit"] == "fits"
     row = next(line for line in rec.render_markdown(matrix).splitlines()
-               if line.startswith("| Linux or Windows with an NVIDIA GPU | `black-forest-labs/FLUX.2-klein-4B`"))
+               if line.startswith("| Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together) | `black-forest-labs/FLUX.2-klein-4B`"))
     assert "8.3 GiB (measured with AbstractVision/diffusers with model CPU offload)" in row and row.endswith("| fits |")
 
 

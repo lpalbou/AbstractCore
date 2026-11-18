@@ -94,12 +94,12 @@ def test_empty_routes_are_filled(tmp_path) -> None:
 
     report = manager.apply_recommended_capability_defaults()
 
-    # Linux, processor only (`cpu16`): text, voice output and speech input are
-    # applied; the image and video recommendations (MLX-Gen) cannot run here
-    # and are reported, never written.
+    # Linux, processor only (`cpu16`): text, voice output, speech input and text
+    # embeddings are applied; the image and video recommendations (MLX-Gen) cannot
+    # run here and are reported, never written.
     runnable = recommended_capability_default_routes()
-    assert set(runnable) == {"input.text", "output.voice", "input.voice"}
-    assert report["changed"] == 3
+    assert set(runnable) == {"input.text", "output.voice", "input.voice", "embedding.text"}
+    assert report["changed"] == 4
     routes = _routes_on_disk(tmp_path)
     for key, recommended in runnable.items():
         assert routes[key]["provider"] == recommended.provider

@@ -4198,6 +4198,32 @@ def mark_recommended_route_gaps(plan: Dict[str, Any], routes: Iterable[Any]) -> 
 # ---------------------------------------------------------------------------
 
 
+# Engine names AbstractVision's catalog puts in front of a model id (its "routed" name:
+# `diffusers/black-forest-labs/FLUX.2-klein-4B`), and the ones whose ids are never repo ids.
+_VISION_ENGINE_PREFIXES = frozenset({"diffusers", "huggingface", "hf", "hf-diffusers", "mlx-gen", "mlxgen", "mflux", "m-flux", "mlx"})
+_VISION_PRESET_ENGINE_PREFIXES = frozenset({"sdcpp", "sd-cpp", "stable-diffusion.cpp"})
+
+
+def _vision_route_artifact(key: str, model: str) -> str:
+    """The weights an image or video route's model names, without the engine in front.
+
+    One model has two spellings: the recommendation, the download command and this probe say
+    `black-forest-labs/FLUX.2-klein-4B`; AbstractVision's catalog, which the consoles pick
+    from, says `diffusers/black-forest-labs/FLUX.2-klein-4B`. Both run (AbstractVision strips
+    the engine itself), so both must read the same here: a route saved from the console's
+    list said "not downloaded" over weights that were in the cache. The engine is dropped only
+    when a repo id remains (`diffusers/sdxl-instructpix2pix-768` is a repo of the `diffusers`
+    organisation, kept whole), or when the engine's ids are presets (stable-diffusion.cpp)."""
+
+    if not str(key or "").strip().lower().startswith(("output.image", "output.video")):
+        return model
+    head, sep, rest = model.partition("/")
+    engine = head.strip().lower()
+    if sep and rest and (engine in _VISION_PRESET_ENGINE_PREFIXES or (engine in _VISION_ENGINE_PREFIXES and "/" in rest)):
+        return rest
+    return model
+
+
 def _route_probe_provider(provider: str, key: str) -> str:
     """The engine a route's provider names, resolved the way the route RUNS it.
 
@@ -4306,6 +4332,7 @@ def annotate_route_availability(routes: Iterable[Any]) -> List[Dict[str, Any]]:
                     artifact = inherited
             if probe_provider == provider and provider:
                 probe_provider = _route_probe_provider(provider, key)
+            artifact = _vision_route_artifact(key, artifact)
             if key.startswith("embedding.") and _norm(provider) == "huggingface" and artifact and "/" not in artifact:
                 # An embedding route names a catalog alias ("qwen3-embedding"); the
                 # embedding manager loads its Hugging Face repo. Probe and download THAT,

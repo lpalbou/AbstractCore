@@ -297,6 +297,9 @@ def provider_engine_installed(provider: Any) -> Optional[bool]:
         return _distributed("abstractvision") and _distributed("mlx-gen")
     if pid in ("diffusers", "acestep"):
         return _importable("torch")
+    if pid == "huggingface":
+        # The one recommendation that names it as a route provider is text embeddings.
+        return _importable("sentence_transformers")
     return None
 
 
@@ -304,7 +307,7 @@ def provider_engines_installed() -> Dict[str, bool]:
     """`{provider: installed}` for every provider `provider_engine_installed` judges."""
 
     out: Dict[str, bool] = {}
-    for pid in ("mlx", "mlx-gen", "diffusers", "acestep", "mlx-whisper"):
+    for pid in ("mlx", "mlx-gen", "diffusers", "acestep", "mlx-whisper", "huggingface"):
         value = provider_engine_installed(pid)
         if value is not None:
             out[pid] = bool(value)

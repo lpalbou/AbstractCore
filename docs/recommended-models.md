@@ -131,7 +131,8 @@ Route `input.text` (text generation).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `mlx-community/Qwen3.8-27B-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 128 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=114688` |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `mlx-community/Qwen3.8-Flash-Next-4bit` | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 6.0 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 6.0 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together) | `qwen/qwen3.8-27b` (download `qwen/qwen3.8-27b@q4_k_m`) | LM Studio, NVIDIA GPU (CUDA) | 16.5 GiB | 17.8 GiB | fits, tightly |
 | Linux or Windows, processor only | `qwen/qwen3.5-9b` (download `qwen/qwen3.5-9b@q4_k_m`) | LM Studio, processor | unknown | 6.0 GiB | fits |
 | Intel Mac | `qwen3.5:9b` | Ollama, processor | unknown | 6.0 GiB | fits |
 
@@ -148,7 +149,8 @@ Route `input.image` (image understanding).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | the text model (`mlx-community/Qwen3.8-27B-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 15.2 GiB | 16.4 GiB | fits |
 | Apple silicon Mac, 128 GB | the text model (`mlx-community/Qwen3.8-Flash-Next-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits after raising the GPU memory limit: `sudo sysctl iogpu.wired_limit_mb=114688` |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | the text model (`mlx-community/Qwen3.8-Flash-Next-4bit`) | MLX (AbstractCore), Apple GPU (Metal) | 103.9 GiB | 109.2 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | the text model (`qwen/qwen3.5-9b`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 6.0 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory | the text model (`qwen/qwen3.5-9b`) | LM Studio, NVIDIA GPU (CUDA) | unknown | 6.0 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together) | the text model (`qwen/qwen3.8-27b`) | LM Studio, NVIDIA GPU (CUDA) | 16.5 GiB | 17.8 GiB | fits, tightly |
 | Linux or Windows, processor only | the text model (`qwen/qwen3.5-9b`) | LM Studio, processor | unknown | 6.0 GiB | fits |
 | Intel Mac | the text model (`qwen3.5:9b`) | Ollama, processor | unknown | 6.0 GiB | fits |
 
@@ -165,7 +167,8 @@ Route `output.voice` (text to speech).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `supertonic-3` | Supertonic on ONNX Runtime (AbstractVoice), processor | 383 MiB | 895 MiB | fits |
 | Apple silicon Mac, 128 GB | `supertonic-3` | Supertonic on ONNX Runtime (AbstractVoice), processor | 383 MiB | 895 MiB | fits |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `supertonic-3` | Supertonic on ONNX Runtime (AbstractVoice), processor | 383 MiB | 895 MiB | fits |
-| Linux or Windows with an NVIDIA GPU | `supertonic-3` | Supertonic on ONNX Runtime (AbstractVoice), processor | 383 MiB | 895 MiB | fits |
+| Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory | `supertonic-3` | Supertonic on ONNX Runtime (AbstractVoice), processor | 383 MiB | 895 MiB | fits |
+| Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together) | `supertonic-3` | Supertonic on ONNX Runtime (AbstractVoice), processor | 383 MiB | 895 MiB | fits |
 | Linux or Windows, processor only | `supertonic-3` | Supertonic on ONNX Runtime (AbstractVoice), processor | 383 MiB | 895 MiB | fits |
 | Intel Mac | `supertonic-3` | Supertonic on ONNX Runtime (AbstractVoice), processor | 383 MiB | 895 MiB | fits |
 
@@ -182,7 +185,8 @@ Route `input.voice` (speech to text).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits |
 | Apple silicon Mac, 128 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `large-v3` (download `mlx-community/whisper-large-v3-mlx`) | mlx-whisper on MLX (AbstractVoice), Apple GPU (Metal) | 2.9 GiB | 3.4 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | `large-v3` (download `Systran/faster-whisper-large-v3`) | faster-whisper on CTranslate2 (AbstractVoice), NVIDIA GPU (CUDA) | 2.9 GiB | 3.4 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory | `large-v3` (download `Systran/faster-whisper-large-v3`) | faster-whisper on CTranslate2 (AbstractVoice), NVIDIA GPU (CUDA) | 2.9 GiB | 3.4 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together) | `large-v3` (download `Systran/faster-whisper-large-v3`) | faster-whisper on CTranslate2 (AbstractVoice), NVIDIA GPU (CUDA) | 2.9 GiB | 3.4 GiB | fits |
 | Linux or Windows, processor only | `large-v3` (download `Systran/faster-whisper-large-v3`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 2.9 GiB | 3.4 GiB | fits |
 | Intel Mac | `large-v3` (download `Systran/faster-whisper-large-v3`) | faster-whisper on CTranslate2 (AbstractVoice), processor | 2.9 GiB | 3.4 GiB | fits |
 
@@ -209,11 +213,13 @@ Route `output.image` (text to image).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 128 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `AbstractFramework/flux.2-klein-4b-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 8.0 GiB | 8.5 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | `black-forest-labs/FLUX.2-klein-4B` | Diffusers on PyTorch (AbstractVision), NVIDIA GPU (CUDA) | 22.1 GiB | 8.3 GiB (measured with AbstractVision/diffusers with model CPU offload) | fits |
+| Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory | `black-forest-labs/FLUX.2-klein-4B` | Diffusers on PyTorch (AbstractVision), NVIDIA GPU (CUDA) | 22.1 GiB | 8.3 GiB (measured with AbstractVision/diffusers with model CPU offload) | fits |
+| Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together) | `black-forest-labs/FLUX.2-klein-4B` | Diffusers on PyTorch (AbstractVision), NVIDIA GPU (CUDA) | 22.1 GiB | 8.3 GiB (measured with AbstractVision/diffusers with model CPU offload) | fits |
 | Linux or Windows, processor only | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
 | Intel Mac | Not available: MLX-Gen image generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); set output.image to a local image engine: diffusers, included with abstractcore[gpu] on Linux and Windows, or sdcpp (stable-diffusion.cpp), included with abstractcore[gpu] on Linux (on an Intel Mac or Windows on ARM they are not available with AbstractCore's install settings), or to a cloud image provider | | | | |
 
-- Linux or Windows with an NVIDIA GPU: AbstractVision runs it in float16 and turns on model CPU offload by itself when its 14.9 GiB of weights do not fit the GPU's free memory (a 16 GB card): the GPU then peaks at about 8.3 GiB (measured) and about 15 GiB of system RAM holds the idle weights. A GPU with room loads it whole.
+- Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory: AbstractVision runs it in float16 and turns on model CPU offload by itself when its 14.9 GiB of weights do not fit the GPU's free memory (a 16 GB card): the GPU then peaks at about 8.3 GiB (measured) and about 15 GiB of system RAM holds the idle weights. A GPU with room loads it whole.
+- Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together): AbstractVision runs it in float16 and turns on model CPU offload by itself when its 14.9 GiB of weights do not fit the GPU's free memory (a 16 GB card): the GPU then peaks at about 8.3 GiB (measured) and about 15 GiB of system RAM holds the idle weights. A GPU with room loads it whole.
 
 ### Video generation
 
@@ -228,7 +234,8 @@ Route `output.video` (text to video, image to video).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 16.6 GiB (measured with AbstractVision/mlx-gen) | fits |
 | Apple silicon Mac, 128 GB | `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 16.6 GiB (measured with AbstractVision/mlx-gen) | fits |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit` | MLX-Gen (AbstractVision), Apple GPU (Metal) | 16.9 GiB | 16.6 GiB (measured with AbstractVision/mlx-gen) | fits |
-| Linux or Windows with an NVIDIA GPU | Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
+| Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory | Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
+| Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together) | Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
 | Linux or Windows, processor only | Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
 | Intel Mac | Not available: MLX-Gen video generation needs MLX, and MLX runs only on Apple Silicon Macs (macOS, arm64); no other local engine in AbstractFramework generates video today (abstractvision's Diffusers video path is disabled, stable-diffusion.cpp has none); the remaining option is an OpenAI-compatible video endpoint (abstractvision openai-compatible backend) | | | | |
 
@@ -245,9 +252,28 @@ Route `output.music` (text to music).
 | Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `ACE-Step/acestep-v15-xl-turbo-diffusers` | ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16) | 10.3 GiB | 10.9 GiB | fits |
 | Apple silicon Mac, 128 GB | `ACE-Step/acestep-v15-xl-turbo-diffusers` | ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16) | 10.3 GiB | 10.9 GiB | fits |
 | Apple silicon Mac, 192 GB, 256 GB or 512 GB | `ACE-Step/acestep-v15-xl-turbo-diffusers` | ACE-Step on Diffusers and PyTorch (AbstractMusic), Apple GPU (MPS, bfloat16) | 10.3 GiB | 10.9 GiB | fits |
-| Linux or Windows with an NVIDIA GPU | `ACE-Step/acestep-v15-xl-turbo-diffusers` | ACE-Step on Diffusers and PyTorch (AbstractMusic), NVIDIA GPU (CUDA) | 10.3 GiB | 10.9 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory | `ACE-Step/acestep-v15-xl-turbo-diffusers` | ACE-Step on Diffusers and PyTorch (AbstractMusic), NVIDIA GPU (CUDA) | 10.3 GiB | 10.9 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together) | `ACE-Step/acestep-v15-xl-turbo-diffusers` | ACE-Step on Diffusers and PyTorch (AbstractMusic), NVIDIA GPU (CUDA) | 10.3 GiB | 10.9 GiB | fits |
 | Linux or Windows, processor only | Not available: ACE-Step 1.5 XL turbo (music) needs about 10.9 GiB of memory while it generates (estimated), and this computer can give a model about 10.0 GiB; use a computer with more memory, or a cloud music backend (acemusic or elevenlabs-music, with its API key) | | | | |
 | Intel Mac | Not available: ACE-Step music generation runs on PyTorch, and current PyTorch builds for macOS require Apple Silicon (arm64); the last Intel-Mac build is 2.2.2; set output.music to a cloud music backend (acemusic or elevenlabs-music, with its API key) | | | | |
+
+### Text embeddings
+
+Route `embedding.text` (text embedding).
+
+| Machine | Recommended model | Engine, device | Download | Memory need | Fit |
+|---|---|---|---|---|---|
+| Apple silicon Mac, 8 GB | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), Apple GPU (MPS) | 1.1 GiB | 1.6 GiB | fits |
+| Apple silicon Mac, 16 GB | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), Apple GPU (MPS) | 1.1 GiB | 1.6 GiB | fits |
+| Apple silicon Mac, 18 GB | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), Apple GPU (MPS) | 1.1 GiB | 1.6 GiB | fits |
+| Apple silicon Mac, 24 GB | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), Apple GPU (MPS) | 1.1 GiB | 1.6 GiB | fits |
+| Apple silicon Mac, 32 GB, 36 GB, 48 GB, 64 GB or 96 GB | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), Apple GPU (MPS) | 1.1 GiB | 1.6 GiB | fits |
+| Apple silicon Mac, 128 GB | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), Apple GPU (MPS) | 1.1 GiB | 1.6 GiB | fits |
+| Apple silicon Mac, 192 GB, 256 GB or 512 GB | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), Apple GPU (MPS) | 1.1 GiB | 1.6 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), NVIDIA GPU (CUDA) | 1.1 GiB | 1.6 GiB | fits |
+| Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together) | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), NVIDIA GPU (CUDA) | 1.1 GiB | 1.6 GiB | fits |
+| Linux or Windows, processor only | `qwen3-embedding` (download `Qwen/Qwen3-Embedding-0.6B`) | Sentence Transformers on PyTorch (AbstractCore), processor | 1.1 GiB | 1.6 GiB | fits |
+| Intel Mac | Not available: The embedding model runs on PyTorch (Sentence Transformers), and current PyTorch builds for macOS require Apple Silicon (arm64); the last Intel-Mac build is 2.2.2 | | | | |
 
 <!-- END GENERATED: recommended-models -->
 
