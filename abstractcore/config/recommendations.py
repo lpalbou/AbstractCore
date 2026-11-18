@@ -2,11 +2,12 @@
 
 `recommended_models(host)` is THE per-host answer for every capability the
 framework recommends a model for: text, image input (vision), speech output,
-speech input, image generation, video generation and music. It adds no
+speech input, image generation, video generation, music and text embeddings. It adds no
 recommendation of its own; it reads the ones that exist:
 
     text           `model_catalog.recommended_text_model()` (Apple silicon:
-                   the unified-memory tier; elsewhere the portable default)
+                   the unified-memory tier; an NVIDIA GPU: the GPU-memory
+                   tier; elsewhere the portable default)
     vision         covered by the text model when it reads images
                    (`manager.model_supports_input`), which the recommended
                    text models do
@@ -17,7 +18,7 @@ recommendation of its own; it reads the ones that exist:
 `recommendation_matrix()` evaluates `recommended_models` on reference machines
 (`MACHINE_CLASSES`: Apple silicon at every unified-memory size Apple ships,
 merged into bands where every answer is the same; Linux or Windows with an
-NVIDIA GPU; processor-only Linux or Windows; Intel Macs). It is what
+NVIDIA GPU, below and from 22 GB of GPU memory; processor-only Linux or Windows; Intel Macs). It is what
 `abstractcore models recommendations --json` exports and what the docs tables
 (`docs/recommended-models.md`, `scripts/update_recommended_models_doc.py`) and
 the AbstractFramework website render, so no table of models is ever edited by
@@ -57,6 +58,7 @@ RECOMMENDATION_CAPABILITIES: Tuple[Tuple[str, str, str, Tuple[str, ...]], ...] =
     ("image", "output.image", "Image generation", ("text_to_image",)),
     ("video", "output.video", "Video generation", ("text_to_video", "image_to_video")),
     ("music", "output.music", "Music generation", ("text_to_music",)),
+    ("embeddings", "embedding.text", "Text embeddings", ("text_embedding",)),
 )
 
 # Unified memory sizes (GiB) Apple ships Apple silicon Macs with. The matrix
@@ -74,10 +76,22 @@ _APPLE_CEILING_SOURCE = "ram_75pct"
 # Reference machines of the classes that are not Apple silicon. `variants` are
 # the other platforms the class label covers: tests assert each gives the same
 # answers as the reference, so the label never over-claims.
+# NVIDIA is two classes: the text model follows the total GPU memory
+# (`model_catalog.CUDA_TEXT_TIERS`: 22 GiB and more runs Qwen3.8 27B).
 MACHINE_CLASSES: Tuple[Dict[str, Any], ...] = (
     {
+        "id": "nvidia_16gb",
+        "family": "nvidia",
+        "label": "Linux or Windows with an NVIDIA GPU, less than 22 GB of GPU memory",
+        "reference": "x86_64, NVIDIA GPU with 16 GB of memory, 64 GB of RAM",
+        "host": {"os": "linux", "arch": "x86_64", "accelerator": "cuda", "unified_memory": False,
+                 "ram_bytes": 64 * _GIB, "vram_bytes": 16 * _GIB, "ceiling_bytes": 16 * _GIB,
+                 "ceiling_source": "cuda_total", "gpu_count": 1},
+        "variants": ({"os": "windows", "arch": "x86_64"},),
+    },
+    {
         "id": "nvidia",
-        "label": "Linux or Windows with an NVIDIA GPU",
+        "label": "Linux or Windows with an NVIDIA GPU, 22 GB of GPU memory or more (one GPU, or several together)",
         "reference": "x86_64, NVIDIA GPU with 24 GB of memory, 64 GB of RAM",
         "host": {"os": "linux", "arch": "x86_64", "accelerator": "cuda", "unified_memory": False,
                  "ram_bytes": 64 * _GIB, "vram_bytes": 24 * _GIB, "ceiling_bytes": 24 * _GIB,
@@ -115,6 +129,7 @@ _ENGINE_LABEL = {
     "mlx-whisper": "mlx-whisper on MLX (AbstractVoice)",
     "acestep": "ACE-Step on Diffusers and PyTorch (AbstractMusic)",
     "diffusers": "Diffusers on PyTorch (AbstractVision)",
+    "huggingface": "Sentence Transformers on PyTorch (AbstractCore)",
 }
 
 # Who measured a `resident` (measured) memory need, per recommended provider:
@@ -141,6 +156,9 @@ def _device(provider: str, accelerator: str) -> str:
         return "NVIDIA GPU (CUDA)" if accelerator == "cuda" else "processor"
     if provider == "mlx-whisper":
         return "Apple GPU (Metal)"
+    if provider == "huggingface":
+        # AbstractCore's embedder (the route option `device: gpu`): CUDA, then MPS, then the processor.
+        return {"metal": "Apple GPU (MPS)", "cuda": "NVIDIA GPU (CUDA)"}.get(accelerator, "processor")
     if provider == "acestep":
         # abstractmusic acestep: CUDA, then MPS (bfloat16), then CPU (float32).
         return {"metal": "Apple GPU (MPS, bfloat16)", "cuda": "NVIDIA GPU (CUDA)"}.get(accelerator, "processor (float32)")
@@ -605,7 +623,7 @@ def recommendation_matrix() -> Dict[str, Any]:
         classes.append(
             {
                 "id": spec["id"],
-                "family": spec["id"],
+                "family": spec.get("family", spec["id"]),
                 "label": spec["label"],
                 "reference": spec["reference"],
                 "platform": _platform(host),

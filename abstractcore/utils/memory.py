@@ -285,14 +285,17 @@ def _device_snapshot_backend() -> Dict[str, Any]:
 
         if torch.cuda.is_available():
             out["backend"] = "cuda"
+            # Every GPU, summed, like the host profile's `vram_bytes`: with two 16 GB cards
+            # the meters showed 16 GB of the 32 (device 0 only) until 2.36.
+            devices = range(int(torch.cuda.device_count()))
             try:
-                out["allocated_bytes"] = int(torch.cuda.memory_allocated())
+                out["allocated_bytes"] = sum(int(torch.cuda.memory_allocated(i)) for i in devices)
             except Exception:
                 pass
             try:
-                free_bytes, total_bytes = torch.cuda.mem_get_info()
-                out["free_bytes"] = int(free_bytes)
-                out["total_bytes"] = int(total_bytes)
+                infos = [torch.cuda.mem_get_info(i) for i in devices]
+                out["free_bytes"] = sum(int(free) for free, _total in infos)
+                out["total_bytes"] = sum(int(total) for _free, total in infos)
             except Exception:
                 pass
             return out

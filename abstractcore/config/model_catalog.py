@@ -115,6 +115,20 @@ _HOST_PREFERENCE = {
 #                              128 GB Mac it fits once the GPU memory limit is
 #                              raised (`needs_gpu_limit`, operator-accepted)
 #
+# An NVIDIA GPU (accelerator `cuda`) follows the same ladder on LM Studio's GGUF
+# builds, chosen by TOTAL GPU memory in GiB (the host probe's `vram_bytes`, the
+# sum over the GPUs: llama.cpp, LM Studio's engine, splits a model across them),
+# `CUDA_TEXT_TIERS`:
+#
+#     GPU memory <  22      -> Qwen3.5 9B        (the portable default)
+#     GPU memory >= 22      -> Qwen3.8 27B       (qwen/qwen3.8-27b@q4_k_m,
+#                              17.8 GiB with an 8k context): `tight` on one
+#                              24 GB card (which reports 23.99 GiB, hence 22),
+#                              `fits` from 32 GB, two 16 GB cards included
+#
+# Flash-Next has no LM Studio build, so the ladder stops there. Before 2.36 an
+# NVIDIA host kept the 9B whatever its GPU memory.
+#
 # Every other host keeps the portable default (`RECOMMENDED_MODEL_DOWNLOADS`
 # in capability_defaults) -- except where the portable default's engine has
 # no build: LM Studio does not run on Intel Macs (engines support matrix), so
@@ -148,6 +162,11 @@ APPLE_TEXT_TIERS: Tuple[Dict[str, Any], ...] = (
      "plain": "mlx-community/Qwen3.8-Flash-Next-4bit", "mtp": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"},
 )
 _TIER_PROVIDER = "mlx"
+# NVIDIA GPUs: the tiers ABOVE the portable default, by total GPU memory (the rule is in the
+# comment above). `from_gib` is inclusive; LM Studio serves the artifact.
+CUDA_TEXT_TIERS: Tuple[Dict[str, Any], ...] = (
+    {"from_gib": 22, "row": "qwen3.8-27b", "artifact": "qwen/qwen3.8-27b@q4_k_m"},
+)
 # The tier's engine when this install has no MLX (the light profile): LM Studio serves the same
 # rows (`qwen/qwen3.5-9b@q4_k_m`, `qwen/qwen3.8-27b@q4_k_m`) from its own app, nothing to
 # install in this Python (`recommended_text_model`, basis `apple_silicon_engine_fallback`).
@@ -187,6 +206,20 @@ def _apple_tier(memory_gib: Optional[float]) -> Tuple[Dict[str, Any], str]:
             return tier, rule
         lower = bound
     raise AssertionError("APPLE_TEXT_TIERS must end with an unbounded tier")
+
+
+def _cuda_tier(host: Mapping[str, Any]) -> Optional[Tuple[Dict[str, Any], str]]:
+    """The largest `CUDA_TEXT_TIERS` entry this much GPU memory reaches, and its rule; None
+    below the first one (the portable default) and where the GPU memory is unknown."""
+
+    vram = host.get("vram_bytes")
+    if isinstance(vram, bool) or not isinstance(vram, (int, float)) or vram <= 0:
+        return None
+    gib = float(vram) / float(1024**3)
+    reached = [tier for tier in CUDA_TEXT_TIERS if gib >= tier["from_gib"]]
+    if not reached:
+        return None
+    return reached[-1], f"GPU memory >= {reached[-1]['from_gib']} GiB"
 
 
 def _seed_row_and_artifact(row_id: str, provider: str, artifact: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -303,7 +336,9 @@ def recommended_text_model(
       model      the id the route stores (the served id; for MLX the repo id)
       options    route options: the portable route's MTP policy
                  (`speculation`), overlaid with the artifact's own options
-      basis      `apple_silicon_tiers`, `apple_silicon_engine_fallback` (Apple
+      basis      `nvidia_gpu_tiers` (an NVIDIA GPU with enough memory for a
+                 larger model than the portable default, `CUDA_TEXT_TIERS`),
+                 `apple_silicon_tiers`, `apple_silicon_engine_fallback` (Apple
                  silicon without MLX in this install: the tier's LM Studio build,
                  else the nearest smaller tier's), `portable_default`,
                  `portable_engine_fallback` (the portable engine has no build
@@ -432,6 +467,20 @@ def recommended_text_model(
                 "catalog_id": row_id,
                 "basis": "portable_engine_fallback",
                 "tier": f"{unsupported}: the portable model's {fallback['provider']} build",
+                "mtp": False,
+            }
+        elif accelerator == "cuda" and _cuda_tier(profile) is not None:
+            tier, rule = _cuda_tier(profile)
+            row, art = _seed_row_and_artifact(str(tier["row"]), portable["provider"], str(tier["artifact"]))
+            out = {
+                "provider": portable["provider"],
+                "artifact": str(tier["artifact"]),
+                "model": _split_artifact(str(tier["artifact"]))[0],  # LM Studio serves the id without `@quant`
+                # The host-wide MTP policy, as on the portable route.
+                "options": dict(portable["options"], **json.loads(json.dumps(art.get("options") or {}))),
+                "catalog_id": row["id"],
+                "basis": "nvidia_gpu_tiers",
+                "tier": rule,
                 "mtp": False,
             }
         else:

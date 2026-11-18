@@ -198,3 +198,36 @@ def test_the_status_payload_marks_gaps_against_the_whole_grid(monkeypatch):
 
     assert [row["key"] for row in payload["routes"]] == ["input.text"]
     assert payload["recommended"]["gaps"] == []
+
+
+@pytest.mark.parametrize("key, model, artifact", [
+    ("output.image", "black-forest-labs/FLUX.2-klein-4B", "black-forest-labs/FLUX.2-klein-4B"),
+    # The catalog's routed name, which a console saves when a model is picked from its list.
+    ("output.image", "diffusers/black-forest-labs/FLUX.2-klein-4B", "black-forest-labs/FLUX.2-klein-4B"),
+    ("output.image.text_to_image", "mlx-gen/AbstractFramework/flux.2-klein-4b-8bit", "AbstractFramework/flux.2-klein-4b-8bit"),
+    ("output.video", "mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit", "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"),
+    # A repo of the `diffusers` organisation is a repo id, not an engine in front of one.
+    ("output.image", "diffusers/sdxl-instructpix2pix-768", "diffusers/sdxl-instructpix2pix-768"),
+    ("output.image", "sdcpp/default", "default"),
+    # Only image and video routes name models this way.
+    ("output.text", "mlx/some-org/some-model", "mlx/some-org/some-model"),
+])
+def test_an_image_route_s_weights_are_the_same_with_or_without_the_engine_in_front(key, model, artifact):
+    """2026-11-18: FLUX.2 klein, in the cache, read "not downloaded" once saved from the console's list."""
+    from abstractcore.config.model_materializer import _vision_route_artifact
+
+    assert _vision_route_artifact(key, model) == artifact
+
+
+def test_the_grid_probes_an_image_route_for_its_weights_whichever_way_it_is_spelled(monkeypatch):
+    from abstractcore.config import model_materializer as mm
+
+    probed = []
+    monkeypatch.setattr(mm, "probe", lambda provider, artifact, **kw: probed.append((provider, artifact)) or mm.ModelPresence(provider, artifact, mm.PRESENCE_INSTALLED))
+    rows = mm.annotate_route_availability([
+        {"key": "output.image", "provider": "diffusers", "model": "diffusers/black-forest-labs/FLUX.2-klein-4B"},
+        {"key": "output.image", "provider": "huggingface", "model": "diffusers/black-forest-labs/FLUX.2-klein-4B"},
+        {"key": "output.image", "provider": "diffusers", "model": "black-forest-labs/FLUX.2-klein-4B"},
+    ])
+    assert {a for _p, a in probed} == {"black-forest-labs/FLUX.2-klein-4B"}  # one probe per (provider, weights)
+    assert all(r["availability"]["status"] == mm.PRESENCE_INSTALLED for r in rows)

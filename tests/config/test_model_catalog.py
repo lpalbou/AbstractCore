@@ -177,7 +177,9 @@ def test_the_starter_text_model_is_preselected_on_apple_silicon(host):
 
 def test_the_portable_starter_is_preselected_off_apple_silicon(host, monkeypatch):
     _no_local_engines(monkeypatch)  # with no engine installed the curated LM Studio build leads
-    row = next(r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"] if r["id"] == "qwen3.5-9b")
+    # Below 22 GiB of GPU memory (from there an NVIDIA GPU is recommended the 27B, `CUDA_TEXT_TIERS`).
+    card16 = dict(synthetic_host("cuda24"), vram_bytes=16 * 1024**3, ceiling_bytes=16 * 1024**3)
+    row = next(r for r in mc.catalog(host=card16)["rows"] if r["id"] == "qwen3.5-9b")
     assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["qwen/qwen3.5-9b@q4_k_m"]
     assert row["starter"] is True
 

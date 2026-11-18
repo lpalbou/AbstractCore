@@ -143,6 +143,9 @@ class CircuitBreaker:
         self.failure_count = 0
         self.last_failure_time: Optional[datetime] = None
         self.half_open_calls = 0
+        self.half_open_since: Optional[datetime] = None
+        # The failure that last counted, in the provider's words: what an open breaker reports.
+        self.last_error: str = ""
 
     def record_success(self):
         """Record successful call and potentially close circuit."""
@@ -156,10 +159,12 @@ class CircuitBreaker:
             # Decay failure count on success
             self.failure_count = max(0, self.failure_count - 1)
 
-    def record_failure(self):
+    def record_failure(self, error: Optional[BaseException] = None):
         """Record failed call and potentially open circuit."""
         self.failure_count += 1
         self.last_failure_time = datetime.now()
+        if error is not None:
+            self.last_error = str(error)
 
         if self.state == CircuitState.CLOSED:
             if self.failure_count >= self.config.failure_threshold:
@@ -182,18 +187,35 @@ class CircuitBreaker:
                 time_since_failure = (datetime.now() - self.last_failure_time).total_seconds()
                 if time_since_failure >= self.config.recovery_timeout:
                     self.state = CircuitState.HALF_OPEN
-                    self.half_open_calls = 0
+                    self.half_open_calls = 1  # this call is the first probe
+                    self.half_open_since = datetime.now()
                     logger.info("Circuit breaker entering half-open state")
                     return True
             return False
 
         if self.state == CircuitState.HALF_OPEN:
+            # Probes whose outcome is not counted (the endpoint was unreachable, the call was
+            # cancelled) neither close nor reopen the breaker: once they had used every probe,
+            # it refused every call for the life of the process. A new round of probes starts
+            # when the pause has passed again.
+            since = self.half_open_since
+            if (self.half_open_calls >= self.config.half_open_max_calls and since is not None
+                    and (datetime.now() - since).total_seconds() >= self.config.recovery_timeout):
+                self.half_open_calls = 0
+                self.half_open_since = datetime.now()
             if self.half_open_calls < self.config.half_open_max_calls:
                 self.half_open_calls += 1
                 return True
             return False
 
         return False
+
+    def retry_after_s(self) -> float:
+        """Seconds until the next call is tried while the breaker refuses calls (0 when it does not)."""
+        started = self.last_failure_time if self.state == CircuitState.OPEN else self.half_open_since
+        if self.state == CircuitState.CLOSED or started is None:
+            return 0.0
+        return max(0.0, self.config.recovery_timeout - (datetime.now() - started).total_seconds())
 
     def get_state_info(self) -> Dict[str, Any]:
         """Get circuit breaker state information for events/logging."""
@@ -377,9 +399,16 @@ class RetryManager:
 
         # Check circuit breaker before starting
         if not circuit_breaker.can_execute():
-            from ..exceptions import ProviderAPIError
+            from ..exceptions import CircuitBreakerOpenError
             scope = f"endpoint {damping.label}" if damping is not None else provider_key
-            raise ProviderAPIError(f"Circuit breaker open for {scope}")
+            wait_s = circuit_breaker.retry_after_s()
+            # The cause and the wait are the message: "Circuit breaker open" alone told a
+            # person nothing about a server that was answering 503 (2026-11-18).
+            raise CircuitBreakerOpenError(
+                f"Circuit breaker open for {scope}: its last {circuit_breaker.failure_count} calls failed, so it is "
+                f"not called again for {max(1, round(wait_s))} s. Last error: {circuit_breaker.last_error or 'not recorded'}",
+                retry_after_s=wait_s,
+            )
 
         # Handle edge case of zero max attempts
         if self.config.max_attempts <= 0:
@@ -463,7 +492,7 @@ class RetryManager:
                 # the resumed runs for recovery_timeout after it came back.
                 if (error_type is not RetryableErrorType.UNKNOWN
                         and getattr(e, "counts_toward_breaker", True) is not False):
-                    circuit_breaker.record_failure()
+                    circuit_breaker.record_failure(e)
 
                 # Check if we should retry
                 if not self.should_retry(e, attempt):

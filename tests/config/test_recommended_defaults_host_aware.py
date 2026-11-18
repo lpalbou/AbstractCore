@@ -70,8 +70,19 @@ MLX_WHISPER = {"provider": "mlx-whisper", "model": "large-v3"}
 MLX_WHISPER_DOWNLOAD = {"provider": "huggingface", "artifact": "mlx-community/whisper-large-v3-mlx"}
 
 
+# Text embeddings (Qwen3 Embedding 0.6B, Sentence Transformers on PyTorch; 2026-11-18): every
+# host PyTorch has a build for, so not Windows on arm64 nor an Intel Mac.
+NO_EMBEDDING_ENGINE = {"windows_arm64", "intel_mac"}
+EMBEDDING = {"provider": "huggingface", "model": "qwen3-embedding"}
+EMBEDDING_DOWNLOAD = {"provider": "huggingface", "artifact": "Qwen/Qwen3-Embedding-0.6B"}
+
+
 def _starter_keys(name: str) -> set:
-    return {"input.text", "output.voice"} | (set() if name in NO_STT_ENGINE else {"input.voice"})
+    return (
+        {"input.text", "output.voice"}
+        | (set() if name in NO_STT_ENGINE else {"input.voice"})
+        | (set() if name in NO_EMBEDDING_ENGINE else {"embedding.text"})
+    )
 TEXT_BY_HOST = {name: ("lmstudio", "qwen/qwen3.5-9b", "qwen/qwen3.5-9b@q4_k_m") for name in NON_APPLE}
 TEXT_BY_HOST["intel_mac"] = ("ollama", "qwen3.5:9b", "qwen3.5:9b")
 
@@ -115,7 +126,11 @@ def test_no_route_or_download_names_an_engine_the_host_cannot_run(name):
 @pytest.mark.parametrize("name", NO_IMAGE_ENGINE)
 def test_the_image_route_is_reported_unavailable_with_its_reason(name):
     unavailable = cd.recommended_unavailable_routes(_host(name))
-    assert set(unavailable) == {"output.image", "output.video"} | ({"input.voice"} if name in NO_STT_ENGINE else set())
+    assert set(unavailable) == (
+        {"output.image", "output.video"}
+        | ({"input.voice"} if name in NO_STT_ENGINE else set())
+        | ({"embedding.text"} if name in NO_EMBEDDING_ENGINE else set())
+    )
     row = unavailable["output.image"]
     assert (row["provider"], row["model"]) == ("mlx-gen", "AbstractFramework/flux.2-klein-4b-8bit")
     assert "Apple Silicon" in row["reason"]
@@ -132,9 +147,10 @@ def test_the_seed_never_writes_the_image_route(name):
 @pytest.mark.parametrize("name", NO_IMAGE_ENGINE)
 def test_apply_reports_image_unavailable_and_writes_the_rest(name):
     plan = {p["key"]: p for p in cd.plan_recommended_capability_defaults({}, host=_host(name), force=True)}
-    assert list(plan) == ["input.text", "output.voice", "output.image", "output.video", "input.voice"]
+    assert list(plan) == ["input.text", "output.voice", "output.image", "output.video", "input.voice", "embedding.text"]
     assert plan["input.text"]["action"] == plan["output.voice"]["action"] == "apply"
     assert plan["input.voice"]["action"] == ("unavailable" if name in NO_STT_ENGINE else "apply")
+    assert plan["embedding.text"]["action"] == ("unavailable" if name in NO_EMBEDDING_ENGINE else "apply")
     for key in ("output.image", "output.video"):
         row = plan[key]
         assert row["action"] == "unavailable" and row["changed"] is False
@@ -291,7 +307,7 @@ def test_a_host_with_no_supported_engine_gets_no_route_at_all():
     host = dict(synthetic_host("cpu16"), os="freebsd")
     assert cd.recommended_capability_default_routes(host) == {}
     unavailable = cd.recommended_unavailable_routes(host)
-    assert set(unavailable) == {"input.text", "input.image", "output.voice", "input.voice", "output.image", "output.video"}
+    assert set(unavailable) == {"input.text", "input.image", "output.voice", "input.voice", "output.image", "output.video", "embedding.text"}
     # Image input is read by the text model: unavailable for the same reason.
     assert unavailable["input.image"]["reason"] == unavailable["input.text"]["reason"]
 
@@ -310,7 +326,7 @@ def test_a_fresh_linux_install_leaves_image_unset_and_the_grid_says_why(tmp_path
     pin_host(_host("linux_x86_64_cpu"))
     manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
     stored = {k for k, r in manager.config.capability_defaults.routes.items() if r.configured()}
-    assert stored == {"input.text", "output.voice", "input.voice"}
+    assert stored == {"input.text", "output.voice", "input.voice", "embedding.text"}
     rows = {row["key"]: row for row in manager.list_capability_defaults()}
     image = rows["output.image"]
     assert image["configured"] is False and image["source"] == "not_configured"
@@ -321,7 +337,7 @@ def test_a_fresh_linux_install_leaves_image_unset_and_the_grid_says_why(tmp_path
     report = manager.apply_recommended_capability_defaults(force=True)
     # The seed lives in memory until a save: apply writes it (planned against
     # the store on disk, which does not exist yet).
-    assert report["unavailable"] == 2 and report["changed"] == 3
+    assert report["unavailable"] == 2 and report["changed"] == 4  # text, voice, speech input, embeddings
     assert "output.image" not in {k for k, r in manager.config.capability_defaults.routes.items() if r.configured()}
 
 
@@ -376,7 +392,9 @@ def _golden_apple_seed(text_model: str, video: bool = False) -> str:
     }
     # 2.19.2: speech input joins the seed, stamped recommended-v2. Round 16: Whisper large-v3
     # on mlx-whisper, the Apple GPU (CTranslate2, faster-whisper's engine, has no Metal backend).
-    routes = dict(sorted({**routes, "input.voice": dict(MLX_WHISPER)}.items()))
+    # 2.36: text embeddings join it (Qwen3 Embedding 0.6B; the stamp stays v2: no row is added
+    # to a store seeded earlier).
+    routes = dict(sorted({**routes, "input.voice": dict(MLX_WHISPER), "embedding.text": dict(EMBEDDING)}.items()))
     if video:
         routes = dict(sorted({**routes, "output.video": dict(VIDEO)}.items()))
     return json.dumps({"version": 1, "routes": routes, "seeded": "recommended-v2"}, sort_keys=False)
@@ -404,7 +422,7 @@ def test_apple_silicon_routes_downloads_and_plan_are_unchanged(kind, monkeypatch
     video = VIDEO_FITS[kind]
     routes = cd.recommended_capability_default_routes(host)
     assert list(routes) == (
-        ["input.text", "output.voice", "output.image"] + (["output.video"] if video else []) + ["input.voice"]
+        ["input.text", "output.voice", "output.image"] + (["output.video"] if video else []) + ["input.voice", "embedding.text"]
     )
     assert {k: v.to_dict() for k, v in routes.items()} == {
         "input.text": {"provider": "mlx", "model": text, "options": MTP_OPTIONS},
@@ -412,6 +430,7 @@ def test_apple_silicon_routes_downloads_and_plan_are_unchanged(kind, monkeypatch
         "output.image": {"provider": "mlx-gen", "model": "AbstractFramework/flux.2-klein-4b-8bit"},
         **({"output.video": dict(VIDEO)} if video else {}),
         "input.voice": dict(MLX_WHISPER),
+        "embedding.text": dict(EMBEDDING),
     }
     assert cd.recommended_model_downloads(host) == {
         "input.text": {"provider": "mlx", "artifact": text},
@@ -419,10 +438,11 @@ def test_apple_silicon_routes_downloads_and_plan_are_unchanged(kind, monkeypatch
         "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
         **({"output.video": {"provider": VIDEO["provider"], "artifact": VIDEO["model"]}} if video else {}),
         "input.voice": dict(MLX_WHISPER_DOWNLOAD),
+        "embedding.text": dict(EMBEDDING_DOWNLOAD),
     }
     plan = cd.plan_recommended_capability_defaults({}, host=host)
-    assert [p["key"] for p in plan] == ["input.text", "output.voice", "output.image", "output.video", "input.voice"]
-    for entry in list(plan[:3]) + (list(plan[3:4]) if video else []) + [plan[4]]:
+    assert [p["key"] for p in plan] == ["input.text", "output.voice", "output.image", "output.video", "input.voice", "embedding.text"]
+    for entry in list(plan[:3]) + (list(plan[3:4]) if video else []) + list(plan[4:]):
         # The pre-fix entry shape, exactly: no `reason`, no new keys.
         assert set(entry) == {"key", "selector", "action", "changed", "recommended", "before", "after", "download"}
         assert entry["action"] == "apply"

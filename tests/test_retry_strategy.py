@@ -872,3 +872,42 @@ def test_circuit_breaker_ignores_non_retryable_failures():
     assert info.get("state") != "open", (
         f"breaker opened on non-retryable caller errors: {info}"
     )
+
+
+def test_an_open_breaker_says_why_and_for_how_long_and_is_not_retried():
+    """2026-11-18: a local server answering 503 left the user with "Circuit breaker open for
+    OpenAICompatibleProvider:<model>" three times and no cause."""
+    from abstractcore.exceptions import CircuitBreakerOpenError, ProviderAPIError
+
+    manager = RetryManager(RetryConfig(max_attempts=1, failure_threshold=2, recovery_timeout=60, use_jitter=False))
+
+    def refused():
+        raise ProviderAPIError("OpenAI-compatible server API error (503): The current model state is uncertain or not ready")
+
+    for _ in range(2):
+        with pytest.raises(ProviderAPIError):
+            manager.execute_with_retry(refused, provider_key="P:m")
+    with pytest.raises(CircuitBreakerOpenError) as caught:
+        manager.execute_with_retry(lambda: "never called", provider_key="P:m")
+    message = str(caught.value)
+    assert message.startswith("Circuit breaker open for P:m")
+    assert "(503): The current model state is uncertain or not ready" in message and "60 s" in message
+    assert caught.value.retryable is False and 59 <= caught.value.retry_after_s <= 60
+    assert manager.should_retry(caught.value, 1) is False
+
+
+def test_a_half_open_breaker_whose_probes_were_not_counted_probes_again_later():
+    """Probes that end uncounted (endpoint unreachable, cancelled) neither close nor reopen the
+    breaker; once they had used every probe it refused every call until the process restarted."""
+    from datetime import timedelta
+
+    config = RetryConfig(failure_threshold=1, recovery_timeout=60, half_open_max_calls=3)
+    cb = CircuitBreaker(config)
+    cb.record_failure()
+    cb.last_failure_time -= timedelta(seconds=61)
+    assert cb.can_execute()  # enters half-open
+    assert [cb.can_execute() for _ in range(3)] == [True, True, False]  # three probes with the first, none counted
+    cb.half_open_since -= timedelta(seconds=61)
+    assert cb.can_execute()  # a new round of probes
+    cb.record_success()
+    assert cb.state == CircuitState.CLOSED

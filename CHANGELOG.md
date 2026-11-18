@@ -10,6 +10,37 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ## [Unreleased]
 
+## [2.36.0] - 2026-11-18
+
+### Added
+
+- **Text embeddings are part of the recommended starter set** (`embedding.text`, selector `embeddings`): Qwen3
+  Embedding 0.6B on AbstractCore's embedder (1024-dimension vectors). A fresh install is seeded with it, and
+  `apply-recommended` fills an empty embedding route with it. A store seeded by an earlier version is not changed
+  on its own, and the embedder's built-in fallback for a store with no embedding route stays all-MiniLM-L6-v2, so
+  vectors already stored keep matching.
+- `CircuitBreakerOpenError` (a `ProviderAPIError`): raised when a provider's circuit breaker refuses a call. It
+  carries `retry_after_s` and `retryable = False`.
+
+### Changed
+
+- **The recommended text model on an NVIDIA GPU follows the total GPU memory** (`model_catalog.CUDA_TEXT_TIERS`):
+  Qwen3.8 27B on LM Studio (`qwen/qwen3.8-27b@q4_k_m`) from 22 GiB, counted across all GPUs, and Qwen3.5 9B below.
+  The recommendations matrix lists the two NVIDIA classes.
+- **`apply-recommended` replaces a value written by the fresh-install seed** when the full host reading recommends
+  another one (the seed runs without a GPU probe, so an NVIDIA host is seeded the portable text model). A route you
+  configured yourself is kept, as before.
+- **The circuit-breaker error names its cause**: the provider's last error (status, message, URL) and the seconds
+  until the next attempt.
+- **The CUDA memory reading sums every GPU** (`utils/memory.py`), like the host profile.
+
+### Fixed
+
+- A half-open circuit breaker whose probe calls ended without a counted result (endpoint unreachable, cancelled)
+  starts a new round of probes after the recovery pause instead of refusing every later call.
+- An image or video route reads as downloaded whether its model is stored as `<repo>` or as AbstractVision's routed
+  name `<engine>/<repo>` (for example `diffusers/black-forest-labs/FLUX.2-klein-4B`).
+
 ## [2.35.2] - 2026-11-14
 
 ### Fixed

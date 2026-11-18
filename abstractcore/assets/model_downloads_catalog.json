@@ -4660,7 +4660,7 @@
         "embedding",
         "multilingual"
       ],
-      "starter": false,
+      "starter": true,
       "artifacts": [
         {
           "provider": "ollama",
@@ -4685,6 +4685,19 @@
           "download_bytes": 639150592,
           "size_source": "catalog",
           "verified": true
+        },
+        {
+          "provider": "huggingface",
+          "artifact": "Qwen/Qwen3-Embedding-0.6B",
+          "quant": "f16",
+          "download_bytes": 1207489041,
+          "size_source": "catalog",
+          "verified": false,
+          "upstream": {
+            "method": "hf_api",
+            "checked": "2026-11-18",
+            "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
+          }
         }
       ],
       "capabilities_override": {
