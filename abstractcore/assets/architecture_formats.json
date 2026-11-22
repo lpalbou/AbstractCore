@@ -1657,6 +1657,32 @@
         "laya-gguf",
         "/laya"
       ]
+    },
+    "inkling": {
+      "description": "Thinking Machines Inkling family: Inkling and Inkling Small (InklingForConditionalGeneration, model_type 'inkling_mm_model'), Inkling 2 Small (Inkling2ForConditionalGeneration, 'inkling2') and Inkling 2 Mini (Inkling2LoopForConditionalGeneration, 'inkling2_loop'). Messages are <|message_ROLE|> headers followed by typed content blocks (<|content_text|>, <|content_thinking|>, <|content_image|>) closed by <|end_message|>; a reply ends with <|content_model_end_sampling|>. Tools are declared once as a JSON list in <|message_system|>tool_declare<|content_xml|> and called as <|message_model|>NAME<|content_invoke_tool_json|>{\"name\":...,\"args\":{...}}<|end_message|>. Reasoning effort is the template variable reasoning_effort (none 0.0, minimal 0.1, low 0.2, medium 0.7, high 0.9 default, xhigh/max 0.99) rendered as a 'Thinking effort level' system message; no value switches reasoning off. Served by vLLM and SGLang with --reasoning-parser inkling and --tool-call-parser inkling, which require the tools in the request's `tools` field",
+      "message_format": "openai_chat",
+      "tool_format": "native",
+      "tool_prefix": "<|content_invoke_tool_json|>",
+      "tool_calling_format": "<|message_model|>function_name<|content_invoke_tool_json|>{\"name\":\"function_name\",\"args\":{\"key\":\"value\"}}<|end_message|>",
+      "default_tool_support": "native",
+      "thinking_output_field": "reasoning",
+      "thinking_control": {
+        "request_param": "reasoning_effort"
+      },
+      "reasoning_support": true,
+      "reasoning_levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high"
+      ],
+      "inference_parameters": {
+        "temperature": 1.0
+      },
+      "patterns": [
+        "inkling",
+        "thinkingmachines/inkling"
+      ]
     }
   },
   "message_formats": {

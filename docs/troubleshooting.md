@@ -451,6 +451,29 @@ if hasattr(response, 'tool_calls') and response.tool_calls:
     print("Tools were called")
 ```
 
+**The model announces a tool call, but `tool_calls` is empty (self-hosted servers):**
+
+AbstractCore sends tools in the request's `tools` field only when the model's registry entry
+declares `tool_support: "native"`. A model name the registry does not recognize uses the
+`prompted` mode instead: the tool list is written into the system prompt and calls are parsed from
+the reply text. Servers that extract tool calls with a model-specific parser, such as vLLM or
+SGLang with `--tool-call-parser`, only return calls for tools declared in `tools`, so in prompted
+mode the call never reaches you and the reply keeps only the sentence before it.
+
+Check how AbstractCore resolves the name you serve the model under:
+
+```python
+from abstractcore.architectures import detect_architecture, get_model_capabilities
+
+name = "my-served-model"  # the model id your server reports in /v1/models
+print(detect_architecture(name), get_model_capabilities(name).get("tool_support"))
+```
+
+If it prints `generic` and `prompted` for a model that supports native tool calling, serve the
+model under its published repository name (for example `thinkingmachines/Inkling-2-Mini`) or a
+registered alias, or add an entry to `abstractcore/assets/model_capabilities.json` (see
+[Model Metadata Registry](architecture.md#model-metadata-registry-source-of-truth)).
+
 ---
 
 ## Local Model Downloads

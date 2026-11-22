@@ -13662,6 +13662,219 @@
         ]
       },
       "notes": "OpenJev (openjev/openjev): a 27B Qwen3.5 fine-tune reading one letter per option; weights are CC-BY-NC-4.0 (non-commercial), which AbstractCore surfaces but does not endorse for commercial use. Runs through the label-logit engine on huggingface (transformers or GGUF) and mlx (openjev/openjev-MLX-4bit, 15 GB)."
+    },
+    "inkling-2-mini": {
+      "max_output_tokens": 32768,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_output_field": "reasoning",
+      "thinking_control": {
+        "request_param": "reasoning_effort"
+      },
+      "reasoning_levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "architecture": "inkling",
+      "total_parameters": "26.4B",
+      "active_parameters": "3.4B",
+      "experts": 128,
+      "experts_activated": 8,
+      "shared_experts": 0,
+      "license": "Apache-2.0",
+      "release_date": "2026-11-17",
+      "notes": "Inkling2LoopForConditionalGeneration (model_type 'inkling2_loop'). Looped MoE: 24 layers, 20 sliding-window (1,024 tokens) and 4 global attention layers; layers 6-17 run 3 times per token (5.4B effective active parameters). Single checkpoint of about 20 GB in mixed NVFP4 (experts) and MXFP8 (last four layers). Text and image input; audio input is rejected by the template. Chat template: <|message_ROLE|> headers with typed content blocks (<|content_text|>, <|content_thinking|>, <|content_image|>) closed by <|end_message|>, reply end <|content_model_end_sampling|>; tools declared in <|message_system|>tool_declare<|content_xml|> and called as <|message_model|>NAME<|content_invoke_tool_json|>{\"name\":...,\"args\":{...}}<|end_message|>. Serve with vLLM or SGLang using --reasoning-parser inkling and --tool-call-parser inkling (reasoning arrives in message.reasoning). Tool calling needs the tools in the request's `tools` field: the server's tool parser extracts the call only for declared tools, so a tool list written into the system prompt yields no call. reasoning_effort maps to the template's thinking effort (minimal 0.1, low 0.2, medium 0.7, high 0.9 = default); the lowest setting 'none' (0.0) does not disable reasoning, so thinking='off' uses the lowest declared level. No output cap is published: max_output_tokens 32,768 bounds long reasoning traces (the model card notes occasional long reasoning loops) — raise per deployment.",
+      "source": "Hugging Face model card, config.json and chat_template.jinja (thinkingmachines/Inkling-2-Mini), accessed 2026-11-22",
+      "canonical_name": "inkling-2-mini",
+      "aliases": [
+        "thinkingmachines/Inkling-2-Mini",
+        "Inkling-2-Mini",
+        "inkling2-mini"
+      ],
+      "max_tokens": 1048576,
+      "inference_parameters": {
+        "temperature": 1.0
+      },
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "inkling-2-small": {
+      "max_output_tokens": 32768,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_output_field": "reasoning",
+      "thinking_control": {
+        "request_param": "reasoning_effort"
+      },
+      "reasoning_levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "architecture": "inkling",
+      "total_parameters": "594B",
+      "active_parameters": "17B",
+      "experts": 384,
+      "experts_activated": 8,
+      "shared_experts": 0,
+      "license": "Apache-2.0",
+      "release_date": "2026-11-04",
+      "notes": "Inkling2ForConditionalGeneration (model_type 'inkling2'). 48 layers, sliding-window attention 1,024 tokens. Published as NVFP4 (thinkingmachines/Inkling-2-Small) and MXFP8 (thinkingmachines/Inkling-2-Small-MXFP8). Text and image input. Chat template: <|message_ROLE|> headers with typed content blocks (<|content_text|>, <|content_thinking|>, <|content_image|>) closed by <|end_message|>, reply end <|content_model_end_sampling|>; tools declared in <|message_system|>tool_declare<|content_xml|> and called as <|message_model|>NAME<|content_invoke_tool_json|>{\"name\":...,\"args\":{...}}<|end_message|>. Serve with vLLM or SGLang using --reasoning-parser inkling and --tool-call-parser inkling (reasoning arrives in message.reasoning). Tool calling needs the tools in the request's `tools` field: the server's tool parser extracts the call only for declared tools, so a tool list written into the system prompt yields no call. reasoning_effort maps to the template's thinking effort (minimal 0.1, low 0.2, medium 0.7, high 0.9 = default); the lowest setting 'none' (0.0) does not disable reasoning, so thinking='off' uses the lowest declared level. No output cap is published: max_output_tokens 32,768 bounds long reasoning traces (the model card notes occasional long reasoning loops) — raise per deployment.",
+      "source": "Hugging Face model card, config.json and chat_template.jinja (thinkingmachines/Inkling-2-Small), accessed 2026-11-22",
+      "canonical_name": "inkling-2-small",
+      "aliases": [
+        "thinkingmachines/Inkling-2-Small",
+        "thinkingmachines/Inkling-2-Small-MXFP8",
+        "Inkling-2-Small",
+        "inkling2-small",
+        "inkling-2-small-mxfp8"
+      ],
+      "max_tokens": 1048576,
+      "inference_parameters": {
+        "temperature": 1.0
+      },
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "inkling": {
+      "max_output_tokens": 32768,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_output_field": "reasoning",
+      "thinking_control": {
+        "request_param": "reasoning_effort"
+      },
+      "reasoning_levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high"
+      ],
+      "architecture": "inkling",
+      "total_parameters": "975B",
+      "active_parameters": "41B",
+      "experts": 256,
+      "experts_activated": 6,
+      "shared_experts": 2,
+      "license": "Apache-2.0",
+      "release_date": "2026-07-14",
+      "notes": "InklingForConditionalGeneration (model_type 'inkling_mm_model'). 66 layers, sliding-window attention 512 tokens. Published as BF16 (thinkingmachines/Inkling) and NVFP4 (thinkingmachines/Inkling-NVFP4). Text, image and audio input. Chat template: <|message_ROLE|> headers with typed content blocks (<|content_text|>, <|content_thinking|>, <|content_image|>) closed by <|end_message|>, reply end <|content_model_end_sampling|>; tools declared in <|message_system|>tool_declare<|content_xml|> and called as <|message_model|>NAME<|content_invoke_tool_json|>{\"name\":...,\"args\":{...}}<|end_message|>. Serve with vLLM or SGLang using --reasoning-parser inkling and --tool-call-parser inkling (reasoning arrives in message.reasoning). Tool calling needs the tools in the request's `tools` field: the server's tool parser extracts the call only for declared tools, so a tool list written into the system prompt yields no call. reasoning_effort maps to the template's thinking effort (minimal 0.1, low 0.2, medium 0.7, high 0.9 = default); the lowest setting 'none' (0.0) does not disable reasoning, so thinking='off' uses the lowest declared level. No output cap is published: max_output_tokens 32,768 bounds long reasoning traces (the model card notes occasional long reasoning loops) — raise per deployment.",
+      "source": "Hugging Face model card, config.json and chat_template.jinja (thinkingmachines/Inkling), accessed 2026-11-22",
+      "canonical_name": "inkling",
+      "aliases": [
+        "thinkingmachines/Inkling",
+        "thinkingmachines/Inkling-NVFP4",
+        "inkling-nvfp4"
+      ],
+      "max_tokens": 1048576,
+      "inference_parameters": {
+        "temperature": 1.0
+      },
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "inkling-small": {
+      "max_output_tokens": 32768,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_output_field": "reasoning",
+      "thinking_control": {
+        "request_param": "reasoning_effort"
+      },
+      "reasoning_levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high"
+      ],
+      "architecture": "inkling",
+      "total_parameters": "276B",
+      "active_parameters": "12B",
+      "experts": 256,
+      "experts_activated": 6,
+      "shared_experts": 2,
+      "license": "Apache-2.0",
+      "release_date": "2026-07-27",
+      "notes": "InklingForConditionalGeneration (model_type 'inkling_mm_model'). 42 layers, sliding-window attention 512 tokens. Published as BF16 (thinkingmachines/Inkling-Small) and NVFP4 (thinkingmachines/Inkling-Small-NVFP4). Text, image and audio input. Chat template: <|message_ROLE|> headers with typed content blocks (<|content_text|>, <|content_thinking|>, <|content_image|>) closed by <|end_message|>, reply end <|content_model_end_sampling|>; tools declared in <|message_system|>tool_declare<|content_xml|> and called as <|message_model|>NAME<|content_invoke_tool_json|>{\"name\":...,\"args\":{...}}<|end_message|>. Serve with vLLM or SGLang using --reasoning-parser inkling and --tool-call-parser inkling (reasoning arrives in message.reasoning). Tool calling needs the tools in the request's `tools` field: the server's tool parser extracts the call only for declared tools, so a tool list written into the system prompt yields no call. reasoning_effort maps to the template's thinking effort (minimal 0.1, low 0.2, medium 0.7, high 0.9 = default); the lowest setting 'none' (0.0) does not disable reasoning, so thinking='off' uses the lowest declared level. No output cap is published: max_output_tokens 32,768 bounds long reasoning traces (the model card notes occasional long reasoning loops) — raise per deployment.",
+      "source": "Hugging Face model card, config.json and chat_template.jinja (thinkingmachines/Inkling-Small), accessed 2026-11-22",
+      "canonical_name": "inkling-small",
+      "aliases": [
+        "thinkingmachines/Inkling-Small",
+        "thinkingmachines/Inkling-Small-NVFP4",
+        "Inkling-Small",
+        "inkling-small-nvfp4"
+      ],
+      "max_tokens": 1048576,
+      "inference_parameters": {
+        "temperature": 1.0
+      },
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     }
   },
   "tool_support_levels": {

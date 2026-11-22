@@ -3510,6 +3510,29 @@ if hasattr(response, 'tool_calls') and response.tool_calls:
     print("Tools were called")
 ```
 
+**The model announces a tool call, but `tool_calls` is empty (self-hosted servers):**
+
+AbstractCore sends tools in the request's `tools` field only when the model's registry entry
+declares `tool_support: "native"`. A model name the registry does not recognize uses the
+`prompted` mode instead: the tool list is written into the system prompt and calls are parsed from
+the reply text. Servers that extract tool calls with a model-specific parser, such as vLLM or
+SGLang with `--tool-call-parser`, only return calls for tools declared in `tools`, so in prompted
+mode the call never reaches you and the reply keeps only the sentence before it.
+
+Check how AbstractCore resolves the name you serve the model under:
+
+```python
+from abstractcore.architectures import detect_architecture, get_model_capabilities
+
+name = "my-served-model"  # the model id your server reports in /v1/models
+print(detect_architecture(name), get_model_capabilities(name).get("tool_support"))
+```
+
+If it prints `generic` and `prompted` for a model that supports native tool calling, serve the
+model under its published repository name (for example `thinkingmachines/Inkling-2-Mini`) or a
+registered alias, or add an entry to `abstractcore/assets/model_capabilities.json` (see
+[Model Metadata Registry](docs/architecture.md#model-metadata-registry-source-of-truth)).
+
 ---
 
 ## Local Model Downloads
@@ -14736,6 +14759,7 @@ table shows what reaches the server for `thinking="on"` / `"off"` / `"high"`.
 | Gemma 4, Nemotron, GLM-5, LongCat (`template_kwarg` only) | `reasoning_effort` `medium` / `none` / `medium` (reported as `on`) | `chat_template_kwargs.enable_thinking`; Nemotron `low_effort` for `low`/`minimal` | HF: template switch; MLX: not mapped (warns) |
 | DeepSeek V4, Mistral Small 4 (levels incl. `none`, no template surface) | `reasoning_effort` `high` / `none` / `high` | `reasoning_effort` | not mapped (warns) |
 | GPT-OSS (Harmony, levels `low\|medium\|high`) | `Reasoning:` system line plus `reasoning_effort` | `reasoning_effort` (vLLM builds the Harmony system message from it) plus the system line | `Reasoning:` system line |
+| Inkling, Inkling 2 (`request_param: reasoning_effort`, levels `minimal\|low\|medium\|high`, plus `xhigh` on Inkling 2; no OFF value) | `reasoning_effort` `medium` / `minimal` / `high` (off warns: reasoning continues at the lowest effort) | `reasoning_effort` `medium` / `minimal` / `high` (off warns: reasoning continues at the lowest effort) | not mapped (warns) |
 | GLM-4.6V (`prompt_disable_token` only) | `/nothink` appended for off; on not mapped (warns) | `/nothink` for off; on not mapped | `/nothink` for off |
 | Kimi K2.6 (`request_param: thinking`), surface-less reasoning models | not mapped (warns) | not mapped (warns) | not mapped (warns) |
 
