@@ -283,3 +283,12 @@ def test_gguf_and_mlx_packaging_names_resolve_for_every_family() -> None:
     assert resolve("Qwen/Qwen3.8-27B-FP8", models) == "qwen3.8-27b-fp8"
     # A speculative-decoding drafter is a different artifact and must NOT inherit its target.
     assert resolve("mlx-community/Qwen3.8-27B-MTP-4bit", models) not in {"qwen3.8-27b"}
+
+def test_nvidia_qad_build_of_qwen3_8_27b_is_the_registered_model() -> None:
+    from abstractcore.architectures.detection import resolve_registered_model_name
+
+    for name in ("nvidia/Qwen3.8-27B-NVFP4-QAD", "Qwen3.8-27B-NVFP4-QAD", "vllm/nvidia/Qwen3.8-27B-NVFP4-QAD"):
+        assert resolve_registered_model_name(name) == "qwen3.8-27b"
+    caps = get_model_capabilities("nvidia/Qwen3.8-27B-NVFP4-QAD")
+    assert caps.get("max_tokens") == 262144
+    assert caps.get("tool_support") == "native"

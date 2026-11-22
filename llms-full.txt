@@ -7614,6 +7614,23 @@ The body can also be `{"tool_calls": [...]}`, a list of calls, or the OpenAI
 text: a JSON answer, a block naming a tool the request did not offer, and every
 ```` ```json ```` block when the request has no tools.
 
+Native tool calls work the same way. OpenAI and OpenAI-compatible servers (vLLM, LM Studio,
+OpenRouter, Portkey) stream a call as a named first delta followed by fragments of its arguments.
+AbstractCore joins the fragments and delivers each call once, complete, on the chunk that carries
+the `finish_reason` (or on a last chunk if the stream ends without one). Parallel calls arrive
+together, in order:
+
+```python
+for chunk in llm.generate("Weather in Paris and Tokyo?", tools=[get_weather], stream=True):
+    if chunk.tool_calls:
+        print(chunk.tool_calls)
+# [{"id": "call_1", "type": "function", "name": "get_weather", "arguments": "{\"city\": \"Paris\"}"},
+#  {"id": "call_2", "type": "function", "name": "get_weather", "arguments": "{\"city\": \"Tokyo\"}"}]
+```
+
+`arguments` is the JSON string the model wrote; a call the stream cut short keeps the part that
+was received. The raw server deltas stay available in `chunk.raw_response` as they arrive.
+
 GPT-OSS models write Harmony transcripts. When the backend passes the raw transcript through, the
 stream is split by channel as it arrives: `final` is text, `analysis` is reasoning
 (`chunk.metadata["reasoning_delta"]`), `commentary` without a recipient is text, and a message

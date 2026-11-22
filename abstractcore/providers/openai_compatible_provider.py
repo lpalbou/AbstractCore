@@ -107,6 +107,7 @@ def _inline_json_schema_refs(schema: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         return schema
 from .base import BaseProvider, ThinkingControlHandling
+from .stream_tool_calls import StreamedToolCallAssembler
 from ..architectures.response_postprocessing import extract_reasoning_from_message
 from ..core.types import GenerateResponse
 from ..exceptions import (
@@ -1524,6 +1525,7 @@ class OpenAICompatibleProvider(BaseProvider):
             self._raise_for_status(response, request_url=request_url)
 
             yielded_any = False
+            tool_call_assembler = StreamedToolCallAssembler()
             for line in response.iter_lines():
                 if line:
                     # Decode bytes to string if necessary
@@ -1588,8 +1590,11 @@ class OpenAICompatibleProvider(BaseProvider):
                                     model_capabilities=self.model_capabilities,
                                     strip=False,
                                 )
-                                tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
+                                # Tool calls arrive as per-chunk fragments: join them and
+                                # publish the complete calls once, with the finish reason.
+                                tool_call_assembler.feed(delta.get("tool_calls") or choice.get("tool_calls"))
                                 finish_reason = choice.get("finish_reason")
+                                tool_calls = tool_call_assembler.drain() if finish_reason else None
 
                                 metadata = {}
                                 if isinstance(reasoning, str) and reasoning.strip():
@@ -1619,6 +1624,11 @@ class OpenAICompatibleProvider(BaseProvider):
 
                         except json.JSONDecodeError:
                             continue
+
+            # A stream that ended without a finish reason still delivers its calls.
+            pending_tool_calls = tool_call_assembler.drain()
+            if pending_tool_calls:
+                yield GenerateResponse(content="", model=self.model, tool_calls=pending_tool_calls)
 
     @staticmethod
     def _stream_error_event_detail(chunk: Any) -> Optional[str]:
@@ -1947,6 +1957,7 @@ class OpenAICompatibleProvider(BaseProvider):
             self._raise_for_status(response, request_url=request_url)
 
             yielded_any = False
+            tool_call_assembler = StreamedToolCallAssembler()
             async for line in response.aiter_lines():
                 if line:
                     line = line.strip()
@@ -1998,8 +2009,11 @@ class OpenAICompatibleProvider(BaseProvider):
                                     model_capabilities=self.model_capabilities,
                                     strip=False,
                                 )
-                                tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
+                                # Tool calls arrive as per-chunk fragments: join them and
+                                # publish the complete calls once, with the finish reason.
+                                tool_call_assembler.feed(delta.get("tool_calls") or choice.get("tool_calls"))
                                 finish_reason = choice.get("finish_reason")
+                                tool_calls = tool_call_assembler.drain() if finish_reason else None
 
                                 metadata = {}
                                 if isinstance(reasoning, str) and reasoning.strip():
@@ -2027,6 +2041,11 @@ class OpenAICompatibleProvider(BaseProvider):
 
                         except json.JSONDecodeError:
                             continue
+
+            # A stream that ended without a finish reason still delivers its calls.
+            pending_tool_calls = tool_call_assembler.drain()
+            if pending_tool_calls:
+                yield GenerateResponse(content="", model=self.model, tool_calls=pending_tool_calls)
 
     def supports_prompt_cache(self) -> bool:
         """Best-effort: forward `prompt_cache_key` to OpenAI-compatible servers that support it."""

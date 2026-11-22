@@ -5509,7 +5509,8 @@
         "bartowski/Qwen3.8-27B-GGUF",
         "mlx-community/Qwen3.8-27B-4bit",
         "mlx-community/Qwen3.8-27B-8bit",
-        "mlx-community/Qwen3.8-27B-bf16"
+        "mlx-community/Qwen3.8-27B-bf16",
+        "nvidia/Qwen3.8-27B-NVFP4-QAD"
       ],
       "max_tokens": 262144,
       "license": "Apache-2.0",

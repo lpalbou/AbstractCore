@@ -16,6 +16,7 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider, ThinkingControlHandling
 from ._http import build_read_idle_timeout
+from .stream_tool_calls import StreamedToolCallAssembler
 from ..core.types import GenerateResponse
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -670,7 +671,7 @@ class OpenAIProvider(BaseProvider):
 
         # For streaming with tools, we need to collect the complete response
         collected_content = ""
-        collected_tool_calls = {}  # Use dict to merge streaming chunks by tool call ID
+        collected_tool_calls = StreamedToolCallAssembler()  # joins streamed fragments by index
         final_response = None
 
         async for chunk in stream:
@@ -684,24 +685,7 @@ class OpenAIProvider(BaseProvider):
 
             # Handle tool calls in streaming - merge incomplete chunks
             if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                for tc in delta.tool_calls:
-                    tc_id = getattr(tc, 'id', None) or getattr(tc, 'index', 0)
-
-                    # Initialize or get existing tool call
-                    if tc_id not in collected_tool_calls:
-                        collected_tool_calls[tc_id] = {
-                            "id": getattr(tc, 'id', None),
-                            "type": getattr(tc, 'type', 'function'),
-                            "name": None,
-                            "arguments": ""
-                        }
-
-                    # Update with new data from this chunk
-                    if hasattr(tc, 'function'):
-                        if hasattr(tc.function, 'name') and tc.function.name:
-                            collected_tool_calls[tc_id]["name"] = tc.function.name
-                        if hasattr(tc.function, 'arguments') and tc.function.arguments:
-                            collected_tool_calls[tc_id]["arguments"] += tc.function.arguments
+                collected_tool_calls.feed(delta.tool_calls)
 
             # Create chunk response
             chunk_response = GenerateResponse(
@@ -715,10 +699,7 @@ class OpenAIProvider(BaseProvider):
             # If this is the final chunk and we have tools, handle tool execution
             if choice.finish_reason and tools and collected_tool_calls:
                 # Convert dict to list and filter out incomplete tool calls
-                complete_tool_calls = []
-                for tc in collected_tool_calls.values():
-                    if tc["name"] and tc["arguments"] is not None:  # Include tool calls with empty args
-                        complete_tool_calls.append(tc)
+                complete_tool_calls = [tc for tc in (collected_tool_calls.drain() or []) if tc["name"]]
 
                 # Create complete response for tool processing
                 complete_response = GenerateResponse(
@@ -857,7 +838,7 @@ class OpenAIProvider(BaseProvider):
 
         # For streaming with tools, we need to collect the complete response
         collected_content = ""
-        collected_tool_calls = {}  # Use dict to merge streaming chunks by tool call ID
+        collected_tool_calls = StreamedToolCallAssembler()  # joins streamed fragments by index
         final_response = None
 
         for chunk in stream:
@@ -871,24 +852,7 @@ class OpenAIProvider(BaseProvider):
 
             # Handle tool calls in streaming - merge incomplete chunks
             if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                for tc in delta.tool_calls:
-                    tc_id = getattr(tc, 'id', None) or getattr(tc, 'index', 0)
-
-                    # Initialize or get existing tool call
-                    if tc_id not in collected_tool_calls:
-                        collected_tool_calls[tc_id] = {
-                            "id": getattr(tc, 'id', None),
-                            "type": getattr(tc, 'type', 'function'),
-                            "name": None,
-                            "arguments": ""
-                        }
-
-                    # Update with new data from this chunk
-                    if hasattr(tc, 'function'):
-                        if hasattr(tc.function, 'name') and tc.function.name:
-                            collected_tool_calls[tc_id]["name"] = tc.function.name
-                        if hasattr(tc.function, 'arguments') and tc.function.arguments:
-                            collected_tool_calls[tc_id]["arguments"] += tc.function.arguments
+                collected_tool_calls.feed(delta.tool_calls)
 
             # Create chunk response
             chunk_response = GenerateResponse(
@@ -902,10 +866,7 @@ class OpenAIProvider(BaseProvider):
             # If this is the final chunk and we have tools, handle tool execution
             if choice.finish_reason and tools and collected_tool_calls:
                 # Convert dict to list and filter out incomplete tool calls
-                complete_tool_calls = []
-                for tc in collected_tool_calls.values():
-                    if tc["name"] and tc["arguments"] is not None:  # Include tool calls with empty args
-                        complete_tool_calls.append(tc)
+                complete_tool_calls = [tc for tc in (collected_tool_calls.drain() or []) if tc["name"]]
 
                 # Create complete response for tool processing
                 complete_response = GenerateResponse(
