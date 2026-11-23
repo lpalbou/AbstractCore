@@ -13697,7 +13697,6 @@
       "canonical_name": "inkling-2-mini-26b-a3b",
       "aliases": [
         "thinkingmachines/Inkling-2-Mini",
-        "Inkling-2-Mini",
         "inkling2-mini",
         "inkling-2-mini"
       ],
@@ -13751,7 +13750,6 @@
       "aliases": [
         "thinkingmachines/Inkling-2-Small",
         "thinkingmachines/Inkling-2-Small-MXFP8",
-        "Inkling-2-Small",
         "inkling2-small",
         "inkling-2-small-mxfp8",
         "inkling-2-small"
@@ -13859,7 +13857,6 @@
       "aliases": [
         "thinkingmachines/Inkling-Small",
         "thinkingmachines/Inkling-Small-NVFP4",
-        "Inkling-Small",
         "inkling-small-nvfp4",
         "inkling-small"
       ],
