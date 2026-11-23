@@ -2,7 +2,7 @@
 
 > Canonical user documentation in one file. The linked source pages remain authoritative; source code determines behavior.
 
-Package version: 2.36.0
+Package version: 2.37.0
 
 Start with the [agent skill](skills/abstractcore/SKILL.md) for a portable operating procedure,
 or [llms.txt](llms.txt) for a short index. Register the complete skill folder with its references.
@@ -95,6 +95,8 @@ The linked source pages are canonical. Fenced examples retain their source forma
 
 Unified LLM Interface
 > Write once, run everywhere
+
+What's new in 2.37.0: with `stream=True`, a native tool call arrives once and complete from OpenAI, OpenAI-compatible (vLLM, LM Studio, OpenRouter, Portkey) and Anthropic streams; a tool call the model did not finish (output stopped at its limit) is reported in `metadata["unparsed_tool_call"]` instead of being delivered with empty arguments, streamed or not; and the registry covers the Thinking Machines Inkling family (Inkling 2 Mini, Inkling 2 Small, Inkling, Inkling Small) with native tool calling. See the [changelog](CHANGELOG.md#2370---2026-11-23).
 
 What's new in 2.36.0: on an NVIDIA GPU the recommended text model follows the total GPU memory (Qwen3.8 27B from 22 GiB, across all GPUs); Qwen3 Embedding 0.6B joins the recommended starter set; a circuit-breaker refusal names the provider's last error and when the next attempt is made.
 
@@ -7617,8 +7619,7 @@ text: a JSON answer, a block naming a tool the request did not offer, and every
 Native tool calls work the same way. OpenAI and OpenAI-compatible servers (vLLM, LM Studio,
 OpenRouter, Portkey) stream a call as a named first delta followed by fragments of its arguments.
 AbstractCore joins the fragments and delivers each call once, complete, on the chunk that carries
-the `finish_reason` (or on a last chunk if the stream ends without one). Parallel calls arrive
-together, in order:
+the `finish_reason`. Parallel calls arrive together, in order:
 
 ```python
 for chunk in llm.generate("Weather in Paris and Tokyo?", tools=[get_weather], stream=True):
@@ -7628,8 +7629,29 @@ for chunk in llm.generate("Weather in Paris and Tokyo?", tools=[get_weather], st
 #  {"id": "call_2", "type": "function", "name": "get_weather", "arguments": "{\"city\": \"Tokyo\"}"}]
 ```
 
-`arguments` is the JSON string the model wrote; a call the stream cut short keeps the part that
-was received. The raw server deltas stay available in `chunk.raw_response` as they arrive.
+A native call on a stream carries `id` and `arguments` as the JSON string the model wrote; a
+non-streamed response carries the same call as `call_id` and `arguments` as a dict. An
+OpenAI-compatible stream that ends without a finish reason still delivers its calls, on a last
+chunk. While a call is arriving, the chunks that carry its pieces have
+`chunk.metadata["tool_call_delta"] = True`, which you can use to show progress, and the raw
+server delta stays available in `chunk.raw_response`.
+
+Anthropic streams a call's input in pieces too. Each call is delivered once, complete, when its
+content block ends, with `"type": "tool_use"`; a tool that takes no arguments arrives with
+`"arguments": "{}"`.
+
+In every case a chunk's `tool_calls` holds complete calls only, and text that was streamed before
+a call is not repeated on the chunk that carries it.
+
+A model can stop in the middle of a native call, usually because it reached `max_output_tokens`
+(`finish_reason: "length"`). Its arguments are then not a JSON object, and the call is not
+delivered in `tool_calls`, streamed or not, so it cannot run with missing arguments. The chunk (or
+the response) reports it instead, with everything the model wrote and a warning:
+
+```python
+chunk.metadata["unparsed_tool_call"]
+# {"format": "native", "text": "write_file {\"path\": \"a.txt\", \"content\": \"unfin", "reason": "unclosed"}
+```
 
 GPT-OSS models write Harmony transcripts. When the backend passes the raw transcript through, the
 stream is split by channel as it arrives: `final` is text, `analysis` is reasoning
@@ -14776,7 +14798,7 @@ table shows what reaches the server for `thinking="on"` / `"off"` / `"high"`.
 | Gemma 4, Nemotron, GLM-5, LongCat (`template_kwarg` only) | `reasoning_effort` `medium` / `none` / `medium` (reported as `on`) | `chat_template_kwargs.enable_thinking`; Nemotron `low_effort` for `low`/`minimal` | HF: template switch; MLX: not mapped (warns) |
 | DeepSeek V4, Mistral Small 4 (levels incl. `none`, no template surface) | `reasoning_effort` `high` / `none` / `high` | `reasoning_effort` | not mapped (warns) |
 | GPT-OSS (Harmony, levels `low\|medium\|high`) | `Reasoning:` system line plus `reasoning_effort` | `reasoning_effort` (vLLM builds the Harmony system message from it) plus the system line | `Reasoning:` system line |
-| Inkling, Inkling 2 (`request_param: reasoning_effort`, levels `minimal\|low\|medium\|high`, plus `xhigh` on Inkling 2; no OFF value) | `reasoning_effort` `medium` / `minimal` / `high` (off warns: reasoning continues at the lowest effort) | `reasoning_effort` `medium` / `minimal` / `high` (off warns: reasoning continues at the lowest effort) | not mapped (warns) |
+| Inkling, Inkling 2 (`request_param: reasoning_effort`, levels `minimal\|low\|medium\|high`, plus `xhigh` on Inkling 2; no value turns reasoning off) | `reasoning_effort` `medium` / `none` / `high` (the model still reasons at `none`, its lowest effort) | `reasoning_effort` `medium` / `minimal` / `high`, plus `thinking_token_budget` for a level (off warns: reasoning continues at the lowest effort) | not mapped (warns) |
 | GLM-4.6V (`prompt_disable_token` only) | `/nothink` appended for off; on not mapped (warns) | `/nothink` for off; on not mapped | `/nothink` for off |
 | Kimi K2.6 (`request_param: thinking`), surface-less reasoning models | not mapped (warns) | not mapped (warns) | not mapped (warns) |
 

@@ -10,6 +10,64 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ## [Unreleased]
 
+## [2.37.0] - 2026-11-23
+
+### Added
+
+- **Thinking Machines Inkling family in the capability registry** (`assets/model_capabilities.json`,
+  `assets/architecture_formats.json`). Inkling 2 Mini, Inkling 2 Small, Inkling and Inkling Small resolve to
+  their entries (`inkling-2-mini-26b-a3b`, `inkling-2-small-594b-a17b`, `inkling-975b-a41b`,
+  `inkling-small-276b-a12b`) from the plain names (`inkling-2-mini`, `inkling`, ...), the published repository
+  names (`thinkingmachines/Inkling-2-Mini`, `thinkingmachines/Inkling-2-Small-MXFP8`,
+  `thinkingmachines/Inkling-NVFP4`, ...) and GGUF or MLX re-packagings, and to the new `inkling` architecture.
+  Tool calling is native, so OpenAI-compatible servers running vLLM or SGLang with `--tool-call-parser inkling`
+  receive the tools in the request's `tools` field and return parsed `tool_calls`. Reasoning arrives in
+  `message.reasoning`. `thinking` maps to `reasoning_effort`: `minimal`, `low`, `medium` and `high` on every
+  model, plus `xhigh` on Inkling 2; `thinking="off"` sends the lowest effort, because no Inkling effort value
+  turns reasoning off. Entries declare a 1,048,576-token context, image input (and voice and sound input on
+  Inkling and Inkling Small), and `max_output_tokens` 32,768. An Inkling release the registry does not list yet
+  (`thinkingmachines/Inkling-3-...`) gets native tool calling from the architecture, and a model whose name only
+  contains the word (`twinkling-7b`) is not read as an Inkling model.
+- **`nvidia/Qwen3.8-27B-NVFP4-QAD` is an alias of `qwen3.8-27b`** (`assets/model_capabilities.json`), so
+  NVIDIA's quantization-aware-distilled NVFP4 build resolves to the registered model by name.
+- **Chunks that carry the pieces of a native tool call are marked** with
+  `chunk.metadata["tool_call_delta"] = True` (OpenAI-compatible, OpenAI and Anthropic streams). You can use it
+  to show that a call is on its way; time to first token counts the first marked chunk.
+
+### Changed
+
+- **A native tool call the model did not finish is reported, not delivered** (`providers/native_tool_calls.py`,
+  `providers/base.py`). When a model stops in the middle of a call, usually at `max_output_tokens`
+  (`finish_reason: "length"`), its arguments are not a JSON object. Such a call used to come back as a tool
+  call with empty arguments (`{}`), which an agent could execute. It is now left out of `tool_calls`, streamed
+  or not, and reported in `metadata["unparsed_tool_call"]` (`format: "native"`, everything the model wrote, and
+  `reason: "unclosed"` or `"unparseable"`) with `metadata["tool_call_error"]` and a warning, the same way an
+  unparsed text tool call is reported. A call without arguments (`""`, `null` or `{}`) is delivered as before.
+
+### Fixed
+
+- **Troubleshooting covers announced but missing tool calls** (`docs/troubleshooting.md`). When a server
+  reports a model under a name the registry does not know, tools are sent in prompted mode, and servers that parse
+  tool calls per model (vLLM or SGLang `--tool-call-parser`) return no call. The guide shows how to check the
+  resolved `tool_support` and how to fix it.
+- **Streamed native tool calls arrive complete** (`providers/native_tool_calls.py`,
+  `providers/openai_compatible_provider.py`, `providers/openai_provider.py`,
+  `providers/anthropic_provider.py`). With `stream=True`, OpenAI and OpenAI-compatible servers (vLLM, LM Studio,
+  OpenRouter, Portkey) send a tool call as a named first delta followed by fragments of its arguments, and
+  Anthropic sends a call's input in pieces. Each call is now delivered once, complete:
+  - OpenAI-compatible and OpenAI streams join the fragments by index and deliver the calls on the chunk that
+    carries the `finish_reason`, as `{"id", "type", "name", "arguments": "<JSON string>"}`; parallel calls
+    arrive together and in order, and an OpenAI-compatible stream that ends without a finish reason still
+    delivers its calls on a last chunk.
+  - Anthropic streams deliver each call when its content block ends, and a tool without arguments arrives
+    with `"arguments": "{}"` (it used to be missing).
+  - OpenAI streams no longer repeat, on the chunk that carries the calls, the text already streamed in that
+    turn.
+
+  A streamed call carries the same name and argument values as the non-streamed one. If you assembled
+  `delta.tool_calls` fragments from `chunk.tool_calls` yourself, use the complete call, or read the raw deltas
+  from `chunk.raw_response`.
+
 ## [2.36.0] - 2026-11-18
 
 ### Added

@@ -16,7 +16,11 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider, ThinkingControlHandling
 from ._http import build_read_idle_timeout
-from .stream_tool_calls import StreamedToolCallAssembler
+from .native_tool_calls import (
+    StreamedToolCallAssembler,
+    declared_tool_names,
+    incomplete_tool_call_metadata,
+)
 from ..core.types import GenerateResponse
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -693,13 +697,20 @@ class OpenAIProvider(BaseProvider):
                 raw_response=chunk,
                 model=chunk.model,
                 finish_reason=choice.finish_reason,
-                tool_calls=None  # Don't include incomplete tool calls in chunks
+                tool_calls=None,  # calls are delivered once, complete, with the finish reason
+                metadata={"tool_call_delta": True} if getattr(delta, 'tool_calls', None) else None,
             )
 
             # If this is the final chunk and we have tools, handle tool execution
             if choice.finish_reason and tools and collected_tool_calls:
-                # Convert dict to list and filter out incomplete tool calls
-                complete_tool_calls = [tc for tc in (collected_tool_calls.drain() or []) if tc["name"]]
+                complete_tool_calls, incomplete_calls = collected_tool_calls.drain()
+                # A call the model did not finish is reported, never delivered.
+                stream_metadata = incomplete_tool_call_metadata(
+                    None,
+                    incomplete_calls,
+                    finish_reason=choice.finish_reason,
+                    available_tools=declared_tool_names(tools),
+                )
 
                 # Create complete response for tool processing
                 complete_response = GenerateResponse(
@@ -707,7 +718,7 @@ class OpenAIProvider(BaseProvider):
                     raw_response=chunk,
                     model=chunk.model,
                     finish_reason=choice.finish_reason,
-                    tool_calls=complete_tool_calls if complete_tool_calls else None
+                    tool_calls=complete_tool_calls,
                 )
 
                 # Handle tool execution
@@ -724,13 +735,15 @@ class OpenAIProvider(BaseProvider):
                         tool_calls=None
                     )
                 else:
-                    # No tools executed but response was processed - yield final response content
+                    # Tools not executed here: close the stream with the complete calls. The text
+                    # was already streamed chunk by chunk, so only this chunk's own text is sent.
                     yield GenerateResponse(
-                        content=final_response.content,
+                        content=content,
                         raw_response=chunk,
                         model=chunk.model,
                         finish_reason=choice.finish_reason,
-                        tool_calls=complete_tool_calls if complete_tool_calls else None
+                        tool_calls=complete_tool_calls,
+                        metadata=stream_metadata,
                     )
             else:
                 yield chunk_response
@@ -860,13 +873,20 @@ class OpenAIProvider(BaseProvider):
                 raw_response=chunk,
                 model=chunk.model,
                 finish_reason=choice.finish_reason,
-                tool_calls=None  # Don't include incomplete tool calls in chunks
+                tool_calls=None,  # calls are delivered once, complete, with the finish reason
+                metadata={"tool_call_delta": True} if getattr(delta, 'tool_calls', None) else None,
             )
 
             # If this is the final chunk and we have tools, handle tool execution
             if choice.finish_reason and tools and collected_tool_calls:
-                # Convert dict to list and filter out incomplete tool calls
-                complete_tool_calls = [tc for tc in (collected_tool_calls.drain() or []) if tc["name"]]
+                complete_tool_calls, incomplete_calls = collected_tool_calls.drain()
+                # A call the model did not finish is reported, never delivered.
+                stream_metadata = incomplete_tool_call_metadata(
+                    None,
+                    incomplete_calls,
+                    finish_reason=choice.finish_reason,
+                    available_tools=declared_tool_names(tools),
+                )
 
                 # Create complete response for tool processing
                 complete_response = GenerateResponse(
@@ -874,7 +894,7 @@ class OpenAIProvider(BaseProvider):
                     raw_response=chunk,
                     model=chunk.model,
                     finish_reason=choice.finish_reason,
-                    tool_calls=complete_tool_calls if complete_tool_calls else None
+                    tool_calls=complete_tool_calls,
                 )
 
                 # Handle tool execution
@@ -891,13 +911,15 @@ class OpenAIProvider(BaseProvider):
                         tool_calls=None
                     )
                 else:
-                    # No tools executed but response was processed - yield final response content
+                    # Tools not executed here: close the stream with the complete calls. The text
+                    # was already streamed chunk by chunk, so only this chunk's own text is sent.
                     yield GenerateResponse(
-                        content=final_response.content,
+                        content=content,
                         raw_response=chunk,
                         model=chunk.model,
                         finish_reason=choice.finish_reason,
-                        tool_calls=complete_tool_calls if complete_tool_calls else None
+                        tool_calls=complete_tool_calls,
+                        metadata=stream_metadata,
                     )
             else:
                 yield chunk_response

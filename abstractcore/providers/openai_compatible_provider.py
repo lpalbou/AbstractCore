@@ -107,7 +107,11 @@ def _inline_json_schema_refs(schema: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         return schema
 from .base import BaseProvider, ThinkingControlHandling
-from .stream_tool_calls import StreamedToolCallAssembler
+from .native_tool_calls import (
+    StreamedToolCallAssembler,
+    declared_tool_names,
+    incomplete_tool_call_metadata,
+)
 from ..architectures.response_postprocessing import extract_reasoning_from_message
 from ..core.types import GenerateResponse
 from ..exceptions import (
@@ -1592,13 +1596,27 @@ class OpenAICompatibleProvider(BaseProvider):
                                 )
                                 # Tool calls arrive as per-chunk fragments: join them and
                                 # publish the complete calls once, with the finish reason.
-                                tool_call_assembler.feed(delta.get("tool_calls") or choice.get("tool_calls"))
+                                tool_call_deltas = delta.get("tool_calls") or choice.get("tool_calls")
+                                tool_call_assembler.feed(tool_call_deltas)
                                 finish_reason = choice.get("finish_reason")
-                                tool_calls = tool_call_assembler.drain() if finish_reason else None
+                                tool_calls, incomplete_calls = (
+                                    tool_call_assembler.drain() if finish_reason else (None, [])
+                                )
 
                                 metadata = {}
                                 if isinstance(reasoning, str) and reasoning.strip():
                                     metadata["reasoning_delta"] = reasoning
+                                if tool_call_deltas:
+                                    # A call is arriving: lets consumers show progress and time the first token.
+                                    metadata["tool_call_delta"] = True
+                                if incomplete_calls:
+                                    # A call the model did not finish is reported, never delivered.
+                                    metadata = incomplete_tool_call_metadata(
+                                        metadata,
+                                        incomplete_calls,
+                                        finish_reason=finish_reason,
+                                        available_tools=declared_tool_names(payload.get("tools")),
+                                    )
 
                                 yielded_any = True
                                 yield GenerateResponse(
@@ -1626,9 +1644,19 @@ class OpenAICompatibleProvider(BaseProvider):
                             continue
 
             # A stream that ended without a finish reason still delivers its calls.
-            pending_tool_calls = tool_call_assembler.drain()
-            if pending_tool_calls:
-                yield GenerateResponse(content="", model=self.model, tool_calls=pending_tool_calls)
+            pending_tool_calls, incomplete_calls = tool_call_assembler.drain()
+            if pending_tool_calls or incomplete_calls:
+                yield GenerateResponse(
+                    content="",
+                    model=self.model,
+                    tool_calls=pending_tool_calls,
+                    metadata=incomplete_tool_call_metadata(
+                        None,
+                        incomplete_calls,
+                        finish_reason=None,
+                        available_tools=declared_tool_names(payload.get("tools")),
+                    ),
+                )
 
     @staticmethod
     def _stream_error_event_detail(chunk: Any) -> Optional[str]:
@@ -2011,13 +2039,27 @@ class OpenAICompatibleProvider(BaseProvider):
                                 )
                                 # Tool calls arrive as per-chunk fragments: join them and
                                 # publish the complete calls once, with the finish reason.
-                                tool_call_assembler.feed(delta.get("tool_calls") or choice.get("tool_calls"))
+                                tool_call_deltas = delta.get("tool_calls") or choice.get("tool_calls")
+                                tool_call_assembler.feed(tool_call_deltas)
                                 finish_reason = choice.get("finish_reason")
-                                tool_calls = tool_call_assembler.drain() if finish_reason else None
+                                tool_calls, incomplete_calls = (
+                                    tool_call_assembler.drain() if finish_reason else (None, [])
+                                )
 
                                 metadata = {}
                                 if isinstance(reasoning, str) and reasoning.strip():
                                     metadata["reasoning_delta"] = reasoning
+                                if tool_call_deltas:
+                                    # A call is arriving: lets consumers show progress and time the first token.
+                                    metadata["tool_call_delta"] = True
+                                if incomplete_calls:
+                                    # A call the model did not finish is reported, never delivered.
+                                    metadata = incomplete_tool_call_metadata(
+                                        metadata,
+                                        incomplete_calls,
+                                        finish_reason=finish_reason,
+                                        available_tools=declared_tool_names(payload.get("tools")),
+                                    )
 
                                 yielded_any = True
                                 yield GenerateResponse(
@@ -2043,9 +2085,19 @@ class OpenAICompatibleProvider(BaseProvider):
                             continue
 
             # A stream that ended without a finish reason still delivers its calls.
-            pending_tool_calls = tool_call_assembler.drain()
-            if pending_tool_calls:
-                yield GenerateResponse(content="", model=self.model, tool_calls=pending_tool_calls)
+            pending_tool_calls, incomplete_calls = tool_call_assembler.drain()
+            if pending_tool_calls or incomplete_calls:
+                yield GenerateResponse(
+                    content="",
+                    model=self.model,
+                    tool_calls=pending_tool_calls,
+                    metadata=incomplete_tool_call_metadata(
+                        None,
+                        incomplete_calls,
+                        finish_reason=None,
+                        available_tools=declared_tool_names(payload.get("tools")),
+                    ),
+                )
 
     def supports_prompt_cache(self) -> bool:
         """Best-effort: forward `prompt_cache_key` to OpenAI-compatible servers that support it."""

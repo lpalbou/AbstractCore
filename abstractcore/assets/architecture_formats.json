@@ -1680,8 +1680,11 @@
         "temperature": 1.0
       },
       "patterns": [
-        "inkling",
-        "thinkingmachines/inkling"
+        "thinkingmachines/inkling",
+        "thinkingmachines_inkling",
+        "/inkling",
+        "inkling-2-",
+        "inkling2-"
       ]
     }
   },

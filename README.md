@@ -9,6 +9,8 @@
 Unified LLM Interface
 > Write once, run everywhere
 
+What's new in 2.37.0: with `stream=True`, a native tool call arrives once and complete from OpenAI, OpenAI-compatible (vLLM, LM Studio, OpenRouter, Portkey) and Anthropic streams; a tool call the model did not finish (output stopped at its limit) is reported in `metadata["unparsed_tool_call"]` instead of being delivered with empty arguments, streamed or not; and the registry covers the Thinking Machines Inkling family (Inkling 2 Mini, Inkling 2 Small, Inkling, Inkling Small) with native tool calling. See the [changelog](CHANGELOG.md#2370---2026-11-23).
+
 What's new in 2.36.0: on an NVIDIA GPU the recommended text model follows the total GPU memory (Qwen3.8 27B from 22 GiB, across all GPUs); Qwen3 Embedding 0.6B joins the recommended starter set; a circuit-breaker refusal names the provider's last error and when the next attempt is made.
 
 What's new in 2.35.1: a plain `pip install "abstractcore[gpu]"` on a Linux NVIDIA machine now runs GGUF models on the GPU (AbstractCore installs llama.cpp's CUDA build itself, once, the first time it is needed). In 2.35.0: the model capability registry covers the current vendor lineups (GPT-6 and GPT-6.1, Claude 5.5 and Fable 5.1, Grok 4.3 to 4.7, Qwen 3.8, DeepSeek V4.1 Flash, GLM 5.3, MiniMax M3.1 Flash, Kimi K3 and K3.1 Pro, LFM3, Spark X2.5/X2.6, Nemotron 3.5, Bonsai 2 and more), so an image, video or voice route can name them; and a GGUF or MLX re-packaging of a registered model (`unsloth/...-GGUF:Q4_K_M`, `mlx-community/...-4bit`, bartowski's `Org_Model-GGUF`) resolves to that model's entry instead of the text-only default. Transcriptions report `language` and `detected_language`. See the [changelog](CHANGELOG.md#2351---2026-11-10).

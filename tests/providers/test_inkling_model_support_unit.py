@@ -41,13 +41,41 @@ SPELLINGS = [
 @pytest.mark.parametrize("name,total", SPELLINGS)
 def test_every_spelling_resolves_to_its_inkling_entry(name: str, total: str) -> None:
     caps = get_model_capabilities(name)
-    assert detect_architecture(name) == "inkling"
+    assert caps["architecture"] == "inkling"
+    # The architecture patterns need the publisher or the "2": the bare first-generation names
+    # (`inkling`, `inkling-small`) resolve through their aliases only.
+    if "/" in name or "inkling-2" in name.lower() or "inkling2" in name.lower():
+        assert detect_architecture(name) == "inkling"
     assert caps["total_parameters"] == total
     assert caps["tool_support"] == "native"
     assert caps["thinking_support"] is True
     assert caps["thinking_output_field"] == "reasoning"
     assert caps["max_tokens"] == 1048576
     assert UniversalToolHandler(name).supports_native is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "twinkling-7b",
+        "sprinkling-llm",
+        "tinkling",
+        "wrinkling-coder-33b",
+        "org/Twinkling-Star-GGUF",
+        "twinkling-small",
+        "acme/twinkling-nvfp4",
+        "my-inkling-finetune",
+    ],
+)
+def test_unrelated_names_containing_the_word_are_not_inkling(name: str) -> None:
+    assert detect_architecture(name) == "generic"
+    assert get_model_capabilities(name).get("total_parameters") is None
+    assert UniversalToolHandler(name).supports_native is False
+
+
+def test_an_unlisted_inkling_release_still_gets_native_tools() -> None:
+    assert detect_architecture("thinkingmachines/Inkling-3-Large") == "inkling"
+    assert UniversalToolHandler("thinkingmachines/Inkling-3-Large").supports_native is True
 
 
 def test_inputs_follow_the_model_cards() -> None:

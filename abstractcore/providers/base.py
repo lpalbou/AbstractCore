@@ -65,6 +65,7 @@ from ..events import EventType, Event
 from datetime import datetime
 from ..utils.structured_logging import get_logger
 from ..utils.jsonish import loads_dict_like
+from .native_tool_calls import incomplete_tool_call_metadata, split_incomplete_tool_calls
 from ..utils.truncation import preview_text
 from ..exceptions import (
     ProviderAPIError,
@@ -5599,9 +5600,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                 raw_has_content = isinstance(processed_chunk.content, str) and bool(
                                     processed_chunk.content
                                 )
-                                raw_has_tools = isinstance(
-                                    processed_chunk.tool_calls, list
-                                ) and bool(processed_chunk.tool_calls)
+                                # A native tool call is delivered once it is complete; the chunks
+                                # that carried its pieces are marked, and the first one counts.
+                                raw_has_tools = (
+                                    isinstance(processed_chunk.tool_calls, list) and bool(processed_chunk.tool_calls)
+                                ) or bool(chunk_meta and chunk_meta.get("tool_call_delta"))
                                 if raw_has_content or raw_has_tools:
                                     ttft_ms = round((time.perf_counter() - start_perf) * 1000, 1)
                                     meta = (
@@ -9094,6 +9097,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         allowed_names = self._get_allowed_tool_names(tools)
 
+        # A native call the model did not finish (arguments that are not a JSON object, usually
+        # an output that stopped at its limit) is reported, never delivered with empty arguments.
+        complete_calls, incomplete_calls = split_incomplete_tool_calls(response.tool_calls)
+        if incomplete_calls:
+            response.tool_calls = complete_calls or None
+            response.metadata = incomplete_tool_call_metadata(
+                response.metadata if isinstance(response.metadata, dict) else None,
+                incomplete_calls,
+                finish_reason=response.finish_reason,
+                available_tools=sorted(allowed_names or ()),
+            )
         # 1) If provider already returned tool_calls (native tools), normalize shape + args.
         normalized_existing = self._normalize_tool_calls_payload(
             response.tool_calls,

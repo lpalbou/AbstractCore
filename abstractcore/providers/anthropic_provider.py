@@ -15,6 +15,7 @@ except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
 from .base import BaseProvider, ThinkingControlHandling
+from .native_tool_calls import declared_tool_names, incomplete_tool_call_metadata, is_complete_arguments
 from ..core.types import GenerateResponse
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools, merge_tools_into_system
@@ -941,34 +942,46 @@ class AnthropicProvider(BaseProvider):
                                 metadata={"reasoning_delta": thinking_text},
                             )
                     elif hasattr(chunk.delta, 'partial_json'):
-                        # Tool call arguments coming in chunks
+                        # Tool call arguments arrive in pieces; the call is published once,
+                        # complete, when its block ends. The marker lets consumers show
+                        # progress and time the first token.
                         if current_tool_call:
                             accumulated_input += chunk.delta.partial_json
-                            # Yield partial tool call
-                            tool_call_partial = current_tool_call.copy()
-                            tool_call_partial["arguments"] = accumulated_input
                             yield GenerateResponse(
                                 content="",
                                 raw_response=chunk,
                                 model=call_params.get("model"),
-                                tool_calls=[tool_call_partial]
+                                metadata={"tool_call_delta": True},
                             )
 
                 elif chunk.type == "content_block_stop":
                     # End of a content block
-                    if current_tool_call and accumulated_input:
-                        # Finalize the tool call with complete arguments
-                        current_tool_call["arguments"] = accumulated_input
-                        collected_tool_calls.append(current_tool_call)
-                        yield GenerateResponse(
-                            content="",
-                            raw_response=chunk,
-                            model=call_params.get("model"),
-                            tool_calls=[current_tool_call]
-                        )
+                    if current_tool_call:
+                        # A tool that takes no arguments sends no input at all.
+                        current_tool_call["arguments"] = accumulated_input or "{}"
+                        if is_complete_arguments(current_tool_call["arguments"]):
+                            collected_tool_calls.append(current_tool_call)
+                            yield GenerateResponse(
+                                content="",
+                                raw_response=chunk,
+                                model=call_params.get("model"),
+                                tool_calls=[current_tool_call]
+                            )
+                        else:
+                            # A call the model did not finish is reported, never delivered.
+                            yield GenerateResponse(
+                                content="",
+                                raw_response=chunk,
+                                model=call_params.get("model"),
+                                metadata=incomplete_tool_call_metadata(
+                                    None,
+                                    [current_tool_call],
+                                    finish_reason=None,
+                                    available_tools=declared_tool_names(tools),
+                                ),
+                            )
                         current_tool_call = None
                         accumulated_input = ""
-
                 elif chunk.type == "message_stop":
                     # Final chunk with usage info and tool execution
                     usage = None

@@ -625,8 +625,7 @@ text: a JSON answer, a block naming a tool the request did not offer, and every
 Native tool calls work the same way. OpenAI and OpenAI-compatible servers (vLLM, LM Studio,
 OpenRouter, Portkey) stream a call as a named first delta followed by fragments of its arguments.
 AbstractCore joins the fragments and delivers each call once, complete, on the chunk that carries
-the `finish_reason` (or on a last chunk if the stream ends without one). Parallel calls arrive
-together, in order:
+the `finish_reason`. Parallel calls arrive together, in order:
 
 ```python
 for chunk in llm.generate("Weather in Paris and Tokyo?", tools=[get_weather], stream=True):
@@ -636,8 +635,29 @@ for chunk in llm.generate("Weather in Paris and Tokyo?", tools=[get_weather], st
 #  {"id": "call_2", "type": "function", "name": "get_weather", "arguments": "{\"city\": \"Tokyo\"}"}]
 ```
 
-`arguments` is the JSON string the model wrote; a call the stream cut short keeps the part that
-was received. The raw server deltas stay available in `chunk.raw_response` as they arrive.
+A native call on a stream carries `id` and `arguments` as the JSON string the model wrote; a
+non-streamed response carries the same call as `call_id` and `arguments` as a dict. An
+OpenAI-compatible stream that ends without a finish reason still delivers its calls, on a last
+chunk. While a call is arriving, the chunks that carry its pieces have
+`chunk.metadata["tool_call_delta"] = True`, which you can use to show progress, and the raw
+server delta stays available in `chunk.raw_response`.
+
+Anthropic streams a call's input in pieces too. Each call is delivered once, complete, when its
+content block ends, with `"type": "tool_use"`; a tool that takes no arguments arrives with
+`"arguments": "{}"`.
+
+In every case a chunk's `tool_calls` holds complete calls only, and text that was streamed before
+a call is not repeated on the chunk that carries it.
+
+A model can stop in the middle of a native call, usually because it reached `max_output_tokens`
+(`finish_reason: "length"`). Its arguments are then not a JSON object, and the call is not
+delivered in `tool_calls`, streamed or not, so it cannot run with missing arguments. The chunk (or
+the response) reports it instead, with everything the model wrote and a warning:
+
+```python
+chunk.metadata["unparsed_tool_call"]
+# {"format": "native", "text": "write_file {\"path\": \"a.txt\", \"content\": \"unfin", "reason": "unclosed"}
+```
 
 GPT-OSS models write Harmony transcripts. When the backend passes the raw transcript through, the
 stream is split by channel as it arrives: `final` is text, `analysis` is reasoning
