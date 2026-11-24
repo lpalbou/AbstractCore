@@ -25,13 +25,13 @@ means nothing to any process that does not hold that SID:
 
 - ``deny``   the folder itself refuses everything, traversal included: nothing below it
              can be reached by path, and nothing is written on its content;
-- ``carve``  a refused folder with an allowed folder inside: it can be traversed but not
-             listed, and each thing directly inside it is refused (a folder: closed like a
-             ``deny`` one), now and, by inheritance, when it is created later;
+- ``carve``  a refused folder with an allowed folder inside: it can be traversed and
+             listed (the names directly inside it, never their content: git turns its
+             working folder into its long form, and ``GetLongPathNameW`` looks each folder
+             up in its parent), and each thing directly inside it is refused (a folder:
+             closed like a ``deny`` one), now and, by inheritance, when it is created later;
 - ``pass``   a folder between a carved folder and the allowed folder inside it: carved the
              same way, for the same SID;
-- ``carve-list`` / ``pass-list``  the same, with the names of what is directly inside
-             listed (where writes are limited to the rows: see the last paragraph);
 - ``ro``     every kind of write is refused, inherited (no grant: reading is the user's);
 - ``rw`` / ``read``  an allowed folder inside a refused one: modify / read, inherited;
 - ``guard``  the entries of ``ro``, for the tokens of other runs (see the last paragraph).
@@ -66,11 +66,7 @@ labelled folder its policy can reach but not write. The labelled folders are lis
 ``<state>\\labelled`` (added before the folder's guard is written, which comes before its
 label); a token's guard SIDs are read from it at launch. A run that starts while another
 run's command is already running is guarded against the other's folders; the other command
-is not guarded against a folder labelled for the first time after it started. Such a policy
-carves with ``carve-list``: every row of "Deny everything" lies in a refused folder (the
-profile, a folder at the root of a drive), and git, which turns its working folder into its
-long form (``GetLongPathNameW`` looks each folder up in its parent), cannot start where a
-folder on the way may not be listed.
+is not guarded against a folder labelled for the first time after it started.
 """
 
 from __future__ import annotations
@@ -165,6 +161,7 @@ class _JobExtendedLimits(ctypes.Structure):
 _TreeProgress = ctypes.WINFUNCTYPE(None, W.LPWSTR, W.DWORD, _P(ctypes.c_int), _VOID, W.BOOL)
 
 CloseHandle = _api(_k32, "CloseHandle", W.BOOL, W.HANDLE)
+CreateFileW = _api(_k32, "CreateFileW", W.HANDLE, W.LPCWSTR, W.DWORD, W.DWORD, _VOID, W.DWORD, W.DWORD, W.HANDLE)
 LocalFree = _api(_k32, "LocalFree", _VOID, _VOID)
 GetCurrentProcess = _api(_k32, "GetCurrentProcess", W.HANDLE)
 GetStdHandle = _api(_k32, "GetStdHandle", W.HANDLE, W.DWORD)
@@ -228,11 +225,11 @@ FILE_DELETE_CHILD = 0x40
 # Every kind of write: data, append, extended attributes, delete child, attributes, DELETE,
 # WRITE_DAC, WRITE_OWNER.
 FILE_WRITES = 0x2 | 0x4 | 0x10 | 0x40 | 0x100 | 0x10000 | 0x40000 | 0x80000
-# What a path lookup needs of an ancestor: traverse, read attributes, synchronize.
-FILE_PASS = 0x20 | 0x80 | 0x100000
-# And what turning a path into its long or final form needs (GetLongPathNameW, which git
-# runs on its working folder, looks each folder up in its parent): listing the names.
-FILE_NAMES = FILE_PASS | 0x1
+# What a path lookup needs of an ancestor: traverse, read attributes, synchronize, and
+# listing the names (turning a path into its long form looks each folder up in its parent).
+FILE_PASS = 0x1 | 0x20 | 0x80 | 0x100000
+# What a carve granted in 2.38.0 (no listing): its entries are replaced where found.
+FILE_PASS_2_38 = 0x20 | 0x80 | 0x100000
 
 RULE_AUTHORITY = "S-1-9"  # resource-manager authority: never an account, never looked up
 # The owner guard. An owner may always rewrite an object's access list, whatever the list
@@ -255,14 +252,12 @@ Template = Tuple[int, int, int]  # (ACE type, mask, inheritance flags)
 RULES: Dict[str, Tuple[List[Entry], List[Entry]]] = {
     "deny": ([(DENY, FILE_ALL)], []),
     "carve": ([(DENY, FILE_ALL & ~FILE_PASS)], [(DENY, FILE_ALL)]),
-    "carve-list": ([(DENY, FILE_ALL & ~FILE_NAMES)], [(DENY, FILE_ALL)]),
     "ro": ([(DENY, FILE_WRITES)], [(DENY, FILE_WRITES)]),
     "rw": ([(ALLOW, FILE_MODIFY)], [(ALLOW, FILE_MODIFY)]),
     "read": ([(ALLOW, FILE_READ_EXECUTE)], [(ALLOW, FILE_READ_EXECUTE)]),
     "guard": ([(DENY, FILE_WRITES)], [(DENY, FILE_WRITES)]),
 }
-REFUSING = ("deny", "carve", "carve-list", "ro", "guard")
-CARVES, PASSES = ("carve", "carve-list"), ("pass", "pass-list")  # a pass rule belongs to its carve
+REFUSING = ("deny", "carve", "ro", "guard")
 
 
 def rule_sid(action: str, path: str) -> str:
@@ -314,13 +309,13 @@ def _read_dacl(path: str) -> Tuple[List[_Ace], int]:
     stored (GetNamedSecurityInfo would GUESS which entries are inherited on an object that
     does not say, by comparing with its folder as it is now)."""
     size = W.DWORD()
-    GetFileSecurityW(path, DACL_INFORMATION, None, 0, ctypes.byref(size))
+    GetFileSecurityW(_native(path), DACL_INFORMATION, None, 0, ctypes.byref(size))
     sd = ctypes.create_string_buffer(size.value)
     present, defaulted, dacl = W.BOOL(), W.BOOL(), _VOID()
     control, revision = W.WORD(), W.DWORD()
     if not (
         size.value
-        and GetFileSecurityW(path, DACL_INFORMATION, sd, size, ctypes.byref(size))
+        and GetFileSecurityW(_native(path), DACL_INFORMATION, sd, size, ctypes.byref(size))
         and GetSecurityDescriptorDacl(sd, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted))
         and GetSecurityDescriptorControl(sd, ctypes.byref(control), ctypes.byref(revision))
     ):
@@ -425,13 +420,30 @@ def _write_here(path: str, aces: Sequence[_Ace], control: int, added: Sequence[T
         InitializeSecurityDescriptor(sd, 1)
         and SetSecurityDescriptorDacl(sd, True, acl, False)
         and SetSecurityDescriptorControl(sd, SE_DACL_AUTO_INHERIT_REQ | SE_DACL_AUTO_INHERITED | SE_DACL_PROTECTED, keep)
-        and SetFileSecurityW(path, DACL_INFORMATION, sd)
+        and SetFileSecurityW(_native(path), DACL_INFORMATION, sd)
     ):
         raise _error(f"cannot change the permissions of {path} ({_NOT_OURS})")
 
 
+NAME_SURROGATE = 0x20000000  # a reparse tag's mark of a link to another name
+
+
 def _is_link(entry: os.DirEntry) -> bool:
-    return entry.is_symlink() or bool(entry.stat(follow_symlinks=False).st_file_attributes & 0x400)  # reparse point
+    """A link to another path (symbolic link, junction): a lookup through it starts again
+    at the target, whose own rules apply, and its access list must never be written (that
+    would write the target's). Any other reparse point (a cloud file placeholder, an app
+    alias) is the object itself, and is ruled like any other."""
+    info = entry.stat(follow_symlinks=False)
+    tag = getattr(info, "st_reparse_tag", 0)
+    return entry.is_symlink() or bool(info.st_file_attributes & 0x400 and (not tag or tag & NAME_SURROGATE))
+
+
+def _native(path: str) -> str:
+    """``path`` as the security calls take it whatever its length (a command can always
+    reach a long path through ``\\\\?\\``, even where Windows' long paths are off)."""
+    if path.startswith("\\\\?\\"):
+        return path
+    return "\\\\?\\UNC\\" + path[2:] if path.startswith("\\\\") else "\\\\?\\" + path
 
 
 def _handed_down(aces: Sequence[_Ace], to_folder: bool) -> set:
@@ -467,18 +479,19 @@ def _hand_down(folder: str) -> None:
             if not control & SE_DACL_PROTECTED:
                 copied = _copied(aces, control, handed[entry.is_dir(follow_symlinks=False)])
                 acl = _build_acl([a for a in aces if not a.flags & INHERITED and a not in copied], ())
-                TreeSetNamedSecurityInfoW(entry.path, SE_FILE_OBJECT, DACL_INFORMATION | UNPROTECTED_DACL, None, None, acl, None, 1, quiet, 3, None)
+                TreeSetNamedSecurityInfoW(_native(entry.path), SE_FILE_OBJECT, DACL_INFORMATION | UNPROTECTED_DACL, None, None, acl, None, 1, quiet, 3, None)
 
 
 def _readable(path: str) -> bool:
-    try:
-        if os.path.isdir(path):
-            with os.scandir(path):
-                return True
-        with open(path, "rb"):
+    """This user may open ``path`` now to read or run it, or (a folder) to list it or pass
+    through it. The command's token can do no more: what this user cannot reach (refused
+    to them, a file in use that no one may open) needs no refusal."""
+    for access in (0x1, 0x20):  # read data / list; execute / traverse
+        handle = CreateFileW(_native(path), access, 7, None, 3, 0x02000000, None)  # share all, existing, folders too
+        if handle and handle != INVALID_HANDLE:
+            CloseHandle(handle)
             return True
-    except OSError:
-        return False
+    return False
 
 
 def _refuse(path: str, is_dir: bool, sid: str, entries: Sequence[Entry], handed: Optional[set] = None, a_row: bool = False) -> None:
@@ -517,7 +530,7 @@ def _skip(paths) -> set:
 def _checked_stream(folder: str, sid: str) -> str:
     """Where a carved folder keeps the time of its last check: a named stream of the folder
     itself, which a command refused the folder cannot write."""
-    return f"{folder}:abstractcore-sandbox-{sid.rsplit('-', 1)[1]}"
+    return f"{_native(folder)}:abstractcore-sandbox-{sid.rsplit('-', 1)[1]}"
 
 
 def _born(entry: os.DirEntry) -> int:
@@ -525,19 +538,26 @@ def _born(entry: os.DirEntry) -> int:
     return getattr(info, "st_birthtime_ns", None) or info.st_ctime_ns  # creation time on Windows
 
 
-def _carve(path: str, sid: str, rows: Sequence[str], passes: Sequence[str], action: str, passable: bool) -> bool:
-    """A refused folder that an allowed row lies in: traversable, never listed (``carve``) or
-    listed but nothing read (``carve-list``), and each thing directly inside it refused (a
-    folder inside: traversal included, so nothing below it needs an entry). ``passable``: a
-    folder on the way to the row, not the refused one.
+def _upgraded(aces: List[_Ace], control: int, sid: str) -> Tuple[List[_Ace], int]:
+    """A carved folder's access list without the entries 2.38.0 wrote on the folder itself
+    for ``sid`` (they refused listing): its rule is then written again, as it is now."""
+    stale = {(DENY, FILE_ALL & ~FILE_PASS_2_38), (ALLOW, FILE_PASS_2_38)}
+    return [a for a in aces if not (a.sid == sid and not a.flags & (INHERITED | INHERIT_ONLY) and (a.type, a.mask) in stale)], control
+
+
+def _carve(path: str, sid: str, rows: Sequence[str], passes: Sequence[str], passable: bool) -> bool:
+    """A refused folder that an allowed row lies in: traversable and listed, nothing read,
+    and each thing directly inside it refused (a folder inside: traversal included, so
+    nothing below it needs an entry). ``passable``: a folder on the way to the row, not the
+    refused one.
 
     What is created inside it later inherits the refusal, unless it is made with permissions
     of its own: so every launch looks at what appeared since the last check (False then: the
     rule itself was in place)."""
-    own, below = RULES[action]
-    if passable:  # its parent's refusal is inherited here: let traversal through
-        own = own + [(ALLOW, FILE_PASS if action == "carve" else FILE_NAMES)]
-    aces, control = _read_rule(path, sid, True)
+    own, below = RULES["carve"]
+    if passable:
+        own = own + [(ALLOW, FILE_PASS)]  # its parent's refusal is inherited here: let traversal through
+    aces, control = _upgraded(*_read_rule(path, sid, True), sid)
     in_place = not _pending(aces, sid, own, 0, True)
     since = 0
     if in_place:
@@ -560,7 +580,7 @@ def _carve(path: str, sid: str, rows: Sequence[str], passes: Sequence[str], acti
                 folder = entry.is_dir(follow_symlinks=False)
                 _refuse(entry.path, folder, sid, below, _handed_down(aces, folder), a_row=os.path.normcase(entry.path) in ruled)
     if not in_place:
-        aces, control = _read_dacl(path)
+        aces, control = _upgraded(*_read_dacl(path), sid)
         _write_here(path, aces, control, _pending(aces, sid, own, 0, True))  # last: the rule is in place
     if seen_new or not in_place:
         try:
@@ -608,15 +628,14 @@ def ensure_rule(rule: Sequence[str], rows: Sequence[str] = (), passes: Sequence[
     action, path = rule[0], rule[1]
     if not os.path.lexists(path):
         return False
-    if action in PASSES:
-        carve = CARVES[PASSES.index(action)]
-        return _carve(path, rule_sid(carve, rule[2]), rows, passes, carve, passable=True)
+    if action == "pass":
+        return _carve(path, rule_sid("carve", rule[2]), rows, passes, passable=True)
     sid = rule_sid(action, path)
     refusing = action in REFUSING
     try:
-        if action in CARVES and os.path.isdir(path):
-            wrote = _carve(path, sid, rows, passes, action, passable=False)
-        elif action == "deny" or action in CARVES:
+        if action == "carve" and os.path.isdir(path):
+            wrote = _carve(path, sid, rows, passes, passable=False)
+        elif action in ("deny", "carve"):
             aces, control = _read_rule(path, sid, True)
             todo = _pending(aces, sid, RULES["deny"][0], 0, True)
             if todo:
@@ -647,7 +666,7 @@ def ensure_rule(rule: Sequence[str], rows: Sequence[str] = (), passes: Sequence[
 
 
 def rule_sids(rules: Sequence[Sequence[str]]) -> List[str]:
-    return list(dict.fromkeys(rule_sid(r[0], r[1]) for r in rules if r[0] not in PASSES))
+    return list(dict.fromkeys(rule_sid(r[0], r[1]) for r in rules if r[0] != "pass"))
 
 
 # --------------------------------------------------------------------------------------
@@ -664,10 +683,10 @@ TREE_SET, PROGRESS_EVERY_OBJECT = 1, 3
 def _label(path: str) -> Optional[Tuple[int, int]]:
     """(inheritance flags, level) of ``path``'s integrity label, None without one (Medium)."""
     size = W.DWORD()
-    GetFileSecurityW(path, LABEL_INFORMATION, None, 0, ctypes.byref(size))
+    GetFileSecurityW(_native(path), LABEL_INFORMATION, None, 0, ctypes.byref(size))
     sd = ctypes.create_string_buffer(size.value)
     present, defaulted, sacl = W.BOOL(), W.BOOL(), _VOID()
-    if not (size.value and GetFileSecurityW(path, LABEL_INFORMATION, sd, size, ctypes.byref(size))
+    if not (size.value and GetFileSecurityW(_native(path), LABEL_INFORMATION, sd, size, ctypes.byref(size))
             and GetSecurityDescriptorSacl(sd, ctypes.byref(present), ctypes.byref(sacl), ctypes.byref(defaulted))):  # fmt: skip
         raise _error(f"cannot read the integrity label of {path}")
     for index in range(ctypes.c_ushort.from_address(sacl.value + 4).value if present.value and sacl.value else 0):
@@ -700,12 +719,12 @@ def ensure_label(path: str) -> bool:
     folder = os.path.isdir(path)
     if folder:
         quiet = _TreeProgress(lambda _name, _status, invoke, _args, _set: invoke.__setitem__(0, 3))  # keep going
-        code = TreeSetNamedSecurityInfoW(path, SE_FILE_OBJECT, LABEL_INFORMATION, None, None, None, _label_acl(CHILDREN | INHERIT_ONLY), TREE_SET, quiet, PROGRESS_EVERY_OBJECT, None)
+        code = TreeSetNamedSecurityInfoW(_native(path), SE_FILE_OBJECT, LABEL_INFORMATION, None, None, None, _label_acl(CHILDREN | INHERIT_ONLY), TREE_SET, quiet, PROGRESS_EVERY_OBJECT, None)
         if code:
             raise _error(f"cannot label {path} ({_NOT_OURS})", code)
     sd, acl = ctypes.create_string_buffer(64), _label_acl(CHILDREN if folder else 0)  # the descriptor points to acl
     if not (InitializeSecurityDescriptor(sd, 1) and SetSecurityDescriptorSacl(sd, True, acl, False)
-            and SetFileSecurityW(path, LABEL_INFORMATION, sd)):  # fmt: skip
+            and SetFileSecurityW(_native(path), LABEL_INFORMATION, sd)):  # fmt: skip
         raise _error(f"cannot label {path} ({_NOT_OURS})")
     return True
 
@@ -742,7 +761,7 @@ def guard_sids(labelled: Sequence[str], rules: Sequence[Sequence[str]]) -> List[
     those whose nearest rule is neither a refusal (unreachable) nor ``rw`` (its own)."""
     out = []
     for path in labelled:
-        around = [r for r in rules if r[0] not in PASSES and _inside(path, r[1])]
+        around = [r for r in rules if r[0] != "pass" and _inside(path, r[1])]
         nearest = max(around, key=lambda r: len(r[1].rstrip("\\")), default=None)
         if nearest is None or nearest[0] in ("ro", "read", "guard"):
             out.append(rule_sid("guard", path))
@@ -753,8 +772,8 @@ def prepare(policy: Dict) -> Tuple[List[str], Optional[int]]:
     """Put the policy in force, one launcher at a time (two runs often share a rule): the
     restricting SIDs of the command's token and its integrity level (None: the caller's)."""
     rules, label = policy["rules"], policy.get("label")
-    rows = [r[1] for r in rules if r[0] not in PASSES]
-    passes = [r[1] for r in rules if r[0] in PASSES]
+    rows = [r[1] for r in rules if r[0] != "pass"]
+    passes = [r[1] for r in rules if r[0] == "pass"]
     mutex = CreateMutexW(None, False, "Local\\abstractcore-command-sandbox")
     if not mutex:
         raise _error("CreateMutex")
@@ -930,8 +949,8 @@ def read_policy(text: str) -> Dict:
     command may reach."""
     policy = json.loads(zlib.decompress(base64.urlsafe_b64decode(text)))
     for rule in policy["rules"]:
-        well_formed = isinstance(rule, list) and all(isinstance(part, str) for part in rule) and len(rule) == (3 if rule[0] in PASSES else 2)
-        if not (well_formed and (rule[0] in RULES or rule[0] in PASSES) and all(os.path.isabs(p) for p in rule[1:])):
+        well_formed = isinstance(rule, list) and all(isinstance(part, str) for part in rule) and len(rule) == (3 if rule[0] == "pass" else 2)
+        if not (well_formed and (rule[0] in RULES or rule[0] == "pass") and all(os.path.isabs(p) for p in rule[1:])):
             raise SandboxLaunchError(f"malformed policy rule {rule!r}")
     if "label" in policy:
         rw = {os.path.normcase(r[1]) for r in policy["rules"] if r[0] == "rw"}

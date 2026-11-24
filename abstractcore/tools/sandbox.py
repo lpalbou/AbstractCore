@@ -817,16 +817,15 @@ def windows_rules(spec: SandboxSpec) -> List[List[str]]:
     write by default, else readable and unwritable, by integrity level):
 
     - ``["deny", path]``   a refused folder: closed at the folder itself;
-    - ``["carve", path]``  a refused folder with an allowed row inside;
+    - ``["carve", path]``  a refused folder with an allowed row inside (the names directly
+      inside it can be listed, nothing read: git needs that of every folder above its own);
     - ``["pass", folder, carved]``  a folder between the ``carved`` folder and an allowed
-      row inside it (traversal only, never its content);
+      row inside it (traversal and names only, never its content);
     - ``["ro", path]``  a read-only row (writes refused; reading is the user's own right);
     - ``["rw" | "read", path]``  a row re-opened inside a refused or read-only one (``read``:
       a read-only row inside a refused one, a system root, the host's own Python); where
       writes are limited to the rows, every read & write row is one (it is labelled);
-    - ``["guard", path]``  a folder Windows labels Low: writes refused (read-only default);
-    - ``carve-list`` / ``pass-list`` for ``carve`` / ``pass`` where writes are limited to the
-      rows: the names directly inside are listed, nothing is read.
+    - ``["guard", path]``  a folder Windows labels Low: writes refused (read-only default).
 
     Under "Deny everything, allow listed workspaces" the user's data
     (``_windows_user_data_roots``) is refused, except where a row lies at or above it.
@@ -878,12 +877,6 @@ def windows_rules(spec: SandboxSpec) -> List[List[str]]:
             while not _under(outer[1], folder):
                 passes.setdefault(os.path.normcase(folder), ["pass", folder, outer[1]])
                 folder = os.path.dirname(folder)
-    if writes_rows:
-        # The folders on the way to a row list their names (never their content): git turns
-        # its working folder into its long form, which looks each folder up in its parent,
-        # and every row of "Deny everything" lies in a refused folder.
-        for rule in kept + list(passes.values()):
-            rule[0] = {"carve": "carve-list", "pass": "pass-list"}.get(rule[0], rule[0])
     guards: List[List[str]] = []
     if spec.posture == "any_except_denied" and writes_rows:
         for path in _windows_low_places():

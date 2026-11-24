@@ -281,9 +281,7 @@ def test_each_session_has_its_own_folder_in_the_same_data_folder(t, shape):
     (t / "data/late/x.txt").write_text(DATA_MARK)
     (t / "data/late.txt").write_text(DATA_MARK)
     res, out = _run(t, f'type "{three}\\late.txt" & type "{t}\\data\\late\\x.txt" & type "{t}\\data\\late.txt" & dir "{t}\\data\\workspaces"', _spec(t, shape))
-    assert "THREE" not in out and DATA_MARK not in out
-    if shape == RW_DEFAULT:  # elsewhere the folders on the way to a row list their names
-        assert "session-3" not in (res.get("stdout") or "")
+    assert "THREE" not in out and DATA_MARK not in out  # (its name is listed: the folders on the way to a row list names)
     res, out = _run(t, f'type late.txt && echo three> note.txt && type "{one}\\mine.txt"', _session(t, 3, shape))
     assert "THREE" in out and (three / "note.txt").exists() and "ONE" not in out
     assert shared() == entries  # sessions add nothing to the folders they share
@@ -329,6 +327,151 @@ def test_a_busy_file_in_the_data_folder_does_not_stop_commands(t, shape):
     assert DATA_MARK not in out
 
 
+# --- what a real profile and its folders hold, directly inside a carved folder -----------
+# (the kinds found on a real profile's chain of folders; the data folder is carved under
+# every shape, and its `workspaces` is a folder on the way to the run's own)
+
+
+def _carve_sid(t: Path, shape) -> str:
+    """The SID of the carve the data folder is part of: its own, or (allow-list) the lab's."""
+    return _launcher().rule_sid("carve", str(t if shape == ALLOW_LIST else t / "data"))
+
+
+def _reparse(path: Path, tag: int) -> None:
+    """Make ``path`` a reparse point of ``tag`` (a cloud file placeholder, an app alias)."""
+    import ctypes
+    import struct
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateFileW.restype = ctypes.c_void_p
+    handle = k32.CreateFileW(str(path), 0xC0000000, 0, None, 3, 0x02000000 | 0x00200000, None)
+    buf = struct.pack("<IHH", tag, 16, 0) + b"\x00" * 16
+    done = ctypes.c_ulong()
+    try:
+        assert k32.DeviceIoControl(ctypes.c_void_p(handle), 0x000900A4, buf, len(buf), None, 0, ctypes.byref(done), None), ctypes.get_last_error()
+    finally:
+        k32.CloseHandle(ctypes.c_void_p(handle))
+
+
+def _junction(link: Path, target: Path) -> None:
+    """A junction shaped like the profile's legacy ones (``Application Data``...): hidden,
+    system, its own listing refused to everyone."""
+    subprocess.run(["cmd", "/c", "mklink", "/j", str(link), str(target)], check=True, capture_output=True)
+    subprocess.run(["icacls", str(link), "/deny", "*S-1-1-0:(RD)"], check=True, capture_output=True)
+    subprocess.run(["attrib", "+h", "+s", str(link), "/l"], check=True, capture_output=True)
+
+
+@shapes
+def test_reparse_points_that_are_not_links_are_refused_like_anything_else(t, shape):
+    # OneDrive's placeholders and the Store's app aliases are reparse points of their own kind:
+    # opening one opens it, not another path. 2.38.0 skipped them, leaving them readable.
+    cloud = t / "data/cloud"
+    cloud.mkdir()
+    (cloud / "inside.txt").write_text(DATA_MARK)
+    _reparse(cloud, 0x9000601A)  # IO_REPARSE_TAG_CLOUD_6
+    alias = t / "data/alias.exe"
+    alias.write_text(DATA_MARK)
+    _reparse(alias, 0x8000001B)  # IO_REPARSE_TAG_APPEXECLINK
+    res, out = _run(t, f'type "{cloud}\\inside.txt" & dir /b "{cloud}" & "{PY}" -c "print(open(r\'{cloud}\\inside.txt\').read())"', _spec(t, shape))
+    assert DATA_MARK not in out and "inside.txt" not in (res.get("stdout") or "")
+    w = _launcher()
+    assert any(a.sid == _carve_sid(t, shape) and a.type == w.DENY for a in w._read_dacl(str(cloud))[0])
+    os.remove(alias)  # (a reparse point that nothing handles: removed by its own name)
+
+
+@shapes
+def test_a_junction_in_a_carved_folder_is_left_alone_and_leads_nowhere_new(t, shape):
+    # A lookup through a junction starts again at its target: the target's own rules apply.
+    # Writing on the junction would write on its target: here a folder on the way to the row.
+    jump = t / "data/Application Data"
+    _junction(jump, t / "data/workspaces")
+    w = _launcher()
+    before = _acl(jump)
+    (_priv(t) / "mine.txt").write_text("MINE")
+    res, out = _run(t, f'type "{jump}\\session-1\\mine.txt" & type "{jump}\\session-2\\theirs.txt" & dir /b "{jump}\\session-2"', _spec(t, shape))
+    assert "MINE" in out and DATA_MARK not in out and "theirs.txt" not in (res.get("stdout") or "")
+    assert _acl(jump) == before  # nothing written on the junction ...
+    carve = _carve_sid(t, shape)
+    ours = sorted((a.type, a.mask) for a in w._read_dacl(str(t / "data/workspaces"))[0] if a.sid == carve and not a.flags & (w.INHERITED | w.INHERIT_ONLY))
+    assert ours == sorted([(w.DENY, w.FILE_ALL & ~w.FILE_PASS), (w.ALLOW, w.FILE_PASS)])  # ... nor, through it, a refusal on its target
+
+
+def test_allow_list_a_legacy_junction_of_the_profile_onto_a_folder_on_the_way(t):
+    # The profile's `Application Data` points to `AppData\Roaming`, a folder on the way to
+    # the host's Python under a uv install: here the lab is the profile, `data` that folder.
+    jump = t / "Application Data"
+    _junction(jump, t / "data")
+    (_priv(t) / "mine.txt").write_text("MINE")
+    res, out = _run(t, f'type "{jump}\\workspaces\\session-1\\mine.txt" & type "{jump}\\gateway.sqlite3" & type "{jump}\\secrets\\token"', _spec(t, ALLOW_LIST))
+    assert "MINE" in out and DATA_MARK not in out
+
+
+@shapes
+def test_what_a_carved_folder_holds_hidden_long_named_or_in_use(t, shape):
+    (t / "data/desktop.ini").write_text(DATA_MARK)
+    subprocess.run(["attrib", "+h", "+s", str(t / "data/desktop.ini")], check=True)
+    long_dir = "\\\\?\\" + str(t / "data" / ("L" * 200) / ("M" * 100))
+    os.makedirs(long_dir)
+    Path(long_dir, "deep.txt").write_text(DATA_MARK)
+    res, out = _run(t, f'type "{t}\\data\\desktop.ini" & type "{long_dir}\\deep.txt" & "{PY}" -c "print(open(r\'{long_dir}\\deep.txt\').read())"', _spec(t, shape))
+    assert "return_code" in res and DATA_MARK not in out
+
+
+@shapes
+def test_a_child_this_user_cannot_change_stops_commands_only_when_it_can_be_read(t, shape):
+    # Readable, but its permissions are not this user's to change (the owner's own right
+    # to them is taken by an OWNER RIGHTS entry): it cannot be refused, so nothing runs,
+    # and the line names it.
+    locked = t / "data/installer-made"
+    locked.mkdir()
+    (locked / "f.txt").write_text(DATA_MARK)
+    _set_acl(locked, "D:P(D;;WDWO;;;{me})(A;OICI;FA;;;{me})(A;;RC;;;OW)")  # (still deletable: pytest cleans up)
+    res, out = _run(t, "echo ran> ran.txt", _spec(t, shape))
+    assert res.get("return_code") == 126 and "installer-made" in out and not (_priv(t) / "ran.txt").exists()
+    (locked / "f.txt").unlink()
+    locked.rmdir()
+    # Refused to this user too, passing through included (a folder another account made): no
+    # refusal is needed, and commands run.
+    closed = t / "data/other-account"
+    closed.mkdir()
+    _set_acl(closed, "D:P(D;;0xC0021;;;{me})(A;OICI;FA;;;{me})(A;;RC;;;OW)")
+    res, out = _run(t, f'echo ran> ran.txt & dir "{closed}"', _spec(t, shape))
+    assert res.get("return_code") not in (None, 126) and (_priv(t) / "ran.txt").exists(), out[-300:]
+
+
+@shapes
+def test_children_that_come_and_go_while_a_carved_folder_is_checked(t, shape):
+    # A temp folder: things are created and deleted while each launch looks at what is new.
+    import threading
+
+    stop = threading.Event()
+
+    def churn(folder: Path):
+        n = 0
+        while not stop.is_set():
+            p = folder / f"churn-{n % 50}"
+            try:
+                p.mkdir() if n % 2 else p.write_text(DATA_MARK)
+                (p.rmdir() if p.is_dir() else p.unlink()) if n % 3 else None
+            except OSError:
+                pass
+            n += 1
+
+    threads = [threading.Thread(target=churn, args=(f,)) for f in (t / "data", t / "data/workspaces")]
+    for th in threads:
+        th.start()
+    try:
+        for _ in range(8):
+            res, out = _run(t, f'echo ok & type "{t}\\data\\churn-0" & type "{t}\\data\\churn-2"', _spec(t, shape))
+            assert res.get("return_code") != 126 and "ok" in out and DATA_MARK not in out, out[-300:]
+    finally:
+        stop.set()
+        for th in threads:
+            th.join()
+    res, out = _run(t, f'for %f in ("{t}\\data\\churn-*") do @type "%f"', _spec(t, shape))
+    assert DATA_MARK not in out  # what appeared in the meantime is refused at the next launch
+
+
 # --- nesting, read-only rows, the rest of the world --------------------------------------
 
 
@@ -338,9 +481,7 @@ def test_nesting_most_specific_row_wins(t, shape):
     assert "CHILD-OK" in out and (t / "parent/child/w.txt").exists()  # an allowed row inside a refused one
     for cmd in (f'type "{t}\\parent\\secret.txt"', f'dir "{t}\\parent"', f'type "{t}\\parent\\child\\deny\\x.txt"', f'dir /s "{t}\\parent\\child\\deny"'):
         _, out = _run(t, cmd, _spec(t, shape))
-        assert REFUSED_MARK not in out and "x.txt" not in out, cmd
-        if shape == RW_DEFAULT:  # elsewhere the folders on the way to a row list their names
-            assert "secret.txt" not in out, cmd
+        assert REFUSED_MARK not in out and "x.txt" not in out, cmd  # ("secret.txt" is listed: names only)
 
 
 @shapes
@@ -449,6 +590,51 @@ def test_nothing_outside_the_rows_is_writable(t, shape, template):
     assert not any(a.sid == "S-1-1-0" for a in w._read_dacl(str(t / "home/outside"))[0])
 
 
+GIT = "git -c user.email=t@example.invalid -c user.name=t"
+
+
+@shapes
+def test_git_works_in_the_private_workspace_inside_the_data_folder(t, shape):
+    # The gateway's layout: the run's folder lies in the refused data folder, carved. git turns
+    # its working folder into its long form, which looks each folder above up in its parent.
+    sub = _priv(t) / "repo/sub"
+    sub.mkdir(parents=True)
+    spec = _spec(t, shape)
+    res, out = _run(t, f"git init -q && echo a> a.txt && {GIT} add -A && {GIT} commit -qm first && git status --short && git rev-parse --show-toplevel",
+                    spec, cwd=_priv(t) / "repo")  # fmt: skip
+    assert res["success"] and "repo" in out, out[-500:]
+    res, out = _run(t, f"echo b> b.txt && {GIT} add -A && {GIT} commit -qm second && git rev-parse --show-toplevel && git log --oneline", spec, cwd=sub)
+    assert res["success"] and "second" in out and "first" in out, out[-500:]
+    # What the folders on the way show: names, never content.
+    res, out = _run(t, f'dir /b "{t}\\data" & dir /b "{t}\\data\\workspaces" & type "{t}\\data\\gateway.sqlite3" & dir /b "{t}\\data\\workspaces\\session-2"'
+                       f' & type "{t}\\data\\workspaces\\session-2\\theirs.txt" & dir /b "{t}\\data\\secrets"', spec)  # fmt: skip
+    names = (res.get("stdout") or "").split()
+    assert {"gateway.sqlite3", "secrets", "workspaces", "session-1", "session-2"} <= set(names), names
+    assert DATA_MARK not in out and "theirs.txt" not in names and "token" not in names
+
+
+def test_carved_folders_written_by_2_38_are_upgraded_in_place(t):
+    # 2.38.0 refused listing a carved folder (git could not start below it). Its entries, for
+    # the very same rule SIDs, are on users' and CI machines: they are replaced, not added to.
+    w = _launcher()
+    old_pass = w.FILE_PASS_2_38
+    w.RULES["carve"] = ([(w.DENY, w.FILE_ALL & ~old_pass)], [(w.DENY, w.FILE_ALL)])
+    w.FILE_PASS, w._upgraded = old_pass, lambda aces, control, sid: (aces, control)
+    policy = w.read_policy(sb.windows_policy(sb.windows_rules(_spec(t)), _spec(t)))
+    w.prepare(policy)  # as 2.38.0 wrote them
+    carve = w.rule_sid("carve", str(t / "data"))
+
+    def entries(path):
+        return sorted((a.type, hex(a.mask)) for a in w._read_dacl(str(path))[0] if a.sid == carve and not a.flags & (w.INHERITED | w.INHERIT_ONLY))
+
+    assert entries(t / "data") == [(w.DENY, hex(0x0F015F))] and entries(t / "data/workspaces") == [(w.ALLOW, hex(0x1000A0)), (w.DENY, hex(0x0F015F))]
+    res, out = _run(t, f"git init -q && {GIT} commit -q --allow-empty -m m && git rev-parse --show-toplevel", cwd=_priv(t))
+    assert res["success"], out[-500:]
+    assert entries(t / "data") == [(w.DENY, hex(0x0F015E))] and entries(t / "data/workspaces") == [(w.ALLOW, hex(0x1000A1)), (w.DENY, hex(0x0F015E))]
+    _, out = _run(t, f'type "{t}\\data\\gateway.sqlite3" & type "{t}\\data\\workspaces\\session-2\\theirs.txt"')
+    assert DATA_MARK not in out
+
+
 @rows_only
 def test_the_registry_is_not_writable(t, shape):
     key = "HKCU\\Software\\AbstractCoreSandboxProbe"
@@ -525,7 +711,7 @@ def test_allow_list_a_row_at_or_above_the_user_data_opens_it(t):
     spec = _spec(t, ALLOW_LIST, allowed=(SandboxRow(str(t / "home"), "ro"),))
     res, out = _run(t, f'type "{t}\\home\\outside\\f.txt" & echo x> "{t}\\home\\outside\\w.txt"', spec)
     assert OUTSIDE_MARK in out and not (t / "home/outside/w.txt").exists()
-    assert ["carve-list", str(t)] in sb.windows_rules(spec)
+    assert ["carve", str(t)] in sb.windows_rules(spec)
 
 
 def test_the_allow_list_floor_is_computed_from_this_machine():

@@ -705,12 +705,21 @@ sandbox built from the run's effective workspace set. The command string is neve
   identifier (`S-1-9-…`, derived from the rule and the path; inert for every other program).
   - A refused folder is closed at the folder itself: nothing below it can be reached by path, and
     nothing is written on its content. A refused folder with an allowed row inside it (the
-    gateway's data folder around a run's own folder) can be traversed but not listed, and each
-    thing directly inside it is refused: when the rule is written, by inheritance when something
-    is created there later, and at every launch for what appeared since the last one with
-    permissions of its own (the time of that check is kept in a named stream of the folder,
-    `<folder>:abstractcore-sandbox-<id>`). A read-only row refuses every kind of write, inherited
-    by its content. The most specific row wins, as on the other platforms.
+    gateway's data folder around a run's own folder, the profile under "Deny everything") can be
+    traversed and listed, and each thing directly inside it is refused: when the rule is written,
+    by inheritance when something is created there later, and at every launch for what appeared
+    since the last one with permissions of its own (the time of that check is kept in a named
+    stream of the folder, `<folder>:abstractcore-sandbox-<id>`). Listing shows the names (and
+    sizes and dates) of what is directly inside such a folder and of each folder on the way to
+    the row, never their content: git turns its working folder into its long form, which looks
+    each folder up in its parent, and could not start otherwise. Folders that 2.38.0 carved
+    without listing are rewritten in place at the next launch. A read-only row refuses every kind
+    of write, inherited by its content. The most specific row wins, as on the other platforms.
+  - What a carved folder holds is refused whatever it is: hidden and system files, files in use,
+    names longer than 260 characters, and reparse points that are not links (cloud file
+    placeholders such as OneDrive's, app aliases). A link (a junction such as the profile's
+    `Application Data`, a symbolic link) is left as it is: a path through it is looked up again
+    at its target, whose own rules apply.
   - A string command runs through `%ComSpec% /c`, as `subprocess.Popen(command, shell=True)` does.
   - **Writes limited to the rows** ("Deny everything, allow listed workspaces", and a read-only
     default): the command's token also runs at integrity level 6144, between Low and Medium.
@@ -729,13 +738,17 @@ sandbox built from the run's effective workspace set. The command string is neve
     user may change and that is not `Windows`, `Program Files*` or `ProgramData`, plus the user's
     folder of the drive's recycle bin. A row at or above one of them opens it (as on the other
     platforms); the host's own Python stays readable (a `read` rule when it lives in the profile,
-    as a uv install does). The folders on the way to a row list the names directly inside them,
-    never their content: git turns its working folder into its long form, which looks each
-    folder up in its parent.
-  - A rule or label that cannot be written (a folder the user can read but whose permissions
-    they cannot change; a read & write row the user may not take ownership of) exits 126 with
-    one line on stderr and the command does not run. A refused path that does not exist has no
-    rule, as with `bwrap`.
+    as a uv install does).
+  - **When a refusal cannot be written:** something the user can open (read, list, run or pass
+    through; the command's token can do no more) whose permissions the user cannot change, inside
+    a refused folder that has a row in it, or a read & write row the user may not take ownership
+    of: the command does not run (exit 126, one line on stderr naming the path). This happens
+    when a row lies in a folder that also holds what an administrator's installer made (on this
+    kind of machine, `AppData\Local\Temp` and some folders at the root of a drive hold such
+    folders): list that row's folder elsewhere, or refuse the whole folder. What the user cannot
+    open anyway (refused to them, a file in use that no one may open, such as `NTUSER.DAT`) needs
+    no refusal and does not stop commands. A refused path that does not exist has no rule, as
+    with `bwrap`.
   - Limits (every shape): Windows' own TLS (schannel: `curl.exe`, `Invoke-WebRequest`, .NET) is
     refused to a restricted token, while programs that bring their own TLS work; Store app
     aliases under `WindowsApps` do not start. The sandbox shapes file access: the command still
@@ -743,23 +756,28 @@ sandbox built from the run's effective workspace set. The command string is neve
     made earlier outside a refused folder still reaches the file. Content moved into a carved
     folder or a read-only row from elsewhere on the same drive, content given permissions of its
     own by hand after the rule was written, and content created later with permissions of its own
-    inside a read-only row keep those permissions. Under "Allow everything" with read & write by
-    default, git cannot start in a folder below a carved one (the run's own folder inside the
-    gateway's data folder): it reports that it cannot read its working folder.
+    inside a read-only row keep those permissions.
   - Limits where writes are limited to the rows: Git Bash and other MSYS2/Cygwin programs do not
     start (their runtime cannot create its shared objects at this integrity level); git, cmd,
-    PowerShell, python and node do. Registry keys and folders that Windows itself labels Low
-    stay writable (`HKCU\Software\AppDataLow`, Internet Explorer's and the Start menu's cache
-    keys, `AppData\Local\Packages\*\AC`, `AppData\Local\Publishers`); `AppData\LocalLow` and
+    PowerShell, python and node do. A junction or hard link can be made only to what the command
+    may write. Registry keys and folders that Windows itself labels Low stay writable
+    (`HKCU\Software\AppDataLow`, Internet Explorer's and the Start menu's cache keys,
+    `AppData\Local\Packages\*\AC`, `AppData\Local\Publishers`); `AppData\LocalLow` and
     `Favorites` are refused writes under the read-only default and are in the refused profile
-    under "Deny everything". A command that is already running when a folder becomes a read &
-    write row of another run for the very first time is not guarded against that folder (a run
-    started later is). Content created inside a read & write row with permissions of its own
-    (Python 3.13's `tempfile.mkdtemp`, for one) can be written by another run's command that can
-    reach it. Under "Deny everything", what the user cannot change stays as readable as it is:
-    files at the root of a drive whose root is not theirs, `C:\Users\Public`, folders an
-    installer made at the root of a drive, removable and network drives, `ProgramData`; the
-    registry stays readable.
+    under "Deny everything".
+  - Two runs and one folder: when run A lists a folder read & write, a command of run B that
+    may only read it (B lists it read-only, or not at all under a read-only default) cannot
+    write it, before, while or after A runs, with one exception: if B's command was already
+    running at the very moment the folder was listed read & write for the first time on this
+    machine (by any run), that one command of B can write it until it ends. Every command
+    started after that moment is refused. Also, a file or folder that run A, or one of the
+    user's programs, creates inside that folder with permissions of its own instead of the ones
+    it would inherit (Python 3.13's `tempfile.mkdtemp` does; most programs do not) can be
+    written by run B's commands that can reach it.
+  - Under "Deny everything", what the user cannot change stays as readable as it is: files at
+    the root of a drive whose root is not theirs, `C:\Users\Public`, folders an installer made at
+    the root of a drive, removable and network drives, `ProgramData`; the registry stays
+    readable.
 - **Fail closed:** with no sandbox available the tool returns `success: false` with one sentence
   ("Commands are not sandboxed on this gateway host, so they are refused: …") and the run continues,
   unless the host allowed unsandboxed commands (`configure_host(unsandboxed_commands_allowed=True)`,

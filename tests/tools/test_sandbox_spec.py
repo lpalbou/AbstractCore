@@ -334,16 +334,16 @@ def test_windows_rules_under_a_read_only_default(tree):
     ]
 
 
-def test_windows_rules_carve_and_pass_list_names_where_writes_are_limited_to_the_rows(tree):
+def test_windows_rules_carve_a_refusal_under_a_read_only_default(tree):
     t = tree
     spec = _spec(t, default_mode="ro", private_workspace=str(t / "parent/a/b/priv"), allowed=(), refused=(str(t / "parent"),), builtin_refused=())
     assert _rules(spec) == [
-        ["carve-list", str(t / "parent")],
+        ["carve", str(t / "parent")],
         ["deny", str(t / "machine/state")],
         ["rw", str(t / "parent/a/b/priv")],
         ["guard", str(t / "machine/LocalLow")],
-        ["pass-list", str(t / "parent/a"), str(t / "parent")],
-        ["pass-list", str(t / "parent/a/b"), str(t / "parent")],
+        ["pass", str(t / "parent/a"), str(t / "parent")],
+        ["pass", str(t / "parent/a/b"), str(t / "parent")],
     ]
 
 
@@ -355,12 +355,12 @@ def test_windows_rules_allow_list_refuses_the_users_data(tree, monkeypatch):
     spec = _spec(t, posture="allowed_only", private_workspace=str(run_dir), allowed=(SandboxRow(str(t / "home/proj"), "rw"), SandboxRow(str(t / "ro"), "ro")),
                  refused=(), builtin_refused=(str(data),), builtin_allowed=(str(run_dir),))  # fmt: skip
     assert _rules(spec) == [
-        ["carve-list", str(t / "home")],  # the user's data, with rows inside
+        ["carve", str(t / "home")],  # the user's data, with rows inside
         ["rw", str(t / "home/proj")],
         ["deny", str(t / "machine/state")],
         ["rw", str(run_dir)],
-        ["pass-list", str(data), str(t / "home")],  # the built-in refusal lies in the refused profile: a folder on the way
-        ["pass-list", str(data / "workspaces"), str(t / "home")],
+        ["pass", str(data), str(t / "home")],  # the built-in refusal lies in the refused profile: a folder on the way
+        ["pass", str(data / "workspaces"), str(t / "home")],
     ]  # (the read-only row lies outside the user's data: readable and unwritable already; no Low guard: the profile is refused)
     # A row at or above a root of the user's data opens it.
     opened = _spec(t, posture="allowed_only", allowed=(SandboxRow(str(t / "home"), "ro"),), refused=(), builtin_refused=())
@@ -372,8 +372,8 @@ def test_windows_rules_keep_the_hosts_python_readable_under_the_allow_list(tree,
     python_home.mkdir(parents=True)
     monkeypatch.setattr(sb, "_system_readable_roots", lambda: (str(python_home),))
     rules = sb.windows_rules(_spec(tree, posture="allowed_only", allowed=(), refused=(), builtin_refused=()))
-    assert ["read", str(python_home)] in rules and ["carve-list", str(tree / "home")] in rules
-    assert ["pass-list", str(tree / "home/AppData"), str(tree / "home")] in rules
+    assert ["read", str(python_home)] in rules and ["carve", str(tree / "home")] in rules
+    assert ["pass", str(tree / "home/AppData"), str(tree / "home")] in rules
 
 
 def test_under_follows_the_platforms_path_rules():
