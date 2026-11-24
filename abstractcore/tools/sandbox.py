@@ -746,9 +746,14 @@ _WRITE_DAC, _OPEN_EXISTING, _BACKUP_SEMANTICS = 0x40000, 3, 0x02000000
 
 
 def _may_change_permissions(path: str) -> bool:
-    """This user can rewrite ``path``'s access list (it can then carry a refusal). Asks
-    Windows to open it for that right, which changes nothing."""
+    """This user can rewrite ``path``'s access list and the volume keeps one (it can then
+    carry a refusal). Asks Windows to open it for that right, which changes nothing: on a
+    volume without access lists (exFAT) that open succeeds and means nothing."""
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    volume, flags = ctypes.create_unicode_buffer(300), ctypes.c_ulong()
+    if not (k32.GetVolumePathNameW(ctypes.c_wchar_p(path), volume, 300)
+            and k32.GetVolumeInformationW(volume, None, 0, None, None, ctypes.byref(flags), None, 0) and flags.value & _FILE_PERSISTENT_ACLS):  # fmt: skip
+        return False
     k32.CreateFileW.restype = ctypes.c_void_p
     k32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
     handle = k32.CreateFileW(path, _WRITE_DAC, 7, None, _OPEN_EXISTING, _BACKUP_SEMANTICS, None)
@@ -756,6 +761,32 @@ def _may_change_permissions(path: str) -> bool:
         return False
     k32.CloseHandle(ctypes.c_void_p(handle))
     return True
+
+
+_DRIVE_REMOVABLE, _DRIVE_REMOTE = 2, 4
+_FILE_PERSISTENT_ACLS = 0x8
+
+
+def windows_unprotected_volumes() -> Dict[str, str]:
+    """The drives of this host the Windows sandbox cannot protect, each with the sentence a
+    command's result shows: a volume without access lists (FAT, exFAT: no permission and no
+    integrity label can be stored on it, so a command reads and changes it as the user can)
+    and a network share (the server checks the user, never the command's restricted token).
+    Removable drives without media are left out. Off Windows: none."""
+    if os.name != "nt":
+        return {}
+    kernel32 = ctypes.WinDLL("kernel32")
+    out: Dict[str, str] = {}
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        drive = f"{letter}:\\"
+        kind = kernel32.GetDriveTypeW(ctypes.c_wchar_p(drive))
+        if kind == _DRIVE_REMOTE:
+            out[drive] = f"drive {letter}: is a network share: commands can read and change it as you can"
+        elif kind in (_DRIVE_REMOVABLE, _DRIVE_FIXED):
+            flags, fs = ctypes.c_ulong(), ctypes.create_unicode_buffer(64)
+            if kernel32.GetVolumeInformationW(ctypes.c_wchar_p(drive), None, 0, None, None, ctypes.byref(flags), fs, 64) and not flags.value & _FILE_PERSISTENT_ACLS:
+                out[drive] = f"drive {letter}: has no permissions ({fs.value or 'no access lists'}): commands can read and change it"
+    return out
 
 
 def _windows_user_data_roots() -> Tuple[str, ...]:
@@ -773,9 +804,10 @@ def _windows_user_data_roots() -> Tuple[str, ...]:
         return tuple(roots)
     system = {os.path.normcase(os.path.realpath(os.environ[v])) for v in ("SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData") if os.environ.get(v)}
     kernel32 = ctypes.WinDLL("kernel32")
+    unprotected = windows_unprotected_volumes()  # nothing written there could hold: never a root
     for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
         drive = f"{letter}:\\"
-        if kernel32.GetDriveTypeW(ctypes.c_wchar_p(drive)) != _DRIVE_FIXED:
+        if kernel32.GetDriveTypeW(ctypes.c_wchar_p(drive)) != _DRIVE_FIXED or drive in unprotected:
             continue
         if not any(_under(s, drive) for s in system) and _may_change_permissions(drive):
             roots.append(drive)
@@ -804,8 +836,7 @@ def _windows_low_places() -> Tuple[str, ...]:
 
 
 def _windows_state_folder() -> str:
-    """Where the launcher lists the folders it labelled (refused to every command whose
-    writes are limited to its rows)."""
+    """The launcher's own folder (its lock, the folders it labelled), refused to every command."""
     local = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
     return os.path.join(os.path.realpath(local), "AbstractCore", "command-sandbox")
 
@@ -830,10 +861,12 @@ def windows_rules(spec: SandboxSpec) -> List[List[str]]:
     Under "Deny everything, allow listed workspaces" the user's data
     (``_windows_user_data_roots``) is refused, except where a row lies at or above it.
     A built-in refusal is absolute: a row inside one is dropped unless it lies under one of
-    the host's exceptions (``builtin_allowed``); so is the launcher's state folder."""
+    the host's exceptions (``builtin_allowed``); so is the launcher's state folder, in every
+    shape (it holds the lock no command may take)."""
     spec = normalize_spec(spec)
     writes_rows = _windows_writes_rows(spec)
-    absolutes = spec.builtin_refused + ((_windows_state_folder(),) if writes_rows else ())
+    absolutes = spec.builtin_refused + (_windows_state_folder(),)
+    unprotected = windows_unprotected_volumes()
 
     def absolute(path: str) -> bool:
         return any(_under(path, b) for b in absolutes) and not any(_under(path, a) for a in spec.builtin_allowed)
@@ -867,7 +900,8 @@ def windows_rules(spec: SandboxSpec) -> List[List[str]]:
         outer = next((k for k in reversed(kept) if _under(path, k[1])), None)
         around = {"carve": "deny", "read": "ro"}.get(outer[0], outer[0]) if outer else ("ro" if writes_rows else "rw")
         if around == ("ro" if action == "read" else action) or (action == "read" and around != "deny"):
-            continue  # already what its surroundings allow
+            if not (action in ("ro", "deny") and any(_under(path, d) for d in unprotected)):
+                continue  # already what its surroundings allow (not where they cannot hold: the launcher says so)
         kept.append([action, path])
         if action == "ro" and around == "deny":
             kept.append(["read", path])  # refusing writes does not re-open what is refused
@@ -887,12 +921,15 @@ def windows_rules(spec: SandboxSpec) -> List[List[str]]:
 
 
 def windows_policy(rules: Sequence[Sequence[str]], spec: Optional[SandboxSpec] = None) -> str:
-    """The launcher's policy argument: the rules as compressed JSON (paths repeat a lot).
-    Where ``spec`` limits writes to its rows: the folders to label (every ``rw`` rule) and
-    the launcher's state folder too."""
-    policy: Dict[str, Any] = {"rules": [list(r) for r in rules]}
+    """The launcher's policy argument: the rules and the launcher's state folder as compressed
+    JSON (paths repeat a lot); where ``spec`` limits writes to its rows, the folders to label
+    (every ``rw`` rule) too."""
+    policy: Dict[str, Any] = {"rules": [list(r) for r in rules], "state": _windows_state_folder()}
+    unprotected = windows_unprotected_volumes()
+    if unprotected:
+        policy["unprotected"] = unprotected  # nothing is written there; a refusal there cannot hold
     if spec is not None and _windows_writes_rows(spec):
-        policy.update(label=[r[1] for r in rules if r[0] == "rw"], state=_windows_state_folder())
+        policy["label"] = [r[1] for r in rules if r[0] == "rw"]
     raw = json.dumps(policy, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(zlib.compress(raw, 9)).decode("ascii")
 
@@ -923,6 +960,9 @@ class Sandbox:
     _prefix: Tuple[str, ...] = ()
     _shell: Tuple[str, ...] = ("/bin/sh", "-c")  # what runs a command given as one string
     _exec: Tuple[str, ...] = ()  # what introduces a command given as a list
+    # Drives this sandbox reads and writes as the user can (Windows: no access lists, a
+    # network share), each with its sentence; shown wherever writes would be limited.
+    unprotected: Tuple[Tuple[str, str], ...] = ()
 
     @property
     def refuses(self) -> bool:
@@ -942,6 +982,8 @@ class Sandbox:
             return "Sandbox: none — commands refused on this host"
         if self.kind == KIND_UNSANDBOXED:
             return "Sandbox: none — unsandboxed commands allowed by the host (serve --unsandboxed-commands)"
+        if self.unprotected:
+            return f"Sandbox: {self.label} (not protected: " + "; ".join(why for _, why in self.unprotected) + ")"
         return f"Sandbox: {self.label}"
 
     def describe(self) -> Dict[str, Any]:
@@ -950,6 +992,9 @@ class Sandbox:
         out: Dict[str, Any] = {"kind": self.kind, "label": self.label}
         if self.reason:
             out["reason"] = self.reason
+        if self.unprotected:
+            out["unprotected"] = [drive for drive, _ in self.unprotected]
+            out["unprotected_note"] = "; ".join(why for _, why in self.unprotected)
         s = self.spec
         if s is not None:
             out.update(
@@ -1028,7 +1073,8 @@ def build_sandbox(spec: Optional[SandboxSpec]) -> Sandbox:
             os.makedirs(private_tmpdir(spec), exist_ok=True)
             # -I: nothing of the command's environment or folder reaches the launcher's imports.
             prefix = (_windows_python(), "-I", WINDOWS_LAUNCHER, policy)
-            return Sandbox(kind=KIND_WINDOWS, spec=spec, _prefix=prefix, _shell=("--shell",), _exec=("--",))
+            unprotected = tuple(sorted(windows_unprotected_volumes().items())) if _windows_writes_rows(spec) else ()
+            return Sandbox(kind=KIND_WINDOWS, spec=spec, _prefix=prefix, _shell=("--shell",), _exec=("--",), unprotected=unprotected)
         kind, reason = KIND_NONE, WINDOWS_TOO_MANY_ROWS
     if spec.unsandboxed_commands_allowed:
         return Sandbox(kind=KIND_UNSANDBOXED, spec=spec, reason=reason)
@@ -1088,6 +1134,7 @@ __all__ = [
     "refusal_result",
     "sandbox_for_tool_call",
     "windows_policy",
+    "windows_unprotected_volumes",
     "windows_rules",
 ]
 

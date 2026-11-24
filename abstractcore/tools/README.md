@@ -720,7 +720,21 @@ sandbox built from the run's effective workspace set. The command string is neve
     placeholders such as OneDrive's, app aliases). A link (a junction such as the profile's
     `Application Data`, a symbolic link) is left as it is: a path through it is looked up again
     at its target, whose own rules apply.
+  - A read & write row: everything inside it is the command's, its permissions included (as
+    `chmod` is on macOS and Linux: ssh-keygen, git, Python's `tempfile.mkdtemp` and installers set
+    permissions on what they make); the row folder itself may be written into but its own
+    permissions and integrity label may not be changed (they carry what other runs rely on).
+  - A path's role may change from one run to the next (a folder made in a refused folder after a
+    first command, then listed read & write or read-only, or on the way to a deeper row; a row
+    that is no longer listed): each launch looks again at every row and every folder on the way
+    directly inside a carved folder, and the refusal it holds there is always one that a row on
+    that very path overrides. A folder there with permissions of its own (not inherited) cannot be
+    a row: the command does not run and the line says to let it inherit (`icacls <path> /reset`).
   - A string command runs through `%ComSpec% /c`, as `subprocess.Popen(command, shell=True)` does.
+  - The launcher's state folder, `%LOCALAPPDATA%\AbstractCore\command-sandbox`, is refused to every
+    command of every shape. It holds the lock that lets one launcher at a time write rules (a file
+    opened by one launcher only; a launch waits up to 10 minutes for it, then does not run and says
+    which process holds it) and the list of labelled folders.
   - **Writes limited to the rows** ("Deny everything, allow listed workspaces", and a read-only
     default): the command's token also runs at integrity level 6144, between Low and Medium.
     Every object without a label of its own counts as Medium, so integrity alone refuses every
@@ -730,13 +744,15 @@ sandbox built from the run's effective workspace set. The command string is neve
     not), so it stays, like the rules. Each labelled folder also refuses writes to its own guard
     identifier, and every other run's command whose policy can reach it but not write it holds
     that identifier, so a folder one run may write stays read-only to another. The launcher lists
-    the labelled folders in `%LOCALAPPDATA%\AbstractCore\command-sandbox\labelled`; that folder is
-    refused to every such command.
+    the labelled folders in the state folder (`labelled`, ending with its own hash). A list that
+    is missing or damaged could have lost a folder's guard: commands that limit writes to their
+    rows do not run (the line names the list) until it is deleted to start a new one; a folder
+    labelled before is then guarded again once a run lists it read & write.
   - **"Deny everything, allow listed workspaces"** refuses, computed from the machine at each
     command: the user's profile, and on every fixed drive the drive itself when the user may
     change its permissions and it holds no system root, else each folder at its root that the
     user may change and that is not `Windows`, `Program Files*` or `ProgramData`, plus the user's
-    folder of the drive's recycle bin. A row at or above one of them opens it (as on the other
+    folder of the drive's recycle bin. A drive the sandbox cannot protect is never one of them. A row at or above one of them opens it (as on the other
     platforms); the host's own Python stays readable (a `read` rule when it lives in the profile,
     as a uv install does).
   - **When a refusal cannot be written:** something the user can open (read, list, run or pass
@@ -765,6 +781,15 @@ sandbox built from the run's effective workspace set. The command string is neve
     `AppData\Local\Packages\*\AC`, `AppData\Local\Publishers`); `AppData\LocalLow` and
     `Favorites` are refused writes under the read-only default and are in the refused profile
     under "Deny everything".
+  - **Drives the sandbox cannot protect:** a drive without permissions (FAT, exFAT: no access list
+    and no integrity label can be stored there) and a network share (its server checks the user,
+    not the command's token). Commands read and change them as the user can.
+    `sandbox.windows_unprotected_volumes()` lists them; where writes are limited to the rows, the
+    result's `sandbox` block carries `unprotected: ["D:\\"]` and `unprotected_note` ("drive D:
+    has no permissions (exFAT): commands can read and change it"), and the `Sandbox:` line says
+    so. A refused or read-only row there cannot be enforced: the command does not run (exit 126,
+    one line naming the row and the drive). A read & write row there works. Remedy: convert the
+    drive to NTFS (`convert D: /fs:ntfs`), or accept it.
   - Two runs and one folder: when run A lists a folder read & write, a command of run B that
     may only read it (B lists it read-only, or not at all under a read-only default) cannot
     write it, before, while or after A runs, with one exception: if B's command was already
@@ -772,7 +797,7 @@ sandbox built from the run's effective workspace set. The command string is neve
     machine (by any run), that one command of B can write it until it ends. Every command
     started after that moment is refused. Also, a file or folder that run A, or one of the
     user's programs, creates inside that folder with permissions of its own instead of the ones
-    it would inherit (Python 3.13's `tempfile.mkdtemp` does; most programs do not) can be
+    it would inherit (Python's `tempfile.mkdtemp` does; most programs do not) can be
     written by run B's commands that can reach it.
   - Under "Deny everything", what the user cannot change stays as readable as it is: files at
     the root of a drive whose root is not theirs, `C:\Users\Public`, folders an installer made at

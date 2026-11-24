@@ -109,7 +109,8 @@ def test_the_sandbox_on_this_hosts_real_profile(host, shape):
     res, out, first = _run(spec, "echo ok")
     assert res["success"] and res["sandbox"]["kind"] == "windows-restricted-token", out[-800:]
     _, _, second = _run(spec, "echo ok")
-    print(f"\n{'/'.join(shape)}: first launch {first:.1f}s, second {second:.2f}s, objects with an entry around its rules: {_with_entries(spec)}")
+    print(f"\n{'/'.join(shape)}: first launch {first:.1f}s, second {second:.2f}s, objects with an entry around its rules: {_with_entries(spec)},"
+          f" drives not protected: {sb.windows_unprotected_volumes() or 'none'}")
     assert second < 10, "a launch once the rules are in place only reads them"
 
     git = "git -c user.email=t@example.invalid -c user.name=t"

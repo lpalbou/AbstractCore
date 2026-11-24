@@ -48,6 +48,7 @@ IDS = {RW_DEFAULT: "rw-default", RO_DEFAULT: "ro-default", ALLOW_LIST: "allow-li
 shapes = pytest.mark.parametrize("shape", POSTURES, ids=IDS.get)
 rows_only = pytest.mark.parametrize("shape", ROWS_ONLY, ids=IDS.get)
 REAL_USER_DATA_ROOTS = sb._windows_user_data_roots
+REAL_UNPROTECTED = sb.windows_unprotected_volumes
 
 
 @pytest.fixture(autouse=True)
@@ -81,6 +82,7 @@ def _fake_machine(t, monkeypatch):
     monkeypatch.setattr(sb, "_windows_user_data_roots", lambda: (str(t),))
     monkeypatch.setattr(sb, "_windows_low_places", lambda: (str(t / "machine/LocalLow"),))
     monkeypatch.setattr(sb, "_windows_state_folder", lambda: str(t / "machine/state"))
+    monkeypatch.setattr(sb, "windows_unprotected_volumes", lambda: {})  # (this host's real drives aside: see _fake_drive)
     real_rules = sb.windows_rules
 
     def confined(spec):
@@ -472,6 +474,171 @@ def test_children_that_come_and_go_while_a_carved_folder_is_checked(t, shape):
     assert DATA_MARK not in out  # what appeared in the meantime is refused at the next launch
 
 
+# --- a path's role changes from one run to the next --------------------------------------
+# A refused folder with a row inside it, carved under every shape (`profile`: under the
+# allow-list it is the user's data). What is made directly inside it after a first command is
+# refused by the next launch; a later policy may list it, a policy after that may not.
+
+NO_AUTO_INHERIT = "D:(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;{me})"  # a real profile's: its folders hold unmarked copies
+
+
+@shapes
+@pytest.mark.parametrize("profile_acl", [None, NO_AUTO_INHERIT], ids=["inherits", "like-a-real-profile"])
+def test_a_folder_made_after_a_first_run_can_take_any_role_later(t, shape, profile_acl, monkeypatch):
+    profile = t / "profile"
+    profile.mkdir()
+    if profile_acl:
+        _set_acl(profile, profile_acl)
+    (profile / "keep").mkdir()
+    monkeypatch.setattr(sb, "_windows_user_data_roots", lambda: (str(profile),))
+
+    def spec(*rows):
+        return _spec(t, shape, allowed=(SandboxRow(str(profile / "keep"), "rw"),) + rows, refused=(str(profile),))
+
+    _run(t, "echo first", spec())
+    made = {name: profile / name for name in ("to-rw", "to-ro", "on-the-way", "stays")}
+    for name, folder in made.items():
+        folder.mkdir()
+        (folder / "n.txt").write_text(f"{name}-OK")
+    (made["on-the-way"] / "deep").mkdir()
+    (made["on-the-way"] / "deep/n.txt").write_text("DEEP-OK")
+    reads = " & ".join(f'type "{f}\\n.txt"' for f in made.values()) + f' & type "{made["on-the-way"]}\\deep\\n.txt"'
+    _, out = _run(t, reads, spec())  # this launch refuses what is new
+    assert "-OK" not in out, out
+    later = spec(SandboxRow(str(made["to-rw"]), "rw"), SandboxRow(str(made["to-ro"]), "ro"), SandboxRow(str(made["on-the-way"] / "deep"), "rw"))
+    s = {k: str(v) for k, v in made.items()}
+    res, out = _run(t, f'type "{s["to-rw"]}\\n.txt" & echo w> "{s["to-rw"]}\\w.txt" & type "{s["to-ro"]}\\n.txt" & echo w> "{s["to-ro"]}\\w.txt"'
+                       f' & type "{s["on-the-way"]}\\deep\\n.txt" & echo w> "{s["on-the-way"]}\\deep\\w.txt" & type "{s["on-the-way"]}\\n.txt" & type "{s["stays"]}\\n.txt"', later)  # fmt: skip
+    assert "to-rw-OK" in out and (made["to-rw"] / "w.txt").exists(), out
+    assert "to-ro-OK" in out and not (made["to-ro"] / "w.txt").exists(), out
+    assert "DEEP-OK" in out and (made["on-the-way"] / "deep/w.txt").exists(), out
+    assert "on-the-way-OK" not in out and "stays-OK" not in out, out  # a folder on the way shows nothing of its own
+    _, out = _run(t, reads, spec())  # the reverse: a policy that no longer lists them refuses them again
+    assert "-OK" not in out, out
+
+
+@shapes
+def test_a_folder_with_permissions_of_its_own_in_a_refused_folder_cannot_be_a_row(t, shape):
+    # No order of entries lets its run in and keeps every other run out: the command does not
+    # run, and says why (2.38.0 left such a row readable to every other run).
+    own = t / "parent/own"
+    own.mkdir()
+    (own / "n.txt").write_text(REFUSED_MARK)
+    _grant_self(own, "/inheritance:r")
+    _, out = _run(t, f'type "{own}\\n.txt"', _spec(t, shape))
+    assert REFUSED_MARK not in out  # refused to a run that does not list it
+    res, out = _run(t, "echo ran> ran.txt", _spec(t, shape, allowed=_spec(t, shape).allowed + (SandboxRow(str(own), "rw"),)))
+    assert res.get("return_code") == 126 and "permissions of its own" in out and "own" in out and not (_priv(t) / "ran.txt").exists()
+
+
+@shapes
+@pytest.mark.parametrize("place", ["row inside a refused folder", "private workspace", "row outside refused folders"])
+def test_content_of_a_read_and_write_row_takes_permission_changes_its_folder_does_not(t, shape, place):
+    # Writable includes the permissions of what is inside (ssh-keygen, git, installers set
+    # them); the row folder itself keeps what other runs rely on (its guard, its label,
+    # another run's rule on it).
+    row = {"row inside a refused folder": t / "parent/child", "private workspace": _priv(t), "row outside refused folders": t / "rw"}[place]
+    spec = _spec(t, shape)
+    _run(t, "echo first", spec)
+    made = row / "made-later.txt"
+    made.write_text("x")
+    (row / "made-later-dir").mkdir()
+    res, out = _run(t, f'icacls "{made}" /grant *S-1-1-0:(R) && icacls "{row}\\made-later-dir" /grant *S-1-1-0:(OI)(CI)(R) /t', spec)
+    assert res["success"], out[-300:]
+    assert "Everyone" in _acl(made) and "Everyone" in _acl(row / "made-later-dir")
+    res, out = _run(t, f'icacls "{row}" /grant *S-1-1-0:(OI)(CI)(F) & icacls "{row}" /setintegritylevel (OI)(CI)L', spec)
+    ruled = shape != RW_DEFAULT or place != "row outside refused folders"  # (no rule on it otherwise: the user's own folder, as released)
+    if ruled:
+        assert "Everyone" not in _acl(row) and "Low Mandatory" not in _acl(row), out[-300:]
+
+
+@shapes
+def test_python_makes_private_folders_in_the_rows(t, shape):
+    # tempfile.mkdtemp makes its folder with permissions of its own (mode 0o700) and, on a
+    # refusal, tries another name, 2**31 times: in 2.38.0's rows inside a refused folder (the
+    # run's own folder and its .tmp among them) every pip install and venv hung there.
+    for cwd in (_priv(t), t / "parent/child", t / "rw"):
+        res, out = _run(t, f'"{PY}" -c "import tempfile,os;d=tempfile.mkdtemp(dir=\'.\');open(os.path.join(d,\'f\'),\'w\').write(\'x\');print(\'made\',d)" '
+                           f'&& "{PY}" -c "import tempfile;print(\'tmp\',tempfile.mkdtemp())"', _spec(t, shape), cwd=cwd, timeout=60)  # fmt: skip
+        assert res["success"] and out.count("made") == 1 and "tmp " in out, f"{cwd}: {out[-300:]}"
+
+
+@shapes
+def test_a_virtual_environment_with_pip_installs_from_a_local_wheel(t, shape):
+    import ensurepip
+
+    bundled = Path(ensurepip.__file__).parent / "_bundled"  # pip's own wheel: no network needed
+    venv_python = _priv(t) / "v/Scripts/python.exe"
+    res, out = _run(t, f'"{PY}" -m venv v && "{venv_python}" -m pip --version && "{venv_python}" -m pip install -q --no-index --find-links "{bundled}" '
+                       f"--force-reinstall pip && echo installed", _spec(t, shape), timeout=240)  # fmt: skip
+    assert res["success"] and "installed" in out and "pip " in out, out[-600:]
+
+
+# --- the launcher's lock -------------------------------------------------------------------
+
+SQUAT = r"""
+import ctypes, sys, time
+from ctypes import wintypes as W
+k = ctypes.WinDLL("kernel32", use_last_error=True)
+adv = ctypes.WinDLL("advapi32", use_last_error=True)
+class SA(ctypes.Structure):
+    _fields_ = [("n", W.DWORD), ("sd", ctypes.c_void_p), ("inherit", W.BOOL)]
+sd = ctypes.c_void_p()
+adv.ConvertStringSecurityDescriptorToSecurityDescriptorW("D:(D;;GA;;;WD)", 1, ctypes.byref(sd), None)
+sa = SA(ctypes.sizeof(SA), sd, False)
+k.CreateMutexW.restype = k.CreateFileW.restype = ctypes.c_void_p
+held = [k.CreateMutexW(ctypes.byref(sa), True, "Local\\abstractcore-command-sandbox"),
+        k.CreateFileW(sys.argv[2] + "\\lock", 0xC0000000, 0, None, 4, 0, None)]  # the old lock's name, the new lock
+print("squatter:", [h not in (None, 2**64 - 1) for h in held], flush=True)
+open(sys.argv[1], "w").write("held")
+time.sleep(60)
+"""
+
+
+@shapes
+def test_a_sandboxed_command_cannot_take_or_spoil_the_launchers_lock(t, shape):
+    # A named object of the session (2.38.0's lock) could be held by any command, so every
+    # later launch waited; made with a refusing access list, every later launch failed. The
+    # lock is a file in the state folder, which every policy refuses.
+    script, flag = _priv(t) / "squat.py", _priv(t) / "held"
+    script.write_text(SQUAT)
+    squatter = _popen(t, _spec(t, shape), [PY, str(script), str(flag), str(t / "machine/state")])
+    try:
+        _wait_for(flag)
+        started = time.time()
+        res, out = _run(t, "echo later-ok", _session(t, 2, shape), timeout=30)
+        assert res["success"] and "later-ok" in out and time.time() - started < 15, out[-300:]
+        assert squatter.poll() is None  # it was holding what it could while the later launch ran
+    finally:
+        squatter.kill()
+        out = squatter.communicate(timeout=30)[0]
+    assert "squatter: [True, False]" in out, out  # the old name could be taken, the lock file could not
+
+
+def test_a_held_lock_is_waited_for_a_bounded_time_and_reported(t):
+    import ctypes
+
+    w = _launcher()
+    state = t / "machine/state"
+    state.mkdir(parents=True)
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateFileW.restype = ctypes.c_void_p
+    holder = k32.CreateFileW(str(state / "lock"), 0xC0000000, 0x1, None, 4, 0, None)  # as a launch holds it
+    assert holder not in (None, 2**64 - 1)
+    try:
+        written = ctypes.c_ulong()
+        k32.WriteFile(ctypes.c_void_p(holder), b"process 4242 since 2026-11-24 10:00:00", 38, ctypes.byref(written), None)
+        w.LOCK_WAIT = 0.5
+        policy = w.read_policy(sb.windows_policy(sb.windows_rules(_spec(t)), _spec(t)))
+        started = time.time()
+        with pytest.raises(w.SandboxLaunchError, match="held by process 4242 since 2026-11-24 10:00:00"):
+            w.prepare(policy)
+        assert time.time() - started < 5
+    finally:
+        k32.CloseHandle(ctypes.c_void_p(holder))
+    w.prepare(policy)  # released: the next one takes it
+
+
 # --- nesting, read-only rows, the rest of the world --------------------------------------
 
 
@@ -613,6 +780,21 @@ def test_git_works_in_the_private_workspace_inside_the_data_folder(t, shape):
     assert DATA_MARK not in out and "theirs.txt" not in names and "token" not in names
 
 
+@shapes
+def test_git_works_in_a_row_whose_path_has_short_names_below_a_refused_folder(t, shape):
+    # git's last resort for its working folder, GetLongPathNameW, looks up in its parent each
+    # folder whose name could itself be a short (8.3) name: `child` in the refused `parent`
+    # (`src` in a refused project, `AppData` in the profile). 2.38.0 refused listing a carved
+    # folder, and git stopped with "Unable to read current working directory". (The gateway's
+    # `workspaces\session-<id>` has no such name: git worked there.)
+    row = t / "parent/child"
+    res, out = _run(t, f"git init -q && {GIT} commit -q --allow-empty -m m && git status --short && git rev-parse --show-toplevel", _spec(t, shape), cwd=row)
+    assert res["success"] and "child" in out, out[-400:]
+    (row / "sub").mkdir(exist_ok=True)
+    res, out = _run(t, "git rev-parse --show-prefix", _spec(t, shape), cwd=row / "sub")
+    assert res["success"] and "sub/" in out, out[-400:]
+
+
 def test_carved_folders_written_by_2_38_are_upgraded_in_place(t):
     # 2.38.0 refused listing a carved folder (git could not start below it). Its entries, for
     # the very same rule SIDs, are on users' and CI machines: they are replaced, not added to.
@@ -726,6 +908,54 @@ def test_the_allow_list_floor_is_computed_from_this_machine():
         if root != home:
             assert sb._may_change_permissions(root), root  # every refusal can be written
     assert len(roots) == len({os.path.normcase(r) for r in roots})
+
+
+# --- drives the sandbox cannot protect (no access lists, network shares) -----------------
+# A scratch folder plays the drive (it is NTFS, so what the launcher does NOT write there
+# shows): the volume probe is injected, the real one is checked read-only below.
+
+def _fake_drive(t: Path, monkeypatch):
+    drive = t / "exfat"
+    drive.mkdir()
+    why = "drive X: has no permissions (exFAT): commands can read and change it"
+    monkeypatch.setattr(sb, "windows_unprotected_volumes", lambda: {str(drive) + "\\": why})
+    return drive, why
+
+
+@shapes
+def test_an_unprotected_drive_is_shown_and_never_written(t, shape, monkeypatch):
+    drive, why = _fake_drive(t, monkeypatch)
+    (drive / "proj").mkdir()
+    spec = _spec(t, shape, allowed=_spec(t, shape).allowed + (SandboxRow(str(drive / "proj"), "rw"),))
+    res, out = _run(t, "echo ok", spec)
+    assert res["success"] and "ok" in out, out[-300:]
+    if shape == RW_DEFAULT:  # everything is readable and writable anyway: nothing to say
+        assert "unprotected" not in res["sandbox"]
+    else:
+        assert res["sandbox"]["unprotected"] == [str(drive) + "\\"] and why in res["sandbox"]["unprotected_note"] and why in res["rendered"]
+    w = _launcher()
+    written = [a for a in w._read_dacl(str(drive / "proj"))[0] if a.sid.startswith("S-1-9-") and not a.flags & w.INHERITED]
+    assert not written and w._label(str(drive / "proj")) is None  # nothing written there (what it inherits is the lab's)
+    assert str(drive / "proj") not in (t / "machine/state/labelled").read_text() if (t / "machine/state/labelled").exists() else True
+
+
+@shapes
+@pytest.mark.parametrize("row", ["refused", "read-only"])
+def test_a_refused_or_read_only_row_on_an_unprotected_drive_stops_the_command(t, shape, row, monkeypatch):
+    drive, why = _fake_drive(t, monkeypatch)
+    (drive / "secret").mkdir()
+    kw = {"refused": _spec(t, shape).refused + (str(drive / "secret"),)} if row == "refused" else {"allowed": _spec(t, shape).allowed + (SandboxRow(str(drive / "secret"), "ro"),)}
+    res, out = _run(t, "echo ran> ran.txt", _spec(t, shape, **kw))
+    assert res.get("return_code") == 126 and str(drive / "secret") in out and why in out and not (_priv(t) / "ran.txt").exists(), out[-300:]
+
+
+def test_this_hosts_unprotected_drives_are_never_in_the_allow_list_floor():
+    # Read-only: on a host with an exFAT or FAT drive (or a mapped share), it is reported and
+    # never a root of "the user's data" (no refusal could be written there).
+    unprotected = REAL_UNPROTECTED()
+    assert all(not any(sb._under(root, drive) for drive in unprotected) for root in REAL_USER_DATA_ROOTS())
+    for drive, why in unprotected.items():
+        assert why.startswith(f"drive {drive[0]}:") and "commands can read and change it" in why
 
 
 # --- runs that share folders -------------------------------------------------------------
@@ -857,13 +1087,39 @@ def test_a_killed_launcher_leaves_nothing_that_lets_another_run_write(t):
 def test_the_list_of_labelled_folders_forgets_only_removed_folders(t):
     w = _launcher()
     state = t / "machine/state"
-    state.mkdir(parents=True)
+    w._make_state(str(state))
     kept, removed, away = t / "rw", t / "gone", t / "drive-away/proj"
     removed.mkdir()
     assert w._register(str(state), [str(kept), str(removed), str(away)]) == [str(kept), str(removed), str(away)]
     removed.rmdir()  # removed: its label and guard went with it
     assert w._register(str(state), []) == [str(kept), str(away)]  # a folder whose drive is away stays listed
-    assert (state / "labelled").read_text().splitlines() == [str(kept), str(away)]
+    assert (state / "labelled").read_text().splitlines()[1:-1] == [str(kept), str(away)]
+
+
+@shapes
+def test_no_command_reads_or_changes_the_launchers_state(t, shape):
+    # The list of labelled folders names other sessions' folders, and a guard lost from it
+    # leaves another run's folder writable: refused to every shape, read & write by default too.
+    _run(t, "echo ok", _spec(t, RO_DEFAULT))  # a list with this policy's folders in it
+    listed = t / "machine/state/labelled"
+    before = listed.read_text()
+    res, out = _run(t, f'type "{listed}" & type nul > "{listed}" & del /q "{listed}" & ren "{t}\\machine\\state" moved & dir /b "{t}\\machine\\state"'
+                       f' & "{PY}" -c "open(r\'{listed}\',\'w\')"', _spec(t, shape))  # fmt: skip
+    assert listed.read_text() == before and str(t / "rw") not in (res.get("stdout") or ""), out[-300:]
+
+
+@rows_only
+@pytest.mark.parametrize("damage", ["emptied", "an entry removed", "deleted"])
+def test_a_damaged_list_of_labelled_folders_stops_confined_commands(t, shape, damage):
+    _run(t, "echo first", _spec(t, shape))
+    listed = t / "machine/state/labelled"
+    lines = listed.read_text().splitlines()
+    {"emptied": lambda: listed.write_text(""), "an entry removed": lambda: listed.write_text("\n".join(lines[:1] + lines[2:]) + "\n"),
+     "deleted": listed.unlink}[damage]()  # fmt: skip
+    res, out = _run(t, "echo ran> ran.txt", _spec(t, shape))
+    assert res.get("return_code") == 126 and "missing or damaged" in out and not (_priv(t) / "ran.txt").exists(), out[-300:]
+    res, out = _run(t, "echo ran> ran.txt", _spec(t, RW_DEFAULT))  # the read & write default holds no guard
+    assert res["success"], out[-300:]
 
 
 # --- what the rules leave on the user's folders -------------------------------------------
@@ -1060,7 +1316,7 @@ def test_rules_labels_and_the_list_are_written_once(t, shape):
     before = state()
     subprocess.run(argv, cwd=_priv(t), env=env, check=True, timeout=60)
     assert state() == before
-    assert sorted(before[-1].splitlines()) == sorted([str(t / "rw"), str(t / "parent/child"), str(_priv(t))])
+    assert sorted(before[-1].splitlines()[1:-1]) == sorted([str(t / "rw"), str(t / "parent/child"), str(_priv(t))])
 
 
 @shapes
@@ -1084,7 +1340,8 @@ def test_a_row_that_cannot_be_labelled_fails_closed(t, shape):
     row.mkdir(parents=True)
     _set_acl(row, "D:PAI(A;OICI;0x1701bf;;;{me})")  # modify + change permissions
     res, out = _run(t, "echo ran> ran.txt", _spec(t, shape, allowed=(SandboxRow(str(row), "rw"),)))
-    assert res.get("return_code") == 126 and "cannot label" in out and "the command did not run" in out
+    # (under the allow-list it lies in the refused lab with a protected list: refused one step earlier)
+    assert res.get("return_code") == 126 and ("cannot label" in out or "permissions of its own" in out) and "the command did not run" in out
     assert not (_priv(t) / "ran.txt").exists()
 
 
