@@ -338,15 +338,20 @@ def _acl(path: Path) -> str:
     return subprocess.run(["icacls", str(path)], capture_output=True, text=True, check=True).stdout
 
 
+def _set_acl(path: Path, sddl: str) -> None:
+    """Give ``path`` exactly this access list (``{me}``: this user's SID), whatever its folder hands down."""
+    w = _launcher()
+    sd = w._VOID()
+    convert = w._api(w._adv, "ConvertStringSecurityDescriptorToSecurityDescriptorW", w.W.BOOL, w.W.LPCWSTR, w.W.DWORD, w._P(w._VOID), w._VOID)
+    assert convert(sddl.format(me=w.identity_sids()[0]), 1, w.ctypes.byref(sd), None), sddl
+    assert w.SetFileSecurityW(str(path), w.DACL_INFORMATION, sd), path
+
+
 def test_entries_planted_in_advance_do_not_pass_for_a_rule(t):
     # A rule's SID is no secret: something that could write a folder's access list before
     # the folder was refused may have left the rule's own entry there, after a grant to
     # everyone. The rule must be in force, not merely present.
-    w = _launcher()
-    planted = f"D:(A;OICI;FA;;;WD)(D;;FA;;;{w.rule_sid('deny', str(t / 'refused'))})(A;;RCWD;;;OW)"
-    sd = w._VOID()
-    convert = w._api(w._adv, "ConvertStringSecurityDescriptorToSecurityDescriptorW", w.W.BOOL, w.W.LPCWSTR, w.W.DWORD, w._P(w._VOID), w._VOID)
-    assert convert(planted, 1, w.ctypes.byref(sd), None) and w.SetFileSecurityW(str(t / "refused"), w.DACL_INFORMATION, sd)
+    _set_acl(t / "refused", f"D:(A;OICI;FA;;;WD)(D;;FA;;;{_launcher().rule_sid('deny', str(t / 'refused'))})(A;;RCWD;;;OW)")
     res, out = _run(t, f'type "{t}\\refused\\secret.txt" & dir "{t}\\refused"')
     assert not _leaked(res, out)
 
@@ -365,7 +370,7 @@ def test_a_private_key_in_a_read_only_row_keeps_an_access_list_openssh_accepts(t
     # are to its owner by name: OpenSSH refuses a key that grants anything to anyone else.
     key = t / "ro/id_key"
     key.write_text(RO_MARK)
-    subprocess.run(["icacls", str(key), "/inheritance:r", "/grant:r", f"{os.environ['USERNAME']}:M"], check=True, capture_output=True)
+    _set_acl(key, "D:P(A;;0x1301bf;;;{me})")
     res, out = _run(t, f'type "{key}" & echo x>> "{key}"')
     assert RO_MARK in out and key.read_text() == RO_MARK
     w = _launcher()
@@ -390,7 +395,7 @@ def test_the_owner_keeps_control_of_a_refused_folder(t):
     owned = t / "owned/inner"
     owned.mkdir(parents=True)
     (owned / "f.txt").write_text(REFUSED_MARK)
-    subprocess.run(["icacls", str(owned), "/inheritance:r", "/grant", "*S-1-5-32-545:(OI)(CI)M"], check=True, capture_output=True)
+    _set_acl(owned, "D:PAI(A;OICI;0x1301bf;;;BU)")
     res, out = _run(t, f'type "{owned}\\f.txt"', _spec(t, refused=(str(owned),)))
     assert REFUSED_MARK not in out
     again = subprocess.run(["icacls", str(owned), "/grant", "*S-1-5-32-545:(OI)(CI)F"], capture_output=True, text=True)
@@ -403,7 +408,7 @@ def test_a_row_keeps_the_permissions_it_inherited_where_it_came_from(t):
     # permissions are next edited by hand. Making it a row must not be that edit.
     private = t / "private"
     private.mkdir()
-    subprocess.run(["icacls", str(private), "/inheritance:r", "/grant:r", f"{os.environ['USERNAME']}:(OI)(CI)F"], check=True, capture_output=True)
+    _set_acl(private, "D:PAI(A;OICI;FA;;;{me})")
     (private / "moved/sub").mkdir(parents=True)
     (private / "moved/sub/f.txt").write_text(RO_MARK)
     os.rename(private / "moved", t / "rw/moved")
