@@ -7239,8 +7239,8 @@ Two properties are stated in the tool schemas and matter operationally:
 `execute_command`, `shell_exec` and AbstractRuntime's `local_helper_start` run inside an OS
 sandbox built from the run's effective workspace set (`abstractcore.tools.sandbox`): macOS
 `sandbox-exec`, Linux `bwrap`, Linux Landlock for "Deny everything, allow listed workspaces", or
-a Windows restricted token for "Allow everything, refuse listed workspaces" with read & write by
-default.
+a Windows restricted token (every posture; where writes are limited to the rows, the token runs
+at an integrity level below Medium and the read & write rows are labelled for it).
 Refused workspaces, built-in refusals (credentials, the gateway data folder) and, under the
 allow-list posture, all other user data are unreadable; writes are limited to the read & write
 workspaces, the run's private workspace and its private `TMPDIR`. The command string is never
