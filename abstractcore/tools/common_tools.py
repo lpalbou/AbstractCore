@@ -13494,9 +13494,10 @@ def execute_command(
     Execute a shell command safely with comprehensive security controls.
 
     Round 12: when the host stamps ``_sandbox`` (the run's effective workspace set), the
-    command runs inside an OS sandbox (macOS sandbox-exec, Linux bubblewrap/Landlock) with the
-    host's scrubbed environment and a private TMPDIR; with no sandbox available the command is
-    refused (success=False, one sentence) unless the host allowed unsandboxed commands.
+    command runs inside an OS sandbox (macOS sandbox-exec, Linux bubblewrap/Landlock, a Windows
+    restricted token) with the host's scrubbed environment and a private TMPDIR; where the host
+    cannot sandbox it the command is refused (success=False, one sentence) unless the host
+    allowed unsandboxed commands.
 
     Args:
         command: The shell command to execute
