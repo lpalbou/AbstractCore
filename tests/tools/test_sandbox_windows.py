@@ -900,8 +900,9 @@ def test_the_allow_list_floor_is_computed_from_this_machine():
     # Read-only: what "Deny everything" would refuse on this machine.
     roots = REAL_USER_DATA_ROOTS()
     home = os.path.realpath(os.path.expanduser("~"))
-    assert roots[0] == home
-    system = [os.path.realpath(os.environ[v]) for v in ("SystemRoot", "ProgramFiles", "ProgramData") if os.environ.get(v)]
+    # The profile is a root, or lies in one (an administrator may change C:\Users itself).
+    assert any(root == home or sb._under(home, root) for root in roots), roots
+    system =[os.path.realpath(os.environ[v]) for v in ("SystemRoot", "ProgramFiles", "ProgramData") if os.environ.get(v)]
     for root in roots:
         assert not any(sb._under(s, root) for s in system), (root, "would hide a system root")
         assert not any(o != root and sb._under(root, o) for o in roots)
