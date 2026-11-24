@@ -244,13 +244,16 @@ Two properties are stated in the tool schemas and matter operationally:
 
 `execute_command`, `shell_exec` and AbstractRuntime's `local_helper_start` run inside an OS
 sandbox built from the run's effective workspace set (`abstractcore.tools.sandbox`): macOS
-`sandbox-exec`, Linux `bwrap`, or Linux Landlock for "Deny everything, allow listed workspaces".
+`sandbox-exec`, Linux `bwrap`, Linux Landlock for "Deny everything, allow listed workspaces", or
+a Windows restricted token for "Allow everything, refuse listed workspaces" with read & write by
+default.
 Refused workspaces, built-in refusals (credentials, the gateway data folder) and, under the
 allow-list posture, all other user data are unreadable; writes are limited to the read & write
 workspaces, the run's private workspace and its private `TMPDIR`. The command string is never
-parsed — `cd`, `$(…)`, symlinks and scripts are stopped by the kernel. With no sandbox on the host,
-commands are refused with one sentence (the run continues) unless the host allowed unsandboxed
-commands. The tool result carries `sandbox: {kind, …}` and a `Sandbox: …` line. Details:
+parsed — `cd`, `$(…)`, symlinks and scripts are stopped by the kernel. Where the host cannot
+sandbox a command (no sandbox, or a posture its sandbox cannot express), the command is refused
+with one sentence that says why (the run continues) unless the host allowed unsandboxed commands.
+The tool result carries `sandbox: {kind, …}` and a `Sandbox: …` line. Details:
 [`abstractcore/tools/README.md`](../abstractcore/tools/README.md) (*Command sandbox*).
 
 **Email tools (opt-in):**

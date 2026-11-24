@@ -10,6 +10,41 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ## [Unreleased]
 
+## [2.38.0] - 2026-11-24
+
+### Added
+
+- **Commands run sandboxed on Windows** (`abstractcore.tools.sandbox`, `abstractcore/tools/sandbox_windows.py`).
+  `execute_command` and the other process-spawning tools were refused on Windows ("unsupported platform"),
+  because the command sandbox had macOS and Linux backends only. Windows has its own: the kind
+  `windows-restricted-token` ("Windows restricted token"), for runs set to "Allow everything, refuse listed
+  workspaces" with read & write by default. Each command starts with a restricted token, in a job that ends
+  with it, behind a small launcher run by the host's interpreter; the run's workspaces are enforced by entries
+  in the folders' access lists, written once per folder and inert for every other program. A refused folder
+  and the built-in refusals are closed to the command and everything it starts, a read-only row refuses every
+  write, and the run's own folder inside a refused data folder stays usable. A string command runs through
+  `%ComSpec% /c`, as it does unsandboxed.
+  - `host_sandbox_kind("any_except_denied")` returns `windows-restricted-token` on Windows;
+    `host_sandbox_kind("allowed_only")` returns `none` there, and a run with a read-only default is refused:
+    a restricted token cannot express either, and the refusal says which
+    (`WINDOWS_ALLOW_LIST_UNEXPRESSIBLE`, `WINDOWS_READ_ONLY_UNEXPRESSIBLE`). A host that allowed unsandboxed
+    commands runs them unsandboxed, as on Linux with Landlock.
+  - New public names: `KIND_WINDOWS`, `windows_rules(spec)`, `windows_policy(rules)`.
+  - Limits, documented in `abstractcore/tools/README.md` (*Command sandbox*, Windows): Windows' own TLS
+    (`curl.exe`, `Invoke-WebRequest`, .NET) and Store app aliases are not available to a restricted token;
+    the sandbox shapes file access and does not stop a command from asking another service of the user's
+    session to act for it; a rule on a folder whose permissions the user cannot change is not written and the
+    command does not run (exit code 126).
+
+### Fixed
+
+- **The sandbox's path rules follow the platform** (`sandbox._under`, `path_readable`). Nested rows were
+  compared with `/` separators and exact letter case, so on Windows no path was ever "under" another:
+  `path_readable`, which scopes `browser_probe`'s local pages to the run's workspaces, answered wrongly there.
+  Paths are compared by the platform's own rules (separators, and letter case on Windows), `\\?\` spellings
+  resolve to the same folder, and a path that names a data stream or a device, or that the host cannot
+  resolve, is rejected as a malformed stamp.
+
 ## [2.37.0] - 2026-11-23
 
 ### Added

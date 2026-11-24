@@ -694,7 +694,39 @@ sandbox built from the run's effective workspace set. The command string is neve
   nesting rule holds on Linux too); Linux Landlock for the allow-list posture when bwrap is absent
   (kernel ≥ 5.13; grants each allowed folder, including one inside a refused folder; a refused row
   inside an allowed one cannot be expressed and refuses). CI proves both on Ubuntu (job
-  `linux-sandbox`).
+  `linux-sandbox`). Windows: a restricted token and access-list entries, for "Allow everything,
+  refuse listed workspaces" with read & write by default (see *Windows* below; CI job
+  `windows-sandbox`).
+- **Windows** (`kind: windows-restricted-token`, `abstractcore/tools/sandbox_windows.py`): every
+  command is prefixed with a small launcher, run by the host's own interpreter with the standard
+  library only. The launcher starts the command with a restricted token (the user's identity
+  mirrored as restricting SIDs plus one identifier per rule, every privilege removed) in a job that
+  ends with it, and writes each rule once as entries in the folder's access list for that rule's
+  identifier (`S-1-9-…`, derived from the rule and the path; inert for every other program).
+  - A refused folder is closed at the folder itself: nothing below it can be reached by path, and
+    nothing is written on its content. A refused folder with an allowed row inside it (the
+    gateway's data folder around a run's own folder) can be traversed but not listed, and each
+    thing directly inside it is refused: when the rule is written, by inheritance when something
+    is created there later, and at every launch for what appeared since the last one with
+    permissions of its own (the time of that check is kept in a named stream of the folder,
+    `<folder>:abstractcore-sandbox-<id>`). A read-only row refuses every kind of write, inherited
+    by its content. The most specific row wins, as on the other platforms.
+  - A string command runs through `%ComSpec% /c`, as `subprocess.Popen(command, shell=True)` does.
+  - `host_sandbox_kind("allowed_only")` is `none` on Windows, and a run with a read-only default is
+    refused: neither can be expressed with a restricted token. The refusal carries the reason
+    (`WINDOWS_ALLOW_LIST_UNEXPRESSIBLE`, `WINDOWS_READ_ONLY_UNEXPRESSIBLE`).
+  - A rule that cannot be written (a folder the user can read but whose permissions they cannot
+    change) exits 126 with one line on stderr and the command does not run. A refused path that
+    does not exist has no rule, as with `bwrap`.
+  - Limits: Windows' own TLS (schannel: `curl.exe`, `Invoke-WebRequest`, .NET) is refused to a
+    restricted token, while programs that bring their own TLS work; Store app aliases under
+    `WindowsApps` do not start. The sandbox shapes file access: the command still runs as the
+    user, so it can ask another service of the session to act for it, and can rename or remove a
+    refused folder through a parent it may write (its content stays unreadable). A hard link made
+    earlier outside a refused folder still reaches the file. Content moved into a carved folder or
+    a read-only row from elsewhere on the same drive, content given permissions of its own by hand
+    after the rule was written, and content created later with permissions of its own inside a
+    read-only row keep those permissions.
 - **Fail closed:** with no sandbox available the tool returns `success: false` with one sentence
   ("Commands are not sandboxed on this gateway host, so they are refused: …") and the run continues,
   unless the host allowed unsandboxed commands (`configure_host(unsandboxed_commands_allowed=True)`,
@@ -705,7 +737,8 @@ sandbox built from the run's effective workspace set. The command string is neve
   refused. `host_policy()` and `host_sandbox_kind()` report the state (variable names only).
 - **Evidence:** the result carries `sandbox: {kind, posture, default_mode, private_workspace, tmpdir,
   allowed, refused, builtin_refused: <count>}` and the rendered text a line such as
-  `Sandbox: macOS sandbox-exec` or `Sandbox: none — commands refused on this host`.
+  `Sandbox: macOS sandbox-exec`, `Sandbox: Windows restricted token` or
+  `Sandbox: none — commands refused on this host`.
 - Library use with no host policy and no stamp keeps the historical behaviour (no sandbox).
 - `browser_probe` runs a fixed browser worker outside the OS sandbox (Chromium cannot run nested
   inside sandbox-exec without disabling its own sandbox). Its local pages are scoped instead: with

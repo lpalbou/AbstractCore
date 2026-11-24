@@ -26,8 +26,10 @@ Spec (filled by the runtime from the same workspace arguments the file tools rea
 Kinds: ``macos-sandbox-exec`` (generated SBPL profile; SBPL is last-match-wins, so rules
 are emitted from the least to the most specific), ``linux-bwrap`` (bind mounts, tmpfs
 over refused folders), ``linux-landlock`` (allow-list posture only, kernel >= 5.13),
-otherwise ``none``: the command is REFUSED (fail closed) unless the host explicitly
-allowed unsandboxed commands (``unsandboxed``; the gateway's ``serve
+``windows-restricted-token`` ("Allow everything, refuse listed workspaces" with read &
+write by default; a restricted token and access-list entries, applied by the launcher in
+``sandbox_windows.py``), otherwise ``none``: the command is REFUSED (fail closed) unless
+the host explicitly allowed unsandboxed commands (``unsandboxed``; the gateway's ``serve
 --unsandboxed-commands`` flag, never an environment variable).
 
 Host level: :func:`configure_host` is called once by the host at boot (the gateway's
@@ -37,6 +39,7 @@ Once configured, a spawning tool call that carries no run sandbox is refused.
 
 from __future__ import annotations
 
+import base64
 import ctypes
 import ctypes.util
 import json
@@ -45,6 +48,7 @@ import platform
 import shutil
 import sys
 import threading
+import zlib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
@@ -55,6 +59,7 @@ MODES = ("ro", "rw")
 KIND_MACOS = "macos-sandbox-exec"
 KIND_BWRAP = "linux-bwrap"
 KIND_LANDLOCK = "linux-landlock"
+KIND_WINDOWS = "windows-restricted-token"
 KIND_NONE = "none"
 KIND_UNSANDBOXED = "unsandboxed"
 
@@ -62,11 +67,14 @@ KIND_LABELS = {
     KIND_MACOS: "macOS sandbox-exec",
     KIND_BWRAP: "Linux bubblewrap",
     KIND_LANDLOCK: "Linux Landlock",
+    KIND_WINDOWS: "Windows restricted token",
     KIND_NONE: "none",
     KIND_UNSANDBOXED: "none (unsandboxed commands allowed by the host)",
 }
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+# The Windows launcher: run as a script by the host's interpreter, never imported here.
+WINDOWS_LAUNCHER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sandbox_windows.py")
 
 # The one sentence a refused command answers with (the run continues).
 REFUSED_NO_SANDBOX = (
@@ -181,7 +189,16 @@ def _check_path(raw: str, *, what: str) -> str:
     p = Path(text).expanduser()
     if not p.is_absolute():
         raise SandboxError(f"{what}: path must be absolute ({text!r})")
-    return os.path.realpath(str(p))
+    try:
+        real = os.path.realpath(str(p))
+    except OSError as exc:
+        raise SandboxError(f"{what}: not a path this host can resolve ({text!r}: {exc})") from exc
+    if os.name == "nt":
+        if real.startswith("\\\\?\\"):  # one folder, one spelling
+            real = "\\\\" + real[8:] if real.startswith("\\\\?\\UNC\\") else real[4:]
+        if not os.path.isabs(real) or ":" in os.path.splitdrive(real)[1] or real.startswith("\\\\.\\"):
+            raise SandboxError(f"{what}: not a folder or file path ({text!r})")  # a data stream, a device
+    return real
 
 
 def normalize_spec(spec: SandboxSpec) -> SandboxSpec:
@@ -297,8 +314,9 @@ def _landlock_abi() -> int:
 
 def host_sandbox_kind(posture: str = "allowed_only") -> str:
     """The kind of sandbox this host can apply for ``posture`` (cheap; no spec needed):
-    "macos-sandbox-exec" | "linux-bwrap" | "linux-landlock" | "none". Landlock only
-    expresses the allow-list posture, so ``any_except_denied`` without bwrap is "none"."""
+    "macos-sandbox-exec" | "linux-bwrap" | "linux-landlock" | "windows-restricted-token" |
+    "none". Landlock only expresses the allow-list posture, so ``any_except_denied``
+    without bwrap is "none"; the Windows sandbox only expresses ``any_except_denied``."""
     if sys.platform == "darwin":
         return KIND_MACOS if os.access(SANDBOX_EXEC, os.X_OK) else KIND_NONE
     if sys.platform.startswith("linux"):
@@ -306,7 +324,26 @@ def host_sandbox_kind(posture: str = "allowed_only") -> str:
             return KIND_BWRAP
         if posture == "allowed_only" and _landlock_abi() > 0:
             return KIND_LANDLOCK
+    if sys.platform == "win32" and posture == "any_except_denied":
+        return KIND_WINDOWS
     return KIND_NONE
+
+
+# What the Windows sandbox cannot express, as the reason of the refusal. A restricted token
+# cannot hide the folders Windows opens to every user (other drives, folders at the root of
+# a drive), and cannot take away the user's own right to write without relabelling folders.
+WINDOWS_ALLOW_LIST_UNEXPRESSIBLE = (
+    'the Windows sandbox cannot express "Deny everything, allow listed workspaces"; '
+    'choose "Allow everything, refuse listed workspaces" for this run'
+)
+WINDOWS_READ_ONLY_UNEXPRESSIBLE = (
+    "the Windows sandbox cannot make everything read-only by default; "
+    "choose read & write by default and mark the folders to protect read-only or refused"
+)
+WINDOWS_TOO_MANY_ROWS = "this run has more workspace rows than a Windows command line can carry to the sandbox"
+# The launcher takes its rules as one argument, and a Windows command line holds 32,767
+# characters: the rules may use half of it.
+WINDOWS_POLICY_LIMIT = 16000
 
 
 def _no_sandbox_reason(posture: str) -> str:
@@ -316,6 +353,8 @@ def _no_sandbox_reason(posture: str) -> str:
         if posture == "allowed_only":
             return "install bubblewrap (bwrap); Landlock is not available on this kernel"
         return "install bubblewrap (bwrap); Landlock cannot express \"Allow everything, refuse listed workspaces\""
+    if sys.platform == "win32":
+        return WINDOWS_ALLOW_LIST_UNEXPRESSIBLE
     return f"unsupported platform ({platform.system() or sys.platform})"
 
 
@@ -325,7 +364,15 @@ def _no_sandbox_reason(posture: str) -> str:
 
 
 def _under(path: str, prefix: str) -> bool:
-    return path == prefix or prefix == "/" or path.startswith(prefix.rstrip("/") + "/")
+    """``path`` is ``prefix`` or lies below it, by this platform's path rules (separators,
+    and letter case on Windows). Both are real paths (``normalize_spec``)."""
+    path, prefix = os.path.normcase(path), os.path.normcase(prefix)
+    return path == prefix or path.startswith(prefix.rstrip(os.sep) + os.sep)
+
+
+def _depth(path: str) -> int:
+    """Orders nested rows: an enclosing path is always shorter."""
+    return len(path.rstrip(os.sep))
 
 
 def _system_readable_roots() -> Tuple[str, ...]:
@@ -367,7 +414,7 @@ def _ordered_rules(spec: SandboxSpec, *, user_roots: Sequence[str]) -> Tuple[Lis
     rows.append(_Rule(spec.private_workspace, "rw"))
     rows.append(_Rule(private_tmpdir(spec), "rw"))
     tie = {"read": 0, "rw": 1, "ro": 2, "deny": 3}
-    rows.sort(key=lambda r: (len(r.path.rstrip("/")), tie[r.action]))
+    rows.sort(key=lambda r: (_depth(r.path), tie[r.action]))
     floor: List[_Rule] = []
     if spec.posture == "allowed_only":
         floor = [_Rule(p, "deny") for p in user_roots]
@@ -395,7 +442,7 @@ def path_readable(spec: SandboxSpec, path: str) -> bool:
     allows = [spec.private_workspace, private_tmpdir(spec)] + [r.path for r in spec.allowed]
     for prefix, refused in [(a, 0) for a in allows] + [(r, 1) for r in spec.refused]:
         if _under(real, prefix):
-            key = (len(prefix.rstrip("/")), refused)
+            key = (_depth(prefix), refused)
             if best is None or key > best:
                 best = key
     if best is None:
@@ -698,6 +745,85 @@ def _landlock_exec_main(argv: Sequence[str]) -> None:  # pragma: no cover - runs
 
 
 # --------------------------------------------------------------------------------------
+# Windows: restricted token + access-list entries (applied by sandbox_windows.py)
+# --------------------------------------------------------------------------------------
+
+
+def windows_rules(spec: SandboxSpec) -> List[List[str]]:
+    """The launcher's rules for ``spec`` ("Allow everything, refuse listed workspaces", read
+    & write by default), outermost first. Windows gives the nearest row the last word, so
+    only the rows that CHANGE what their surroundings allow become rules:
+
+    - ``["deny", path]``   a refused folder: closed at the folder itself;
+    - ``["carve", path]``  a refused folder with an allowed row inside;
+    - ``["pass", folder, carved]``  a folder between the ``carved`` folder and an allowed
+      row inside it (traversal only, never its content);
+    - ``["ro", path]``  a read-only row (writes refused; reading is the user's own right);
+    - ``["rw" | "read", path]``  a row re-opened inside a refused or read-only one (``read``:
+      a read-only row inside a refused one, a system root, the host's own Python).
+
+    A built-in refusal is absolute: a row inside one is dropped unless it lies under one of
+    the host's exceptions (``builtin_allowed``)."""
+    spec = normalize_spec(spec)
+
+    def absolute(path: str) -> bool:
+        return any(_under(path, b) for b in spec.builtin_refused) and not any(_under(path, a) for a in spec.builtin_allowed)
+
+    rank = {"read": 0, "rw": 1, "ro": 2, "deny": 3}  # on one path: a refusal, then read-only, wins
+    rows: Dict[str, Tuple[str, str]] = {}
+
+    def row(path: str, action: str) -> None:
+        key = os.path.normcase(path)
+        if key not in rows or rank[action] > rank[rows[key][1]]:
+            rows[key] = (path, action)
+
+    for path in _system_readable_roots():
+        if not absolute(path):
+            row(path, "read")
+    for r in spec.allowed:
+        if not absolute(r.path):
+            row(r.path, r.mode)
+    row(spec.private_workspace, "rw")
+    for path in spec.refused + spec.builtin_refused:
+        row(path, "deny")
+
+    kept: List[List[str]] = []  # [action, path], outermost first
+    passes: Dict[str, List[str]] = {}
+    for path, action in sorted(rows.values(), key=lambda item: _depth(item[0])):
+        outer = next((k for k in reversed(kept) if _under(path, k[1])), None)
+        around = {"carve": "deny", "read": "ro"}.get(outer[0], outer[0]) if outer else "rw"
+        if around == ("ro" if action == "read" else action) or (action == "read" and around != "deny"):
+            continue  # already what its surroundings allow
+        kept.append([action, path])
+        if action == "ro" and around == "deny":
+            kept.append(["read", path])  # refusing writes does not re-open what is refused
+        if action != "deny" and around == "deny":
+            outer[0] = "carve"
+            folder = os.path.dirname(path)
+            while not _under(outer[1], folder):
+                passes.setdefault(os.path.normcase(folder), ["pass", folder, outer[1]])
+                folder = os.path.dirname(folder)
+    return kept + sorted(passes.values(), key=lambda rule: _depth(rule[1]))
+
+
+def windows_policy(rules: Sequence[Sequence[str]]) -> str:
+    """The launcher's policy argument: the rules as compressed JSON (paths repeat a lot)."""
+    raw = json.dumps({"rules": [list(r) for r in rules]}, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(zlib.compress(raw, 9)).decode("ascii")
+
+
+def _windows_python() -> str:
+    """The interpreter that runs the launcher: this one, or its console twin when the host
+    runs windowless (pythonw has no standard streams to hand to the command)."""
+    exe = sys.executable
+    if os.path.basename(exe).lower() == "pythonw.exe":
+        twin = os.path.join(os.path.dirname(exe), "python.exe")
+        if os.path.exists(twin):
+            return twin
+    return exe
+
+
+# --------------------------------------------------------------------------------------
 # The Sandbox object
 # --------------------------------------------------------------------------------------
 
@@ -710,6 +836,8 @@ class Sandbox:
     spec: Optional[SandboxSpec]
     reason: str = ""  # why commands are refused (kind none)
     _prefix: Tuple[str, ...] = ()
+    _shell: Tuple[str, ...] = ("/bin/sh", "-c")  # what runs a command given as one string
+    _exec: Tuple[str, ...] = ()  # what introduces a command given as a list
 
     @property
     def refuses(self) -> bool:
@@ -770,13 +898,18 @@ class Sandbox:
 
     def wrap(self, command: Command, cwd: Optional[str] = None, env: Optional[Mapping[str, str]] = None) -> Tuple[List[str], Dict[str, str]]:
         """(argv, env) to pass to ``subprocess.Popen(argv, shell=False, cwd=cwd, env=env)``.
-        A string command runs through ``/bin/sh -c``. Raises SandboxError when this sandbox
-        refuses commands (kind none): callers must check ``refuses`` first."""
+        A string command runs through ``/bin/sh -c`` (the Windows sandbox: through
+        ``%ComSpec% /c``, as ``Popen(command, shell=True)`` does there). Raises SandboxError
+        when this sandbox refuses commands (kind none): callers must check ``refuses`` first."""
         if self.refuses:
             raise SandboxError(self.refusal())
-        argv = ["/bin/sh", "-c", command] if isinstance(command, str) else [str(a) for a in command]
-        if not argv:
-            raise SandboxError("empty command")
+        if isinstance(command, str):
+            argv = [*self._shell, command]
+        else:
+            argv = [str(a) for a in command]
+            if not argv:
+                raise SandboxError("empty command")
+            argv = [*self._exec, *argv]
         return list(self._prefix) + argv, self.env_for(env)
 
 
@@ -804,6 +937,14 @@ def build_sandbox(spec: Optional[SandboxSpec]) -> Sandbox:
         return Sandbox(kind=KIND_MACOS, spec=spec, _prefix=(SANDBOX_EXEC, "-p", macos_profile(spec)))
     if kind == KIND_BWRAP:
         return Sandbox(kind=KIND_BWRAP, spec=spec, _prefix=tuple(bwrap_argv(spec, bwrap=_bwrap_path() or "bwrap")) + ("--",))
+    if kind == KIND_WINDOWS:
+        policy = windows_policy(windows_rules(spec)) if spec.default_mode == "rw" else ""
+        if policy and len(policy) <= WINDOWS_POLICY_LIMIT:
+            os.makedirs(private_tmpdir(spec), exist_ok=True)
+            # -I: nothing of the command's environment or folder reaches the launcher's imports.
+            prefix = (_windows_python(), "-I", WINDOWS_LAUNCHER, policy)
+            return Sandbox(kind=KIND_WINDOWS, spec=spec, _prefix=prefix, _shell=("--shell",), _exec=("--",))
+        kind, reason = KIND_NONE, (WINDOWS_TOO_MANY_ROWS if policy else WINDOWS_READ_ONLY_UNEXPRESSIBLE)
     if spec.unsandboxed_commands_allowed:
         return Sandbox(kind=KIND_UNSANDBOXED, spec=spec, reason=reason)
     return Sandbox(kind=KIND_NONE, spec=spec, reason=reason)
@@ -841,6 +982,7 @@ __all__ = [
     "KIND_MACOS",
     "KIND_NONE",
     "KIND_UNSANDBOXED",
+    "KIND_WINDOWS",
     "REFUSED_NO_SANDBOX",
     "REFUSED_NO_SPEC",
     "STAMP_ARG",
@@ -860,6 +1002,8 @@ __all__ = [
     "private_tmpdir",
     "refusal_result",
     "sandbox_for_tool_call",
+    "windows_policy",
+    "windows_rules",
 ]
 
 
