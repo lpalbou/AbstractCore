@@ -398,6 +398,28 @@ def test_a_junction_in_a_carved_folder_is_left_alone_and_leads_nowhere_new(t, sh
     assert ours == sorted([(w.DENY, w.FILE_ALL & ~w.FILE_PASS), (w.ALLOW, w.FILE_PASS)])  # ... nor, through it, a refusal on its target
 
 
+def test_allow_list_when_the_profile_lies_on_the_way_inside_a_refused_users_folder(t, monkeypatch):
+    # An administrator may change C:\Users itself: it is then the refused root, and the profile
+    # (whose list is its own, protected, as every profile's is) lies on the way to the run's
+    # folder. Found by the real-host smoke on GitHub's runner: every command was refused.
+    users = t / "Users"
+    me, other = users / "me", users / "other"
+    for folder in (me / "Documents", other / "Documents"):
+        folder.mkdir(parents=True)
+    _set_acl(me, "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;{me})")
+    (me / "Documents/n.txt").write_text(OUTSIDE_MARK)
+    (other / "Documents/n.txt").write_text(OUTSIDE_MARK)
+    run_dir = me / "AppData/Local/Gateway/workspaces/session-1"
+    run_dir.mkdir(parents=True)
+    (me / "AppData/Local/Gateway/gateway.sqlite3").write_text(DATA_MARK)
+    monkeypatch.setattr(sb, "_windows_user_data_roots", lambda: (str(users),))
+    spec = _spec(t, ALLOW_LIST, private_workspace=str(run_dir), allowed=(), refused=(), builtin_refused=(str(me / "AppData/Local/Gateway"),), builtin_allowed=(str(run_dir),))
+    res, out = _run(t, f'echo ok> mine.txt && type mine.txt && git init -q && git status --short & type "{me}\\Documents\\n.txt" & type "{other}\\Documents\\n.txt"'
+                       f' & type "{me}\\AppData\\Local\\Gateway\\gateway.sqlite3"', spec)  # fmt: skip
+    assert res.get("return_code") != 126 and "ok" in out and OUTSIDE_MARK not in out and DATA_MARK not in out, out[-400:]
+    assert (run_dir / ".git").is_dir()
+
+
 def test_allow_list_a_legacy_junction_of_the_profile_onto_a_folder_on_the_way(t):
     # The profile's `Application Data` points to `AppData\Roaming`, a folder on the way to
     # the host's Python under a uv install: here the lab is the profile, `data` that folder.
@@ -1040,15 +1062,24 @@ def test_rows_of_two_runs_nested_in_each_other(t, narrow_first):
     assert (inner / "wide.txt").exists() and (outer / "wide.txt").exists()
 
 
-def test_the_remaining_window_a_command_already_running_when_a_folder_is_first_labelled(t):
-    # Documents the limit the launcher states: a command that started before a folder was
-    # labelled for the first time is not guarded against it. A run started after it is.
-    fresh = t / "fresh"
-    fresh.mkdir()
-    go, ready = fresh / "go", t / "data/workspaces/session-2/ready"  # go: written by the owner, readable to both
-    script = t / "data/workspaces/session-2/early.py"
-    script.write_text(f"import os, time\nwhile not os.path.exists(r'{go}'):\n    time.sleep(0.1)\nopen(r'{fresh}\\early.txt', 'w')\n")
-    early = _popen(t, _session(t, 2, RO_DEFAULT, allowed=()), f'echo r> "{ready}" && "{PY}" "{script}"')
+def _named_in_bucket(t: Path, of: Path, prefix: str, same: bool) -> Path:
+    """A folder of the lab whose bucket is (or is not) the bucket of ``of``."""
+    w = _launcher()
+    for i in range(10000):
+        candidate = t / f"{prefix}-{i}"
+        if (w.bucket(str(candidate)) == w.bucket(str(of))) == same:
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+    raise AssertionError("no such name")
+
+
+def _early_writer(t: Path, fresh: Path, spec: SandboxSpec):
+    """A command of another run that is already running when ``fresh`` is first labelled, and
+    then tries to write it."""
+    go, ready = fresh / "go", Path(spec.private_workspace) / "ready"  # go: written by the owner, readable to both
+    script = Path(spec.private_workspace) / "early.py"
+    script.write_text(f"import os, time\nwhile not os.path.exists(r'{go}'):\n    time.sleep(0.1)\ntry:\n    open(r'{fresh}\\early.txt', 'w')\nexcept OSError:\n    pass\n")
+    early = _popen(t, spec, f'echo r> "{ready}" && "{PY}" "{script}"')
     try:
         _wait_for(ready)
         _run(t, f'echo o> "{fresh}\\owner.txt" & echo g> "{go}"', _spec(t, RO_DEFAULT, allowed=(SandboxRow(str(fresh), "rw"),)))
@@ -1056,9 +1087,41 @@ def test_the_remaining_window_a_command_already_running_when_a_folder_is_first_l
     finally:
         early.kill()
     assert (fresh / "owner.txt").exists()
-    assert (fresh / "early.txt").exists()  # the window
+    return (fresh / "early.txt").exists()
+
+
+def test_a_command_already_running_when_a_folder_is_first_labelled_cannot_write_it(t):
+    # Its token was made before the folder had a label or a guard of its own; it holds the
+    # folder's bucket's SID already, as every confined token holds every bucket but its own.
+    other = _session(t, 2, RO_DEFAULT, allowed=())
+    fresh = _named_in_bucket(t, Path(other.private_workspace), "fresh", same=False)
+    assert not _early_writer(t, fresh, other)
     _run(t, f'echo l> "{fresh}\\late.txt"', _session(t, 3, RO_DEFAULT, allowed=()))
     assert not (fresh / "late.txt").exists()
+
+
+def test_the_remaining_window_a_running_command_whose_own_row_shares_the_folders_bucket(t):
+    # Documents the limit that remains (one pair of folders in 256): the command's own row is
+    # in the folder's bucket, so its token lacks that bucket's SID, and the folder's own guard
+    # was not in the list when the token was made. A run started afterwards is guarded.
+    fresh = t / "fresh"
+    fresh.mkdir()
+    own = _named_in_bucket(t, fresh, "own", same=True)
+    assert _early_writer(t, fresh, _session(t, 2, RO_DEFAULT, allowed=(SandboxRow(str(own), "rw"),)))
+    _run(t, f'echo l> "{fresh}\\late.txt"', _session(t, 3, RO_DEFAULT, allowed=(SandboxRow(str(own), "rw"),)))
+    assert not (fresh / "late.txt").exists()
+
+
+def test_a_folder_in_the_bucket_of_a_runs_own_row_is_guarded_by_the_list(t):
+    # The exact layer: the run holds the shared folder's own guard SID from the list.
+    _shared(t)
+    _run(t, f'echo o> "{t}\\shared\\owner.txt"', _owner(t))
+    own = _named_in_bucket(t, t / "shared", "own", same=True)
+    spec = _session(t, 2, RO_DEFAULT, allowed=(SandboxRow(str(own), "rw"),))
+    _try_writes(t, spec, "other")
+    assert _untouched(t)
+    _run(t, f'echo w> "{own}\\w.txt"', spec)
+    assert (own / "w.txt").exists()  # its own row, in the same bucket, is its to write
 
 
 def test_a_killed_launcher_leaves_nothing_that_lets_another_run_write(t):
@@ -1110,17 +1173,23 @@ def test_no_command_reads_or_changes_the_launchers_state(t, shape):
 
 
 @rows_only
-@pytest.mark.parametrize("damage", ["emptied", "an entry removed", "deleted"])
-def test_a_damaged_list_of_labelled_folders_stops_confined_commands(t, shape, damage):
-    _run(t, "echo first", _spec(t, shape))
-    listed = t / "machine/state/labelled"
+@pytest.mark.parametrize("damage", ["emptied", "garbage", "an entry removed", "deleted", "state folder deleted"])
+def test_a_lost_or_damaged_list_is_started_again_and_the_buckets_still_guard(t, shape, damage):
+    _shared(t)
+    _run(t, f'echo o> "{t}\\shared\\owner.txt"', _owner(t))
+    state = t / "machine/state"
+    listed = state / "labelled"
     lines = listed.read_text().splitlines()
-    {"emptied": lambda: listed.write_text(""), "an entry removed": lambda: listed.write_text("\n".join(lines[:1] + lines[2:]) + "\n"),
-     "deleted": listed.unlink}[damage]()  # fmt: skip
-    res, out = _run(t, "echo ran> ran.txt", _spec(t, shape))
-    assert res.get("return_code") == 126 and "missing or damaged" in out and not (_priv(t) / "ran.txt").exists(), out[-300:]
-    res, out = _run(t, "echo ran> ran.txt", _spec(t, RW_DEFAULT))  # the read & write default holds no guard
-    assert res["success"], out[-300:]
+    {"emptied": lambda: listed.write_text(""), "garbage": lambda: listed.write_bytes(b"\xff\xfe" + os.urandom(64)),
+     "an entry removed": lambda: listed.write_text("\n".join(lines[:1] + lines[2:]) + "\n"), "deleted": listed.unlink,
+     "state folder deleted": lambda: __import__("shutil").rmtree(state)}[damage]()  # fmt: skip
+    spec = _session(t, 2, shape, allowed=(SandboxRow(str(t / "shared"), "ro"),))
+    w = _launcher()
+    assert w.bucket(str(t / "shared")) != w.bucket(spec.private_workspace)  # (a pair that does not collide)
+    out = _try_writes(t, spec, "other")
+    assert _untouched(t) and RO_MARK in out, out[-300:]  # it ran, and could not write the other run's folder
+    text = listed.read_text().splitlines()
+    assert text[0] == w.LIST_HEADER and text[-1].startswith("sha256 ")  # a sound list again
 
 
 # --- what the rules leave on the user's folders -------------------------------------------

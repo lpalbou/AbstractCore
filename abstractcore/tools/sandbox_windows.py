@@ -62,13 +62,16 @@ below Low, cmd's ``dir`` and ``>nul`` fail and python does not start). Each read
 row is labelled 6144, inherited by what is inside it. To any other program such a label
 changes nothing (Medium writes anyway, Low may not), so it stays, as the rules do. Between
 runs it would: a folder labelled for one run is writable for every other run's token. So
-each labelled folder also refuses writes (``guard``: the entries of ``ro``) to its guard
-SID, ``S-1-9-<hash of "guard" and path>``, and every token holds the guard SID of each
-labelled folder its policy can reach but not write. The labelled folders are listed in
-``<state>\\labelled`` (added before the folder's guard is written, which comes before its
-label); a token's guard SIDs are read from it at launch. A run that starts while another
-run's command is already running is guarded against the other's folders; the other command
-is not guarded against a folder labelled for the first time after it started.
+each labelled folder also refuses writes (the entries of ``ro``) to two SIDs. Its
+``bucket``'s: one of 256 fixed SIDs, chosen by a hash of its path; every token whose writes
+are limited holds every bucket's SID but those of its own read & write rows (and of the
+labelled folders inside them), so it is refused another run's folder with no list at all,
+also one labelled for the first time after the token was made. And its own ``guard`` SID,
+``S-1-9-<hash of "guard" and path>``, held by every such token whose policy can reach the
+folder but not write it, read at launch from ``<state>\\labelled`` (added before the
+folder's guard and bucket entries are written, which come before its label): the exact
+layer, for a folder whose bucket is also one of the token's own rows'. A lost or damaged
+list is started again; what it named is still guarded by its bucket.
 """
 
 from __future__ import annotations
@@ -260,12 +263,24 @@ RULES: Dict[str, Tuple[List[Entry], List[Entry]]] = {
     "rw": ([(DENY, WRITE_DAC | WRITE_OWNER), (ALLOW, FILE_MODIFY)], [(ALLOW, FILE_ALL)]),
     "read": ([(ALLOW, FILE_READ_EXECUTE)], [(ALLOW, FILE_READ_EXECUTE)]),
     "guard": ([(DENY, FILE_WRITES)], [(DENY, FILE_WRITES)]),
+    "bucket": ([(DENY, FILE_WRITES)], [(DENY, FILE_WRITES)]),
 }
-REFUSING = ("deny", "carve", "ro", "guard")
+REFUSING = ("deny", "carve", "ro", "guard", "bucket")
+# The guard net that needs no list: every labelled folder also refuses writes to the SID of
+# its bucket, and every token whose writes are limited holds every bucket's SID but its own
+# rows'. 256: measured, a token with 512 extra SIDs or more reads files measurably slower.
+BUCKETS = 256
+
+
+def bucket(path: str) -> int:
+    return int.from_bytes(hashlib.sha256(os.path.normcase(path).encode("utf-8")).digest()[:4], "little") % BUCKETS
 
 
 def rule_sid(action: str, path: str) -> str:
-    """The SID of rule (action, path): the same for every run, different for every rule."""
+    """The SID of rule (action, path): the same for every run, different for every rule (a
+    ``bucket`` rule: the same for every folder of the bucket)."""
+    if action == "bucket":
+        action, path = "guard-bucket", str(bucket(path))
     digest = hashlib.sha256(f"abstractcore-sandbox\0{action}\0{os.path.normcase(path)}".encode("utf-8")).digest()
     return RULE_AUTHORITY + "".join(f"-{int.from_bytes(digest[i:i + 4], 'little')}" for i in range(0, 16, 4))
 
@@ -515,7 +530,7 @@ class RowWithOwnPermissions(SandboxLaunchError):
     lets the row's run in and keeps every other run out."""
 
 
-def _refuse(path: str, is_dir: bool, sid: str, entries: Sequence[Entry], handed: Optional[set] = None, a_row: bool = False) -> None:
+def _refuse(path: str, is_dir: bool, sid: str, entries: Sequence[Entry], handed: Optional[set] = None, a_row: bool = False, a_pass: bool = False) -> None:
     """Make ``sid``'s refusal the first thing reached on ``path``, an object below a rule.
 
     ``handed`` None (below a read-only row): the refusal is written as the object's own entry.
@@ -528,7 +543,11 @@ def _refuse(path: str, is_dir: bool, sid: str, entries: Sequence[Entry], handed:
     entries they are, and an entry of ``sid`` written as the object's own (for another role,
     or copied unmarked) is moved to where it is inherited. With a grant of its own, the
     refusal stays the object's own entry; such an object cannot be a row (the error says
-    so), as no order of entries would let its run in and keep the others out."""
+    so), as no order of entries would let its run in and keep the others out. It can be
+    ``a_pass``, a folder on the way: its own entries for ``sid`` (``pass``: everything refused
+    but passing through and the names) come before any grant of its own, so they are its
+    refusal, and nothing else is written (a profile has a list of its own, and lies on the way
+    when an administrator's ``C:\\Users`` is refused)."""
     try:
         aces, control = _read_dacl(path)
         if handed is None:
@@ -542,6 +561,11 @@ def _refuse(path: str, is_dir: bool, sid: str, entries: Sequence[Entry], handed:
         guards = [a for a in aces if not a.flags & INHERITED and a.type == ALLOW and a.sid == user and a.mask == READ_CONTROL | WRITE_DAC]
         copied = [] if control & SE_DACL_PROTECTED else _copied([a for a in aces if a not in guards], control, handed) + guards
         own_grants = [a for a in aces if not a.flags & INHERITED and not _ours(a) and a not in copied]
+        if (own_grants or control & SE_DACL_PROTECTED) and a_pass:
+            stale = [a for a in aces if a.sid == sid and a.type == DENY and a.mask == FILE_ALL and not a.flags & INHERIT_ONLY]
+            if stale:  # a refusal of a former role: it would stop passing through
+                _write_here(path, [a for a in aces if a not in stale], control, ())
+            return
         if own_grants or control & SE_DACL_PROTECTED:
             if not _in_force(aces, sid):
                 flags = CHILDREN if is_dir else 0
@@ -615,7 +639,7 @@ def _carve(path: str, sid: str, rows: Sequence[str], passes: Sequence[str], pass
         if first:
             _write_here(path, aces, control, first)
     started = time.time_ns()
-    ruled = _skip(list(rows) + list(passes))  # the policy's own rows: their rules follow
+    ruled, on_the_way = _skip(list(rows) + list(passes)), _skip(passes)  # the policy's own rows: their rules follow
     seen_new = False
     with os.scandir(path) as entries:
         for entry in entries:
@@ -625,7 +649,7 @@ def _carve(path: str, sid: str, rows: Sequence[str], passes: Sequence[str], pass
             if (a_row or _born(entry) >= since) and not _is_link(entry):
                 seen_new = seen_new or not a_row
                 folder = entry.is_dir(follow_symlinks=False)
-                _refuse(entry.path, folder, sid, below, _handed_down(aces, folder), a_row=a_row)
+                _refuse(entry.path, folder, sid, below, _handed_down(aces, folder), a_row=a_row, a_pass=os.path.normcase(entry.path) in on_the_way)
     if not in_place:
         aces, control = _upgraded(*_read_dacl(path), sid)
         _write_here(path, aces, control, _pending(aces, sid, own, 0, True))  # last: the rule is in place
@@ -705,7 +729,7 @@ def ensure_rule(rule: Sequence[str], rows: Sequence[str] = (), passes: Sequence[
         if refusing and not _readable(path):
             return False  # nothing to refuse: this user cannot open it anyway
         raise
-    if wrote and refusing and action != "guard":
+    if wrote and refusing and action not in ("guard", "bucket"):
         # The folder that holds a refused or read-only row may not delete or rename it. Its
         # access list is not always ours to change (a drive root): then it is not ours to
         # delete from either. (A guarded folder's is unlabelled, or another row's: the token's
@@ -827,10 +851,10 @@ def _register(state: str, paths: Sequence[str]) -> List[str]:
     the rest), with ``paths`` added and the folders that were removed dropped (a folder whose
     drive or share is away for now comes back with its label and its guard: it stays listed).
 
-    A list that is missing or does not match its hash (written by something else) may have
-    lost a folder whose guard a token must hold: the command does not run until it is made
-    again (every folder labelled since is listed again, and guarded again, by the next
-    launch that lists it read & write)."""
+    The list is the exact layer of the guard (a folder whose bucket is also one of a run's own
+    rows is guarded by its own SID only, which the run holds through the list). A list that is
+    missing or does not match its hash is started again, silently: the buckets still guard
+    every folder it named, and each one is listed again by the next launch that labels it."""
     listed = os.path.join(state, "labelled")
     try:
         with open(listed, encoding="utf-8") as stream:
@@ -839,16 +863,20 @@ def _register(state: str, paths: Sequence[str]) -> List[str]:
         sound = lines[:1] == [LIST_HEADER] and lines[-1:] == ["sha256 " + hashlib.sha256(body.encode("utf-8")).hexdigest()]
     except (OSError, UnicodeDecodeError):
         sound = False
-    if not sound:
-        raise SandboxLaunchError(f"the list of folders the sandbox labelled ({listed}) is missing or damaged, so another run's folder "
-                                 f"could be left writable; to start a new list, delete {state}")  # fmt: skip
-    known = lines[1:-1]
+    known = lines[1:-1] if sound else []  # lost or damaged: a new one (the buckets guard what it listed)
     seen = {os.path.normcase(p) for p in known}
     removed = [p for p in known if not os.path.lexists(p) and os.path.isdir(os.path.dirname(p))]
     labelled = [p for p in known if p not in removed] + [p for p in paths if os.path.normcase(p) not in seen]
-    if labelled != known:
+    if labelled != known or not sound:
         _write_list(listed, labelled)
     return labelled
+
+
+def bucket_sids(own: Sequence[str], labelled: Sequence[str]) -> List[str]:
+    """Every bucket's SID but those of the token's own read & write rows and of the labelled
+    folders inside them (another run's row inside one of its own is its to write)."""
+    mine = {bucket(p) for p in own} | {bucket(q) for q in labelled if any(_inside(q, p) for p in own)}
+    return [rule_sid("guard-bucket", str(i)) for i in range(BUCKETS) if i not in mine]
 
 
 def guard_sids(labelled: Sequence[str], rules: Sequence[Sequence[str]]) -> List[str]:
@@ -916,8 +944,9 @@ def prepare(policy: Dict) -> Tuple[List[str], Optional[int]]:
         for path in label:
             if os.path.lexists(path):
                 ensure_rule(["guard", path])
+                ensure_rule(["bucket", path])
                 ensure_label(path)
-        return rule_sids(rules) + guard_sids(labelled, rules), WRITER
+        return rule_sids(rules) + guard_sids(labelled, rules) + bucket_sids(label, labelled), WRITER
     finally:
         os.close(lock)
 
