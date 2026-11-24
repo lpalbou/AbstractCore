@@ -1276,7 +1276,11 @@ def test_limit_a_a_command_running_when_a_folder_is_first_labelled_can_write_it(
         out = _finish_long(proc, b, "b")
     assert "b-before: refused" in out, out[-600:]
     after = (x / "b-after.txt").exists()
-    assert after is _reaches(shape, b_mode), f"limit (a) changed under {shape.id}/{b_mode}: B's running command wrote={after}\n{out[-600:]}"
+    # Since the bucket guard (round 3), the limit remains only where one of B's own read & write
+    # rows (here its private workspace) is in the folder's bucket: one pair in 256.
+    launcher = _launcher()
+    collides = launcher.bucket(str(x)) == launcher.bucket(b.private_workspace)
+    assert after is (_reaches(shape, b_mode) and collides), f"limit (a) changed under {shape.id}/{b_mode}: B's running command wrote={after}\n{out[-600:]}"
     assert not any(_write_x(t, x, b, "B-next")), "B's next launch wrote the folder"
 
 

@@ -39,8 +39,14 @@
   file in the launcher's state folder, which every policy refuses; a launch waits for it at most
   10 minutes and then says which process holds it.
 - **The launcher's state is refused to every command** (`tools/sandbox.py`), read & write by default
-  included, and its list of labelled folders checks itself: a missing or damaged list stops the
-  commands that rely on it instead of silently dropping another run's guard.
+  included. Another run's read & write folder no longer depends on the launcher's list to stay
+  read-only (`tools/sandbox_windows.py`): each such folder also refuses writes to one of 256
+  bucket identifiers, held by every other run whose writes are limited unless one of its own
+  rows shares the bucket; this also refuses a command that was already running when the folder
+  was first listed. A lost or damaged list is started again on its own.
+- **"Deny everything" works for an administrator** (`tools/sandbox_windows.py`). When `C:\Users`
+  itself can be refused (an elevated account), the profile, whose permissions are its own, lies
+  on the way to every run's folder, and every command was refused.
 - **Reparse points that are not links are refused** (`tools/sandbox_windows.py`). Inside a
   refused folder that has a row in it, a cloud file placeholder (OneDrive) or an app alias was
   skipped like a junction and stayed readable. Only links (junctions, symbolic links), which a

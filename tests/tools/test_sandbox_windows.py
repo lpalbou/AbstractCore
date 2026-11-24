@@ -1112,6 +1112,32 @@ def test_the_remaining_window_a_running_command_whose_own_row_shares_the_folders
     assert not (fresh / "late.txt").exists()
 
 
+@pytest.mark.parametrize("reader", [RO_DEFAULT, ALLOW_LIST], ids=IDS.get)
+def test_permissions_a_command_gives_its_content_open_nothing_another_run_may_not_read(t, reader):
+    # A command may change the permissions of what is inside its read & write rows, and could
+    # grant them to any SID, another run's rule SIDs included. Another run's refusals stop it
+    # at the refused folder itself (it cannot be passed through): what is inside stays closed.
+    _shared(t)
+    secret = t / "shared/secret.txt"
+    secret.write_text(REFUSED_MARK)
+    w = _launcher()
+    other = _session(t, 2, reader, allowed=(), refused=(str(t / "shared"),))
+    sids = [w.rule_sid("deny", str(t / "shared")), w.rule_sid("carve", str(t)), w.rule_sid("bucket", str(t / "shared")), "S-1-1-0", w.identity_sids()[0]]
+    plant = _priv(t) / "plant.py"  # (icacls cannot name these SIDs)
+    plant.write_text(
+        "import ctypes, sys\n"
+        "adv = ctypes.WinDLL('advapi32', use_last_error=True)\n"
+        "sd = ctypes.c_void_p()\n"
+        f"assert adv.ConvertStringSecurityDescriptorToSecurityDescriptorW({'D:' + ''.join(f'(A;;FA;;;{s})' for s in sids)!r}, 1, ctypes.byref(sd), None)\n"
+        "assert adv.SetFileSecurityW(sys.argv[1], 4, sd), ctypes.get_last_error()\n"
+        "print('planted')\n"
+    )
+    res, out = _run(t, f'"{PY}" "{plant}" "{secret}"', _owner(t))
+    assert "planted" in out, out[-300:]
+    _, out = _run(t, f'type "{secret}" & "{PY}" -c "print(open(r\'{secret}\').read())"', other)
+    assert REFUSED_MARK not in out
+
+
 def test_a_folder_in_the_bucket_of_a_runs_own_row_is_guarded_by_the_list(t):
     # The exact layer: the run holds the shared folder's own guard SID from the list.
     _shared(t)

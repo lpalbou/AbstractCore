@@ -730,6 +730,12 @@ sandbox built from the run's effective workspace set. The command string is neve
     directly inside a carved folder, and the refusal it holds there is always one that a row on
     that very path overrides. A folder there with permissions of its own (not inherited) cannot be
     a row: the command does not run and the line says to let it inherit (`icacls <path> /reset`).
+    It can lie on the way to one (a profile's own list, when an administrator's `C:\Users` is the
+    refused folder): what such a folder refuses is everything but passing through and the names.
+  - Each launch re-checks, under the lock, every folder on the way: it lists what is directly
+    inside and reads the creation times (measured: 8 ms for a folder of 1,264 entries); what
+    appeared since the last check is refused before the command starts (measured: 1,000 new
+    entries add 0.2 s to the next launch, once).
   - A string command runs through `%ComSpec% /c`, as `subprocess.Popen(command, shell=True)` does.
   - The launcher's state folder, `%LOCALAPPDATA%\AbstractCore\command-sandbox`, is refused to every
     command of every shape. It holds the lock that lets one launcher at a time write rules (a file
@@ -741,20 +747,21 @@ sandbox built from the run's effective workspace set. The command string is neve
     write outside the rows, the registry included (`reg add HKCU\Software\…` fails). Each read &
     write row and the run's private workspace (with its `.tmp`) is labelled 6144, inherited by its
     content. Such a label changes nothing for any other program (Medium writes anyway, Low may
-    not), so it stays, like the rules. Each labelled folder also refuses writes to its own guard
-    identifier, and every other run's command whose policy can reach it but not write it holds
-    that identifier, so a folder one run may write stays read-only to another. The launcher lists
-    the labelled folders in the state folder (`labelled`, ending with its own hash). A list that
-    is missing or damaged could have lost a folder's guard: commands that limit writes to their
-    rows do not run (the line names the list) until it is deleted to start a new one; a folder
-    labelled before is then guarded again once a run lists it read & write.
+    not), so it stays, like the rules. Each labelled folder also refuses writes to two
+    identifiers, so a folder one run may write stays read-only to the others: its bucket's (one of
+    256, chosen by a hash of its path), which every other run's command holds unless one of its
+    own read & write rows is in the same bucket; and its own, which every other run's command
+    that can reach the folder holds, read from the list of labelled folders in the state folder
+    (`labelled`, ending with its own hash). A list that is lost or damaged is started again
+    without a word: the buckets still guard every folder it named.
   - **"Deny everything, allow listed workspaces"** refuses, computed from the machine at each
     command: the user's profile, and on every fixed drive the drive itself when the user may
     change its permissions and it holds no system root, else each folder at its root that the
     user may change and that is not `Windows`, `Program Files*` or `ProgramData`, plus the user's
-    folder of the drive's recycle bin. A drive the sandbox cannot protect is never one of them. A row at or above one of them opens it (as on the other
-    platforms); the host's own Python stays readable (a `read` rule when it lives in the profile,
-    as a uv install does).
+    folder of the drive's recycle bin. A drive the sandbox cannot protect is never one of them. A
+    row at or above one of them opens it (as on the other platforms); the host's own Python stays
+    readable (a `read` rule when it lives in the profile, as a uv install does). An administrator
+    may change `C:\Users` itself: it is then the refused folder, the profile one on the way.
   - **When a refusal cannot be written:** something the user can open (read, list, run or pass
     through; the command's token can do no more) whose permissions the user cannot change, inside
     a refused folder that has a row in it, or a read & write row the user may not take ownership
@@ -774,8 +781,16 @@ sandbox built from the run's effective workspace set. The command string is neve
     own by hand after the rule was written, and content created later with permissions of its own
     inside a read-only row keep those permissions.
   - Limits where writes are limited to the rows: Git Bash and other MSYS2/Cygwin programs do not
-    start (their runtime cannot create its shared objects at this integrity level); git, cmd,
-    PowerShell, python and node do. A junction or hard link can be made only to what the command
+    start (their runtime cannot create its shared objects at this integrity level); cmd,
+    PowerShell, python (`venv`, `pip install`) and node do. git: `init`, `add`, `commit`,
+    `status`, `diff`, `log`, `branch`, `checkout` work, and so does https (git starts its own
+    helper, with its own TLS: `http.sslBackend` is `openssl`; measured as far as a connection
+    attempt). What git runs through its MSYS shell does not: `git clone` of a local path or a
+    `file://` URL fails ("make sure you have the correct access rights"), and hooks and `!`
+    aliases do not run (the commit itself is made). Git's `ssh-keygen` (MSYS) does not start;
+    Windows' own (`%SystemRoot%\System32\OpenSSH\ssh-keygen.exe`) writes the private key and then
+    fails on the public one, under every shape (the read & write default too): the key left
+    behind grants its owner "modify", so the user's own programs read and delete it. A junction or hard link can be made only to what the command
     may write. Registry keys and folders that Windows itself labels Low stay writable
     (`HKCU\Software\AppDataLow`, Internet Explorer's and the Start menu's cache keys,
     `AppData\Local\Packages\*\AC`, `AppData\Local\Publishers`); `AppData\LocalLow` and
@@ -792,13 +807,16 @@ sandbox built from the run's effective workspace set. The command string is neve
     drive to NTFS (`convert D: /fs:ntfs`), or accept it.
   - Two runs and one folder: when run A lists a folder read & write, a command of run B that
     may only read it (B lists it read-only, or not at all under a read-only default) cannot
-    write it, before, while or after A runs, with one exception: if B's command was already
-    running at the very moment the folder was listed read & write for the first time on this
-    machine (by any run), that one command of B can write it until it ends. Every command
-    started after that moment is refused. Also, a file or folder that run A, or one of the
-    user's programs, creates inside that folder with permissions of its own instead of the ones
-    it would inherit (Python's `tempfile.mkdtemp` does; most programs do not) can be
-    written by run B's commands that can reach it.
+    write it, before, while or after A runs, including a command of B that was already running
+    when the folder was listed for the first time. Exceptions, for one pair of folders in 256
+    (B has a read & write row of its own in the folder's bucket): that already-running command
+    of B can write it until it ends; and if the list of labelled folders was lost, B can write a
+    folder of that bucket labelled before the loss until a run lists it read & write again.
+    The guard protects against mistakes, not against a command that sets out to share: a command
+    that can write a workspace can also open what is inside it to other runs' commands (give it
+    permissions of its own, as Python's `tempfile.mkdtemp` does on its own folders; most programs
+    do not), and they can then write it. It cannot open anything another run may not read: that
+    run's refusals stop it at the refused folder, which no command of another run can change.
   - Under "Deny everything", what the user cannot change stays as readable as it is: files at
     the root of a drive whose root is not theirs, `C:\Users\Public`, folders an installer made at
     the root of a drive, removable and network drives, `ProgramData`; the registry stays
