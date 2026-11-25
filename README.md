@@ -9,6 +9,8 @@
 Unified LLM Interface
 > Write once, run everywhere
 
+What's new in 2.39.0: on Windows, agents' shell commands run inside the command sandbox under every workspace setting ("Allow everything, refuse listed workspaces" read & write or read-only by default, and "Deny everything, allow listed workspaces"); a drive that stores no permissions (exFAT, FAT, a network share) is named in each command's result as not protected. In 2.38.0: the first Windows sandbox, for the read & write default. See the [changelog](CHANGELOG.md#2390---2026-11-25).
+
 What's new in 2.37.0: with `stream=True`, a native tool call arrives once and complete from OpenAI, OpenAI-compatible (vLLM, LM Studio, OpenRouter, Portkey) and Anthropic streams; a tool call the model did not finish (output stopped at its limit) is reported in `metadata["unparsed_tool_call"]` instead of being delivered with empty arguments, streamed or not; and the registry covers the Thinking Machines Inkling family (Inkling 2 Mini, Inkling 2 Small, Inkling, Inkling Small) with native tool calling. See the [changelog](CHANGELOG.md#2370---2026-11-23).
 
 What's new in 2.36.0: on an NVIDIA GPU the recommended text model follows the total GPU memory (Qwen3.8 27B from 22 GiB, across all GPUs); Qwen3 Embedding 0.6B joins the recommended starter set; a circuit-breaker refusal names the provider's last error and when the next attempt is made.
