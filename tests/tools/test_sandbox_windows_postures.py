@@ -1342,7 +1342,13 @@ def test_limit_d_git_bash_does_not_start_in_the_confined_shapes(t, shape):
     res, out = _run(t, f'"{bash}" -c "echo GITBASH-OK" & git --version', _spec(t, shape), timeout=60)
     _ran(res)
     assert "git version" in out, out[-300:]
-    assert ("GITBASH-OK" in out) is (not shape.writes_confined), f"limit (d) changed under {shape.id}: {out[-400:]}"
+    # Measured on GitHub's runner (round 3): under the confined shapes MSYS starts when it is the
+    # first MSYS program of the session; it stops only when a normal one (a Git Bash window)
+    # already made its shared objects. Either way the failure is that one, and git.exe works.
+    if not shape.writes_confined:
+        assert "GITBASH-OK" in out, f"limit (d) changed under {shape.id}: {out[-400:]}"
+    elif "GITBASH-OK" not in out:
+        assert "NtCreateDirectoryObject" in out, f"limit (d) changed under {shape.id}: {out[-400:]}"
 
 
 def test_limit_e_the_allow_list_leaves_what_the_user_cannot_change_readable():
@@ -1350,8 +1356,10 @@ def test_limit_e_the_allow_list_leaves_what_the_user_cannot_change_readable():
     # system roots, C:\Users\Public and ProgramData lie under none (they stay readable).
     roots = REAL_USER_DATA_ROOTS()
     home = os.path.realpath(os.path.expanduser("~"))
-    assert any(_same(r, home) for r in roots), roots
-    for var in ("SystemRoot", "ProgramFiles", "ProgramData", "PUBLIC"):
+    # (an administrator may change C:\Users itself: it is then the root, the profile inside it)
+    assert any(_same(r, home) or sb._under(home, r) for r in roots), roots
+    users_refused = any(_same(r, os.path.dirname(home)) for r in roots)
+    for var in ("SystemRoot", "ProgramFiles", "ProgramData") + (() if users_refused else ("PUBLIC",)):
         if os.environ.get(var):
             place = os.path.realpath(os.environ[var])
             assert not any(sb._under(place, r) for r in roots), f"{var} ({place}) is user data: {roots}"

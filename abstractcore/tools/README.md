@@ -780,17 +780,19 @@ sandbox built from the run's effective workspace set. The command string is neve
     folder or a read-only row from elsewhere on the same drive, content given permissions of its
     own by hand after the rule was written, and content created later with permissions of its own
     inside a read-only row keep those permissions.
-  - Limits where writes are limited to the rows: Git Bash and other MSYS2/Cygwin programs do not
-    start (their runtime cannot create its shared objects at this integrity level); cmd,
-    PowerShell, python (`venv`, `pip install`) and node do. git: `init`, `add`, `commit`,
+  - Limits where writes are limited to the rows: Git Bash and other MSYS2/Cygwin programs (bash,
+    sh, Git's own `ssh-keygen`, and what git runs through its shell: `git clone` of a local path
+    or a `file://` URL, hooks, `!` aliases) stop at start ("NtCreateDirectoryObject ...
+    0xC0000022") when a normal one is already running in the same session (a Git Bash window):
+    their runtime cannot open the shared objects that one made. When none is, they start
+    (measured: they stopped on a desktop with a Git Bash open, and started on GitHub's runner).
+    cmd, PowerShell, python (`venv`, `pip install`) and node work. git: `init`, `add`, `commit`,
     `status`, `diff`, `log`, `branch`, `checkout` work, and so does https (git starts its own
     helper, with its own TLS: `http.sslBackend` is `openssl`; measured as far as a connection
-    attempt). What git runs through its MSYS shell does not: `git clone` of a local path or a
-    `file://` URL fails ("make sure you have the correct access rights"), and hooks and `!`
-    aliases do not run (the commit itself is made). Git's `ssh-keygen` (MSYS) does not start;
-    Windows' own (`%SystemRoot%\System32\OpenSSH\ssh-keygen.exe`) writes the private key and then
-    fails on the public one, under every shape (the read & write default too): the key left
-    behind grants its owner "modify", so the user's own programs read and delete it. A junction or hard link can be made only to what the command
+    attempt); a commit is made even where its hook cannot run. Windows' own `ssh-keygen`
+    (`%SystemRoot%\System32\OpenSSH\ssh-keygen.exe`) writes the private key and then fails on the
+    public one, under every shape (the read & write default too): the key left behind grants its
+    owner "modify", so the user's own programs read and delete it. A junction or hard link can be made only to what the command
     may write. Registry keys and folders that Windows itself labels Low stay writable
     (`HKCU\Software\AppDataLow`, Internet Explorer's and the Start menu's cache keys,
     `AppData\Local\Packages\*\AC`, `AppData\Local\Publishers`); `AppData\LocalLow` and
