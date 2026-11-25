@@ -1358,7 +1358,7 @@ def test_limit_e_the_allow_list_leaves_what_the_user_cannot_change_readable():
     home = os.path.realpath(os.path.expanduser("~"))
     # (an administrator may change C:\Users itself: it is then the root, the profile inside it)
     assert any(_same(r, home) or sb._under(home, r) for r in roots), roots
-    users_refused = any(_same(r, os.path.dirname(home)) for r in roots)
+    users_refused = any(_same(r, os.path.dirname(os.environ.get("PUBLIC") or home)) for r in roots)
     for var in ("SystemRoot", "ProgramFiles", "ProgramData") + (() if users_refused else ("PUBLIC",)):
         if os.environ.get(var):
             place = os.path.realpath(os.environ[var])
