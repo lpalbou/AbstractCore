@@ -750,10 +750,12 @@ sandbox built from the run's effective workspace set. The command string is neve
     not), so it stays, like the rules. Each labelled folder also refuses writes to two
     identifiers, so a folder one run may write stays read-only to the others: its bucket's (one of
     256, chosen by a hash of its path), which every other run's command holds unless one of its
-    own read & write rows is in the same bucket; and its own, which every other run's command
-    that can reach the folder holds, read from the list of labelled folders in the state folder
-    (`labelled`, ending with its own hash). A list that is lost or damaged is started again
-    without a word: the buckets still guard every folder it named.
+    own read & write rows is in the same bucket; and its own, which a run's command holds in
+    exactly that case (the folder is in one of its own buckets, and it can reach the folder),
+    read from the list of labelled folders in the state folder (`labelled`, ending with its own
+    hash). A list that is lost or damaged is started again without a word: the buckets still
+    guard every folder it named, except from a run with a read & write row of its own in the
+    folder's bucket (see "Two runs and one folder" below).
   - **"Deny everything, allow listed workspaces"** refuses, computed from the machine at each
     command: the user's profile, and on every fixed drive the drive itself when the user may
     change its permissions and it holds no system root, else each folder at its root that the

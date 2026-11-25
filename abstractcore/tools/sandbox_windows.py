@@ -68,7 +68,7 @@ are limited holds every bucket's SID but those of its own read & write rows (and
 labelled folders inside them), so it is refused another run's folder with no list at all,
 also one labelled for the first time after the token was made. And its own ``guard`` SID,
 ``S-1-9-<hash of "guard" and path>``, held by every such token whose policy can reach the
-folder but not write it, read at launch from ``<state>\\labelled`` (added before the
+folder but not write it and whose own buckets include the folder's, read at launch from ``<state>\\labelled`` (added before the
 folder's guard and bucket entries are written, which come before its label): the exact
 layer, for a folder whose bucket is also one of the token's own rows'. A lost or damaged
 list is started again; what it named is still guarded by its bucket.
@@ -872,18 +872,27 @@ def _register(state: str, paths: Sequence[str]) -> List[str]:
     return labelled
 
 
-def bucket_sids(own: Sequence[str], labelled: Sequence[str]) -> List[str]:
-    """Every bucket's SID but those of the token's own read & write rows and of the labelled
-    folders inside them (another run's row inside one of its own is its to write)."""
-    mine = {bucket(p) for p in own} | {bucket(q) for q in labelled if any(_inside(q, p) for p in own)}
+def own_buckets(own: Sequence[str], labelled: Sequence[str]) -> set:
+    """The buckets a token does not hold: those of its own read & write rows and of the
+    labelled folders inside them (another run's row inside one of its own is its to write)."""
+    return {bucket(p) for p in own} | {bucket(q) for q in labelled if any(_inside(q, p) for p in own)}
+
+
+def bucket_sids(mine: set) -> List[str]:
+    """Every bucket's SID but the token's own."""
     return [rule_sid("guard-bucket", str(i)) for i in range(BUCKETS) if i not in mine]
 
 
-def guard_sids(labelled: Sequence[str], rules: Sequence[Sequence[str]]) -> List[str]:
-    """The guard SIDs of the labelled folders a token of ``rules`` can reach but not write:
-    those whose nearest rule is neither a refusal (unreachable) nor ``rw`` (its own)."""
+def guard_sids(labelled: Sequence[str], rules: Sequence[Sequence[str]], mine: set) -> List[str]:
+    """The guard SIDs of the labelled folders a token of ``rules`` can reach but not write
+    (their nearest rule is neither a refusal, unreachable, nor ``rw``, its own) and that its
+    buckets do not guard already: a folder in one of the token's own buckets. So their
+    number stays small however many folders were ever labelled (a token carries about 4,000
+    restricting SIDs at most)."""
     out = []
     for path in labelled:
+        if bucket(path) not in mine:
+            continue
         around = [r for r in rules if r[0] != "pass" and _inside(path, r[1])]
         nearest = max(around, key=lambda r: len(r[1].rstrip("\\")), default=None)
         if nearest is None or nearest[0] in ("ro", "read", "guard"):
@@ -946,7 +955,8 @@ def prepare(policy: Dict) -> Tuple[List[str], Optional[int]]:
                 ensure_rule(["guard", path])
                 ensure_rule(["bucket", path])
                 ensure_label(path)
-        return rule_sids(rules) + guard_sids(labelled, rules) + bucket_sids(label, labelled), WRITER
+        mine = own_buckets(label, labelled)
+        return rule_sids(rules) + guard_sids(labelled, rules, mine) + bucket_sids(mine), WRITER
     finally:
         os.close(lock)
 
