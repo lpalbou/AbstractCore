@@ -792,8 +792,8 @@ sandbox built from the run's effective workspace set. The command string is neve
     attempt); a commit is made even where its hook cannot run. Windows' own `ssh-keygen`
     (`%SystemRoot%\System32\OpenSSH\ssh-keygen.exe`) writes the private key and then fails on the
     public one, under every shape (the read & write default too): the key left behind grants its
-    owner "modify", so the user's own programs read and delete it. A junction or hard link can be made only to what the command
-    may write. Registry keys and folders that Windows itself labels Low stay writable
+    owner "modify", so the user's own programs read and delete it. A junction or hard link can be
+    made only to what the command may write. Registry keys and folders that Windows itself labels Low stay writable
     (`HKCU\Software\AppDataLow`, Internet Explorer's and the Start menu's cache keys,
     `AppData\Local\Packages\*\AC`, `AppData\Local\Publishers`); `AppData\LocalLow` and
     `Favorites` are refused writes under the read-only default and are in the refused profile
@@ -820,9 +820,9 @@ sandbox built from the run's effective workspace set. The command string is neve
     do not), and they can then write it. It cannot open anything another run may not read: that
     run's refusals stop it at the refused folder, which no command of another run can change.
   - Under "Deny everything", what the user cannot change stays as readable as it is: files at
-    the root of a drive whose root is not theirs, `C:\Users\Public`, folders an installer made at
-    the root of a drive, removable and network drives, `ProgramData`; the registry stays
-    readable.
+    the root of a drive whose root is not theirs, `C:\Users\Public` (refused with `C:\Users` when
+    the user is an administrator who may change it), folders an installer made at the root of a
+    drive, removable and network drives, `ProgramData`; the registry stays readable.
 - **Fail closed:** with no sandbox available the tool returns `success: false` with one sentence
   ("Commands are not sandboxed on this gateway host, so they are refused: …") and the run continues,
   unless the host allowed unsandboxed commands (`configure_host(unsandboxed_commands_allowed=True)`,
