@@ -138,7 +138,7 @@ jobs:
       - name: Pytest (Windows sandbox tests must run, not skip)
         run: >
           python -m pytest -rs -p no:cacheprovider
-          tests/tools/test_sandbox_windows.py tests/tools/test_sandbox_spec.py
+          tests/tools/test_sandbox_windows.py tests/tools/test_sandbox_windows_postures.py tests/tools/test_sandbox_spec.py
           --junitxml=sandbox-junit.xml
       - name: Assert the Windows sandbox tests ran
         shell: python
@@ -156,6 +156,26 @@ jobs:
               print("SKIPPED:", c.get("name"), "-", (c.find("skipped").get("message") or ""))
           if len(cases) < 60 or skipped or failed:
               sys.exit("The Windows sandbox tests did not all run and pass on this Windows host.")
+      # The runner is disposable: the smoke test may write the sandbox's entries and labels on
+      # its real profile and drives (never set this variable on a machine someone uses).
+      - name: Pytest (the sandbox on this runner's real profile and drives)
+        env:
+          ABSTRACTCORE_SANDBOX_REAL_HOST: "1"
+        run: >
+          python -m pytest -s -rs -p no:cacheprovider
+          tests/tools/test_sandbox_windows_real_host.py
+          --junitxml=real-host-junit.xml
+      - name: Assert the real-host smoke ran
+        shell: python
+        run: |
+          import sys
+          import xml.etree.ElementTree as ET
+
+          cases = list(ET.parse("real-host-junit.xml").getroot().iter("testcase"))
+          bad = [c.get("name") for c in cases if any(c.find(k) is not None for k in ("skipped", "failure", "error"))]
+          print(f"real host: {len(cases)} collected, {len(cases) - len(bad)} passed; not passed: {bad}")
+          if len(cases) < 3 or bad:
+              sys.exit("The real-host sandbox smoke did not run and pass on this Windows host.")
 
   build:
     runs-on: ubuntu-latest

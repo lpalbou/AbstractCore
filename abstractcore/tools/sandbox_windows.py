@@ -25,13 +25,16 @@ means nothing to any process that does not hold that SID:
 
 - ``deny``   the folder itself refuses everything, traversal included: nothing below it
              can be reached by path, and nothing is written on its content;
-- ``carve``  a refused folder with an allowed folder inside: it can be traversed but not
-             listed, and each thing directly inside it is refused (a folder: closed like a
-             ``deny`` one), now and, by inheritance, when it is created later;
+- ``carve``  a refused folder with an allowed folder inside: it can be traversed and
+             listed (the names directly inside it, never their content: git turns its
+             working folder into its long form, and ``GetLongPathNameW`` looks each folder
+             up in its parent), and each thing directly inside it is refused (a folder:
+             closed like a ``deny`` one), now and, by inheritance, when it is created later;
 - ``pass``   a folder between a carved folder and the allowed folder inside it: carved the
              same way, for the same SID;
 - ``ro``     every kind of write is refused, inherited (no grant: reading is the user's);
-- ``rw`` / ``read``  an allowed folder inside a refused one: modify / read, inherited.
+- ``rw`` / ``read``  an allowed folder inside a refused one: modify / read, inherited;
+- ``guard``  the entries of ``ro``, for the tokens of other runs (see the last paragraph).
 
 Windows evaluates an object's own entries before the ones it inherits, and the nearest
 ancestor's first, which is the nesting rule of the other backends: the most specific row
@@ -44,6 +47,31 @@ A carved folder is looked at again at every launch: what appeared directly insid
 its last check (a folder made with permissions of its own, as a secrets folder is) is
 refused before the command starts. The time of that check is kept in a named stream of the
 folder itself (``<folder>:abstractcore-sandbox-<id>``), which the command cannot write.
+
+Every policy names a ``state`` folder that every policy refuses: it holds the lock that lets
+one launcher at a time write rules (``<state>\\lock``) and the list of labelled folders.
+
+Writes limited to the rows ("Deny everything, allow listed workspaces", and a read-only
+default; the policy then lists the folders to ``label``). The mirror carries the user's own right to write everywhere, and no
+restricting SID can take it back without also taking reading (a token whose restricting
+SIDs count only for writes ignores a refusal of reading). So the token is also given an
+integrity level, 6144: below Medium, what every object without a label of its own counts
+as, so integrity alone refuses every write there, the registry included; above Low, which
+is what Windows' own objects are labelled so that a Low process can use them (at a level
+below Low, cmd's ``dir`` and ``>nul`` fail and python does not start). Each read & write
+row is labelled 6144, inherited by what is inside it. To any other program such a label
+changes nothing (Medium writes anyway, Low may not), so it stays, as the rules do. Between
+runs it would: a folder labelled for one run is writable for every other run's token. So
+each labelled folder also refuses writes (the entries of ``ro``) to two SIDs. Its
+``bucket``'s: one of 256 fixed SIDs, chosen by a hash of its path; every token whose writes
+are limited holds every bucket's SID but those of its own read & write rows (and of the
+labelled folders inside them), so it is refused another run's folder with no list at all,
+also one labelled for the first time after the token was made. And its own ``guard`` SID,
+``S-1-9-<hash of "guard" and path>``, held by every such token whose policy can reach the
+folder but not write it and whose own buckets include the folder's, read at launch from ``<state>\\labelled`` (added before the
+folder's guard and bucket entries are written, which come before its label): the exact
+layer, for a folder whose bucket is also one of the token's own rows'. A lost or damaged
+list is started again; what it named is still guarded by its bucket.
 """
 
 from __future__ import annotations
@@ -52,6 +80,7 @@ import base64
 import ctypes
 import hashlib
 import json
+import msvcrt
 import os
 import signal
 import subprocess
@@ -138,13 +167,12 @@ class _JobExtendedLimits(ctypes.Structure):
 _TreeProgress = ctypes.WINFUNCTYPE(None, W.LPWSTR, W.DWORD, _P(ctypes.c_int), _VOID, W.BOOL)
 
 CloseHandle = _api(_k32, "CloseHandle", W.BOOL, W.HANDLE)
+CreateFileW = _api(_k32, "CreateFileW", W.HANDLE, W.LPCWSTR, W.DWORD, W.DWORD, _VOID, W.DWORD, W.DWORD, W.HANDLE)
 LocalFree = _api(_k32, "LocalFree", _VOID, _VOID)
 GetCurrentProcess = _api(_k32, "GetCurrentProcess", W.HANDLE)
 GetStdHandle = _api(_k32, "GetStdHandle", W.HANDLE, W.DWORD)
 SetHandleInformation = _api(_k32, "SetHandleInformation", W.BOOL, W.HANDLE, W.DWORD, W.DWORD)
 GetConsoleCP = _api(_k32, "GetConsoleCP", W.UINT)
-CreateMutexW = _api(_k32, "CreateMutexW", W.HANDLE, _VOID, W.BOOL, W.LPCWSTR)
-ReleaseMutex = _api(_k32, "ReleaseMutex", W.BOOL, W.HANDLE)
 WaitForSingleObject = _api(_k32, "WaitForSingleObject", W.DWORD, W.HANDLE, W.DWORD)
 CreateJobObjectW = _api(_k32, "CreateJobObjectW", W.HANDLE, _VOID, W.LPCWSTR)
 SetInformationJobObject = _api(_k32, "SetInformationJobObject", W.BOOL, W.HANDLE, ctypes.c_int, _VOID, W.DWORD)
@@ -159,6 +187,10 @@ DeleteProcThreadAttributeList = _api(_k32, "DeleteProcThreadAttributeList", None
 OpenProcessToken = _api(_adv, "OpenProcessToken", W.BOOL, W.HANDLE, W.DWORD, _P(W.HANDLE))
 GetTokenInformation = _api(_adv, "GetTokenInformation", W.BOOL, W.HANDLE, ctypes.c_int, _VOID, W.DWORD, _P(W.DWORD))
 CreateRestrictedToken = _api(_adv, "CreateRestrictedToken", W.BOOL, W.HANDLE, W.DWORD, W.DWORD, _VOID, W.DWORD, _VOID, W.DWORD, _VOID, _P(W.HANDLE))
+SetTokenInformation = _api(_adv, "SetTokenInformation", W.BOOL, W.HANDLE, ctypes.c_int, _VOID, W.DWORD)
+GetSecurityDescriptorSacl = _api(_adv, "GetSecurityDescriptorSacl", W.BOOL, _VOID, _P(W.BOOL), _P(_VOID), _P(W.BOOL))
+SetSecurityDescriptorSacl = _api(_adv, "SetSecurityDescriptorSacl", W.BOOL, _VOID, W.BOOL, _VOID, W.BOOL)
+AddMandatoryAce = _api(_adv, "AddMandatoryAce", W.BOOL, _VOID, W.DWORD, W.DWORD, W.DWORD, _VOID)
 CreateProcessAsUserW = _api(_adv, "CreateProcessAsUserW", W.BOOL, W.HANDLE, W.LPCWSTR, W.LPWSTR, _VOID, _VOID, W.BOOL, W.DWORD, _VOID, W.LPCWSTR, _VOID, _P(_ProcessInformation))
 ConvertStringSidToSidW = _api(_adv, "ConvertStringSidToSidW", W.BOOL, W.LPCWSTR, _P(_VOID))
 ConvertSidToStringSidW = _api(_adv, "ConvertSidToStringSidW", W.BOOL, _VOID, _P(W.LPWSTR))
@@ -179,8 +211,8 @@ AddAccessDeniedAceEx = _api(_adv, "AddAccessDeniedAceEx", W.BOOL, _VOID, W.DWORD
 
 INVALID_HANDLE = W.HANDLE(-1).value
 INFINITE = 0xFFFFFFFF
-TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_QUERY = 0x1, 0x2, 0x8
-TOKEN_USER, TOKEN_GROUPS, TOKEN_PRIVILEGES = 1, 2, 3
+TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_QUERY, TOKEN_ADJUST_DEFAULT = 0x1, 0x2, 0x8, 0x80
+TOKEN_USER, TOKEN_GROUPS, TOKEN_PRIVILEGES, TOKEN_INTEGRITY_LEVEL = 1, 2, 3, 25
 SE_GROUP_ENABLED, SE_GROUP_USE_FOR_DENY_ONLY, SE_GROUP_INTEGRITY = 0x4, 0x10, 0x20
 SE_FILE_OBJECT, ACL_REVISION = 1, 2
 DACL_INFORMATION, PROTECTED_DACL, UNPROTECTED_DACL = 0x4, 0x80000000, 0x20000000
@@ -197,8 +229,11 @@ FILE_DELETE_CHILD = 0x40
 # Every kind of write: data, append, extended attributes, delete child, attributes, DELETE,
 # WRITE_DAC, WRITE_OWNER.
 FILE_WRITES = 0x2 | 0x4 | 0x10 | 0x40 | 0x100 | 0x10000 | 0x40000 | 0x80000
-# What a path lookup needs of an ancestor: traverse, read attributes, synchronize.
-FILE_PASS = 0x20 | 0x80 | 0x100000
+# What a path lookup needs of an ancestor: traverse, read attributes, synchronize, and
+# listing the names (turning a path into its long form looks each folder up in its parent).
+FILE_PASS = 0x1 | 0x20 | 0x80 | 0x100000
+# What a carve granted in 2.38.0 (no listing): its entries are replaced where found.
+FILE_PASS_2_38 = 0x20 | 0x80 | 0x100000
 
 RULE_AUTHORITY = "S-1-9"  # resource-manager authority: never an account, never looked up
 # The owner guard. An owner may always rewrite an object's access list, whatever the list
@@ -212,7 +247,7 @@ RULE_AUTHORITY = "S-1-9"  # resource-manager authority: never an account, never 
 # OWNER RIGHTS or to a rule's SID on a refused or read-only object: OpenSSH refuses a private
 # key whose access list grants anything to anyone but its owner.
 OWNER_RIGHTS = "S-1-3-4"
-READ_CONTROL, WRITE_DAC = 0x20000, 0x40000
+READ_CONTROL, WRITE_DAC, WRITE_OWNER = 0x20000, 0x40000, 0x80000
 OWNER_GUARD_MASK = 0x01000000  # ACCESS_SYSTEM_SECURITY: granted by privilege only, never by a list
 
 Entry = Tuple[int, int]  # (ACE type, mask)
@@ -222,14 +257,30 @@ RULES: Dict[str, Tuple[List[Entry], List[Entry]]] = {
     "deny": ([(DENY, FILE_ALL)], []),
     "carve": ([(DENY, FILE_ALL & ~FILE_PASS)], [(DENY, FILE_ALL)]),
     "ro": ([(DENY, FILE_WRITES)], [(DENY, FILE_WRITES)]),
-    "rw": ([(ALLOW, FILE_MODIFY)], [(ALLOW, FILE_MODIFY)]),
+    # Content: everything, its permissions included (ssh-keygen, git and installers set them on
+    # what they make); the row folder itself: modify only, and its permissions refused even
+    # where the user's own entry grants them (its guard, its label, other runs' rules on it).
+    "rw": ([(DENY, WRITE_DAC | WRITE_OWNER), (ALLOW, FILE_MODIFY)], [(ALLOW, FILE_ALL)]),
     "read": ([(ALLOW, FILE_READ_EXECUTE)], [(ALLOW, FILE_READ_EXECUTE)]),
+    "guard": ([(DENY, FILE_WRITES)], [(DENY, FILE_WRITES)]),
+    "bucket": ([(DENY, FILE_WRITES)], [(DENY, FILE_WRITES)]),
 }
-REFUSING = ("deny", "carve", "ro")
+REFUSING = ("deny", "carve", "ro", "guard", "bucket")
+# The guard net that needs no list: every labelled folder also refuses writes to the SID of
+# its bucket, and every token whose writes are limited holds every bucket's SID but its own
+# rows'. 256: measured, a token with 512 extra SIDs or more reads files measurably slower.
+BUCKETS = 256
+
+
+def bucket(path: str) -> int:
+    return int.from_bytes(hashlib.sha256(os.path.normcase(path).encode("utf-8")).digest()[:4], "little") % BUCKETS
 
 
 def rule_sid(action: str, path: str) -> str:
-    """The SID of rule (action, path): the same for every run, different for every rule."""
+    """The SID of rule (action, path): the same for every run, different for every rule (a
+    ``bucket`` rule: the same for every folder of the bucket)."""
+    if action == "bucket":
+        action, path = "guard-bucket", str(bucket(path))
     digest = hashlib.sha256(f"abstractcore-sandbox\0{action}\0{os.path.normcase(path)}".encode("utf-8")).digest()
     return RULE_AUTHORITY + "".join(f"-{int.from_bytes(digest[i:i + 4], 'little')}" for i in range(0, 16, 4))
 
@@ -277,13 +328,13 @@ def _read_dacl(path: str) -> Tuple[List[_Ace], int]:
     stored (GetNamedSecurityInfo would GUESS which entries are inherited on an object that
     does not say, by comparing with its folder as it is now)."""
     size = W.DWORD()
-    GetFileSecurityW(path, DACL_INFORMATION, None, 0, ctypes.byref(size))
+    GetFileSecurityW(_native(path), DACL_INFORMATION, None, 0, ctypes.byref(size))
     sd = ctypes.create_string_buffer(size.value)
     present, defaulted, dacl = W.BOOL(), W.BOOL(), _VOID()
     control, revision = W.WORD(), W.DWORD()
     if not (
         size.value
-        and GetFileSecurityW(path, DACL_INFORMATION, sd, size, ctypes.byref(size))
+        and GetFileSecurityW(_native(path), DACL_INFORMATION, sd, size, ctypes.byref(size))
         and GetSecurityDescriptorDacl(sd, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted))
         and GetSecurityDescriptorControl(sd, ctypes.byref(control), ctypes.byref(revision))
     ):
@@ -388,13 +439,30 @@ def _write_here(path: str, aces: Sequence[_Ace], control: int, added: Sequence[T
         InitializeSecurityDescriptor(sd, 1)
         and SetSecurityDescriptorDacl(sd, True, acl, False)
         and SetSecurityDescriptorControl(sd, SE_DACL_AUTO_INHERIT_REQ | SE_DACL_AUTO_INHERITED | SE_DACL_PROTECTED, keep)
-        and SetFileSecurityW(path, DACL_INFORMATION, sd)
+        and SetFileSecurityW(_native(path), DACL_INFORMATION, sd)
     ):
         raise _error(f"cannot change the permissions of {path} ({_NOT_OURS})")
 
 
+NAME_SURROGATE = 0x20000000  # a reparse tag's mark of a link to another name
+
+
 def _is_link(entry: os.DirEntry) -> bool:
-    return entry.is_symlink() or bool(entry.stat(follow_symlinks=False).st_file_attributes & 0x400)  # reparse point
+    """A link to another path (symbolic link, junction): a lookup through it starts again
+    at the target, whose own rules apply, and its access list must never be written (that
+    would write the target's). Any other reparse point (a cloud file placeholder, an app
+    alias) is the object itself, and is ruled like any other."""
+    info = entry.stat(follow_symlinks=False)
+    tag = getattr(info, "st_reparse_tag", 0)
+    return entry.is_symlink() or bool(info.st_file_attributes & 0x400 and (not tag or tag & NAME_SURROGATE))
+
+
+def _native(path: str) -> str:
+    """``path`` as the security calls take it whatever its length (a command can always
+    reach a long path through ``\\\\?\\``, even where Windows' long paths are off)."""
+    if path.startswith("\\\\?\\"):
+        return path
+    return "\\\\?\\UNC\\" + path[2:] if path.startswith("\\\\") else "\\\\?\\" + path
 
 
 def _handed_down(aces: Sequence[_Ace], to_folder: bool) -> set:
@@ -418,7 +486,13 @@ def _hand_down(folder: str) -> None:
     (This is the recomputation any edit of a folder's permissions triggers: content that was
     moved here and still carried what it inherited elsewhere takes this folder's entries.)"""
     quiet = _TreeProgress(lambda _name, _status, invoke, _args, _set: invoke.__setitem__(0, 3))  # keep going
-    handed = {flag: _handed_down(_read_dacl(folder)[0], flag) for flag in (True, False)}
+    parent = _read_dacl(folder)[0]
+    handed = {flag: _handed_down(parent, flag) for flag in (True, False)}
+    # Our own entries that an object holds as its own only because Windows copied them there
+    # unmarked (into an object whose list is not marked as inheriting, as a real profile's
+    # folders are): recomputed as inherited too, or a refusal of the folder's former role
+    # would stay ahead of the grant of its new one.
+    ours = {flag: {(a.type, a.sid, a.mask) for a in parent if a.flags & (CONTAINER_INHERIT if flag else OBJECT_INHERIT) and _ours(a)} for flag in (True, False)}
     with os.scandir(folder) as entries:
         for entry in entries:
             if _is_link(entry):
@@ -428,46 +502,90 @@ def _hand_down(folder: str) -> None:
             except SandboxLaunchError:
                 continue
             if not control & SE_DACL_PROTECTED:
-                copied = _copied(aces, control, handed[entry.is_dir(follow_symlinks=False)])
+                folder_entry = entry.is_dir(follow_symlinks=False)
+                copied = _copied(aces, control, handed[folder_entry])
+                copied += [a for a in aces if not a.flags & INHERITED and _ours(a) and (a.type, a.sid, a.mask) in ours[folder_entry]]
                 acl = _build_acl([a for a in aces if not a.flags & INHERITED and a not in copied], ())
-                TreeSetNamedSecurityInfoW(entry.path, SE_FILE_OBJECT, DACL_INFORMATION | UNPROTECTED_DACL, None, None, acl, None, 1, quiet, 3, None)
+                TreeSetNamedSecurityInfoW(_native(entry.path), SE_FILE_OBJECT, DACL_INFORMATION | UNPROTECTED_DACL, None, None, acl, None, 1, quiet, 3, None)
 
 
 def _readable(path: str) -> bool:
-    try:
-        if os.path.isdir(path):
-            with os.scandir(path):
-                return True
-        with open(path, "rb"):
+    """This user may open ``path`` now to read or run it, or (a folder) to list it or pass
+    through it. The command's token can do no more: what this user cannot reach (refused
+    to them, a file in use that no one may open) needs no refusal."""
+    for access in (0x1, 0x20):  # read data / list; execute / traverse
+        handle = CreateFileW(_native(path), access, 7, None, 3, 0x02000000, None)  # share all, existing, folders too
+        if handle and handle != INVALID_HANDLE:
+            CloseHandle(handle)
             return True
-    except OSError:
-        return False
+    return False
 
 
-def _refuse(path: str, is_dir: bool, sid: str, entries: Sequence[Entry], handed: Optional[set] = None, a_row: bool = False) -> None:
+def _inherited(ace: _Ace) -> _Ace:
+    return ace._replace(flags=ace.flags | INHERITED, raw=ace.raw[:1] + bytes([ace.raw[1] | INHERITED]) + ace.raw[2:])
+
+
+class RowWithOwnPermissions(SandboxLaunchError):
+    """A row inside a refused folder whose own access list grants: no order of entries both
+    lets the row's run in and keeps every other run out."""
+
+
+def _refuse(path: str, is_dir: bool, sid: str, entries: Sequence[Entry], handed: Optional[set] = None, a_row: bool = False, a_pass: bool = False) -> None:
     """Make ``sid``'s refusal the first thing reached on ``path``, an object below a rule.
 
-    ``handed`` (what its folder hands down): write the refusal as the entry the object
-    INHERITS, so that a row on this very object overrides it (for the run that has the row;
-    every other run is refused). That only refuses when the object has no grant of its own
-    before it: entries it merely copies from its folder are marked as the inherited entries
-    they are. With any other entry of its own, or when ``handed`` is None, the refusal is
-    written as the object's own entry, unless it is ``a_row`` of this policy: an entry of its
-    own would refuse the run it is allowed to."""
+    ``handed`` None (below a read-only row): the refusal is written as the object's own entry.
+
+    ``handed`` (what its folder hands down; the object lies directly inside a carved folder):
+    the refusal is written as the entry the object INHERITS, so that a row on this very object,
+    now or in a later policy (a folder made in the profile, then listed), overrides it for the
+    run that has the row while every other run is refused. That holds when the object grants
+    nothing of its own: entries it merely copies from its folder are marked as the inherited
+    entries they are, and an entry of ``sid`` written as the object's own (for another role,
+    or copied unmarked) is moved to where it is inherited. With a grant of its own, the
+    refusal stays the object's own entry; such an object cannot be a row (the error says
+    so), as no order of entries would let its run in and keep the others out. It can be
+    ``a_pass``, a folder on the way: its own entries for ``sid`` (``pass``: everything refused
+    but passing through and the names) come before any grant of its own, so they are its
+    refusal, and nothing else is written (a profile has a list of its own, and lies on the way
+    when an administrator's ``C:\\Users`` is refused)."""
     try:
         aces, control = _read_dacl(path)
-        if any(a.sid == sid and a.type == DENY for a in aces) if a_row else _in_force(aces, sid):
+        if handed is None:
+            if not _in_force(aces, sid):
+                flags = CHILDREN if is_dir else 0
+                _write_here(path, aces, control, [(sid, (kind, mask, flags)) for kind, mask in entries] + _guard(aces, flags))
             return
-        inherited = 0
-        if handed is not None and not control & SE_DACL_PROTECTED:
-            copied = _copied(aces, control, handed)
-            if all(a.flags & INHERITED or _ours(a) or a in copied for a in aces):
-                inherited = INHERITED
-                aces = [a._replace(flags=a.flags | INHERITED, raw=a.raw[:1] + bytes([a.raw[1] | INHERITED]) + a.raw[2:]) if a in copied else a for a in aces]
-        if a_row and not inherited:
+        # An owner guard's grant (``_guard``: change permissions, to the user by name) is ours
+        # too: ahead of an inherited refusal it would give every run's token that right.
+        user = identity_sids()[0]
+        guards = [a for a in aces if not a.flags & INHERITED and a.type == ALLOW and a.sid == user and a.mask == READ_CONTROL | WRITE_DAC]
+        copied = [] if control & SE_DACL_PROTECTED else _copied([a for a in aces if a not in guards], control, handed) + guards
+        own_grants = [a for a in aces if not a.flags & INHERITED and not _ours(a) and a not in copied]
+        if (own_grants or control & SE_DACL_PROTECTED) and a_pass:
+            stale = [a for a in aces if a.sid == sid and a.type == DENY and a.mask == FILE_ALL and not a.flags & INHERIT_ONLY]
+            if stale:  # a refusal of a former role: it would stop passing through
+                _write_here(path, [a for a in aces if a not in stale], control, ())
             return
-        flags = (CHILDREN if is_dir else 0) | inherited
-        _write_here(path, aces, control, [(sid, (kind, mask, flags)) for kind, mask in entries] + _guard(aces, flags))
+        if own_grants or control & SE_DACL_PROTECTED:
+            if not _in_force(aces, sid):
+                flags = CHILDREN if is_dir else 0
+                _write_here(path, aces, control, [(sid, (kind, mask, flags)) for kind, mask in entries] + _guard(aces, flags))
+            if a_row:
+                raise RowWithOwnPermissions(f"{path} has permissions of its own and lies in a refused folder: it can be a row once it "
+                                            "inherits its permissions (icacls <path> /reset)")  # fmt: skip
+            return
+        # The refusal written as the object's own entry (for another role, or copied unmarked);
+        # not a folder-on-the-way's own entries, which are for the same SID.
+        stale = [a for a in aces if a.sid == sid and a.type == DENY and a.mask == FILE_ALL and not a.flags & (INHERITED | INHERIT_ONLY)]
+        if not stale and not copied and any(a.sid == sid and a.type == DENY for a in aces):
+            return  # in force, as an inherited entry
+        kept = [_inherited(a) if a in copied else a for a in aces if a not in stale]
+        flags = (CHILDREN if is_dir else 0) | INHERITED
+        pending = [(sid, (kind, mask, flags)) for kind, mask in entries if not any(a.sid == sid and a.type == kind and a.mask == mask for a in kept)]
+        guarded = any(a.sid == OWNER_RIGHTS and a.type == DENY and a.flags & (CHILDREN | INHERITED) == flags for a in kept)
+        _write_here(path, kept, control, pending + ([] if guarded else _guard(kept, flags)))
+    except RowWithOwnPermissions:
+        raise
     except SandboxLaunchError:
         if _readable(path):
             raise  # this user can open it, and its refusal cannot be written
@@ -480,7 +598,7 @@ def _skip(paths) -> set:
 def _checked_stream(folder: str, sid: str) -> str:
     """Where a carved folder keeps the time of its last check: a named stream of the folder
     itself, which a command refused the folder cannot write."""
-    return f"{folder}:abstractcore-sandbox-{sid.rsplit('-', 1)[1]}"
+    return f"{_native(folder)}:abstractcore-sandbox-{sid.rsplit('-', 1)[1]}"
 
 
 def _born(entry: os.DirEntry) -> int:
@@ -488,10 +606,18 @@ def _born(entry: os.DirEntry) -> int:
     return getattr(info, "st_birthtime_ns", None) or info.st_ctime_ns  # creation time on Windows
 
 
+def _upgraded(aces: List[_Ace], control: int, sid: str) -> Tuple[List[_Ace], int]:
+    """A carved folder's access list without the entries 2.38.0 wrote on the folder itself
+    for ``sid`` (they refused listing): its rule is then written again, as it is now."""
+    stale = {(DENY, FILE_ALL & ~FILE_PASS_2_38), (ALLOW, FILE_PASS_2_38)}
+    return [a for a in aces if not (a.sid == sid and not a.flags & (INHERITED | INHERIT_ONLY) and (a.type, a.mask) in stale)], control
+
+
 def _carve(path: str, sid: str, rows: Sequence[str], passes: Sequence[str], passable: bool) -> bool:
-    """A refused folder that an allowed row lies in: traversable, never listed, and each
-    thing directly inside it refused (a folder inside: traversal included, so nothing below
-    it needs an entry). ``passable``: a folder on the way to the row, not the refused one.
+    """A refused folder that an allowed row lies in: traversable and listed, nothing read,
+    and each thing directly inside it refused (a folder inside: traversal included, so
+    nothing below it needs an entry). ``passable``: a folder on the way to the row, not the
+    refused one.
 
     What is created inside it later inherits the refusal, unless it is made with permissions
     of its own: so every launch looks at what appeared since the last check (False then: the
@@ -499,7 +625,7 @@ def _carve(path: str, sid: str, rows: Sequence[str], passes: Sequence[str], pass
     own, below = RULES["carve"]
     if passable:
         own = own + [(ALLOW, FILE_PASS)]  # its parent's refusal is inherited here: let traversal through
-    aces, control = _read_rule(path, sid, True)
+    aces, control = _upgraded(*_read_rule(path, sid, True), sid)
     in_place = not _pending(aces, sid, own, 0, True)
     since = 0
     if in_place:
@@ -513,16 +639,19 @@ def _carve(path: str, sid: str, rows: Sequence[str], passes: Sequence[str], pass
         if first:
             _write_here(path, aces, control, first)
     started = time.time_ns()
-    ruled = _skip(list(rows) + list(passes))  # the policy's own rows: their rules follow
+    ruled, on_the_way = _skip(list(rows) + list(passes)), _skip(passes)  # the policy's own rows: their rules follow
     seen_new = False
     with os.scandir(path) as entries:
         for entry in entries:
-            if _born(entry) >= since and not _is_link(entry):
-                seen_new = True
+            # What is new since the last check, and every row and folder on the way at every
+            # launch: a path's role may have changed since (a folder refused, now listed).
+            a_row = os.path.normcase(entry.path) in ruled
+            if (a_row or _born(entry) >= since) and not _is_link(entry):
+                seen_new = seen_new or not a_row
                 folder = entry.is_dir(follow_symlinks=False)
-                _refuse(entry.path, folder, sid, below, _handed_down(aces, folder), a_row=os.path.normcase(entry.path) in ruled)
+                _refuse(entry.path, folder, sid, below, _handed_down(aces, folder), a_row=a_row, a_pass=os.path.normcase(entry.path) in on_the_way)
     if not in_place:
-        aces, control = _read_dacl(path)
+        aces, control = _upgraded(*_read_dacl(path), sid)
         _write_here(path, aces, control, _pending(aces, sid, own, 0, True))  # last: the rule is in place
     if seen_new or not in_place:
         try:
@@ -563,12 +692,23 @@ def _inherit(path: str, sid: str, action: str, rows: Sequence[str]) -> bool:
     return True
 
 
-def ensure_rule(rule: Sequence[str], rows: Sequence[str] = (), passes: Sequence[str] = ()) -> bool:
+def _unprotected(path: str, unprotected: Dict[str, str]) -> str:
+    """Why ``path`` lies where no entry can hold (a drive without access lists, a network
+    share), or "" (``policy["unprotected"]``: drive -> sentence, from ``sandbox.py``)."""
+    return next((why for drive, why in unprotected.items() if _inside(path, drive)), "")
+
+
+def ensure_rule(rule: Sequence[str], rows: Sequence[str] = (), passes: Sequence[str] = (), unprotected: Dict[str, str] = {}) -> bool:  # noqa: B006 - read only
     """Write the access-list entries of one rule; False when it was already in place (one
     read). ``rows`` and ``passes``: the paths of the policy's rules, by kind. A path that
     does not exist has no rule (as with the other backends, it is not created)."""
     action, path = rule[0], rule[1]
     if not os.path.lexists(path):
+        return False
+    why = _unprotected(path, unprotected)
+    if why:  # nothing is written there: readable and writable it is, refused or read-only it cannot be
+        if action in REFUSING:
+            raise SandboxLaunchError(f"{path} is refused or read-only, but {why}")
         return False
     if action == "pass":
         return _carve(path, rule_sid("carve", rule[2]), rows, passes, passable=True)
@@ -589,10 +729,12 @@ def ensure_rule(rule: Sequence[str], rows: Sequence[str] = (), passes: Sequence[
         if refusing and not _readable(path):
             return False  # nothing to refuse: this user cannot open it anyway
         raise
-    if wrote and refusing:
+    if wrote and refusing and action not in ("guard", "bucket"):
         # The folder that holds a refused or read-only row may not delete or rename it. Its
         # access list is not always ours to change (a drive root): then it is not ours to
-        # delete from either.
+        # delete from either. (A guarded folder's is unlabelled, or another row's: the token's
+        # integrity level, or that row's guard, refuses it; and one entry per run's folder
+        # would pile up in the folder that holds every session's.)
         parent = os.path.dirname(path)
         if parent and parent != path:
             try:
@@ -605,24 +747,218 @@ def ensure_rule(rule: Sequence[str], rows: Sequence[str] = (), passes: Sequence[
     return wrote
 
 
-def ensure_rules(rules: Sequence[Sequence[str]]) -> None:
-    """Write every missing entry, one launcher at a time (two runs often share a rule)."""
-    rows = [r[1] for r in rules if r[0] != "pass"]
-    passes = [r[1] for r in rules if r[0] == "pass"]
-    mutex = CreateMutexW(None, False, "Local\\abstractcore-command-sandbox")
-    if not mutex:
-        raise _error("CreateMutex")
-    try:
-        WaitForSingleObject(mutex, INFINITE)
-        for rule in rules:
-            ensure_rule(rule, rows, passes)
-    finally:
-        ReleaseMutex(mutex)
-        CloseHandle(mutex)
-
-
 def rule_sids(rules: Sequence[Sequence[str]]) -> List[str]:
     return list(dict.fromkeys(rule_sid(r[0], r[1]) for r in rules if r[0] != "pass"))
+
+
+# --------------------------------------------------------------------------------------
+# Integrity labels (writes limited to the rows)
+# --------------------------------------------------------------------------------------
+
+LABEL_INFORMATION = 0x10
+MANDATORY_LABEL = 0x11  # ACE type
+NO_WRITE_UP = 0x1
+LOW, WRITER = 4096, 6144  # integrity levels (the RID of S-1-16-<level>); Medium is 8192
+TREE_SET, PROGRESS_EVERY_OBJECT = 1, 3
+
+
+def _label(path: str) -> Optional[Tuple[int, int]]:
+    """(inheritance flags, level) of ``path``'s integrity label, None without one (Medium)."""
+    size = W.DWORD()
+    GetFileSecurityW(_native(path), LABEL_INFORMATION, None, 0, ctypes.byref(size))
+    sd = ctypes.create_string_buffer(size.value)
+    present, defaulted, sacl = W.BOOL(), W.BOOL(), _VOID()
+    if not (size.value and GetFileSecurityW(_native(path), LABEL_INFORMATION, sd, size, ctypes.byref(size))
+            and GetSecurityDescriptorSacl(sd, ctypes.byref(present), ctypes.byref(sacl), ctypes.byref(defaulted))):  # fmt: skip
+        raise _error(f"cannot read the integrity label of {path}")
+    for index in range(ctypes.c_ushort.from_address(sacl.value + 4).value if present.value and sacl.value else 0):
+        ace = _VOID()
+        if GetAce(sacl, index, ctypes.byref(ace)) and ctypes.c_ubyte.from_address(ace.value).value == MANDATORY_LABEL:
+            level = int(_sid_text(ace.value + 8).rsplit("-", 1)[1])
+            return ctypes.c_ubyte.from_address(ace.value + 1).value, level
+    return None
+
+
+def _label_acl(flags: int) -> ctypes.Array:
+    level = _Sid(f"S-1-16-{WRITER}")
+    acl = ctypes.create_string_buffer(8 + 8 + level.size)
+    if not (InitializeAcl(acl, len(acl), ACL_REVISION) and AddMandatoryAce(acl, ACL_REVISION, flags, NO_WRITE_UP, level.ptr)):
+        raise _error("cannot build an integrity label")
+    return acl
+
+
+def ensure_label(path: str) -> bool:
+    """Make ``path`` and what is inside it writable at the token's level; False when it
+    already was (one read). What is inside is labelled first (what cannot be, a file in use,
+    stays as it is: unwritable to the command); the label of ``path`` itself comes last: it
+    is what says the rest is in place. A level at or below Low is the user's own (a Low
+    program writes there) and is kept."""
+    label = _label(path)
+    if label and not label[0] & INHERIT_ONLY and (label[1] <= LOW or (not label[0] & INHERITED and label[1] == WRITER)):
+        return False
+    if label and label[1] > 8192:
+        raise SandboxLaunchError(f"{path} has an integrity level above Medium; it cannot be made writable")
+    folder = os.path.isdir(path)
+    if folder:
+        quiet = _TreeProgress(lambda _name, _status, invoke, _args, _set: invoke.__setitem__(0, 3))  # keep going
+        code = TreeSetNamedSecurityInfoW(_native(path), SE_FILE_OBJECT, LABEL_INFORMATION, None, None, None, _label_acl(CHILDREN | INHERIT_ONLY), TREE_SET, quiet, PROGRESS_EVERY_OBJECT, None)
+        if code:
+            raise _error(f"cannot label {path} ({_NOT_OURS})", code)
+    sd, acl = ctypes.create_string_buffer(64), _label_acl(CHILDREN if folder else 0)  # the descriptor points to acl
+    if not (InitializeSecurityDescriptor(sd, 1) and SetSecurityDescriptorSacl(sd, True, acl, False)
+            and SetFileSecurityW(_native(path), LABEL_INFORMATION, sd)):  # fmt: skip
+        raise _error(f"cannot label {path} ({_NOT_OURS})")
+    return True
+
+
+def _inside(path: str, folder: str) -> bool:
+    path, folder = os.path.normcase(path), os.path.normcase(folder)
+    return path == folder or path.startswith(folder.rstrip("\\") + "\\")
+
+
+LIST_HEADER = "abstractcore command sandbox: labelled folders, v1"
+
+
+def _write_list(listed: str, folders: Sequence[str]) -> None:
+    body = "".join(line + "\n" for line in [LIST_HEADER, *folders])
+    with open(listed + ".new", "w", encoding="utf-8", newline="\n") as stream:
+        stream.write(body + "sha256 " + hashlib.sha256(body.encode("utf-8")).hexdigest() + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(listed + ".new", listed)
+
+
+def _make_state(state: str) -> None:
+    """The state folder, born with its (empty) list of labelled folders: assembled under
+    another name and renamed into place, so it never exists without one. A list that is
+    missing later was lost, not never made."""
+    if os.path.isdir(state):
+        return
+    os.makedirs(os.path.dirname(state), exist_ok=True)
+    assembling = f"{state}.new-{os.getpid()}"
+    os.makedirs(assembling, exist_ok=True)
+    _write_list(os.path.join(assembling, "labelled"), [])
+    try:
+        os.rename(assembling, state)
+    except OSError:  # another launch made it first
+        for name in os.listdir(assembling):
+            os.remove(os.path.join(assembling, name))
+        os.rmdir(assembling)
+
+
+def _register(state: str, paths: Sequence[str]) -> List[str]:
+    """The labelled folders (``<state>\\labelled``: a header, one folder per line, the hash of
+    the rest), with ``paths`` added and the folders that were removed dropped (a folder whose
+    drive or share is away for now comes back with its label and its guard: it stays listed).
+
+    The list is the exact layer of the guard (a folder whose bucket is also one of a run's own
+    rows is guarded by its own SID only, which the run holds through the list). A list that is
+    missing or does not match its hash is started again, silently: the buckets still guard
+    every folder it named, and each one is listed again by the next launch that labels it."""
+    listed = os.path.join(state, "labelled")
+    try:
+        with open(listed, encoding="utf-8") as stream:
+            lines = stream.read().splitlines()
+        body = "".join(line + "\n" for line in lines[:-1])
+        sound = lines[:1] == [LIST_HEADER] and lines[-1:] == ["sha256 " + hashlib.sha256(body.encode("utf-8")).hexdigest()]
+    except (OSError, UnicodeDecodeError):
+        sound = False
+    known = lines[1:-1] if sound else []  # lost or damaged: a new one (the buckets guard what it listed)
+    seen = {os.path.normcase(p) for p in known}
+    removed = [p for p in known if not os.path.lexists(p) and os.path.isdir(os.path.dirname(p))]
+    labelled = [p for p in known if p not in removed] + [p for p in paths if os.path.normcase(p) not in seen]
+    if labelled != known or not sound:
+        _write_list(listed, labelled)
+    return labelled
+
+
+def own_buckets(own: Sequence[str], labelled: Sequence[str]) -> set:
+    """The buckets a token does not hold: those of its own read & write rows and of the
+    labelled folders inside them (another run's row inside one of its own is its to write)."""
+    return {bucket(p) for p in own} | {bucket(q) for q in labelled if any(_inside(q, p) for p in own)}
+
+
+def bucket_sids(mine: set) -> List[str]:
+    """Every bucket's SID but the token's own."""
+    return [rule_sid("guard-bucket", str(i)) for i in range(BUCKETS) if i not in mine]
+
+
+def guard_sids(labelled: Sequence[str], rules: Sequence[Sequence[str]], mine: set) -> List[str]:
+    """The guard SIDs of the labelled folders a token of ``rules`` can reach but not write
+    (their nearest rule is neither a refusal, unreachable, nor ``rw``, its own) and that its
+    buckets do not guard already: a folder in one of the token's own buckets. So their
+    number stays small however many folders were ever labelled (a token carries about 4,000
+    restricting SIDs at most)."""
+    out = []
+    for path in labelled:
+        if bucket(path) not in mine:
+            continue
+        around = [r for r in rules if r[0] != "pass" and _inside(path, r[1])]
+        nearest = max(around, key=lambda r: len(r[1].rstrip("\\")), default=None)
+        if nearest is None or nearest[0] in ("ro", "read", "guard"):
+            out.append(rule_sid("guard", path))
+    return out
+
+
+LOCK_WAIT = 600.0  # seconds a launch waits for another one's rules (a first one can walk a big tree)
+ERROR_SHARING_VIOLATION = 32
+
+
+def _lock(state: str) -> int:
+    """One launcher at a time, through ``<state>\\lock`` opened for writing by one only. Every
+    policy refuses the state folder, so no sandboxed command can open it (a named object of
+    the session could be taken by any of them: held, every later launch waits; made with a
+    refusing access list, every later launch fails). The holder writes who it is; a waiter
+    reads it to say who holds the lock when it gives up."""
+    path = _native(os.path.join(state, "lock"))
+    deadline = time.monotonic() + LOCK_WAIT
+    while True:
+        handle = CreateFileW(path, 0xC0000000, 0x1, None, 4, 0, None)  # read & write, others may read, open always
+        if handle and handle != INVALID_HANDLE:
+            fd = msvcrt.open_osfhandle(handle, os.O_WRONLY)
+            os.ftruncate(fd, 0)
+            os.write(fd, f"process {os.getpid()} since {time.strftime('%Y-%m-%d %H:%M:%S')}".encode("ascii"))
+            return fd
+        code = ctypes.get_last_error()
+        if code != ERROR_SHARING_VIOLATION:
+            raise _error(f"cannot open the sandbox's lock {path}", code)
+        if time.monotonic() > deadline:
+            try:
+                with open(path, encoding="ascii") as stream:
+                    holder = stream.read() or "a launch"
+            except OSError:
+                holder = "a launch"
+            raise SandboxLaunchError(f"the sandbox's lock ({path}) is held by {holder}, for more than {LOCK_WAIT:.0f}s")
+        time.sleep(0.05)
+
+
+def prepare(policy: Dict) -> Tuple[List[str], Optional[int]]:
+    """Put the policy in force, one launcher at a time (two runs often share a rule): the
+    restricting SIDs of the command's token and its integrity level (None: the caller's)."""
+    rules, label = policy["rules"], policy.get("label")
+    rows = [r[1] for r in rules if r[0] != "pass"]
+    passes = [r[1] for r in rules if r[0] == "pass"]
+    _make_state(policy["state"])  # before its refusal, which is one of the rules
+    lock = _lock(policy["state"])
+    unprotected = policy.get("unprotected", {})
+    try:
+        # The carved folders and the folders on the way first: they settle what each row
+        # inside them holds of a former role before the row's own entries are handed down.
+        for rule in [r for r in rules if r[0] in ("carve", "pass")] + [r for r in rules if r[0] not in ("carve", "pass")]:
+            ensure_rule(rule, rows, passes, unprotected)
+        if label is None:
+            return rule_sids(rules), None
+        label = [p for p in label if not _unprotected(p, unprotected)]  # (no label can be stored there)
+        labelled = _register(policy["state"], label)
+        for path in label:
+            if os.path.lexists(path):
+                ensure_rule(["guard", path])
+                ensure_rule(["bucket", path])
+                ensure_label(path)
+        mine = own_buckets(label, labelled)
+        return rule_sids(rules) + guard_sids(labelled, rules, mine) + bucket_sids(mine), WRITER
+    finally:
+        os.close(lock)
 
 
 # --------------------------------------------------------------------------------------
@@ -676,10 +1012,10 @@ def identity_sids() -> Tuple[str, frozenset]:
     return _IDENTITY
 
 
-def restricted_token(sids: Sequence[str]) -> int:
+def restricted_token(sids: Sequence[str], integrity: Optional[int] = None) -> int:
     """A primary token for the command: this process's identity mirrored as restricting
-    SIDs, plus ``sids``, with no privilege left."""
-    own = _own_token(TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY)
+    SIDs, plus ``sids``, with no privilege left (and at ``integrity``, when given)."""
+    own = _own_token(TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT)
     try:
         mirror, _buffers = _identity(own)
         privileges = _token_information(own, TOKEN_PRIVILEGES)
@@ -692,6 +1028,13 @@ def restricted_token(sids: Sequence[str]) -> int:
         token = W.HANDLE()
         if not CreateRestrictedToken(own, 0, 0, None, count, to_delete, len(restricting), restricting, ctypes.byref(token)):
             raise _error("CreateRestrictedToken")
+        if integrity is not None:
+            level = _Sid(f"S-1-16-{integrity}")
+            label = _SidAndAttributes(level.ptr, SE_GROUP_INTEGRITY)
+            if not SetTokenInformation(token, TOKEN_INTEGRITY_LEVEL, ctypes.byref(label), ctypes.sizeof(label) + level.size):
+                code = ctypes.get_last_error()
+                CloseHandle(token)
+                raise _error("cannot set the integrity level of the command", code)
         return token.value
     finally:
         CloseHandle(own)
@@ -764,15 +1107,26 @@ def shell_command_line(command: str) -> str:
     return f'{comspec} /c "{command}"'
 
 
-def read_policy(text: str) -> List[List[str]]:
-    """The rules of a policy argument (``sandbox.windows_policy``). Raises on anything that is
-    not a list of rules with absolute paths: the policy decides what the command may reach."""
-    rules = json.loads(zlib.decompress(base64.urlsafe_b64decode(text)))["rules"]
-    for rule in rules:
-        well_formed = isinstance(rule, list) and all(isinstance(part, str) for part in rule) and len(rule) == (3 if rule[:1] == ["pass"] else 2)
+def read_policy(text: str) -> Dict:
+    """A policy argument (``sandbox.windows_policy``). Raises on anything that is not a list
+    of rules with absolute paths and an absolute state folder (plus, when writes are limited
+    to the rows, the folders to label, each a ``rw`` rule): the policy decides what the
+    command may reach."""
+    policy = json.loads(zlib.decompress(base64.urlsafe_b64decode(text)))
+    for rule in policy["rules"]:
+        well_formed = isinstance(rule, list) and all(isinstance(part, str) for part in rule) and len(rule) == (3 if rule[0] == "pass" else 2)
         if not (well_formed and (rule[0] in RULES or rule[0] == "pass") and all(os.path.isabs(p) for p in rule[1:])):
             raise SandboxLaunchError(f"malformed policy rule {rule!r}")
-    return rules
+    state, unprotected = policy.get("state"), policy.get("unprotected", {})
+    if not (isinstance(state, str) and os.path.isabs(state)):
+        raise SandboxLaunchError("malformed policy: no state folder")
+    if not (isinstance(unprotected, dict) and all(isinstance(k, str) and os.path.isabs(k) and isinstance(v, str) for k, v in unprotected.items())):
+        raise SandboxLaunchError("malformed policy: unprotected drives")
+    if "label" in policy:
+        rw = {os.path.normcase(r[1]) for r in policy["rules"] if r[0] == "rw"}
+        if not (isinstance(policy["label"], list) and all(isinstance(p, str) and os.path.normcase(p) in rw for p in policy["label"])):
+            raise SandboxLaunchError("malformed policy labels")
+    return policy
 
 
 def main(argv: Sequence[str]) -> int:
@@ -783,9 +1137,7 @@ def main(argv: Sequence[str]) -> int:
             command_line = subprocess.list2cmdline(argv[2:])
         else:
             raise SandboxLaunchError("usage: sandbox_windows.py <policy> (-- <program> [arguments...] | --shell <command line>)")
-        rules = read_policy(argv[0])
-        ensure_rules(rules)
-        token = restricted_token(rule_sids(rules))
+        token = restricted_token(*prepare(read_policy(argv[0])))
     except Exception as exc:  # noqa: BLE001 - fail closed, whatever went wrong
         _say(f"sandbox: {exc}; the command did not run")
         return EXIT_REFUSED

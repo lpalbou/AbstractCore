@@ -35,10 +35,16 @@ def _fresh_host():
 @pytest.fixture
 def tree(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    for d in ("home/.ssh", "priv", "refused/inner", "allowed/sub", "ro", "rw", "parent/child"):
+    for d in ("home/.ssh", "priv", "refused/inner", "allowed/sub", "ro", "rw", "parent/child", "machine/LocalLow"):
         (tmp_path / d).mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("HOME", str(home))
-    return Path(os.path.realpath(tmp_path))
+    real = Path(os.path.realpath(tmp_path))
+    # What the Windows rules compute from the machine: here, from this tree.
+    monkeypatch.setattr(sb, "_windows_user_data_roots", lambda: (str(real / "home"),))
+    monkeypatch.setattr(sb, "_windows_low_places", lambda: (str(real / "machine/LocalLow"),))
+    monkeypatch.setattr(sb, "_windows_state_folder", lambda: str(real / "machine/state"))
+    monkeypatch.setattr(sb, "windows_unprotected_volumes", lambda: {})
+    return real
 
 
 def _spec(t: Path, **kw) -> SandboxSpec:
@@ -171,18 +177,38 @@ def test_linux_without_bwrap_or_landlock_is_none(monkeypatch):
     assert sb.host_sandbox_kind("any_except_denied") == KIND_NONE  # Landlock cannot deny a subpath
 
 
-def test_windows_expresses_the_refuse_listed_posture_only(monkeypatch):
+def test_windows_expresses_every_posture(monkeypatch):
     monkeypatch.setattr(sb.sys, "platform", "win32")
     assert sb.host_sandbox_kind("any_except_denied") == sb.KIND_WINDOWS
-    assert sb.host_sandbox_kind("allowed_only") == KIND_NONE
-    assert sb._no_sandbox_reason("allowed_only") == sb.WINDOWS_ALLOW_LIST_UNEXPRESSIBLE
+    assert sb.host_sandbox_kind("allowed_only") == sb.KIND_WINDOWS
+    assert not hasattr(sb, "WINDOWS_ALLOW_LIST_UNEXPRESSIBLE") and not hasattr(sb, "WINDOWS_READ_ONLY_UNEXPRESSIBLE")
 
 
-def test_windows_read_only_default_is_refused_with_its_reason(tree, monkeypatch):
+def _policy(argv):
+    import base64
+    import zlib
+
+    return json.loads(zlib.decompress(base64.urlsafe_b64decode(argv[3])))
+
+
+@pytest.mark.parametrize("posture,default_mode", [("any_except_denied", "ro"), ("allowed_only", "rw"), ("allowed_only", "ro")])
+def test_windows_limits_writes_to_the_rows_with_labels(tree, monkeypatch, posture, default_mode):
     monkeypatch.setattr(sb.sys, "platform", "win32")
-    box = build_sandbox(_spec(tree, default_mode="ro"))
-    assert box.refuses and box.reason == sb.WINDOWS_READ_ONLY_UNEXPRESSIBLE
-    assert sb.WINDOWS_READ_ONLY_UNEXPRESSIBLE in box.refusal()
+    spec = _spec(tree, posture=posture, default_mode=default_mode)
+    box = build_sandbox(spec)
+    assert box.kind == sb.KIND_WINDOWS and not box.refuses
+    policy = _policy(box.wrap("echo hi")[0])
+    assert policy["rules"] == sb.windows_rules(spec)
+    # Every read & write rule is labelled (the run's own folder included), nothing else.
+    assert policy["label"] == [r[1] for r in policy["rules"] if r[0] == "rw"]
+    assert str(tree / "priv") in policy["label"] and str(tree / "rw") in policy["label"] and str(tree / "ro") not in policy["label"]
+    assert policy["state"] == str(tree / "machine/state")
+
+
+def test_windows_read_and_write_default_carries_no_label(tree, monkeypatch):
+    monkeypatch.setattr(sb.sys, "platform", "win32")
+    policy = _policy(build_sandbox(_spec(tree)).wrap("echo hi")[0])
+    assert set(policy) == {"rules", "state"} and policy["state"] == str(tree / "machine/state")
 
 
 def test_windows_wraps_commands_with_the_launcher(tree, monkeypatch):
@@ -195,7 +221,7 @@ def test_windows_wraps_commands_with_the_launcher(tree, monkeypatch):
     import base64
     import zlib
 
-    assert json.loads(zlib.decompress(base64.urlsafe_b64decode(argv[3]))) == {"rules": sb.windows_rules(_spec(tree))}
+    assert json.loads(zlib.decompress(base64.urlsafe_b64decode(argv[3]))) == {"rules": sb.windows_rules(_spec(tree)), "state": str(tree / "machine/state")}
     assert argv[4:] == ["--shell", "echo hi"]  # one string: the launcher runs it as `shell=True` does
     assert box.wrap(["git", "status"])[0][4:] == ["--", "git", "status"]
     assert env["TEMP"] == env["TMP"] == str(tree / "priv" / ".tmp")
@@ -207,9 +233,19 @@ def test_windows_wraps_commands_with_the_launcher(tree, monkeypatch):
 
 
 def _rules(spec: SandboxSpec):
-    """The rules without the host's own Python (a system root, wherever this test runs)."""
+    """The rules without the host's own Python (a system root, wherever this test runs) and
+    the launcher's state folder (refused in every shape: see the test below)."""
     system = {os.path.normcase(p) for p in sb._system_readable_roots()}
-    return [r for r in sb.windows_rules(spec) if os.path.normcase(r[1]) not in system and os.path.normcase(r[-1]) not in system]
+    state = ["deny", sb._windows_state_folder()]
+    return [r for r in sb.windows_rules(spec) if os.path.normcase(r[1]) not in system and os.path.normcase(r[-1]) not in system and r != state]
+
+
+@pytest.mark.parametrize("posture,default_mode", [("any_except_denied", "rw"), ("any_except_denied", "ro"), ("allowed_only", "rw")])
+def test_windows_rules_refuse_the_launchers_state_folder_in_every_shape(tree, posture, default_mode):
+    # It holds the lock one launcher at a time takes and the list of labelled folders: no
+    # command of any shape may read, change or hold them.
+    rules = sb.windows_rules(_spec(tree, posture=posture, default_mode=default_mode, allowed=(SandboxRow(str(tree / "machine"), "rw"),)))
+    assert ["deny", str(tree / "machine/state")] in rules  # even inside a read & write row
 
 
 def test_windows_rules_keep_only_rows_that_change_their_surroundings(tree):
@@ -288,9 +324,64 @@ def test_windows_rules_keep_the_hosts_python_readable_inside_a_refusal(tree, mon
     python_home = tree / "allowed/sub"
     monkeypatch.setattr(sb, "_system_readable_roots", lambda: (str(python_home),))
     rules = sb.windows_rules(_spec(tree, allowed=(), refused=(str(tree / "allowed"),), builtin_refused=()))
-    assert rules == [["carve", str(tree / "allowed")], ["read", str(python_home)]]
+    assert rules == [["carve", str(tree / "allowed")], ["read", str(python_home)], ["deny", str(tree / "machine/state")]]
     monkeypatch.setattr(sb, "_system_readable_roots", lambda: (str(tree / "rw"),))
-    assert sb.windows_rules(_spec(tree, allowed=(), refused=(), builtin_refused=())) == []  # readable anyway: no rule
+    assert _rules(_spec(tree, allowed=(), refused=(), builtin_refused=())) == []  # readable anyway: no rule
+
+
+def test_windows_rules_under_a_read_only_default(tree):
+    t = tree
+    spec = _spec(t, default_mode="ro", allowed=(SandboxRow(str(t / "ro"), "ro"), SandboxRow(str(t / "rw"), "rw"),
+                                                 SandboxRow(str(t / "rw/frozen"), "ro"), SandboxRow(str(t / "rw/frozen/thaw"), "rw")))  # fmt: skip
+    assert _rules(spec) == [
+        ["rw", str(t / "rw")],  # every read & write row is a rule (it is labelled), but no read-only
+        ["rw", str(t / "priv")],  # row: nothing is writable around it anyway; the run's own folder too
+        ["deny", str(t / "refused")],
+        ["ro", str(t / "rw/frozen")],
+        ["deny", str(t / "home/.ssh")],
+        ["rw", str(t / "rw/frozen/thaw")],
+        ["guard", str(t / "machine/LocalLow")],  # what Windows labels Low: writes refused
+    ]
+
+
+def test_windows_rules_carve_a_refusal_under_a_read_only_default(tree):
+    t = tree
+    spec = _spec(t, default_mode="ro", private_workspace=str(t / "parent/a/b/priv"), allowed=(), refused=(str(t / "parent"),), builtin_refused=())
+    assert _rules(spec) == [
+        ["carve", str(t / "parent")],
+        ["rw", str(t / "parent/a/b/priv")],
+        ["guard", str(t / "machine/LocalLow")],
+        ["pass", str(t / "parent/a"), str(t / "parent")],
+        ["pass", str(t / "parent/a/b"), str(t / "parent")],
+    ]
+
+
+def test_windows_rules_allow_list_refuses_the_users_data(tree, monkeypatch):
+    t = tree
+    data = t / "home/.data"
+    run_dir = data / "workspaces/session-1"
+    run_dir.mkdir(parents=True)
+    spec = _spec(t, posture="allowed_only", private_workspace=str(run_dir), allowed=(SandboxRow(str(t / "home/proj"), "rw"), SandboxRow(str(t / "ro"), "ro")),
+                 refused=(), builtin_refused=(str(data),), builtin_allowed=(str(run_dir),))  # fmt: skip
+    assert _rules(spec) == [
+        ["carve", str(t / "home")],  # the user's data, with rows inside
+        ["rw", str(t / "home/proj")],
+        ["rw", str(run_dir)],
+        ["pass", str(data), str(t / "home")],  # the built-in refusal lies in the refused profile: a folder on the way
+        ["pass", str(data / "workspaces"), str(t / "home")],
+    ]  # (the read-only row lies outside the user's data: readable and unwritable already; no Low guard: the profile is refused)
+    # A row at or above a root of the user's data opens it.
+    opened = _spec(t, posture="allowed_only", allowed=(SandboxRow(str(t / "home"), "ro"),), refused=(), builtin_refused=())
+    assert _rules(opened) == [["rw", str(t / "priv")]]
+
+
+def test_windows_rules_keep_the_hosts_python_readable_under_the_allow_list(tree, monkeypatch):
+    python_home = tree / "home/AppData/uv/python"
+    python_home.mkdir(parents=True)
+    monkeypatch.setattr(sb, "_system_readable_roots", lambda: (str(python_home),))
+    rules = sb.windows_rules(_spec(tree, posture="allowed_only", allowed=(), refused=(), builtin_refused=()))
+    assert ["read", str(python_home)] in rules and ["carve", str(tree / "home")] in rules
+    assert ["pass", str(tree / "home/AppData"), str(tree / "home")] in rules
 
 
 def test_under_follows_the_platforms_path_rules():

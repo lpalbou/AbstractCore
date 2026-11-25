@@ -2,7 +2,7 @@
 
 > Canonical user documentation in one file. The linked source pages remain authoritative; source code determines behavior.
 
-Package version: 2.38.0
+Package version: 2.39.0
 
 Start with the [agent skill](skills/abstractcore/SKILL.md) for a portable operating procedure,
 or [llms.txt](llms.txt) for a short index. Register the complete skill folder with its references.
@@ -95,6 +95,8 @@ The linked source pages are canonical. Fenced examples retain their source forma
 
 Unified LLM Interface
 > Write once, run everywhere
+
+What's new in 2.39.0: on Windows, agents' shell commands run inside the command sandbox under every workspace setting ("Allow everything, refuse listed workspaces" read & write or read-only by default, and "Deny everything, allow listed workspaces"); a drive that stores no permissions (exFAT, FAT, a network share) is named in each command's result as not protected. In 2.38.0: the first Windows sandbox, for the read & write default. See the [changelog](CHANGELOG.md#2390---2026-11-25).
 
 What's new in 2.37.0: with `stream=True`, a native tool call arrives once and complete from OpenAI, OpenAI-compatible (vLLM, LM Studio, OpenRouter, Portkey) and Anthropic streams; a tool call the model did not finish (output stopped at its limit) is reported in `metadata["unparsed_tool_call"]` instead of being delivered with empty arguments, streamed or not; and the registry covers the Thinking Machines Inkling family (Inkling 2 Mini, Inkling 2 Small, Inkling, Inkling Small) with native tool calling. See the [changelog](CHANGELOG.md#2370---2026-11-23).
 
@@ -7239,8 +7241,8 @@ Two properties are stated in the tool schemas and matter operationally:
 `execute_command`, `shell_exec` and AbstractRuntime's `local_helper_start` run inside an OS
 sandbox built from the run's effective workspace set (`abstractcore.tools.sandbox`): macOS
 `sandbox-exec`, Linux `bwrap`, Linux Landlock for "Deny everything, allow listed workspaces", or
-a Windows restricted token for "Allow everything, refuse listed workspaces" with read & write by
-default.
+a Windows restricted token (every posture; where writes are limited to the rows, the token runs
+at an integrity level below Medium and the read & write rows are labelled for it).
 Refused workspaces, built-in refusals (credentials, the gateway data folder) and, under the
 allow-list posture, all other user data are unreadable; writes are limited to the read & write
 workspaces, the run's private workspace and its private `TMPDIR`. The command string is never

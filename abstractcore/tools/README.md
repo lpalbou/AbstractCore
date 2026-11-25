@@ -694,8 +694,8 @@ sandbox built from the run's effective workspace set. The command string is neve
   nesting rule holds on Linux too); Linux Landlock for the allow-list posture when bwrap is absent
   (kernel ≥ 5.13; grants each allowed folder, including one inside a refused folder; a refused row
   inside an allowed one cannot be expressed and refuses). CI proves both on Ubuntu (job
-  `linux-sandbox`). Windows: a restricted token and access-list entries, for "Allow everything,
-  refuse listed workspaces" with read & write by default (see *Windows* below; CI job
+  `linux-sandbox`). Windows: a restricted token, access-list entries and, where writes are
+  limited to the rows, integrity labels, for every posture (see *Windows* below; CI job
   `windows-sandbox`).
 - **Windows** (`kind: windows-restricted-token`, `abstractcore/tools/sandbox_windows.py`): every
   command is prefixed with a small launcher, run by the host's own interpreter with the standard
@@ -705,28 +705,126 @@ sandbox built from the run's effective workspace set. The command string is neve
   identifier (`S-1-9-…`, derived from the rule and the path; inert for every other program).
   - A refused folder is closed at the folder itself: nothing below it can be reached by path, and
     nothing is written on its content. A refused folder with an allowed row inside it (the
-    gateway's data folder around a run's own folder) can be traversed but not listed, and each
-    thing directly inside it is refused: when the rule is written, by inheritance when something
-    is created there later, and at every launch for what appeared since the last one with
-    permissions of its own (the time of that check is kept in a named stream of the folder,
-    `<folder>:abstractcore-sandbox-<id>`). A read-only row refuses every kind of write, inherited
-    by its content. The most specific row wins, as on the other platforms.
+    gateway's data folder around a run's own folder, the profile under "Deny everything") can be
+    traversed and listed, and each thing directly inside it is refused: when the rule is written,
+    by inheritance when something is created there later, and at every launch for what appeared
+    since the last one with permissions of its own (the time of that check is kept in a named
+    stream of the folder, `<folder>:abstractcore-sandbox-<id>`). Listing shows the names (and
+    sizes and dates) of what is directly inside such a folder and of each folder on the way to
+    the row, never their content: git turns its working folder into its long form, which looks
+    each folder up in its parent, and could not start otherwise. Folders that 2.38.0 carved
+    without listing are rewritten in place at the next launch. A read-only row refuses every kind
+    of write, inherited by its content. The most specific row wins, as on the other platforms.
+  - What a carved folder holds is refused whatever it is: hidden and system files, files in use,
+    names longer than 260 characters, and reparse points that are not links (cloud file
+    placeholders such as OneDrive's, app aliases). A link (a junction such as the profile's
+    `Application Data`, a symbolic link) is left as it is: a path through it is looked up again
+    at its target, whose own rules apply.
+  - A read & write row: everything inside it is the command's, its permissions included (as
+    `chmod` is on macOS and Linux: ssh-keygen, git, Python's `tempfile.mkdtemp` and installers set
+    permissions on what they make); the row folder itself may be written into but its own
+    permissions and integrity label may not be changed (they carry what other runs rely on).
+  - A path's role may change from one run to the next (a folder made in a refused folder after a
+    first command, then listed read & write or read-only, or on the way to a deeper row; a row
+    that is no longer listed): each launch looks again at every row and every folder on the way
+    directly inside a carved folder, and the refusal it holds there is always one that a row on
+    that very path overrides. A folder there with permissions of its own (not inherited) cannot be
+    a row: the command does not run and the line says to let it inherit (`icacls <path> /reset`).
+    It can lie on the way to one (a profile's own list, when an administrator's `C:\Users` is the
+    refused folder): what such a folder refuses is everything but passing through and the names.
+  - Each launch re-checks, under the lock, every folder on the way: it lists what is directly
+    inside and reads the creation times (measured: 8 ms for a folder of 1,264 entries); what
+    appeared since the last check is refused before the command starts (measured: 1,000 new
+    entries add 0.2 s to the next launch, once).
   - A string command runs through `%ComSpec% /c`, as `subprocess.Popen(command, shell=True)` does.
-  - `host_sandbox_kind("allowed_only")` is `none` on Windows, and a run with a read-only default is
-    refused: neither can be expressed with a restricted token. The refusal carries the reason
-    (`WINDOWS_ALLOW_LIST_UNEXPRESSIBLE`, `WINDOWS_READ_ONLY_UNEXPRESSIBLE`).
-  - A rule that cannot be written (a folder the user can read but whose permissions they cannot
-    change) exits 126 with one line on stderr and the command does not run. A refused path that
-    does not exist has no rule, as with `bwrap`.
-  - Limits: Windows' own TLS (schannel: `curl.exe`, `Invoke-WebRequest`, .NET) is refused to a
-    restricted token, while programs that bring their own TLS work; Store app aliases under
-    `WindowsApps` do not start. The sandbox shapes file access: the command still runs as the
-    user, so it can ask another service of the session to act for it, and can rename or remove a
-    refused folder through a parent it may write (its content stays unreadable). A hard link made
-    earlier outside a refused folder still reaches the file. Content moved into a carved folder or
-    a read-only row from elsewhere on the same drive, content given permissions of its own by hand
-    after the rule was written, and content created later with permissions of its own inside a
-    read-only row keep those permissions.
+  - The launcher's state folder, `%LOCALAPPDATA%\AbstractCore\command-sandbox`, is refused to every
+    command of every shape. It holds the lock that lets one launcher at a time write rules (a file
+    opened by one launcher only; a launch waits up to 10 minutes for it, then does not run and says
+    which process holds it) and the list of labelled folders.
+  - **Writes limited to the rows** ("Deny everything, allow listed workspaces", and a read-only
+    default): the command's token also runs at integrity level 6144, between Low and Medium.
+    Every object without a label of its own counts as Medium, so integrity alone refuses every
+    write outside the rows, the registry included (`reg add HKCU\Software\…` fails). Each read &
+    write row and the run's private workspace (with its `.tmp`) is labelled 6144, inherited by its
+    content. Such a label changes nothing for any other program (Medium writes anyway, Low may
+    not), so it stays, like the rules. Each labelled folder also refuses writes to two
+    identifiers, so a folder one run may write stays read-only to the others: its bucket's (one of
+    256, chosen by a hash of its path), which every other run's command holds unless one of its
+    own read & write rows is in the same bucket; and its own, which a run's command holds in
+    exactly that case (the folder is in one of its own buckets, and it can reach the folder),
+    read from the list of labelled folders in the state folder (`labelled`, ending with its own
+    hash). A list that is lost or damaged is started again without a word: the buckets still
+    guard every folder it named, except from a run with a read & write row of its own in the
+    folder's bucket (see "Two runs and one folder" below).
+  - **"Deny everything, allow listed workspaces"** refuses, computed from the machine at each
+    command: the user's profile, and on every fixed drive the drive itself when the user may
+    change its permissions and it holds no system root, else each folder at its root that the
+    user may change and that is not `Windows`, `Program Files*` or `ProgramData`, plus the user's
+    folder of the drive's recycle bin. A drive the sandbox cannot protect is never one of them. A
+    row at or above one of them opens it (as on the other platforms); the host's own Python stays
+    readable (a `read` rule when it lives in the profile, as a uv install does). An administrator
+    may change `C:\Users` itself: it is then the refused folder, the profile one on the way.
+  - **When a refusal cannot be written:** something the user can open (read, list, run or pass
+    through; the command's token can do no more) whose permissions the user cannot change, inside
+    a refused folder that has a row in it, or a read & write row the user may not take ownership
+    of: the command does not run (exit 126, one line on stderr naming the path). This happens
+    when a row lies in a folder that also holds what an administrator's installer made (on this
+    kind of machine, `AppData\Local\Temp` and some folders at the root of a drive hold such
+    folders): list that row's folder elsewhere, or refuse the whole folder. What the user cannot
+    open anyway (refused to them, a file in use that no one may open, such as `NTUSER.DAT`) needs
+    no refusal and does not stop commands. A refused path that does not exist has no rule, as
+    with `bwrap`.
+  - Limits (every shape): Windows' own TLS (schannel: `curl.exe`, `Invoke-WebRequest`, .NET) is
+    refused to a restricted token, while programs that bring their own TLS work; Store app
+    aliases under `WindowsApps` do not start. The sandbox shapes file access: the command still
+    runs as the user, so it can ask another service of the session to act for it. A hard link
+    made earlier outside a refused folder still reaches the file. Content moved into a carved
+    folder or a read-only row from elsewhere on the same drive, content given permissions of its
+    own by hand after the rule was written, and content created later with permissions of its own
+    inside a read-only row keep those permissions.
+  - Limits where writes are limited to the rows: Git Bash and other MSYS2/Cygwin programs (bash,
+    sh, Git's own `ssh-keygen`, and what git runs through its shell: `git clone` of a local path
+    or a `file://` URL, hooks, `!` aliases) stop at start ("NtCreateDirectoryObject ...
+    0xC0000022") when a normal one is already running in the same session (a Git Bash window):
+    their runtime cannot open the shared objects that one made. When none is, they start
+    (measured: they stopped on a desktop with a Git Bash open, and started on GitHub's runner).
+    cmd, PowerShell, python (`venv`, `pip install`) and node work. git: `init`, `add`, `commit`,
+    `status`, `diff`, `log`, `branch`, `checkout` work, and so does https (git starts its own
+    helper, with its own TLS: `http.sslBackend` is `openssl`; measured as far as a connection
+    attempt); a commit is made even where its hook cannot run. Windows' own `ssh-keygen`
+    (`%SystemRoot%\System32\OpenSSH\ssh-keygen.exe`) writes the private key and then fails on the
+    public one, under every shape (the read & write default too): the key left behind grants its
+    owner "modify", so the user's own programs read and delete it. A junction or hard link can be
+    made only to what the command may write. Registry keys and folders that Windows itself labels Low stay writable
+    (`HKCU\Software\AppDataLow`, Internet Explorer's and the Start menu's cache keys,
+    `AppData\Local\Packages\*\AC`, `AppData\Local\Publishers`); `AppData\LocalLow` and
+    `Favorites` are refused writes under the read-only default and are in the refused profile
+    under "Deny everything".
+  - **Drives the sandbox cannot protect:** a drive without permissions (FAT, exFAT: no access list
+    and no integrity label can be stored there) and a network share (its server checks the user,
+    not the command's token). Commands read and change them as the user can.
+    `sandbox.windows_unprotected_volumes()` lists them; where writes are limited to the rows, the
+    result's `sandbox` block carries `unprotected: ["D:\\"]` and `unprotected_note` ("drive D:
+    has no permissions (exFAT): commands can read and change it"), and the `Sandbox:` line says
+    so. A refused or read-only row there cannot be enforced: the command does not run (exit 126,
+    one line naming the row and the drive). A read & write row there works. Remedy: convert the
+    drive to NTFS (`convert D: /fs:ntfs`), or accept it.
+  - Two runs and one folder: when run A lists a folder read & write, a command of run B that
+    may only read it (B lists it read-only, or not at all under a read-only default) cannot
+    write it, before, while or after A runs, including a command of B that was already running
+    when the folder was listed for the first time. Exceptions, for one pair of folders in 256
+    (B has a read & write row of its own in the folder's bucket): that already-running command
+    of B can write it until it ends; and if the list of labelled folders was lost, B can write a
+    folder of that bucket labelled before the loss until a run lists it read & write again.
+    The guard protects against mistakes, not against a command that sets out to share: a command
+    that can write a workspace can also open what is inside it to other runs' commands (give it
+    permissions of its own, as Python's `tempfile.mkdtemp` does on its own folders; most programs
+    do not), and they can then write it. It cannot open anything another run may not read: that
+    run's refusals stop it at the refused folder, which no command of another run can change.
+  - Under "Deny everything", what the user cannot change stays as readable as it is: files at
+    the root of a drive whose root is not theirs, `C:\Users\Public` (refused with `C:\Users` when
+    the user is an administrator who may change it), folders an installer made at the root of a
+    drive, removable and network drives, `ProgramData`; the registry stays readable.
 - **Fail closed:** with no sandbox available the tool returns `success: false` with one sentence
   ("Commands are not sandboxed on this gateway host, so they are refused: …") and the run continues,
   unless the host allowed unsandboxed commands (`configure_host(unsandboxed_commands_allowed=True)`,
