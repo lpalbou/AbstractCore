@@ -1,8 +1,8 @@
 """
 OpenAI-compatible vision generation endpoints for AbstractCore Server.
 
-This module is intentionally dependency-light:
-- It does not import `abstractvision` unless the endpoints are actually used.
+Request and error types are AbstractVision's (a base dependency); its backends are imported
+when a route first needs one.
 
 Design notes:
 - AbstractCore Server is a gateway; vision generation is delegated to AbstractVision backends.
@@ -18,9 +18,11 @@ Out-of-the-box behavior:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
+import math
 import os
 import shlex
 import time
@@ -29,11 +31,21 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Annotated, Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import httpx
+from abstractvision.backends.base_backend import REQUEST_OPTION_FIELDS, SOUNDTRACK_REQUEST_FIELDS
+from abstractvision.backends.openai_compatible import looks_like_openai_api
+from abstractvision.errors import (
+    AbstractVisionError,
+    BackendNotConfiguredError,
+    CapabilityNotSupportedError,
+    GenerationCancelledError,
+    OptionalDependencyMissingError as AbstractVisionDependencyMissingError,
+)
+from abstractvision.types import MEMORY_MODES, GeneratedAsset
 from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, Request, UploadFile
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, model_validator
 
 from ..capabilities import vision_catalog as _vision_catalog
 from ..capabilities.errors import CapabilityUnavailableError
@@ -55,7 +67,9 @@ router = APIRouter(tags=["vision"])
 provider_router = APIRouter(tags=["vision"])
 
 _BACKEND_CACHE_LOCK = threading.Lock()
-_BACKEND_CACHE: Dict[Tuple[Any, ...], Tuple[Any, threading.Lock, float]] = {}
+# key -> (backend, call lock, last use, the task it last served). A backend enters the cache when
+# it ran a request or was loaded through the residency routes; a refused request leaves no entry.
+_BACKEND_CACHE: Dict[Tuple[Any, ...], Tuple[Any, threading.Lock, float, Optional[str]]] = {}
 _RESIDENCY_RECORDS: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
 
 _ACTIVE_LOCK = threading.Lock()
@@ -67,6 +81,9 @@ _ACTIVE_LOADED_AT_S: Optional[float] = None
 
 _JOBS_LOCK = threading.Lock()
 _JOBS: Dict[str, Dict[str, Any]] = {}
+_JOB_TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
+# The key of a job's cancel event inside its record; never part of a job snapshot.
+_JOB_CANCEL_KEY = "_cancel_event"
 
 _DEFAULT_MODEL_ALIASES = {"default", "configured-default"}
 _REMOVED_VISION_MODEL_ALIASES = {"local/abstractvision", "abstractvision/default", "server/default"}
@@ -437,6 +454,54 @@ class LoRAAdapterBody(BaseModel):
     )
 
 
+# Per-call options of AbstractVision requests, declared once for the JSON bodies. Their values are
+# checked by the backend that runs the request (`CapabilityNotSupportedError` -> HTTP 422).
+MemoryModeField = Annotated[
+    Optional[StrictStr],
+    Field(
+        description=(
+            "Optional memory mode for this run: a lower peak for a slower run. The modes a model honours are "
+            "listed by `GET /v1/vision/models`; another value is refused with HTTP 422 `capability_not_supported`. "
+            "Unset: the route's configured default, else the server process default (`ABSTRACTVISION_MEMORY_MODE`)."
+        ),
+        json_schema_extra={"enum": list(MEMORY_MODES)},
+        examples=["low"],
+    ),
+]
+QuantizeField = Annotated[
+    Optional[Union[StrictInt, Literal["none"]]],
+    Field(
+        description=(
+            "Optional load-time quantization of a source model's weights, in bits, or `none` for no load-time "
+            "quantization over the route's configured default. Prepared packages refuse it; a value the model "
+            "does not accept is refused with HTTP 422 `capability_not_supported`."
+        ),
+        examples=[8],
+    ),
+]
+SoundscapeField = Annotated[
+    Optional[StrictStr],
+    Field(
+        description="Ambient sound and effects of the soundtrack, for a video model that generates one (MiniMax-H3).",
+        examples=["Soft crunch of paws in dry snow, faint wind in the pines."],
+    ),
+]
+MusicField = Annotated[
+    Optional[StrictStr],
+    Field(description="Background music of the soundtrack (MiniMax-H3).", examples=["Sparse solo piano."]),
+]
+GenerateAudioField = Annotated[
+    Optional[StrictBool],
+    Field(description="`false` writes a silent clip on a model that generates a soundtrack.", examples=[True]),
+]
+AudioShiftField = Annotated[
+    Optional[float],
+    Field(allow_inf_nan=False, description="Schedule shift of the soundtrack's denoising (MiniMax-H3).", examples=[3.0]),
+]
+# The per-call options an image request carries; a video request carries all of REQUEST_OPTION_FIELDS.
+_IMAGE_REQUEST_OPTION_FIELDS = ("memory_mode", "quantize")
+
+
 class ImageGenerationBody(BaseModel):
     """OpenAI-compatible image generation request body."""
 
@@ -552,6 +617,8 @@ class ImageGenerationBody(BaseModel):
     output_format: Optional[str] = Field(default=None, description="Optional OpenAI-compatible output image format forwarded to upstream providers.", examples=["png"])
     output_compression: Optional[int] = Field(default=None, description="Optional OpenAI-compatible output compression value forwarded to upstream providers. Use this with compressed formats such as `jpeg` or `webp` when the upstream supports it.", examples=[85])
     moderation: Optional[str] = Field(default=None, description="Optional OpenAI-compatible moderation setting forwarded to upstream providers, commonly `auto` or `low` for GPT image models.", examples=["auto"])
+    memory_mode: MemoryModeField = None
+    quantize: QuantizeField = None
     extra: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Backend-specific parameters forwarded to the selected image backend or upstream endpoint.",
@@ -669,6 +736,12 @@ class VideoGenerationBody(BaseModel):
         description="Optional ordered LoRA adapter stack for local video backends that support adapters.",
     )
     max_sequence_length: Optional[int] = Field(default=None, description="Optional backend-specific prompt token length cap.", examples=[256])
+    memory_mode: MemoryModeField = None
+    quantize: QuantizeField = None
+    soundscape: SoundscapeField = None
+    music: MusicField = None
+    generate_audio: GenerateAudioField = None
+    audio_shift: AudioShiftField = None
     extra: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Backend-specific parameters forwarded to the selected video backend or upstream endpoint.",
@@ -729,7 +802,7 @@ def _jobs_cleanup_locked(*, now_s: float) -> None:
     # Drop old completed jobs.
     for jid, job in list(_JOBS.items()):
         state = str(job.get("state") or "")
-        if state not in {"succeeded", "failed"}:
+        if state not in _JOB_TERMINAL_STATES:
             continue
         updated = float(job.get("updated_at_s") or 0.0)
         if updated and (now_s - updated) > ttl:
@@ -744,7 +817,7 @@ def _jobs_cleanup_locked(*, now_s: float) -> None:
         if len(_JOBS) <= max_entries:
             break
         state = str(job.get("state") or "")
-        if state in {"succeeded", "failed"}:
+        if state in _JOB_TERMINAL_STATES:
             _JOBS.pop(jid, None)
 
     # If still too many (all in-flight), drop the oldest anyway (best-effort).
@@ -894,7 +967,7 @@ def _progress_for_job_response(progress: Any, *, state: str) -> Any:
         return progress
     payload = dict(progress)
     payload["job_state"] = state
-    terminal = state in {"succeeded", "failed"}
+    terminal = state in _JOB_TERMINAL_STATES
     if terminal:
         payload["terminal"] = True
         payload["progress_mode"] = "terminal"
@@ -995,18 +1068,29 @@ def _job_update_progress(
         job["updated_at_s"] = time.time()
 
 
-def _job_finish(job_id: str, *, ok: bool, result: Optional[Dict[str, Any]] = None, error: Optional[str] = None) -> None:
+def _job_finish(
+    job_id: str,
+    *,
+    ok: bool,
+    result: Optional[Dict[str, Any]] = None,
+    error: Optional[str] = None,
+    state: Optional[str] = None,
+    fields: Optional[Dict[str, Any]] = None,
+) -> None:
     with _JOBS_LOCK:
         job = _JOBS.get(job_id)
         if job is None:
             return
-        job["state"] = "succeeded" if ok else "failed"
+        state = state or ("succeeded" if ok else "failed")
+        job["state"] = state
         job["updated_at_s"] = time.time()
+        if fields:
+            job.update(fields)
         prog = job.get("progress")
         if isinstance(prog, dict):
-            prog["phase"] = "succeeded" if ok else "failed"
-            prog["status"] = "succeeded" if ok else "failed"
-            prog["message"] = "succeeded" if ok else "failed"
+            prog["phase"] = state
+            prog["status"] = state
+            prog["message"] = state
             prog["progress_mode"] = "terminal"
             prog["progress_source"] = "core"
             prog["terminal"] = True
@@ -1028,42 +1112,63 @@ def _job_finish(job_id: str, *, ok: bool, result: Optional[Dict[str, Any]] = Non
             job.pop("result", None)
 
 
-def _get_or_create_cached_backend(key: Tuple[Any, ...], factory):
-    evicted: list[Tuple[Any, threading.Lock]] = []
+def _get_or_create_cached_backend(key: Tuple[Any, ...], factory, *, task: Optional[str] = None):
+    """The cached backend of `key`, or a new one built by `factory` and cached now."""
     with _BACKEND_CACHE_LOCK:
-        now = time.time()
         cached = _BACKEND_CACHE.get(key)
         if cached is not None:
-            backend, call_lock, _ts = cached
-            _BACKEND_CACHE[key] = (backend, call_lock, now)
+            backend, call_lock = cached[0], cached[1]
+            _BACKEND_CACHE[key] = (backend, call_lock, time.time(), task or cached[3])
             return backend, call_lock
-
         backend = factory()
-        call_lock = threading.Lock()
-        _BACKEND_CACHE[key] = (backend, call_lock, now)
+    return backend, _keep_backend(key, backend, task=task)
 
-        max_entries_raw = _env("ABSTRACTCORE_VISION_BACKEND_CACHE_MAX", "4") or "4"
-        try:
-            max_entries = int(str(max_entries_raw).strip())
-        except Exception:
-            max_entries = 4
-        max_entries = max(1, min(int(max_entries), 64))
 
-        if len(_BACKEND_CACHE) > max_entries:
-            # Evict least-recently-used backends (best-effort).
-            items = sorted(_BACKEND_CACHE.items(), key=lambda kv: kv[1][2])
-            for k, _ in items[: max(0, len(_BACKEND_CACHE) - max_entries)]:
-                if k == key:
-                    continue
-                removed = _BACKEND_CACHE.pop(k, None)
+def _cached_or_new_backend(key: Tuple[Any, ...], factory) -> Tuple[Any, threading.Lock]:
+    """The cached backend of `key`, else a new one that is cached only once it has run (`_keep_backend`)."""
+    with _BACKEND_CACHE_LOCK:
+        cached = _BACKEND_CACHE.get(key)
+        if cached is not None:
+            return cached[0], cached[1]
+    return factory(), threading.Lock()
+
+
+def _cache_max_entries() -> int:
+    raw = _env("ABSTRACTCORE_VISION_BACKEND_CACHE_MAX", "4") or "4"
+    try:
+        return max(1, min(int(str(raw).strip()), 64))
+    except Exception:
+        return 4
+
+
+def _keep_backend(key: Tuple[Any, ...], backend: Any, *, task: Optional[str]) -> threading.Lock:
+    """Cache `backend` under `key` (or refresh its entry), evicting the least recently used ones.
+
+    A model loaded through the residency routes (pinned) is never evicted.
+    """
+    evicted: list[Tuple[Any, threading.Lock]] = []
+    with _BACKEND_CACHE_LOCK:
+        cached = _BACKEND_CACHE.get(key)
+        call_lock = cached[1] if cached is not None and cached[0] is backend else threading.Lock()
+        _BACKEND_CACHE[key] = (backend, call_lock, time.time(), task or (cached[3] if cached is not None else None))
+        excess = len(_BACKEND_CACHE) - _cache_max_entries()
+        if excess > 0:
+            candidates = sorted(
+                (
+                    (k, entry)
+                    for k, entry in _BACKEND_CACHE.items()
+                    if k != key and not (_RESIDENCY_RECORDS.get(k) or {}).get("pinned")
+                ),
+                key=lambda kv: kv[1][2],
+            )
+            for k, entry in candidates[:excess]:
+                _BACKEND_CACHE.pop(k, None)
                 _RESIDENCY_RECORDS.pop(k, None)
-                if removed is not None:
-                    evicted.append((removed[0], removed[1]))
-
+                evicted.append((entry[0], entry[1]))
     for evicted_backend, evicted_lock in evicted:
         with evicted_lock:
             _unload_backend_best_effort(evicted_backend)
-    return backend, call_lock
+    return call_lock
 
 
 def _vision_api_key_fingerprint(api_key: Optional[str]) -> Optional[str]:
@@ -1101,7 +1206,8 @@ def _vision_load_id_for_key(key: Tuple[Any, ...]) -> str:
     return hashlib.sha256(repr(key).encode("utf-8")).hexdigest()[:16]
 
 
-def _unpack_resolved_backend(resolved: Tuple[Any, ...]) -> Tuple[Any, Any, Any, Any, Any, Any, Any, Any]:
+def _unpack_resolved_backend(resolved: Tuple[Any, ...]) -> Tuple[Any, ...]:
+    """(backend, call lock, dependency error, the five request types, cache key)."""
     if len(resolved) < 5:
         raise RuntimeError("Vision backend resolver returned an invalid result.")
     return (
@@ -1113,6 +1219,7 @@ def _unpack_resolved_backend(resolved: Tuple[Any, ...]) -> Tuple[Any, Any, Any, 
         resolved[5] if len(resolved) > 5 else None,
         resolved[6] if len(resolved) > 6 else None,
         resolved[7] if len(resolved) > 7 else None,
+        resolved[8] if len(resolved) > 8 else _vision_backend_cache_key_for_backend(resolved[0]),
     )
 
 
@@ -1150,12 +1257,30 @@ def _vision_record_tasks(task: Optional[str]) -> list[str]:
     return ["image_generation", "text_to_image", "image_to_image"]
 
 
+def _public_model_id(kind: str, model: str) -> str:
+    """How a residency record names a model: a local path becomes `default` when it is the configured
+    default of its backend, else its last component; never the path itself."""
+    if not _looks_like_filesystem_path(model):
+        return model
+    defaults = {
+        "mlx-gen": lambda modality: _mflux_model_default(modality),
+        "diffusers": lambda modality: _diffusers_model_default(modality),
+        "sdcpp": lambda modality: _sdcpp_setting("MODEL", modality=modality) or _sdcpp_setting("DIFFUSION_MODEL", modality=modality),
+    }.get(kind)
+    if defaults is not None and model in {defaults("image"), defaults("video")}:
+        return "default"
+    return Path(model).name
+
+
 def _vision_record_for_key(
     key: Tuple[Any, ...],
     *,
     cache_ts: Optional[float] = None,
     meta: Optional[Dict[str, Any]] = None,
+    backend: Any = None,
+    served_task: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """A residency record; `_match_ids` (internal, removed by `_public_record`) also holds the raw ids."""
     meta = dict(meta or {})
     kind = str(key[0] if key else "").strip()
     loaded_at = meta.get("loaded_at_s") or cache_ts or time.time()
@@ -1196,7 +1321,6 @@ def _vision_record_for_key(
         model = str(key[1] if len(key) > 1 and key[1] else key[2] if len(key) > 2 and key[2] else "default")
         options = {
             "base_model": key[2] if len(key) > 2 else None,
-            "model_dir": key[3] if len(key) > 3 else None,
             "allow_download": key[4] if len(key) > 4 else None,
         }
     elif kind == "sdcpp":
@@ -1204,8 +1328,6 @@ def _vision_record_for_key(
         backend_kind = "sdcpp"
         model = str(key[2] if len(key) > 2 and key[2] else key[3] if len(key) > 3 and key[3] else "default")
         options = {
-            "sd_cli_path": key[1] if len(key) > 1 else None,
-            "diffusion_model": key[3] if len(key) > 3 else None,
             "timeout_s": key[11] if len(key) > 11 else None,
         }
     elif kind == "configured" and len(key) >= 5:
@@ -1217,12 +1339,16 @@ def _vision_record_for_key(
         scope = "remote"
 
     options = {str(k): v for k, v in options.items() if v is not None}
-    load_id = _vision_load_id_for_key(key)
-    # `loaded` means the backend/runtime is currently held in-process and reusable.
-    loaded = isolation == "in_process" and cache_ts is not None
+    raw_model = model
+    raw_load_id = _vision_load_id_for_key(key)
+    model = _public_model_id(backend_kind, raw_model)
+    load_id = raw_load_id if model == raw_model else f"{provider}/{model}"
+    # `loaded`: the backend holds its model now, by its own answer.
+    loaded = isolation == "in_process" and cache_ts is not None and backend is not None and backend.has_loaded_model()
     state = "loaded" if loaded else "configured" if isolation == "remote" else "not_loaded"
-    tasks = _vision_record_tasks(meta.get("task"))
+    tasks = _vision_record_tasks(meta.get("task") or served_task)
     return {
+        "_match_ids": {raw_model, raw_load_id},
         "runtime_id": load_id,
         "load_id": load_id,
         "task": tasks[0],
@@ -1247,10 +1373,14 @@ def _vision_record_for_key(
 
 def _vision_backend_cache_key_for_backend(backend: Any) -> Optional[Tuple[Any, ...]]:
     with _BACKEND_CACHE_LOCK:
-        for key, (candidate, _call_lock, _ts) in _BACKEND_CACHE.items():
-            if candidate is backend:
+        for key, entry in _BACKEND_CACHE.items():
+            if entry[0] is backend:
                 return key
     return None
+
+
+def _public_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in record.items() if k != "_match_ids"}
 
 
 def _vision_configured_key(
@@ -1284,11 +1414,12 @@ def _vision_record_matches(record: Dict[str, Any], filters: Dict[str, Any]) -> b
     backend_kind = _normalize_vision_provider_filter(filters.get("backend_kind"))
     if backend_kind and backend_kind != _normalize_vision_provider_filter(record.get("backend_kind")):
         return False
+    ids = {str(record.get("model") or ""), str(record.get("load_id") or ""), *(str(i) for i in record.get("_match_ids") or ())}
     model = str(filters.get("model") or "").strip()
-    if model and model not in {str(record.get("model") or ""), str(record.get("load_id") or ""), str(record.get("runtime_id") or "")}:
+    if model and model not in ids:
         return False
     runtime_id = str(filters.get("runtime_id") or filters.get("load_id") or "").strip()
-    if runtime_id and runtime_id not in {str(record.get("runtime_id") or ""), str(record.get("load_id") or "")}:
+    if runtime_id and runtime_id not in ids:
         return False
     return True
 
@@ -1296,10 +1427,14 @@ def _vision_record_matches(record: Dict[str, Any], filters: Dict[str, Any]) -> b
 def _vision_loaded_records(filters: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
     filters = dict(filters or {})
     with _BACKEND_CACHE_LOCK:
-        records = [
-            _vision_record_for_key(key, cache_ts=ts, meta=_RESIDENCY_RECORDS.get(key))
-            for key, (_backend, _call_lock, ts) in _BACKEND_CACHE.items()
-        ]
+        records = []
+        for key, (backend, _call_lock, ts, served_task) in _BACKEND_CACHE.items():
+            meta = _RESIDENCY_RECORDS.get(key)
+            record = _vision_record_for_key(key, cache_ts=ts, meta=meta, backend=backend, served_task=served_task)
+            if record["isolation"] == "in_process" and not record["loaded"] and meta is None:
+                # A model a request loaded and its backend released: nothing to list.
+                continue
+            records.append(record)
         cached_keys = set(_BACKEND_CACHE)
         for key, meta in _RESIDENCY_RECORDS.items():
             if key not in cached_keys:
@@ -1310,7 +1445,7 @@ def _vision_loaded_records(filters: Optional[Dict[str, Any]] = None) -> list[Dic
 
 def list_server_vision_loaded_models(filters: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
     """List server-local image backends visible to `/v1/images/*`."""
-    return _vision_loaded_records(filters)
+    return [_public_record(record) for record in _vision_loaded_records(filters)]
 
 
 def load_server_vision_loaded_model(
@@ -1357,9 +1492,9 @@ def load_server_vision_loaded_model(
             }
             record = _vision_record_for_key(configured_key, meta=_RESIDENCY_RECORDS[configured_key])
         record["loaded_new"] = bool(loaded_new)
-        return record
+        return _public_record(record)
 
-    backend, call_lock, _missing, _gen_req, _edit_req, _video_req, _i2v_req, _upscale_req = _unpack_resolved_backend(
+    resolved = _unpack_resolved_backend(
         _resolve_backend(
             request_model,
             modality=residency_modality,
@@ -1368,13 +1503,15 @@ def load_server_vision_loaded_model(
             api_key=api_key,
         )
     )
-    preload = getattr(backend, "preload", None)
-    if callable(preload):
-        with call_lock:
-            preload()
-    key = _vision_backend_cache_key_for_backend(backend)
+    backend, call_lock, key = resolved[0], resolved[1], resolved[8]
+    # The model is loaded the way a request that names nothing runs it: with the memory mode and
+    # load-time quantization configured as the route's request defaults. The backend checks them.
+    defaults = _route_request_defaults(backend_kind, residency_modality, config_task, request_model)
+    load_options = {name: defaults[name] for name in ("memory_mode", "quantize") if defaults.get(name) is not None}
+    with _GENERATION_GATE, call_lock:
+        backend.preload(**load_options)
     if key is None:
-        raise RuntimeError("Vision backend was loaded but not present in the server backend cache.")
+        raise RuntimeError("Vision backend was loaded but has no server cache key.")
     now = time.time()
     with _BACKEND_CACHE_LOCK:
         loaded_new = key not in _RESIDENCY_RECORDS
@@ -1385,9 +1522,13 @@ def load_server_vision_loaded_model(
             "last_used_at_s": now,
             "pinned": bool(payload.get("pin", True)),
         }
-        record = _vision_record_for_key(key, cache_ts=now, meta=_RESIDENCY_RECORDS[key])
+    _keep_backend(key, backend, task=config_task)
+    with _BACKEND_CACHE_LOCK:
+        record = _vision_record_for_key(
+            key, cache_ts=now, meta=_RESIDENCY_RECORDS[key], backend=backend, served_task=config_task
+        )
     record["loaded_new"] = bool(loaded_new)
-    return record
+    return _public_record(record)
 
 
 def unload_server_vision_loaded_model(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -1415,7 +1556,7 @@ def unload_server_vision_loaded_model(request: Dict[str, Any]) -> Dict[str, Any]
     removed_lock: Optional[threading.Lock] = None
     with _BACKEND_CACHE_LOCK:
         target_key = None
-        for key, (backend, call_lock, _ts) in list(_BACKEND_CACHE.items()):
+        for key, (backend, call_lock, _ts, _task) in list(_BACKEND_CACHE.items()):
             record = _vision_record_for_key(key, meta=_RESIDENCY_RECORDS.get(key))
             if str(record.get("load_id") or record.get("runtime_id") or "") == target_id:
                 target_key = key
@@ -1438,7 +1579,7 @@ def unload_server_vision_loaded_model(request: Dict[str, Any]) -> Dict[str, Any]
         else:
             _unload_backend_best_effort(removed_backend)
 
-    out = dict(target)
+    out = _public_record(target)
     out.update({"state": "unloaded", "loaded": False, "unloaded": True})
     return out
 
@@ -1573,10 +1714,6 @@ def _validate_request_base_url(base_url: Any) -> Optional[str]:
             "to allow additional hosts or URL prefixes."
         ),
     )
-
-
-def _looks_like_openai_api(base_url: Any) -> bool:
-    return "api.openai.com" in str(base_url or "").lower()
 
 
 def _vision_catalog_api_key_for_base_url(base_url: Any) -> Optional[str]:
@@ -1890,6 +2027,25 @@ _ROUTE_OPTION_KEYS: Dict[str, frozenset] = {
 }
 
 
+def _route_request_defaults(backend_kind: str, modality: str, task: Optional[str], request_model: Any) -> Dict[str, Any]:
+    """The configured route's request defaults, for a request that runs that route's model.
+
+    A route's options are of two kinds, split by `_ROUTE_OPTION_KEYS`: settings that build its
+    backend (`base_model`, `device`, ...) and request defaults (`steps`, upscale `resolution`,
+    `memory_mode`, `quantize`, ...). The defaults apply when the request names that model or none;
+    a value the request sets wins. The backend checks them like request values.
+    """
+    route = _vision_route_defaults(modality, task)
+    options = route.get("options")
+    if route.get("backend") != backend_kind or not isinstance(options, dict):
+        return {}
+    requested = _normalize_request_model_for_backend(request_model)
+    if requested and route.get("model") and requested != route.get("model"):
+        return {}
+    settings = _ROUTE_OPTION_KEYS.get(backend_kind, frozenset())
+    return {str(k).lower(): v for k, v in options.items() if str(k).lower() not in settings}
+
+
 def _route_options_for(backend_kind: str, modality: str = "image", task: Optional[str] = None) -> Dict[str, Any]:
     """Configured route options recognized as `backend_kind` BACKEND SETTINGS, keys lowercased.
 
@@ -2115,7 +2271,7 @@ def _sdcpp_setting(*names: str, modality: str = "image", task: Optional[str] = N
 def _active_state() -> Dict[str, Any]:
     with _ACTIVE_LOCK:
         return {
-            "model_id": _ACTIVE_MODEL_ID,
+            "model_id": _public_model_id(str(_ACTIVE_BACKEND_KIND or ""), _ACTIVE_MODEL_ID) if _ACTIVE_MODEL_ID else None,
             "backend_kind": _ACTIVE_BACKEND_KIND,
             "loaded_at_s": _ACTIVE_LOADED_AT_S,
             "has_backend": _ACTIVE_BACKEND is not None,
@@ -2518,6 +2674,8 @@ def _upstream_api_key_for_request(request_model: Any, modality: str = "image", t
 
 def _require_diffusers_model_id(request_model: Any, modality: str = "image", task: Optional[str] = None) -> str:
     model_id = str(_normalize_request_model_for_backend(request_model) or _diffusers_model_default(modality, task) or "").strip()
+    # A local folder is published by its name (`_public_listing_entry`); the name selects it again.
+    model_id = _vision_catalog.local_diffusers_model_path(model_id) or model_id
     if not model_id:
         raise HTTPException(
             status_code=501,
@@ -2668,6 +2826,7 @@ _IMAGE_GENERATION_CORE_FIELDS = {
     "guidance_scale",
     "lora_adapters",
     "extra",
+    *_IMAGE_REQUEST_OPTION_FIELDS,
 }
 
 
@@ -2694,6 +2853,7 @@ _VIDEO_GENERATION_CORE_FIELDS = {
     "lora_adapters",
     "max_sequence_length",
     "extra",
+    *REQUEST_OPTION_FIELDS,
 }
 
 
@@ -2787,7 +2947,7 @@ def _scoped_request_model_for_request(model: Any, provider: Any = None, *, base_
     if provider_s in {"huggingface", "hf", "diffusers", "mlx-gen", "mlxgen", "mflux", "m-flux", "sdcpp", "sd-cpp"}:
         return request_model
 
-    remote_provider = "openai" if _looks_like_openai_api(base_url_s) else "openai-compatible"
+    remote_provider = "openai" if looks_like_openai_api(base_url_s) else "openai-compatible"
     default_model = "gpt-image-1" if remote_provider == "openai" else "default"
     return _scoped_request_model(default_model, remote_provider)
 
@@ -2865,6 +3025,8 @@ def _coerce_form_float(
         value = float(str(v).strip())
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"{name} must be a number.") from e
+    if not math.isfinite(value):
+        raise HTTPException(status_code=400, detail=f"{name} must be a finite number.")
     if minimum is not None and value < minimum:
         raise HTTPException(status_code=400, detail=f"{name} must be >= {minimum}.")
     if maximum is not None and value > maximum:
@@ -2883,6 +3045,48 @@ def _coerce_form_bool(name: str, v: Any) -> Optional[bool]:
     if text in {"0", "false", "no", "off"}:
         return False
     raise HTTPException(status_code=400, detail=f"{name} must be a boolean.")
+
+
+def _coerce_form_quantize(v: Any) -> Any:
+    """A `quantize` form field: bits as an integer, or `none`; the backend checks the value."""
+    if not _blank_form_value(v) and str(v).strip().lower() == "none":
+        return "none"
+    return _coerce_form_int("quantize", v)
+
+
+def _form_request_options(
+    *,
+    memory_mode: Optional[str] = None,
+    quantize: Optional[str] = None,
+    soundscape: Optional[str] = None,
+    music: Optional[str] = None,
+    generate_audio: Optional[str] = None,
+    audio_shift: Optional[str] = None,
+) -> Dict[str, Any]:
+    """The per-call request options of a multipart form, typed (blank fields are unset)."""
+    return {
+        "memory_mode": None if _blank_form_value(memory_mode) else str(memory_mode).strip(),
+        "quantize": _coerce_form_quantize(quantize),
+        "soundscape": None if _blank_form_value(soundscape) else str(soundscape),
+        "music": None if _blank_form_value(music) else str(music),
+        "generate_audio": _coerce_form_bool("generate_audio", generate_audio),
+        "audio_shift": _coerce_form_float("audio_shift", audio_shift),
+    }
+
+
+# Form fields of the per-call request options, declared once for every multipart route.
+MemoryModeForm = Annotated[
+    Optional[str],
+    Form(description="Optional memory mode (`default`, `low`, `lowest`); a mode the model cannot honour is refused with HTTP 422 `capability_not_supported`.", examples=["low"]),
+]
+QuantizeForm = Annotated[
+    Optional[str],
+    Form(description="Optional load-time quantization in bits (for example `8`), or `none`. Prepared packages refuse it; a value the model does not accept is refused with HTTP 422 `capability_not_supported`.", examples=["8"]),
+]
+SoundscapeForm = Annotated[Optional[str], Form(description="Ambient sound and effects of the soundtrack (MiniMax-H3).", examples=["Soft crunch of paws in dry snow."])]
+MusicForm = Annotated[Optional[str], Form(description="Background music of the soundtrack (MiniMax-H3).", examples=["Sparse solo piano."])]
+GenerateAudioForm = Annotated[Optional[str], Form(description="`false` writes a silent clip on a model that generates a soundtrack.", examples=["true"])]
+AudioShiftForm = Annotated[Optional[str], Form(description="Schedule shift of the soundtrack's denoising (MiniMax-H3).", examples=["3.0"])]
 
 
 def _validate_scale_factor_field(name: str, v: Optional[str]) -> Optional[str]:
@@ -2917,6 +3121,20 @@ def _validate_upscale_resolution_field(v: Optional[str]) -> Optional[str]:
     return str(v).strip()
 
 
+def _upscale_form_quantize(v: Optional[str]) -> Any:
+    """The upscale `quantize` form field: bits as an integer, any other spelling as sent.
+
+    SeedVR2 reads "none", "false", "off", "no" and 0 as an unquantized load; the backend checks
+    every value.
+    """
+    if v is None:
+        return None
+    try:
+        return int(str(v).strip())
+    except ValueError:
+        return v
+
+
 def _parse_upscale_form_fields(
     *,
     scale: Optional[str],
@@ -2931,7 +3149,7 @@ def _parse_upscale_form_fields(
         "resolution": _validate_upscale_resolution_field(resolution),
         "softness": _coerce_form_float("softness", softness, minimum=0.0, maximum=1.0),
         "seed": _coerce_form_int("seed", seed),
-        "quantize": _coerce_form_int("quantize", quantize, allowed={3, 4, 5, 6, 8}),
+        "quantize": _upscale_form_quantize(quantize),
         "vae_tiling": _coerce_form_bool("vae_tiling", vae_tiling),
     }
 
@@ -3179,6 +3397,7 @@ def _resolve_backend(
             _ProxyVideoGenerationRequest,
             _ProxyImageToVideoRequest,
             _ProxyImageUpscaleRequest,
+            key,
         )
     elif backend_kind == "diffusers":
         model_id = _require_diffusers_model_id(request_model, modality, task)
@@ -3256,6 +3475,7 @@ def _resolve_backend(
             VideoGenerationRequest,
             ImageToVideoRequest,
             ImageUpscaleRequest,
+            None,
         )
 
     if backend_kind == "diffusers":
@@ -3276,7 +3496,7 @@ def _resolve_backend(
             allow_download,
             prevalidated["auto_retry_fp32"],
         )
-        backend, call_lock = _get_or_create_cached_backend(key, lambda: HuggingFaceDiffusersVisionBackend(config=cfg))
+        backend, call_lock = _cached_or_new_backend(key, lambda: HuggingFaceDiffusersVisionBackend(config=cfg))
         return (
             backend,
             call_lock,
@@ -3286,6 +3506,7 @@ def _resolve_backend(
             VideoGenerationRequest,
             ImageToVideoRequest,
             ImageUpscaleRequest,
+            key,
         )
 
     if backend_kind == "mlx-gen":
@@ -3302,7 +3523,7 @@ def _resolve_backend(
             prevalidated["model_dir"],
             prevalidated["allow_download"],
         )
-        backend, call_lock = _get_or_create_cached_backend(key, lambda: MFluxVisionBackend(config=cfg))
+        backend, call_lock = _cached_or_new_backend(key, lambda: MFluxVisionBackend(config=cfg))
         return (
             backend,
             call_lock,
@@ -3312,6 +3533,7 @@ def _resolve_backend(
             VideoGenerationRequest,
             ImageToVideoRequest,
             ImageUpscaleRequest,
+            key,
         )
 
     if backend_kind == "sdcpp":
@@ -3345,7 +3567,7 @@ def _resolve_backend(
             extra_args,
             prevalidated["timeout_s"],
         )
-        backend, call_lock = _get_or_create_cached_backend(key, lambda: StableDiffusionCppVisionBackend(config=cfg))
+        backend, call_lock = _cached_or_new_backend(key, lambda: StableDiffusionCppVisionBackend(config=cfg))
         return (
             backend,
             call_lock,
@@ -3355,6 +3577,7 @@ def _resolve_backend(
             VideoGenerationRequest,
             ImageToVideoRequest,
             ImageUpscaleRequest,
+            key,
         )
 
     raise HTTPException(status_code=501, detail=f"Unknown vision backend kind: {backend_kind!r} (set ABSTRACTCORE_VISION_BACKEND)")
@@ -3368,16 +3591,8 @@ def _create_vision_generation_core(
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
 ):
-    (
-        backend,
-        call_lock,
-        OptionalDependencyMissingError,
-        ImageGenerationRequest,
-        ImageEditRequest,
-        VideoGenerationRequest,
-        ImageToVideoRequest,
-        ImageUpscaleRequest,
-    ) = _unpack_resolved_backend(
+    """(capability core, dependency error, cache key, backend) for a request's backend."""
+    resolved = _unpack_resolved_backend(
         _resolve_backend(
             request_model,
             modality=modality,
@@ -3386,56 +3601,24 @@ def _create_vision_generation_core(
             api_key=api_key,
         )
     )
+    kind = _effective_backend_kind(request_model, modality, task)
     facade = ServerVisionFacade(
-        backend=backend,
-        call_lock=call_lock,
-        image_generation_request_cls=ImageGenerationRequest,
-        image_edit_request_cls=ImageEditRequest,
-        video_generation_request_cls=VideoGenerationRequest,
-        image_to_video_request_cls=ImageToVideoRequest,
-        image_upscale_request_cls=ImageUpscaleRequest,
-        backend_id=f"abstractcore-server:{_effective_backend_kind(request_model, modality, task)}",
+        backend=resolved[0],
+        call_lock=resolved[1],
+        image_generation_request_cls=resolved[3],
+        image_edit_request_cls=resolved[4],
+        video_generation_request_cls=resolved[5],
+        image_to_video_request_cls=resolved[6],
+        image_upscale_request_cls=resolved[7],
+        backend_id=f"abstractcore-server:{kind}",
+        takes_request_options=kind != "openai_compatible_proxy",
     )
     core = create_capability_generation_core(vision_facade=facade)
-    return core, OptionalDependencyMissingError
+    return core, resolved[2], resolved[8], resolved[0]
 
 
 def _is_remote_vision_request(request_model: Any, modality: str = "image", task: Optional[str] = None) -> bool:
     return _effective_backend_kind(request_model, modality, task) == "openai_compatible_proxy"
-
-
-def _generated_image_bytes_list(result: Any) -> list[bytes]:
-    image_items = getattr(result, "outputs", {}).get("image", [])
-    if not image_items:
-        raise RuntimeError("Image backend returned no image outputs.")
-    out: list[bytes] = []
-    for item in image_items:
-        data = getattr(item, "data", None)
-        if not isinstance(data, (bytes, bytearray)):
-            raise RuntimeError("Image backend returned an unexpected type (expected raw bytes).")
-        out.append(bytes(data))
-    return out
-
-
-def _first_generated_image_bytes(result: Any) -> bytes:
-    return _generated_image_bytes_list(result)[0]
-
-
-def _generated_video_bytes_list(result: Any) -> list[bytes]:
-    video_items = getattr(result, "outputs", {}).get("video", [])
-    if not video_items:
-        raise RuntimeError("Video backend returned no video outputs.")
-    out: list[bytes] = []
-    for item in video_items:
-        data = getattr(item, "data", None)
-        if not isinstance(data, (bytes, bytearray)):
-            raise RuntimeError("Video backend returned an unexpected type (expected raw bytes).")
-        out.append(bytes(data))
-    return out
-
-
-def _first_generated_video_bytes(result: Any) -> bytes:
-    return _generated_video_bytes_list(result)[0]
 
 
 def _vision_catalog_error(exc: Exception) -> HTTPException:
@@ -3445,12 +3628,14 @@ def _vision_catalog_error(exc: Exception) -> HTTPException:
         "stale": False,
         "error": str(exc),
     }
-    if isinstance(exc, CapabilityUnavailableError):
-        return HTTPException(status_code=501, detail=detail)
-    msg = str(exc).lower()
-    if "not configured" in msg or "missing" in msg or "does not support" in msg or "does not expose" in msg:
-        return HTTPException(status_code=501, detail=detail)
-    return HTTPException(status_code=502, detail=detail)
+    # What this server or the plugin cannot do is 501; a failure of the provider behind it is 502.
+    unavailable = (
+        CapabilityUnavailableError,
+        CapabilityNotSupportedError,
+        BackendNotConfiguredError,
+        AbstractVisionDependencyMissingError,
+    )
+    return HTTPException(status_code=501 if isinstance(exc, unavailable) else 502, detail=detail)
 
 
 def _vision_provider_model_capabilities_for_task(task: Optional[str]) -> list[str]:
@@ -3515,15 +3700,15 @@ def _configured_vision_provider_model_entries(task: Optional[str]) -> list[Dict[
     upstream_base_url = _upstream_base_url_default()
     upstream_model = _route_model_for("openai_compatible_proxy") or _env_first("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID")
     upstream_key = _vision_catalog_api_key_for_base_url(upstream_base_url)
-    if upstream_base_url and upstream_model and (not _looks_like_openai_api(upstream_base_url) or upstream_key):
-        add(provider="openai" if _looks_like_openai_api(upstream_base_url) else "openai-compatible", model_id=upstream_model)
+    if upstream_base_url and upstream_model and (not looks_like_openai_api(upstream_base_url) or upstream_key):
+        add(provider="openai" if looks_like_openai_api(upstream_base_url) else "openai-compatible", model_id=upstream_model)
 
     backend_kind = _vision_backend_kind()
     abstractvision_model = _env_first("ABSTRACTVISION_MODEL_ID", "ABSTRACTCORE_VISION_MODEL_ID")
     if abstractvision_model and upstream_base_url and (backend_kind == "openai_compatible_proxy" or upstream_base_url) and (
-        not _looks_like_openai_api(upstream_base_url) or upstream_key
+        not looks_like_openai_api(upstream_base_url) or upstream_key
     ):
-        add(provider="openai" if _looks_like_openai_api(upstream_base_url) else "openai-compatible", model_id=abstractvision_model)
+        add(provider="openai" if looks_like_openai_api(upstream_base_url) else "openai-compatible", model_id=abstractvision_model)
 
     return entries
 
@@ -3545,8 +3730,8 @@ def _cached_vision_provider_model_entries(cached_catalog: Any, task: Optional[st
         tasks = [str(t) for t in item.get("tasks", [])] if isinstance(item.get("tasks"), list) else ["text_to_image"]
         if task and task not in tasks:
             continue
-        backend = "diffusers" if provider in {"huggingface", "hf"} else provider
-        routed = f"diffusers/{model_id}" if backend == "diffusers" and not model_id.startswith("diffusers/") else model_id
+        backend = _listing_backend_kind({"backend": item.get("backend"), "provider": provider})
+        routed = _routed_model(backend, model_id)
         entries.append(
             {
                 "id": model_id,
@@ -3569,6 +3754,56 @@ def _cached_vision_provider_model_entries(cached_catalog: Any, task: Optional[st
     return entries
 
 
+# Listing providers that name no backend kind of their own.
+_LISTING_PROVIDER_KINDS = {"huggingface": "diffusers", "hf": "diffusers", "local": "diffusers"}
+
+
+def _listing_backend_kind(entry: Dict[str, Any]) -> str:
+    """The backend kind a listing entry states: its `backend`, else `raw.backend`, else its provider."""
+    raw = entry.get("raw") if isinstance(entry.get("raw"), dict) else {}
+    for value in (entry.get("backend"), raw.get("backend"), entry.get("provider"), entry.get("owned_by")):
+        name = str(value or "").strip().lower()
+        if name:
+            return _LISTING_PROVIDER_KINDS.get(name) or _normalize_backend_alias(name) or name
+    return ""
+
+
+def _routed_model(kind: str, model_id: str, *, provider: Optional[str] = None) -> str:
+    """The `model` a request sends to run `model_id` on backend `kind`: `<prefix>/<model_id>`.
+
+    The prefix is the one `_effective_backend_kind` routes to `kind`; on the remote lane it is the
+    entry's provider (`openai` or `openai-compatible`). Every discovery entry's `routed_model`,
+    the server defaults' included, is built here.
+    """
+    if kind == "openai_compatible_proxy" and provider in {"openai", "openai-compatible"}:
+        prefix = str(provider)
+    else:
+        prefix = _route_prefix_for_backend_kind(kind) or kind
+    return model_id if model_id.startswith(f"{prefix}/") else f"{prefix}/{model_id}"
+
+
+def _public_listing_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """A model listing entry as this server publishes it: no filesystem path.
+
+    A model the listing names by its local path is named as residency records name it
+    (`_public_model_id`), in `id` and in the routed names built from it; `snapshot_dir` is left out.
+    """
+    out = {k: v for k, v in entry.items() if k != "snapshot_dir"}
+    raw = out.get("raw")
+    if isinstance(raw, dict):
+        out["raw"] = _public_listing_entry(raw)
+    model_id = out.get("id")
+    if not isinstance(model_id, str) or not _looks_like_filesystem_path(model_id):
+        return out
+    public_id = _public_model_id(_listing_backend_kind(entry), model_id)
+    out["id"] = public_id
+    for name in ("model", "routed_model"):
+        value = out.get(name)
+        if isinstance(value, str) and value.endswith(model_id):
+            out[name] = value[: len(value) - len(model_id)] + public_id
+    return out
+
+
 def _merge_vision_provider_model_entries(*groups: Any) -> list[Dict[str, Any]]:
     out: list[Dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -3578,11 +3813,12 @@ def _merge_vision_provider_model_entries(*groups: Any) -> list[Dict[str, Any]]:
         for item in group:
             if not isinstance(item, dict):
                 continue
-            provider = str(item.get("provider") or item.get("owned_by") or "").strip()
-            model = str(item.get("model") or item.get("routed_model") or item.get("id") or "").strip()
-            if not model:
+            item = _public_listing_entry(item)
+            model_id = str(item.get("id") or "").strip()
+            if not model_id:
                 continue
-            key = (provider, model)
+            item["routed_model"] = _routed_model(_listing_backend_kind(item), model_id, provider=item.get("provider"))
+            key = (str(item.get("provider") or item.get("owned_by") or "").strip(), item["routed_model"])
             if key in seen:
                 continue
             seen.add(key)
@@ -3837,9 +4073,84 @@ async def list_vision_provider_models(
     return _vision_filter_provider_payload(payload, provider)
 
 
+def _vision_entry_with_contract_fields(entry: Dict[str, Any], provider_details: Dict[str, Any]) -> Dict[str, Any]:
+    """A catalog entry with what AbstractVision publishes for it: `memory_modes`, `supports_audio`, `audio_fields`.
+
+    `memory_modes` is the model's `parameter_constraints.memory_mode.enum`, else its provider's
+    `memory_modes`; absent when AbstractVision states neither. A model with a soundtrack publishes
+    `parameter_constraints.audio`.
+    """
+    out = dict(entry)
+    constraints = entry.get("parameter_constraints")
+    constraints = constraints if isinstance(constraints, dict) else {}
+    memory = constraints.get("memory_mode")
+    details = provider_details.get(str(entry.get("provider") or ""))
+    if isinstance(memory, dict) and isinstance(memory.get("enum"), list):
+        out["memory_modes"] = list(memory["enum"])
+    elif isinstance(details, dict) and isinstance(details.get("memory_modes"), list):
+        out["memory_modes"] = list(details["memory_modes"])
+    supports_audio = isinstance(constraints.get("audio"), dict)
+    out["supports_audio"] = supports_audio
+    out["audio_fields"] = list(SOUNDTRACK_REQUEST_FIELDS) if supports_audio else []
+    return out
+
+
+_VISION_TASK_MODALITY = {
+    "text_to_image": "image",
+    "image_to_image": "image",
+    "image_upscale": "image",
+    "text_to_video": "video",
+    "image_to_video": "video",
+}
+
+
+def _server_default_entries(task: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    """Per task, the model a request that names none runs on this server, when it runs in process.
+
+    Listed with the display id `default`; a request runs it by naming its `routed_model`
+    (`<provider>/default`) or no model. Its fields are the backend's own answers for its configured
+    model, read without loading it. A configured local path never appears.
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    for name, modality in _VISION_TASK_MODALITY.items():
+        if task and name != task:
+            continue
+        kind = _vision_backend_kind(modality, name)
+        if kind not in {"mlx-gen", "diffusers", "sdcpp"}:
+            continue
+        try:
+            backend = _unpack_resolved_backend(_resolve_backend(None, modality=modality, task=name))[0]
+            capabilities = backend.get_capabilities()
+            if capabilities is None or name not in (capabilities.supported_tasks or ()):
+                continue
+            memory_modes = list(backend.supported_memory_modes(name))
+            accepted = backend.supported_request_options(name)
+        except (HTTPException, AbstractVisionError):
+            # No default runs in process for this task here (not configured, or its engine is missing).
+            continue
+        prefix = _route_prefix_for_backend_kind(kind) or kind
+        audio_fields = [field for field in SOUNDTRACK_REQUEST_FIELDS if field in accepted]
+        out[name] = {
+            "id": "default",
+            "model": "default",
+            "provider": prefix,
+            "routed_model": _routed_model(kind, "default"),
+            "server_default": True,
+            "capabilities": [name],
+            "memory_modes": memory_modes,
+            "supports_audio": bool(audio_fields),
+            "audio_fields": audio_fields,
+        }
+    return out
+
+
 async def _local_vision_model_catalog() -> Dict[str, Any]:
-    """List vision models from the public local cached-vision catalog helper."""
-    payload = dict(_vision_catalog.get_local_vision_cache_catalog())
+    """The local cached-vision catalog as this server publishes it: no filesystem path.
+
+    The cache directories are left out, and each entry is published as `_public_listing_entry`.
+    """
+    payload = {k: v for k, v in _vision_catalog.get_local_vision_cache_catalog().items() if k != "cache_dirs"}
+    payload["models"] = [_public_listing_entry(entry) for entry in payload.get("models") or []]
     payload["active"] = _active_state()
     return payload
 
@@ -3856,6 +4167,14 @@ async def list_cached_vision_models(
         default=None,
         description="Optional provider filter (e.g. openai, openai-compatible, huggingface, mflux, sdcpp).",
         examples=["huggingface"],
+    ),
+    detail: bool = Query(
+        default=False,
+        description=(
+            "Add `memory_peaks` to each model entry: AbstractVision's measured peak memory of the "
+            "package per task and memory mode (`llm.vision.memory_peaks`), as it returns them; an "
+            "empty list for a model it has no measurement of."
+        ),
     ),
     base_url: Optional[str] = Query(
         default=None,
@@ -3916,6 +4235,15 @@ async def list_cached_vision_models(
             if isinstance(p, str) and str(p).strip()
         ] or available_providers
 
+    provider_details = availability.get("details") if isinstance(availability.get("details"), dict) else {}
+    models = [_vision_entry_with_contract_fields(item, provider_details) for item in (models or [])]
+    if detail and core is not None:
+        try:
+            for item in models:
+                item["memory_peaks"] = core.vision.memory_peaks(str(item.get("id") or ""))
+        except CapabilityUnavailableError as e:
+            raise _vision_catalog_error(e) from e
+
     models_by_provider = _vision_models_by_provider(models)
     if available_providers:
         allowed = {p.lower() for p in available_providers}
@@ -3942,6 +4270,12 @@ async def list_cached_vision_models(
             "providers": providers,
             "available_providers": available_providers,
             "models_by_provider": models_by_provider,
+            "memory_modes_by_provider": {
+                str(name): list(info["memory_modes"])
+                for name, info in provider_details.items()
+                if isinstance(info, dict) and isinstance(info.get("memory_modes"), list)
+            },
+            "defaults": _server_default_entries(task),
             "models": list(models or []),
             "local_models": list(out.get("models") or []),
         }
@@ -4043,6 +4377,560 @@ async def list_vision_adapters(
     }
 
 
+# ---------------------------------------------------------------------------
+# Running a generation: one runner, used by the synchronous routes and the jobs
+# ---------------------------------------------------------------------------
+
+# In-process generation runs one request at a time across the server, synchronous routes and jobs
+# alike: local backends share the machine's memory, and a second run would plan its peak against
+# memory the first one holds. A synchronous request waits for its turn (and stops waiting when its
+# client disconnects); a job is refused while one runs. Remote (proxy) requests do not take it.
+_GENERATION_GATE = threading.Lock()
+
+
+@dataclass
+class _VisionRun:
+    """One generation request, resolved: the backend facade, the call, and the seeds of its items."""
+
+    task: str
+    core: Any
+    dependency_missing: Any
+    in_process: bool
+    seeds: List[Optional[int]]
+    args: Tuple[Any, ...]
+    kwargs: Dict[str, Any]
+    cache_key: Optional[Tuple[Any, ...]]
+    backend: Any
+
+
+def _asset_method(run: _VisionRun) -> Callable[..., Any]:
+    vision = run.core.vision
+    return {
+        "text_to_image": vision.generate_image_asset,
+        "image_to_image": vision.edit_image_asset,
+        "image_upscale": vision.upscale_image_asset,
+        "text_to_video": vision.generate_video_asset,
+        "image_to_video": vision.image_to_video_asset,
+    }[run.task]
+
+
+def _new_run(
+    request: Request,
+    *,
+    task: str,
+    modality: str,
+    provider: Any,
+    model: Any,
+    base_url: Any,
+    args: Tuple[Any, ...],
+    kwargs: Dict[str, Any],
+    count: int = 1,
+    seed: Optional[int] = None,
+    seeds: Optional[List[int]] = None,
+) -> _VisionRun:
+    """Resolve a request's backend and plan its items; HTTP errors for what is wrong before any run."""
+    request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
+    provider_api_key = _provider_api_key_from_request(request)
+    if _is_remote_vision_request(request_model, modality, task=task):
+        guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
+    core, dependency_missing, cache_key, backend = _create_vision_generation_core(
+        request_model,
+        modality=modality,
+        task=task,
+        base_url=base_url,
+        api_key=provider_api_key,
+    )
+    if task == "text_to_video" and not core.vision.supports_video_generation:
+        raise HTTPException(status_code=501, detail="The selected vision backend does not expose VideoGenerationRequest.")
+    if task == "image_to_video" and not core.vision.supports_image_to_video:
+        raise HTTPException(status_code=501, detail="The selected vision backend does not expose ImageToVideoRequest.")
+    if task == "image_upscale" and not core.vision.supports_image_upscale:
+        raise HTTPException(status_code=501, detail="The selected vision backend does not expose ImageUpscaleRequest.")
+    kind = _effective_backend_kind(request_model, modality, task)
+    merged = dict(_route_request_defaults(kind, modality, task, request_model))
+    merged.update({key: value for key, value in kwargs.items() if value is not None})
+    try:
+        planned = core.vision.plan_batch_seeds(count=int(count), seed=seed, seeds=seeds)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _VisionRun(
+        task=task,
+        core=core,
+        dependency_missing=dependency_missing,
+        in_process=kind != "openai_compatible_proxy",
+        seeds=planned,
+        args=args,
+        kwargs=merged,
+        cache_key=cache_key,
+        backend=backend,
+    )
+
+
+def _execute(
+    run: _VisionRun,
+    cancel_event: threading.Event,
+    item_hooks: Optional[Callable[[int], Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Run every item of `run` and return the response body; `cancel_event` stops it."""
+    if run.in_process:
+        while not _GENERATION_GATE.acquire(timeout=0.1):
+            if cancel_event.is_set():
+                raise GenerationCancelledError("The request was cancelled before it started.")
+    succeeded = False
+    try:
+        method = _asset_method(run)
+        assets: List[Any] = []
+        for index, seed in enumerate(run.seeds):
+            if cancel_event.is_set():
+                raise GenerationCancelledError("The request was cancelled.")
+            call_kwargs = dict(run.kwargs, seed=seed, cancel_event=cancel_event)
+            if item_hooks is not None:
+                call_kwargs.update(item_hooks(index))
+            assets.append(method(*run.args, **call_kwargs))
+        succeeded = True
+    finally:
+        # Cached (and listed) once it has run, or whenever it holds its model, so a model a failed
+        # or cancelled run left in memory is listed and can be unloaded; a refusal loads nothing.
+        if run.in_process and run.cache_key is not None and (succeeded or run.backend.has_loaded_model()):
+            _keep_backend(run.cache_key, run.backend, task=run.task)
+        if run.in_process:
+            _GENERATION_GATE.release()
+    return _response_body(run.task, assets)
+
+
+async def _run_and_wait(request: Request, run: _VisionRun) -> Dict[str, Any]:
+    """A synchronous route: run in a worker thread; a client that disconnects cancels the run."""
+    cancel_event = threading.Event()
+    worker = asyncio.ensure_future(asyncio.to_thread(_execute, run, cancel_event))
+    while True:
+        done, _pending = await asyncio.wait({worker}, timeout=0.5)
+        if done:
+            break
+        if await request.is_disconnected():
+            cancel_event.set()
+    try:
+        return worker.result()
+    except Exception as e:
+        raise _vision_http_error(e, run.dependency_missing) from e
+
+
+def _start_job(kind: str, run: _VisionRun, *, progress_mode: str) -> Dict[str, Any]:
+    """Start `run` as a job; progress is reported per item, like the synchronous run's result."""
+    item_total = _coerce_int(run.kwargs.get("steps")) if progress_mode != "upscale" else None
+    total_steps = int(item_total) * len(run.seeds) if item_total is not None else None
+    cancel_event = threading.Event()
+    now_s = time.time()
+    with _JOBS_LOCK:
+        _jobs_cleanup_locked(now_s=now_s)
+        if _any_inflight_job_locked() or (run.in_process and _GENERATION_GATE.locked()):
+            raise HTTPException(status_code=409, detail="Another generation is already running; wait for it to finish.")
+        job_id = _new_job_id()
+        _JOBS[job_id] = {
+            "id": job_id,
+            "kind": kind,
+            "state": "queued",
+            "created_at_s": now_s,
+            "updated_at_s": now_s,
+            "progress": {"step": 0, "total_steps": total_steps},
+            _JOB_CANCEL_KEY: cancel_event,
+        }
+
+    def hooks(index: int) -> Dict[str, Any]:
+        return _job_progress_hooks(
+            job_id,
+            index=index,
+            count=len(run.seeds),
+            item_total=item_total,
+            total_steps=total_steps,
+            mode=progress_mode,
+        )
+
+    def runner() -> None:
+        try:
+            _job_update_progress(job_id, step=0, total=total_steps, message="running")
+            with _JOBS_LOCK:
+                job = _JOBS.get(job_id)
+                if job is not None:
+                    job["state"] = "running"
+                    job["updated_at_s"] = time.time()
+            _job_finish(job_id, ok=True, result=_execute(run, cancel_event, hooks))
+        except Exception as e:
+            _job_fail(job_id, e)
+
+    threading.Thread(target=runner, name=f"vision-job-{job_id}", daemon=True).start()
+    return {"job_id": job_id}
+
+
+def _job_progress_hooks(
+    job_id: str,
+    *,
+    index: int,
+    count: int,
+    item_total: Optional[int],
+    total_steps: Optional[int],
+    mode: str,
+) -> Dict[str, Any]:
+    """Progress callbacks for item `index` of a job, after marking the job as waiting for it.
+
+    `mode`: "image" (denoise steps), "video" (steps, else frames), "upscale" (one item, as reported).
+    """
+    if mode == "upscale":
+        _job_update_progress(job_id, step=0, total=None, event=_unreported_progress_event("Waiting for provider response"))
+
+        def upscale_event(raw_event: Any) -> None:
+            _job_update_progress(job_id, step=None, total=None, event=_progress_event_payload(raw_event))
+
+        def upscale_progress(step_i: int, total_i: Optional[int] = None) -> None:
+            _job_update_progress(job_id, step=max(0, int(step_i)), total=total_i)
+
+        return {"on_progress": upscale_event, "progress_callback": upscale_progress}
+
+    offset = int(item_total) * index if item_total is not None else 0
+    _job_update_progress(
+        job_id, step=offset, total=total_steps, event=_unreported_progress_event("Waiting for provider response")
+    )
+
+    def on_event(raw_event: Any) -> None:
+        event = _progress_event_payload(raw_event)
+        raw_step = event.get("step")
+        reported_total = event.get("total_steps")
+        if mode == "video":
+            raw_step = _coerce_int(raw_step)
+            reported_total = _coerce_int(reported_total)
+            if raw_step is None:
+                raw_step = _coerce_int(event.get("frame"))
+                reported_total = _coerce_int(event.get("total_frames"))
+        step, derived_total = _batch_progress_state(
+            item_index=index,
+            batch_count=count,
+            explicit_item_total=item_total,
+            reported_item_total=reported_total,
+            raw_step=raw_step,
+        )
+        _job_update_progress(job_id, step=step, total=total_steps if total_steps is not None else derived_total, event=event)
+
+    def on_step(step_i: int, total_i: Optional[int] = None) -> None:
+        overall, derived_total = _batch_progress_state(
+            item_index=index,
+            batch_count=count,
+            explicit_item_total=item_total,
+            reported_item_total=total_i,
+            raw_step=step_i,
+        )
+        _job_update_progress(job_id, step=overall, total=total_steps if total_steps is not None else derived_total)
+
+    return {"on_progress": on_event, "progress_callback": on_step}
+
+
+def _job_fail(job_id: str, exc: BaseException) -> None:
+    """Finish a job after an exception: `cancelled`, or `failed` with the error's code.
+
+    The codes are the synchronous route's: `capability_not_supported` (422) with the refusal's
+    `field` / `supported`, `invalid_request` (400) for a value the backend rejects as invalid.
+    """
+    if isinstance(exc, GenerationCancelledError):
+        _job_finish(job_id, ok=False, error=str(exc), state="cancelled")
+        return
+    fields: Dict[str, Any] = {}
+    if isinstance(exc, CapabilityNotSupportedError):
+        fields = {
+            "error_code": "capability_not_supported",
+            "error_field": exc.field,
+            "error_supported": list(exc.supported) if exc.supported is not None else None,
+        }
+    elif isinstance(exc, ValueError):
+        fields = {"error_code": "invalid_request"}
+    _job_finish(job_id, ok=False, error=_public_error_message(exc), fields=fields)
+
+
+def capability_error_body(exc: CapabilityNotSupportedError) -> Dict[str, Any]:
+    return {
+        "error": {
+            "message": str(exc),
+            "type": "capability_not_supported",
+            "code": "capability_not_supported",
+            "field": exc.field,
+            "supported": list(exc.supported) if exc.supported is not None else None,
+        }
+    }
+
+
+def _public_error_message(exc: BaseException) -> str:
+    """The message a client sees for `exc`.
+
+    AbstractVision's errors and the request checks (ValueError) carry no filesystem path, so their
+    message is relayed. Any other exception comes from an engine or the server itself and may name
+    a file: the client gets its type, the server log gets the rest.
+    """
+    if isinstance(exc, (AbstractVisionError, ValueError, HTTPException)):
+        return str(exc)
+    logger.error("Vision generation failed", error_type=type(exc).__name__, error=str(exc))
+    return f"The vision backend failed ({type(exc).__name__}); the server log has the details."
+
+
+def _vision_http_error(exc: BaseException, dependency_missing: Any) -> HTTPException:
+    """The HTTP error of an exception raised while a vision request runs."""
+    if isinstance(exc, HTTPException):
+        return exc
+    if isinstance(exc, CapabilityNotSupportedError):
+        return HTTPException(status_code=422, detail=capability_error_body(exc))
+    if isinstance(exc, GenerationCancelledError):
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, dependency_missing):
+        return HTTPException(status_code=501, detail=str(exc))
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=400, detail=str(exc))
+    return HTTPException(status_code=500, detail=_public_error_message(exc))
+
+
+def _asset_bytes(asset: Any, media: str) -> bytes:
+    data = getattr(asset, "data", None)
+    if not isinstance(data, (bytes, bytearray)):
+        noun = "Image" if media == "image" else "Video"
+        raise RuntimeError(f"{noun} backend returned an unexpected type (expected raw bytes).")
+    return bytes(data)
+
+
+def _audio_payload(asset: GeneratedAsset) -> Dict[str, Any]:
+    """The `audio` object of a video: AbstractVision's soundtrack summary, the WAV inline when unmuxed."""
+    summary = asset.audio_summary()
+    if summary is None:
+        return {"present": False}
+    out = dict(summary)
+    wav = out.pop("wav", None)
+    if wav is not None:
+        out["wav"] = {"b64_json": base64.b64encode(bytes(wav)).decode("ascii"), "mime_type": asset.audio.mime_type}
+    return out
+
+
+def _response_body(task: str, assets: List[Any]) -> Dict[str, Any]:
+    """The JSON of a generation; a job's `result` is the same object.
+
+    AbstractVision assets add what the backend recorded: the memory mode the run used
+    (`memory_mode_used`, from the asset's `memory_mode`) and, on a video, its soundtrack (`audio`).
+    """
+    media = "video" if task in {"text_to_video", "image_to_video"} else "image"
+    if not assets:
+        raise RuntimeError(f"{'Image' if media == 'image' else 'Video'} backend returned no {media} outputs.")
+    items: List[Dict[str, Any]] = []
+    for asset in assets:
+        item: Dict[str, Any] = {"b64_json": base64.b64encode(_asset_bytes(asset, media)).decode("ascii")}
+        if media == "video" and isinstance(asset, GeneratedAsset):
+            item["audio"] = _audio_payload(asset)
+        items.append(item)
+    body: Dict[str, Any] = {"created": int(time.time()), "data": items}
+    first = assets[0]
+    if isinstance(first, GeneratedAsset):
+        if media == "video":
+            body["audio"] = items[0]["audio"]
+        if "memory_mode" in first.metadata:
+            body["memory_mode_used"] = first.metadata["memory_mode"]
+    return body
+
+
+def _image_generation_run(request: Request, payload: Dict[str, Any]) -> _VisionRun:
+    prompt = str(payload.get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Missing required field: prompt")
+    response_format = str(payload.get("response_format") or "b64_json").strip().lower()
+    if response_format not in {"b64_json"}:
+        raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
+    n = max(1, min(int(_coerce_int(payload.get("n")) or 1), 10))
+    negative_prompt = payload.get("negative_prompt")
+    request_model = _scoped_request_model_for_request(
+        payload.get("model"), payload.get("provider"), base_url=payload.get("base_url")
+    )
+    width, height, extra = _image_generation_request_parts(payload, request_model=request_model, task="text_to_image")
+    return _new_run(
+        request,
+        task="text_to_image",
+        modality="image",
+        provider=payload.get("provider"),
+        model=payload.get("model"),
+        base_url=payload.get("base_url"),
+        args=(prompt,),
+        kwargs={
+            "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
+            "width": width,
+            "height": height,
+            "steps": _coerce_int(payload.get("steps")),
+            "guidance_scale": _coerce_float(payload.get("guidance_scale")),
+            "lora_adapters": payload.get("lora_adapters") or (),
+            "extra": extra,
+            **{name: payload.get(name) for name in _IMAGE_REQUEST_OPTION_FIELDS},
+        },
+        count=n,
+        seed=_coerce_int(payload.get("seed")),
+        seeds=payload.get("seeds"),
+    )
+
+
+def _video_generation_run(request: Request, payload: Dict[str, Any]) -> _VisionRun:
+    prompt = str(payload.get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Missing required field: prompt")
+    response_format = str(payload.get("response_format") or "b64_json").strip().lower()
+    if response_format not in {"b64_json"}:
+        raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
+    n = max(1, min(int(_coerce_int(payload.get("n")) or 1), 4))
+    negative_prompt = payload.get("negative_prompt")
+    request_model = _scoped_request_model_for_request(
+        payload.get("model"), payload.get("provider"), base_url=payload.get("base_url")
+    )
+    width, height, fps, num_frames, extra = _video_generation_request_parts(
+        payload, request_model=request_model, task="text_to_video"
+    )
+    return _new_run(
+        request,
+        task="text_to_video",
+        modality="video",
+        provider=payload.get("provider"),
+        model=payload.get("model"),
+        base_url=payload.get("base_url"),
+        args=(prompt,),
+        kwargs={
+            "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "num_frames": num_frames,
+            "steps": _coerce_int(payload.get("steps")),
+            "guidance_scale": _coerce_float(payload.get("guidance_scale")),
+            "guidance_2": _coerce_float(payload.get("guidance_2")),
+            "flow_shift": _coerce_float(payload.get("flow_shift")),
+            "lora_adapters": payload.get("lora_adapters") or (),
+            "extra": extra,
+            **{name: payload.get(name) for name in REQUEST_OPTION_FIELDS},
+        },
+        count=n,
+        seed=_coerce_int(payload.get("seed")),
+        seeds=payload.get("seeds"),
+    )
+
+
+async def _edit_request(
+    request: Request,
+    *,
+    prompt: str,
+    image: UploadFile,
+    mask: Optional[UploadFile],
+    reference_images: Optional[list],
+    provider: Optional[str],
+    model: Optional[str],
+    base_url: Optional[str],
+    size: Optional[str],
+    n: Optional[str],
+    seeds: Optional[str],
+    response_format: Optional[str],
+    negative_prompt: Optional[str],
+    seed: Optional[str],
+    steps: Optional[str],
+    guidance_scale: Optional[str],
+    lora_adapters_json: Optional[str],
+    extra_json: Optional[str],
+    options: Dict[str, Any],
+    job: bool,
+) -> Dict[str, Any]:
+    prompt_s = str(prompt or "").strip()
+    if not prompt_s:
+        raise HTTPException(status_code=400, detail="Missing required field: prompt")
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Missing required image bytes")
+    mask_bytes = await mask.read() if mask is not None else None
+    reference_image_bytes: list[bytes] = []
+    for ref in reference_images or []:
+        content = await ref.read()
+        if content:
+            reference_image_bytes.append(bytes(content))
+    extra = _parse_extra_json_form(extra_json)
+    response_format_s = str(response_format or "b64_json").strip().lower()
+    if response_format_s not in {"b64_json"}:
+        raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
+    if size:
+        extra.setdefault("size", str(size).strip())
+    if reference_image_bytes:
+        extra.setdefault("reference_images", reference_image_bytes)
+    count = max(1, min(int(_coerce_int(n) or 1), 10))
+    run = _new_run(
+        request,
+        task="image_to_image",
+        modality="image",
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        args=(prompt_s, bytes(image_bytes)),
+        kwargs={
+            "mask": bytes(mask_bytes) if mask_bytes else None,
+            "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
+            "steps": _coerce_int(steps),
+            "guidance_scale": _coerce_float(guidance_scale),
+            "lora_adapters": _parse_lora_adapters_form(lora_adapters_json) or (),
+            "extra": extra,
+            **options,
+        },
+        count=count,
+        seed=_coerce_int(seed),
+        seeds=_parse_seeds_form(seeds),
+    )
+    if job:
+        return _start_job("images/edits", run, progress_mode="image")
+    return await _run_and_wait(request, run)
+
+
+async def _upscale_request(
+    request: Request,
+    *,
+    image: UploadFile,
+    provider: Optional[str],
+    model: Optional[str],
+    base_url: Optional[str],
+    response_format: Optional[str],
+    scale: Optional[str],
+    resolution: Optional[str],
+    softness: Optional[str],
+    seed: Optional[str],
+    quantize: Optional[str],
+    vae_tiling: Optional[str],
+    extra_json: Optional[str],
+    memory_mode: Optional[str],
+    job: bool,
+) -> Dict[str, Any]:
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Missing required image bytes")
+    response_format_s = str(response_format or "b64_json").strip().lower()
+    if response_format_s not in {"b64_json"}:
+        raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
+    extra = _parse_extra_json_form(extra_json)
+    fields = _parse_upscale_form_fields(
+        scale=scale, resolution=resolution, softness=softness, seed=seed, quantize=quantize, vae_tiling=vae_tiling
+    )
+    route_provider, route_model = _image_upscale_route_defaults(provider=provider, model=model, base_url=base_url)
+    run = _new_run(
+        request,
+        task="image_upscale",
+        modality="image",
+        provider=route_provider,
+        model=route_model,
+        base_url=base_url,
+        args=(bytes(image_bytes),),
+        kwargs={
+            "resolution": fields["resolution"],
+            "scale": fields["scale"],
+            "softness": fields["softness"],
+            "quantize": fields["quantize"],
+            "vae_tiling": fields["vae_tiling"],
+            "extra": extra,
+            "memory_mode": _form_request_options(memory_mode=memory_mode)["memory_mode"],
+        },
+        seed=fields["seed"],
+    )
+    if job:
+        return _start_job("images/upscale", run, progress_mode="upscale")
+    return await _run_and_wait(request, run)
+
+
 async def _images_generations_impl(
     request: Request,
     payload: ImageGenerationBody,
@@ -4059,74 +4947,7 @@ async def _images_generations_impl(
     payload = _model_payload(payload)
     if path_provider:
         payload = _payload_with_path_provider(payload, path_provider)
-    prompt = str(payload.get("prompt") or "").strip()
-    if not prompt:
-        raise HTTPException(status_code=400, detail="Missing required field: prompt")
-
-    response_format = str(payload.get("response_format") or "b64_json").strip().lower()
-    if response_format not in {"b64_json"}:
-        raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
-
-    n = _coerce_int(payload.get("n")) or 1
-    n = max(1, min(int(n), 10))
-
-    negative_prompt = payload.get("negative_prompt")
-    steps = _coerce_int(payload.get("steps"))
-    guidance_scale = _coerce_float(payload.get("guidance_scale"))
-    seed = _coerce_int(payload.get("seed"))
-    seeds = payload.get("seeds")
-    lora_adapters = payload.get("lora_adapters")
-    request_model = _scoped_request_model_for_request(
-        payload.get("model"),
-        payload.get("provider"),
-        base_url=payload.get("base_url"),
-    )
-    width, height, extra = _image_generation_request_parts(payload, request_model=request_model, task="text_to_image")
-    provider_api_key = _provider_api_key_from_request(request)
-    if _is_remote_vision_request(request_model, task="text_to_image"):
-        guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-    core, OptionalDependencyMissingError = _create_vision_generation_core(
-        request_model,
-        task="text_to_image",
-        base_url=payload.get("base_url"),
-        api_key=provider_api_key,
-    )
-
-    try:
-        output_spec = {
-            "modality": "image",
-            "task": "image_generation",
-            "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
-            "width": width,
-            "height": height,
-            "steps": steps,
-            "guidance_scale": guidance_scale,
-            "seed": seed,
-            "count": n,
-            "seeds": seeds,
-            "lora_adapters": lora_adapters,
-            "extra": extra,
-        }
-        if payload.get("provider") is not None:
-            output_spec["provider"] = payload.get("provider")
-        if payload.get("model") is not None:
-            output_spec["model"] = payload.get("model")
-        result = core.generate(
-            prompt,
-            output=output_spec,
-        )
-        image_bytes_list = _generated_image_bytes_list(result)
-    except OptionalDependencyMissingError as e:
-        raise HTTPException(status_code=501, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    data_items = [{"b64_json": base64.b64encode(image_bytes).decode("ascii")} for image_bytes in image_bytes_list]
-
-    return {"created": int(time.time()), "data": data_items}
+    return await _run_and_wait(request, _image_generation_run(request, payload))
 
 
 @router.post("/images/generations")
@@ -4168,79 +4989,7 @@ async def _videos_generations_impl(
     payload = _model_payload(payload)
     if path_provider:
         payload = _payload_with_path_provider(payload, path_provider)
-    prompt = str(payload.get("prompt") or "").strip()
-    if not prompt:
-        raise HTTPException(status_code=400, detail="Missing required field: prompt")
-
-    response_format = str(payload.get("response_format") or "b64_json").strip().lower()
-    if response_format not in {"b64_json"}:
-        raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
-
-    n = _coerce_int(payload.get("n")) or 1
-    n = max(1, min(int(n), 4))
-
-    negative_prompt = payload.get("negative_prompt")
-    steps = _coerce_int(payload.get("steps"))
-    guidance_scale = _coerce_float(payload.get("guidance_scale"))
-    guidance_2 = _coerce_float(payload.get("guidance_2"))
-    flow_shift = _coerce_float(payload.get("flow_shift"))
-    seed = _coerce_int(payload.get("seed"))
-    seeds = payload.get("seeds")
-    lora_adapters = payload.get("lora_adapters")
-    request_model = _scoped_request_model_for_request(
-        payload.get("model"),
-        payload.get("provider"),
-        base_url=payload.get("base_url"),
-    )
-    width, height, fps, num_frames, extra = _video_generation_request_parts(payload, request_model=request_model, task="text_to_video")
-    provider_api_key = _provider_api_key_from_request(request)
-    if _is_remote_vision_request(request_model, "video", task="text_to_video"):
-        guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-    core, OptionalDependencyMissingError = _create_vision_generation_core(
-        request_model,
-        modality="video",
-        task="text_to_video",
-        base_url=payload.get("base_url"),
-        api_key=provider_api_key,
-    )
-
-    try:
-        output_spec = {
-            "modality": "video",
-            "task": "text_to_video",
-            "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
-            "width": width,
-            "height": height,
-            "fps": fps,
-            "num_frames": num_frames,
-            "steps": steps,
-            "guidance_scale": guidance_scale,
-            "guidance_2": guidance_2,
-            "flow_shift": flow_shift,
-            "seed": seed,
-            "count": n,
-            "seeds": seeds,
-            "lora_adapters": lora_adapters,
-            "format": "mp4",
-            "extra": extra,
-        }
-        if payload.get("provider") is not None:
-            output_spec["provider"] = payload.get("provider")
-        if payload.get("model") is not None:
-            output_spec["model"] = payload.get("model")
-        result = core.generate(prompt, output=output_spec)
-        video_bytes_list = _generated_video_bytes_list(result)
-    except OptionalDependencyMissingError as e:
-        raise HTTPException(status_code=501, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    data_items = [{"b64_json": base64.b64encode(video_bytes).decode("ascii")} for video_bytes in video_bytes_list]
-
-    return {"created": int(time.time()), "data": data_items}
+    return await _run_and_wait(request, _video_generation_run(request, payload))
 
 
 @router.post("/videos/generations")
@@ -4265,276 +5014,15 @@ async def provider_videos_generations(
 @router.post("/vision/jobs/images/generations")
 async def jobs_images_generations(request: Request, payload: ImageGenerationBody = Body(...)) -> Dict[str, Any]:
     """Start an async image generation job with progress polling."""
-    payload = _model_payload(payload)
-    prompt = str(payload.get("prompt") or "").strip()
-    if not prompt:
-        raise HTTPException(status_code=400, detail="Missing required field: prompt")
-
-    response_format = str(payload.get("response_format") or "b64_json").strip().lower()
-    if response_format not in {"b64_json"}:
-        raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
-
-    n = _coerce_int(payload.get("n")) or 1
-    n = max(1, min(int(n), 10))
-
-    negative_prompt = payload.get("negative_prompt")
-    steps = _coerce_int(payload.get("steps"))
-    guidance_scale = _coerce_float(payload.get("guidance_scale"))
-    seed = _coerce_int(payload.get("seed"))
-    seeds = payload.get("seeds")
-    lora_adapters = payload.get("lora_adapters")
-    request_model = _scoped_request_model_for_request(
-        payload.get("model"),
-        payload.get("provider"),
-        base_url=payload.get("base_url"),
-    )
-    width, height, extra = _image_generation_request_parts(payload, request_model=request_model, task="text_to_image")
-    provider_api_key = _provider_api_key_from_request(request)
-    if _is_remote_vision_request(request_model, task="text_to_image"):
-        guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-
-    core, OptionalDependencyMissingError = _create_vision_generation_core(
-        request_model,
-        task="text_to_image",
-        base_url=payload.get("base_url"),
-        api_key=provider_api_key,
-    )
-    try:
-        planned_seeds = core.vision.plan_batch_seeds(count=int(n), seed=seed, seeds=seeds)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    total_steps = (int(steps) * int(n)) if steps is not None else None
-
-    now_s = time.time()
-    with _JOBS_LOCK:
-        _jobs_cleanup_locked(now_s=now_s)
-        # Be conservative: only allow one in-flight job to reduce memory pressure.
-        if _any_inflight_job_locked():
-            raise HTTPException(status_code=409, detail="Another generation is already running; wait for it to finish.")
-
-        job_id = _new_job_id()
-        _JOBS[job_id] = {
-            "id": job_id,
-            "kind": "images/generations",
-            "state": "queued",
-            "created_at_s": now_s,
-            "updated_at_s": now_s,
-            "progress": {"step": 0, "total_steps": total_steps},
-        }
-
-    def _runner() -> None:
-        try:
-            _job_update_progress(job_id, step=0, total=total_steps, message="running")
-            with _JOBS_LOCK:
-                job = _JOBS.get(job_id)
-                if job is not None:
-                    job["state"] = "running"
-                    job["updated_at_s"] = time.time()
-
-            data_items = []
-            for i, planned_seed in enumerate(planned_seeds):
-                run_extra = dict(extra or {})
-                offset = int(steps) * i if steps is not None else 0
-
-                def _event_progress(raw_event: Any) -> None:
-                    event = _progress_event_payload(raw_event)
-                    derived_step, derived_total = _batch_progress_state(
-                        item_index=i,
-                        batch_count=len(planned_seeds),
-                        explicit_item_total=steps,
-                        reported_item_total=event.get("total_steps"),
-                        raw_step=event.get("step"),
-                    )
-                    _job_update_progress(
-                        job_id,
-                        step=derived_step,
-                        total=total_steps if total_steps is not None else derived_total,
-                        event=event,
-                    )
-
-                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                    overall, derived_total = _batch_progress_state(
-                        item_index=i,
-                        batch_count=len(planned_seeds),
-                        explicit_item_total=steps,
-                        reported_item_total=total_i,
-                        raw_step=step_i,
-                    )
-                    _job_update_progress(job_id, step=overall, total=total_steps if total_steps is not None else derived_total)
-
-                _job_update_progress(
-                    job_id,
-                    step=offset,
-                    total=total_steps,
-                    event=_unreported_progress_event("Waiting for provider response"),
-                )
-                asset = core.vision.generate_image_asset(
-                    prompt,
-                    negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                    width=width,
-                    height=height,
-                    steps=steps,
-                    guidance_scale=guidance_scale,
-                    seed=planned_seed,
-                    lora_adapters=lora_adapters or (),
-                    extra=run_extra,
-                    on_progress=_event_progress,
-                    progress_callback=_progress,
-                )
-                b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
-                data_items.append({"b64_json": b64})
-
-            _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": data_items})
-        except OptionalDependencyMissingError as e:
-            _job_finish(job_id, ok=False, error=str(e))
-        except Exception as e:
-            _job_finish(job_id, ok=False, error=str(e))
-
-    threading.Thread(target=_runner, name=f"vision-job-{job_id}", daemon=True).start()
-    return {"job_id": job_id}
+    run = _image_generation_run(request, _model_payload(payload))
+    return _start_job("images/generations", run, progress_mode="image")
 
 
 @router.post("/vision/jobs/videos/generations")
 async def jobs_videos_generations(request: Request, payload: VideoGenerationBody = Body(...)) -> Dict[str, Any]:
     """Start an async text-to-video generation job with progress polling."""
-    payload = _model_payload(payload)
-    prompt = str(payload.get("prompt") or "").strip()
-    if not prompt:
-        raise HTTPException(status_code=400, detail="Missing required field: prompt")
-
-    response_format = str(payload.get("response_format") or "b64_json").strip().lower()
-    if response_format not in {"b64_json"}:
-        raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
-
-    n = _coerce_int(payload.get("n")) or 1
-    n = max(1, min(int(n), 4))
-    negative_prompt = payload.get("negative_prompt")
-    steps = _coerce_int(payload.get("steps"))
-    guidance_scale = _coerce_float(payload.get("guidance_scale"))
-    guidance_2 = _coerce_float(payload.get("guidance_2"))
-    flow_shift = _coerce_float(payload.get("flow_shift"))
-    seed = _coerce_int(payload.get("seed"))
-    seeds = payload.get("seeds")
-    lora_adapters = payload.get("lora_adapters")
-    request_model = _scoped_request_model_for_request(
-        payload.get("model"),
-        payload.get("provider"),
-        base_url=payload.get("base_url"),
-    )
-    width, height, fps, num_frames, extra = _video_generation_request_parts(payload, request_model=request_model, task="text_to_video")
-    provider_api_key = _provider_api_key_from_request(request)
-    if _is_remote_vision_request(request_model, "video", task="text_to_video"):
-        guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-
-    core, OptionalDependencyMissingError = _create_vision_generation_core(
-        request_model,
-        modality="video",
-        task="text_to_video",
-        base_url=payload.get("base_url"),
-        api_key=provider_api_key,
-    )
-    if not core.vision.supports_video_generation:
-        raise HTTPException(status_code=501, detail="The selected vision backend does not expose VideoGenerationRequest.")
-    try:
-        planned_seeds = core.vision.plan_batch_seeds(count=int(n), seed=seed, seeds=seeds)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    total_steps = (int(steps) * int(n)) if steps is not None else None
-
-    now_s = time.time()
-    with _JOBS_LOCK:
-        _jobs_cleanup_locked(now_s=now_s)
-        if _any_inflight_job_locked():
-            raise HTTPException(status_code=409, detail="Another generation is already running; wait for it to finish.")
-
-        job_id = _new_job_id()
-        _JOBS[job_id] = {
-            "id": job_id,
-            "kind": "videos/generations",
-            "state": "queued",
-            "created_at_s": now_s,
-            "updated_at_s": now_s,
-            "progress": {"step": 0, "total_steps": total_steps},
-        }
-
-    def _runner() -> None:
-        try:
-            _job_update_progress(job_id, step=0, total=total_steps, message="running")
-            with _JOBS_LOCK:
-                job = _JOBS.get(job_id)
-                if job is not None:
-                    job["state"] = "running"
-                    job["updated_at_s"] = time.time()
-
-            data_items = []
-            per_item_total = int(steps) if steps is not None else None
-            for i, planned_seed in enumerate(planned_seeds):
-                run_extra = dict(extra or {})
-                offset = int(per_item_total) * i if per_item_total is not None else 0
-
-                def _event_progress(raw_event: Any) -> None:
-                    event = _progress_event_payload(raw_event)
-                    derived_step = _coerce_int(event.get("step"))
-                    reported_total = _coerce_int(event.get("total_steps"))
-                    if derived_step is None:
-                        derived_step = _coerce_int(event.get("frame"))
-                        reported_total = _coerce_int(event.get("total_frames"))
-                    overall_step, derived_total = _batch_progress_state(
-                        item_index=i,
-                        batch_count=len(planned_seeds),
-                        explicit_item_total=per_item_total,
-                        reported_item_total=reported_total,
-                        raw_step=derived_step,
-                    )
-                    _job_update_progress(
-                        job_id,
-                        step=overall_step,
-                        total=total_steps if total_steps is not None else derived_total,
-                        event=event,
-                    )
-
-                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                    overall, derived_total = _batch_progress_state(
-                        item_index=i,
-                        batch_count=len(planned_seeds),
-                        explicit_item_total=per_item_total,
-                        reported_item_total=total_i,
-                        raw_step=step_i,
-                    )
-                    _job_update_progress(job_id, step=overall, total=total_steps if total_steps is not None else derived_total)
-
-                _job_update_progress(
-                    job_id,
-                    step=offset,
-                    total=total_steps,
-                    event=_unreported_progress_event("Waiting for provider response"),
-                )
-                asset = core.vision.generate_video_asset(
-                    prompt,
-                    negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                    width=width,
-                    height=height,
-                    fps=fps,
-                    num_frames=num_frames,
-                    steps=steps,
-                    guidance_scale=guidance_scale,
-                    guidance_2=guidance_2,
-                    flow_shift=flow_shift,
-                    seed=planned_seed,
-                    lora_adapters=lora_adapters or (),
-                    extra=run_extra,
-                    on_progress=_event_progress,
-                    progress_callback=_progress,
-                )
-                data_items.append({"b64_json": base64.b64encode(bytes(asset.data)).decode("ascii")})
-            _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": data_items})
-        except OptionalDependencyMissingError as e:
-            _job_finish(job_id, ok=False, error=str(e))
-        except Exception as e:
-            _job_finish(job_id, ok=False, error=str(e))
-
-    threading.Thread(target=_runner, name=f"vision-job-{job_id}", daemon=True).start()
-    return {"job_id": job_id}
+    run = _video_generation_run(request, _model_payload(payload))
+    return _start_job("videos/generations", run, progress_mode="video")
 
 
 @router.get("/vision/jobs/{job_id}")
@@ -4553,16 +5041,38 @@ async def get_job(
         job = _JOBS.get(jid)
         if job is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        data = dict(job)
+        data = {key: value for key, value in job.items() if key != _JOB_CANCEL_KEY}
         state = str(data.get("state") or "")
         data["progress"] = _progress_for_job_response(data.get("progress"), state=state)
-        if consume and state in {"succeeded", "failed"}:
+        if consume and state in _JOB_TERMINAL_STATES:
             _JOBS.pop(jid, None)
 
     # Avoid leaking large results on in-flight polls.
     if str(data.get("state") or "") not in {"succeeded"}:
         data.pop("result", None)
     return data
+
+
+@router.post("/vision/jobs/{job_id}/cancel", responses={404: {"description": "Job not found."}})
+async def cancel_job(
+    job_id: str = FastAPIPath(..., description="Vision job id returned by `/v1/vision/jobs/images/*` or `/v1/vision/jobs/videos/*`."),
+) -> Dict[str, Any]:
+    """Cancel a queued or running job.
+
+    The job's cancel event is its backend request's `cancel_event`: a backend that checks it between
+    steps stops at the next one, and a batch does not start its next item. The job then reports
+    `state: "cancelled"`. A finished job is returned unchanged.
+    """
+    jid = str(job_id or "").strip()
+    with _JOBS_LOCK:
+        job = _JOBS.get(jid)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if str(job.get("state") or "") not in _JOB_TERMINAL_STATES:
+            job[_JOB_CANCEL_KEY].set()
+            job["cancel_requested"] = True
+            job["updated_at_s"] = time.time()
+        return {"id": jid, "state": str(job.get("state") or ""), "cancel_requested": bool(job.get("cancel_requested"))}
 
 
 if _HAS_MULTIPART:
@@ -4607,150 +5117,32 @@ if _HAS_MULTIPART:
         guidance_scale: Optional[str] = Form(None, description="Local/backend-specific classifier-free guidance scale. Use `extra_json` for custom OpenAI-compatible upstreams that support this field.", examples=["7.5"]),
         lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters.", examples=['{"quality":"low","background":"auto","output_format":"png"}']),
+        memory_mode: MemoryModeForm = None,
+        quantize: QuantizeForm = None,
     ) -> Dict[str, Any]:
         """Start an async image edit job with progress polling."""
-        prompt_s = str(prompt or "").strip()
-        if not prompt_s:
-            raise HTTPException(status_code=400, detail="Missing required field: prompt")
-
-        image_bytes = await image.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Missing required image bytes")
-
-        mask_bytes = await mask.read() if mask is not None else None
-        reference_image_bytes: list[bytes] = []
-        for ref in reference_images or []:
-            content = await ref.read()
-            if content:
-                reference_image_bytes.append(bytes(content))
-
-        extra: Dict[str, Any] = {}
-        if extra_json:
-            try:
-                parsed = json.loads(str(extra_json))
-            except Exception as e:
-                raise HTTPException(status_code=400, detail="extra_json must be a JSON object string") from e
-            if parsed is None:
-                extra = {}
-            elif isinstance(parsed, dict):
-                extra = dict(parsed)
-            else:
-                raise HTTPException(status_code=400, detail="extra_json must be a JSON object string")
-
-        seed_i = _coerce_int(seed)
-        steps_i = _coerce_int(steps)
-        guidance_f = _coerce_float(guidance_scale)
-        count = _coerce_int(n) or 1
-        count = max(1, min(int(count), 10))
-        parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
-        response_format_s = str(response_format or "b64_json").strip().lower()
-        if response_format_s not in {"b64_json"}:
-            raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
-        if size:
-            extra.setdefault("size", str(size).strip())
-        if reference_image_bytes:
-            extra.setdefault("reference_images", reference_image_bytes)
-        request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
-        provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model, task="image_to_image"):
-            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-        core, OptionalDependencyMissingError = _create_vision_generation_core(
-            request_model,
-            task="image_to_image",
+        return await _edit_request(
+            request,
+            prompt=prompt,
+            image=image,
+            mask=mask,
+            reference_images=reference_images,
+            provider=provider,
+            model=model,
             base_url=base_url,
-            api_key=provider_api_key,
+            size=size,
+            n=n,
+            seeds=seeds,
+            response_format=response_format,
+            negative_prompt=negative_prompt,
+            seed=seed,
+            steps=steps,
+            guidance_scale=guidance_scale,
+            lora_adapters_json=lora_adapters_json,
+            extra_json=extra_json,
+            options=_form_request_options(memory_mode=memory_mode, quantize=quantize),
+            job=True,
         )
-        try:
-            planned_seeds = core.vision.plan_batch_seeds(count=count, seed=seed_i, seeds=_parse_seeds_form(seeds))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        total_steps = (int(steps_i) * int(count)) if steps_i is not None else None
-
-        now_s = time.time()
-        with _JOBS_LOCK:
-            _jobs_cleanup_locked(now_s=now_s)
-            if _any_inflight_job_locked():
-                raise HTTPException(status_code=409, detail="Another generation is already running; wait for it to finish.")
-
-            job_id = _new_job_id()
-            _JOBS[job_id] = {
-                "id": job_id,
-                "kind": "images/edits",
-                "state": "queued",
-                "created_at_s": now_s,
-                "updated_at_s": now_s,
-                "progress": {"step": 0, "total_steps": total_steps},
-            }
-
-        def _runner() -> None:
-            try:
-                _job_update_progress(job_id, step=0, total=total_steps, message="running")
-                with _JOBS_LOCK:
-                    job = _JOBS.get(job_id)
-                    if job is not None:
-                        job["state"] = "running"
-                        job["updated_at_s"] = time.time()
-
-                data_items = []
-                for index, planned_seed in enumerate(planned_seeds):
-                    run_extra = dict(extra or {})
-                    offset = int(steps_i) * index if steps_i is not None else 0
-
-                    def _event_progress(raw_event: Any) -> None:
-                        event = _progress_event_payload(raw_event)
-                        derived_step, derived_total = _batch_progress_state(
-                            item_index=index,
-                            batch_count=len(planned_seeds),
-                            explicit_item_total=steps_i,
-                            reported_item_total=event.get("total_steps"),
-                            raw_step=event.get("step"),
-                        )
-                        _job_update_progress(
-                            job_id,
-                            step=derived_step,
-                            total=total_steps if total_steps is not None else derived_total,
-                            event=event,
-                        )
-
-                    def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                        overall, derived_total = _batch_progress_state(
-                            item_index=index,
-                            batch_count=len(planned_seeds),
-                            explicit_item_total=steps_i,
-                            reported_item_total=total_i,
-                            raw_step=step_i,
-                        )
-                        _job_update_progress(job_id, step=overall, total=total_steps if total_steps is not None else derived_total)
-
-                    _job_update_progress(
-                        job_id,
-                        step=offset,
-                        total=total_steps,
-                        event=_unreported_progress_event("Waiting for provider response"),
-                    )
-                    asset = core.vision.edit_image_asset(
-                        prompt_s,
-                        bytes(image_bytes),
-                        mask=bytes(mask_bytes) if mask_bytes else None,
-                        negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                        seed=planned_seed,
-                        steps=steps_i,
-                        guidance_scale=guidance_f,
-                        lora_adapters=parsed_lora_adapters or (),
-                        extra=run_extra,
-                        on_progress=_event_progress,
-                        progress_callback=_progress,
-                    )
-                    b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
-                    data_items.append({"b64_json": b64})
-                _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": data_items})
-            except OptionalDependencyMissingError as e:
-                _job_finish(job_id, ok=False, error=str(e))
-            except Exception as e:
-                _job_finish(job_id, ok=False, error=str(e))
-
-        threading.Thread(target=_runner, name=f"vision-job-{job_id}", daemon=True).start()
-        return {"job_id": job_id}
 
     @router.post("/images/edits")
     async def images_edits(
@@ -4792,109 +5184,32 @@ if _HAS_MULTIPART:
         guidance_scale: Optional[str] = Form(None, description="Local/backend-specific classifier-free guidance scale. Use `extra_json` for custom OpenAI-compatible upstreams that support this field.", examples=["7.5"]),
         lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters.", examples=['{"quality":"low","background":"auto","output_format":"png"}']),
+        memory_mode: MemoryModeForm = None,
+        quantize: QuantizeForm = None,
     ) -> Dict[str, Any]:
-        """
-        OpenAI-compatible image edit endpoint: POST /v1/images/edits (multipart/form-data)
-
-        Implemented as a thin proxy over AbstractVision's OpenAI-compatible backend.
-        """
-        prompt_s = str(prompt or "").strip()
-        if not prompt_s:
-            raise HTTPException(status_code=400, detail="Missing required field: prompt")
-
-        image_bytes = await image.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Missing required image bytes")
-
-        mask_bytes = await mask.read() if mask is not None else None
-        reference_image_bytes: list[bytes] = []
-        for ref in reference_images or []:
-            content = await ref.read()
-            if content:
-                reference_image_bytes.append(bytes(content))
-
-        extra: Dict[str, Any] = {}
-        if extra_json:
-            try:
-                parsed = json.loads(str(extra_json))
-            except Exception as e:
-                raise HTTPException(status_code=400, detail="extra_json must be a JSON object string") from e
-            if parsed is None:
-                extra = {}
-            elif isinstance(parsed, dict):
-                extra = dict(parsed)
-            else:
-                raise HTTPException(status_code=400, detail="extra_json must be a JSON object string")
-
-        response_format_s = str(response_format or "b64_json").strip().lower()
-        if response_format_s not in {"b64_json"}:
-            raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
-        if size:
-            extra.setdefault("size", str(size).strip())
-        if reference_image_bytes:
-            extra.setdefault("reference_images", reference_image_bytes)
-        count = _coerce_int(n) or 1
-        count = max(1, min(int(count), 10))
-        parsed_seeds = _parse_seeds_form(seeds)
-        parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
-        request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
-        provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model, task="image_to_image"):
-            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-        core, OptionalDependencyMissingError = _create_vision_generation_core(
-            request_model,
-            task="image_to_image",
+        """OpenAI-compatible image edit endpoint: POST /v1/images/edits (multipart/form-data)."""
+        return await _edit_request(
+            request,
+            prompt=prompt,
+            image=image,
+            mask=mask,
+            reference_images=reference_images,
+            provider=provider,
+            model=model,
             base_url=base_url,
-            api_key=provider_api_key,
+            size=size,
+            n=n,
+            seeds=seeds,
+            response_format=response_format,
+            negative_prompt=negative_prompt,
+            seed=seed,
+            steps=steps,
+            guidance_scale=guidance_scale,
+            lora_adapters_json=lora_adapters_json,
+            extra_json=extra_json,
+            options=_form_request_options(memory_mode=memory_mode, quantize=quantize),
+            job=False,
         )
-
-        try:
-            media = [
-                {
-                    "type": "image",
-                    "content": bytes(image_bytes),
-                    "role": "source",
-                }
-            ]
-            if mask_bytes:
-                media.append(
-                    {
-                        "type": "image",
-                        "content": bytes(mask_bytes),
-                        "role": "mask",
-                    }
-                )
-            result = core.generate(
-                prompt_s,
-                media=media,
-                output={
-                    "modality": "image",
-                    "task": "image_edit",
-                    "provider": provider,
-                    "model": model,
-                    "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
-                    "seed": _coerce_int(seed),
-                    "count": count,
-                    "seeds": parsed_seeds,
-                    "steps": _coerce_int(steps),
-                    "guidance_scale": _coerce_float(guidance_scale),
-                    "lora_adapters": parsed_lora_adapters,
-                    "extra": extra,
-                },
-            )
-            image_bytes_out = _generated_image_bytes_list(result)
-        except OptionalDependencyMissingError as e:
-            raise HTTPException(status_code=501, detail=str(e)) from e
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e)) from e
-        return {
-            "created": int(time.time()),
-            "data": [{"b64_json": base64.b64encode(item).decode("ascii")} for item in image_bytes_out],
-        }
 
     @provider_router.post("/{provider}/v1/images/edits")
     async def provider_images_edits(
@@ -4934,9 +5249,11 @@ if _HAS_MULTIPART:
         guidance_scale: Optional[str] = Form(None, description="Local/backend-specific classifier-free guidance scale. Use `extra_json` for custom OpenAI-compatible upstreams that support this field.", examples=["7.5"]),
         lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters.", examples=['{"quality":"low","background":"auto","output_format":"png"}']),
+        memory_mode: MemoryModeForm = None,
+        quantize: QuantizeForm = None,
     ) -> Dict[str, Any]:
-        return await images_edits(
-            request=request,
+        return await _edit_request(
+            request,
             prompt=prompt,
             image=image,
             mask=mask,
@@ -4954,6 +5271,8 @@ if _HAS_MULTIPART:
             guidance_scale=guidance_scale,
             lora_adapters_json=lora_adapters_json,
             extra_json=extra_json,
+            options=_form_request_options(memory_mode=memory_mode, quantize=quantize),
+            job=False,
         )
 
     @router.post("/images/upscale")
@@ -4968,75 +5287,28 @@ if _HAS_MULTIPART:
         resolution: Optional[str] = Form(None, description="SeedVR2 target shortest edge in pixels or scale factor such as `2x`.", examples=["2x"]),
         softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.25"]),
         seed: Optional[str] = Form(None, description="Deterministic seed.", examples=["1234"]),
-        quantize: Optional[str] = Form(None, description="Runtime quantization for official/source SeedVR2 loading: 3, 4, 5, 6, or 8. Canonical prepared q8/q4 packages do not require this field.", examples=["8"]),
+        quantize: Optional[str] = Form(None, description="Load-time quantization of a source SeedVR2 snapshot, in bits (3, 4, 5, 6 or 8); `none`, `0`, `false`, `off`, `no` or an empty value load it unquantized. Passed to the backend as sent; the prepared q8/q4 packages need none.", examples=["8"]),
         vae_tiling: Optional[str] = Form(None, description="Force tiled VAE encode/decode; leave unset for the MLX-Gen SeedVR2 runtime policy.", examples=["true"]),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific parameters."),
+        memory_mode: MemoryModeForm = None,
     ) -> Dict[str, Any]:
-        image_bytes = await image.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Missing required image bytes")
-        response_format_s = str(response_format or "b64_json").strip().lower()
-        if response_format_s not in {"b64_json"}:
-            raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
-        extra = _parse_extra_json_form(extra_json)
-        upscale_fields = _parse_upscale_form_fields(
+        return await _upscale_request(
+            request,
+            image=image,
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            response_format=response_format,
             scale=scale,
             resolution=resolution,
             softness=softness,
             seed=seed,
             quantize=quantize,
             vae_tiling=vae_tiling,
+            extra_json=extra_json,
+            memory_mode=memory_mode,
+            job=False,
         )
-        route_provider, route_model = _image_upscale_route_defaults(
-            provider=provider,
-            model=model,
-            base_url=base_url,
-        )
-        request_model = _scoped_request_model_for_request(route_model, route_provider, base_url=base_url)
-        provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model, task="image_upscale"):
-            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-        core, OptionalDependencyMissingError = _create_vision_generation_core(
-            request_model,
-            task="image_upscale",
-            base_url=base_url,
-            api_key=provider_api_key,
-        )
-        try:
-            result = core.generate(
-                "",
-                media=[
-                    {
-                        "type": "image",
-                        "content": bytes(image_bytes),
-                        "role": "source",
-                    }
-                ],
-                output={
-                    "modality": "image",
-                    "task": "image_upscale",
-                    "provider": route_provider,
-                    "model": route_model,
-                    "scale": upscale_fields["scale"],
-                    "resolution": upscale_fields["resolution"],
-                    "softness": upscale_fields["softness"],
-                    "seed": upscale_fields["seed"],
-                    "quantize": upscale_fields["quantize"],
-                    "vae_tiling": upscale_fields["vae_tiling"],
-                    "extra": extra,
-                },
-            )
-            image_bytes_out = _first_generated_image_bytes(result)
-        except OptionalDependencyMissingError as e:
-            raise HTTPException(status_code=501, detail=str(e)) from e
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e)) from e
-        b64 = base64.b64encode(image_bytes_out).decode("ascii")
-        return {"created": int(time.time()), "data": [{"b64_json": b64}]}
 
     @provider_router.post("/{provider}/v1/images/upscale")
     async def provider_images_upscale(
@@ -5050,12 +5322,13 @@ if _HAS_MULTIPART:
         resolution: Optional[str] = Form(None, description="SeedVR2 target shortest edge in pixels or scale factor such as `2x`.", examples=["2x"]),
         softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.25"]),
         seed: Optional[str] = Form(None, description="Deterministic seed.", examples=["1234"]),
-        quantize: Optional[str] = Form(None, description="Runtime quantization for official/source SeedVR2 loading: 3, 4, 5, 6, or 8. Canonical prepared q8/q4 packages do not require this field.", examples=["8"]),
+        quantize: Optional[str] = Form(None, description="Load-time quantization of a source SeedVR2 snapshot, in bits (3, 4, 5, 6 or 8); `none`, `0`, `false`, `off`, `no` or an empty value load it unquantized. Passed to the backend as sent; the prepared q8/q4 packages need none.", examples=["8"]),
         vae_tiling: Optional[str] = Form(None, description="Force tiled VAE encode/decode; leave unset for the MLX-Gen SeedVR2 runtime policy.", examples=["true"]),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific parameters."),
+        memory_mode: MemoryModeForm = None,
     ) -> Dict[str, Any]:
-        return await images_upscale(
-            request=request,
+        return await _upscale_request(
+            request,
             image=image,
             provider=provider,
             model=model,
@@ -5068,6 +5341,8 @@ if _HAS_MULTIPART:
             quantize=quantize,
             vae_tiling=vae_tiling,
             extra_json=extra_json,
+            memory_mode=memory_mode,
+            job=False,
         )
 
     @router.post("/vision/jobs/images/upscale")
@@ -5081,104 +5356,30 @@ if _HAS_MULTIPART:
         resolution: Optional[str] = Form(None, description="SeedVR2 target shortest edge in pixels or scale factor such as `2x`.", examples=["2x"]),
         softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.25"]),
         seed: Optional[str] = Form(None, description="Deterministic seed.", examples=["1234"]),
-        quantize: Optional[str] = Form(None, description="Runtime quantization for official/source SeedVR2 loading: 3, 4, 5, 6, or 8. Canonical prepared q8/q4 packages do not require this field.", examples=["8"]),
+        quantize: Optional[str] = Form(None, description="Load-time quantization of a source SeedVR2 snapshot, in bits (3, 4, 5, 6 or 8); `none`, `0`, `false`, `off`, `no` or an empty value load it unquantized. Passed to the backend as sent; the prepared q8/q4 packages need none.", examples=["8"]),
         vae_tiling: Optional[str] = Form(None, description="Force tiled VAE encode/decode; leave unset for the MLX-Gen SeedVR2 runtime policy.", examples=["true"]),
         response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"]),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific parameters."),
+        memory_mode: MemoryModeForm = None,
     ) -> Dict[str, Any]:
-        image_bytes = await image.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Missing required image bytes")
-        response_format_s = str(response_format or "b64_json").strip().lower()
-        if response_format_s not in {"b64_json"}:
-            raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
-        extra = _parse_extra_json_form(extra_json)
-        upscale_fields = _parse_upscale_form_fields(
+        """Start an async image upscale job with progress polling."""
+        return await _upscale_request(
+            request,
+            image=image,
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            response_format=response_format,
             scale=scale,
             resolution=resolution,
             softness=softness,
             seed=seed,
             quantize=quantize,
             vae_tiling=vae_tiling,
+            extra_json=extra_json,
+            memory_mode=memory_mode,
+            job=True,
         )
-        route_provider, route_model = _image_upscale_route_defaults(
-            provider=provider,
-            model=model,
-            base_url=base_url,
-        )
-        request_model = _scoped_request_model_for_request(route_model, route_provider, base_url=base_url)
-        provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model, task="image_upscale"):
-            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-        core, OptionalDependencyMissingError = _create_vision_generation_core(
-            request_model,
-            task="image_upscale",
-            base_url=base_url,
-            api_key=provider_api_key,
-        )
-        if not core.vision.supports_image_upscale:
-            raise HTTPException(status_code=501, detail="The selected vision backend does not expose ImageUpscaleRequest.")
-
-        now_s = time.time()
-        with _JOBS_LOCK:
-            _jobs_cleanup_locked(now_s=now_s)
-            if _any_inflight_job_locked():
-                raise HTTPException(status_code=409, detail="Another generation is already running; wait for it to finish.")
-            job_id = _new_job_id()
-            _JOBS[job_id] = {
-                "id": job_id,
-                "kind": "images/upscale",
-                "state": "queued",
-                "created_at_s": now_s,
-                "updated_at_s": now_s,
-                "progress": {"step": 0, "total_steps": None},
-            }
-
-        def _runner() -> None:
-            try:
-                _job_update_progress(job_id, step=0, total=None, message="running")
-                with _JOBS_LOCK:
-                    job = _JOBS.get(job_id)
-                    if job is not None:
-                        job["state"] = "running"
-                        job["updated_at_s"] = time.time()
-
-                run_extra = dict(extra or {})
-
-                def _event_progress(raw_event: Any) -> None:
-                    event = _progress_event_payload(raw_event)
-                    _job_update_progress(job_id, step=None, total=None, event=event)
-
-                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                    _job_update_progress(job_id, step=max(0, int(step_i)), total=total_i)
-
-                _job_update_progress(
-                    job_id,
-                    step=0,
-                    total=None,
-                    event=_unreported_progress_event("Waiting for provider response"),
-                )
-                asset = core.vision.upscale_image_asset(
-                    bytes(image_bytes),
-                    resolution=upscale_fields["resolution"],
-                    scale=upscale_fields["scale"],
-                    seed=upscale_fields["seed"],
-                    softness=upscale_fields["softness"],
-                    quantize=upscale_fields["quantize"],
-                    vae_tiling=upscale_fields["vae_tiling"],
-                    extra=run_extra,
-                    on_progress=_event_progress,
-                    progress_callback=_progress,
-                )
-                b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
-                _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": [{"b64_json": b64}]})
-            except OptionalDependencyMissingError as e:
-                _job_finish(job_id, ok=False, error=str(e))
-            except Exception as e:
-                _job_finish(job_id, ok=False, error=str(e))
-
-        threading.Thread(target=_runner, name=f"vision-job-{job_id}", daemon=True).start()
-        return {"job_id": job_id}
 
     @router.post("/vision/jobs/videos/edits")
     @router.post("/vision/jobs/videos/from-image", include_in_schema=False)
@@ -5207,161 +5408,49 @@ if _HAS_MULTIPART:
         max_sequence_length: Optional[str] = Form(None, description="Optional backend-specific prompt token length cap."),
         lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
+        memory_mode: MemoryModeForm = None,
+        quantize: QuantizeForm = None,
+        soundscape: SoundscapeForm = None,
+        music: MusicForm = None,
+        generate_audio: GenerateAudioForm = None,
+        audio_shift: AudioShiftForm = None,
     ) -> Dict[str, Any]:
         """Start an async image-to-video generation job with progress polling."""
-        image_bytes = await image.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Missing required image bytes")
-
-        response_format_s = str(response_format or "b64_json").strip().lower()
-        if response_format_s not in {"b64_json"}:
-            raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
-
-        payload = {
-            "prompt": prompt,
-            "provider": provider,
-            "model": model,
-            "base_url": base_url,
-            "width": _coerce_int(width),
-            "height": _coerce_int(height),
-            "size": size,
-            "fps": _coerce_int(fps),
-            "num_frames": _coerce_int(num_frames) or _coerce_int(frames),
-            "negative_prompt": negative_prompt,
-            "seed": _coerce_int(seed),
-            "steps": _coerce_int(steps),
-            "guidance_scale": _coerce_float(guidance_scale),
-            "guidance_2": _coerce_float(guidance_2),
-            "flow_shift": _coerce_float(flow_shift),
-            "max_sequence_length": _coerce_int(max_sequence_length),
-            "extra": _parse_extra_json_form(extra_json),
-        }
-        count = _coerce_int(n) or 1
-        count = max(1, min(int(count), 4))
-        parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
-        request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
-        width_i, height_i, fps_i, num_frames_i, extra = _video_generation_request_parts(payload, request_model=request_model, task="image_to_video")
-        provider_api_key = _provider_api_key_from_request(request)
-        # modality MUST be "video" here (this is the /videos/* lane): backend
-        # resolution previously defaulted to the image route (the P1
-        # cross-modality bleed the t2v lanes already fixed).
-        if _is_remote_vision_request(request_model, "video", task="image_to_video"):
-            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-        core, OptionalDependencyMissingError = _create_vision_generation_core(
-            request_model,
-            modality="video",
-            task="image_to_video",
+        return await _videos_edits_impl(
+            request,
+            prompt=prompt,
+            image=image,
+            provider=provider,
+            model=model,
             base_url=base_url,
-            api_key=provider_api_key,
+            n=n,
+            seeds=seeds,
+            width=width,
+            height=height,
+            size=size,
+            fps=fps,
+            num_frames=num_frames,
+            frames=frames,
+            response_format=response_format,
+            negative_prompt=negative_prompt,
+            seed=seed,
+            steps=steps,
+            guidance_scale=guidance_scale,
+            guidance_2=guidance_2,
+            flow_shift=flow_shift,
+            max_sequence_length=max_sequence_length,
+            lora_adapters_json=lora_adapters_json,
+            extra_json=extra_json,
+            options=_form_request_options(
+                memory_mode=memory_mode,
+                quantize=quantize,
+                soundscape=soundscape,
+                music=music,
+                generate_audio=generate_audio,
+                audio_shift=audio_shift,
+            ),
+            job=True,
         )
-        if not core.vision.supports_image_to_video:
-            raise HTTPException(status_code=501, detail="The selected vision backend does not expose ImageToVideoRequest.")
-        try:
-            planned_seeds = core.vision.plan_batch_seeds(
-                count=count,
-                seed=_coerce_int(seed),
-                seeds=_parse_seeds_form(seeds),
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-
-        steps_i = _coerce_int(steps)
-        per_item_total = steps_i
-        total_steps = (int(per_item_total) * int(count)) if per_item_total is not None else None
-        now_s = time.time()
-        with _JOBS_LOCK:
-            _jobs_cleanup_locked(now_s=now_s)
-            if _any_inflight_job_locked():
-                raise HTTPException(status_code=409, detail="Another generation is already running; wait for it to finish.")
-
-            job_id = _new_job_id()
-            _JOBS[job_id] = {
-                "id": job_id,
-                "kind": "videos/edits",
-                "state": "queued",
-                "created_at_s": now_s,
-                "updated_at_s": now_s,
-                "progress": {"step": 0, "total_steps": total_steps},
-            }
-
-        def _runner() -> None:
-            try:
-                _job_update_progress(job_id, step=0, total=total_steps, message="running")
-                with _JOBS_LOCK:
-                    job = _JOBS.get(job_id)
-                    if job is not None:
-                        job["state"] = "running"
-                        job["updated_at_s"] = time.time()
-                data_items = []
-                for index, planned_seed in enumerate(planned_seeds):
-                    run_extra = dict(extra or {})
-                    offset = int(per_item_total) * index if per_item_total is not None else 0
-
-                    def _event_progress(raw_event: Any) -> None:
-                        event = _progress_event_payload(raw_event)
-                        derived_step = _coerce_int(event.get("step"))
-                        reported_total = _coerce_int(event.get("total_steps"))
-                        if derived_step is None:
-                            derived_step = _coerce_int(event.get("frame"))
-                            reported_total = _coerce_int(event.get("total_frames"))
-                        overall_step, derived_total = _batch_progress_state(
-                            item_index=index,
-                            batch_count=len(planned_seeds),
-                            explicit_item_total=per_item_total,
-                            reported_item_total=reported_total,
-                            raw_step=derived_step,
-                        )
-                        _job_update_progress(
-                            job_id,
-                            step=overall_step,
-                            total=total_steps if total_steps is not None else derived_total,
-                            event=event,
-                        )
-
-                    def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                        overall, derived_total = _batch_progress_state(
-                            item_index=index,
-                            batch_count=len(planned_seeds),
-                            explicit_item_total=per_item_total,
-                            reported_item_total=total_i,
-                            raw_step=step_i,
-                        )
-                        _job_update_progress(job_id, step=overall, total=total_steps if total_steps is not None else derived_total)
-
-                    _job_update_progress(
-                        job_id,
-                        step=offset,
-                        total=total_steps,
-                        event=_unreported_progress_event("Waiting for provider response"),
-                    )
-                    asset = core.vision.image_to_video_asset(
-                        bytes(image_bytes),
-                        prompt=str(prompt or ""),
-                        negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                        width=width_i,
-                        height=height_i,
-                        fps=fps_i,
-                        num_frames=num_frames_i,
-                        seed=planned_seed,
-                        steps=steps_i,
-                        guidance_scale=_coerce_float(guidance_scale),
-                        guidance_2=_coerce_float(guidance_2),
-                        flow_shift=_coerce_float(flow_shift),
-                        lora_adapters=parsed_lora_adapters or (),
-                        extra=run_extra,
-                        on_progress=_event_progress,
-                        progress_callback=_progress,
-                    )
-                    b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
-                    data_items.append({"b64_json": b64})
-                _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": data_items})
-            except OptionalDependencyMissingError as e:
-                _job_finish(job_id, ok=False, error=str(e))
-            except Exception as e:
-                _job_finish(job_id, ok=False, error=str(e))
-
-        threading.Thread(target=_runner, name=f"vision-job-{job_id}", daemon=True).start()
-        return {"job_id": job_id}
 
     async def _videos_edits_impl(
         request: Request,
@@ -5389,6 +5478,8 @@ if _HAS_MULTIPART:
         max_sequence_length: Optional[str],
         lora_adapters_json: Optional[str],
         extra_json: Optional[str],
+        options: Dict[str, Any],
+        job: bool,
     ) -> Dict[str, Any]:
         image_bytes = await image.read()
         if not image_bytes:
@@ -5419,63 +5510,40 @@ if _HAS_MULTIPART:
         }
         count = _coerce_int(n) or 1
         count = max(1, min(int(count), 4))
-        parsed_seeds = _parse_seeds_form(seeds)
-        parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
-        width_i, height_i, fps_i, num_frames_i, extra = _video_generation_request_parts(payload, request_model=request_model, task="image_to_video")
-        provider_api_key = _provider_api_key_from_request(request)
-        # modality MUST be "video" here (this is the /videos/* lane): backend
-        # resolution previously defaulted to the image route (the P1
-        # cross-modality bleed the t2v lanes already fixed).
-        if _is_remote_vision_request(request_model, "video", task="image_to_video"):
-            guard_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key), surface="vision")
-        core, OptionalDependencyMissingError = _create_vision_generation_core(
-            request_model,
-            modality="video",
-            task="image_to_video",
-            base_url=base_url,
-            api_key=provider_api_key,
+        width_i, height_i, fps_i, num_frames_i, extra = _video_generation_request_parts(
+            payload, request_model=request_model, task="image_to_video"
         )
-
-        try:
-            result = core.generate(
-                str(prompt or ""),
-                media=[{"type": "image", "content": bytes(image_bytes), "role": "source"}],
-                output={
-                    "modality": "video",
-                    "task": "image_to_video",
-                    "provider": provider,
-                    "model": model,
-                    "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
-                    "width": width_i,
-                    "height": height_i,
-                    "fps": fps_i,
-                    "num_frames": num_frames_i,
-                    "seed": _coerce_int(seed),
-                    "count": count,
-                    "seeds": parsed_seeds,
-                    "steps": _coerce_int(steps),
-                    "guidance_scale": _coerce_float(guidance_scale),
-                    "guidance_2": _coerce_float(guidance_2),
-                    "flow_shift": _coerce_float(flow_shift),
-                    "lora_adapters": parsed_lora_adapters,
-                    "format": "mp4",
-                    "extra": extra,
-                },
-            )
-            video_bytes_out = _generated_video_bytes_list(result)
-        except OptionalDependencyMissingError as e:
-            raise HTTPException(status_code=501, detail=str(e)) from e
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e)) from e
-        return {
-            "created": int(time.time()),
-            "data": [{"b64_json": base64.b64encode(item).decode("ascii")} for item in video_bytes_out],
-        }
+        run = _new_run(
+            request,
+            task="image_to_video",
+            modality="video",
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            args=(bytes(image_bytes),),
+            kwargs={
+                "prompt": str(prompt or ""),
+                "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
+                "width": width_i,
+                "height": height_i,
+                "fps": fps_i,
+                "num_frames": num_frames_i,
+                "steps": _coerce_int(steps),
+                "guidance_scale": _coerce_float(guidance_scale),
+                "guidance_2": _coerce_float(guidance_2),
+                "flow_shift": _coerce_float(flow_shift),
+                "lora_adapters": _parse_lora_adapters_form(lora_adapters_json) or (),
+                "extra": extra,
+                **options,
+            },
+            count=count,
+            seed=_coerce_int(seed),
+            seeds=_parse_seeds_form(seeds),
+        )
+        if job:
+            return _start_job("videos/edits", run, progress_mode="video")
+        return await _run_and_wait(request, run)
 
     @router.post("/videos/edits")
     @router.post("/videos/from-image", include_in_schema=False)
@@ -5504,6 +5572,12 @@ if _HAS_MULTIPART:
         max_sequence_length: Optional[str] = Form(None, description="Optional backend-specific prompt token length cap."),
         lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
+        memory_mode: MemoryModeForm = None,
+        quantize: QuantizeForm = None,
+        soundscape: SoundscapeForm = None,
+        music: MusicForm = None,
+        generate_audio: GenerateAudioForm = None,
+        audio_shift: AudioShiftForm = None,
     ) -> Dict[str, Any]:
         """OpenAI-compatible image-to-video endpoint."""
         return await _videos_edits_impl(
@@ -5531,6 +5605,15 @@ if _HAS_MULTIPART:
             max_sequence_length=max_sequence_length,
             lora_adapters_json=lora_adapters_json,
             extra_json=extra_json,
+            options=_form_request_options(
+                memory_mode=memory_mode,
+                quantize=quantize,
+                soundscape=soundscape,
+                music=music,
+                generate_audio=generate_audio,
+                audio_shift=audio_shift,
+            ),
+            job=False,
         )
 
     @provider_router.post("/{provider}/v1/videos/edits")
@@ -5560,6 +5643,12 @@ if _HAS_MULTIPART:
         max_sequence_length: Optional[str] = Form(None, description="Optional backend-specific prompt token length cap."),
         lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
+        memory_mode: MemoryModeForm = None,
+        quantize: QuantizeForm = None,
+        soundscape: SoundscapeForm = None,
+        music: MusicForm = None,
+        generate_audio: GenerateAudioForm = None,
+        audio_shift: AudioShiftForm = None,
     ) -> Dict[str, Any]:
         return await _videos_edits_impl(
             request,
@@ -5586,6 +5675,15 @@ if _HAS_MULTIPART:
             max_sequence_length=max_sequence_length,
             lora_adapters_json=lora_adapters_json,
             extra_json=extra_json,
+            options=_form_request_options(
+                memory_mode=memory_mode,
+                quantize=quantize,
+                soundscape=soundscape,
+                music=music,
+                generate_audio=generate_audio,
+                audio_shift=audio_shift,
+            ),
+            job=False,
         )
 
 else:

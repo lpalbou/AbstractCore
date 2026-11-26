@@ -1606,8 +1606,6 @@ def test_images_upscale_without_route_defaults_to_seedvr2(client, monkeypatch):
         ("resolution", "large", "resolution must be a positive integer"),
         ("softness", "2", "softness must be <="),
         ("seed", "abc", "seed must be an integer"),
-        ("quantize", "abc", "quantize must be an integer"),
-        ("quantize", "7", "quantize must be one of"),
         ("vae_tiling", "maybe", "vae_tiling must be a boolean"),
     ],
 )

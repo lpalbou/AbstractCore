@@ -10,6 +10,91 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 
 ## [Unreleased]
 
+## [2.40.0] - 2026-11-27
+
+### Added
+
+- **Vision routes take memory modes, load-time quantization and video soundtracks** (`server/vision_endpoints.py`,
+  `server/capability_generation.py`). Every image, edit, upscale and video route, and each job, declares `memory_mode`
+  (`default`, `low`, `lowest`) and `quantize` (bits, or `none`); the video routes also declare `soundscape`, `music`,
+  `generate_audio` and `audio_shift` (MiniMax-H3). They reach AbstractVision as typed request fields, and the backend
+  decides what it honours: a value it refuses is answered with 422 and
+  `{"error": {"code": "capability_not_supported", "field", "supported", "message"}}` before any model loads, and the
+  refused request leaves nothing loaded or cached. A value the backend rejects as invalid (an unknown mode name, a
+  top-level value and `extra` that disagree) is 400 `invalid_request`; a value of the wrong type is refused with 422
+  `validation_error` and its `field` (400 on a form). `extra` reaches the backend unchanged; a key named like an option is that option only for
+  a backend that lists it. The OpenAI-compatible remote lane forwards requests as before and refuses the typed fields
+  with 422 (`supported: []`).
+- **Video responses describe their soundtrack** (`audio`, AbstractVision's `audio_summary()`: `present`, `sample_rate`,
+  `channels`, `codec`, `muxed`, `duration_seconds`, and the track as `wav` when the engine could not mux it;
+  `{"present": false}` without one), on each item and at the top level. `memory_mode_used` is the memory mode the
+  backend recorded for the run. A succeeded job's `result` is the synchronous response body; a failed job carries the
+  synchronous route's `error_code` (`capability_not_supported` with `error_field` and `error_supported`, or
+  `invalid_request`).
+- **Cancelling a vision job** (`POST /v1/vision/jobs/{job_id}/cancel`, 404 for an unknown job). The job's cancel event
+  is the backend request's `cancel_event`: MLX-Gen stops at its next step and the job ends `cancelled`. A synchronous
+  request is cancelled the same way when its client disconnects.
+- **Vision discovery lists what each model honours** (`GET /v1/vision/models`): every entry carries `memory_modes`,
+  `supports_audio` and `audio_fields`, and its `routed_model` is what a request sends to run it on the backend it
+  states (an MLX-Gen package found in the cache is published as `mlx-gen/<repo>`, no longer as the bare repo id the
+  router sends to Diffusers); `memory_modes_by_provider` and `defaults` (per task, the model a request that
+  names none runs in process, listed as `default`) are added, and `detail=true` relays AbstractVision's measured
+  `memory_peaks` for each entry as it returns them. `llm.vision.memory_peaks(model)` reaches the same
+  call from Python.
+- **MiniMax-H3 in the downloads catalog** (`assets/model_downloads_catalog.json`): `AbstractFramework/minimax-h3-8bit`
+  (the row's pre-selected package), `-bf16` and `-4bit`, sizes and revisions read from the Hugging Face API, each with
+  mlx-gen's measured `default`-mode footprint as `resident`. The packages are `gated` (a new catalog artifact field) under
+  the MiniMax H3 Community License; the row is never a starter nor a `--recommended` download, so nothing downloads it
+  implicitly.
+
+### Changed
+
+- **The vision test images carry no location or serial number.** The GPS data of four images and the camera serial
+  number of one were blanked in place in `tests/vision_examples/`; every other byte, including the pictures
+  themselves, is unchanged. The Portkey provider's notes no longer name a specific gateway.
+- **In-process vision generation runs one request at a time** (`server/vision_endpoints.py`), across the synchronous
+  routes and the jobs: a synchronous request waits for its turn, and a job is refused with 409 while a generation runs.
+  The remote lane is not limited.
+- **A configured vision route's options are split into backend settings and request defaults** (one table per backend
+  kind). Backend settings (`base_model`, `device`, upstream paths, ...) only build the backend and no longer reach the
+  request's `extra`; every other option (`steps`, upscale `resolution`, `memory_mode`, ...) is a request default for
+  requests that name the route's model or none, on the synchronous routes and the jobs alike, and the backend checks
+  it like a request value.
+- **`POST /acore/models/load` preloads a vision model with its route's `memory_mode` and `quantize` defaults** (checked
+  by AbstractVision as a request's are; a default the model cannot honour is refused with the structured 422, leaving a
+  model already loaded as it was) and pins
+  it, so a request naming nothing runs on that instance; a pinned model is never evicted. The loaded state
+  `GET /acore/models/loaded` reports is the backend's own `has_loaded_model()`: a `low` or `lowest` run drops the model,
+  and a pinned model dropped that way keeps its pin and is loaded again by its next request.
+- **Every HTTP error body has `error.code`** (`server/app.py`), and `error.field` when one field is at fault; a structured
+  detail passes through with the status's code added when it has none.
+- **The upscale routes pass `quantize` to SeedVR2 as sent** (an integer as bits): the backend decides, and `none`,
+  `0`, `false`, `off` and `no` load it unquantized; the server's own list of accepted widths is gone.
+- **AbstractVision 0.3.37 is the floor** (base dependency, the `apple` / `gpu` settings and the `vision-*` aliases).
+
+### Fixed
+
+- **No vision or residency response carries a filesystem path** (`server/vision_endpoints.py`). A model loaded from a
+  local folder is listed by the folder's name (`diffusers/<name>` selects it again) and a configured local default
+  as `default`; cache and snapshot
+  directories are no longer published, and an unexpected engine error returns its type only (the server log has the
+  message).
+- **A video model a request loaded is listed under its task**: `GET /acore/models/loaded?task=text_to_video` left out
+  a loaded MiniMax-H3 or Wan model.
+- **A refusal the vision backend raises is 422, not 500.**
+- **A refused `NaN` no longer breaks the validation error response** (`server/app.py`).
+- **The OpenAI API is recognised by AbstractVision's rule** (`looks_like_openai_api`: the parsed host is
+  `api.openai.com` or a regional `*.api.openai.com`), not a substring of the URL.
+- **A model a failed or cancelled run left loaded is listed and can be unloaded**: the server keeps a backend after its
+  run when the run succeeded or the backend still holds its model, and only a request refused before anything loaded
+  leaves no entry.
+- **A local engine missing or outside AbstractVision's version bounds is 501 with AbstractVision's message** (MLX-Gen:
+  `mlx-gen>=0.40.1,<0.41` with AbstractVision 0.3.37, `mlx-gen>=0.40.2,<0.41` from 0.3.38, and `mlx>=0.32.4` on
+  macOS).
+- **A gated Hugging Face repository is reported as gated** (`download.py`). `GatedRepoError` subclasses
+  `RepositoryNotFoundError`, so a gated model was reported as not found; the message now names the model page where the
+  licence is accepted and the token to retry with.
+
 ## [2.39.0] - 2026-11-25
 
 ### Added

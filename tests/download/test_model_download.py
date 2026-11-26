@@ -164,6 +164,33 @@ class TestUnsupportedProvider:
                 pass
 
 
+class TestGatedRepository:
+    @pytest.mark.asyncio
+    async def test_a_gated_repository_names_the_license_page_and_the_token(self, monkeypatch):
+        """A gated repository needs its license accepted on the model page, not only a token."""
+        import huggingface_hub
+        from huggingface_hub.utils import GatedRepoError
+
+        class _GatedResponse:
+            status_code = 403
+            headers: dict = {}
+            url = "https://huggingface.co/api/models/AbstractFramework/minimax-h3-8bit"
+            request = None
+
+            def json(self):
+                return {}
+
+        def refuse(**_kwargs):
+            raise GatedRepoError("gated", response=_GatedResponse())
+
+        monkeypatch.setattr(huggingface_hub, "snapshot_download", refuse)
+        events = [p async for p in download_model("huggingface", "AbstractFramework/minimax-h3-8bit")]
+        assert events[-1].status == DownloadStatus.ERROR
+        message = events[-1].message
+        assert "https://huggingface.co/AbstractFramework/minimax-h3-8bit" in message
+        assert "license" in message and "token" in message
+
+
 class TestDownloadProgress:
     """Test DownloadProgress dataclass."""
 

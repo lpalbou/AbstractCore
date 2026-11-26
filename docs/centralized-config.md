@@ -183,6 +183,12 @@ Text-to-video A14B also has measured needs at other canvases (about 35.1 GiB at
 640x352 and 53.5 GiB at 1280x720, 81 frames): the catalog entry's
 `smaller_canvas` names the smaller size where only it fits, and `larger_canvas`
 the larger size where that fits too.
+MiniMax-H3 (video with a synchronized stereo soundtrack; `AbstractFramework/minimax-h3-8bit`,
+`-bf16`, `-4bit`) is in the catalog, never a starter nor a recommended download: its packages
+are gated on Hugging Face under the MiniMax H3 Community License (`gated: true` on each
+artifact) and are downloaded only on an explicit request. Its fit reads the measured
+`default`-mode footprint (`resident`); `memory_mode` `low` and `lowest` need less, as
+AbstractVision's `memory_peaks` lists (`GET /v1/vision/models?detail=true`).
 A route that is already configured but cannot run on this host — an
 `mlx`, `mlx-gen` or `supertonic` route on a machine without that engine, for
 example `output.image: mlx-gen/...` kept from an install made before these

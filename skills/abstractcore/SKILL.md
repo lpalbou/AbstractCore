@@ -4,7 +4,7 @@ description: Write Python integrations and operate AbstractCore through create_l
 license: MIT
 compatibility: Python 3.9+. Remote inference needs a reachable endpoint and its credentials. MLX needs Apple silicon; local engines require the apple or gpu install setting. Models must be downloaded explicitly.
 metadata:
-  package-version: "2.39.0"
+  package-version: "2.40.0"
 ---
 
 # AbstractCore

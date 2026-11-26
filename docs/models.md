@@ -420,6 +420,19 @@ abstractcore models download lmstudio qwen/qwen3.5-9b@q4_k_m --dry-run     # sho
   `mlx_lm.load("<id>")`, vLLM, your own scripts) then finds it. An existing `refs/main`
   naming another commit is never overwritten; the completion message says which commit
   loading by name resolves.
+- A gated Hugging Face repository (`gated: true` on its catalog artifact) downloads only after
+  its licence was accepted on the model page with the account whose `HF_TOKEN` is set;
+  otherwise the download ends with a message naming that page. The MiniMax-H3 video packages
+  (`AbstractFramework/minimax-h3-8bit`, `-bf16`, `-4bit`) are gated under the MiniMax H3
+  Community License. They are catalog rows only: no starter, `--recommended` download or
+  generation request fetches them; within the row the 8-bit package is the pre-selected one.
+  Each carries its measured `default`-mode footprint (`resident`); the other memory modes'
+  peaks come from AbstractVision (see
+  [Vision memory modes and sound](server.md#vision-memory-modes-and-sound)).
+
+```bash
+abstractcore models download mlx-gen AbstractFramework/minimax-h3-8bit   # with HF_TOKEN set
+```
 
 ### MTP companions
 

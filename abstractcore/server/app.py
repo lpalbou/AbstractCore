@@ -25,6 +25,7 @@ Media Support:
 import os
 import asyncio
 import json
+import math
 import time
 import uuid
 import hashlib
@@ -70,6 +71,8 @@ from ..core.bloc_kv import (
     read_bloc_kv_manifest,
 )
 from ..capabilities.registry import CapabilityRegistry
+from abstractvision.errors import CapabilityNotSupportedError
+
 from ..capabilities.errors import CapabilityUnavailableError
 from ..core.factory import create_llm
 from ..core.file_blocs import FileBlocStore
@@ -251,7 +254,12 @@ def _is_sensitive_name(name: Any) -> bool:
 
 
 def _redact_sensitive_data(value: Any) -> Any:
-    """Recursively redact known secret-bearing fields for logs and validation responses."""
+    """Recursively redact known secret-bearing fields for logs and validation responses.
+
+    A non-finite float (a refused `NaN`) becomes its text, which JSON can carry.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
     if isinstance(value, dict):
         return {
             k: (_REDACTED if _is_sensitive_name(k) else _redact_sensitive_data(v))
@@ -1224,6 +1232,21 @@ def _custom_openapi() -> Dict[str, Any]:
     _request_example("/v1/videos/generations", "post", "application/json", "text_to_video", "Text-to-video generation", video_generation_example)
     _request_example("/{provider}/v1/videos/generations", "post", "application/json", "provider_scoped_video_generation", "Provider-scoped text-to-video generation", {**video_generation_example, "model": "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit", "provider": None})
     _request_example("/v1/vision/jobs/videos/generations", "post", "application/json", "async_video_generation", "Async text-to-video generation job", video_generation_example)
+    # MiniMax-H3: video with a synchronized stereo soundtrack. The values left out (canvas, frame
+    # count, steps, shifts) take the schedule's defaults; `memory_mode` lowers the run's peak.
+    sound_video_example = {
+        "prompt": "A red fox trots through fresh snow at dawn, low sun behind birch trees.",
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/minimax-h3-8bit",
+        "soundscape": "Soft crunch of paws in dry snow, faint wind in the branches.",
+        "music": "Sparse solo piano, slow and calm.",
+        "generate_audio": True,
+        "seed": 42,
+        "memory_mode": "low",
+        "response_format": "b64_json",
+    }
+    _request_example("/v1/videos/generations", "post", "application/json", "text_to_video_with_sound", "MiniMax-H3 text-to-video with a soundtrack and a memory mode", sound_video_example)
+    _request_example("/v1/vision/jobs/videos/generations", "post", "application/json", "async_video_with_sound", "Async MiniMax-H3 text-to-video job with a soundtrack", sound_video_example)
     _request_example(
         "/v1/audio/translations",
         "post",
@@ -1289,6 +1312,23 @@ def _custom_openapi() -> Dict[str, Any]:
         "extra_json": '{"max_sequence_length":256}',
     }
     _request_example("/v1/videos/edits", "post", "multipart/form-data", "image_to_video", "Image-to-video generation", video_edit_example)
+    _request_example(
+        "/v1/videos/edits",
+        "post",
+        "multipart/form-data",
+        "first_frame_with_sound",
+        "MiniMax-H3 first-frame image-to-video with a soundtrack",
+        {
+            "prompt": "The fox turns its head toward the camera.",
+            "image": "<upload first-frame.png>",
+            "provider": "mlx-gen",
+            "model": "AbstractFramework/minimax-h3-8bit",
+            "soundscape": "Wind in the birch branches.",
+            "music": "Sparse solo piano.",
+            "memory_mode": "low",
+            "response_format": "b64_json",
+        },
+    )
     _request_example("/{provider}/v1/videos/edits", "post", "multipart/form-data", "provider_scoped_image_to_video", "Provider-scoped image-to-video generation", {**video_edit_example, "model": "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit"})
     _request_example("/v1/vision/jobs/videos/edits", "post", "multipart/form-data", "async_image_to_video", "Async image-to-video generation job", video_edit_example)
     _request_example(
@@ -1594,17 +1634,39 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         except Exception as e:
             logger.debug(f"Could not read request body for debugging: {e}")
 
-    # Return detailed error response
-    return JSONResponse(
-        status_code=422,
-        content={
-            "error": {
-                "message": "Request validation failed",
-                "type": "validation_error",
-                "details": error_details
-            }
-        }
-    )
+    # `field`: the request field at fault, when every error is about the same one.
+    fields = {
+        str(error["loc"][1]) if len(error["loc"]) > 1 and error["loc"][0] in {"body", "query", "path", "header", "cookie"} else None
+        for error in exc.errors()
+    }
+    body: Dict[str, Any] = {
+        "message": "Request validation failed",
+        "type": "validation_error",
+        "code": "validation_error",
+        "details": error_details,
+    }
+    if len(fields) == 1 and None not in fields:
+        body["field"] = next(iter(fields))
+    return JSONResponse(status_code=422, content={"error": body})
+
+# `error.code` of an HTTP error whose detail is a message.
+_HTTP_ERROR_CODES = {
+    400: "invalid_request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    405: "method_not_allowed",
+    409: "conflict",
+    413: "payload_too_large",
+    422: "invalid_request",
+    429: "rate_limited",
+    500: "server_error",
+    501: "not_implemented",
+    502: "bad_gateway",
+    503: "service_unavailable",
+    504: "gateway_timeout",
+}
+
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -1619,16 +1681,21 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         client=request.client.host if request.client else "unknown"
     )
 
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
+    # A structured detail (`{"error": {...}}`) is the body, given the status's `code` when it has
+    # none of its own; any other detail is the message.
+    if isinstance(safe_detail, dict) and "error" in safe_detail:
+        content = dict(safe_detail)
+        if isinstance(content["error"], dict) and "code" not in content["error"]:
+            content["error"] = {**content["error"], "code": _HTTP_ERROR_CODES.get(exc.status_code, "http_error")}
+    else:
+        content = {
             "error": {
                 "message": str(safe_detail),
-                "type": "http_error"
+                "type": "http_error",
+                "code": _HTTP_ERROR_CODES.get(exc.status_code, "http_error"),
             }
-        },
-        headers=getattr(exc, "headers", None),
-    )
+        }
+    return JSONResponse(status_code=exc.status_code, content=content, headers=getattr(exc, "headers", None))
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
@@ -1648,7 +1715,8 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={
             "error": {
                 "message": "Internal server error",
-                "type": "server_error"
+                "type": "server_error",
+                "code": "server_error",
             }
         }
     )
@@ -5257,6 +5325,8 @@ def _capability_residency_load(task: str, payload: Dict[str, Any], http_request:
         try:
             runtime = _vision_endpoints.load_server_vision_loaded_model(payload, api_key=provider_key)
         except Exception as e:
+            if isinstance(e, CapabilityNotSupportedError):
+                raise HTTPException(status_code=422, detail=_vision_endpoints.capability_error_body(e)) from e
             raise _capability_residency_error(e, task=task) from e
         runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
         return {
@@ -5468,7 +5538,6 @@ class LoadedModelRequest(BaseModel):
         ),
     )
     ttl_s: Optional[float] = Field(default=None, description="Optional future TTL hint in seconds. Currently advisory.")
-
     class Config:
         json_schema_extra = {
             "examples": [

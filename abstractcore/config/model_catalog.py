@@ -820,7 +820,7 @@ def validate_catalog(data: Any) -> List[str]:
                     "capabilities_key", "tags", "starter", "artifacts")
     required_art = ("provider", "artifact", "quant", "download_bytes", "size_source", "verified")
     allowed_row = set(required_row) | {"notes", "capabilities_override", "kv_geometry"}
-    allowed_art = set(required_art) | {"recommended", "options", "upstream", "note", "resident", "route"}
+    allowed_art = set(required_art) | {"recommended", "gated", "options", "upstream", "note", "resident", "route"}
     seen: set = set()
     for i, row in enumerate(rows):
         where = f"rows[{i}]"
@@ -883,6 +883,8 @@ def validate_catalog(data: Any) -> List[str]:
                 errors.extend(_validate_upstream(aw, art, size))
             if "note" in art and (not isinstance(art.get("note"), str) or not art.get("note")):
                 errors.append(f"{aw}.note must be a non-empty string")
+            if "gated" in art and not isinstance(art.get("gated"), bool):
+                errors.append(f"{aw}.gated must be a boolean")
             if "resident" in art:
                 errors.extend(_validate_resident(aw, art.get("resident")))
             if "route" in art:
@@ -1836,6 +1838,7 @@ def _build_artifact(
         "loadable": False if unloadable_reason else (True if gguf_architecture and engine == "llamacpp" and _llamacpp_known(gguf_architecture) else None),
         "unloadable_reason": unloadable_reason,
         "recommended": bool(art.get("recommended")),
+        "gated": bool(art.get("gated")),
         "verified": bool(art.get("verified")),
         "cli_download": f"abstractcore models download {provider} {artifact}",
         **({"inventory": _inventory_descriptor(installed, {"status": presence.status})} if installed else {}),
