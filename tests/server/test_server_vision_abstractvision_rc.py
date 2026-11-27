@@ -7,7 +7,6 @@ AbstractVision's OpenAI-compatible client drives this server over loopback.
 from __future__ import annotations
 
 import threading
-import time
 from types import SimpleNamespace
 from typing import Any, Dict
 from unittest.mock import patch
@@ -16,6 +15,7 @@ import pytest
 
 from abstractcore.server.app import app
 from tests.server.mlx_gen_stand_ins import FLUX, H3, MP4, WAV, FakeMiniMaxH3, mlx_gen  # noqa: F401
+from tests.server.vision_jobs import HANG_GUARD_S, join_job
 
 abstractvision_types = pytest.importorskip("abstractvision.types")
 
@@ -100,19 +100,30 @@ def served(monkeypatch):
     monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
     monkeypatch.setenv("ABSTRACTCORE_VISION_BACKEND", "mlx-gen")
     monkeypatch.setenv("ABSTRACTCORE_VISION_MFLUX_MODEL", H3)
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-    thread = threading.Thread(target=server.run, daemon=True)
+    # The server is handed the bound socket: no other process can take the port in between.
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    started = threading.Event()
+    startup = server.startup
+
+    async def signalling_startup(sockets=None):
+        try:
+            await startup(sockets=sockets)
+        finally:
+            started.set()
+
+    server.startup = signalling_startup  # type: ignore[method-assign]
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
-    deadline = time.time() + 10
-    while not server.started and time.time() < deadline:
-        time.sleep(0.02)
-    assert server.started
-    yield f"http://127.0.0.1:{port}/v1"
-    server.should_exit = True
-    thread.join(10)
+    try:
+        assert started.wait(HANG_GUARD_S) and server.started
+        yield f"http://127.0.0.1:{port}/v1"
+    finally:
+        server.should_exit = True
+        thread.join(HANG_GUARD_S)
+        sock.close()
 
 
 def _client(base_url: str, model_id=None):
@@ -178,16 +189,16 @@ def test_the_client_cancel_event_cancels_the_server_job(served):
 
     reached = threading.Event()
 
-    def cancel_requested() -> bool:
+    def the_job() -> Dict[str, Any]:
         with vision_endpoints._JOBS_LOCK:
-            return any(job.get("cancel_requested") for job in vision_endpoints._JOBS.values())
+            (job,) = vision_endpoints._JOBS.values()
+            return job
 
     def during_step(step) -> None:
         if step == 1:
             reached.set()
-            deadline = time.time() + 10
-            while time.time() < deadline and not cancel_requested():
-                time.sleep(0.02)
+            # Held here until the client's cancel reached the server; the next step then stops.
+            assert the_job()[vision_endpoints._JOB_CANCEL_KEY].wait(HANG_GUARD_S), "the cancel never reached the job"
 
     FakeMiniMaxH3.during_step = during_step
     cancel = threading.Event()
@@ -203,18 +214,13 @@ def test_the_client_cancel_event_cancels_the_server_job(served):
 
     worker = threading.Thread(target=run)
     worker.start()
-    assert reached.wait(10)
+    assert reached.wait(HANG_GUARD_S)
     cancel.set()
-    worker.join(15)
+    worker.join(HANG_GUARD_S)
+    assert not worker.is_alive()
 
     assert isinstance(outcome.get("error"), GenerationCancelledError), outcome
-    deadline = time.time() + 5
-    while time.time() < deadline:
-        with vision_endpoints._JOBS_LOCK:
-            states = [job.get("state") for job in vision_endpoints._JOBS.values()]
-        if "cancelled" in states:
-            break
-        time.sleep(0.02)
-    assert "cancelled" in states
+    join_job(the_job()["id"])
+    assert the_job()["state"] == "cancelled"
     # The backend's run stopped at its next step: one call, never finished.
     assert len(FakeMiniMaxH3.instances[-1].generate_calls) == 1

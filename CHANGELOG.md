@@ -89,7 +89,7 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
   run when the run succeeded or the backend still holds its model, and only a request refused before anything loaded
   leaves no entry.
 - **A local engine missing or outside AbstractVision's version bounds is 501 with AbstractVision's message** (MLX-Gen:
-  `mlx-gen>=0.40.1,<0.41` with AbstractVision 0.3.37, `mlx-gen>=0.40.2,<0.41` from 0.3.38, and `mlx>=0.32.4` on
+  `mlx-gen>=0.40.1,<0.41` with AbstractVision 0.3.37, `mlx-gen>=0.40.3,<0.41` from 0.3.38, and `mlx>=0.32.4` on
   macOS).
 - **A gated Hugging Face repository is reported as gated** (`download.py`). `GatedRepoError` subclasses
   `RepositoryNotFoundError`, so a gated model was reported as not found; the message now names the model page where the

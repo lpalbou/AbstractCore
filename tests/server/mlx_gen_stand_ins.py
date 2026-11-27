@@ -124,8 +124,10 @@ class FakeH3Video:
 class FakeMiniMaxH3:
     instances: list = []
     mux = True
-    # Called with each denoise step index, then "decode": lets a test hold a run mid-way.
+    # Called with each denoise step index: lets a test hold a run mid-way.
     during_step = None
+    # Called while the model loads, before any `generate_video`: lets a test hold a run there.
+    during_load = None
 
     def __init__(self, **kwargs):
         self.init_kwargs = dict(kwargs)
@@ -133,6 +135,8 @@ class FakeMiniMaxH3:
         self.transformer = object()
         self.generate_calls: list = []
         FakeMiniMaxH3.instances.append(self)
+        if FakeMiniMaxH3.during_load is not None:
+            FakeMiniMaxH3.during_load()
 
     def generate_video(self, **kwargs):
         self.generate_calls.append(dict(kwargs))
@@ -261,6 +265,7 @@ def mlx_gen(tmp_path, monkeypatch) -> Iterator[Path]:
     FakeMiniMaxH3.instances = []
     FakeMiniMaxH3.mux = True
     FakeMiniMaxH3.during_step = None
+    FakeMiniMaxH3.during_load = None
     FakeFlux2.instances = []
     FakeMemorySaver.instances = []
     target = "abstractvision.backends.mflux"
@@ -282,4 +287,9 @@ def mlx_gen(tmp_path, monkeypatch) -> Iterator[Path]:
         reset_server_state()
         yield cache
         FakeMiniMaxH3.during_step = None
+        FakeMiniMaxH3.during_load = None
         reset_server_state()
+        # The gate is module state: a test that left it held would refuse the next test's jobs.
+        from abstractcore.server import vision_endpoints
+
+        assert not vision_endpoints._GENERATION_GATE.locked(), "a test left the generation gate held"

@@ -199,12 +199,12 @@ def test_reopen_after_death_does_not_leak_master_fd(tmp_path) -> None:
             s.run("kill -9 $$ 2>/dev/null || true", timeout_s=3)
             # SIGKILL delivery and the exit are asynchronous: run() can return before
             # waitpid(WNOHANG) sees the child gone (observed under a loaded CI matrix,
-            # 2026-11-08). Give the kernel up to 2 s; the assertion stays strict.
-            import time as _time
+            # 2026-11-08). Wait for that exit itself, which the SIGKILL makes certain,
+            # instead of a deadline; is_alive() then reports the reaped shell as dead.
+            import contextlib
 
-            deadline = _time.monotonic() + 2.0
-            while s.is_alive() and _time.monotonic() < deadline:
-                _time.sleep(0.02)
+            with contextlib.suppress(ChildProcessError):  # run() may have reaped it already
+                os.waitpid(s._pid, 0)
             assert s.is_alive() is False
             if i == 1:
                 baseline = _open_fd_count()

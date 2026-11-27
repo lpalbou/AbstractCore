@@ -14,7 +14,6 @@ import json
 import os
 import sys
 import threading
-import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List
 from unittest.mock import patch
@@ -38,9 +37,9 @@ from tests.server.mlx_gen_stand_ins import (  # noqa: F401 - `mlx_gen` is a fixt
     FakeMiniMaxH3,
     mlx_gen,
 )
+from tests.server.vision_jobs import HANG_GUARD_S, finished_job
 
 pytestmark = pytest.mark.usefixtures("mlx_gen")
-
 
 
 @pytest.fixture()
@@ -77,15 +76,10 @@ def _t2i(client: TestClient, **fields: Any):
     return client.post("/v1/images/generations", json={"prompt": "cube", "provider": "mlx-gen", "model": FLUX, **fields})
 
 
-def _wait_job(client: TestClient, job_id: str, timeout: float = 10.0) -> Dict[str, Any]:
-    deadline = time.time() + timeout
-    job: Dict[str, Any] = {}
-    while time.time() < deadline:
-        job = client.get(f"/v1/vision/jobs/{job_id}").json()
-        if job["state"] in {"succeeded", "failed", "cancelled"}:
-            return job
-        time.sleep(0.02)
-    raise AssertionError(job)
+def _wait_job(client: TestClient, job_id: str) -> Dict[str, Any]:
+    job = finished_job(client, job_id)
+    assert job["state"] in {"succeeded", "failed", "cancelled"}, job
+    return job
 
 
 def _strings(value: Any) -> Iterator[str]:
@@ -392,11 +386,11 @@ def test_cancelling_a_job_stops_the_run_at_its_next_step(client):
     def during_step(step):
         if step == 1:
             reached.set()
-            proceed.wait(5.0)
+            assert proceed.wait(HANG_GUARD_S)
 
     FakeMiniMaxH3.during_step = during_step
     job_id = client.post("/v1/vision/jobs/videos/generations", json={"prompt": "fox", "provider": "mlx-gen", "model": H3}).json()["job_id"]
-    assert reached.wait(5.0)
+    assert reached.wait(HANG_GUARD_S)
     cancel = client.post(f"/v1/vision/jobs/{job_id}/cancel").json()
     proceed.set()
 
@@ -409,19 +403,48 @@ def test_cancelling_a_job_stops_the_run_at_its_next_step(client):
 # --- One generation at a time; a client that leaves cancels its run --------------------------------
 
 
-def test_a_job_is_refused_while_a_synchronous_run_holds_the_machine_and_a_second_request_waits(client):
+class _ObservedGate:
+    """The generation gate, signalling `waiting` once a run has found it held."""
+
+    def __init__(self, gate: Any) -> None:
+        self._gate = gate
+        self.waiting = threading.Event()
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        acquired = self._gate.acquire(blocking, timeout)
+        if not acquired:
+            self.waiting.set()
+        return acquired
+
+    def release(self) -> None:
+        self._gate.release()
+
+    def locked(self) -> bool:
+        return self._gate.locked()
+
+    def __enter__(self) -> "_ObservedGate":
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.release()
+
+
+def test_a_job_is_refused_while_a_synchronous_run_holds_the_machine_and_a_second_request_waits(client, monkeypatch):
+    gate = _ObservedGate(vision_endpoints._GENERATION_GATE)
+    monkeypatch.setattr(vision_endpoints, "_GENERATION_GATE", gate)
     reached, proceed = threading.Event(), threading.Event()
 
     def during_step(step):
         if step == 0 and not reached.is_set():
             reached.set()
-            proceed.wait(10.0)
+            assert proceed.wait(HANG_GUARD_S)
 
     FakeMiniMaxH3.during_step = during_step
     results: Dict[str, Any] = {}
     first = threading.Thread(target=lambda: results.setdefault("video", _t2v(client)))
     first.start()
-    assert reached.wait(5.0)
+    assert reached.wait(HANG_GUARD_S)
 
     refused = client.post("/v1/vision/jobs/images/generations", json={"prompt": "cube", "provider": "mlx-gen", "model": FLUX})
     assert refused.status_code == 409
@@ -429,49 +452,100 @@ def test_a_job_is_refused_while_a_synchronous_run_holds_the_machine_and_a_second
 
     second = threading.Thread(target=lambda: results.setdefault("image", _t2i(client)))
     second.start()
-    time.sleep(0.3)
+    assert gate.waiting.wait(HANG_GUARD_S)  # the image run found the gate held by the video run
     assert FakeFlux2.instances == []  # waiting for the gate, not running beside the video
     proceed.set()
-    first.join(10)
-    second.join(10)
+    first.join(HANG_GUARD_S)
+    second.join(HANG_GUARD_S)
+    assert not first.is_alive() and not second.is_alive()
     assert results["video"].status_code == 200 and results["image"].status_code == 200
     assert not vision_endpoints._GENERATION_GATE.locked()
 
 
-def test_a_synchronous_run_is_cancelled_when_its_client_disconnects(monkeypatch):
-    from starlette.requests import Request
+class _ClientThatLeaves:
+    """A synchronous video request whose client reports a disconnect once `left` is set.
 
-    cancel_events: List[threading.Event] = []
-    execute = vision_endpoints._execute
+    The server polls the client while the run goes on; it then sets the run's cancel event.
+    """
 
-    def recording_execute(run, cancel_event, item_hooks=None):
-        cancel_events.append(cancel_event)
-        return execute(run, cancel_event, item_hooks)
+    def __init__(self, monkeypatch) -> None:
+        self.left = threading.Event()
+        self.cancel_events: List[threading.Event] = []
+        execute = vision_endpoints._execute
 
-    monkeypatch.setattr(vision_endpoints, "_execute", recording_execute)
+        def recording_execute(run, cancel_event, item_hooks=None):
+            self.cancel_events.append(cancel_event)
+            return execute(run, cancel_event, item_hooks)
+
+        monkeypatch.setattr(vision_endpoints, "_execute", recording_execute)
+
+    def leave_and_wait_for_the_cancel(self) -> None:
+        # Called on the run's thread, which recorded its cancel event before it ran.
+        self.left.set()
+        assert self.cancel_events[0].wait(HANG_GUARD_S), "the server never cancelled the run"
+
+    def run(self) -> HTTPException:
+        from starlette.requests import Request
+
+        request = Request({"type": "http", "method": "POST", "path": "/v1/videos/generations", "headers": [], "query_string": b""})
+        left = self.left
+
+        async def disconnected() -> bool:
+            return left.is_set()
+
+        request.is_disconnected = disconnected  # type: ignore[method-assign]
+        run = vision_endpoints._video_generation_run(request, {"prompt": "fox", "provider": "mlx-gen", "model": H3})
+        with pytest.raises(HTTPException) as caught:
+            asyncio.run(vision_endpoints._run_and_wait(request, run))
+        return caught.value
+
+
+def test_a_synchronous_run_is_cancelled_when_its_client_disconnects_mid_run(monkeypatch):
+    client = _ClientThatLeaves(monkeypatch)
 
     def during_step(step):
         if step == 0:
-            deadline = time.time() + 5
-            while time.time() < deadline and not (cancel_events and cancel_events[0].is_set()):
-                time.sleep(0.01)
+            client.leave_and_wait_for_the_cancel()
 
     FakeMiniMaxH3.during_step = during_step
-    request = Request({"type": "http", "method": "POST", "path": "/v1/videos/generations", "headers": [], "query_string": b""})
 
-    async def disconnected() -> bool:
-        return True
+    error = client.run()
 
-    monkeypatch.setattr(request, "is_disconnected", disconnected)
-    run = vision_endpoints._video_generation_run(request, {"prompt": "fox", "provider": "mlx-gen", "model": H3})
-
-    with pytest.raises(HTTPException) as caught:
-        asyncio.run(vision_endpoints._run_and_wait(request, run))
-
-    assert caught.value.status_code == 409
-    assert cancel_events[0].is_set()
-    assert len(FakeMiniMaxH3.instances[0].generate_calls) == 1
+    assert error.status_code == 409
+    assert client.cancel_events[0].is_set()
+    assert len(FakeMiniMaxH3.instances[0].generate_calls) == 1  # stopped at the step after step 0
     assert not vision_endpoints._GENERATION_GATE.locked()
+
+
+def test_a_client_that_disconnects_while_the_model_loads_gets_409_and_the_loaded_model_is_listed(monkeypatch):
+    client = _ClientThatLeaves(monkeypatch)
+    FakeMiniMaxH3.during_load = client.leave_and_wait_for_the_cancel
+
+    error = client.run()
+
+    assert error.status_code == 409
+    assert FakeMiniMaxH3.instances[0].generate_calls == []  # cancelled before the engine ran
+    assert not vision_endpoints._GENERATION_GATE.locked()
+    # The model it loaded is held in memory: listed, so it can be unloaded.
+    (record,) = TestClient(app).get("/acore/models/loaded").json()["data"]
+    assert (record["model"], record["loaded"]) == (H3, True)
+
+
+def test_a_client_that_disconnects_while_waiting_for_the_gate_gets_409_and_loads_nothing(monkeypatch):
+    client = _ClientThatLeaves(monkeypatch)
+    client.left.set()
+    gate = vision_endpoints._GENERATION_GATE
+    assert gate.acquire(blocking=False)  # another generation holds the machine
+    try:
+        error = client.run()
+        assert gate.locked()  # the refused run never took nor released the other run's gate
+    finally:
+        gate.release()
+
+    assert error.status_code == 409
+    assert client.cancel_events[0].is_set()
+    assert FakeMiniMaxH3.instances == []
+    assert vision_endpoints._BACKEND_CACHE == {}
 
 
 # --- Discovery ---------------------------------------------------------------------------------------

@@ -390,23 +390,30 @@ def test_cancel_kills_the_whole_process_tree_not_just_the_child(host):
     """An installer (brew, pip) spawns children; cancel must stop them too."""
 
     reg = host_jobs.HostJobRegistry()
-    pidfile = host["config"] / "grandchild.pid"
     script = (
-        "import subprocess, sys, time, pathlib\n"
+        "import subprocess, sys, time\n"
         f"p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
-        f"pathlib.Path({str(pidfile)!r}).write_text(str(p.pid))\n"
-        "print('spawned', flush=True)\n"
+        "print(f'spawned {p.pid}', flush=True)\n"
         "time.sleep(60)\n"
     )
+    # The job's own streamed line says the grandchild exists (and gives its pid): the cancel is
+    # sent only then, with no file to poll (a pid file can be seen created before it is written).
+    spawned = threading.Event()
+    pids: list = []
 
     def runner(ctx):
-        return mm._run_streaming([sys.executable, "-c", script], "engine", "tree", ctx.progress).to_dict()
+        def progress(update):
+            message = str(getattr(update, "message", "") or "")
+            if message.startswith("spawned "):
+                pids.append(int(message.split()[1]))
+                spawned.set()
+            ctx.progress(update)
+
+        return mm._run_streaming([sys.executable, "-c", script], "engine", "tree", progress).to_dict()
 
     job = reg.start(kind="engine_install", key="engine_install", runner=runner, join=False)
-    deadline = time.time() + 10
-    while not pidfile.exists() and time.time() < deadline:
-        time.sleep(0.05)
-    grandchild = int(pidfile.read_text())
+    assert spawned.wait(120), "the installer never reported its child"
+    (grandchild,) = pids
     reg.cancel(job["job_id"])
     assert reg.wait(job["job_id"], 15)["status"] == "cancelled"
     deadline = time.time() + 10

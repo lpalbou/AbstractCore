@@ -27153,7 +27153,7 @@ Every vision error body has `error.code` (`invalid_request`, `not_found`,
 `conflict`, `capability_not_supported`, `validation_error`, `server_error`, ...),
 and `error.field` when one field is at fault. A local engine that is missing,
 or installed outside the versions the installed AbstractVision requires (MLX-Gen:
-`mlx-gen>=0.40.1,<0.41` with AbstractVision 0.3.37, `mlx-gen>=0.40.2,<0.41` from 0.3.38,
+`mlx-gen>=0.40.1,<0.41` with AbstractVision 0.3.37, `mlx-gen>=0.40.3,<0.41` from 0.3.38,
 and, on macOS, `mlx>=0.32.4`), is `501` (`not_implemented`) with AbstractVision's
 message naming the versions to install. An unexpected engine error is `500`
 with its type only; the server log has its message.
