@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from abstractcore.server.app import app
+from tests.server.vision_jobs import finished_job
 
 _PNG_BYTES = b"\x89PNG\r\n\x1a\nabstractcore-test-png"
 _MP4_BYTES = b"\x00\x00\x00\x18ftypmp42abstractcore-test-mp4"
@@ -975,14 +976,7 @@ def test_video_generation_job_records_progress_event(client, monkeypatch):
 
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    data = {}
-    for _ in range(50):
-        poll = client.get(f"/v1/vision/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["state"] == "succeeded":
-            break
-        time.sleep(0.02)
+    data = finished_job(client, job_id)
 
     assert data["state"] == "succeeded"
     assert base64.b64decode(data["result"]["data"][0]["b64_json"]) == _MP4_BYTES
@@ -1036,14 +1030,7 @@ def test_video_generation_job_uses_reported_denoise_total_when_steps_omitted(cli
 
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    data = {}
-    for _ in range(50):
-        poll = client.get(f"/v1/vision/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["state"] == "succeeded":
-            break
-        time.sleep(0.02)
+    data = finished_job(client, job_id)
 
     assert data["state"] == "succeeded"
     progress = data["progress"]
@@ -1092,14 +1079,7 @@ def test_image_to_video_job_records_step_first_progress_event(client, monkeypatc
 
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    data = {}
-    for _ in range(50):
-        poll = client.get(f"/v1/vision/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["state"] == "succeeded":
-            break
-        time.sleep(0.02)
+    data = finished_job(client, job_id)
 
     assert data["state"] == "succeeded"
     assert base64.b64decode(data["result"]["data"][0]["b64_json"]) == _MP4_BYTES
@@ -1160,14 +1140,7 @@ def test_image_to_video_job_scales_reported_denoise_totals_for_batches_when_step
 
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    data = {}
-    for _ in range(50):
-        poll = client.get(f"/v1/vision/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["state"] == "succeeded":
-            break
-        time.sleep(0.02)
+    data = finished_job(client, job_id)
 
     assert data["state"] == "succeeded"
     assert len(data["result"]["data"]) == 2
@@ -1214,14 +1187,7 @@ def test_image_generation_job_records_progress_event(client, monkeypatch):
 
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    data = {}
-    for _ in range(50):
-        poll = client.get(f"/v1/vision/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["state"] == "succeeded":
-            break
-        time.sleep(0.02)
+    data = finished_job(client, job_id)
 
     assert data["state"] == "succeeded"
     assert base64.b64decode(data["result"]["data"][0]["b64_json"]) == _PNG_BYTES
@@ -1269,14 +1235,7 @@ def test_image_generation_job_uses_reported_total_when_steps_omitted(client, mon
 
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    data = {}
-    for _ in range(50):
-        poll = client.get(f"/v1/vision/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["state"] == "succeeded":
-            break
-        time.sleep(0.02)
+    data = finished_job(client, job_id)
 
     assert data["state"] == "succeeded"
     progress = data["progress"]
@@ -1322,14 +1281,7 @@ def test_image_edit_job_records_progress_event(client, monkeypatch):
 
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    data = {}
-    for _ in range(50):
-        poll = client.get(f"/v1/vision/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["state"] == "succeeded":
-            break
-        time.sleep(0.02)
+    data = finished_job(client, job_id)
 
     assert data["state"] == "succeeded"
     assert base64.b64decode(data["result"]["data"][0]["b64_json"]) == _PNG_BYTES
@@ -1384,14 +1336,7 @@ def test_image_edit_job_uses_reported_total_when_steps_omitted(client, monkeypat
 
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    data = {}
-    for _ in range(50):
-        poll = client.get(f"/v1/vision/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["state"] == "succeeded":
-            break
-        time.sleep(0.02)
+    data = finished_job(client, job_id)
 
     assert data["state"] == "succeeded"
     progress = data["progress"]
@@ -1444,14 +1389,7 @@ def test_image_upscale_job_records_progress_event(client, monkeypatch):
 
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    data = {}
-    for _ in range(50):
-        poll = client.get(f"/v1/vision/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["state"] == "succeeded":
-            break
-        time.sleep(0.02)
+    data = finished_job(client, job_id)
 
     assert data["state"] == "succeeded"
     assert base64.b64decode(data["result"]["data"][0]["b64_json"]) == _PNG_BYTES
@@ -1606,8 +1544,6 @@ def test_images_upscale_without_route_defaults_to_seedvr2(client, monkeypatch):
         ("resolution", "large", "resolution must be a positive integer"),
         ("softness", "2", "softness must be <="),
         ("seed", "abc", "seed must be an integer"),
-        ("quantize", "abc", "quantize must be an integer"),
-        ("quantize", "7", "quantize must be one of"),
         ("vae_tiling", "maybe", "vae_tiling must be a boolean"),
     ],
 )

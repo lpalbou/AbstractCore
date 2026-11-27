@@ -353,23 +353,24 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Embeddings | POST | `/v1/embeddings` | OpenAI-compatible embedding vectors | `model`, `input`, `dimensions`, `encoding_format`, `user`, `base_url` |
 | Decisions | POST | `/v1/decisions` | Typed questions (choice / noul / score) about a state, answered by a local or hosted decision model with calibrated probabilities (System One request/answer shape) | `model`, `state`, `questions`, `truncate` |
 | Decisions | POST | `/{provider}/v1/decisions` | Provider-scoped decisions route where the body model is unprefixed | path `provider`, body `model`, `state`, `questions`, `truncate` |
-| Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `seeds`, `steps`, `guidance_scale`, `seed`, `lora_adapters`, `quality`, `extra` |
+| Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `seeds`, `steps`, `guidance_scale`, `seed`, `lora_adapters`, `quality`, `memory_mode`, `quantize`, `extra` |
 | Images | POST | `/{provider}/v1/images/generations` | Provider-scoped text-to-image route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, image generation parameters |
-| Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, repeatable `reference_images`, `model`, `provider`, `base_url`, `n`, `seeds`, `size`, `steps`, `guidance_scale`, `seed`, `lora_adapters_json`, `extra_json` |
+| Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, repeatable `reference_images`, `model`, `provider`, `base_url`, `n`, `seeds`, `size`, `steps`, `guidance_scale`, `seed`, `lora_adapters_json`, `memory_mode`, `quantize`, `extra_json` |
 | Images | POST | `/{provider}/v1/images/edits` | Provider-scoped image edit route where body model is unprefixed | path `provider`, optional `base_url`, image edit form fields |
-| Images | POST | `/v1/images/upscale` | Image upscaling via multipart form | `image`, optional `model`, `provider`, `base_url`, `scale`, `resolution`, `softness`, `seed`, `quantize`, `vae_tiling`, `extra_json` |
+| Images | POST | `/v1/images/upscale` | Image upscaling via multipart form | `image`, optional `model`, `provider`, `base_url`, `scale`, `resolution`, `softness`, `seed`, `quantize`, `vae_tiling`, `memory_mode`, `extra_json` |
 | Images | POST | `/{provider}/v1/images/upscale` | Provider-scoped image upscale route where body model is unprefixed | path `provider`, optional `base_url`, image upscale form fields |
-| Videos | POST | `/v1/videos/generations` | Text-to-video generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `n`, `seeds`, `steps`, `guidance_scale`, `guidance_2`, `flow_shift`, `lora_adapters`, `extra` |
+| Videos | POST | `/v1/videos/generations` | Text-to-video generation; the response carries the soundtrack's `audio` object and `memory_mode_used` | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `n`, `seeds`, `steps`, `guidance_scale`, `guidance_2`, `flow_shift`, `lora_adapters`, `memory_mode`, `quantize`, `soundscape`, `music`, `generate_audio`, `audio_shift`, `extra` |
 | Videos | POST | `/{provider}/v1/videos/generations` | Provider-scoped text-to-video route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, video generation parameters |
-| Videos | POST | `/v1/videos/edits` | Image-to-video via multipart form | `prompt`, `image`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `n`, `seeds`, `steps`, `guidance_scale`, `guidance_2`, `flow_shift`, `lora_adapters_json`, `extra_json` |
+| Videos | POST | `/v1/videos/edits` | Image-to-video via multipart form | `prompt`, `image`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `n`, `seeds`, `steps`, `guidance_scale`, `guidance_2`, `flow_shift`, `lora_adapters_json`, `memory_mode`, `quantize`, `soundscape`, `music`, `generate_audio`, `audio_shift`, `extra_json` |
 | Videos | POST | `/{provider}/v1/videos/edits` | Provider-scoped image-to-video route where body model is unprefixed | path `provider`, optional `base_url`, image-to-video form fields |
 | Vision Jobs | POST | `/v1/vision/jobs/images/generations` | Async image generation with polling and progress events | same body as `/v1/images/generations` |
 | Vision Jobs | POST | `/v1/vision/jobs/images/edits` | Async image edit with polling and progress events | same form fields as `/v1/images/edits` |
 | Vision Jobs | POST | `/v1/vision/jobs/images/upscale` | Async image upscale with polling and progress events | same form fields as `/v1/images/upscale` |
 | Vision Jobs | POST | `/v1/vision/jobs/videos/generations` | Async text-to-video with polling and progress events | same body as `/v1/videos/generations` |
 | Vision Jobs | POST | `/v1/vision/jobs/videos/edits` | Async image-to-video with polling and progress events | same form fields as `/v1/videos/edits` |
-| Vision Jobs | GET | `/v1/vision/jobs/{job_id}` | Poll/consume async job state | path `job_id`, query `consume` |
-| Vision Models | GET | `/v1/vision/models` | Available AbstractVision model catalog | optional `task`, `provider`, `base_url`, `api_key` |
+| Vision Jobs | GET | `/v1/vision/jobs/{job_id}` | Poll/consume async job state (`queued`, `running`, `succeeded`, `failed`, `cancelled`); a succeeded job's `result` is the synchronous response body; a refused job carries `error_code`, `error_field`, `error_supported` | path `job_id`, query `consume` |
+| Vision Jobs | POST | `/v1/vision/jobs/{job_id}/cancel` | Cancel a queued or running job; the backend stops at its next step (`404` for an unknown job) | path `job_id` |
+| Vision Models | GET | `/v1/vision/models` | Available AbstractVision model catalog; each entry lists `memory_modes`, `supports_audio` and `audio_fields`; `defaults` holds the server default per task | optional `task`, `provider`, `detail` (adds AbstractVision's `memory_peaks`), `base_url`, `api_key` |
 | Audio | POST | `/v1/audio/transcriptions` | Speech-to-text multipart endpoint. Local engines answer `{text, language, detected_language}`: `language` is what the engine was told (`null` = it detected the language), `detected_language` the ISO 639-1 code it reported (`null` when it reports none). | `file`, optional `provider`, `model`, `language` (ISO 639-1; absent = detected), `prompt`, `response_format`, `temperature`, `format`, `base_url` |
 | Audio | POST | `/{provider}/v1/audio/transcriptions` | Provider-scoped speech-to-text route where body model is unprefixed | path `provider`, optional `base_url`, STT form fields |
 | Audio | POST | `/v1/audio/speech` | Text-to-speech endpoint | `input`/`text`, optional `provider`, `model`, `voice`, `response_format`/`format`, `speed`, `instructions`, `profile`, `quality_preset`, `quality`, `one_shot`, `base_url` |
@@ -913,8 +914,9 @@ for example:
 - `mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit` for image-to-video.
 - `mlx-gen/AbstractFramework/qwen-image-2512-4bit` for text-to-image.
 
-Core does not expose a quantization override. Q4/Q8 choices are part of the
-model id that AbstractVision/MLX-Gen loads.
+Q4/Q8 choices are part of the model id that AbstractVision/MLX-Gen loads. The
+`quantize` field quantizes a source snapshot at load time; the prepared
+packages refuse it (see [Vision memory modes and sound](#vision-memory-modes-and-sound)).
 
 `POST /v1/videos/generations` JSON parameters:
 
@@ -929,6 +931,8 @@ model id that AbstractVision/MLX-Gen loads.
 | `negative_prompt`, `seed`, `steps`, `guidance_scale`, `guidance_2`, `flow_shift` | no | Backend-specific generation controls. `guidance_2` is the typed second-stage/low-noise guidance control for dual-transformer video models such as Wan A14B. `flow_shift` is a typed video control used by models such as Wan TI2V 5B. |
 | `n`, `seeds` | no | Batch generation controls. When `seeds` is provided, its length must match `n`. |
 | `lora_adapters` | no | Ordered LoRA adapter stack for local video backends that support adapters. |
+| `memory_mode`, `quantize` | no | Memory mode (`default`, `low`, `lowest`) and load-time quantization; see [Vision memory modes and sound](#vision-memory-modes-and-sound). |
+| `soundscape`, `music`, `generate_audio`, `audio_shift` | no | The soundtrack of a model that generates one (MiniMax-H3); a model without one refuses them with `422`. |
 | `extra.max_sequence_length` | no | Useful for MLX-Gen Wan-style video runs. |
 
 `POST /v1/videos/edits` multipart parameters mirror generation and add
@@ -1028,11 +1032,178 @@ curl -sS -X POST "$BASE/v1/videos/edits" \
   -F 'extra_json={"max_sequence_length":256}'
 ```
 
+#### Vision memory modes and sound
+
+Every image, edit, upscale and video route, and each job form, takes two more
+optional fields, at the top level of a JSON body or as form fields:
+
+- `memory_mode`: `default`, `low` or `lowest`. `low` lowers the memory peak and
+  runs slower; `lowest` also streams the model's weights from disk, on the models
+  that support it (MiniMax-H3). Unset: the server process default
+  `ABSTRACTVISION_MEMORY_MODE`, else `default`.
+- `quantize`: load-time quantization in bits (for example `8`), or `none`.
+  Prepared packages are already quantized and refuse it. On the upscale routes
+  the form value reaches SeedVR2 as sent (an integer as bits): `none`, `0`,
+  `false`, `off` and `no` load it unquantized.
+
+Video routes also take the soundtrack fields of a model that generates one
+(MiniMax-H3): `soundscape` and `music` (text), `generate_audio` (boolean;
+`false` writes a silent clip) and `audio_shift` (a finite number). A form sends
+booleans as `true` / `false`.
+
+A value of the wrong type is refused before anything runs: `422` with
+`"code": "validation_error"` and the `field` on a JSON body, `400` on a form.
+A value the backend rejects as invalid (an unknown memory mode name, a top-level
+value and `extra` that disagree) is `400` with `"code": "invalid_request"`; a
+job that fails this way carries `"error_code": "invalid_request"`.
+
+The backend decides what it honours, and refuses the rest with `422` before
+any model loads; nothing is dropped:
+
+```json
+{"error": {"code": "capability_not_supported", "type": "capability_not_supported",
+           "message": "MFluxVisionBackend cannot honour memory_mode='lowest' for text_to_image with its configured model and device (supported: default, low). ...",
+           "field": "memory_mode", "supported": ["default", "low"]}}
+```
+
+`field` names the request field at fault and `supported` the values the backend
+accepts there, when the backend states them (`null` otherwise). A job refused
+this way ends `failed` with `error_code`, `error_field` and `error_supported`
+next to `error`. A request the backend refuses leaves no model loaded or cached.
+
+`extra` (`extra_json` on forms) is passed to the backend as it is. A key named
+like one of these options is that option for a backend that lists it (the same
+value at the top level and in `extra` is accepted; two different values are
+refused with `400`); for any other backend it stays an opaque `extra` key.
+
+On the OpenAI-compatible remote lane (`openai-compatible/...`, `base_url`), the
+server forwards the request as before: the typed fields are refused with `422`
+(`supported: []`), and backend-specific values go in `extra`, which the remote
+receives unchanged.
+
+Video responses carry the soundtrack in an `audio` object, on each `data[]`
+item and, for the first video, at the top level, next to `memory_mode_used`:
+
+```json
+{"created": 1764000000,
+ "data": [{"b64_json": "<mp4>", "audio": {"present": true, "sample_rate": 32000, "channels": 2,
+                                           "codec": "aac", "muxed": true, "duration_seconds": 5.17}}],
+ "audio": {"present": true, "sample_rate": 32000, "channels": 2, "codec": "aac", "muxed": true, "duration_seconds": 5.17},
+ "memory_mode_used": "low"}
+```
+
+The object is AbstractVision's soundtrack summary (`GeneratedAsset.audio_summary()`).
+The returned MP4 holds the soundtrack when it was muxed. When the engine could
+not mux it, `muxed` is `false`, `codec` is the WAV's (`pcm_s16le`) and the track
+is in `audio.wav` (`{"b64_json": "...", "mime_type": "audio/wav"}`). A video
+without a soundtrack has `{"present": false}`. `memory_mode_used` is the memory
+mode the backend recorded for the run (`metadata["memory_mode"]`), on image and
+video responses; it is absent when the backend recorded none. A succeeded job's
+`result` (`GET /v1/vision/jobs/{job_id}`) is the same body as the synchronous
+response.
+
+`POST /v1/vision/jobs/{job_id}/cancel` cancels a queued or running job (`404`
+for an unknown id): the job's cancel event is the backend request's
+`cancel_event`, so MLX-Gen stops at its next step and a batch does not start its
+next item; the job then reports `state: "cancelled"`. A finished job is returned
+unchanged.
+
+One generation at a time: in-process generation (every backend except the
+remote lane) runs one request at a time across the synchronous routes and the
+jobs, because local models share the machine's memory. A synchronous request
+waits for its turn, and its run is cancelled when its client disconnects. A job
+is refused with `409` (`"code": "conflict"`) while a generation runs or another
+job is queued or running.
+
+Every vision error body has `error.code` (`invalid_request`, `not_found`,
+`conflict`, `capability_not_supported`, `validation_error`, `server_error`, ...),
+and `error.field` when one field is at fault. A local engine that is missing,
+or installed outside the versions the installed AbstractVision requires (MLX-Gen:
+`mlx-gen>=0.40.1,<0.41` with AbstractVision 0.3.37, `mlx-gen>=0.40.3,<0.41` from 0.3.38,
+and, on macOS, `mlx>=0.32.4`), is `501` (`not_implemented`) with AbstractVision's
+message naming the versions to install. An unexpected engine error is `500`
+with its type only; the server log has its message.
+
+Discovery (`GET /v1/vision/models`):
+
+- An entry's `id` is its display identifier; its `routed_model` is what a
+  request sends as `model` to run it, on the backend the entry describes.
+- Each entry lists `memory_modes` (the model's own list where AbstractVision
+  publishes one, else its provider's), `supports_audio` and `audio_fields`;
+  `memory_modes_by_provider` lists what each provider honours on this host.
+- `defaults` holds, per task (`text_to_image`, `image_to_image`,
+  `image_upscale`, `text_to_video`, `image_to_video`), the model a request that
+  names none runs in process: `{"id": "default", "model": "default",
+  "routed_model": "<provider>/default", "server_default": true, "memory_modes",
+  "supports_audio", "audio_fields"}`, the backend's own answers for its
+  configured model, read without loading it. A request runs it by naming no
+  model or its `routed_model`. A client that names no model reads
+  `defaults[<task>]`; `active` is the 2.39.0 object, unchanged.
+- `detail=true` adds `memory_peaks` to each entry: AbstractVision's measured
+  peak memory of the package (`llm.vision.memory_peaks(model)`), as it returns
+  them, one row per task and memory mode: `{task, memory_mode, width, height,
+  frames, steps, peak_bytes, machine_total_ram_bytes}`. A model without a
+  measurement has `[]`.
+
+No vision or residency response carries a filesystem path: a model the server
+loads from a local folder is listed by the folder's name (its `routed_model`,
+`diffusers/<folder name>`, selects that folder again), a configured local
+default as `default`; cache and snapshot directories are not published.
+
+A configured `output.image` / `output.video` route's `options` are of two kinds.
+Backend settings build the backend (`base_model`, `model_dir`, `allow_download`
+on MLX-Gen; `device`, `torch_dtype`, ... on Diffusers; the upstream paths on
+the remote lane; the binary and model files on stable-diffusion.cpp). Every
+other option is a request default (`steps`, upscale `resolution`, `memory_mode`,
+`quantize`, the soundtrack fields, ...): it applies to the synchronous routes
+and the jobs for a request that names the route's model or none, a value the
+request sets wins, and the backend checks it like a request value.
+
+Residency:
+
+- `POST /acore/models/load` with a vision `task` preloads the model with the
+  route's request defaults `memory_mode` and `quantize`
+  (AbstractVision's `preload(memory_mode=, quantize=)`, which checks them as a
+  request's are) and pins it. A request that then names nothing (or the route's
+  model) runs on that instance; a route `lowest` default is preloaded streamed.
+  In `low` or `lowest` the preload runs no warm-up and the preloaded instance
+  serves one request, whose run ends with the model dropped.
+  A default the model cannot honour is refused by the load with the structured
+  `422` and loads nothing (a pinned model already loaded stays loaded and
+  listed); every request that applies that default is
+  refused the same way until the route is fixed (the default is never dropped).
+- The loaded state the server reports (`GET /acore/models/loaded`) is the
+  backend's own `has_loaded_model()`. A run in `low` or `lowest` ends with the
+  model dropped; `default` keeps it, a failed or cancelled run included, and
+  the model is then listed and can be unloaded. A model a request loaded and
+  then dropped is no longer listed. A pinned model a `low` or `lowest` request dropped keeps
+  its pin and its backend: it is listed with `loaded: false`,
+  `state: "not_loaded"`, and the next request loads it again.
+- Request-loaded backends are evicted least recently used first past
+  `ABSTRACTCORE_VISION_BACKEND_CACHE_MAX` (default 4); a pinned model is never
+  evicted. `POST /acore/models/unload` and an eviction run the backend's own
+  unload.
+
+MiniMax-H3 example (its peaks per memory mode:
+`GET /v1/vision/models?task=text_to_video&detail=true`):
+
+```bash
+curl -sS -X POST "$BASE/v1/vision/jobs/videos/generations" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"mlx-gen","model":"AbstractFramework/minimax-h3-8bit","prompt":"A red fox trots through fresh snow at dawn.","soundscape":"Soft crunch of paws in dry snow.","music":"Sparse solo piano.","memory_mode":"low","seed":42}'
+```
+
+The MiniMax-H3 packages are gated on Hugging Face (MiniMax H3 Community
+License): accept the licence on the model page and download them explicitly
+(`abstractvision download AbstractFramework/minimax-h3-8bit --base-model minimax-h3-turbo-544p`);
+the server never fetches them during generation.
+
 Local vision model helper endpoint:
 
 | Endpoint | Purpose | Notes |
 |---|---|---|
-| `GET /v1/vision/models` | List available AbstractVision provider models. | Includes remote providers when their API key/base URL is configured and local models when they are present in known caches. |
+| `GET /v1/vision/models` | List available AbstractVision provider models. | Includes remote providers when their API key/base URL is configured and local models when they are present in known caches. Each entry lists `memory_modes`, `supports_audio` and `audio_fields`; `detail=true` adds AbstractVision's `memory_peaks`. |
 
 #### Audio (STT/TTS)
 

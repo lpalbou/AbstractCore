@@ -344,7 +344,10 @@ def test_vision_provider_models_catalog_route(monkeypatch):
     assert payload["backend_id"] == "fake-vision"
     assert payload["providers"] == ["fake-vision"]
     assert payload["models_by_provider"] == {"fake-vision": ["fake-vision/image-test"]}
-    assert payload["models"] == [{"id": "image-test", "model": "fake-vision/image-test", "provider": "fake-vision", "task": "text_to_image"}]
+    # The plugin's entry as published, with the `routed_model` a request sends to run it.
+    assert payload["models"] == [
+        {"id": "image-test", "model": "fake-vision/image-test", "provider": "fake-vision", "task": "text_to_image", "routed_model": "fake-vision/image-test"}
+    ]
 
 
 def test_vision_models_catalog_route_includes_provider_models(monkeypatch):

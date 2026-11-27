@@ -21,7 +21,7 @@ Routing modes (mutually exclusive — first match wins)
 
 In every mode the Portkey gateway key is sent via **both**
 ``x-portkey-api-key`` *and* ``Authorization: Bearer`` so it works with
-standard Portkey as well as enterprise / custom gateways (e.g. Roche Galileo)
+standard Portkey as well as enterprise / custom gateways
 that expect the OpenAI-compatible ``Authorization`` header. In provider-direct
 mode, ``Authorization`` is intentionally overwritten with the *upstream*
 provider key.
@@ -338,7 +338,7 @@ class PortkeyProvider(OpenAICompatibleProvider):
             api_key_str = str(self.api_key).strip()
             # x-portkey-api-key:  Portkey-native gateway auth
             # Authorization:     OpenAI-compatible auth (needed by enterprise /
-            #                    custom gateways such as Roche Galileo)
+            #                    custom gateways)
             headers["x-portkey-api-key"] = api_key_str
             headers["Authorization"] = f"Bearer {api_key_str}"
 

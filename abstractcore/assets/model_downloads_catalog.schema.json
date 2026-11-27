@@ -89,6 +89,7 @@
         "size_source": {"type": "string", "enum": ["catalog", "unknown"]},
         "verified": {"type": "boolean", "description": "The id was seen on a real engine store or cache when the seed was built."},
         "recommended": {"type": "boolean", "description": "The portable (non-Apple-silicon) curated pre-selection. On Apple silicon the text-tier rows pre-select model_catalog.APPLE_TEXT_TIERS instead."},
+        "gated": {"type": "boolean", "description": "The Hugging Face repository is gated: its license must be accepted on the model page, signed in, before the account's token can download it."},
         "options": {
           "type": "object",
           "description": "Route options a recommendation copies with this artifact (the MTP builds: speculation, validated by providers/speculation.py).",

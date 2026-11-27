@@ -675,6 +675,13 @@ def test_every_upstream_artifact_is_eight_bit_or_a_tier_or_a_reverified_id():
     # Laya (fp32, 421M) and the Lev bf16 adapter are full precision as well.
     reverified |= {"ggml-org/Kev-4B-GGUF:Q4_K_M", "jaredpalmer/kev-4b", "interfaze-ai/lev", "convaiinnovations/laya",
                    "AbstractFramework/kev-4b-mlx-4bit", "AbstractFramework/kev-0.8b-mlx-4bit", "jaredpalmer/kev-0.8b"}
+    # MiniMax-H3 video packages (2026-11-25): repo ids, sizes and revisions read from the Hugging Face
+    # API (`?blobs=true`); the published 8-bit, 16-bit and mixed 4-bit builds.
+    reverified |= {
+        "AbstractFramework/minimax-h3-8bit",
+        "AbstractFramework/minimax-h3-bf16",
+        "AbstractFramework/minimax-h3-4bit",
+    }
     for r in mc.load_seed()["rows"]:
         for a in r["artifacts"]:
             if "upstream" not in a:

@@ -36,6 +36,9 @@ from tests.models_engines_fakes import isolate_host, synthetic_host
 TI2V = "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"
 T2V = "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"
 I2V = "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit"
+H3_8BIT = "AbstractFramework/minimax-h3-8bit"
+H3_BF16 = "AbstractFramework/minimax-h3-bf16"
+H3_4BIT = "AbstractFramework/minimax-h3-4bit"
 VIDEO_ROUTE = {"provider": "mlx-gen", "model": TI2V}
 VIDEO_DOWNLOAD = {"provider": "mlx-gen", "artifact": TI2V}
 
@@ -206,15 +209,36 @@ def _rows(tmp_path, monkeypatch, host: dict, **kw) -> dict:
     return {r["id"]: r for r in mc.catalog(host=host, **kw)["rows"]}
 
 
-def test_the_catalog_has_the_three_wan_video_rows(tmp_path, monkeypatch):
+def test_the_catalog_has_the_wan_and_minimax_h3_video_rows(tmp_path, monkeypatch):
     rows = _rows(tmp_path, monkeypatch, synthetic_host("metal128"), tags=["video"])
-    assert set(rows) == {"wan2.2-ti2v-5b", "wan2.2-t2v-a14b", "wan2.2-i2v-a14b"}
+    assert set(rows) == {"wan2.2-ti2v-5b", "wan2.2-t2v-a14b", "wan2.2-i2v-a14b", "minimax-h3"}
     tasks = {rid: (r["capabilities"]["text_to_video"], r["capabilities"]["image_to_video"]) for rid, r in rows.items()}
-    assert tasks == {"wan2.2-ti2v-5b": (True, True), "wan2.2-t2v-a14b": (True, False), "wan2.2-i2v-a14b": (False, True)}
+    assert tasks == {
+        "wan2.2-ti2v-5b": (True, True),
+        "wan2.2-t2v-a14b": (True, False),
+        "wan2.2-i2v-a14b": (False, True),
+        "minimax-h3": (True, True),
+    }
     for row in rows.values():
         assert row["capabilities"]["video_generation"] is True and row["capabilities"]["text"] is False
-        (art,) = row["artifacts"]
-        assert art["provider"] == "mlx-gen" and art["engine"] == "mlx"
+        for art in row["artifacts"]:
+            assert art["provider"] == "mlx-gen" and art["engine"] == "mlx"
+    assert [a["artifact"] for a in rows["minimax-h3"]["artifacts"]] == [H3_8BIT, H3_BF16, H3_4BIT]
+
+
+def test_minimax_h3_is_gated_never_a_starter_nor_a_default_download_and_its_8bit_package_is_the_row_pick(tmp_path, monkeypatch):
+    seed = next(r for r in mc.load_seed()["rows"] if r["id"] == "minimax-h3")
+    assert seed["starter"] is False
+    assert H3_8BIT not in {d.get("artifact") for d in cd.RECOMMENDED_MODEL_DOWNLOADS.values()}
+    assert [a["artifact"] for a in seed["artifacts"] if a.get("recommended")] == [H3_8BIT]
+    assert all(a["gated"] is True for a in seed["artifacts"])
+    # mlx-gen 0.40.1's measured whole-process footprint with memory_mode default, as the engine states it.
+    resident = {a["artifact"]: a["resident"]["bytes"] for a in seed["artifacts"]}
+    assert resident == {H3_8BIT: 39_679_465_288, H3_BF16: 58_438_371_168, H3_4BIT: 34_894_207_480}
+    assert all(a["upstream"]["method"] == "hf_api" and a["size_source"] == "catalog" for a in seed["artifacts"])
+    rows = _rows(tmp_path, monkeypatch, synthetic_host("metal128"), tags=["video"])
+    assert all(a["gated"] is True for a in rows["minimax-h3"]["artifacts"])
+    assert all(a["gated"] is False for rid, r in rows.items() if rid != "minimax-h3" for a in r["artifacts"])
 
 
 def test_the_video_fit_uses_the_measured_memory_not_the_file_size(tmp_path, monkeypatch):
@@ -260,7 +284,7 @@ def test_a_measured_need_is_the_need_with_no_estimated_overhead_on_top(tmp_path,
     seed_arts = [
         (r, a) for r in mc.load_seed()["rows"] for a in r["artifacts"] if a.get("resident") and a["provider"] == "mlx-gen"
     ]
-    assert {a["artifact"] for _r, a in seed_arts} == {TI2V, T2V, I2V}
+    assert {a["artifact"] for _r, a in seed_arts} == {TI2V, T2V, I2V, H3_8BIT, H3_BF16, H3_4BIT}
     rows = _rows(tmp_path, monkeypatch, synthetic_host("metal128"), tags=["video"])
     catalog_arts = {a["artifact"]: a for r in rows.values() for a in r["artifacts"]}
     for name in ("metal16", "metal24", "metal64", "metal128"):
@@ -302,13 +326,13 @@ def test_a14b_8bit_per_memory_band_at_the_default_canvas(artifact):
 def test_the_fits_filter_hides_video_where_it_cannot_run(tmp_path, monkeypatch):
     linux = _rows(tmp_path, monkeypatch, synthetic_host("cuda24"), tags=["video"])
     for row in linux.values():
-        (art,) = row["artifacts"]
+        art = row["artifacts"][0]
         assert art["supported_on_host"] is False and art["downloadable"] is False
         assert art["recommended"] is False
         assert "the mlx engine does not run on this host" in art["fit"]["notes"]
     assert _rows(tmp_path / "b", monkeypatch, synthetic_host("cuda24"), tags=["video"], fits=True) == {}
     assert set(_rows(tmp_path / "c", monkeypatch, synthetic_host("metal128"), tags=["video"], fits=True)) == {
-        "wan2.2-ti2v-5b", "wan2.2-t2v-a14b", "wan2.2-i2v-a14b"
+        "wan2.2-ti2v-5b", "wan2.2-t2v-a14b", "wan2.2-i2v-a14b", "minimax-h3"
     }
 
 

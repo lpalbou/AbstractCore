@@ -3,8 +3,47 @@ from __future__ import annotations
 import importlib
 from typing import Any, Dict, List
 
+from abstractvision.backends.base_backend import VisionBackend
 from fastapi.testclient import TestClient
 import pytest
+
+
+class _EngineFreeBackend(VisionBackend):
+    """An AbstractVision backend whose engine is faked: it only records loads and unloads."""
+
+    def __init__(self) -> None:
+        self.preloaded = 0
+        self.unloaded = 0
+        self.holds_weights = False
+
+    def preload(self) -> None:
+        self.preloaded += 1
+        self.holds_weights = True
+
+    def unload(self) -> None:
+        self.unloaded += 1
+        self.holds_weights = False
+
+    def has_loaded_model(self) -> bool:
+        return self.holds_weights
+
+    def generate_image(self, request):  # pragma: no cover - never run here
+        raise NotImplementedError
+
+    def edit_image(self, request):  # pragma: no cover
+        raise NotImplementedError
+
+    def generate_angles(self, request):  # pragma: no cover
+        raise NotImplementedError
+
+    def generate_video(self, request):  # pragma: no cover
+        raise NotImplementedError
+
+    def image_to_video(self, request):  # pragma: no cover
+        raise NotImplementedError
+
+    def get_capabilities(self):  # pragma: no cover
+        return None
 
 
 @pytest.fixture(autouse=True)
@@ -348,18 +387,7 @@ def test_server_vision_residency_helpers_share_backend_cache(monkeypatch) -> Non
     vision_endpoints._BACKEND_CACHE.clear()
     vision_endpoints._RESIDENCY_RECORDS.clear()
 
-    class _FakeVisionBackend:
-        def __init__(self) -> None:
-            self.preloaded = 0
-            self.unloaded = 0
-
-        def preload(self) -> None:
-            self.preloaded += 1
-
-        def unload(self) -> None:
-            self.unloaded += 1
-
-    backend = _FakeVisionBackend()
+    backend = _EngineFreeBackend()
     key = ("diffusers", "runwayml/stable-diffusion-v1-5", "auto", None, False, True)
 
     def fake_resolve(
@@ -402,11 +430,7 @@ def test_server_vision_residency_accepts_video_task_filters(monkeypatch) -> None
     vision_endpoints._BACKEND_CACHE.clear()
     vision_endpoints._RESIDENCY_RECORDS.clear()
 
-    class _FakeVisionBackend:
-        def preload(self) -> None:
-            return None
-
-    backend = _FakeVisionBackend()
+    backend = _EngineFreeBackend()
     key = ("mlx-gen", "Wan-AI/Wan2.2-TI2V-5B-Diffusers", None, None, False)
 
     def fake_resolve(
@@ -441,21 +465,13 @@ def test_server_vision_residency_accepts_video_task_filters(monkeypatch) -> None
     assert listed_t2i == []
 
 
-def test_server_vision_residency_eviction_clears_records_and_unloads(monkeypatch) -> None:
+def test_server_vision_residency_eviction_unloads_request_loaded_models_and_keeps_pinned_ones(monkeypatch) -> None:
     vision_endpoints = importlib.import_module("abstractcore.server.vision_endpoints")
-    vision_endpoints._BACKEND_CACHE.clear()
-    vision_endpoints._RESIDENCY_RECORDS.clear()
     monkeypatch.setenv("ABSTRACTCORE_VISION_BACKEND_CACHE_MAX", "1")
+    backends: Dict[str, _EngineFreeBackend] = {}
 
-    class _FakeVisionBackend:
-        def __init__(self) -> None:
-            self.unloaded = 0
-
-        def unload(self) -> None:
-            self.unloaded += 1
-
-    backends: Dict[str, _FakeVisionBackend] = {}
-    created: List[_FakeVisionBackend] = []
+    def key_of(model: str):
+        return ("diffusers", model, "auto", None, False, True)
 
     def fake_resolve(
         request_model: str | None,
@@ -466,30 +482,29 @@ def test_server_vision_residency_eviction_clears_records_and_unloads(monkeypatch
         api_key: str | None = None,
     ):
         _ = modality, task, base_url, api_key
-        model_key = str(request_model or "default")
-        backend = backends.get(model_key)
-        if backend is None:
-            backend = _FakeVisionBackend()
-            backends[model_key] = backend
-            created.append(backend)
-        key = ("diffusers", model_key, "auto", None, False, True)
-        cached, call_lock = vision_endpoints._get_or_create_cached_backend(key, lambda: backend)
+        model = str(request_model or "default").split("/", 1)[-1]
+        backend = backends.setdefault(model, _EngineFreeBackend())
+        cached, call_lock = vision_endpoints._get_or_create_cached_backend(key_of(model), lambda: backend)
         return cached, call_lock, RuntimeError, object, object
 
     monkeypatch.setattr(vision_endpoints, "_resolve_backend", fake_resolve)
 
+    # A model a generation request loaded (no pin): the cache may evict it.
+    request_loaded = backends.setdefault("model-zero", _EngineFreeBackend())
+    request_loaded.holds_weights = True
+    vision_endpoints._keep_backend(key_of("model-zero"), request_loaded, task="image_generation")
+
     first = vision_endpoints.load_server_vision_loaded_model(
         {"task": "image_generation", "provider": "diffusers", "model": "model-one"}
     )
+    assert request_loaded.unloaded == 1
+    assert key_of("model-zero") not in vision_endpoints._BACKEND_CACHE
+
+    # Explicit loads are pinned: a second one goes past the cache size instead of evicting the first.
     second = vision_endpoints.load_server_vision_loaded_model(
         {"task": "image_generation", "provider": "diffusers", "model": "model-two"}
     )
-
-    listed_ids = {
-        str(item.get("load_id") or item.get("runtime_id") or "")
-        for item in vision_endpoints.list_server_vision_loaded_models({})
-    }
-    assert str(first["load_id"]) not in listed_ids
-    assert str(second["load_id"]) in listed_ids
-    assert created[0].unloaded == 1
-    assert created[1].unloaded == 0
+    listed_ids = {str(item["load_id"]) for item in vision_endpoints.list_server_vision_loaded_models({})}
+    assert listed_ids == {str(first["load_id"]), str(second["load_id"])}
+    assert backends["model-one"].unloaded == 0
+    assert backends["model-two"].unloaded == 0

@@ -135,15 +135,15 @@ The bug was not DDGS response parsing. It was our caller boundary:
     - `ceil(max_results / 10) + 1`
 - `python -m pytest -q tests/tools/test_common_tools_skim_url_and_websearch.py`
   - Result: `12 passed`
-- Live repro after the fix:
+- Live repro after the fix (the second and third queries are shown with neutral example text):
   - `web_search("abstractframework.ai", num_results="5")`
     - `backend_used=ddgs.text`
     - `degraded=false`
     - `params.num_results=5`
-  - `web_search("Genentech ML Engineering Director AI4DD", num_results="10")`
+  - `web_search("open source LLM frameworks", num_results="10")`
     - `backend_used=ddgs.text`
     - `degraded=false`
-  - `web_search("Roche Basel Machine Learning Scientist", num_results="3")`
+  - `web_search("python packaging guide", num_results="3")`
     - `backend_used=ddgs.text`
     - `degraded=false`
   - `web_search("pets", num_results="abc")`

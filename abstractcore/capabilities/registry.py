@@ -1712,6 +1712,19 @@ class _VisionFacade:
         out = method(model=model, task=task, provider=provider)
         return list(out or [])
 
+    def memory_peaks(self, model: str) -> List[Dict[str, Any]]:
+        """The vision plugin's measured peak memory rows for one model, as it returns them."""
+        backend = self._registry.get_vision()
+        method = getattr(backend, "memory_peaks", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason="The selected vision capability backend does not expose memory_peaks(model).",
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return list(method(model))
+
     def available_providers(self, *, task: Optional[str] = None) -> Dict[str, Any]:
         """Return lightweight provider availability for vision backends."""
         backend = self._registry.get_vision()

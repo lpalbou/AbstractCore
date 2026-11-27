@@ -25,16 +25,16 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/v1/chat/completions` | POST | Chat completions | `model`, `messages`, `stream` |
 | `/v1/embeddings` | POST | Generate embeddings | `model`, `input` |
 | `/v1/responses` | POST | OpenAI Responses API | `model`, `input` |
-| `/v1/images/generations` | POST | Image generation (optional) | `prompt`, `model`, `provider`, `base_url`, `width`, `height`, `size` |
+| `/v1/images/generations` | POST | Image generation (optional) | `prompt`, `model`, `provider`, `base_url`, `width`, `height`, `size`, `memory_mode`, `quantize` |
 | `/{provider}/v1/images/generations` | POST | Provider-scoped image generation | `model` (no prefix), `prompt`, `base_url` |
-| `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `mask`, `size` |
+| `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `mask`, `size`, `memory_mode`, `quantize` |
 | `/{provider}/v1/images/edits` | POST | Provider-scoped image editing | `model` (no prefix), `prompt`, `image`, `base_url` |
-| `/v1/videos/generations` | POST | Text-to-video generation (optional) | `prompt`, `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2` |
+| `/v1/videos/generations` | POST | Text-to-video generation (optional); the response's `audio` describes the soundtrack | `prompt`, `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2`, `memory_mode`, `quantize`, `soundscape`, `music`, `generate_audio`, `audio_shift` |
 | `/{provider}/v1/videos/generations` | POST | Provider-scoped text-to-video | `model` (no prefix), `prompt`, `base_url` |
-| `/v1/videos/edits` | POST | Image-to-video generation (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2` |
+| `/v1/videos/edits` | POST | Image-to-video generation (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2`, `memory_mode`, `quantize`, `soundscape`, `music`, `generate_audio`, `audio_shift` |
 | `/{provider}/v1/videos/edits` | POST | Provider-scoped image-to-video | `model` (no prefix), `prompt`, `image`, `base_url` |
-| `/v1/vision/models` | GET | Available vision model catalog | `task`, `provider`, `base_url`, `api_key` |
-| `/v1/vision/jobs/*` | GET/POST | Async image/video jobs | `job_id`, `consume`, media parameters, `progress.last_event` |
+| `/v1/vision/models` | GET | Available vision model catalog, with each entry's `memory_modes`, `supports_audio`, `audio_fields`, and the server default per task (`defaults`) | `task`, `provider`, `detail` (AbstractVision's `memory_peaks`), `base_url`, `api_key` |
+| `/v1/vision/jobs/*` | GET/POST | Async image/video jobs; `POST /v1/vision/jobs/{job_id}/cancel` cancels one | `job_id`, `consume`, media parameters, `progress.last_event`, `result` (the synchronous response body) |
 | `/v1/audio/transcriptions` | POST | Speech-to-text (optional) | `file`, `provider`, `model`, `base_url` |
 | `/{provider}/v1/audio/transcriptions` | POST | Provider-scoped speech-to-text | `model` (no prefix), `file`, `base_url` |
 | `/v1/audio/translations` | POST | Audio translations (not yet supported) | - |

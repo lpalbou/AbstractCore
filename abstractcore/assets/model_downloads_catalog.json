@@ -1,7 +1,7 @@
 {
   "$schema": "./model_downloads_catalog.schema.json",
   "schema": "model_downloads_catalog_v1",
-  "version": "2026-10-30",
+  "version": "2026-11-25",
   "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer. upstream={method, checked, revision?} records an id verified to exist upstream on that date (hf_api: HfApi.model_info(files_metadata=True), download_bytes = the weight files; ollama_registry: the registry manifest, download_bytes = the sum of its layers); such an artifact must carry its verified size. options carries route options the recommendation copies (the MTP builds: speculation). resident={bytes, source} (optional, per artifact) is the MEASURED memory the engine needs while it runs, for models whose working memory is not their file size (video generation): the fit verdict uses it instead of download_bytes, and `source` says where and at which profile it was measured. route={key, provider, model} (optional, per artifact) names the capability route that runs the artifact when its engine is not the download provider (AbstractVoice's faster-whisper runs `base`, fetched as a Hugging Face repo): what a surface shows and writes for that route, and how a route stored with the download pair is repaired (capability_defaults.repair_download_pair_routes).",
   "companion_sizes": {
     "mlx-community/Qwen3.5-4B-MTP-4bit": {
@@ -5748,6 +5748,92 @@
         "image_to_video": true
       },
       "notes": "Wan2.2 A14B image-to-video (MoE, two 14B experts), run by AbstractVision through MLX-Gen (Apple silicon only). Its memory need is measured at AbstractVision's default canvas (832x480)."
+    },
+    {
+      "id": "minimax-h3",
+      "family": "minimax-h3",
+      "display_name": "MiniMax-H3 (video with a stereo soundtrack)",
+      "vendor": "MiniMax",
+      "params_total": null,
+      "params_active": null,
+      "license": "minimax-h3-community-license",
+      "capabilities_key": null,
+      "tags": [
+        "video",
+        "large"
+      ],
+      "starter": false,
+      "artifacts": [
+        {
+          "provider": "mlx-gen",
+          "artifact": "AbstractFramework/minimax-h3-8bit",
+          "quant": "8bit",
+          "download_bytes": 69010605065,
+          "size_source": "catalog",
+          "verified": true,
+          "upstream": {
+            "method": "hf_api",
+            "checked": "2026-11-25",
+            "revision": "bbe22953c7e08315523ed58eb643d3ab7acd1006"
+          },
+          "gated": true,
+          "recommended": true,
+          "resident": {
+            "bytes": 39679465288,
+            "source": "mlx-gen 0.40.1 measured_runs: the whole-process physical footprint of a clip at 960x544, 124 frames, with memory_mode default. The peaks of the other memory modes: GET /v1/vision/models?detail=true (memory_peaks).",
+            "measured_with": "mlx-gen at 960x544x124 with memory_mode default"
+          },
+          "note": "8-bit transformer and conditioner."
+        },
+        {
+          "provider": "mlx-gen",
+          "artifact": "AbstractFramework/minimax-h3-bf16",
+          "quant": "bf16",
+          "download_bytes": 123599877029,
+          "size_source": "catalog",
+          "verified": true,
+          "upstream": {
+            "method": "hf_api",
+            "checked": "2026-11-25",
+            "revision": "3fa65eaa09a1fde5ecc0409fabb4d071d5ab35e1"
+          },
+          "gated": true,
+          "resident": {
+            "bytes": 58438371168,
+            "source": "mlx-gen 0.40.1 measured_runs: the whole-process physical footprint of a clip at 960x544, 124 frames, with memory_mode default. The peaks of the other memory modes: GET /v1/vision/models?detail=true (memory_peaks).",
+            "measured_with": "mlx-gen at 960x544x124 with memory_mode default"
+          },
+          "note": "The released 16-bit weights, repacked."
+        },
+        {
+          "provider": "mlx-gen",
+          "artifact": "AbstractFramework/minimax-h3-4bit",
+          "quant": "4bit",
+          "download_bytes": 48164094121,
+          "size_source": "catalog",
+          "verified": true,
+          "upstream": {
+            "method": "hf_api",
+            "checked": "2026-11-25",
+            "revision": "49f35d7c06e79c3be3048e34c5d6ba875a48780f"
+          },
+          "gated": true,
+          "resident": {
+            "bytes": 34894207480,
+            "source": "mlx-gen 0.40.1 measured_runs: the whole-process physical footprint of a clip at 960x544, 124 frames, with memory_mode default. The peaks of the other memory modes: GET /v1/vision/models?detail=true (memory_peaks).",
+            "measured_with": "mlx-gen at 960x544x124 with memory_mode default"
+          },
+          "note": "Mixed package: 4-bit conditioner, 6-bit transformer."
+        }
+      ],
+      "capabilities_override": {
+        "text": false,
+        "vision": false,
+        "video_generation": true,
+        "text_to_video": true,
+        "image_to_video": true
+      },
+      "notes": "MiniMax-H3: video with a synchronized stereo soundtrack (text-to-video and first-frame image-to-video), run by AbstractVision through MLX-Gen (Apple silicon only). The packages hold the base weights; the Turbo schedules also need their adapter, which `abstractvision download AbstractFramework/minimax-h3-8bit --base-model minimax-h3-turbo-544p` fetches. The MiniMax H3 Community License's grant excludes the European Union, the United Kingdom, the Republic of Korea and the United States of America. Its memory need is measured at 960x544, 124 frames."
     },
     {
       "id": "faster-whisper-base",

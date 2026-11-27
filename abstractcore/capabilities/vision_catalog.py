@@ -299,6 +299,21 @@ def _discover_local_diffusers_models(model_dirs: list[Path]) -> list[str]:
     return sorted(out)
 
 
+def local_diffusers_model_path(name: str) -> Optional[str]:
+    """The local Diffusers folder a published model name stands for, or None.
+
+    A folder that is not named `org__name` is published by its folder name (a server lists no
+    filesystem path); that name, alone, selects the folder again.
+    """
+    wanted = str(name or "").strip()
+    if not wanted or "/" in wanted:
+        return None
+    for model_id in _discover_local_diffusers_models(_default_local_diffusers_model_dirs()):
+        if Path(model_id).is_absolute() and Path(model_id).name == wanted:
+            return model_id
+    return None
+
+
 def _default_lmstudio_model_dirs() -> list[Path]:
     dirs: list[str] = []
     for key in ("LMSTUDIO_MODELS_DIR", "LMSTUDIO_MODEL_DIR", "LM_STUDIO_MODELS_DIR"):

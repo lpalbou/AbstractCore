@@ -294,7 +294,66 @@ For task-specific Wan A14B video models, pass `guidance_2` as a normal output
 field when you need the second-stage/low-noise guidance control. Keep
 backend-specific fields such as `max_sequence_length` in `extra`.
 
-This separation keeps the default `abstractcore` install dependency-light: remote media proxying lives in the server, while local generative vision runtimes remain opt-in through `abstractvision`. Quantized MLX-Gen generation/edit/video models are selected by their published repo id. SeedVR2 upscaling follows the same rule for the canonical packages: use `AbstractFramework/seedvr2-3b-8bit` by default, `AbstractFramework/seedvr2-7b-8bit` when memory allows, or the matching q4 package when memory is tight. The default upscaler request uses `resolution="2x"` and `softness=0.25`. Core forwards the runtime `quantize` request field only for official/source SeedVR2 loads that need runtime quantization.
+### Memory modes, load-time quantization and video with sound
+
+Every image, edit, upscale and video call takes three typed options, on
+`llm.vision.*` and on `llm.generate(..., output={...})` alike, and hands them to
+AbstractVision unchanged:
+
+- `memory_mode`: `"default"`, `"low"` (a lower memory peak, slower) or
+  `"lowest"` (the lowest peak, where the model streams its weights from disk).
+  Without it the process default `ABSTRACTVISION_MEMORY_MODE` applies, else
+  `"default"`. A mode the selected provider or model cannot honour is refused
+  with `CapabilityNotSupportedError` before any model loads.
+- `quantize`: load-time quantization in bits for a source snapshot (the
+  prepared `AbstractFramework/*` packages are already quantized and refuse it).
+- `cancel_event`: any object with `is_set()`, such as `threading.Event`; the
+  run stops at its next step once it is set.
+
+Video calls also take the soundtrack fields of a model that generates one
+(MiniMax-H3): `soundscape`, `music`, `generate_audio` and `audio_shift`. Other
+models refuse them.
+
+```python
+mp4 = llm.vision.t2v(
+    "A red fox trots through fresh snow at dawn.",
+    provider="mlx-gen",
+    model="AbstractFramework/minimax-h3-8bit",
+    soundscape="Soft crunch of paws in dry snow, faint wind.",
+    music="Sparse solo piano.",
+    memory_mode="low",
+)
+```
+
+What each model honours is published with the catalog:
+`llm.vision.list_provider_models(...)` entries carry
+`parameter_constraints["memory_mode"]["enum"]` (and
+`parameter_constraints["audio"]` for a model with a soundtrack), and
+`llm.vision.available_providers()["details"][<provider>]["memory_modes"]` lists
+what each provider honours on this host. The AbstractVision tools take one mode
+for all their calls: `make_vision_tools(..., memory_mode="low")`.
+
+`llm.vision.memory_peaks(model)` returns AbstractVision's
+measured peak memory of a prepared MLX-Gen package, one row per task and memory
+mode (`{task, memory_mode, width, height, frames, steps, peak_bytes,
+machine_total_ram_bytes}`), without loading it; `[]` for a model without a
+measurement.
+
+MiniMax-H3 runs on Apple silicon through MLX-Gen. Its packages are
+`AbstractFramework/minimax-h3-8bit`, `AbstractFramework/minimax-h3-bf16` and
+`AbstractFramework/minimax-h3-4bit` (sizes and measured needs: the downloads
+catalog and `llm.vision.memory_peaks`). They are gated on Hugging Face under the
+MiniMax H3 Community License: accept it on the model page, then download
+explicitly (`abstractcore models download mlx-gen
+AbstractFramework/minimax-h3-8bit` with `HF_TOKEN` set, or `abstractvision download
+AbstractFramework/minimax-h3-8bit --base-model minimax-h3-turbo-544p`, which also
+fetches the adapter the Turbo schedules load). They are not part of
+`abstractcore models download --recommended`, and generation never fetches them.
+
+The HTTP routes take the same fields; see
+[Vision memory modes and sound](server.md#vision-memory-modes-and-sound).
+
+This separation keeps the default `abstractcore` install dependency-light: remote media proxying lives in the server, while local generative vision runtimes remain opt-in through `abstractvision`. Quantized MLX-Gen generation/edit/video models are selected by their published repo id. SeedVR2 upscaling follows the same rule for the canonical packages: use `AbstractFramework/seedvr2-3b-8bit` by default, `AbstractFramework/seedvr2-7b-8bit` when memory allows, or the matching q4 package when memory is tight. The default upscaler request uses `resolution="2x"` and `softness=0.25`; `quantize` matters only for official/source SeedVR2 loads that need runtime quantization.
 
 ## Troubleshooting (common)
 

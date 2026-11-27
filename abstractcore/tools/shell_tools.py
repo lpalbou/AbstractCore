@@ -110,13 +110,14 @@ def shell_exec(
 
     `working_directory` sets the INITIAL cwd when the session is first created (ignored on an
     existing session — use `cd` there). `timeout` bounds this call in seconds; on timeout the
-    session survives and resyncs on the next call.
+    session survives and resyncs on the next call (one that cannot resync is closed, and that
+    call says so).
 
     Args:
         command: Shell command line to run in the session (bash syntax; a trailing `&` starts a background process that outlives the call).
         session_id: Name of the persistent session to run in (default: "main"); a new name starts a separate shell with its own cwd and environment.
         working_directory: Initial directory of the session when this call creates it (default: the current directory); ignored on an existing session, use `cd` there.
-        timeout: Seconds this call waits for the command (default: 120); on timeout the output so far is returned, the session survives and resyncs on the next call.
+        timeout: Seconds this call waits for the command (default: 120); on timeout the output so far is returned, the session survives and resyncs on the next call (or is closed if it cannot).
     """
     cmd = str(command or "").strip()
     if not cmd:

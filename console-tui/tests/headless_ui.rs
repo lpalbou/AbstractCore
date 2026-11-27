@@ -3670,12 +3670,16 @@ fn download_w_polls_the_job_to_a_completion_toast() {
     let mut h = harness();
     h.load_fixtures();
     h.open_models();
-    // Progress the backend reports on the next polls.
+    // The backend reports 42% on every poll until the test has seen it
+    // (polls run every 10 ms: two queued answers could be gone before a
+    // frame on a loaded machine), then completes the job.
+    let mut running = fixture("job_running");
+    running["job_id"] = json!("download_1");
     h.mock
-        .polls
+        .held
         .lock()
         .unwrap()
-        .extend([fixture("job_running"), fixture("job_running")]);
+        .insert("download_1".into(), running);
     h.select_artifact("qwen3:8b");
     h.key(b"w");
     let s = h.settle_until("the job at 42%", |s| s.contains("42%"));
@@ -3686,6 +3690,7 @@ fn download_w_polls_the_job_to_a_completion_toast() {
     assert!(s.contains("2.0 GiB / 4.8 GiB"), "bytes shown:\n{s}");
     assert!(s.contains("c cancels"), "{s}");
     assert!(h.mock.called("download ollama qwen3:8b"));
+    h.mock.held.lock().unwrap().remove("download_1");
     let s = h.settle_until_contains("✓ download ollama qwen3:8b completed");
     assert!(s.contains("completed"), "{s}");
     assert!(!h.screens.job_running());

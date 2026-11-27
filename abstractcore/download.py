@@ -247,18 +247,20 @@ async def _download_huggingface(
             percent=100.0,
         )
 
-    except RepositoryNotFoundError:
-        yield DownloadProgress(
-            status=DownloadStatus.ERROR,
-            message=f"Model '{model}' not found on HuggingFace Hub",
-        )
+    # GatedRepoError subclasses RepositoryNotFoundError: it is caught first.
     except GatedRepoError:
         yield DownloadProgress(
             status=DownloadStatus.ERROR,
             message=(
-                f"Model '{model}' requires authentication. "
-                f"Provide a HuggingFace token via the 'token' parameter."
+                f"Model '{model}' is gated on Hugging Face: accept its license on "
+                f"https://huggingface.co/{model} while signed in, then retry with that account's "
+                f"token (the 'token' parameter or HF_TOKEN)."
             ),
+        )
+    except RepositoryNotFoundError:
+        yield DownloadProgress(
+            status=DownloadStatus.ERROR,
+            message=f"Model '{model}' not found on HuggingFace Hub",
         )
     except Exception as e:
         yield DownloadProgress(

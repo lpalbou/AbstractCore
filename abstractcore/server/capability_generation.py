@@ -11,8 +11,17 @@ import random
 import threading
 from typing import Any, Callable, Optional
 
+from abstractvision.backends.base_backend import REQUEST_OPTION_FIELDS
+from abstractvision.errors import CapabilityNotSupportedError
+
 from ..core.types import GenerateResponse
 from ..providers.base import BaseProvider
+
+# Request fields a caller sets per call besides the generation parameters, as AbstractVision's
+# request types declare them: the cancel event, the memory mode and load-time quantization, and on
+# video requests the soundtrack options too (REQUEST_OPTION_FIELDS).
+_IMAGE_REQUEST_OPTIONS = ("cancel_event", "memory_mode", "quantize")
+_VIDEO_REQUEST_OPTIONS = ("cancel_event", *REQUEST_OPTION_FIELDS)
 
 
 class ServerCapabilityProvider(BaseProvider):
@@ -96,6 +105,7 @@ class ServerVisionFacade:
         image_to_video_request_cls: Optional[Any] = None,
         image_upscale_request_cls: Optional[Any] = None,
         backend_id: str,
+        takes_request_options: bool = True,
     ) -> None:
         self._backend = backend
         self._call_lock = call_lock or threading.Lock()
@@ -105,6 +115,34 @@ class ServerVisionFacade:
         self._image_to_video_request_cls = image_to_video_request_cls
         self._image_upscale_request_cls = image_upscale_request_cls
         self.backend_id = backend_id
+        # False for a backend whose request types carry no memory mode, quantization, soundtrack
+        # or cancel event (the server's OpenAI-compatible proxy): a caller that sets one is refused.
+        self._takes_request_options = takes_request_options
+
+    def _request_options(self, kwargs: dict[str, Any], names: tuple) -> dict[str, Any]:
+        """The per-call request options set in `kwargs`, as request fields.
+
+        `quantize="none"` asks for no load-time quantization (over a route default) and is sent as
+        unset. On a backend that takes none of them, a set option is refused; the cancel event is
+        then left out (the run is cancelled between items).
+        """
+        options: dict[str, Any] = {}
+        for name in names:
+            value = kwargs.get(name)
+            if name == "quantize" and value == "none":
+                continue
+            if value is None:
+                continue
+            if not self._takes_request_options:
+                if name == "cancel_event":
+                    continue
+                raise CapabilityNotSupportedError(
+                    f"The selected provider does not take `{name}`; send backend-specific values in `extra`.",
+                    field=name,
+                    supported=(),
+                )
+            options[name] = value
+        return options
 
     @staticmethod
     def plan_batch_seeds(
@@ -214,6 +252,7 @@ class ServerVisionFacade:
             seed=kwargs.get("seed"),
             lora_adapters=kwargs.get("lora_adapters") or (),
             extra=self._extra_with_image_params(kwargs),
+            **self._request_options(kwargs, _IMAGE_REQUEST_OPTIONS),
         )
 
     def generate_image_asset(
@@ -246,6 +285,7 @@ class ServerVisionFacade:
             guidance_scale=kwargs.get("guidance_scale"),
             lora_adapters=kwargs.get("lora_adapters") or (),
             extra=self._extra_with_image_params(kwargs),
+            **self._request_options(kwargs, _IMAGE_REQUEST_OPTIONS),
         )
 
     def edit_image_asset(
@@ -278,9 +318,12 @@ class ServerVisionFacade:
             scale=kwargs.get("scale"),
             seed=kwargs.get("seed"),
             softness=kwargs.get("softness"),
-            quantize=kwargs.get("quantize"),
             vae_tiling=kwargs.get("vae_tiling"),
             extra=self._extra_with_image_params(kwargs),
+            # As sent: on upscale, "none" (like "0", "false", ...) is the backend's own spelling of
+            # an unquantized load, not "unset".
+            quantize=kwargs.get("quantize"),
+            **self._request_options(kwargs, ("memory_mode", "cancel_event")),
         )
 
     def upscale_image_asset(
@@ -304,17 +347,20 @@ class ServerVisionFacade:
 
     @staticmethod
     def _extra_with_params(kwargs: dict[str, Any], *, request_keys: set[str]) -> dict[str, Any]:
-        extra = kwargs.get("extra")
-        merged = dict(extra) if isinstance(extra, dict) else {}
-        for key in ("on_progress", "progress_event_callback", "progress_callback"):
-            callback = kwargs.get(key)
-            if callback is not None:
-                merged[key] = callback
+        """`extra` for a request: other keyword parameters, then the caller's `extra` over them."""
+        merged: dict[str, Any] = {}
         for key, value in kwargs.items():
             if key in request_keys or key in {"on_progress", "progress_event_callback", "progress_callback"}:
                 continue
             if value is not None:
                 merged[str(key)] = value
+        extra = kwargs.get("extra")
+        if isinstance(extra, dict):
+            merged.update(extra)
+        for key in ("on_progress", "progress_event_callback", "progress_callback"):
+            callback = kwargs.get(key)
+            if callback is not None:
+                merged[key] = callback
         return merged
 
     @classmethod
@@ -336,7 +382,7 @@ class ServerVisionFacade:
                 "guidance_2",
                 "lora_adapters",
                 "softness",
-                "quantize",
+                *_IMAGE_REQUEST_OPTIONS,
                 "vae_tiling",
                 "extra",
                 "provider",
@@ -365,6 +411,7 @@ class ServerVisionFacade:
                 "guidance_2",
                 "flow_shift",
                 "lora_adapters",
+                *_VIDEO_REQUEST_OPTIONS,
                 "extra",
                 "provider",
                 "model",
@@ -391,6 +438,7 @@ class ServerVisionFacade:
             flow_shift=kwargs.get("flow_shift"),
             lora_adapters=kwargs.get("lora_adapters") or (),
             extra=self._extra_with_video_params(kwargs),
+            **self._request_options(kwargs, _VIDEO_REQUEST_OPTIONS),
         )
 
     def generate_video_asset(
@@ -430,6 +478,7 @@ class ServerVisionFacade:
             flow_shift=kwargs.get("flow_shift"),
             lora_adapters=kwargs.get("lora_adapters") or (),
             extra=self._extra_with_video_params(kwargs),
+            **self._request_options(kwargs, _VIDEO_REQUEST_OPTIONS),
         )
 
     def image_to_video_asset(
