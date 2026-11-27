@@ -28,7 +28,7 @@ bounded for the model with an explicit `#[WARNING:TRUNCATION]` marker (ADR-0026)
 running regardless. A command with no output and no return (a bare `cat` with no input, an infinite
 loop) still hits the per-call timeout, which marks the session `_degraded`; the next `run()` then
 resyncs deterministically (Ctrl-C + a discard-until-sync sentinel) so stale output does not bleed
-into it, though a SIGINT-ignoring foreground process still warrants recycling the session.
+into it; a foreground process that outlives every interrupt gets the session closed instead.
 
 The engine is hardened and adversarially verified (bounded O(n) sentinel scan + capped memory on
 huge output, deterministic post-timeout resync, fd-leak-free reopen, process-group teardown). It is
@@ -53,6 +53,9 @@ from typing import Any, Dict, Optional
 _DEFAULT_TIMEOUT_S = 120.0
 _MAX_OUTPUT_CHARS = 20000
 _STARTUP_DRAIN_TIMEOUT_S = 5.0
+# After a timed-out command: interrupts sent, each followed by a fresh sync marker awaited this long.
+_RESYNC_ATTEMPTS = 3
+_RESYNC_ATTEMPT_TIMEOUT_S = 5.0
 # PTY read size: 64 KiB keeps big-output commands to few syscalls/queue hops (small reads made a
 # multi-MB command hundreds of round-trips). The reader is event-driven — run() wakes the instant a
 # chunk lands — so this only affects large-output throughput, not short-command latency.
@@ -129,6 +132,17 @@ class ShellSession:
 
         pid, master_fd = pty.fork()
         if pid == 0:  # child
+            # Disable ECHO (so our written command bytes aren't echoed back) and ONLCR (so newlines
+            # are not translated to \r\n in the output stream) BEFORE the shell starts: set from the
+            # parent, this raced the shell's startup, and a readline that read the terminal first
+            # kept echoing every command (the sentinel line included) for the whole session.
+            try:
+                attrs = termios.tcgetattr(0)
+                attrs[3] = attrs[3] & ~termios.ECHO  # lflag
+                attrs[1] = attrs[1] & ~termios.ONLCR  # oflag
+                termios.tcsetattr(0, termios.TCSANOW, attrs)
+            except Exception:
+                pass
             try:
                 if self.cwd:
                     os.chdir(self.cwd)
@@ -143,16 +157,6 @@ class ShellSession:
         # Parent.
         self._pid = pid
         self._master_fd = master_fd
-
-        # Disable ECHO (so our written command bytes aren't echoed back) and ONLCR (so newlines
-        # are not translated to \r\n in the output stream).
-        try:
-            attrs = termios.tcgetattr(master_fd)
-            attrs[3] = attrs[3] & ~termios.ECHO  # lflag
-            attrs[1] = attrs[1] & ~termios.ONLCR  # oflag
-            termios.tcsetattr(master_fd, termios.TCSANOW, attrs)
-        except Exception:
-            pass
 
         def _drain() -> None:
             while True:
@@ -306,41 +310,58 @@ class ShellSession:
             # SYNC sentinel, and discard everything up to and including it. Late stale output from
             # the interrupted command arrives BEFORE the sync sentinel and is dropped — unlike a
             # fixed-sleep drain, this closes the race where output emitted just after the sleep
-            # window bled into the next command. (If the foreground process IGNORES SIGINT, the sync
-            # sentinel can't run and we fall back to draining what's buffered; recycle the session.)
+            # window bled into the next command. A process that outlives the interrupt gets more
+            # (see _resync); a session that never syncs is closed, never reused.
             if self._degraded:
-                self._resync()
+                if not self._resync():
+                    # Output that no sync marker closed may still belong to the old command:
+                    # the session is not reused (closed, like a dead one; open() replaces it).
+                    self.close()
+                    raise RuntimeError(
+                        f"shell session '{self.session_id}' could not be resynchronised after a "
+                        "timed-out command (its foreground process kept running through "
+                        f"{_RESYNC_ATTEMPTS} interrupts); the session was closed, start a new one"
+                    )
                 self._degraded = False
             return self._run_raw(cmd, timeout_s=timeout_s)
 
-    def _resync(self, *, timeout_s: float = 5.0) -> None:
-        try:
-            self._write("\x03")  # ETX -> SIGINT to the foreground process group
-        except Exception:
-            pass
-        sync = f"__ABSTRACT_SYNC_{uuid.uuid4().hex}__"
-        try:
-            self._write(f"printf '\\n%s\\n' '{sync}'\n")
-        except Exception:
-            return
-        deadline = time.monotonic() + max(1.0, float(timeout_s))
-        seen = ""
-        while time.monotonic() < deadline:
+    def _resync(self) -> bool:
+        """Interrupt the timed-out command, then discard output up to a FRESH sync marker.
+
+        The shell prints a marker only once the foreground command has ended, and runs queued
+        lines in order, so everything before the latest marker is the old command's (an earlier
+        attempt's marker included). A command that outlives an interrupt (a trapped SIGINT, or
+        bash continuing a loop whose child exited as the signal landed) gets another interrupt
+        and a new marker. Returns False when no attempt's marker arrives.
+        """
+        for _attempt in range(_RESYNC_ATTEMPTS):
+            sync = f"__ABSTRACT_SYNC_{uuid.uuid4().hex}__"
             try:
-                chunk = self._chunks.get(timeout=0.5)
+                self._write("\x03")  # ETX -> SIGINT to the foreground process group
+                self._write(f"printf '\\n%s\\n' '{sync}'\n")
+            except Exception:
+                return False
+            # Matched with its newline: the marker as printed, never as typed (quoted).
+            if self._discard_until(sync + "\n", deadline=time.monotonic() + _RESYNC_ATTEMPT_TIMEOUT_S):
+                return True
+        return False
+
+    def _discard_until(self, marker: str, *, deadline: float) -> bool:
+        seen = ""
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            try:
+                chunk = self._chunks.get(timeout=min(remaining, 0.5))
             except queue.Empty:
                 continue
             if chunk is _EOF:
-                return
-            seen += chunk
-            if sync in seen:
-                return
-        # Sync sentinel never arrived (SIGINT-ignoring foreground process). Best-effort drain.
-        while True:
-            try:
-                self._chunks.get_nowait()
-            except queue.Empty:
-                break
+                return False
+            # Only a tail long enough to hold a marker split across chunks is kept.
+            seen = (seen + chunk)[-(len(marker) + 4096):]
+            if marker in seen:
+                return True
 
     def write_stdin(self, data: str) -> None:
         """Feed raw input to the session (for interactive prompts / REPLs)."""

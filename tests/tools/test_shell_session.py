@@ -180,6 +180,103 @@ def test_no_stale_bleed_after_timeout(tmp_path) -> None:
         reg.close_all()
 
 
+# A single long-lived child with exact SIGINT behaviour: a shell loop is not one (under load bash
+# both drops interrupts to a loop and ends a loop that ignores them, depending on where it forks).
+_LEAVES_AT_THE_SECOND_INTERRUPT = """
+import signal, sys, time
+hits = []
+def on_interrupt(*_):
+    hits.append(1)
+    if len(hits) == 2:
+        sys.exit(0)
+signal.signal(signal.SIGINT, on_interrupt)
+print("READY", flush=True)
+while True:
+    print("STALE", flush=True)
+    time.sleep(0.05)
+"""
+_IGNORES_INTERRUPTS = """
+import signal, time
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+print("READY", flush=True)
+while True:
+    print("STALE", flush=True)
+    time.sleep(0.05)
+"""
+
+
+def _start_child(sess, script: str) -> None:
+    """Start `script` in the session (it never ends, so the call times out); return once it is READY.
+
+    READY is printed after its SIGINT handler is set, so every interrupt the resync sends reaches it.
+    """
+    import shlex
+    import sys
+
+    out = sess.run(f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}", timeout_s=1).stdout
+    for _ in range(60):  # a hang guard only: each read returns as soon as output arrives
+        if "READY" in out:
+            return
+        out += sess.read_output(timeout_s=2).stdout
+    raise AssertionError(f"the child never got ready: {out!r}")
+
+
+def test_a_command_that_outlives_the_first_interrupt_never_reaches_the_next_command(tmp_path) -> None:
+    """The timed-out command keeps printing through the first Ctrl-C (as a bash loop does when
+    bash continues it past an interrupt) and ends at the second. The next command gets only its
+    own output."""
+    reg = ShellSessionRegistry()
+    sess = reg.open(cwd=str(tmp_path))
+    try:
+        _start_child(sess, _LEAVES_AT_THE_SECOND_INTERRUPT)
+        r2 = sess.run("echo FRESH_ONLY", timeout_s=10)
+        assert (r2.stdout, r2.exit_code, r2.timed_out) == ("FRESH_ONLY\n", 0, False), f"stale bleed: {r2.stdout!r}"
+        assert sess.run("echo AGAIN", timeout_s=10).stdout == "AGAIN\n"
+    finally:
+        reg.close_all()
+
+
+def test_a_session_that_cannot_be_resynchronised_is_closed_and_the_next_command_fails(tmp_path, monkeypatch) -> None:
+    from abstractcore.tools import shell_session
+
+    # The child ignores SIGINT, so no attempt's marker can ever print: any limit gives this outcome.
+    monkeypatch.setattr(shell_session, "_RESYNC_ATTEMPT_TIMEOUT_S", 0.5)
+    reg = ShellSessionRegistry()
+    sess = reg.open(session_id="stuck", cwd=str(tmp_path))
+    try:
+        _start_child(sess, _IGNORES_INTERRUPTS)
+        with pytest.raises(RuntimeError, match="could not be resynchronised"):
+            sess.run("echo FRESH_ONLY", timeout_s=5)
+        assert sess.is_alive() is False
+        fresh = reg.open(session_id="stuck", cwd=str(tmp_path))
+        assert fresh is not sess
+        assert fresh.run("echo FRESH_ONLY", timeout_s=10).stdout == "FRESH_ONLY\n"
+    finally:
+        reg.close_all()
+
+
+def test_a_terminal_setting_that_lands_late_cannot_make_the_shell_echo_commands(tmp_path, monkeypatch) -> None:
+    """ECHO is turned off before the shell starts. Applied from the parent, it raced the shell's
+    startup: a readline that read the terminal first echoed every command, sentinel included."""
+    import termios
+    import time
+
+    real = termios.tcsetattr
+
+    def late(fd, when, attrs):
+        time.sleep(0.5)  # a loaded machine, not a synchronisation: the shell would be up by now
+        real(fd, when, attrs)
+
+    monkeypatch.setattr(termios, "tcsetattr", late)
+    reg = ShellSessionRegistry()
+    sess = reg.open(cwd=str(tmp_path))
+    try:
+        assert sess.run("echo alive", timeout_s=10).stdout == "alive\n"
+        assert sess.run("echo again", timeout_s=10).stdout == "again\n"
+    finally:
+        reg.close_all()
+
+
 def test_reopen_after_death_does_not_leak_master_fd(tmp_path) -> None:
     """Reopening a session id whose process died without close() must release the old PTY fd."""
     import os

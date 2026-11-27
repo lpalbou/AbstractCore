@@ -94,6 +94,11 @@ Unreleased changes live in [`changelog.d/`](changelog.d/README.md), one file per
 - **A gated Hugging Face repository is reported as gated** (`download.py`). `GatedRepoError` subclasses
   `RepositoryNotFoundError`, so a gated model was reported as not found; the message now names the model page where the
   licence is accepted and the token to retry with.
+- **A shell session never returns a previous command's output after a timeout** (`tools/shell_session.py`). A
+  timed-out command that kept running through the interrupt could leave its output to the next command. The session
+  now interrupts again with a new sync marker until one is seen, and is closed when none is (that call reports it and
+  the next `shell_exec` starts a new session). The terminal is also set up before the shell starts: on a loaded machine
+  the shell could echo every command it ran into the output.
 
 ## [2.39.0] - 2026-11-25
 

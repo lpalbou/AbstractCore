@@ -298,7 +298,7 @@ def test_an_engine_outside_abstractvisions_version_bounds_is_501_with_its_messag
     real_version = metadata.version
 
     def old_mlx(distribution):
-        return {"mlx": "0.31.2", "mlx-gen": "0.40.2"}.get(distribution) or real_version(distribution)
+        return {"mlx": "0.31.2", "mlx-gen": "0.40.3"}.get(distribution) or real_version(distribution)
 
     # The stand-ins skip the engine's version check; this test puts AbstractVision's own back.
     _REAL_VERSION_GATE.cache_clear()
